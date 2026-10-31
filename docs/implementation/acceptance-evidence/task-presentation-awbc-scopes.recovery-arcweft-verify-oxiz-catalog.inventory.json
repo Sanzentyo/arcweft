@@ -1,0 +1,40 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-verify-oxiz",
+      "binary": "arcweft-verify-oxiz",
+      "test": "tests::boolean_identity_is_proven",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-verify-oxiz",
+      "binary": "arcweft-verify-oxiz",
+      "test": "tests::integer_bug_returns_a_counterexample_model",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-verify-oxiz",
+      "binary": "arcweft-verify-oxiz",
+      "test": "tests::ite_body_relation_is_proven_after_core_split",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-verify-oxiz",
+      "binary": "arcweft-verify-oxiz",
+      "test": "tests::monotone_addition_is_proven",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-verify-oxiz",
+      "binary": "arcweft-verify-oxiz",
+      "test": "tests::u128_max_literal_is_lowered_without_narrowing",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

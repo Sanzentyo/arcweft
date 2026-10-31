@@ -1,0 +1,27 @@
+[
+  {
+    "binary": "arcweft-save",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_save-7cc231de1bd0edaa.exe",
+    "sha256": "32f7f8e6c622822b09c221bc5612151c6f2fecacb1ec7e82d961ef348e13b218"
+  },
+  {
+    "binary": "arcweft-save::public_api",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\public_api-eaa9094c19ae956f.exe",
+    "sha256": "78fa79c987874d04b0b5d896035c86e43eb2af5b97d8407a54b60202ffe05696"
+  },
+  {
+    "binary": "arcweft-save::runtime_assertion_identity",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_assertion_identity-e0ff73dd8745602c.exe",
+    "sha256": "dc1ab7f8ac66f778856e739115bd94af7ee867ae8f2a1120946b1e5f246e4093"
+  },
+  {
+    "binary": "arcweft-save::strict_decode",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\strict_decode-61b87df452a9f5d8.exe",
+    "sha256": "662cff2c560522b13d1a379befbfec60289dd3cfee1ced3ef90fea0638eefb40"
+  },
+  {
+    "binary": "arcweft-save::typed_json_preflight",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\typed_json_preflight-9930c55b607108f8.exe",
+    "sha256": "ac38e5ae6685365f3e762530dfcdeb99f367c8219d1e3df9be9edad8796d7607"
+  }
+]

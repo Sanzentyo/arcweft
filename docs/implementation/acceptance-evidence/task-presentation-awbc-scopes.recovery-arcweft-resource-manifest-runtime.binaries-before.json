@@ -1,0 +1,17 @@
+[
+  {
+    "binary": "arcweft-resource-manifest",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_resource_manifest-22b9e3287e05394e.exe",
+    "sha256": "02778d1d47d6d31266b74dc368689cd34e3505a7468ac7d0988654f878346e8e"
+  },
+  {
+    "binary": "arcweft-resource-manifest::manifest_contract",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\manifest_contract-f265a67975cd8e4f.exe",
+    "sha256": "252253379dfe865983cf584c064e3062e0bc9e2eeccdf3d46111f29b0046307b"
+  },
+  {
+    "binary": "arcweft-resource-manifest::publication_contract",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\publication_contract-56b4b23ac672c0e1.exe",
+    "sha256": "0ca42f068a2318ba9de245482cdcbd530bb78fc30b76ce00d540e53b29d4aeca"
+  }
+]

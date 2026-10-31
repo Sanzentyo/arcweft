@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "d70e079dba7c448cd168fbf8de36e99721f068c3",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-rag",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\presentation-awbc-scopes.recovery-arcweft-rag-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-31T03:04:09.0447565Z",
+  "finishedAt": "2026-10-31T03:04:36.6936219Z"
+}

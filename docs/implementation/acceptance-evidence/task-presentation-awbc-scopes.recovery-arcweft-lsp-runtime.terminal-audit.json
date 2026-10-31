@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "d70e079dba7c448cd168fbf8de36e99721f068c3",
+  "run": "presentation-awbc-scopes.recovery-arcweft-lsp-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [ 235.383s] 223 tests run: 223 passed (1 slow), 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 223,
+  "passed": 223,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4005,
+  "sourceDrift": 0,
+  "held": 0,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-31T02:45:41.9109420Z"
+}

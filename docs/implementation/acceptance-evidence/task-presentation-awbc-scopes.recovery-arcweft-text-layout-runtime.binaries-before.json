@@ -1,0 +1,17 @@
+[
+  {
+    "binary": "arcweft-text-layout",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_text_layout-9064742bc29173f2.exe",
+    "sha256": "9c8ade6fdeff1bb5f8a15c0ee743aecf9f8b468dd7b0cb8cb3b726940e91e2bd"
+  },
+  {
+    "binary": "arcweft-text-layout::document_layout",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\document_layout-1699411ba165728b.exe",
+    "sha256": "c9c180072069fed80f664810d0795cde2b46ee4131d8463aa605f904c5dbf05b"
+  },
+  {
+    "binary": "arcweft-text-layout::vertical_break_quality",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\vertical_break_quality-3248c0adb1ff0687.exe",
+    "sha256": "52e7583a5a71badcada8f1ea5a0c5b31be8ef6f581604c5e7c0ceacf446eb4a8"
+  }
+]

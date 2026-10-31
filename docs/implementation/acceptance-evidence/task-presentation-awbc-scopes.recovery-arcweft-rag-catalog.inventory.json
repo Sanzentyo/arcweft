@@ -1,0 +1,19 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-rag",
+      "binary": "arcweft-rag",
+      "test": "fusion::tests::multiple_channels_raise_a_candidate",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-rag",
+      "binary": "arcweft-rag",
+      "test": "vector::tests::cosine_ranking_is_stable",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

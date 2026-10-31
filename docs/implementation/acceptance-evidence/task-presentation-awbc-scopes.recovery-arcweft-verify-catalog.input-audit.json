@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "run": "presentation-awbc-scopes.recovery-arcweft-verify-catalog",
+  "actualExitCode": 0,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-verify",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 4005,
+  "sourceDrift": 0,
+  "held": 0,
+  "at": "2026-10-31T03:25:25.6638391Z"
+}

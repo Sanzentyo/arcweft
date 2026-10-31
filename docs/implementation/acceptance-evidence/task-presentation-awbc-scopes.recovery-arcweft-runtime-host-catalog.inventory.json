@@ -1,0 +1,509 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "activity_host::tests::activity_step_input_selects_only_routed_events_for_target",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "activity_host::tests::registry_rejects_duplicate_or_unknown_activity_targets",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "activity_host::tests::registry_steps_activity_with_selected_input_and_collects_output",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "bundle_runner::session::tests::terminal_session_step_registers_requests_before_publishing_body_retirement",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "bundle_runner::tests::bundle_asset_adapter_publishes_typed_results_for_validated_image_and_voice_bytes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "bundle_runner::tests::bundle_runner_preserves_typed_flow_events_for_embedding_hosts",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "bundle_runner::tests::bundle_runner_rejects_agent_controller_bundle_kind",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "bundle_runner::tests::bundle_runner_rejects_corrupt_image_asset_bytes_before_execution",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "bundle_runner::tests::bundle_runner_rejects_image_asset_metadata_mismatch_before_execution",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "bundle_runner::tests::bundle_runner_rejects_missing_image_asset_virtual_file",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "bundle_runner::tests::bundle_runner_session_captures_per_run_host_state_and_steps_incrementally",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "bundle_runner::tests::bundle_runner_wraps_emitted_assertion_without_condition_parsing",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "bundle_runner::tests::terminal_native_step_registers_requests_before_publishing_body_retirement",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "capabilities::tests::browser_web_excludes_native_file_calls",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "capabilities::tests::conformance_accepts_calls_added_by_implemented_manifest",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "capabilities::tests::conformance_reports_declared_calls_missing_from_runner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "capabilities::tests::effect_availability_does_not_substitute_for_runner_host_call_support",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "capabilities::tests::implemented_adapter_manifests_extend_capabilities",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "capabilities::tests::runner_kind_builds_expected_presets",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "capabilities::tests::standard_native_includes_file_and_system_info_calls",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::program_execution_tests::actual_program_body_retirement_is_required_and_duplicate_batch_is_atomic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::program_execution_tests::actual_program_terminals_construct_one_ordered_publication_packet",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::tests::different_payload_producers_preserve_each_pending_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::tests::dispatch_bridge_rejects_misbound_and_duplicate_task_ids_atomically",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::tests::native_bridge_completes_system_info_allowed_by_manifest",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::tests::native_bridge_rejects_allowed_host_call_without_native_implementation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::tests::native_bridge_rejects_host_call_missing_from_manifest",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::tests::native_cli_args_complete_through_the_checked_host_call_contract",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::tests::native_cli_args_rejects_a_foreign_manifest_contract_before_dispatch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::tests::native_cli_args_rejects_a_tampered_result_type_before_dispatch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::tests::native_cli_exit_requires_exact_manifest_and_never_result_before_dispatch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::tests::native_cli_rejects_malformed_process_arguments_without_side_effects",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::tests::native_file_adapter_completes_manifest_bound_custom_file_calls",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::tests::native_file_custom_calls_reject_wrong_contract_and_argument_shape",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::tests::native_file_roots_separate_read_only_assets_from_mutable_state",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::tests::native_path_constructor_returns_the_exact_standard_opaque_value",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::tests::native_system_info_adapter_completes_all_typed_and_manifest_selected_requests",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::tests::native_system_info_projection_rejects_foreign_or_malformed_requests",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::tests::pending_host_call_accepts_progress_then_ready_in_one_fenced_batch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::tests::pending_task_completion_is_checked_against_its_retained_outcome",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::tests::progress_revisions_preserve_each_generation_and_publication",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::tests::registered_adapter_decline_publishes_a_terminal_failure",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::tests::restored_host_bridge_continues_publication_revision_frontier",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::tests::restored_host_bridge_rejects_previous_worker_with_identical_saved_coordinates",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::tests::selected_native_policy_does_not_grant_unselected_host_calls",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::tests::standard_cli_host_policy_is_manifest_derived",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "native_task::tests::worker_attempt_fence_rejects_stale_packet_before_publication",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "presentation_dispatch::tests::activity_action_rejects_non_activity_semantic_target",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "presentation_dispatch::tests::dispatch_batch_partitions_dialogue_activity_view_and_runtime_actions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "presentation_dispatch::tests::dispatch_semantic_invoke_routes_through_modal_policy_before_partitioning",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "presentation_dispatch::tests::execute_plan_calls_handlers_in_dispatch_order_and_collects_output",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "presentation_dispatch::tests::execute_plan_reports_handler_failure_index_without_running_later_actions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "presentation_dispatch::tests::registered_handlers_emit_configured_actions_and_host_events",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "presentation_dispatch::tests::registered_handlers_reject_duplicate_destination_action_pairs",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "presentation_dispatch::tests::registered_handlers_reject_unregistered_or_mismatched_activity_sources",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "view_frame::tests::frame_commit_retains_fx_instance_identity_and_bindings",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "view_frame::tests::view_frame_commit_lists_image_items_in_render_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "view_frame::tests::view_frame_commit_orders_layers_by_committed_layer_tree",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "view_frame::tests::view_frame_commit_rejects_unknown_and_duplicate_layers_without_replacing_existing",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host",
+      "test": "view_frame::tests::view_frame_commit_semantics_feed_presentation_dispatch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host::awbc_product_runner",
+      "test": "bundle_runner_defaults_are_product_safe",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host::bundle_runner",
+      "test": "bundle_file_runner_executes_decoded_need_producer_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host::bundle_runner",
+      "test": "bundle_file_runner_rejects_json_bytes_in_awfb_path",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host::bundle_runner",
+      "test": "bundle_file_runner_requires_awfb_extension",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host::bundle_runner",
+      "test": "bundle_runner_executes_custom_adapter_without_cli",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host::bundle_runner",
+      "test": "bundle_runner_rejects_missing_exact_entry_selection_before_execution",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host::bundle_runner",
+      "test": "bundle_runner_reports_custom_adapter_missing_from_host",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host::bundle_runner",
+      "test": "runtime_plan_vm_starts_and_awaits_a_typed_need_producer",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host::dependency_direction",
+      "test": "adapter_context_normal_graph_excludes_compiler_layers",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host::dependency_direction",
+      "test": "core_dependency_graph_excludes_compiler_layers",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host::dependency_direction",
+      "test": "runtime_host_normal_graph_excludes_hir_and_runtime_plan",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "binary": "arcweft-runtime-host::view_interaction_dispatch",
+      "test": "frame_commit_preserves_handler_dispatch_and_resolved_interaction_style",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

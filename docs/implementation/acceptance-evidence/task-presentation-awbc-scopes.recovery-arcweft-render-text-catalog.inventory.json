@@ -1,0 +1,145 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-render-text",
+      "binary": "arcweft-render-text::frame_resolution",
+      "test": "discarded_interpolation_retains_an_omitted_preorder_node",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-text",
+      "binary": "arcweft-render-text::frame_resolution",
+      "test": "interpolation_failure_policy_can_discard_or_fallback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-text",
+      "binary": "arcweft-render-text::frame_resolution",
+      "test": "interpolation_failure_policy_can_fail_line",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-text",
+      "binary": "arcweft-render-text::frame_resolution",
+      "test": "interpolation_fallback_can_render_expr_or_call_source",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-text",
+      "binary": "arcweft-render-text::frame_resolution",
+      "test": "nested_ruby_owns_preorder_body_nodes_and_exact_run_slices",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-text",
+      "binary": "arcweft-render-text::frame_resolution",
+      "test": "resolves_text_ruby_controls_and_interpolation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-text",
+      "binary": "arcweft-render-text::frame_resolution",
+      "test": "structural_scope_preserves_style_across_control_nodes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-text",
+      "binary": "arcweft-render-text::resolved_document",
+      "test": "cascade_applies_closed_color_and_font_values_without_losing_presentation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-text",
+      "binary": "arcweft-render-text::resolved_document",
+      "test": "direct_document_rejects_dynamic_nodes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-text",
+      "binary": "arcweft-render-text::resolved_document",
+      "test": "direct_document_rejects_public_node_mutation_that_would_stale_the_borrowed_text",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-text",
+      "binary": "arcweft-render-text::resolved_document",
+      "test": "direct_rich_text_resolution_preserves_ruby_style_and_presentation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-text",
+      "binary": "arcweft-render-text::resolved_document",
+      "test": "document_projection_rebases_runs_and_ruby_without_cloning_text",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-text",
+      "binary": "arcweft-render-text::resolved_document",
+      "test": "document_rejects_a_run_boundary_inside_utf8",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-text",
+      "binary": "arcweft-render-text::resolved_document",
+      "test": "document_rejects_noncontiguous_and_inexact_source_ranges",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-text",
+      "binary": "arcweft-render-text::resolved_document",
+      "test": "nested_ruby_layout_does_not_reset_the_inherited_vertical_flow",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-text",
+      "binary": "arcweft-render-text::resolved_document",
+      "test": "shaping_language_uses_the_shared_canonical_locale_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-text",
+      "binary": "arcweft-render-text::resolved_document",
+      "test": "source_revision_changes_when_ruby_text_changes_without_base_text_changes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-text",
+      "binary": "arcweft-render-text::resolved_document",
+      "test": "stage_resolution_borrows_the_frame_slice_and_retains_full_source_ranges",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-text",
+      "binary": "arcweft-render-text::resolved_document",
+      "test": "style_resolution_rejects_zero_sized_authored_text",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-render-text",
+      "binary": "arcweft-render-text::resolved_document",
+      "test": "validated_document_exposes_borrowed_text_and_exact_source_mapping",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

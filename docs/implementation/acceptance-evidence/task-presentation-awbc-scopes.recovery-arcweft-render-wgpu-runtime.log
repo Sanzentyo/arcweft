@@ -1,0 +1,1984 @@
+warning: unused import: `std::sync::Arc`
+  --> crates\arcweft-core\src\awbc\product_step\line.rs:39:5
+   |
+39 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `HostRestartPolicy`
+  --> crates\arcweft-core\src\awbc\product_step\snapshot.rs:23:5
+   |
+23 |     HostRestartPolicy, NeedProducerInvocationFrontier, NeedProducerInvocationToken,
+   |     ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `NeedId`
+ --> crates\arcweft-core\src\awbc\product_step\suspension.rs:5:53
+  |
+5 |     FiberSuspensionReason, FlowEvent, MappedEffect, NeedId, PendingHostCall, ProductStepError,
+  |                                                     ^^^^^^
+
+warning: unused import: `runtime_sequence_values`
+  --> crates\arcweft-core\src\awbc\product_step.rs:87:5
+   |
+87 |     runtime_sequence_values, runtime_value_label,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeIterator`
+  --> crates\arcweft-core\src\awbc\value_admission.rs:20:5
+   |
+20 |     RuntimeIterator, RuntimeRange, RuntimeRangeIterator, RuntimeReductionProducer,
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeCallableInputSource`
+  --> crates\arcweft-core\src\awbc\verify\code.rs:30:5
+   |
+30 |     RuntimeCallableInputSource, RuntimeCallableParameterKind, RuntimeCallablePosition,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeRegistryUpdateJournalError` and `RuntimeRegistryUpdateJournal`
+  --> crates\arcweft-core\src\effect.rs:15:27
+   |
+15 | pub(crate) use registry::{RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJournalError};
+   |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::plan::code::RuntimeCodeOwner`
+ --> crates\arcweft-core\src\engine.rs:7:5
+  |
+7 | use crate::plan::code::RuntimeCodeOwner;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `NeedId`
+  --> crates\arcweft-core\src\engine.rs:28:51
+   |
+28 |     AwaitManyTarget, CancelScopeId, GenerationId, NeedId, NeedProducerOwnedTaskEventDisposition,
+   |                                                   ^^^^^^
+
+warning: unused import: `RuntimeExpr`
+  --> crates\arcweft-core\src\engine\flow.rs:14:23
+   |
+14 |     RuntimeEvalError, RuntimeExpr, RuntimeIterator, RuntimePattern, RuntimeStepOutput,
+   |                       ^^^^^^^^^^^
+
+warning: unused import: `pattern_binding_capacity`
+  --> crates\arcweft-core\src\engine\flow.rs:18:57
+   |
+18 | use crate::pattern::{RuntimeBuiltinVariantCaseIdentity, pattern_binding_capacity};
+   |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `HostTaskRequest`
+  --> crates\arcweft-core\src\engine\flow.rs:26:19
+   |
+26 | use crate::task::{HostTaskRequest, NamedHostArg, RuntimeHostArgumentTemplate};
+   |                   ^^^^^^^^^^^^^^^
+
+warning: unused imports: `CancelScopeId`, `TaskKey`, `TaskPolicy`, and `TaskPriority`
+ --> crates\arcweft-core\src\engine\suspend.rs:4:67
+  |
+4 |     AwaitItemType, AwaitManyInFlight, AwaitManyState, AwaitState, CancelScopeId, ChoiceState,
+  |                                                                   ^^^^^^^^^^^^^
+...
+7 |     RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
+  |                                                                ^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `TaskId`
+  --> crates\arcweft-core\src\engine\suspend.rs:21:43
+   |
+21 |     HttpFetchRequest, HttpRespondRequest, NeedId, NeedProducerRuntimeArgument,
+   |                                           ^^^^^^
+...
+24 |     SystemInfoKind, SystemInfoRequest, TaskId, TtsRequest, WasmCallRequest,
+   |                                        ^^^^^^
+
+warning: unused import: `RuntimeFunctionSiteBodyKind`
+  --> crates\arcweft-core\src\plan\construction\lower.rs:68:33
+   |
+68 |     RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind, RuntimeHostCallTarget,
+   |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `TaskId`
+  --> crates\arcweft-core\src\plan\construction\seed.rs:25:37
+   |
+25 | use crate::task::{HostCapabilityId, NeedId, NeedProducerTaskPlan, TaskId};
+   |                                     ^^^^^^                        ^^^^^^
+
+warning: unused import: `RuntimeDialogueEffectSite`
+   --> crates\arcweft-core\src\plan\construction.rs:109:73
+    |
+109 |     RuntimeDialogueContentSlot, RuntimeDialogueContentTemplateManifest, RuntimeDialogueEffectSite,
+    |                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimePureHelperId`
+  --> crates\arcweft-core\src\plan\entry_inventory.rs:29:49
+   |
+29 | use super::{FlowOp, FlowRuntimeId, RuntimePlan, RuntimePureHelperId};
+   |                                                 ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeAwbcProgramSourceField`
+  --> crates\arcweft-core\src\plan\task_source\program.rs:27:62
+   |
+27 | pub(crate) use program_task::{RuntimeAwbcProgramSourceError, RuntimeAwbcProgramSourceField};
+   |                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeAwbcHostSourceError`, `RuntimeAwbcHostSourceField`, `RuntimeAwbcSelectedSourceError`, `RuntimeAwbcSelectedSourceField`, `RuntimeAwbcTemplateSourceError`, `RuntimeAwbcTemplateSourceField`, and `RuntimeTaskSourceProgramError`
+  --> crates\arcweft-core\src\plan\task_source.rs:17:5
+   |
+17 |     RuntimeAwbcHostSourceError, RuntimeAwbcHostSourceField, RuntimeAwbcProgramSourceError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+18 |     RuntimeAwbcSelectedSourceError, RuntimeAwbcSelectedSourceField, RuntimeAwbcTemplateSourceError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+19 |     RuntimeAwbcTemplateSourceField, RuntimeTaskSourceProgram, RuntimeTaskSourceProgramError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeIterator`
+  --> crates\arcweft-core\src\plan\value_admission.rs:22:5
+   |
+22 |     RuntimeIterator, RuntimeRange, RuntimeRangeIterator, RuntimeReductionProducer,
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeIdExhausted`
+  --> crates\arcweft-core\src\presentation\resources.rs:10:43
+   |
+10 |     ExecutionInstanceId, RuntimeIdCursor, RuntimeIdExhausted, RuntimeIdNamespace,
+   |                                           ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeBuiltinVariantCaseIdentity`
+  --> crates\arcweft-core\src\pure.rs:20:5
+   |
+20 |     RuntimeBuiltinVariantCaseIdentity, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::BTreeMap`
+ --> crates\arcweft-core\src\pure\function.rs:3:5
+  |
+3 | use std::collections::BTreeMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NeedProducerAssertionError` and `NeedProducerAssertionField`
+  --> crates\arcweft-core\src\task.rs:58:32
+   |
+58 | pub(crate) use specification::{NeedProducerAssertionError, NeedProducerAssertionField};
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeCallableGroupInspection`
+  --> crates\arcweft-core\src\value\callable.rs:23:63
+   |
+23 |     RuntimeCallableApplication, RuntimeCallableBodyReference, RuntimeCallableGroupInspection,
+   |                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeCommand` and `RuntimeSeq`
+  --> crates\arcweft-core\src\value\literal_semantic.rs:9:5
+   |
+ 9 |     RuntimeCommand, RuntimeInt, RuntimeOpaquePersistence, RuntimeOpaqueValueClass, RuntimeRange,
+   |     ^^^^^^^^^^^^^^
+10 |     RuntimeRangeIterator, RuntimeRecordView, RuntimeScalarView, RuntimeSeq, RuntimeSignedIntWidth,
+   |                                                                 ^^^^^^^^^^
+
+warning: trait `PresentationScopeStorage` is more private than the item `fiber::scope::<impl fiber::FiberState<V, O, N, B, R, G>>`
+  --> crates\arcweft-core\src\awbc\fiber\scope.rs:16:1
+   |
+16 | / impl<V, O, N, B, R, G: crate::presentation::resources::PresentationScopeStorage>
+17 | |     super::FiberState<V, O, N, B, R, G>
+   | |_______________________________________^ implementation `fiber::scope::<impl fiber::FiberState<V, O, N, B, R, G>>` is reachable at visibility `pub`
+   |
+note: but trait `PresentationScopeStorage` is only usable at visibility `pub(crate)`
+  --> crates\arcweft-core\src\presentation\resources.rs:44:1
+   |
+44 | pub(crate) trait PresentationScopeStorage {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: `#[warn(private_bounds)]` on by default
+
+warning: type `NativeSourceOperation` is more private than the item `FlowControlStackEntryKind::Loop::source`
+   --> crates\arcweft-core\src\engine.rs:860:9
+    |
+860 |         source: NativeSourceOperation,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `FlowControlStackEntryKind::Loop::source` is reachable at visibility `pub(crate)`
+    |
+note: but type `NativeSourceOperation` is only usable at visibility `pub(in crate::engine)`
+   --> crates\arcweft-core\src\engine\code_cursor.rs:29:1
+    |
+ 29 | pub(super) struct NativeSourceOperation {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: `#[warn(private_interfaces)]` on by default
+
+warning: type `NativeSourceOperation` is more private than the item `FlowControlStackEntryKind::While::source`
+   --> crates\arcweft-core\src\engine.rs:863:9
+    |
+863 |         source: NativeSourceOperation,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `FlowControlStackEntryKind::While::source` is reachable at visibility `pub(crate)`
+    |
+note: but type `NativeSourceOperation` is only usable at visibility `pub(in crate::engine)`
+   --> crates\arcweft-core\src\engine\code_cursor.rs:29:1
+    |
+ 29 | pub(super) struct NativeSourceOperation {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `NativeSourceOperation` is more private than the item `FlowControlStackEntryKind::WhileLet::source`
+   --> crates\arcweft-core\src\engine.rs:866:9
+    |
+866 |         source: NativeSourceOperation,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `FlowControlStackEntryKind::WhileLet::source` is reachable at visibility `pub(crate)`
+    |
+note: but type `NativeSourceOperation` is only usable at visibility `pub(in crate::engine)`
+   --> crates\arcweft-core\src\engine\code_cursor.rs:29:1
+    |
+ 29 | pub(super) struct NativeSourceOperation {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `NativeSourceOperation` is more private than the item `FlowControlStackEntryKind::For::source`
+   --> crates\arcweft-core\src\engine.rs:869:9
+    |
+869 |         source: NativeSourceOperation,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `FlowControlStackEntryKind::For::source` is reachable at visibility `pub(crate)`
+    |
+note: but type `NativeSourceOperation` is only usable at visibility `pub(in crate::engine)`
+   --> crates\arcweft-core\src\engine\code_cursor.rs:29:1
+    |
+ 29 | pub(super) struct NativeSourceOperation {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `RuntimeStoredValue` is more private than the item `engine::presentation::<impl engine::Engine<N, P, R, F, D>>`
+  --> crates\arcweft-core\src\engine\presentation.rs:10:1
+   |
+10 | impl<N, P: RuntimeStoredValue, R, F, D> Engine<N, P, R, F, D> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `engine::presentation::<impl engine::Engine<N, P, R, F, D>>` is reachable at visibility `pub`
+   |
+note: but trait `RuntimeStoredValue` is only usable at visibility `pub(crate)`
+  --> crates\arcweft-core\src\value\storage.rs:15:1
+   |
+15 | pub(crate) trait RuntimeStoredValue {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `RuntimeStoredValue` is more private than the item `NativePendingWork<V, I>`
+   --> crates\arcweft-core\src\engine\work.rs:513:1
+    |
+513 | / impl<V: crate::value::RuntimeStoredValue, I: crate::value::RuntimeStoredValue>
+514 | |     NativePendingWork<V, I>
+    | |___________________________^ implementation `NativePendingWork<V, I>` is reachable at visibility `pub`
+    |
+note: but trait `RuntimeStoredValue` is only usable at visibility `pub(crate)`
+   --> crates\arcweft-core\src\value\storage.rs:15:1
+    |
+ 15 | pub(crate) trait RuntimeStoredValue {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `task::execution::TaskExecutionSource` is more private than the item `NeedProducerRegistryRestore<V, P, S>`
+    --> crates\arcweft-core\src\task\producer.rs:1702:1
+     |
+1702 | impl<V, P, S: super::TaskExecutionSource + PartialEq> NeedProducerRegistryRestore<V, P, S> {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `NeedProducerRegistryRestore<V, P, S>` is reachable at visibility `pub`
+     |
+note: but trait `task::execution::TaskExecutionSource` is only usable at visibility `pub(crate)`
+    --> crates\arcweft-core\src\task\execution.rs:449:1
+     |
+ 449 | pub(crate) trait TaskExecutionSource {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `task::execution::TaskExecutionSource` is more private than the item `producer::NeedProducerLaunchRestore<V, P, S>`
+    --> crates\arcweft-core\src\task\producer.rs:1786:1
+     |
+1786 | impl<V, P, S: super::TaskExecutionSource> NeedProducerLaunchRestore<V, P, S> {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `producer::NeedProducerLaunchRestore<V, P, S>` is reachable at visibility `pub`
+     |
+note: but trait `task::execution::TaskExecutionSource` is only usable at visibility `pub(crate)`
+    --> crates\arcweft-core\src\task\execution.rs:449:1
+     |
+ 449 | pub(crate) trait TaskExecutionSource {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `RuntimeStoredValue` is more private than the item `RuntimeNeedProducerStart<V, P, S>`
+   --> crates\arcweft-core\src\task\producer\start.rs:147:1
+    |
+147 | / impl<V: RuntimeStoredValue, P: RuntimeStoredValue, S: crate::task::TaskExecutionSource>
+148 | |     RuntimeNeedProducerStart<V, P, S>
+    | |_____________________________________^ implementation `RuntimeNeedProducerStart<V, P, S>` is reachable at visibility `pub`
+    |
+note: but trait `RuntimeStoredValue` is only usable at visibility `pub(crate)`
+   --> crates\arcweft-core\src\value\storage.rs:15:1
+    |
+ 15 | pub(crate) trait RuntimeStoredValue {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `task::execution::TaskExecutionSource` is more private than the item `RuntimeNeedProducerStart<V, P, S>`
+   --> crates\arcweft-core\src\task\producer\start.rs:147:1
+    |
+147 | / impl<V: RuntimeStoredValue, P: RuntimeStoredValue, S: crate::task::TaskExecutionSource>
+148 | |     RuntimeNeedProducerStart<V, P, S>
+    | |_____________________________________^ implementation `RuntimeNeedProducerStart<V, P, S>` is reachable at visibility `pub`
+    |
+note: but trait `task::execution::TaskExecutionSource` is only usable at visibility `pub(crate)`
+   --> crates\arcweft-core\src\task\execution.rs:449:1
+    |
+449 | pub(crate) trait TaskExecutionSource {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `task::execution::TaskExecutionSource` is more private than the item `specification::TaskSpec<P, producer::TaskPlanSemanticDigest, S>`
+   --> crates\arcweft-core\src\task\specification.rs:206:1
+    |
+206 | impl<P, S: super::TaskExecutionSource> TaskSpec<P, TaskPlanSemanticDigest, S> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `specification::TaskSpec<P, producer::TaskPlanSemanticDigest, S>` is reachable at visibility `pub`
+    |
+note: but trait `task::execution::TaskExecutionSource` is only usable at visibility `pub(crate)`
+   --> crates\arcweft-core\src\task\execution.rs:449:1
+    |
+449 | pub(crate) trait TaskExecutionSource {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `task::execution::TaskExecutionSource` is more private than the item `task::journal::TaskSubmission<P, producer::TaskPlanSemanticDigest, S>`
+   --> crates\arcweft-core\src\task\journal.rs:40:1
+    |
+ 40 | impl<P, S: super::TaskExecutionSource> TaskSubmission<P, super::TaskPlanSemanticDigest, S> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `task::journal::TaskSubmission<P, producer::TaskPlanSemanticDigest, S>` is reachable at visibility `pub`
+    |
+note: but trait `task::execution::TaskExecutionSource` is only usable at visibility `pub(crate)`
+   --> crates\arcweft-core\src\task\execution.rs:449:1
+    |
+449 | pub(crate) trait TaskExecutionSource {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `TaskSnapshotSource` is more private than the item `task::snapshot::<impl specification::TaskSpec<awbc_save::AwbcRuntimeValueSnapshot, producer::TaskPlanSemanticDigest, S>>`
+  --> crates\arcweft-core\src\task\snapshot.rs:90:1
+   |
+90 | impl<S: TaskSnapshotSource> TaskSpec<AwbcRuntimeValueSnapshot, super::TaskPlanSemanticDigest, S> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `task::snapshot::<impl specification::TaskSpec<awbc_save::AwbcRuntimeValueSnapshot, producer::TaskPlanSemanticDigest, S>>` is reachable at visibility `pub`
+   |
+note: but trait `TaskSnapshotSource` is only usable at visibility `pub(crate)`
+  --> crates\arcweft-core\src\task\snapshot.rs:23:1
+   |
+23 | pub(crate) trait TaskSnapshotSource: super::TaskExecutionSource + Sized {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `task::execution::TaskExecutionSource` is more private than the item `task::descriptor::<impl specification::TaskSpec<P, producer::TaskPlanSemanticDigest, S>>`
+   --> crates\arcweft-core\src\task\descriptor.rs:17:1
+    |
+ 17 | impl<P, S: super::TaskExecutionSource> TaskSpec<P, super::TaskPlanSemanticDigest, S> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `task::descriptor::<impl specification::TaskSpec<P, producer::TaskPlanSemanticDigest, S>>` is reachable at visibility `pub`
+    |
+note: but trait `task::execution::TaskExecutionSource` is only usable at visibility `pub(crate)`
+   --> crates\arcweft-core\src\task\execution.rs:449:1
+    |
+449 | pub(crate) trait TaskExecutionSource {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `task::execution::TaskExecutionSource` is more private than the item `task::descriptor::<impl specification::TaskSpec<P, producer::TaskPlanSemanticDigest, S>>`
+   --> crates\arcweft-core\src\task\descriptor.rs:107:1
+    |
+107 | impl<P, S: super::TaskExecutionSource> TaskSpec<P, super::TaskPlanSemanticDigest, S> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `task::descriptor::<impl specification::TaskSpec<P, producer::TaskPlanSemanticDigest, S>>` is reachable at visibility `pub`
+    |
+note: but trait `task::execution::TaskExecutionSource` is only usable at visibility `pub(crate)`
+   --> crates\arcweft-core\src\task\execution.rs:449:1
+    |
+449 | pub(crate) trait TaskExecutionSource {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `task::execution::TaskExecutionSource` is more private than the item `TaskRequest<P, S>`
+   --> crates\arcweft-core\src\task\execution.rs:608:1
+    |
+608 | impl<P, S: TaskExecutionSource> TaskRequest<P, S> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `TaskRequest<P, S>` is reachable at visibility `pub`
+    |
+note: but trait `task::execution::TaskExecutionSource` is only usable at visibility `pub(crate)`
+   --> crates\arcweft-core\src\task\execution.rs:449:1
+    |
+449 | pub(crate) trait TaskExecutionSource {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `replace_from_snapshot` and `push_call_frame_with_continuation` are never used
+    --> crates\arcweft-core\src\awbc\fiber.rs:2678:19
+     |
+1834 | impl FiberState {
+     | --------------- methods in this implementation
+...
+2678 |     pub(crate) fn replace_from_snapshot(
+     |                   ^^^^^^^^^^^^^^^^^^^^^
+...
+3556 |     pub(crate) fn push_call_frame_with_continuation(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: methods `presentation_scope_binding` and `presentation_scope_target` are never used
+  --> crates\arcweft-core\src\awbc\fiber\scope.rs:48:19
+   |
+47 | impl super::FiberFrame {
+   | ---------------------- methods in this implementation
+48 |     pub(crate) fn presentation_scope_binding(
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+57 |     fn presentation_scope_target(
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `bind_presentation_scope` and `release_presentation_scope` are never used
+  --> crates\arcweft-core\src\awbc\fiber\scope.rs:76:19
+   |
+75 | impl super::FiberState {
+   | ---------------------- methods in this implementation
+76 |     pub(crate) fn bind_presentation_scope<V>(
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^
+...
+96 |     pub(crate) fn release_presentation_scope<V>(
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `is_task_handle` is never used
+    --> crates\arcweft-core\src\awbc\verify\code.rs:6699:4
+     |
+6699 | fn is_task_handle(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
+     |    ^^^^^^^^^^^^^^
+
+warning: function `bind_pattern_copyable` is never used
+    --> crates\arcweft-core\src\awbc\vm.rs:4795:15
+     |
+4795 | pub(crate) fn bind_pattern_copyable(
+     |               ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `pattern_binding_registers` is never used
+    --> crates\arcweft-core\src\awbc\vm.rs:5039:15
+     |
+5039 | pub(crate) fn pattern_binding_registers(
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `RuntimeRegistryUpdateJournalError` is never used
+  --> crates\arcweft-core\src\effect\registry\journal.rs:17:17
+   |
+17 | pub(crate) enum RuntimeRegistryUpdateJournalError {
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `Bank` is never used
+  --> crates\arcweft-core\src\effect\registry\journal.rs:24:6
+   |
+24 | enum Bank {
+   |      ^^^^
+
+warning: struct `RuntimeRegistryUpdateJournal` is never constructed
+  --> crates\arcweft-core\src\effect\registry\journal.rs:31:19
+   |
+31 | pub(crate) struct RuntimeRegistryUpdateJournal {
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated items `new`, `try_push`, and `finish` are never used
+  --> crates\arcweft-core\src\effect\registry\journal.rs:37:19
+   |
+36 | impl RuntimeRegistryUpdateJournal {
+   | --------------------------------- associated items in this implementation
+37 |     pub(crate) fn new(
+   |                   ^^^
+...
+51 |     pub(crate) fn try_push(
+   |                   ^^^^^^^^
+...
+89 |     pub(crate) fn finish(
+   |                   ^^^^^^
+
+warning: method `bind_presentation_scope` is never used
+   --> crates\arcweft-core\src\engine.rs:268:19
+    |
+265 | impl FlowFiber {
+    | -------------- method in this implementation
+...
+268 |     pub(crate) fn bind_presentation_scope<V>(
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `owner` is never used
+   --> crates\arcweft-core\src\engine\code_cursor.rs:201:25
+    |
+200 | impl NativeSourceOperation {
+    | -------------------------- method in this implementation
+201 |     pub(super) const fn owner(&self) -> RuntimeCodeOwner {
+    |                         ^^^^^
+
+warning: method `register_presentation_body` is never used
+  --> crates\arcweft-core\src\engine\presentation.rs:59:19
+   |
+58 | impl Engine {
+   | ----------- method in this implementation
+59 |     pub(crate) fn register_presentation_body(
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `allocate_scheduled_scope` and `push_control_scope_frame` are never used
+    --> crates\arcweft-core\src\engine\flow.rs:1433:8
+     |
+  32 | impl Engine {
+     | ----------- methods in this implementation
+...
+1433 |     fn allocate_scheduled_scope(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1452 |     pub(super) fn push_control_scope_frame(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `code_owner` is never used
+   --> crates\arcweft-core\src\engine\work.rs:233:19
+    |
+206 | impl<V, I> NativePendingWork<V, I> {
+    | ---------------------------------- method in this implementation
+...
+233 |     pub(super) fn code_owner(&self) -> Option<crate::plan::code::RuntimeCodeOwner> {
+    |                   ^^^^^^^^^^
+
+warning: function `canonical_runtime_tuple_digest` is never used
+   --> crates\arcweft-core\src\entry\schema.rs:627:15
+    |
+627 | pub(crate) fn canonical_runtime_tuple_digest(
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated items `try_into_state` and `from_state` are never used
+  --> crates\arcweft-core\src\entry\schema\value_budget.rs:71:19
+   |
+68 | impl ValidationWork {
+   | ------------------- associated items in this implementation
+...
+71 |     pub(crate) fn try_into_state(self) -> Result<ValidationWorkState, Self> {
+   |                   ^^^^^^^^^^^^^^
+...
+77 |     pub(crate) fn from_state(state: ValidationWorkState) -> Self {
+   |                   ^^^^^^^^^^
+
+warning: function `validate_live` is never used
+   --> crates\arcweft-core\src\entry\schema\value_encoding.rs:185:15
+    |
+185 | pub(crate) fn validate_live<V: ValueValidation>(
+    |               ^^^^^^^^^^^^^
+
+warning: function `validate_without_digest` is never used
+   --> crates\arcweft-core\src\entry\schema\value_encoding.rs:213:4
+    |
+213 | fn validate_without_digest<V: ValueValidation>(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type alias `ValueResourceAdmissionState` is never used
+   --> crates\arcweft-core\src\entry\schema\value_encoding.rs:495:17
+    |
+495 | pub(crate) type ValueResourceAdmissionState = ValueResourceAdmission<ValidationWorkState>;
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `map_work` is never used
+   --> crates\arcweft-core\src\entry\schema\value_encoding.rs:498:8
+    |
+497 | impl<Work> ValueResourceAdmission<Work> {
+    | --------------------------------------- method in this implementation
+498 |     fn map_work<Next>(self, map: impl FnOnce(Work) -> Next) -> ValueResourceAdmission<Next> {
+    |        ^^^^^^^^
+
+warning: method `resume` is never used
+   --> crates\arcweft-core\src\entry\schema\value_encoding.rs:511:19
+    |
+510 | impl ValueResourceAdmissionState {
+    | -------------------------------- method in this implementation
+511 |     pub(crate) fn resume(self) -> ValueResourceAdmission {
+    |                   ^^^^^^
+
+warning: method `try_into_state` is never used
+   --> crates\arcweft-core\src\entry\schema\value_encoding.rs:524:19
+    |
+516 | impl ValueResourceAdmission {
+    | --------------------------- method in this implementation
+...
+524 |     pub(crate) fn try_into_state(self) -> Result<ValueResourceAdmissionState, Self> {
+    |                   ^^^^^^^^^^^^^^
+
+warning: associated functions `new` and `from_flow_invocation` are never used
+   --> crates\arcweft-core\src\executor.rs:163:19
+    |
+162 | impl VmExecutor {
+    | --------------- associated functions in this implementation
+163 |     pub(crate) fn new(plan: RuntimePlan) -> Self {
+    |                   ^^^
+...
+176 |     pub(crate) fn from_flow_invocation(
+    |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `new` and `from_flow_invocation` are never used
+   --> crates\arcweft-core\src\executor.rs:214:19
+    |
+213 | impl AotExecutor {
+    | ---------------- associated functions in this implementation
+214 |     pub(crate) fn new(plan: RuntimePlan) -> Self {
+    |                   ^^^
+...
+232 |     pub(crate) fn from_flow_invocation(
+    |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `commit_published`, `commit_abandoned`, and `accept_published_outcome` are never used
+    --> crates\arcweft-core\src\line_task\activation.rs:946:19
+     |
+ 568 | impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
+     | --------------------------------------------------------- methods in this implementation
+...
+ 946 |     pub(crate) fn commit_published(
+     |                   ^^^^^^^^^^^^^^^^
+...
+1004 |     pub(crate) fn commit_abandoned(
+     |                   ^^^^^^^^^^^^^^^^
+...
+1027 |     pub(crate) fn accept_published_outcome(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `issued_command` is never used
+   --> crates\arcweft-core\src\line_task\handle.rs:522:19
+    |
+513 | impl RuntimeDialogueOutcomeStage {
+    | -------------------------------- method in this implementation
+...
+522 |     pub(crate) fn issued_command(
+    |                   ^^^^^^^^^^^^^^
+
+warning: methods `ledger` and `ledger_mut` are never used
+   --> crates\arcweft-core\src\line_task\handle.rs:601:25
+    |
+600 | impl RuntimeScheduledCompletionStage {
+    | ------------------------------------ methods in this implementation
+601 |     pub(crate) const fn ledger(&self) -> &RuntimeLineHandleLedger {
+    |                         ^^^^^^
+...
+605 |     pub(crate) fn ledger_mut(&mut self) -> &mut RuntimeLineHandleLedger {
+    |                   ^^^^^^^^^^
+
+warning: methods `allocate_deferred_registration`, `terminalize_unstarted_scheduled_packet`, `complete_unstarted_scheduled`, `stage_scheduled_child_work_completion`, `replace_transaction_parts`, and `accept_runtime_outcome` are never used
+    --> crates\arcweft-core\src\line_task\handle.rs:914:19
+     |
+ 789 | impl<T: Clone> RuntimeDialogueActivationState<T> {
+     | ------------------------------------------------ methods in this implementation
+...
+ 914 |     pub(crate) fn allocate_deferred_registration(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1385 |     pub(crate) fn terminalize_unstarted_scheduled_packet(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1394 |     pub(crate) fn complete_unstarted_scheduled(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1488 |     pub(crate) fn stage_scheduled_child_work_completion(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1603 |     pub(crate) fn replace_transaction_parts(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1979 |     pub(crate) fn accept_runtime_outcome(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `transition` is never used
+    --> crates\arcweft-core\src\line_task\handle.rs:4262:19
+     |
+4053 | impl RuntimeScheduledLineTask {
+     | ----------------------------- method in this implementation
+...
+4262 |     pub(crate) fn transition(
+     |                   ^^^^^^^^^^
+
+warning: function `match_runtime_pattern` is never used
+    --> crates\arcweft-core\src\pattern.rs:1554:15
+     |
+1554 | pub(crate) fn match_runtime_pattern(
+     |               ^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `value_field_count` and `value_field` are never used
+    --> crates\arcweft-core\src\pattern.rs:2529:8
+     |
+2517 | impl RuntimeRecordPatternDomain<'_> {
+     | ----------------------------------- methods in this implementation
+...
+2529 |     fn value_field_count(&self, value: &RuntimeValue) -> Option<usize> {
+     |        ^^^^^^^^^^^^^^^^^
+...
+2539 |     fn value_field<'value>(
+     |        ^^^^^^^^^^^
+
+warning: function `collect_pattern_bindings` is never used
+    --> crates\arcweft-core\src\pattern.rs:2757:4
+     |
+2757 | fn collect_pattern_bindings(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `collect_record_pattern_bindings` is never used
+    --> crates\arcweft-core\src\pattern.rs:2830:4
+     |
+2830 | fn collect_record_pattern_bindings(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `collect_sequence_pattern_bindings` is never used
+    --> crates\arcweft-core\src\pattern.rs:2862:4
+     |
+2862 | fn collect_sequence_pattern_bindings(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `collect_pattern_list` is never used
+    --> crates\arcweft-core\src\pattern.rs:2889:4
+     |
+2889 | fn collect_pattern_list(
+     |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `from_runtime_contract` is never used
+   --> crates\arcweft-core\src\plan.rs:641:19
+    |
+603 | impl FlowRuntimeId {
+    | ------------------ associated function in this implementation
+...
+641 |     pub(crate) fn from_runtime_contract(
+    |                   ^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `function_row_digest` is never used
+   --> crates\arcweft-core\src\plan\body_semantic\executable_metadata.rs:316:19
+    |
+  7 | impl RuntimeBodySemanticContext<'_> {
+    | ----------------------------------- method in this implementation
+...
+316 |     pub(crate) fn function_row_digest(
+    |                   ^^^^^^^^^^^^^^^^^^^
+
+warning: method `static_request_template_digest` is never used
+   --> crates\arcweft-core\src\plan\body_semantic\request.rs:342:19
+    |
+339 | impl RuntimeBodySemanticContext<'_> {
+    | ----------------------------------- method in this implementation
+...
+342 |     pub(crate) fn static_request_template_digest(
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `storage_bytes` is never used
+  --> crates\arcweft-core\src\plan\body_semantic\request\codec.rs:46:25
+   |
+41 | impl PreparedRuntimeTaskRequestEncoding<'_> {
+   | ------------------------------------------- method in this implementation
+...
+46 |     pub(crate) const fn storage_bytes(&self) -> usize {
+   |                         ^^^^^^^^^^^^^
+
+warning: method `storage_bytes` is never used
+  --> crates\arcweft-core\src\plan\body_semantic\request\codec.rs:88:25
+   |
+87 | impl ValidatedRuntimeTaskRequestSource<'_> {
+   | ------------------------------------------ method in this implementation
+88 |     pub(crate) const fn storage_bytes(&self) -> usize {
+   |                         ^^^^^^^^^^^^^
+
+warning: associated items `encode` and `decode` are never used
+   --> crates\arcweft-core\src\plan\body_semantic\request\codec.rs:149:19
+    |
+148 | impl RuntimeTaskRequestTemplate {
+    | ------------------------------- associated items in this implementation
+149 |     pub(crate) fn encode(
+    |                   ^^^^^^
+...
+244 |     pub(crate) fn decode(
+    |                   ^^^^^^
+
+warning: associated function `decode_task_sources` is never used
+   --> crates\arcweft-core\src\plan\body_semantic\task_image\codec.rs:227:28
+    |
+224 | impl UnsealedRuntimePlanImage {
+    | ----------------------------- associated function in this implementation
+...
+227 |     pub(in crate::plan) fn decode_task_sources(
+    |                            ^^^^^^^^^^^^^^^^^^^
+
+warning: method `bytes` is never used
+   --> crates\arcweft-core\src\plan\body_semantic\task_image\codec.rs:345:34
+    |
+255 | impl<'bytes, 'resources> PreparedRuntimeTaskSource<'bytes, 'resources> {
+    | ---------------------------------------------------------------------- method in this implementation
+...
+345 |     pub(in crate::plan) const fn bytes(&self) -> &'bytes [u8] {
+    |                                  ^^^^^
+
+warning: method `lower_pattern_seed` is never used
+   --> crates\arcweft-core\src\plan\construction\lower.rs:190:19
+    |
+146 | impl RuntimePlanBuilder {
+    | ----------------------- method in this implementation
+...
+190 |     pub(super) fn lower_pattern_seed(
+    |                   ^^^^^^^^^^^^^^^^^^
+
+warning: function `collect_expr_refs_free_locals` is never used
+    --> crates\arcweft-core\src\plan\construction\seed.rs:1398:4
+     |
+1398 | fn collect_expr_refs_free_locals(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: variant `OutputCapacity` is never constructed
+  --> crates\arcweft-core\src\plan\construction\source\audio_commands.rs:52:5
+   |
+30 | pub(in crate::plan) enum RuntimeAudioCommandSourceError {
+   |                          ------------------------------ variant in this enum
+...
+52 |     OutputCapacity { required: usize, remaining: usize },
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `RuntimeAudioCommandSourceError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `footprint` is never read
+  --> crates\arcweft-core\src\plan\construction\source\audio_commands\encoding.rs:12:5
+   |
+10 | pub(in crate::plan) struct EncodedRuntimeAudioCommandSource {
+   |                            -------------------------------- field in this struct
+11 |     bytes: Vec<u8>,
+12 |     footprint: Footprint,
+   |     ^^^^^^^^^
+
+warning: methods `into_bytes`, `storage_bytes`, `elements`, `node_count`, and `append_to` are never used
+  --> crates\arcweft-core\src\plan\construction\source\audio_commands\encoding.rs:18:28
+   |
+14 | impl EncodedRuntimeAudioCommandSource {
+   | ------------------------------------- methods in this implementation
+...
+18 |     pub(in crate::plan) fn into_bytes(self) -> Vec<u8> {
+   |                            ^^^^^^^^^^
+...
+21 |     pub(in crate::plan) const fn storage_bytes(&self) -> usize {
+   |                                  ^^^^^^^^^^^^^
+...
+24 |     pub(in crate::plan) const fn elements(&self) -> usize {
+   |                                  ^^^^^^^^
+...
+27 |     pub(in crate::plan) const fn node_count(&self) -> usize {
+   |                                  ^^^^^^^^^^
+...
+30 |     pub(in crate::plan) fn append_to(self, output: &mut Vec<u8>) -> Result<(), Error> {
+   |                            ^^^^^^^^^
+
+warning: method `into_bytes` is never used
+  --> crates\arcweft-core\src\plan\construction\source\content_plans\encoding.rs:21:28
+   |
+17 | impl EncodedRuntimeContentPlanSources {
+   | ------------------------------------- method in this implementation
+...
+21 |     pub(in crate::plan) fn into_bytes(self) -> Vec<u8> {
+   |                            ^^^^^^^^^^
+
+warning: variant `OutputCapacity` is never constructed
+  --> crates\arcweft-core\src\plan\construction\source\evaluated_effects.rs:55:5
+   |
+29 | pub(in crate::plan) enum RuntimeEvaluatedEffectSourceError {
+   |                          --------------------------------- variant in this enum
+...
+55 |     OutputCapacity { required: usize, remaining: usize },
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `RuntimeEvaluatedEffectSourceError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `footprint` is never read
+  --> crates\arcweft-core\src\plan\construction\source\evaluated_effects\encoding.rs:14:5
+   |
+12 | pub(in crate::plan) struct EncodedRuntimeEvaluatedEffectSource {
+   |                            ----------------------------------- field in this struct
+13 |     bytes: Vec<u8>,
+14 |     footprint: Footprint,
+   |     ^^^^^^^^^
+
+warning: methods `into_bytes`, `storage_bytes`, `elements`, `node_count`, and `append_to` are never used
+  --> crates\arcweft-core\src\plan\construction\source\evaluated_effects\encoding.rs:20:28
+   |
+16 | impl EncodedRuntimeEvaluatedEffectSource {
+   | ---------------------------------------- methods in this implementation
+...
+20 |     pub(in crate::plan) fn into_bytes(self) -> Vec<u8> {
+   |                            ^^^^^^^^^^
+...
+23 |     pub(in crate::plan) const fn storage_bytes(&self) -> usize {
+   |                                  ^^^^^^^^^^^^^
+...
+26 |     pub(in crate::plan) const fn elements(&self) -> usize {
+   |                                  ^^^^^^^^
+...
+29 |     pub(in crate::plan) const fn node_count(&self) -> usize {
+   |                                  ^^^^^^^^^^
+...
+32 |     pub(in crate::plan) fn append_to(self, output: &mut Vec<u8>) -> Result<(), Error> {
+   |                            ^^^^^^^^^
+
+warning: variant `OutputCapacity` is never constructed
+   --> crates\arcweft-core\src\plan\construction\source\expression.rs:109:5
+    |
+ 59 | pub(in crate::plan) enum RuntimeExpressionSourceError {
+    |                          ---------------------------- variant in this enum
+...
+109 |     OutputCapacity { required: usize, remaining: usize },
+    |     ^^^^^^^^^^^^^^
+    |
+    = note: `RuntimeExpressionSourceError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: methods `into_bytes` and `append_to` are never used
+  --> crates\arcweft-core\src\plan\construction\source\expression\encoding.rs:19:28
+   |
+18 | impl EncodedRuntimeExpressionSource {
+   | ----------------------------------- methods in this implementation
+19 |     pub(in crate::plan) fn into_bytes(self) -> Vec<u8> {
+   |                            ^^^^^^^^^^
+...
+34 |     pub(in crate::plan) fn append_to(self, output: &mut Vec<u8>) -> Result<(), Error> {
+   |                            ^^^^^^^^^
+
+warning: variant `OutputCapacity` is never constructed
+   --> crates\arcweft-core\src\plan\construction\source\flow.rs:130:5
+    |
+ 62 | pub(in crate::plan) enum RuntimeFlowSourceError {
+    |                          ---------------------- variant in this enum
+...
+130 |     OutputCapacity { required: usize, remaining: usize },
+    |     ^^^^^^^^^^^^^^
+    |
+    = note: `RuntimeFlowSourceError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `footprint` is never read
+  --> crates\arcweft-core\src\plan\construction\source\flow\encoding.rs:13:5
+   |
+11 | pub(in crate::plan) struct EncodedRuntimeFlowSource {
+   |                            ------------------------ field in this struct
+12 |     bytes: Vec<u8>,
+13 |     footprint: Footprint,
+   |     ^^^^^^^^^
+
+warning: methods `node_count`, `elements`, `storage_bytes`, and `append_to` are never used
+  --> crates\arcweft-core\src\plan\construction\source\flow\encoding.rs:19:34
+   |
+15 | impl EncodedRuntimeFlowSource {
+   | ----------------------------- methods in this implementation
+...
+19 |     pub(in crate::plan) const fn node_count(&self) -> usize {
+   |                                  ^^^^^^^^^^
+...
+22 |     pub(in crate::plan) const fn elements(&self) -> usize {
+   |                                  ^^^^^^^^
+...
+25 |     pub(in crate::plan) const fn storage_bytes(&self) -> usize {
+   |                                  ^^^^^^^^^^^^^
+...
+28 |     pub(in crate::plan) fn append_to(self, output: &mut Vec<u8>) -> Result<(), Error> {
+   |                            ^^^^^^^^^
+
+warning: variant `OutputCapacity` is never constructed
+  --> crates\arcweft-core\src\plan\construction\source\host_calls.rs:75:5
+   |
+39 | pub(in crate::plan) enum RuntimeHostCallSourceError {
+   |                          -------------------------- variant in this enum
+...
+75 |     OutputCapacity { required: usize, remaining: usize },
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `RuntimeHostCallSourceError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `footprint` is never read
+  --> crates\arcweft-core\src\plan\construction\source\host_calls\encoding.rs:12:5
+   |
+10 | pub(in crate::plan) struct EncodedRuntimeHostCallSource {
+   |                            ---------------------------- field in this struct
+11 |     bytes: Vec<u8>,
+12 |     footprint: Footprint,
+   |     ^^^^^^^^^
+
+warning: methods `storage_bytes`, `elements`, `node_count`, and `append_to` are never used
+  --> crates\arcweft-core\src\plan\construction\source\host_calls\encoding.rs:18:34
+   |
+14 | impl EncodedRuntimeHostCallSource {
+   | --------------------------------- methods in this implementation
+...
+18 |     pub(in crate::plan) const fn storage_bytes(&self) -> usize {
+   |                                  ^^^^^^^^^^^^^
+...
+21 |     pub(in crate::plan) const fn elements(&self) -> usize {
+   |                                  ^^^^^^^^
+...
+24 |     pub(in crate::plan) const fn node_count(&self) -> usize {
+   |                                  ^^^^^^^^^^
+...
+27 |     pub(in crate::plan) fn append_to(self, output: &mut Vec<u8>) -> Result<(), Error> {
+   |                            ^^^^^^^^^
+
+warning: field `footprint` is never read
+   --> crates\arcweft-core\src\plan\construction\source\program.rs:275:9
+    |
+270 | pub(in crate::plan) struct OriginalRuntimeProgramSource {
+    |                            ---------------------------- field in this struct
+...
+275 |     pub footprint: Footprint,
+    |         ^^^^^^^^^
+
+warning: methods `node_count` and `elements` are never used
+  --> crates\arcweft-core\src\plan\construction\source\program\encoding.rs:16:34
+   |
+12 | impl EncodedRuntimeProgramSource {
+   | -------------------------------- methods in this implementation
+...
+16 |     pub(in crate::plan) const fn node_count(&self) -> usize {
+   |                                  ^^^^^^^^^^
+...
+19 |     pub(in crate::plan) const fn elements(&self) -> usize {
+   |                                  ^^^^^^^^
+
+warning: variant `OutputCapacity` is never constructed
+  --> crates\arcweft-core\src\plan\construction\source\project_calls.rs:68:5
+   |
+36 | pub(in crate::plan) enum RuntimeProjectCallSourceError {
+   |                          ----------------------------- variant in this enum
+...
+68 |     OutputCapacity { required: usize, remaining: usize },
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `RuntimeProjectCallSourceError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `footprint` is never read
+  --> crates\arcweft-core\src\plan\construction\source\project_calls\encoding.rs:17:5
+   |
+15 | pub(in crate::plan) struct EncodedRuntimeProjectCallSource {
+   |                            ------------------------------- field in this struct
+16 |     bytes: Vec<u8>,
+17 |     footprint: Footprint,
+   |     ^^^^^^^^^
+
+warning: methods `into_bytes`, `storage_bytes`, `elements`, `node_count`, and `append_to` are never used
+  --> crates\arcweft-core\src\plan\construction\source\project_calls\encoding.rs:23:28
+   |
+19 | impl EncodedRuntimeProjectCallSource {
+   | ------------------------------------ methods in this implementation
+...
+23 |     pub(in crate::plan) fn into_bytes(self) -> Vec<u8> {
+   |                            ^^^^^^^^^^
+...
+26 |     pub(in crate::plan) const fn storage_bytes(&self) -> usize {
+   |                                  ^^^^^^^^^^^^^
+...
+29 |     pub(in crate::plan) const fn elements(&self) -> usize {
+   |                                  ^^^^^^^^
+...
+32 |     pub(in crate::plan) const fn node_count(&self) -> usize {
+   |                                  ^^^^^^^^^^
+...
+35 |     pub(in crate::plan) fn append_to(self, output: &mut Vec<u8>) -> Result<(), Error> {
+   |                            ^^^^^^^^^
+
+warning: variant `OutputCapacity` is never constructed
+  --> crates\arcweft-core\src\plan\construction\source\selected_producers.rs:72:5
+   |
+32 | pub(in crate::plan) enum RuntimeSelectedProducerSourceError {
+   |                          ---------------------------------- variant in this enum
+...
+72 |     OutputCapacity { required: usize, remaining: usize },
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `RuntimeSelectedProducerSourceError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `footprint` is never read
+  --> crates\arcweft-core\src\plan\construction\source\selected_producers\encoding.rs:13:5
+   |
+11 | pub(in crate::plan) struct EncodedRuntimeSelectedProducerSource {
+   |                            ------------------------------------ field in this struct
+12 |     bytes: Vec<u8>,
+13 |     footprint: Footprint,
+   |     ^^^^^^^^^
+
+warning: methods `storage_bytes`, `elements`, `node_count`, and `append_to` are never used
+  --> crates\arcweft-core\src\plan\construction\source\selected_producers\encoding.rs:19:34
+   |
+15 | impl EncodedRuntimeSelectedProducerSource {
+   | ----------------------------------------- methods in this implementation
+...
+19 |     pub(in crate::plan) const fn storage_bytes(&self) -> usize {
+   |                                  ^^^^^^^^^^^^^
+...
+22 |     pub(in crate::plan) const fn elements(&self) -> usize {
+   |                                  ^^^^^^^^
+...
+25 |     pub(in crate::plan) const fn node_count(&self) -> usize {
+   |                                  ^^^^^^^^^^
+...
+28 |     pub(in crate::plan) fn append_to(self, output: &mut Vec<u8>) -> Result<(), Error> {
+   |                            ^^^^^^^^^
+
+warning: variant `OutputCapacity` is never constructed
+  --> crates\arcweft-core\src\plan\construction\source\static_effects.rs:58:5
+   |
+30 | pub(in crate::plan) enum RuntimeStaticEffectSourceError {
+   |                          ------------------------------ variant in this enum
+...
+58 |     OutputCapacity { required: usize, remaining: usize },
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `RuntimeStaticEffectSourceError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `footprint` is never read
+  --> crates\arcweft-core\src\plan\construction\source\static_effects\encoding.rs:13:5
+   |
+11 | pub(in crate::plan) struct EncodedRuntimeStaticEffectSource {
+   |                            -------------------------------- field in this struct
+12 |     bytes: Vec<u8>,
+13 |     footprint: Footprint,
+   |     ^^^^^^^^^
+
+warning: methods `into_bytes`, `storage_bytes`, `elements`, `node_count`, and `append_to` are never used
+  --> crates\arcweft-core\src\plan\construction\source\static_effects\encoding.rs:19:28
+   |
+15 | impl EncodedRuntimeStaticEffectSource {
+   | ------------------------------------- methods in this implementation
+...
+19 |     pub(in crate::plan) fn into_bytes(self) -> Vec<u8> {
+   |                            ^^^^^^^^^^
+...
+22 |     pub(in crate::plan) const fn storage_bytes(&self) -> usize {
+   |                                  ^^^^^^^^^^^^^
+...
+25 |     pub(in crate::plan) const fn elements(&self) -> usize {
+   |                                  ^^^^^^^^
+...
+28 |     pub(in crate::plan) const fn node_count(&self) -> usize {
+   |                                  ^^^^^^^^^^
+...
+31 |     pub(in crate::plan) fn append_to(self, output: &mut Vec<u8>) -> Result<(), Error> {
+   |                            ^^^^^^^^^
+
+warning: method `into_bytes` is never used
+  --> crates\arcweft-core\src\plan\construction\source\streams\encoding.rs:23:28
+   |
+19 | impl EncodedRuntimeStreamSources {
+   | -------------------------------- method in this implementation
+...
+23 |     pub(in crate::plan) fn into_bytes(self) -> Vec<u8> {
+   |                            ^^^^^^^^^^
+
+warning: method `materialize` is never used
+   --> crates\arcweft-core\src\plan\control_effect\source_codec.rs:130:28
+    |
+119 | impl PreparedRuntimeControlSources<'_> {
+    | -------------------------------------- method in this implementation
+...
+130 |     pub(in crate::plan) fn materialize(
+    |                            ^^^^^^^^^^^
+
+warning: method `encode_sources` is never used
+   --> crates\arcweft-core\src\plan\control_effect\source_codec.rs:196:28
+    |
+172 | impl RuntimeControlEffectContractTable {
+    | -------------------------------------- method in this implementation
+...
+196 |     pub(in crate::plan) fn encode_sources(
+    |                            ^^^^^^^^^^^^^^
+
+warning: method `storage_bytes` is never used
+   --> crates\arcweft-core\src\plan\declaration_sources.rs:169:25
+    |
+158 | impl PreparedRuntimePlanDeclarationSources<'_> {
+    | ---------------------------------------------- method in this implementation
+...
+169 |     pub(super) const fn storage_bytes(&self) -> usize {
+    |                         ^^^^^^^^^^^^^
+
+warning: method `literals_permit_copy` is never used
+   --> crates\arcweft-core\src\plan\flow_ops.rs:467:19
+    |
+249 | impl FlowOp {
+    | ----------- method in this implementation
+...
+467 |     pub(crate) fn literals_permit_copy(&self) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: method `operation` is never used
+  --> crates\arcweft-core\src\plan\flow_ops\location.rs:72:19
+   |
+31 | impl RuntimeFlowBodyLocation {
+   | ---------------------------- method in this implementation
+...
+72 |     pub(crate) fn operation(self, operation: usize) -> RuntimeFlowOperationLocation {
+   |                   ^^^^^^^^^
+
+warning: methods `body` and `operation_index` are never used
+  --> crates\arcweft-core\src\plan\flow_ops\location.rs:85:19
+   |
+80 | impl RuntimeFlowOperationLocation {
+   | --------------------------------- methods in this implementation
+...
+85 |     pub(crate) fn body(&self) -> &RuntimeFlowBodyLocation {
+   |                   ^^^^
+...
+89 |     pub(crate) fn operation_index(&self) -> usize {
+   |                   ^^^^^^^^^^^^^^^
+
+warning: method `encode_sources` is never used
+   --> crates\arcweft-core\src\plan\local_declarations\source_codec.rs:174:28
+    |
+151 | impl RuntimeLocalDeclarationTable {
+    | --------------------------------- method in this implementation
+...
+174 |     pub(in crate::plan) fn encode_sources(
+    |                            ^^^^^^^^^^^^^^
+
+warning: variant `MissingOriginalSource` is never constructed
+  --> crates\arcweft-core\src\plan\task_source\program.rs:58:5
+   |
+56 | pub(crate) enum RuntimeTaskSourceProgramError {
+   |                 ----------------------------- variant in this enum
+57 |     #[error("AWBC has no original Task Source")]
+58 |     MissingOriginalSource,
+   |     ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `RuntimeTaskSourceProgramError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: associated function `admit_awbc` is never used
+  --> crates\arcweft-core\src\plan\task_source\program.rs:75:19
+   |
+65 | impl RuntimeTaskSourceProgram {
+   | ----------------------------- associated function in this implementation
+...
+75 |     pub(crate) fn admit_awbc(
+   |                   ^^^^^^^^^^
+
+warning: associated function `preflight_source` is never used
+   --> crates\arcweft-core\src\plan\type_scope\function_codec.rs:335:28
+    |
+275 | impl RuntimeFunctionTypeContract {
+    | -------------------------------- associated function in this implementation
+...
+335 |     pub(in crate::plan) fn preflight_source<'a>(
+    |                            ^^^^^^^^^^^^^^^^
+
+warning: associated items `prepare_source_encoding`, `preflight_source`, and `preflight_source_in_frame` are never used
+   --> crates\arcweft-core\src\plan\type_scope\function_codec\formula.rs:87:28
+    |
+ 86 | impl Formula {
+    | ------------ associated items in this implementation
+ 87 |     pub(in crate::plan) fn prepare_source_encoding<'a>(
+    |                            ^^^^^^^^^^^^^^^^^^^^^^^
+...
+136 |     pub(in crate::plan) fn preflight_source<'a>(
+    |                            ^^^^^^^^^^^^^^^^
+...
+153 |     pub(in crate::plan) fn preflight_source_in_frame<'a>(
+    |                            ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `preflight_source` is never used
+   --> crates\arcweft-core\src\plan\type_scope\source_codec.rs:235:28
+    |
+197 | impl RuntimeTypeScope {
+    | --------------------- associated function in this implementation
+...
+235 |     pub(in crate::plan) fn preflight_source<'a>(
+    |                            ^^^^^^^^^^^^^^^^
+
+warning: associated items `encode_sources` and `decode_sources` are never used
+   --> crates\arcweft-core\src\plan\type_table\source_codec.rs:326:28
+    |
+302 | impl RuntimePlanTypeTable {
+    | ------------------------- associated items in this implementation
+...
+326 |     pub(in crate::plan) fn encode_sources(
+    |                            ^^^^^^^^^^^^^^
+...
+362 |     pub(in crate::plan) fn decode_sources(
+    |                            ^^^^^^^^^^^^^^
+
+warning: method `validate_live_value_with_work` is never used
+  --> crates\arcweft-core\src\plan\value_admission.rs:60:19
+   |
+48 | impl RuntimePlan {
+   | ---------------- method in this implementation
+...
+60 |     pub(crate) fn validate_live_value_with_work(
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `decode_literal_source_value`, `materialize_literal_source_value`, and `admit_literal_source_value` are never used
+  --> crates\arcweft-core\src\plan\value_admission\literal_source.rs:18:19
+   |
+17 | impl crate::plan::RuntimePlanInventory {
+   | -------------------------------------- methods in this implementation
+18 |     pub(crate) fn decode_literal_source_value(
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+30 |     pub(crate) fn materialize_literal_source_value(
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+38 |     pub(crate) fn admit_literal_source_value(
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `decode_static_literal_source_value` and `decode_literal_source_value` are never used
+   --> crates\arcweft-core\src\plan\value_admission\literal_source.rs:61:28
+    |
+ 48 | impl PlanValueAuthority<'_> {
+    | --------------------------- methods in this implementation
+...
+ 61 |     pub(in crate::plan) fn decode_static_literal_source_value(
+    |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+118 |     pub(in crate::plan) fn decode_literal_source_value(
+    |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `awbc` is never used
+   --> crates\arcweft-core\src\presentation\resources.rs:193:25
+    |
+183 | impl<'scope> PresentationScopeTarget<'scope> {
+    | -------------------------------------------- associated function in this implementation
+...
+193 |     pub(crate) const fn awbc(
+    |                         ^^^^
+
+warning: associated function `try_new` is never used
+   --> crates\arcweft-core\src\presentation\resources.rs:244:19
+    |
+243 | impl PresentationSlotAddress {
+    | ---------------------------- associated function in this implementation
+244 |     pub(crate) fn try_new(
+    |                   ^^^^^^^
+
+warning: variants `Slot` and `Independent` are never constructed
+   --> crates\arcweft-core\src\presentation\resources.rs:265:5
+    |
+264 | pub(crate) enum PresentationRegistrationSite {
+    |                 ---------------------------- variants in this enum
+265 |     Slot(PresentationSlotAddress),
+    |     ^^^^
+266 |     Independent(PresentationResourceKind),
+    |     ^^^^^^^^^^^
+    |
+    = note: `PresentationRegistrationSite` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: method `into_body` is never used
+   --> crates\arcweft-core\src\presentation\resources.rs:293:19
+    |
+292 | impl<V> PresentationRetirement<V> {
+    | --------------------------------- method in this implementation
+293 |     pub(crate) fn into_body(self) -> V {
+    |                   ^^^^^^^^^
+
+warning: struct `PresentationRegisterError` is never constructed
+   --> crates\arcweft-core\src\presentation\resources.rs:326:19
+    |
+326 | pub(crate) struct PresentationRegisterError<V, E = RuntimePresentationError> {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: multiple associated items are never used
+   --> crates\arcweft-core\src\presentation\resources.rs:347:19
+    |
+331 | impl<V> PresentationLedger<V> {
+    | ----------------------------- associated items in this implementation
+...
+347 |     pub(crate) fn preflight_register(
+    |                   ^^^^^^^^^^^^^^^^^^
+...
+370 |     pub(crate) fn new(
+    |                   ^^^
+...
+388 |     pub(crate) fn bind_scope(
+    |                   ^^^^^^^^^^
+...
+477 |     fn validate_handle(
+    |        ^^^^^^^^^^^^^^^
+...
+507 |     pub(crate) fn register(
+    |                   ^^^^^^^^
+...
+552 |     pub(crate) fn clear(
+    |                   ^^^^^
+...
+561 |     fn take_slot_body(&mut self, address: &PresentationSlotAddress) -> Option<V> {
+    |        ^^^^^^^^^^^^^^
+...
+572 |     pub(crate) fn transfer(
+    |                   ^^^^^^^^
+...
+590 |     pub(crate) fn release(
+    |                   ^^^^^^^
+
+warning: variant `RuntimeContract` is never constructed
+   --> crates\arcweft-core\src\runtime_id.rs:970:5
+    |
+968 | enum RuntimeIdPathSourceMode {
+    |      ----------------------- variant in this enum
+969 |     Canonical,
+970 |     RuntimeContract,
+    |     ^^^^^^^^^^^^^^^
+    |
+    = note: `RuntimeIdPathSourceMode` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+warning: associated functions `from_runtime_contract_str` and `preflight_runtime_contract_source` are never used
+    --> crates\arcweft-core\src\runtime_id.rs:1154:19
+     |
+1141 | impl RuntimeIdPath {
+     | ------------------ associated functions in this implementation
+...
+1154 |     pub(crate) fn from_runtime_contract_str(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1161 |     pub(crate) fn preflight_runtime_contract_source(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `selected_producer_spec` and `host_producer_spec` are never used
+   --> crates\arcweft-core\src\task\producer\source.rs:247:19
+    |
+142 | impl RuntimeTaskSourceRef<'_> {
+    | ----------------------------- methods in this implementation
+...
+247 |     pub(crate) fn selected_producer_spec<V: RuntimeStoredValue>(
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+...
+260 |     pub(crate) fn host_producer_spec<V: RuntimeStoredValue>(
+    |                   ^^^^^^^^^^^^^^^^^^
+
+warning: method `selected_start` is never used
+  --> crates\arcweft-core\src\task\producer\start.rs:57:19
+   |
+56 | impl RuntimeTaskSourceRef<'_> {
+   | ----------------------------- method in this implementation
+57 |     pub(crate) fn selected_start(
+   |                   ^^^^^^^^^^^^^^
+
+warning: method `into_live` is never used
+   --> crates\arcweft-core\src\task\need_handle.rs:115:19
+    |
+ 37 | impl RuntimeNeedHandleSaveSnapshot {
+    | ---------------------------------- method in this implementation
+...
+115 |     pub(crate) fn into_live(
+    |                   ^^^^^^^^^
+
+warning: enum `NeedProducerAssertionField` is never used
+  --> crates\arcweft-core\src\task\specification.rs:14:17
+   |
+14 | pub(crate) enum NeedProducerAssertionField {
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `NeedProducerAssertionError` is never used
+  --> crates\arcweft-core\src\task\specification.rs:24:17
+   |
+24 | pub(crate) enum NeedProducerAssertionError {
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `plan_assertion` is never used
+  --> crates\arcweft-core\src\task\specification.rs:88:19
+   |
+85 | impl NeedProducerInstance {
+   | ------------------------- method in this implementation
+...
+88 |     pub(crate) fn plan_assertion(&self) -> NeedProducerInstance<super::ExpectedTaskPlanKey> {
+   |                   ^^^^^^^^^^^^^^
+
+warning: method `admit_original_spec` is never used
+   --> crates\arcweft-core\src\task\specification.rs:127:19
+    |
+124 | impl NeedProducerInstance<super::ExpectedTaskPlanKey> {
+    | ----------------------------------------------------- method in this implementation
+...
+127 |     pub(crate) fn admit_original_spec(
+    |                   ^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `validate_submissions` is never used
+   --> crates\arcweft-core\src\task\journal.rs:154:19
+    |
+137 | impl TaskAdmissionJournal {
+    | ------------------------- associated function in this implementation
+...
+154 |     pub(super) fn validate_submissions<
+    |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `from_admitted_parts` is never used
+    --> crates\arcweft-core\src\value.rs:1659:19
+     |
+1658 | impl RuntimeLocalRead {
+     | --------------------- associated function in this implementation
+1659 |     pub(crate) fn from_admitted_parts(
+     |                   ^^^^^^^^^^^^^^^^^^^
+
+warning: methods `predicate_collection_lengths` and `additional_structural_node_count` are never used
+    --> crates\arcweft-core\src\value\agent.rs:1701:19
+     |
+1489 | impl RuntimeAgentValue {
+     | ---------------------- methods in this implementation
+...
+1701 |     pub(crate) fn predicate_collection_lengths(&self) -> Vec<usize> {
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1709 |     pub(crate) fn additional_structural_node_count(&self) -> usize {
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `collect_predicate_collection_lengths` is never used
+    --> crates\arcweft-core\src\value\agent.rs:1805:4
+     |
+1805 | fn collect_predicate_collection_lengths(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `predicate_node_count` is never used
+    --> crates\arcweft-core\src\value\agent.rs:1826:4
+     |
+1826 | fn predicate_node_count(predicate: &RuntimeAgentPredicate) -> usize {
+     |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `from_standalone_value` is never used
+   --> crates\arcweft-core\src\value\awbc_save.rs:632:19
+    |
+447 | impl AwbcRuntimeValueSnapshot {
+    | ----------------------------- associated function in this implementation
+...
+632 |     pub(crate) fn from_standalone_value(
+    |                   ^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `prepare_literal_source_encoding` is never used
+   --> crates\arcweft-core\src\value\awbc_save\source_codec.rs:347:19
+    |
+346 | impl AwbcRuntimeValueSnapshot {
+    | ----------------------------- method in this implementation
+347 |     pub(crate) fn prepare_literal_source_encoding<'a>(
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `RuntimeRetainedValueAdmissionState` is never constructed
+  --> crates\arcweft-core\src\value\awbc_save\retained_admission.rs:59:19
+   |
+59 | pub(crate) struct RuntimeRetainedValueAdmissionState {
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `resume` is never used
+  --> crates\arcweft-core\src\value\awbc_save\retained_admission.rs:67:19
+   |
+66 | impl RuntimeRetainedValueAdmissionState {
+   | --------------------------------------- method in this implementation
+67 |     pub(crate) fn resume(self) -> RuntimeRetainedValueAdmission {
+   |                   ^^^^^^
+
+warning: methods `try_into_state` and `validate_scalar` are never used
+   --> crates\arcweft-core\src\value\awbc_save\retained_admission.rs:188:19
+    |
+ 77 | impl RuntimeRetainedValueAdmission {
+    | ---------------------------------- methods in this implementation
+...
+188 |     pub(crate) fn try_into_state(self) -> Result<RuntimeRetainedValueAdmissionState, Self> {
+    |                   ^^^^^^^^^^^^^^
+...
+268 |     pub(crate) fn validate_scalar(
+    |                   ^^^^^^^^^^^^^^^
+
+warning: method `reason` is never used
+  --> crates\arcweft-core\src\value\callable.rs:42:25
+   |
+37 | impl<T> RuntimeCallableOwnedInputError<T> {
+   | ----------------------------------------- method in this implementation
+...
+42 |     pub(crate) const fn reason(&self) -> &RuntimeCallableValueError {
+   |                         ^^^^^^
+
+warning: method `try_duplicate_unrestricted` is never used
+   --> crates\arcweft-core\src\value\callable.rs:171:19
+    |
+138 | impl RuntimeCallableValue {
+    | ------------------------- method in this implementation
+...
+171 |     pub(crate) fn try_duplicate_unrestricted(&self) -> Result<Self, RuntimeCallableValueError> {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: field `0` is never read
+   --> crates\arcweft-core\src\value\callable\application.rs:129:21
+    |
+129 |     AttachedDefault(RuntimeCallableBodyReference),
+    |     --------------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |     |
+    |     field in this variant
+    |
+    = note: `RuntimeCallableGroupInspection` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+    |
+129 -     AttachedDefault(RuntimeCallableBodyReference),
+129 +     AttachedDefault(()),
+    |
+
+warning: method `try_reclaim_inputs` is never used
+   --> crates\arcweft-core\src\value\callable\application.rs:239:19
+    |
+176 | impl RuntimeCallablePendingGroup {
+    | -------------------------------- method in this implementation
+...
+239 |     pub(crate) fn try_reclaim_inputs(
+    |                   ^^^^^^^^^^^^^^^^^^
+
+warning: associated items `from_live` and `into_live` are never used
+   --> crates\arcweft-core\src\value\callable\application.rs:703:19
+    |
+702 | impl RuntimeCallablePendingSnapshot {
+    | ----------------------------------- associated items in this implementation
+703 |     pub(crate) fn from_live(
+    |                   ^^^^^^^^^
+...
+756 |     pub(crate) fn into_live<'a>(
+    |                   ^^^^^^^^^
+
+warning: method `inspect_group` is never used
+   --> crates\arcweft-core\src\value\callable\application.rs:992:19
+    |
+797 | impl RuntimeCallableValue {
+    | ------------------------- method in this implementation
+...
+992 |     pub(crate) fn inspect_group(
+    |                   ^^^^^^^^^^^^^
+
+warning: method `assign_runtime_place` is never used
+   --> crates\arcweft-core\src\value\env.rs:877:19
+    |
+438 | impl RuntimeEnv {
+    | --------------- method in this implementation
+...
+877 |     pub(crate) fn assign_runtime_place(
+    |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: method `literals_permit_copy` is never used
+  --> crates\arcweft-core\src\value\expression_literals.rs:10:19
+   |
+ 6 | impl RuntimeExpr {
+   | ---------------- method in this implementation
+...
+10 |     pub(crate) fn literals_permit_copy(&self) -> bool {
+   |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: method `literals_permit_copy` is never used
+  --> crates\arcweft-core\src\value\expression_literals.rs:16:19
+   |
+15 | impl RuntimeExpressionNode<'_> {
+   | ------------------------------ method in this implementation
+16 |     pub(crate) fn literals_permit_copy(self) -> bool {
+   |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `try_from_evaluated_bindings_parts_with_effect_bindings` is never used
+    --> crates\arcweft-core\src\value\opaque.rs:1540:19
+     |
+1143 | impl RuntimeDialogueContentValue {
+     | -------------------------------- associated function in this implementation
+...
+1540 |     pub(crate) fn try_from_evaluated_bindings_parts_with_effect_bindings(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `arcweft-core` (lib) generated 168 warnings (run `cargo fix --lib -p arcweft-core` to apply 27 suggestions)
+warning: unused variable: `document`
+   --> crates\arcweft-text-layout\src\document_layout.rs:419:9
+    |
+419 |         document: &ResolvedTextDocument<'_>,
+    |         ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_document`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `arcweft-text-layout` (lib) generated 1 warning (run `cargo fix --lib -p arcweft-text-layout` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.54s
+────────────
+ Nextest run ID e288424b-0b7d-4ceb-b8bc-ebcb44e70a97 with nextest profile: default
+    Starting 147 tests across 15 binaries (16 tests skipped)
+        PASS [   0.031s] (  1/147) arcweft-render-wgpu geometry::view_final::tests::final_geometry_lowering_retains_generation_node_revision_and_outward_raster
+        PASS [   0.036s] (  2/147) arcweft-render-wgpu offscreen::tests::later_prepared_coverage_wins_without_rgb_decoding
+        PASS [   0.041s] (  3/147) arcweft-render-wgpu geometry::dialogue_prepared::tests::typed_shader_and_mask_resolve_glyph_and_post_process_passes
+        PASS [   0.047s] (  4/147) arcweft-render-wgpu geometry::dialogue_prepared::tests::missing_typed_shader_is_a_typed_diagnostic
+        PASS [   0.059s] (  5/147) arcweft-render-wgpu offscreen::tests::invalid_requests_fail_with_typed_errors
+        PASS [   0.069s] (  6/147) arcweft-render-wgpu geometry::dialogue_prepared::tests::stage_local_fx_time_reaches_dialogue_prepared_glyph_mask
+        PASS [   0.075s] (  7/147) arcweft-render-wgpu offscreen::tests::logical_regions_scale_to_physical_pixels
+        PASS [   0.080s] (  8/147) arcweft-render-wgpu offscreen::tests::prepared_coverage_extent_and_size_mismatch_are_typed
+        PASS [   0.083s] (  9/147) arcweft-render-wgpu geometry::dialogue_prepared::tests::reveal_changes_only_paint
+        PASS [   0.087s] ( 10/147) arcweft-render-wgpu offscreen::tests::later_region_wins_object_id_overlap
+        PASS [   0.087s] ( 11/147) arcweft-render-wgpu geometry::dialogue_prepared::tests::clear_projects_the_remaining_stage_to_the_dialogue_view_origin
+        PASS [   0.095s] ( 12/147) arcweft-render-wgpu geometry::dialogue_prepared::tests::typed_sampler_uses_logical_glyph_ordinal_and_time_only_changes_paint
+        PASS [   0.098s] ( 13/147) arcweft-render-wgpu offscreen::tests::prepared_and_bounds_coverage_replay_in_region_order
+        PASS [   0.110s] ( 14/147) arcweft-render-wgpu geometry::view_final::tests::inexact_f32_preserves_node_consumer_field_and_round_trip
+        PASS [   0.116s] ( 15/147) arcweft-render-wgpu geometry::view_final::tests::index_range_uses_checked_target_maximum
+        PASS [   0.128s] ( 16/147) arcweft-render-wgpu geometry::view_final::tests::fully_clipped_node_is_absent_from_render_candidate
+        PASS [   0.129s] ( 17/147) arcweft-render-wgpu geometry::dialogue_prepared::tests::vertical_ruby_stage_uses_canonical_layout_and_prepared_glyphs
+        PASS [   0.133s] ( 18/147) arcweft-render-wgpu offscreen::tests::object_id_contract_rejects_ambiguous_region_metadata
+        PASS [   0.138s] ( 19/147) arcweft-render-wgpu geometry::dialogue_prepared::tests::typed_fx_application_changes_layout_style_and_post_layout_transform
+        PASS [   0.111s] ( 20/147) arcweft-render-wgpu offscreen::tests::prepared_coverage_origin_mismatch_is_typed
+        PASS [   0.109s] ( 21/147) arcweft-render-wgpu offscreen::tests::prepared_coverage_uses_its_cropped_frame_origin
+        PASS [   0.110s] ( 22/147) arcweft-render-wgpu offscreen::tests::prepared_mask_uses_alpha_coverage_not_object_id_alpha
+        PASS [   0.156s] ( 23/147) arcweft-render-wgpu geometry::dialogue_prepared::tests::following_page_and_clear_preserve_actual_glyph_reveal_and_ruby_source_identity
+        PASS [   0.109s] ( 24/147) arcweft-render-wgpu offscreen::tests::prepared_text_capture_budget_accepts_exact_limits_and_rejects_one_over
+        PASS [   0.102s] ( 25/147) arcweft-render-wgpu offscreen::tests::prepared_text_capture_budget_counts_padded_rows_for_thin_tall_regions
+        PASS [   0.096s] ( 26/147) arcweft-render-wgpu offscreen::tests::prepared_text_capture_budget_reports_checked_arithmetic_overflow
+        PASS [   0.095s] ( 27/147) arcweft-render-wgpu offscreen::tests::requested_attachment_order_is_preserved
+        PASS [   0.095s] ( 28/147) arcweft-render-wgpu offscreen::tests::scope_crop_reports_origin_and_preserves_transparent_gaps
+        PASS [   0.096s] ( 29/147) arcweft-render-wgpu offscreen::tests::unsupported_target_format_fails_before_device_acquisition
+        PASS [   0.097s] ( 30/147) arcweft-render-wgpu text_editor_geometry::tests::collapsed_range_inside_non_empty_cluster_is_dropped_before_validation
+        PASS [   0.102s] ( 31/147) arcweft-render-wgpu text_editor_geometry::tests::collapsed_range_at_distinct_caret_stop_is_preserved
+        PASS [   0.098s] ( 32/147) arcweft-render-wgpu text_editor_geometry::tests::converts_real_layout_glyphs_to_renderer_backed_editor_layout
+        PASS [   0.100s] ( 33/147) arcweft-render-wgpu text_editor_geometry::tests::merges_identical_non_empty_renderer_ranges_into_one_editor_cluster
+        PASS [   0.095s] ( 34/147) arcweft-render-wgpu text_editor_geometry::tests::mixed_script_fallback_ranges_do_not_reach_editor_layout_as_duplicates
+        PASS [   0.093s] ( 35/147) arcweft-render-wgpu text_editor_geometry::tests::partial_renderer_range_overlap_remains_a_layout_error
+        PASS [   0.085s] ( 36/147) arcweft-render-wgpu view_blend::tests::normal_blend_mode_does_not_need_backdrop_sampling
+        PASS [   0.090s] ( 37/147) arcweft-render-wgpu view_blend::tests::hsl_family_blends_are_shader_supported
+        PASS [   0.090s] ( 38/147) arcweft-render-wgpu view_box_shadow::tests::degenerate_inset_receiver_is_typed_diagnostic
+        PASS [   0.089s] ( 39/147) arcweft-render-wgpu view_box_shadow::tests::inset_shadow_plans_deterministic_inner_geometry
+        PASS [   0.091s] ( 40/147) arcweft-render-wgpu view_box_shadow::tests::inset_shadow_spread_preserves_mixed_elliptical_radii
+        PASS [   0.091s] ( 41/147) arcweft-render-wgpu view_box_shadow::tests::mixed_outer_and_inset_shadows_preserve_stage_order
+        PASS [   0.090s] ( 42/147) arcweft-render-wgpu view_box_shadow::tests::multiple_inset_shadows_paint_back_to_front_within_inset_stage
+        PASS [   0.090s] ( 43/147) arcweft-render-wgpu view_box_shadow::tests::negative_corner_radius_emits_degenerate_radius_diagnostic
+        PASS [   0.097s] ( 44/147) arcweft-render-wgpu view_box_shadow::tests::multiple_outer_shadows_paint_back_to_front
+        PASS [   0.096s] ( 45/147) arcweft-render-wgpu view_box_shadow::tests::negative_spread_changes_inset_shadow_rect_deterministically
+        PASS [   0.097s] ( 46/147) arcweft-render-wgpu view_box_shadow::tests::non_finite_corner_radius_emits_typed_diagnostic
+        PASS [   0.098s] ( 47/147) arcweft-render-wgpu view_box_shadow::tests::non_finite_inset_fields_emit_typed_diagnostics
+        PASS [   0.097s] ( 48/147) arcweft-render-wgpu view_box_shadow::tests::outer_shadow_preserves_per_corner_elliptical_radii
+        PASS [   0.098s] ( 49/147) arcweft-render-wgpu view_box_shadow::tests::spread_changes_shadow_rect_and_outset
+        PASS [   0.099s] ( 50/147) arcweft-render-wgpu view_box_shadow::tests::transparent_and_zero_inset_shadows_are_canonical_noops
+        PASS [   0.099s] ( 51/147) arcweft-render-wgpu view_box_shadow::tests::transparent_and_zero_outer_shadows_are_canonical_noops
+        PASS [   0.099s] ( 52/147) arcweft-render-wgpu view_clip_path::tests::degenerate_path_segments_are_typed_diagnostics
+        PASS [   0.098s] ( 53/147) arcweft-render-wgpu view_clip_path::tests::inset_clip_resolves_percent_and_px
+        PASS [   0.097s] ( 54/147) arcweft-render-wgpu view_clip_path::tests::path_clip_plans_lines_curves_and_close_path
+        PASS [   0.097s] ( 55/147) arcweft-render-wgpu view_clip_path::tests::polygon_clip_points_resolve_against_bounds
+        PASS [   0.098s] ( 56/147) arcweft-render-wgpu view_compositor_uniform::tests::box_shadow_uniform_uses_explicit_logical_extent
+        PASS [   0.099s] ( 57/147) arcweft-render-wgpu view_compositor_uniform::tests::clip_uniform_uses_explicit_logical_extent
+        PASS [   0.098s] ( 58/147) arcweft-render-wgpu view_compositor_uniform::tests::final_target_composite_encodes_display_unorm_formats
+        PASS [   0.100s] ( 59/147) arcweft-render-wgpu view_effects::tests::color_matrix_contrast_and_invert_are_deterministic
+        PASS [   0.100s] ( 60/147) arcweft-render-wgpu view_effects::tests::filter_plan_expands_for_blur_and_drop_shadow
+        PASS [   0.102s] ( 61/147) arcweft-render-wgpu view_effects::tests::fixed_extent_filter_plan_keeps_backdrop_target_size
+        PASS [   0.102s] ( 62/147) arcweft-render-wgpu view_effects::tests::texture_extent_buckets_without_exceeding_cap
+        PASS [   0.103s] ( 63/147) arcweft-render-wgpu view_mask::tests::element_mask_is_a_typed_capture_diagnostic
+        PASS [   0.102s] ( 64/147) arcweft-render-wgpu view_mask::tests::gradient_alpha_and_luminance_stops_differ
+        PASS [   0.102s] ( 65/147) arcweft-render-wgpu view_mask::tests::space_and_round_repeat_resolve_deterministically
+        PASS [   0.101s] ( 66/147) arcweft-render-wgpu view_mask::tests::url_masks_require_external_textures
+        PASS [   0.098s] ( 67/147) arcweft-render-wgpu view_scene::compositing::tests::compositing_requirements_are_deterministic
+        PASS [   0.098s] ( 68/147) arcweft-render-wgpu view_scene::compositing::tests::filter_list_canonicalization_drops_identity_filters_but_keeps_order
+        PASS [   0.098s] ( 69/147) arcweft-render-wgpu view_scene::compositing::tests::filter_visual_outset_uses_blur_and_shadow_extents
+        PASS [   0.097s] ( 70/147) arcweft-render-wgpu view_scene::core::tests::corner_radii_clamp_to_rect_bounds
+        PASS [   0.097s] ( 71/147) arcweft-render-wgpu view_scene::core::tests::prepared_text_coverage_prunes_unrelated_compositing_effects
+        PASS [   0.098s] ( 72/147) arcweft-render-wgpu view_scene::core::tests::prepared_text_ids_preserve_direct_painter_reuse_order
+        PASS [   0.099s] ( 73/147) arcweft-render-wgpu view_scene::core::tests::surface_paint_pushes_shared_rounded_fill_and_border_primitives
+        PASS [   0.102s] ( 74/147) arcweft-render-wgpu view_scene::core::tests::view_scene_preserves_context_primitive_and_paint_node_order
+        PASS [   0.098s] ( 75/147) arcweft-render-wgpu::geometry content_rect_contain_preserves_design_aspect_ratio_in_tall_output
+        PASS [   0.099s] ( 76/147) arcweft-render-wgpu::geometry content_rect_maps_design_rect_into_output_space
+        PASS [   0.101s] ( 77/147) arcweft-render-wgpu::geometry content_rect_modes_make_raw_cover_and_stretch_distinct
+        PASS [   0.103s] ( 78/147) arcweft-render-wgpu::geometry elastic_displacement_affects_visual_offset_but_not_committed_offset
+        PASS [   0.135s] ( 79/147) arcweft-render-wgpu::geometry choice_geometry_ignores_scroll_offset
+        PASS [   0.117s] ( 80/147) arcweft-render-wgpu::geometry directional_keyboard_navigation_uses_focus_target_geometry
+        PASS [   0.163s] ( 81/147) arcweft-render-wgpu::geometry auto_scroll_indicator_fades_deterministically_and_reduce_motion_skips_fade
+        PASS [   0.126s] ( 82/147) arcweft-render-wgpu::geometry focus_navigation_explicit_edge_overrides_geometry
+        PASS [   0.127s] ( 83/147) arcweft-render-wgpu::geometry focus_navigation_next_previous_respects_no_wrap_group
+        PASS [   0.131s] ( 84/147) arcweft-render-wgpu::geometry focused_text_input_target_browser_and_native_use_same_geometry_snapshot_source
+        PASS [   0.137s] ( 85/147) arcweft-render-wgpu::geometry focused_text_input_target_produces_real_focused_text_field
+        PASS [   0.126s] ( 86/147) arcweft-render-wgpu::geometry hidden_scroll_region_reports_no_scroll_range
+        PASS [   0.139s] ( 87/147) arcweft-render-wgpu::geometry focused_text_input_target_secure_field_redacts_value_and_character_geometry
+        PASS [   0.151s] ( 88/147) arcweft-render-wgpu::geometry horizontal_scroll_region_offsets_and_clips_owned_text_controls
+        PASS [   0.165s] ( 89/147) arcweft-render-wgpu::geometry generated_visual_demo_supplies_background_character_and_animated_frames
+        PASS [   0.157s] ( 90/147) arcweft-render-wgpu::geometry keyboard_navigation_wraps_across_stable_targets
+        PASS [   0.159s] ( 91/147) arcweft-render-wgpu::geometry planner_uses_the_same_choice_geometry_for_render_and_hit_test
+        PASS [   0.160s] ( 92/147) arcweft-render-wgpu::geometry prepared_frame_fit_mapping_scales_runtime_control_geometry_and_ime_snapshots
+        PASS [   0.151s] ( 93/147) arcweft-render-wgpu::geometry scroll_region_drops_images_outside_viewport
+        PASS [   0.195s] ( 94/147) arcweft-render-wgpu::geometry interaction_visual_state_changes_the_prepared_choice_rectangles
+        PASS [   0.157s] ( 95/147) arcweft-render-wgpu::geometry scroll_region_offsets_and_clips_owned_action_buttons
+        PASS [   0.151s] ( 96/147) arcweft-render-wgpu::geometry scroll_region_offsets_and_clips_owned_images
+        PASS [   0.185s] ( 97/147) arcweft-render-wgpu::geometry scroll_indicator_policies_produce_observable_thumb_geometry
+        PASS [   0.151s] ( 98/147) arcweft-render-wgpu::geometry scroll_region_offsets_and_clips_owned_text_controls
+        PASS [   0.123s] ( 99/147) arcweft-render-wgpu::geometry signed_scroll_range_preserves_negative_offsets
+        PASS [   0.152s] (100/147) arcweft-render-wgpu::geometry scroll_region_uses_visible_bounds_for_runtime_control_effect_plans
+        SKIP [         ] (───────) arcweft-render-wgpu::prepared_text missing_view_text_id_is_a_typed_compositor_failure
+        SKIP [         ] (───────) arcweft-render-wgpu::prepared_text multiple_prepared_submissions_keep_vertex_buffers_alive_until_submit
+        SKIP [         ] (───────) arcweft-render-wgpu::prepared_text prepared_batch_interaction_paints_selection_before_glyphs_and_ime_after
+        SKIP [         ] (───────) arcweft-render-wgpu::prepared_text prepared_batch_renders_without_renderer_side_shaping
+        PASS [   0.153s] (101/147) arcweft-render-wgpu::geometry scroll_regions_survive_frame_planning_and_viewport_mapping
+        SKIP [         ] (───────) arcweft-render-wgpu::prepared_text view_text_interaction_paints_selection_before_glyphs_and_ime_after
+        SKIP [         ] (───────) arcweft-render-wgpu::prepared_text view_text_obeys_transform_clip_opacity_inside_offscreen_group
+        SKIP [         ] (───────) arcweft-render-wgpu::prepared_text view_text_renders_at_primitive_position_without_late_duplicate_submission
+        SKIP [         ] (───────) arcweft-render-wgpu::runtime_control_backdrop_gpu_smoke prepared_control_backdrop_blur_executes_shared_renderer_path
+        SKIP [         ] (───────) arcweft-render-wgpu::runtime_control_backdrop_gpu_smoke prepared_control_foreground_filter_blur_executes_shared_renderer_path
+        SKIP [         ] (───────) arcweft-render-wgpu::runtime_control_backdrop_gpu_smoke rounded_runtime_control_stroke_draws_straight_edges
+        PASS [   0.126s] (102/147) arcweft-render-wgpu::geometry viewport_physical_scale_factor_preserves_the_host_validated_value
+        PASS [   0.150s] (103/147) arcweft-render-wgpu::geometry stateful_planner_reuses_the_shared_text_shape_cache_for_controls
+        SKIP [         ] (───────) arcweft-render-wgpu::view_box_shadow_exact_png_golden seq06_13e1_inset_shadow_native_exact_png_packet_is_complete
+        SKIP [         ] (───────) arcweft-render-wgpu::view_box_shadow_exact_png_golden seq06_13e1_inset_shadow_web_exact_png_packet_is_complete
+        SKIP [         ] (───────) arcweft-render-wgpu::view_box_shadow_gpu_smoke per_corner_outer_and_elliptical_inset_shadow_cards_execute_gpu_compositor_path
+        PASS [   0.145s] (104/147) arcweft-render-wgpu::geometry_runtime_control_styles backdrop_filter_reaches_runtime_control_backdrop_plan
+        PASS [   0.147s] (105/147) arcweft-render-wgpu::geometry_runtime_control_styles authored_control_depth_orders_text_inputs_and_buttons_together
+        PASS [   0.157s] (106/147) arcweft-render-wgpu::geometry_runtime_control_styles action_button_uses_current_authored_fill_and_text_color
+        PASS [   0.146s] (107/147) arcweft-render-wgpu::geometry_runtime_control_styles empty_text_control_paints_current_placeholder_style
+        PASS [   0.126s] (108/147) arcweft-render-wgpu::geometry_runtime_control_styles focused_text_control_uses_authored_focus_ring
+        PASS [   0.129s] (109/147) arcweft-render-wgpu::geometry_runtime_control_styles focused_text_control_uses_authored_selection_and_caret_colors
+        PASS [   0.129s] (110/147) arcweft-render-wgpu::geometry_runtime_control_styles foreground_filter_reaches_runtime_control_filter_plan
+        PASS [   0.124s] (111/147) arcweft-render-wgpu::geometry_runtime_control_styles runtime_control_color_matrix_filters_reach_view_filter_plan
+        PASS [   0.127s] (112/147) arcweft-render-wgpu::geometry_runtime_control_styles runtime_control_paint_span_carries_inline_backdrop_order
+        PASS [   0.126s] (113/147) arcweft-render-wgpu::geometry_runtime_control_styles supported_box_shadow_reaches_existing_shadow_pass_plan
+        PASS [   0.120s] (114/147) arcweft-render-wgpu::geometry_runtime_control_styles text_control_corner_frame_draws_independent_corner_segments
+        PASS [   0.125s] (115/147) arcweft-render-wgpu::geometry_runtime_control_styles text_control_fill_and_inner_marks_use_authored_corner_radii
+        PASS [   0.130s] (116/147) arcweft-render-wgpu::geometry_runtime_control_styles text_control_uses_authored_font_metrics
+        PASS [   0.134s] (117/147) arcweft-render-wgpu::geometry_runtime_control_styles text_controls_and_buttons_use_authored_font_family
+        PASS [   0.133s] (118/147) arcweft-render-wgpu::view_blend_hsl_modes hsl_family_blend_modes_are_planned_for_shader_execution
+        PASS [   0.122s] (119/147) arcweft-render-wgpu::view_blend_hsl_modes supported_blend_modes_matrix_includes_nonseparable_color_family
+        PASS [   0.152s] (120/147) arcweft-render-wgpu::prepared_text controls_enter_the_prepared_batch_during_frame_planning
+        SKIP [         ] (───────) arcweft-render-wgpu::view_compositor_gpu_smoke gpu_smoke_blur_shadow_mask_clip_backdrop_and_blend_fixture
+        SKIP [         ] (───────) arcweft-render-wgpu::view_compositor_gpu_smoke_seq06_13c seq06_13c_path_clip_gradient_mask_visual_smoke_fixture
+        SKIP [         ] (───────) arcweft-render-wgpu::view_compositor_gpu_smoke_timestamps gpu_smoke_clip_mask_and_motion_timestamps
+        PASS [   0.104s] (121/147) arcweft-render-wgpu::view_box_shadow_plan hsl_family_blends_remain_supported
+        PASS [   0.149s] (122/147) arcweft-render-wgpu::prepared_text final_view_graph_repeated_occurrences_are_unioned_and_absent_contexts_reject
+        PASS [   0.110s] (123/147) arcweft-render-wgpu::view_box_shadow_plan inset_box_shadow_plans_as_typed_inset_pass
+        PASS [   0.154s] (124/147) arcweft-render-wgpu::prepared_text resolved_document_prepares_once_with_shared_layout_and_frame_scale
+        PASS [   0.115s] (125/147) arcweft-render-wgpu::view_box_shadow_plan inset_shadow_plan_preserves_elliptical_radii
+        PASS [   0.115s] (126/147) arcweft-render-wgpu::view_box_shadow_plan mixed_outer_and_inset_shadows_preserve_stage_metadata
+        PASS [   0.129s] (127/147) arcweft-render-wgpu::view_box_shadow_plan negative_radius_is_typed_diagnostic
+        PASS [   0.129s] (128/147) arcweft-render-wgpu::view_box_shadow_plan non_finite_radius_is_typed_diagnostic
+        PASS [   0.122s] (129/147) arcweft-render-wgpu::view_box_shadow_plan outer_box_shadow_plans_before_children_and_expands_visual_extent
+        PASS [   0.126s] (130/147) arcweft-render-wgpu::view_box_shadow_plan outer_shadow_plan_preserves_per_corner_radii
+        PASS [   0.121s] (131/147) arcweft-render-wgpu::view_box_shadow_plan oversized_mixed_corner_radii_are_normalized_to_bounds
+        PASS [   0.115s] (132/147) arcweft-render-wgpu::view_clip_mask_render_closure compositor_plan_counts_path_clip_and_gradient_mask_passes_deterministically
+        PASS [   0.117s] (133/147) arcweft-render-wgpu::view_clip_mask_render_closure element_mask_is_structured_capture_diagnostic
+        PASS [   0.114s] (134/147) arcweft-render-wgpu::view_clip_mask_render_closure gradient_mask_alpha_and_luminance_modes_produce_different_coverage
+        PASS [   0.113s] (135/147) arcweft-render-wgpu::view_clip_mask_render_closure inset_circle_ellipse_and_polygon_clips_plan_as_shader_geometry
+        PASS [   0.104s] (136/147) arcweft-render-wgpu::view_clip_mask_render_closure mask_repeat_space_and_round_resolve_tile_distribution
+        PASS [   0.095s] (137/147) arcweft-render-wgpu::view_clip_mask_render_closure mask_sampling_resolves_size_position_repeat_and_channel
+        PASS [   0.095s] (138/147) arcweft-render-wgpu::view_clip_mask_render_closure path_and_oversized_polygon_stay_structured_diagnostics
+        PASS [   0.097s] (139/147) arcweft-render-wgpu::view_clip_mask_render_closure path_clips_lines_curves_and_both_fill_rules
+        PASS [   0.101s] (140/147) arcweft-render-wgpu::view_compositor_plan blur_shadow_mask_and_blend_count_deterministic_passes
+        PASS [   0.105s] (141/147) arcweft-render-wgpu::view_compositor_plan compositing_plan_snapshot_covers_core_effect_families
+        PASS [   0.105s] (142/147) arcweft-render-wgpu::view_compositor_plan direct_scene_plan_does_not_add_group_effect_passes
+        PASS [   0.107s] (143/147) arcweft-render-wgpu::view_scene_player_path direct_only_view_scene_produces_compositor_direct_plan
+        PASS [   0.111s] (144/147) arcweft-render-wgpu::view_scene_player_path filter_and_backdrop_scene_plans_offscreen_and_one_backdrop_copy
+        PASS [   0.110s] (145/147) arcweft-render-wgpu::view_scene_player_path text_primitive_references_canonical_prepared_item_directly
+        PASS [   0.099s] (146/147) arcweft-render-wgpu::view_scene_player_path view_scene_attaches_to_prepared_frame_without_replacing_base_fields
+        PASS [   3.678s] (147/147) arcweft-render-wgpu::prepared_text evaluated_paint_and_actual_view_context_share_observed_and_capture_geometry
+────────────
+     Summary [   4.272s] 147 tests run: 147 passed, 16 skipped
+        PASS [   0.031s] (  1/147) arcweft-render-wgpu geometry::view_final::tests::final_geometry_lowering_retains_generation_node_revision_and_outward_raster
+        PASS [   0.036s] (  2/147) arcweft-render-wgpu offscreen::tests::later_prepared_coverage_wins_without_rgb_decoding
+        PASS [   0.041s] (  3/147) arcweft-render-wgpu geometry::dialogue_prepared::tests::typed_shader_and_mask_resolve_glyph_and_post_process_passes
+        PASS [   0.047s] (  4/147) arcweft-render-wgpu geometry::dialogue_prepared::tests::missing_typed_shader_is_a_typed_diagnostic
+        PASS [   0.059s] (  5/147) arcweft-render-wgpu offscreen::tests::invalid_requests_fail_with_typed_errors
+        PASS [   0.069s] (  6/147) arcweft-render-wgpu geometry::dialogue_prepared::tests::stage_local_fx_time_reaches_dialogue_prepared_glyph_mask
+        PASS [   0.075s] (  7/147) arcweft-render-wgpu offscreen::tests::logical_regions_scale_to_physical_pixels
+        PASS [   0.080s] (  8/147) arcweft-render-wgpu offscreen::tests::prepared_coverage_extent_and_size_mismatch_are_typed
+        PASS [   0.083s] (  9/147) arcweft-render-wgpu geometry::dialogue_prepared::tests::reveal_changes_only_paint
+        PASS [   0.087s] ( 10/147) arcweft-render-wgpu offscreen::tests::later_region_wins_object_id_overlap
+        PASS [   0.087s] ( 11/147) arcweft-render-wgpu geometry::dialogue_prepared::tests::clear_projects_the_remaining_stage_to_the_dialogue_view_origin
+        PASS [   0.095s] ( 12/147) arcweft-render-wgpu geometry::dialogue_prepared::tests::typed_sampler_uses_logical_glyph_ordinal_and_time_only_changes_paint
+        PASS [   0.098s] ( 13/147) arcweft-render-wgpu offscreen::tests::prepared_and_bounds_coverage_replay_in_region_order
+        PASS [   0.110s] ( 14/147) arcweft-render-wgpu geometry::view_final::tests::inexact_f32_preserves_node_consumer_field_and_round_trip
+        PASS [   0.116s] ( 15/147) arcweft-render-wgpu geometry::view_final::tests::index_range_uses_checked_target_maximum
+        PASS [   0.128s] ( 16/147) arcweft-render-wgpu geometry::view_final::tests::fully_clipped_node_is_absent_from_render_candidate
+        PASS [   0.129s] ( 17/147) arcweft-render-wgpu geometry::dialogue_prepared::tests::vertical_ruby_stage_uses_canonical_layout_and_prepared_glyphs
+        PASS [   0.133s] ( 18/147) arcweft-render-wgpu offscreen::tests::object_id_contract_rejects_ambiguous_region_metadata
+        PASS [   0.138s] ( 19/147) arcweft-render-wgpu geometry::dialogue_prepared::tests::typed_fx_application_changes_layout_style_and_post_layout_transform
+        PASS [   0.111s] ( 20/147) arcweft-render-wgpu offscreen::tests::prepared_coverage_origin_mismatch_is_typed
+        PASS [   0.109s] ( 21/147) arcweft-render-wgpu offscreen::tests::prepared_coverage_uses_its_cropped_frame_origin
+        PASS [   0.110s] ( 22/147) arcweft-render-wgpu offscreen::tests::prepared_mask_uses_alpha_coverage_not_object_id_alpha
+        PASS [   0.156s] ( 23/147) arcweft-render-wgpu geometry::dialogue_prepared::tests::following_page_and_clear_preserve_actual_glyph_reveal_and_ruby_source_identity
+        PASS [   0.109s] ( 24/147) arcweft-render-wgpu offscreen::tests::prepared_text_capture_budget_accepts_exact_limits_and_rejects_one_over
+        PASS [   0.102s] ( 25/147) arcweft-render-wgpu offscreen::tests::prepared_text_capture_budget_counts_padded_rows_for_thin_tall_regions
+        PASS [   0.096s] ( 26/147) arcweft-render-wgpu offscreen::tests::prepared_text_capture_budget_reports_checked_arithmetic_overflow
+        PASS [   0.095s] ( 27/147) arcweft-render-wgpu offscreen::tests::requested_attachment_order_is_preserved
+        PASS [   0.095s] ( 28/147) arcweft-render-wgpu offscreen::tests::scope_crop_reports_origin_and_preserves_transparent_gaps
+        PASS [   0.096s] ( 29/147) arcweft-render-wgpu offscreen::tests::unsupported_target_format_fails_before_device_acquisition
+        PASS [   0.097s] ( 30/147) arcweft-render-wgpu text_editor_geometry::tests::collapsed_range_inside_non_empty_cluster_is_dropped_before_validation
+        PASS [   0.102s] ( 31/147) arcweft-render-wgpu text_editor_geometry::tests::collapsed_range_at_distinct_caret_stop_is_preserved
+        PASS [   0.098s] ( 32/147) arcweft-render-wgpu text_editor_geometry::tests::converts_real_layout_glyphs_to_renderer_backed_editor_layout
+        PASS [   0.100s] ( 33/147) arcweft-render-wgpu text_editor_geometry::tests::merges_identical_non_empty_renderer_ranges_into_one_editor_cluster
+        PASS [   0.095s] ( 34/147) arcweft-render-wgpu text_editor_geometry::tests::mixed_script_fallback_ranges_do_not_reach_editor_layout_as_duplicates
+        PASS [   0.093s] ( 35/147) arcweft-render-wgpu text_editor_geometry::tests::partial_renderer_range_overlap_remains_a_layout_error
+        PASS [   0.085s] ( 36/147) arcweft-render-wgpu view_blend::tests::normal_blend_mode_does_not_need_backdrop_sampling
+        PASS [   0.090s] ( 37/147) arcweft-render-wgpu view_blend::tests::hsl_family_blends_are_shader_supported
+        PASS [   0.090s] ( 38/147) arcweft-render-wgpu view_box_shadow::tests::degenerate_inset_receiver_is_typed_diagnostic
+        PASS [   0.089s] ( 39/147) arcweft-render-wgpu view_box_shadow::tests::inset_shadow_plans_deterministic_inner_geometry
+        PASS [   0.091s] ( 40/147) arcweft-render-wgpu view_box_shadow::tests::inset_shadow_spread_preserves_mixed_elliptical_radii
+        PASS [   0.091s] ( 41/147) arcweft-render-wgpu view_box_shadow::tests::mixed_outer_and_inset_shadows_preserve_stage_order
+        PASS [   0.090s] ( 42/147) arcweft-render-wgpu view_box_shadow::tests::multiple_inset_shadows_paint_back_to_front_within_inset_stage
+        PASS [   0.090s] ( 43/147) arcweft-render-wgpu view_box_shadow::tests::negative_corner_radius_emits_degenerate_radius_diagnostic
+        PASS [   0.097s] ( 44/147) arcweft-render-wgpu view_box_shadow::tests::multiple_outer_shadows_paint_back_to_front
+        PASS [   0.096s] ( 45/147) arcweft-render-wgpu view_box_shadow::tests::negative_spread_changes_inset_shadow_rect_deterministically
+        PASS [   0.097s] ( 46/147) arcweft-render-wgpu view_box_shadow::tests::non_finite_corner_radius_emits_typed_diagnostic
+        PASS [   0.098s] ( 47/147) arcweft-render-wgpu view_box_shadow::tests::non_finite_inset_fields_emit_typed_diagnostics
+        PASS [   0.097s] ( 48/147) arcweft-render-wgpu view_box_shadow::tests::outer_shadow_preserves_per_corner_elliptical_radii
+        PASS [   0.098s] ( 49/147) arcweft-render-wgpu view_box_shadow::tests::spread_changes_shadow_rect_and_outset
+        PASS [   0.099s] ( 50/147) arcweft-render-wgpu view_box_shadow::tests::transparent_and_zero_inset_shadows_are_canonical_noops
+        PASS [   0.099s] ( 51/147) arcweft-render-wgpu view_box_shadow::tests::transparent_and_zero_outer_shadows_are_canonical_noops
+        PASS [   0.099s] ( 52/147) arcweft-render-wgpu view_clip_path::tests::degenerate_path_segments_are_typed_diagnostics
+        PASS [   0.098s] ( 53/147) arcweft-render-wgpu view_clip_path::tests::inset_clip_resolves_percent_and_px
+        PASS [   0.097s] ( 54/147) arcweft-render-wgpu view_clip_path::tests::path_clip_plans_lines_curves_and_close_path
+        PASS [   0.097s] ( 55/147) arcweft-render-wgpu view_clip_path::tests::polygon_clip_points_resolve_against_bounds
+        PASS [   0.098s] ( 56/147) arcweft-render-wgpu view_compositor_uniform::tests::box_shadow_uniform_uses_explicit_logical_extent
+        PASS [   0.099s] ( 57/147) arcweft-render-wgpu view_compositor_uniform::tests::clip_uniform_uses_explicit_logical_extent
+        PASS [   0.098s] ( 58/147) arcweft-render-wgpu view_compositor_uniform::tests::final_target_composite_encodes_display_unorm_formats
+        PASS [   0.100s] ( 59/147) arcweft-render-wgpu view_effects::tests::color_matrix_contrast_and_invert_are_deterministic
+        PASS [   0.100s] ( 60/147) arcweft-render-wgpu view_effects::tests::filter_plan_expands_for_blur_and_drop_shadow
+        PASS [   0.102s] ( 61/147) arcweft-render-wgpu view_effects::tests::fixed_extent_filter_plan_keeps_backdrop_target_size
+        PASS [   0.102s] ( 62/147) arcweft-render-wgpu view_effects::tests::texture_extent_buckets_without_exceeding_cap
+        PASS [   0.103s] ( 63/147) arcweft-render-wgpu view_mask::tests::element_mask_is_a_typed_capture_diagnostic
+        PASS [   0.102s] ( 64/147) arcweft-render-wgpu view_mask::tests::gradient_alpha_and_luminance_stops_differ
+        PASS [   0.102s] ( 65/147) arcweft-render-wgpu view_mask::tests::space_and_round_repeat_resolve_deterministically
+        PASS [   0.101s] ( 66/147) arcweft-render-wgpu view_mask::tests::url_masks_require_external_textures
+        PASS [   0.098s] ( 67/147) arcweft-render-wgpu view_scene::compositing::tests::compositing_requirements_are_deterministic
+        PASS [   0.098s] ( 68/147) arcweft-render-wgpu view_scene::compositing::tests::filter_list_canonicalization_drops_identity_filters_but_keeps_order
+        PASS [   0.098s] ( 69/147) arcweft-render-wgpu view_scene::compositing::tests::filter_visual_outset_uses_blur_and_shadow_extents
+        PASS [   0.097s] ( 70/147) arcweft-render-wgpu view_scene::core::tests::corner_radii_clamp_to_rect_bounds
+        PASS [   0.097s] ( 71/147) arcweft-render-wgpu view_scene::core::tests::prepared_text_coverage_prunes_unrelated_compositing_effects
+        PASS [   0.098s] ( 72/147) arcweft-render-wgpu view_scene::core::tests::prepared_text_ids_preserve_direct_painter_reuse_order
+        PASS [   0.099s] ( 73/147) arcweft-render-wgpu view_scene::core::tests::surface_paint_pushes_shared_rounded_fill_and_border_primitives
+        PASS [   0.102s] ( 74/147) arcweft-render-wgpu view_scene::core::tests::view_scene_preserves_context_primitive_and_paint_node_order
+        PASS [   0.098s] ( 75/147) arcweft-render-wgpu::geometry content_rect_contain_preserves_design_aspect_ratio_in_tall_output
+        PASS [   0.099s] ( 76/147) arcweft-render-wgpu::geometry content_rect_maps_design_rect_into_output_space
+        PASS [   0.101s] ( 77/147) arcweft-render-wgpu::geometry content_rect_modes_make_raw_cover_and_stretch_distinct
+        PASS [   0.103s] ( 78/147) arcweft-render-wgpu::geometry elastic_displacement_affects_visual_offset_but_not_committed_offset
+        PASS [   0.135s] ( 79/147) arcweft-render-wgpu::geometry choice_geometry_ignores_scroll_offset
+        PASS [   0.117s] ( 80/147) arcweft-render-wgpu::geometry directional_keyboard_navigation_uses_focus_target_geometry
+        PASS [   0.163s] ( 81/147) arcweft-render-wgpu::geometry auto_scroll_indicator_fades_deterministically_and_reduce_motion_skips_fade
+        PASS [   0.126s] ( 82/147) arcweft-render-wgpu::geometry focus_navigation_explicit_edge_overrides_geometry
+        PASS [   0.127s] ( 83/147) arcweft-render-wgpu::geometry focus_navigation_next_previous_respects_no_wrap_group
+        PASS [   0.131s] ( 84/147) arcweft-render-wgpu::geometry focused_text_input_target_browser_and_native_use_same_geometry_snapshot_source
+        PASS [   0.137s] ( 85/147) arcweft-render-wgpu::geometry focused_text_input_target_produces_real_focused_text_field
+        PASS [   0.126s] ( 86/147) arcweft-render-wgpu::geometry hidden_scroll_region_reports_no_scroll_range
+        PASS [   0.139s] ( 87/147) arcweft-render-wgpu::geometry focused_text_input_target_secure_field_redacts_value_and_character_geometry
+        PASS [   0.151s] ( 88/147) arcweft-render-wgpu::geometry horizontal_scroll_region_offsets_and_clips_owned_text_controls
+        PASS [   0.165s] ( 89/147) arcweft-render-wgpu::geometry generated_visual_demo_supplies_background_character_and_animated_frames
+        PASS [   0.157s] ( 90/147) arcweft-render-wgpu::geometry keyboard_navigation_wraps_across_stable_targets
+        PASS [   0.159s] ( 91/147) arcweft-render-wgpu::geometry planner_uses_the_same_choice_geometry_for_render_and_hit_test
+        PASS [   0.160s] ( 92/147) arcweft-render-wgpu::geometry prepared_frame_fit_mapping_scales_runtime_control_geometry_and_ime_snapshots
+        PASS [   0.151s] ( 93/147) arcweft-render-wgpu::geometry scroll_region_drops_images_outside_viewport
+        PASS [   0.195s] ( 94/147) arcweft-render-wgpu::geometry interaction_visual_state_changes_the_prepared_choice_rectangles
+        PASS [   0.157s] ( 95/147) arcweft-render-wgpu::geometry scroll_region_offsets_and_clips_owned_action_buttons
+        PASS [   0.151s] ( 96/147) arcweft-render-wgpu::geometry scroll_region_offsets_and_clips_owned_images
+        PASS [   0.185s] ( 97/147) arcweft-render-wgpu::geometry scroll_indicator_policies_produce_observable_thumb_geometry
+        PASS [   0.151s] ( 98/147) arcweft-render-wgpu::geometry scroll_region_offsets_and_clips_owned_text_controls
+        PASS [   0.123s] ( 99/147) arcweft-render-wgpu::geometry signed_scroll_range_preserves_negative_offsets
+        PASS [   0.152s] (100/147) arcweft-render-wgpu::geometry scroll_region_uses_visible_bounds_for_runtime_control_effect_plans
+        PASS [   0.153s] (101/147) arcweft-render-wgpu::geometry scroll_regions_survive_frame_planning_and_viewport_mapping
+        PASS [   0.126s] (102/147) arcweft-render-wgpu::geometry viewport_physical_scale_factor_preserves_the_host_validated_value
+        PASS [   0.150s] (103/147) arcweft-render-wgpu::geometry stateful_planner_reuses_the_shared_text_shape_cache_for_controls
+        PASS [   0.145s] (104/147) arcweft-render-wgpu::geometry_runtime_control_styles backdrop_filter_reaches_runtime_control_backdrop_plan
+        PASS [   0.147s] (105/147) arcweft-render-wgpu::geometry_runtime_control_styles authored_control_depth_orders_text_inputs_and_buttons_together
+        PASS [   0.157s] (106/147) arcweft-render-wgpu::geometry_runtime_control_styles action_button_uses_current_authored_fill_and_text_color
+        PASS [   0.146s] (107/147) arcweft-render-wgpu::geometry_runtime_control_styles empty_text_control_paints_current_placeholder_style
+        PASS [   0.126s] (108/147) arcweft-render-wgpu::geometry_runtime_control_styles focused_text_control_uses_authored_focus_ring
+        PASS [   0.129s] (109/147) arcweft-render-wgpu::geometry_runtime_control_styles focused_text_control_uses_authored_selection_and_caret_colors
+        PASS [   0.129s] (110/147) arcweft-render-wgpu::geometry_runtime_control_styles foreground_filter_reaches_runtime_control_filter_plan
+        PASS [   0.124s] (111/147) arcweft-render-wgpu::geometry_runtime_control_styles runtime_control_color_matrix_filters_reach_view_filter_plan
+        PASS [   0.127s] (112/147) arcweft-render-wgpu::geometry_runtime_control_styles runtime_control_paint_span_carries_inline_backdrop_order
+        PASS [   0.126s] (113/147) arcweft-render-wgpu::geometry_runtime_control_styles supported_box_shadow_reaches_existing_shadow_pass_plan
+        PASS [   0.120s] (114/147) arcweft-render-wgpu::geometry_runtime_control_styles text_control_corner_frame_draws_independent_corner_segments
+        PASS [   0.125s] (115/147) arcweft-render-wgpu::geometry_runtime_control_styles text_control_fill_and_inner_marks_use_authored_corner_radii
+        PASS [   0.130s] (116/147) arcweft-render-wgpu::geometry_runtime_control_styles text_control_uses_authored_font_metrics
+        PASS [   0.134s] (117/147) arcweft-render-wgpu::geometry_runtime_control_styles text_controls_and_buttons_use_authored_font_family
+        PASS [   0.133s] (118/147) arcweft-render-wgpu::view_blend_hsl_modes hsl_family_blend_modes_are_planned_for_shader_execution
+        PASS [   0.122s] (119/147) arcweft-render-wgpu::view_blend_hsl_modes supported_blend_modes_matrix_includes_nonseparable_color_family
+        PASS [   0.152s] (120/147) arcweft-render-wgpu::prepared_text controls_enter_the_prepared_batch_during_frame_planning
+        PASS [   0.104s] (121/147) arcweft-render-wgpu::view_box_shadow_plan hsl_family_blends_remain_supported
+        PASS [   0.149s] (122/147) arcweft-render-wgpu::prepared_text final_view_graph_repeated_occurrences_are_unioned_and_absent_contexts_reject
+        PASS [   0.110s] (123/147) arcweft-render-wgpu::view_box_shadow_plan inset_box_shadow_plans_as_typed_inset_pass
+        PASS [   0.154s] (124/147) arcweft-render-wgpu::prepared_text resolved_document_prepares_once_with_shared_layout_and_frame_scale
+        PASS [   0.115s] (125/147) arcweft-render-wgpu::view_box_shadow_plan inset_shadow_plan_preserves_elliptical_radii
+        PASS [   0.115s] (126/147) arcweft-render-wgpu::view_box_shadow_plan mixed_outer_and_inset_shadows_preserve_stage_metadata
+        PASS [   0.129s] (127/147) arcweft-render-wgpu::view_box_shadow_plan negative_radius_is_typed_diagnostic
+        PASS [   0.129s] (128/147) arcweft-render-wgpu::view_box_shadow_plan non_finite_radius_is_typed_diagnostic
+        PASS [   0.122s] (129/147) arcweft-render-wgpu::view_box_shadow_plan outer_box_shadow_plans_before_children_and_expands_visual_extent
+        PASS [   0.126s] (130/147) arcweft-render-wgpu::view_box_shadow_plan outer_shadow_plan_preserves_per_corner_radii
+        PASS [   0.121s] (131/147) arcweft-render-wgpu::view_box_shadow_plan oversized_mixed_corner_radii_are_normalized_to_bounds
+        PASS [   0.115s] (132/147) arcweft-render-wgpu::view_clip_mask_render_closure compositor_plan_counts_path_clip_and_gradient_mask_passes_deterministically
+        PASS [   0.117s] (133/147) arcweft-render-wgpu::view_clip_mask_render_closure element_mask_is_structured_capture_diagnostic
+        PASS [   0.114s] (134/147) arcweft-render-wgpu::view_clip_mask_render_closure gradient_mask_alpha_and_luminance_modes_produce_different_coverage
+        PASS [   0.113s] (135/147) arcweft-render-wgpu::view_clip_mask_render_closure inset_circle_ellipse_and_polygon_clips_plan_as_shader_geometry
+        PASS [   0.104s] (136/147) arcweft-render-wgpu::view_clip_mask_render_closure mask_repeat_space_and_round_resolve_tile_distribution
+        PASS [   0.095s] (137/147) arcweft-render-wgpu::view_clip_mask_render_closure mask_sampling_resolves_size_position_repeat_and_channel
+        PASS [   0.095s] (138/147) arcweft-render-wgpu::view_clip_mask_render_closure path_and_oversized_polygon_stay_structured_diagnostics
+        PASS [   0.097s] (139/147) arcweft-render-wgpu::view_clip_mask_render_closure path_clips_lines_curves_and_both_fill_rules
+        PASS [   0.101s] (140/147) arcweft-render-wgpu::view_compositor_plan blur_shadow_mask_and_blend_count_deterministic_passes
+        PASS [   0.105s] (141/147) arcweft-render-wgpu::view_compositor_plan compositing_plan_snapshot_covers_core_effect_families
+        PASS [   0.105s] (142/147) arcweft-render-wgpu::view_compositor_plan direct_scene_plan_does_not_add_group_effect_passes
+        PASS [   0.107s] (143/147) arcweft-render-wgpu::view_scene_player_path direct_only_view_scene_produces_compositor_direct_plan
+        PASS [   0.111s] (144/147) arcweft-render-wgpu::view_scene_player_path filter_and_backdrop_scene_plans_offscreen_and_one_backdrop_copy
+        PASS [   0.110s] (145/147) arcweft-render-wgpu::view_scene_player_path text_primitive_references_canonical_prepared_item_directly
+        PASS [   0.099s] (146/147) arcweft-render-wgpu::view_scene_player_path view_scene_attaches_to_prepared_frame_without_replacing_base_fields
+        PASS [   3.678s] (147/147) arcweft-render-wgpu::prepared_text evaluated_paint_and_actual_view_context_share_observed_and_capture_geometry
+        SKIP [         ] (───────) arcweft-render-wgpu::prepared_text missing_view_text_id_is_a_typed_compositor_failure
+        SKIP [         ] (───────) arcweft-render-wgpu::prepared_text multiple_prepared_submissions_keep_vertex_buffers_alive_until_submit
+        SKIP [         ] (───────) arcweft-render-wgpu::prepared_text prepared_batch_interaction_paints_selection_before_glyphs_and_ime_after
+        SKIP [         ] (───────) arcweft-render-wgpu::prepared_text prepared_batch_renders_without_renderer_side_shaping
+        SKIP [         ] (───────) arcweft-render-wgpu::prepared_text view_text_interaction_paints_selection_before_glyphs_and_ime_after
+        SKIP [         ] (───────) arcweft-render-wgpu::prepared_text view_text_obeys_transform_clip_opacity_inside_offscreen_group
+        SKIP [         ] (───────) arcweft-render-wgpu::prepared_text view_text_renders_at_primitive_position_without_late_duplicate_submission
+        SKIP [         ] (───────) arcweft-render-wgpu::runtime_control_backdrop_gpu_smoke prepared_control_backdrop_blur_executes_shared_renderer_path
+        SKIP [         ] (───────) arcweft-render-wgpu::runtime_control_backdrop_gpu_smoke prepared_control_foreground_filter_blur_executes_shared_renderer_path
+        SKIP [         ] (───────) arcweft-render-wgpu::runtime_control_backdrop_gpu_smoke rounded_runtime_control_stroke_draws_straight_edges
+        SKIP [         ] (───────) arcweft-render-wgpu::view_box_shadow_exact_png_golden seq06_13e1_inset_shadow_native_exact_png_packet_is_complete
+        SKIP [         ] (───────) arcweft-render-wgpu::view_box_shadow_exact_png_golden seq06_13e1_inset_shadow_web_exact_png_packet_is_complete
+        SKIP [         ] (───────) arcweft-render-wgpu::view_box_shadow_gpu_smoke per_corner_outer_and_elliptical_inset_shadow_cards_execute_gpu_compositor_path
+        SKIP [         ] (───────) arcweft-render-wgpu::view_compositor_gpu_smoke gpu_smoke_blur_shadow_mask_clip_backdrop_and_blend_fixture
+        SKIP [         ] (───────) arcweft-render-wgpu::view_compositor_gpu_smoke_seq06_13c seq06_13c_path_clip_gradient_mask_visual_smoke_fixture
+        SKIP [         ] (───────) arcweft-render-wgpu::view_compositor_gpu_smoke_timestamps gpu_smoke_clip_mask_and_motion_timestamps

@@ -13359,3 +13359,10 @@ Toolchainの同一性を確認し、同じpackage単位all-features／locked／n
 確認main 10134674da0453be4d99eba7a92be275e38b2855、Source c3b6ea79a7b16674ed0cbcd644b9e7bdd6c95030。維持されるrecord／schema／program authorityの4公開cutに変更はない。以前の最終cutのCore 1,497 PASS、逆依存6,633 PASS／57保持FAILも、そのSource epochの検証結果として保持する。現Semaのclassify_accepted_nominalは、受入済みRustAdtのSource graphを投影した後、無条件でMissingRuntimeSnapshotOwnerを返す。公開checked_ownershipも同classifierを通る。既に全1,363件PASSとして終端照合したSema runのmutual_recursion_is_finite_and_limits_reject_without_publicationも、有限graph・上限拒否を検査した後にこの拒否を要求する。PASSを構造的retention-successへ読み替えない。[Source blob／case終端／確認範囲](acceptance-evidence/task-nominal-c6-current-audit.json)。
 
 Supersedes: 現状一覧の曖昧な「最終C6監査未確認」を、受入済みRust ADTの構造的retention成功経路が未接続という具体的な残条件へ置き換えた。既存C1–C5の実装やcodec／restore受入を戻すものではない。古い待機コメントだけを根拠にせず、実際に残る無条件拒否と実行済みassertionを根拠とする。Needの公開certificateを意図的に出さない別境界を未実装一覧へ加えない。
+
+
+## Core scope の全53逆依存終端 — 2026-10-31
+
+確認main e0070f36985628969ce2fa2bbde56c09eb31ef56、Source c3b6ea79a7b16674ed0cbcd644b9e7bdd6c95030。容量不足前の終端済み25 consumer packageを保持し、全体cargo clean後の残27 packageも終端した。Coreの先行2,133件と52 consumerを重複なく合わせ、7446件中7403 PASS／43 FAIL。consumerは5313件中5270 PASS／43 FAIL、39件除外。43件は以前の全CLI失敗IDと新規0・解消0の完全一致であり、成功扱いにしない。全catalogは成功し、4,005入力・実行前後binary・catalog／終端case集合の差分は0。同じpackage単位all-feature／locked条件を維持し、Coreや終端済みCLIを再実行していない。[統合終端・全原本・比較対象](acceptance-evidence/task-presentation-awbc-scopes-reverse-acceptance.json)。
+
+Supersedes: 現状一覧の「容量不足後の残27を検証中」を、実際の全終端へ更新した。中断時の容量エラー10 catalog、終了code未観測のresource-model、中断sessionの終了-1、全体cleanの終了0は変更せず履歴として保持する。Source／command ABI、AWBC Product bankとactive grantの保存／rollback、Dialogue bank、mount(ViewValue)とdriver接続はこの結果で受入済みにはしない。Generic Matchおよび既存の受入cutも維持する。

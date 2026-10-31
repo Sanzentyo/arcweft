@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "d70e079dba7c448cd168fbf8de36e99721f068c3",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-verify-z3",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\presentation-awbc-scopes.recovery-arcweft-verify-z3-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-31T03:29:37.3190124Z",
+  "finishedAt": "2026-10-31T03:29:41.8829843Z"
+}

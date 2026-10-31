@@ -1,0 +1,1111 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::external_payload::tests::digest_mismatch_fails_before_cache_record_publication",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::external_payload::tests::fetch_external_payload_from_cache_mirror_populates_record",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::external_payload::tests::fetch_external_payload_from_file_mirror_populates_cache",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::external_payload::tests::fetch_external_payload_from_http_mirror_uses_release_network_policy",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::external_payload::tests::http_external_payload_rejects_plain_http_when_https_is_required",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::external_payload::tests::size_mismatch_fails_before_cache_record_publication",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::inspect::tests::cache_explain_embeds_persistent_query_hit_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::inspect::tests::cache_explain_embeds_persistent_query_soft_miss_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::inspect::tests::cache_stats_and_verify_accept_store_artifacts",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::inspect::tests::explain_cache_finds_record_by_artifact_key",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::inspect::tests::explain_cache_finds_record_by_logical_item",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::inspect::tests::explain_cache_reports_invalid_digest_query",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::inspect::tests::prune_cache_apply_removes_empty_parent_directory_after_object_removal",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::inspect::tests::prune_cache_apply_removes_only_candidates",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::inspect::tests::prune_cache_dry_run_reports_empty_directories_without_removing",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::inspect::tests::prune_cache_dry_run_reports_temp_and_unreferenced_objects_without_removing",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::inspect::tests::verify_reports_corrupt_object_digest",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::lock::tests::lock_rejects_second_holder",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::persistent_query_compiler_identity_mismatch_is_soft_miss",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::persistent_query_corrupt_object_is_soft_miss",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::persistent_query_corrupt_record_is_soft_miss",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::persistent_query_dependency_mismatches_are_soft_misses",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::persistent_query_environment_digest_change_is_a_soft_miss",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::persistent_query_hit_returns_payload_and_snapshot_status",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::persistent_query_missing_object_is_soft_miss",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::persistent_query_missing_record_is_soft_miss",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::persistent_query_object_digest_mismatch_is_soft_miss",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::persistent_query_object_length_mismatch_is_soft_miss",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::persistent_query_object_schema_mismatch_is_soft_miss",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::persistent_query_payload_digest_mismatch_is_soft_miss",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::persistent_query_payload_schema_mismatch_is_soft_miss",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::persistent_query_query_kind_mismatch_is_soft_miss",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::persistent_query_record_schema_mismatch_is_soft_miss",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::persistent_query_source_digest_mismatch_is_soft_miss",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::persistent_query_unsupported_object_kind_and_status_are_typed",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::persistent_query_verified_bytecode_unit_is_actual_hit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::persistent_query_verified_link_plan_descriptor_mismatch_is_soft_miss",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::persistent_query_verified_link_plan_matches_expected_descriptor",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::persistent_query_write_through_rejects_payload_kind_mismatch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::persistent_query_write_through_stores_bytecode_gate_as_valid_but_rebuilt",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::persistent_query_write_through_stores_interface_summary_for_read_through",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::persistent_query_write_through_stores_link_plan_gate_as_valid_but_rebuilt",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::persistent_query_write_through_stores_parse_object_for_read_through",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::persistent_query_write_through_stores_typecheck_gate_as_valid_but_rebuilt",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::runtime_plan_unit_remains_unsupported_until_seq04_7_identity_is_applied",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::verified_bytecode_unit_rejects_conservative_relocation_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::persistent_query::tests::verified_link_plan_rejects_conservative_descriptor_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::record::tests::cache_record_round_trips_for_key",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::release::tests::fetch_release_bundle_attempts_https_mirror_then_uses_file_mirror",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::release::tests::fetch_release_bundle_bytes_returns_verified_cached_bytes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::release::tests::fetch_release_bundle_reads_file_mirror_and_stores_cache_record",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::release::tests::fetch_release_bundle_reads_http_mirror_with_timeout_and_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::release::tests::fetch_release_bundle_rejects_http_body_over_byte_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::release::tests::fetch_release_bundle_rejects_unsigned_file_when_signature_required",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::release::tests::fetch_release_bundle_rejects_untrusted_signature_envelope",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::release::tests::fetch_release_bundle_requires_https_policy_skips_http_then_uses_file_mirror",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::release::tests::fetch_release_bundle_retries_failed_file_mirror_then_uses_next_mirror",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::release::tests::fetch_release_bundle_skips_file_candidate_over_byte_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::release::tests::fetch_release_bundle_uses_cache_mirror_before_file_mirror",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::release::tests::fetch_release_product_bundle_decodes_cached_awfb_product",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::release::tests::network_policy_rejects_profiles_unavailable_to_default_cache_client",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::store::tests::missing_record_is_cache_miss",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::store::tests::store_artifact_repairs_corrupt_existing_object_and_record",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "cache::store::tests::store_artifact_round_trips_verified_bytes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "character_manifest::tests::awchar_suffix_resolves_without_directory_probe",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "character_manifest::tests::direct_character_manifest_path_remains_direct",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "environment::tests::malformed_compact_character_path_fails_before_direct_binding_construction",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "environment::tests::profile_character_manifest_uses_source_logical_owner_when_ids_match",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "environment::tests::profile_registration_uses_only_retained_topology_documents",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "environment::tests::registration_loader_returns_source_backed_manifest",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "layout::tests::canonical_layout_contains_existing_and_future_roots",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "layout::tests::existing_ancestor_symlink_escape_is_rejected",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "layout::tests::project_root_must_be_absolute_and_lexically_normalized",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "project::tests::bounded_project_load_accepts_exact_document_and_source_byte_limits",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "project::tests::bounded_project_load_reads_only_one_byte_over_remaining_limit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "project::tests::bounded_project_load_reports_checked_counter_overflow",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "project::tests::bounded_project_load_stops_enumeration_at_one_document_over_limit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "project::tests::maps_flat_files_without_mod_rs_layout",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "project::tests::project_document_ids_are_package_relative_and_separator_stable",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "project::tests::reload_continues_from_a_private_recovered_generation_after_rejection",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "project::tests::reload_does_not_fallback_when_a_prior_module_identity_changes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "project::tests::reload_reuses_a_rejected_new_module_lineage_without_a_published_sidecar",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "project::tests::reload_reuses_the_exact_lineage_and_publishes_the_new_document_lease",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "project::tests::unchanged_reload_retains_the_exact_parsed_snapshot_and_document_lease",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "release_adapter::publish::remote::tests::checksum_mismatch_after_upload_returns_recoverable_report",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "release_adapter::publish::remote::tests::credentials_are_redacted_from_report_and_debug",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "release_adapter::publish::remote::tests::dry_run_plan_is_stable_and_does_not_touch_backend",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "release_adapter::publish::remote::tests::final_awfr_is_committed_last",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "release_adapter::publish::remote::tests::non_retryable_commit_failure_rolls_back_and_reports_abandoned_cleanup",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "release_adapter::publish::remote::tests::object_directory_publish_commits_verified_bytes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "release_adapter::publish::remote::tests::retryable_stage_failure_is_retried",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "release_adapter::publish::tests::publish_release_atomically_commits_all_artifact_families",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "release_adapter::publish::tests::publish_release_rejects_escape_paths_before_writing",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "source_document::tests::exact_file_validation_uses_the_accepted_logical_id_and_detects_changes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::budget::tests::budget_overflow_is_distinct_from_an_ordinary_limit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::budget::tests::inclusive_budget_accepts_exact_maximum_and_rejects_one_over",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::budget::tests::multiple_small_text_resources_share_one_aggregate_source_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::budget::tests::production_limits_are_inclusive_and_reject_one_over",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::external::tests::generated_fact_projection_accepts_exact_and_rejects_one_over_production_depth",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::external::tests::type_reference_parser_enforces_byte_depth_and_work_limits",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::external::tests::type_reference_parser_mounts_nominal_types_inside_structural_types",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::external::tests::type_reference_parser_rejects_unknown_or_trailing_input",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::id::tests::logical_paths_require_normalized_relative_components",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::id::tests::owner_fields_are_nonempty_and_control_free",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::loader_limits_tests::topology_disk_reader_accepts_the_exact_remaining_bytes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::loader_limits_tests::topology_disk_reader_retains_only_remaining_plus_one_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::absent_optional_resource_manifest_does_not_probe_a_conventional_filename",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::activity_binding_requires_the_exact_abstract_activity_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::activity_binding_requires_the_selected_generated_export",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::character_content_root_uses_canonical_asset_package_path",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::character_layers_accept_binary_overlays_and_retain_one_byte_authority",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::character_package_identity_must_match_the_selected_content_root",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::consumed_overlay_ids_are_sorted_and_complete",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::corrupt_binary_overlay_does_not_fall_back_to_valid_disk_layer",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::dependency_resource_manifest_is_loaded_only_from_an_explicit_typed_seed",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::every_generated_metadata_expectation_mismatch_aborts_topology",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::expected_family_mismatch_rejects_rust_wasm_and_process_metadata",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::explicit_root_resource_manifest_is_loaded_published_and_retained",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::generated_metadata_decode_failure_aborts_topology_after_exact_hash",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::generated_metadata_overlay_is_the_only_admitted_revision",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::generated_metadata_publishes_exact_mounted_type_function_and_activity_facts",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::generated_metadata_raw_hash_mismatch_aborts_topology",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::generated_projection_rejects_purity_and_effect_mismatch_without_altering_retained_shape",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::loaded_topology_survives_disk_mutation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::missing_dependency_resource_manifest_is_typed_as_unresolved_package",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::missing_or_invalid_selected_character_package_aborts_topology",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::nested_character_identity_maps_to_nested_asset_package_path",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::one_path_cannot_be_claimed_as_source_and_generated_metadata",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::open_manifest_overlay_precedes_disk_decode",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::overlay_manifest_can_exist_without_disk_file",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::resource_manifest_coordinate_is_checked_against_the_selected_package",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::resource_manifest_utf8_adapter_reports_the_exact_invalid_offset",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::selected_host_adapter_must_exist",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::selected_profile_owns_one_exact_adapter_effect_inventory",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::selected_profile_uses_only_the_host_registry_adapter",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::selected_source_outside_default_root_is_the_profile_crate_root",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::selected_source_outside_default_root_rejects_non_root_module_declaration",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::selected_source_overlay_builds_exact_import_closure",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::text_and_binary_overlays_cannot_claim_the_same_path",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::topology_aggregate_source_byte_limit_is_inclusive",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::topology_diagnostics_are_bounded",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::topology_reload_reuses_the_selected_syntax_lineage_and_exact_document",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::topology_resource_limit_is_inclusive",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::topology_source_revision_covers_every_retained_resource_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::unconsumed_binary_overlay_is_rejected",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::unresolved_import_reports_exact_import_source",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader",
+      "test": "topology::tests::unselected_optional_content_unit_does_not_claim_a_file_backed_resource",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader::dependency_direction",
+      "test": "character_public_api_does_not_depend_on_sema",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader::dependency_direction",
+      "test": "dependency_direction",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader::dependency_direction",
+      "test": "lang_entry_binding_layers_remain_sans_project_and_host_io",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader::dependency_direction",
+      "test": "project_loader_has_required_direct_construction_dependencies",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader::public_api",
+      "test": "removed_project_loader_apis_are_unavailable",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader::release_trust_e2e",
+      "test": "release_remote_publish_file_mirror_archive_verifies_after_publication",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader::release_trust_e2e",
+      "test": "release_trust_failure_matrix_reports_typed_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader::release_trust_e2e",
+      "test": "release_trust_file_and_http_payload_mirrors_are_test_owned",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader::release_trust_e2e",
+      "test": "release_trust_metadata_only_mode_allows_missing_payload_bytes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader::release_trust_e2e",
+      "test": "release_trust_success_cache_hit_verifies_full_graph",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-project-loader",
+      "binary": "arcweft-project-loader::release_trust_e2e",
+      "test": "release_trust_wrong_policy_fails_same_archive",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

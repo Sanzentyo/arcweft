@@ -1,0 +1,61 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-verify",
+      "binary": "arcweft-verify",
+      "test": "call_witness::tests::ambiguity_conflict_precedes_an_earlier_rejected_candidate",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-verify",
+      "binary": "arcweft-verify",
+      "test": "call_witness::tests::proof_call_witness_order_is_deterministic_across_retry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-verify",
+      "binary": "arcweft-verify",
+      "test": "call_witness::tests::t_lim_12_009_two_candidates_retain_two_witnesses_without_omission",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-verify",
+      "binary": "arcweft-verify",
+      "test": "call_witness::tests::t_lim_12_010_three_candidates_retain_two_witnesses_and_one_omission",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-verify",
+      "binary": "arcweft-verify",
+      "test": "smt::tests::counterexample_problem_negates_the_claim_and_declares_symbols",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-verify",
+      "binary": "arcweft-verify",
+      "test": "smt::tests::integer_literals_preserve_u128_and_validate_canonical_decimal_form",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-verify",
+      "binary": "arcweft-verify",
+      "test": "smt::tests::ite_equality_splits_into_guarded_assertions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-verify",
+      "binary": "arcweft-verify",
+      "test": "smt::tests::outcome_owns_solver_output_parsing_and_proof_polarity",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

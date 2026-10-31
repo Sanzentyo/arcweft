@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "d70e079dba7c448cd168fbf8de36e99721f068c3",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-resource-model",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\presentation-awbc-scopes.recovery-arcweft-resource-model-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-31T03:06:54.2870948Z",
+  "finishedAt": "2026-10-31T03:06:59.7861466Z"
+}

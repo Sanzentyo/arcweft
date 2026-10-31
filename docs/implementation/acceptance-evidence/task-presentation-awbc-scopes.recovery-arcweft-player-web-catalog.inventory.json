@@ -1,0 +1,257 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web",
+      "test": "clock::tests::quantizer_never_forwards_fractional_wall_time",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web",
+      "test": "edit_context::tests::composition_preedit_to_commit_flow_emits_platform_events",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web",
+      "test": "edit_context::tests::invalid_utf16_range_rejects_before_serial_advances",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web",
+      "test": "edit_context::tests::secure_activation_narrows_character_bounds_to_redacted",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web",
+      "test": "edit_context::tests::surrogate_replacement_uses_canonical_byte_range",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web",
+      "test": "edit_context::tests::unsupported_activation_reports_typed_error_without_dispatch_state",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web",
+      "test": "host::tests::asset_dispatch_context_mismatch_is_a_failed_task",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web",
+      "test": "host::tests::asset_loads_publish_typed_image_and_voice_results",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web",
+      "test": "host::tests::missing_and_malformed_assets_publish_typed_domain_errors",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web",
+      "test": "host::tests::program_terminals_require_the_exact_source_and_preserve_pending_dispatch_on_rejection",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web",
+      "test": "host::tests::virtual_paths_reject_traversal_and_host_paths",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web",
+      "test": "report::range_tests::owned_visible_text_uses_prepared_origin_and_preserves_utf8",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web",
+      "test": "runtime_text_input::tests::activates_and_publishes_client_coordinate_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web",
+      "test": "runtime_text_input::tests::blur_rejects_late_textupdate_without_sample_session",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web",
+      "test": "runtime_text_input::tests::runtime_snapshot_exposes_multiline_input_option",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web",
+      "test": "runtime_text_input::tests::secure_snapshot_and_geometry_are_redacted_for_js_commands",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web",
+      "test": "runtime_text_input::tests::textupdate_queues_text_input_for_scene_controller",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web",
+      "test": "web_text_input::tests::disabled_status_is_explicit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web",
+      "test": "web_text_input::tests::key_event_command_intent_is_owned_by_rust",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web",
+      "test": "web_text_input::tests::ready_status_requires_constructor_and_element_property",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web",
+      "test": "web_text_input::tests::unsupported_status_is_typed_and_never_installs_fallback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::input",
+      "test": "drag_beyond_the_activation_threshold_does_not_select",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::input",
+      "test": "keyboard_focus_navigation_activates_the_focused_choice",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::input",
+      "test": "pointer_activation_emits_a_typed_semantic_choice_action",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::input",
+      "test": "web_hidden_runtime_text_control_rejects_stale_writeback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::input",
+      "test": "web_hidden_view_action_button_rejects_stale_hit_and_focus",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::input",
+      "test": "web_hidden_view_text_control_rejects_stale_hit_and_focus",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::input",
+      "test": "wheel_input_updates_horizontal_scroll_region_under_pointer",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::input",
+      "test": "wheel_input_updates_scroll_region_under_pointer",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::input",
+      "test": "wheel_input_without_scroll_region_is_noop_for_choice_scroll_state",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::interaction_visual_state",
+      "test": "web_choice_visuals_are_derived_from_shared_interaction_state",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::parity",
+      "test": "web_frame_report_drops_released_image_handle_resources",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::parity",
+      "test": "web_frame_report_uses_visible_bounds_for_scroll_clipped_images",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::report",
+      "test": "diagnostic_schema_name_does_not_claim_dom_rendering",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::web_text_input_glue",
+      "test": "player_owned_setup_can_be_explicitly_disabled_without_fallback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-web",
+      "binary": "arcweft-player-web::web_text_input_glue",
+      "test": "player_owned_setup_reports_ready_only_for_full_editcontext_support",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

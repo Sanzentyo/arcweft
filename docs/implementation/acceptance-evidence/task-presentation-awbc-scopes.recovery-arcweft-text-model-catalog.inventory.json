@@ -1,0 +1,243 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "character_dialogue_style::tests::projection_preserves_catalog_order_and_typed_style_values",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "character_dialogue_style::tests::projection_rejects_an_incomplete_required_layout_direction",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "character_dialogue_style::tests::projection_rejects_ruby_reading_text_as_content_not_style",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "content::tests::formatted_call_template_digest_is_deterministic_and_source_sensitive",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "content::tests::formatted_call_template_has_one_exact_slot_and_authored_sources",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "content::tests::formatted_failure_uses_exact_expression_call_and_plain_value_fallbacks",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "content::tests::formatted_nested_content_keeps_template_errors_fatal_despite_fallback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "content::tests::formatted_nested_failure_remains_recoverable_by_outer_fallback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "content::tests::formatted_success_materializes_text_and_color_without_retaining_the_slot",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "content::tests::materializer_applies_content_failure_policy_once",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "content::tests::materializer_rebases_child_slots_marks_effects_and_origins_per_occurrence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "content::tests::plain_text_context_template_has_one_exact_formatted_slot",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "frame::serde_tests::line_display_frame_round_trips_the_final_typed_wire",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "frame::serde_tests::line_display_frame_wire_rejects_invalid_ranges_and_removed_flat_fields",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "frame::serde_tests::live_and_inert_frame_metadata_share_limits_before_value_projection",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "playback::tests::control_offsets_and_stage_runs_are_utf8_exact",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "playback::tests::frame_without_mapped_content_still_has_one_stage",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "playback::tests::leading_and_consecutive_page_waits_preserve_authored_waits",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "playback::tests::line_wait_retains_the_display_origin_of_a_reached_clear",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "playback::tests::page_and_line_waits_build_distinct_stage_shapes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "playback::tests::stage_projection_retains_and_rebases_a_whole_ruby_base",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "playback::tests::trailing_page_wait_does_not_create_an_empty_tail",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "playback::tests::validation_rejects_a_control_offset_inside_a_utf8_codepoint",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "playback::tests::validation_rejects_a_host_event_payload_mismatch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "playback::tests::validation_rejects_authored_gate_offsets_that_regress",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "projected_range::tests::admitted_strings_and_utf8_boundaries_are_checked",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "projected_range::tests::bounds_order_and_overflow_fail_without_saturation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "projected_range::tests::clear_keeps_display_and_prepared_origins_distinct",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "projected_range::tests::following_page_rebases_display_once_and_retains_clear_clipping",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "projected_range::tests::plain_view_and_empty_documents_use_their_actual_extents",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "projected_range::tests::transport_admits_only_the_final_checked_extent_shape",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "reveal::tests::character_boundary_uses_exact_nanoseconds_without_millisecond_truncation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "reveal::tests::explicit_completion_reaches_events_after_an_unfinished_wait",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-text-model",
+      "binary": "arcweft-text-model",
+      "test": "reveal::tests::typed_content_events_are_reported_only_when_their_offset_is_reached",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

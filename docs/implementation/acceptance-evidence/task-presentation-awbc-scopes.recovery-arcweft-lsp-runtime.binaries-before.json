@@ -1,0 +1,27 @@
+[
+  {
+    "binary": "subprocess::arcweft-lsp",
+    "path": "D:\\git\\arcweft\\target\\debug\\arcweft-lsp.exe",
+    "sha256": "c163712f4d6d0fedc9b2e014a02ec1aeb50fce6e34fbd7ca3a09e26f4603ca6a"
+  },
+  {
+    "binary": "arcweft-lsp",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lsp-533d24d2cdcdaa8b.exe",
+    "sha256": "d11a0f23e26355d413ffcf7f62b8be54dce3268062dfc23d7afd608f235968bd"
+  },
+  {
+    "binary": "arcweft-lsp::bin/arcweft-lsp",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lsp-7e83f4bf2c57cd05.exe",
+    "sha256": "fa1fc8a370addb166e662f215a75f3efb291ce7d91b3c9fbcdaaaa0b5bf972bb"
+  },
+  {
+    "binary": "arcweft-lsp::dependency_direction",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\dependency_direction-b23cbaeb99058715.exe",
+    "sha256": "1ea2d53faac08cbde73971396527e327f677b35731436dd14a89ba5b245efb8e"
+  },
+  {
+    "binary": "arcweft-lsp::public_api",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\public_api-8ab9b542fb9922e9.exe",
+    "sha256": "3160edeff1a9f0e454e8fd3d3a26ae8f68f692c767cb67b302237e41603ae15f"
+  }
+]

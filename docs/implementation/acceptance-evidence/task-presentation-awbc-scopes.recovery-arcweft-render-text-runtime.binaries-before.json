@@ -1,0 +1,17 @@
+[
+  {
+    "binary": "arcweft-render-text",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_render_text-b611722de154c73c.exe",
+    "sha256": "a67536a33f0936700ee5ccfbcfdd33f2bd30ac08f9a04ea26d185a25188394cc"
+  },
+  {
+    "binary": "arcweft-render-text::frame_resolution",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\frame_resolution-f805f2436c432c04.exe",
+    "sha256": "6d459e7a0298d307189190636af3cbad84a6fa4fb8d89ffc84ecfeb6fd755922"
+  },
+  {
+    "binary": "arcweft-render-text::resolved_document",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\resolved_document-899d3428dd1c60cc.exe",
+    "sha256": "60a120c9857fbcd4be8600058c6a3026b02c3172b3c8d0a97f06411b3cf130d7"
+  }
+]

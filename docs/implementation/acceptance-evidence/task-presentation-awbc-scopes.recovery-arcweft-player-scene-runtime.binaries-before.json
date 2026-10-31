@@ -1,0 +1,52 @@
+[
+  {
+    "binary": "arcweft-player-scene::action_button_submit",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\action_button_submit-de7be7f59b190038.exe",
+    "sha256": "49623dcb86e187791e54a34ba7fc37b9e7018d64431bb765997cf4ac87f1af2b"
+  },
+  {
+    "binary": "arcweft-player-scene",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_player_scene-a522e78f7762e39d.exe",
+    "sha256": "fb566637a6e4265eb29a0459cf7ecae275d1ad99ee986975a7043615c34e88e3"
+  },
+  {
+    "binary": "arcweft-player-scene::character_stage",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\character_stage-a6c11ccd042ca33b.exe",
+    "sha256": "afab4e38c8709eee0b4790073b468ff4d7cb50c23f96924f5e247c89129d7b18"
+  },
+  {
+    "binary": "arcweft-player-scene::controller_navigation",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\controller_navigation-371bc68d21fb83b2.exe",
+    "sha256": "4818c2c2bc8c12d3c1c6cfdde2750a53bb944d041300d77aa2f48976ecd8bee5"
+  },
+  {
+    "binary": "arcweft-player-scene::dialogue_view",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\dialogue_view-221fcd16e7c270c8.exe",
+    "sha256": "45920a28a03518f9f05fab8645de29956491ad54fa382732d46c5443ededf29a"
+  },
+  {
+    "binary": "arcweft-player-scene::responsive_stage_placement",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\responsive_stage_placement-494e3e976d5a1acd.exe",
+    "sha256": "4c6af04b1e6576f17c08681a6b65b921ec690276917fb98bc3a982c0d655d23b"
+  },
+  {
+    "binary": "arcweft-player-scene::runtime_control_style_lowering",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_control_style_lowering-076e4ddf160c3a97.exe",
+    "sha256": "0a99fb205a67026a176222437137e985292067324af797911932cc68b0669bd8"
+  },
+  {
+    "binary": "arcweft-player-scene::runtime_text_controls",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_text_controls-2606bc9cdee365e5.exe",
+    "sha256": "fcaa39d75b9667200d004ad55f0e26b3eabca79e942732274ec31f049818b17c"
+  },
+  {
+    "binary": "arcweft-player-scene::scroll_regions",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\scroll_regions-7942661e8bcad2af.exe",
+    "sha256": "73c350cc79d76c648953e09791cfc34b8e67884bb36e91ba215c786a54ed2ce8"
+  },
+  {
+    "binary": "arcweft-player-scene::view_geometry_transaction",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\view_geometry_transaction-6ccf4999e601e732.exe",
+    "sha256": "729eae6ca4e6428e80d5f407bf37a088da53994b73485647601d702332001471"
+  }
+]
