@@ -2875,12 +2875,9 @@ impl AwbcProductStepExecutor {
                 }
                 usize::try_from(vm_output.executed).unwrap_or(usize::MAX)
             }
-            Err(error) => self.fail_main_vm_step(
-                checkpoint,
-                ProductStepError::Internal(error.to_string()),
-                output,
-                1,
-            ),
+            Err(error) => {
+                self.fail_main_vm_step(checkpoint, ProductStepError::Vm(error), output, 1)
+            }
         }
     }
 
@@ -2895,6 +2892,17 @@ impl AwbcProductStepExecutor {
             checkpoint.restore(&mut self.fiber, &mut self.presentation, &self.program)
         {
             self.fail_with_error(ProductStepError::Fiber(restore_error), output);
+        } else if matches!(
+            &error,
+            ProductStepError::Vm(crate::awbc::vm::VmError::Fiber(
+                crate::awbc::fiber::FiberStateError::Snapshot(
+                    crate::value::AwbcRuntimeValueSnapshotError::Presentation(_)
+                )
+            ))
+        ) {
+            // Custody refusal leaves the original continuation retryable. A
+            // second terminal transition would repeat the refused unwind.
+            self.record_error(error, output);
         } else {
             self.fail_with_error(error, output);
         }

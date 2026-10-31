@@ -5,6 +5,8 @@
 //! This module never falls back to the structured VM.
 
 use crate::value::runtime_value_views_equal;
+mod resources;
+use resources::VmExecutionResources;
 
 #[cfg(test)]
 mod dense_numeric_tests;
@@ -555,11 +557,13 @@ fn step_with_host_context_optional(
     fiber: &mut FiberState,
     options: VmStepOptions,
     context: Option<&VmExecutionContext>,
-    mut presentation: Option<
-        &mut PresentationBanks<PresentationBody<crate::value::RuntimePayload>>,
-    >,
+    presentation: Option<&mut PresentationBanks<PresentationBody<crate::value::RuntimePayload>>>,
     host: &mut impl VmHost,
 ) -> Result<VmStepOutput, VmError> {
+    let mut execution = VmExecutionResources {
+        context,
+        presentation,
+    };
     let mut observations = Vec::new();
     let mut executed = 0_u64;
     while fiber.status == FiberStatus::Running && executed < options.max_instructions {
@@ -603,8 +607,7 @@ fn step_with_host_context_optional(
                 program,
                 fiber,
                 host,
-                context,
-                presentation.as_deref_mut(),
+                &mut execution,
                 instruction,
                 source_map,
                 &mut observations,
@@ -622,6 +625,7 @@ fn step_with_host_context_optional(
                         let trap = mark_runtime_error_trap(
                             program,
                             fiber,
+                            &mut execution,
                             code,
                             error.to_string(),
                             source_map,
@@ -692,7 +696,7 @@ fn step_with_host_context_optional(
             program,
             fiber,
             host,
-            context,
+            &mut execution,
             &block.terminator,
             source_map,
             &mut observations,
@@ -710,6 +714,7 @@ fn step_with_host_context_optional(
                     let trap = mark_runtime_error_trap(
                         program,
                         fiber,
+                        &mut execution,
                         code,
                         error.to_string(),
                         source_map,
@@ -742,12 +747,12 @@ fn execute_instruction(
     program: &AwbcProgram,
     fiber: &mut FiberState,
     host: &mut impl VmHost,
-    context: Option<&VmExecutionContext>,
-    presentation: Option<&mut PresentationBanks<PresentationBody<crate::value::RuntimePayload>>>,
+    execution: &mut VmExecutionResources<'_>,
     instruction: &AwbcInstruction,
     source_map: Option<AwbcSourceMapId>,
     observations: &mut Vec<VmObservation>,
 ) -> Result<InstructionControl, VmError> {
+    let context = execution.context;
     match instruction {
         AwbcInstruction::Nop => {}
         AwbcInstruction::LoadConst { dst, constant } => {
@@ -870,7 +875,7 @@ fn execute_instruction(
                 .ok_or(FiberStateError::UnknownFrameLayout(layout_id.0))?;
             fiber.validate_cleanup_inputs(program)?;
             if has_presentation {
-                let banks = presentation.ok_or_else(|| {
+                let banks = execution.presentation.as_deref_mut().ok_or_else(|| {
                     FiberStateError::Snapshot(
                         crate::presentation::RuntimePresentationError::MissingLedger.into(),
                     )
@@ -1082,6 +1087,7 @@ fn execute_instruction(
                 trap(
                     program,
                     fiber,
+                    execution,
                     AwbcTrapCode::InvalidIndex,
                     Some("sequence index out of bounds"),
                     source_map,
@@ -2850,11 +2856,12 @@ fn execute_terminator(
     program: &AwbcProgram,
     fiber: &mut FiberState,
     host: &mut impl VmHost,
-    context: Option<&VmExecutionContext>,
+    execution: &mut VmExecutionResources<'_>,
     terminator: &AwbcTerminator,
     source_map: Option<AwbcSourceMapId>,
     observations: &mut Vec<VmObservation>,
 ) -> Result<VmExit, VmError> {
+    let context = execution.context;
     // These exits transfer registers before dropping frame custody. Reject an
     // invalid later cleanup before the first return value or argument moves.
     match terminator {
@@ -3295,8 +3302,15 @@ fn execute_terminator(
                 .map(|id| string(program, id))
                 .transpose()?
                 .map(str::to_owned);
-            let trap =
-                terminate_with_trap(program, fiber, *code, message, source_map, observations)?;
+            let trap = terminate_with_trap(
+                program,
+                fiber,
+                execution,
+                *code,
+                message,
+                source_map,
+                observations,
+            )?;
             Ok(VmExit::Trapped(trap))
         }
         AwbcTerminator::BudgetYield { resume } => {
@@ -3306,6 +3320,7 @@ fn execute_terminator(
             let trap = terminate_with_trap(
                 program,
                 fiber,
+                execution,
                 AwbcTrapCode::InternalInvariant,
                 Some("unreachable AWBC block executed".to_owned()),
                 source_map,
@@ -5341,6 +5356,7 @@ fn bind_record_pattern_fields(
 fn trap(
     program: &AwbcProgram,
     fiber: &mut FiberState,
+    execution: &mut VmExecutionResources<'_>,
     code: AwbcTrapCode,
     message: Option<&str>,
     source_map: Option<AwbcSourceMapId>,
@@ -5349,6 +5365,7 @@ fn trap(
     terminate_with_trap(
         program,
         fiber,
+        execution,
         code,
         message.map(str::to_owned),
         source_map,
@@ -5360,6 +5377,7 @@ fn trap(
 fn mark_runtime_error_trap(
     program: &AwbcProgram,
     fiber: &mut FiberState,
+    execution: &mut VmExecutionResources<'_>,
     code: AwbcTrapCode,
     message: String,
     source_map: Option<AwbcSourceMapId>,
@@ -5368,6 +5386,7 @@ fn mark_runtime_error_trap(
     terminate_with_trap(
         program,
         fiber,
+        execution,
         code,
         Some(message),
         source_map,
@@ -5378,11 +5397,13 @@ fn mark_runtime_error_trap(
 fn terminate_with_trap(
     program: &AwbcProgram,
     fiber: &mut FiberState,
+    execution: &mut VmExecutionResources<'_>,
     code: AwbcTrapCode,
     message: Option<String>,
     source_map: Option<AwbcSourceMapId>,
     observations: &mut Vec<VmObservation>,
 ) -> Result<FiberTrap, VmError> {
+    execution.retire_unwind(program, fiber)?;
     emit_unwind_cleanup_observations(program, fiber, observations)?;
     let trap = FiberTrap {
         code,
