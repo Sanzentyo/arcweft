@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "1455f4ff9e2599353c6e36e94ab748a52bf0dc46",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked",
+    "--lib",
+    "-E",
+    "test(awbc::product_step::tests::presentation::transfers::)",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-return-transfer-20261031.focus3.runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-31T14:59:56.5958721Z",
+  "finishedAt": "2026-10-31T14:59:59.0639687Z"
+}

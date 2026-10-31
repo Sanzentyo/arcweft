@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "1c99622f8488130fda7eb31792e5a7817bd3a5ae",
+  "run": "presentation-scope-exit-20261031.focus1.runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [   0.056s] 5 tests run: 5 passed, 2145 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 5,
+  "passed": 5,
+  "failed": 0,
+  "skipped": 2145,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4030,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-31T14:46:40.4087425Z"
+}

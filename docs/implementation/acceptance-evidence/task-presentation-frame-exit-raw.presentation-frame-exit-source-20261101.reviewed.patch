@@ -1,0 +1,1092 @@
+diff --git a/crates/arcweft-core/src/awbc/fiber.rs b/crates/arcweft-core/src/awbc/fiber.rs
+index 30d4e9a7516e9c6a1e454a92248a160872ceb5aa..f82f31d97413440b03e417f1e7934fc2ad4fdea8 100644
+--- a/crates/arcweft-core/src/awbc/fiber.rs
++++ b/crates/arcweft-core/src/awbc/fiber.rs
+@@ -449,6 +449,23 @@ pub(crate) struct PreparedInitialFlow {
+     state_register: AwbcRegisterId,
+ }
+ 
++/// The actual next root frame, allocated and typed before old custody exits.
++pub(crate) struct PreparedFiberRootReplacement {
++    owner: RuntimeFiberInstanceId,
++    frame: FiberFrame,
++    cursor: FiberCursor,
++    next_frame_instance: RuntimeIdCursor,
++    parameters: Box<[AwbcRegisterId]>,
++}
++
++impl PreparedFiberRootReplacement {
++    pub(crate) fn presentation_scope_target(
++        &mut self,
++    ) -> crate::presentation::resources::PresentationScopeTarget<'_> {
++        self.frame.presentation_scope_target()
++    }
++}
++
+ /// Borrowed return admission, before result or receiver state leaves the callee.
+ pub(crate) struct PreparedFiberReturn {
+     frame: RuntimeFrameInstanceId,
+@@ -1660,6 +1677,41 @@ impl FiberCallablePendingStorage for RuntimeCallablePendingSnapshot {
+     }
+ }
+ 
++impl FiberReturnContinuation {
++    /// Values that move with the continuation when its callee exits.
++    pub(in crate::awbc) fn visit_runtime_values<E>(
++        &self,
++        mut visitor: impl FnMut(&RuntimeValue) -> Result<(), E>,
++    ) -> Result<(), E> {
++        match self {
++            Self::Ordinary
++            | Self::ProjectCallTarget { .. }
++            | Self::FormatOperand { .. }
++            | Self::FormatDisplay { .. }
++            | Self::InstructionCall { .. } => {}
++            Self::ProjectCallDefault { pending, .. } | Self::ApplyGroupDefault { pending, .. } => {
++                visit_callable_pending_values(pending, &mut visitor)?;
++            }
++            Self::ContextCallbackDefault {
++                pending,
++                callable_pending,
++                ..
++            } => {
++                if let RuntimeArcErrorContextPending::ResultErr(cause) = pending {
++                    visit_value_graph(cause, &mut visitor)?;
++                }
++                visit_callable_pending_values(callable_pending, &mut visitor)?;
++            }
++            Self::ContextCallbackInvoke { pending, .. } => {
++                if let RuntimeArcErrorContextPending::ResultErr(cause) = pending {
++                    visit_value_graph(cause, &mut visitor)?;
++                }
++            }
++        }
++        Ok(())
++    }
++}
++
+ impl<P, V> FiberReturnContinuation<P, V> {
+     fn pending_packet(&self) -> Option<&P> {
+         match self {
+@@ -1968,32 +2020,7 @@ impl FiberState {
+                 }
+             }
+             if let Some(return_to) = &frame.return_to {
+-                match &return_to.continuation {
+-                    FiberReturnContinuation::Ordinary
+-                    | FiberReturnContinuation::ProjectCallTarget { .. }
+-                    | FiberReturnContinuation::FormatOperand { .. }
+-                    | FiberReturnContinuation::FormatDisplay { .. }
+-                    | FiberReturnContinuation::InstructionCall { .. } => {}
+-                    FiberReturnContinuation::ProjectCallDefault { pending, .. }
+-                    | FiberReturnContinuation::ApplyGroupDefault { pending, .. } => {
+-                        visit_callable_pending_values(pending, &mut visitor)?;
+-                    }
+-                    FiberReturnContinuation::ContextCallbackDefault {
+-                        pending,
+-                        callable_pending,
+-                        ..
+-                    } => {
+-                        if let RuntimeArcErrorContextPending::ResultErr(cause) = pending {
+-                            visit_value_graph(cause, &mut visitor)?;
+-                        }
+-                        visit_callable_pending_values(callable_pending, &mut visitor)?;
+-                    }
+-                    FiberReturnContinuation::ContextCallbackInvoke { pending, .. } => {
+-                        if let RuntimeArcErrorContextPending::ResultErr(cause) = pending {
+-                            visit_value_graph(cause, &mut visitor)?;
+-                        }
+-                    }
+-                }
++                return_to.continuation.visit_runtime_values(&mut visitor)?;
+             }
+             visit_scope_cleanup_values(&frame.root_cleanups, &mut visitor)?;
+             for scope in &frame.scopes {
+@@ -3691,14 +3718,15 @@ impl FiberState {
+     }
+ 
+     /// Replaces the call stack while transferring already evaluated Flow
+-    /// arguments into the new root frame.
+-    pub(crate) fn replace_root_function_owned(
+-        &mut self,
++    /// arguments into the actual next root frame, after complete admission.
++    pub(crate) fn prepare_root_replacement(
++        &self,
+         program: &AwbcProgram,
+         function: AwbcFunctionId,
+-        args: Vec<RuntimeValue>,
+-    ) -> Result<(), FiberStateError> {
++        args: &[&RuntimeValue],
++    ) -> Result<PreparedFiberRootReplacement, FiberStateError> {
+         self.require_status(FiberStatus::Running)?;
++        let input = validate_function_argument_value_refs(program, function, args)?;
+         let function_record = program
+             .functions
+             .get(function.index())
+@@ -3708,16 +3736,33 @@ impl FiberState {
+             next_frame_instance.take_next(RuntimeIdNamespace::FrameInstance)?,
+         );
+         let mut frame = FiberFrame::new(frame_instance, program, function, None)?;
+-        frame.bind_positional_arguments_owned(program, args)?;
+-        self.next_frame_instance = next_frame_instance;
+-        self.frames.clear();
+-        self.frames.push(frame);
+-        self.cursor = FiberCursor {
+-            function,
+-            block: function_record.entry_block,
+-            instruction_offset: 0,
+-        };
+-        Ok(())
++        frame.type_instantiation = input.type_instantiation.map(std::sync::Arc::new);
++        Ok(PreparedFiberRootReplacement {
++            owner: self.instance,
++            frame,
++            next_frame_instance,
++            parameters: input.parameter_registers,
++            cursor: FiberCursor {
++                function,
++                block: function_record.entry_block,
++                instruction_offset: 0,
++            },
++        })
++    }
++
++    pub(crate) fn commit_root_replacement(
++        &mut self,
++        mut prepared: PreparedFiberRootReplacement,
++        args: Vec<RuntimeValue>,
++    ) {
++        assert_eq!(self.instance, prepared.owner);
++        assert_eq!(args.len(), prepared.parameters.len());
++        for (register, value) in prepared.parameters.iter().zip(args) {
++            prepared.frame.registers[register.index()] = value.into();
++        }
++        self.next_frame_instance = prepared.next_frame_instance;
++        self.frames = vec![prepared.frame];
++        self.cursor = prepared.cursor;
+     }
+ 
+     pub fn pop_call_frame(
+diff --git a/crates/arcweft-core/src/awbc/fiber/input.rs b/crates/arcweft-core/src/awbc/fiber/input.rs
+index 5d1018ecba4a36741cd1e409c78d7d76394d406a..c747bd09ab50eacee708f33c0d9e10b62f0620c2 100644
+--- a/crates/arcweft-core/src/awbc/fiber/input.rs
++++ b/crates/arcweft-core/src/awbc/fiber/input.rs
+@@ -8,6 +8,32 @@ use crate::entry::schema::value_encoding::ValueResourceAdmission;
+ use crate::program_types::RuntimeFunctionEffectInstantiation;
+ use crate::value::{RuntimePlaceStorage, RuntimeValue, RuntimeValueView};
+ 
++enum PreparedOperand {
++    Copy(RuntimeValue),
++    Move(super::AwbcRegisterId),
++}
++
++/// Complete operand admission while the original frame still owns every input.
++pub(in crate::awbc) struct PreparedRegisterTransfer {
++    frame: crate::runtime_id::RuntimeFrameInstanceId,
++    operands: Vec<PreparedOperand>,
++}
++
++impl PreparedRegisterTransfer {
++    pub(in crate::awbc) fn commit(self, frame: &mut super::FiberFrame) -> Vec<RuntimeValue> {
++        assert_eq!(frame.instance, self.frame);
++        self.operands
++            .into_iter()
++            .map(|operand| match operand {
++                PreparedOperand::Copy(value) => value,
++                PreparedOperand::Move(register) => frame
++                    .take_register(register)
++                    .expect("admitted source is present at its unique transfer commit"),
++            })
++            .collect()
++    }
++}
++
+ pub(super) struct FrameValueContext<'a, V> {
+     pub(super) program: &'a AwbcProgram,
+     pub(super) function: AwbcFunctionId,
+@@ -442,10 +468,16 @@ impl super::FiberFrame {
+         program: &AwbcProgram,
+         registers: &[super::AwbcRegisterId],
+     ) -> Result<Vec<RuntimeValue>, FiberStateError> {
+-        enum Operand {
+-            Copy(RuntimeValue),
+-            Move(super::AwbcRegisterId),
+-        }
++        Ok(self
++            .prepare_register_values(program, registers)?
++            .commit(self))
++    }
++
++    pub(in crate::awbc) fn prepare_register_values(
++        &self,
++        program: &AwbcProgram,
++        registers: &[super::AwbcRegisterId],
++    ) -> Result<PreparedRegisterTransfer, FiberStateError> {
+         let mut resources =
+             ValueResourceAdmission::live(crate::entry::RuntimeSchemaLimits::engine_default());
+         resources
+@@ -498,9 +530,9 @@ impl super::FiberFrame {
+                 .expect("admitted input has an occurrence");
+             *remaining -= 1;
+             prepared.push(if *remaining == 0 {
+-                Operand::Move(*register)
++                PreparedOperand::Move(*register)
+             } else {
+-                Operand::Copy(
++                PreparedOperand::Copy(
+                     self.register(*register)?
+                         .live_view()
+                         .copy_unrestricted()
+@@ -512,15 +544,10 @@ impl super::FiberFrame {
+         }
+         // Each admitted source has exactly one Move. The exclusive frame
+         // borrow prevents changes between admission, preparation and commit.
+-        Ok(prepared
+-            .into_iter()
+-            .map(|operand| match operand {
+-                Operand::Copy(value) => value,
+-                Operand::Move(register) => self
+-                    .take_register(register)
+-                    .expect("admitted source is present at its unique transfer commit"),
+-            })
+-            .collect())
++        Ok(PreparedRegisterTransfer {
++            frame: self.instance,
++            operands: prepared,
++        })
+     }
+ }
+ 
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests.rs b/crates/arcweft-core/src/awbc/product_step/tests.rs
+index 1cfb4d3031c83870c637565f8d2353ea7cf89917..c86ade6e1e3e2e657515e46fa9ac737af9f8f46e 100644
+--- a/crates/arcweft-core/src/awbc/product_step/tests.rs
++++ b/crates/arcweft-core/src/awbc/product_step/tests.rs
+@@ -4386,7 +4386,7 @@ fn ready_direct_need_returns_its_payload_unchanged_in_the_same_step() {
+ 
+     assert_eq!(
+         executor.fiber.terminal,
+-        Some(FiberTerminalValue::ReturnedTransferred)
++        Some(FiberTerminalValue::Returned(Some(expected.clone())))
+     );
+     assert_eq!(
+         executor.fiber.return_summary.as_deref(),
+@@ -4445,7 +4445,7 @@ fn ready_result_error_payload_is_resumed_without_trapping() {
+ 
+     assert_eq!(
+         executor.fiber.terminal,
+-        Some(FiberTerminalValue::ReturnedTransferred)
++        Some(FiberTerminalValue::Returned(Some(expected.clone())))
+     );
+     assert_eq!(
+         executor.fiber.return_summary.as_deref(),
+@@ -4598,7 +4598,7 @@ fn direct_need_uses_the_first_terminal_sequence() {
+ 
+     assert_eq!(
+         executor.fiber.terminal,
+-        Some(FiberTerminalValue::ReturnedTransferred)
++        Some(FiberTerminalValue::Returned(Some(expected.clone())))
+     );
+     assert_eq!(
+         executor.fiber.return_summary.as_deref(),
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs b/crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs
+index 4fc5faabe685a047dc67ab7fa9ecc6f3fcb72e57..07c95db3833b31b2574e94268e1b11ff858ffbb8 100644
+--- a/crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs
++++ b/crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs
+@@ -93,6 +93,14 @@ fn fixture(
+     queued: bool,
+ ) -> (AwbcProductStepExecutor, Vec<RuntimePresentationHandleToken>) {
+     let (program, handle) = handle_program(nested);
++    fixture_with_program(program, handle, queued)
++}
++
++fn fixture_with_program(
++    program: AwbcProgram,
++    handle: AwbcTypeId,
++    queued: bool,
++) -> (AwbcProductStepExecutor, Vec<RuntimePresentationHandleToken>) {
+     let program = crate::awbc::product_step::AwbcProductProgram::admit(
+         std::sync::Arc::new(program),
+         Default::default(),
+@@ -388,3 +396,172 @@ fn callee_owned_handle_joins_the_actual_caller_scope_without_changing_its_token(
+         [crate::value::ownership::RuntimeAffineHandle::Presentation { token, .. }] if token == &tokens[0]));
+     executor.snapshot().unwrap();
+ }
++
++fn goto_fixture(
++    dynamic: bool,
++    queued: bool,
++) -> (AwbcProductStepExecutor, Vec<RuntimePresentationHandleToken>) {
++    let (mut program, handle) = handle_program(false);
++    program.signatures.push(AwbcSignature {
++        params: vec![handle],
++        result: Some(handle),
++        effects: AwbcEffectSetId(0),
++    });
++    program.frame_layouts.push(AwbcFrameLayout {
++        scopes: vec![],
++        max_scope_depth: 0,
++        slots: vec![AwbcFrameSlot {
++            name: None,
++            ty: handle,
++            role: AwbcFrameSlotRole::Parameter,
++            scope_depth: 0,
++        }],
++    });
++    let mut target = program.functions[0].clone();
++    target.definition = crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
++        *blake3::hash(b"presentation.transfer.goto-target.v1\0").as_bytes(),
++    );
++    target.public_id = None;
++    target.signature = AwbcSignatureId(1);
++    target.frame_layout = AwbcFrameLayoutId(1);
++    target.input_ownership.truncate(1);
++    target.blocks = AwbcTableRange::new(1, 1);
++    target.entry_block = AwbcBlockId(1);
++    program.functions.push(target);
++    program.blocks.push(AwbcBlock {
++        owner: AwbcFunctionId(1),
++        instructions: AwbcTableRange::new(0, 0),
++        terminator: AwbcTerminator::Return {
++            value: Some(AwbcRegisterId(0)),
++        },
++        safe_point: AwbcSafePointKind::FlowEntry,
++        source_map: None,
++    });
++    let flow =
++        crate::plan::FlowRuntimeId::from_checked_declaration_digest([0x9b; 32], "flow.after")
++            .unwrap();
++    program.flow_bindings.push(AwbcFlowBinding {
++        flow: flow.clone(),
++        function: AwbcFunctionId(1),
++    });
++    program.flow_executables.push(AwbcFlowExecutable {
++        metadata: RuntimeFlowExecutable {
++            flow: flow.clone(),
++            contract: FlowContractHash::from_bytes([0x9c; 32]),
++            controller: None,
++        },
++        function: AwbcFunctionId(1),
++    });
++    let entry_label = AwbcStringId(program.strings.len().try_into().unwrap());
++    program.strings.push("entry.after".into());
++    let mut entry = program.entries[0].clone();
++    entry.runtime_id = crate::plan::EntryRuntimeId::canonical("after").unwrap();
++    entry.binding = crate::entry::EntryBindingIdentity::from_bytes([2; 32]);
++    entry.public_id = entry_label;
++    entry.target = AwbcEntryTarget::Function {
++        function: AwbcFunctionId(1),
++    };
++    program.entries.push(entry);
++    program.blocks[0].terminator = if dynamic {
++        program.functions[0].flags = program.functions[0]
++            .flags
++            .with(AwbcFunctionFlag::HasDynamicTarget);
++        let target_type = AwbcTypeId(program.runtime_types.len().try_into().unwrap());
++        program.runtime_types.push(AwbcRuntimeType::new(
++            RuntimeCheckedType::EntityReference.semantic_identity_digest(),
++            AwbcRuntimeTypeShape::EntityRef,
++        ));
++        program.frame_layouts[0].slots.push(AwbcFrameSlot {
++            name: None,
++            ty: target_type,
++            role: AwbcFrameSlotRole::Temporary,
++            scope_depth: 0,
++        });
++        program.constants.push(AwbcConstant::EntityRef(
++            crate::value::RuntimeEntityReference::StructuralFlow(flow),
++        ));
++        program.instructions.push(AwbcInstruction::LoadConst {
++            dst: AwbcRegisterId(2),
++            constant: AwbcConstantId(0),
++        });
++        program.blocks[0].instructions = AwbcTableRange::new(0, 1);
++        AwbcTerminator::GotoDynamic {
++            target: AwbcRegisterId(2),
++            args: vec![AwbcRegisterId(0)],
++        }
++    } else {
++        AwbcTerminator::GotoStatic {
++            function: AwbcFunctionId(1),
++            args: vec![AwbcRegisterId(0)],
++        }
++    };
++    program.canonicalize_string_table();
++    let (mut executor, tokens) = fixture_with_program(program, handle, queued);
++    if dynamic {
++        step(&mut executor);
++    }
++    (executor, tokens)
++}
++
++#[test]
++fn static_and_dynamic_goto_move_the_original_handle_into_the_actual_new_root() {
++    for dynamic in [false, true] {
++        let (mut executor, tokens) = goto_fixture(dynamic, false);
++        let before = executor.snapshot().unwrap();
++        let old_frame = executor.fiber.frames[0].instance;
++        let checkpoint = executor
++            .execution_checkpoint(ProductCheckpointTarget::Main)
++            .unwrap();
++        step(&mut executor);
++        assert_eq!(executor.fiber.cursor.function, AwbcFunctionId(1));
++        assert!(executor.fiber.frames[0].instance > old_frame);
++        assert!(executor.fiber.frames[0].root_presentation_scope.is_some());
++        assert_eq!(
++            executor.presentation.as_ref().unwrap().retirements()[0].token,
++            tokens[1]
++        );
++        executor.snapshot().unwrap();
++        step(&mut executor);
++        assert_eq!(executor.fiber.status, FiberStatus::Returned);
++        assert!(
++            matches!(&executor.fiber.terminal, Some(FiberTerminalValue::Returned(Some(value)))
++            if matches!(&value.view().affine_handles().unwrap()[..],
++                [crate::value::ownership::RuntimeAffineHandle::Presentation { token, .. }] if token == &tokens[0]))
++        );
++        executor.snapshot().unwrap();
++        checkpoint
++            .restore(
++                &mut executor.fiber,
++                &mut executor.presentation,
++                &executor.program,
++            )
++            .unwrap();
++        assert_eq!(executor.snapshot().unwrap(), before);
++    }
++}
++
++#[test]
++fn goto_capacity_refusal_keeps_arguments_target_frame_cursor_and_budget_for_retry() {
++    for dynamic in [false, true] {
++        let (mut executor, tokens) = goto_fixture(dynamic, true);
++        let before = executor.snapshot().unwrap();
++        for _ in 0..2 {
++            let output = executor.step(Default::default(), one_op());
++            assert!(!output.output.diagnostics.is_empty());
++            assert_eq!(executor.snapshot().unwrap(), before);
++        }
++        executor
++            .presentation
++            .as_mut()
++            .unwrap()
++            .retirements_mut()
++            .clear();
++        step(&mut executor);
++        assert_eq!(executor.fiber.cursor.function, AwbcFunctionId(1));
++        assert_eq!(
++            executor.presentation.as_ref().unwrap().retirements()[0].token,
++            tokens[1]
++        );
++        executor.snapshot().unwrap();
++    }
++}
+diff --git a/crates/arcweft-core/src/awbc/tests.rs b/crates/arcweft-core/src/awbc/tests.rs
+index 74ba0d0ce0122c05a8aa9fae5d3722c3bf9c9308..4f74b10b39214c798714b18be61c575b8efe8400 100644
+--- a/crates/arcweft-core/src/awbc/tests.rs
++++ b/crates/arcweft-core/src/awbc/tests.rs
+@@ -1496,14 +1496,15 @@ fn nominal_field_sequence_pop_front_roundtrips_verifies_mutates_and_survives_res
+     restored
+         .validate_for_program(&decoded)
+         .expect("restored nominal record register validates");
+-    super::vm::step(
++    let remaining = super::vm::step(
+         &decoded,
+         &mut restored,
+         super::vm::VmStepOptions {
+-            max_instructions: 16,
++            max_instructions: 2,
+         },
+     )
+     .expect("remaining nominal field pops execute");
++    assert_eq!(remaining.exit, super::vm::VmExit::Running);
+     let Some(RuntimeValue::NominalRecord(record)) = restored.frames[0].registers[3].as_ref() else {
+         panic!("restored nominal receiver remains in its local register");
+     };
+@@ -1511,6 +1512,24 @@ fn nominal_field_sequence_pop_front_roundtrips_verifies_mutates_and_survives_res
+         panic!("nominal Vec field remains in its record after repeated pops");
+     };
+     assert_eq!(sequence.len(), 0);
++    let terminal = super::vm::step(
++        &decoded,
++        &mut restored,
++        super::vm::VmStepOptions {
++            max_instructions: 14,
++        },
++    )
++    .unwrap();
++    assert_eq!(
++        terminal.exit,
++        super::vm::VmExit::Returned(Some(RuntimeValue::option_none()))
++    );
++    assert!(
++        restored.frames[0]
++            .registers
++            .iter()
++            .all(|slot| slot.is_vacant())
++    );
+ }
+ 
+ #[test]
+diff --git a/crates/arcweft-core/src/awbc/tests/instruction_call_execution.rs b/crates/arcweft-core/src/awbc/tests/instruction_call_execution.rs
+index dca84c98d4fda71af5cbfb43f6e482b9671a3ccc..2b9b3987ace3c79d04f36bf241ba712026474a53 100644
+--- a/crates/arcweft-core/src/awbc/tests/instruction_call_execution.rs
++++ b/crates/arcweft-core/src/awbc/tests/instruction_call_execution.rs
+@@ -291,7 +291,10 @@ fn mut_trait_return_updates_receiver_on_the_same_saved_fiber() {
+                 .exit,
+             super::super::vm::VmExit::Cancelled
+         ));
+-        let output = loop {
++        for _ in 0..8 {
++            if restored.frames.len() == 1 {
++                break;
++            }
+             let output = super::super::vm::step(
+                 &program,
+                 &mut restored,
+@@ -300,16 +303,9 @@ fn mut_trait_return_updates_receiver_on_the_same_saved_fiber() {
+                 },
+             )
+             .unwrap();
+-            if !matches!(output.exit, super::super::vm::VmExit::Running) {
+-                break output;
+-            }
+-        };
+-        assert_eq!(
+-            output.exit,
+-            super::super::vm::VmExit::Returned(Some(RuntimeValue::Int(
+-                crate::value::RuntimeInt::I64(99)
+-            )))
+-        );
++            assert_eq!(output.exit, super::super::vm::VmExit::Running);
++        }
++        assert_eq!(restored.frames.len(), 1);
+         if receiver_out == AwbcRegisterId(0) {
+             assert_eq!(
+                 restored.frames[0]
+@@ -328,6 +324,26 @@ fn mut_trait_return_updates_receiver_on_the_same_saved_fiber() {
+                 Some(17)
+             );
+         }
++        let output = super::super::vm::step(
++            &program,
++            &mut restored,
++            super::super::vm::VmStepOptions {
++                max_instructions: 1,
++            },
++        )
++        .unwrap();
++        assert_eq!(
++            output.exit,
++            super::super::vm::VmExit::Returned(Some(RuntimeValue::Int(
++                crate::value::RuntimeInt::I64(99)
++            )))
++        );
++        assert!(
++            restored.frames[0]
++                .registers
++                .iter()
++                .all(|slot| slot.is_vacant())
++        );
+         assert!(
+             restored.frames[0].register(AwbcRegisterId(1)).is_err(),
+             "the returned value was transferred to the VM exit"
+diff --git a/crates/arcweft-core/src/awbc/tests/local_assignment.rs b/crates/arcweft-core/src/awbc/tests/local_assignment.rs
+index b6b338b2d020df974e09d20d8a043d08a0730f02..9245e7db555a4b9525b07b92d2d1ff96441df7d3 100644
+--- a/crates/arcweft-core/src/awbc/tests/local_assignment.rs
++++ b/crates/arcweft-core/src/awbc/tests/local_assignment.rs
+@@ -188,11 +188,24 @@ fn partial_record_move_survives_codec_snapshot_and_restore_then_reinitializes()
+         )
+         .unwrap();
+     for _ in 0..2 {
++        let staged = super::super::vm::step(
++            &program,
++            &mut restored,
++            super::super::vm::VmStepOptions {
++                max_instructions: 2,
++            },
++        )
++        .unwrap();
++        assert_eq!(staged.exit, super::super::vm::VmExit::Running);
++        assert_eq!(
++            restored.frames[0].registers[4].as_ref(),
++            Some(&RuntimeValue::Bool(false))
++        );
+         let result = super::super::vm::step(
+             &program,
+             &mut restored,
+             super::super::vm::VmStepOptions {
+-                max_instructions: 8,
++                max_instructions: 6,
+             },
+         )
+         .unwrap();
+@@ -205,9 +218,11 @@ fn partial_record_move_survives_codec_snapshot_and_restore_then_reinitializes()
+             record.fields(),
+             &[RuntimeValue::Bool(true), RuntimeValue::Bool(false)]
+         );
+-        assert_eq!(
+-            restored.frames[0].registers[4].as_ref(),
+-            Some(&RuntimeValue::Bool(false))
++        assert!(
++            restored.frames[0]
++                .registers
++                .iter()
++                .all(|slot| slot.is_vacant())
+         );
+         restored
+             .restore(checkpoint.clone(), &checkpoint_program(&owner))
+@@ -613,11 +628,25 @@ fn assignment_after_move_reinitializes_after_codec_restore_and_checkpoint() {
+         )
+         .unwrap();
+     for _ in 0..2 {
++        let staged = super::super::vm::step(
++            &program,
++            &mut restored,
++            super::super::vm::VmStepOptions {
++                max_instructions: 2,
++            },
++        )
++        .unwrap();
++        assert_eq!(staged.exit, super::super::vm::VmExit::Running);
++        assert!(restored.frames[0].registers[2].is_vacant());
++        assert_eq!(
++            restored.frames[0].registers[1].as_ref(),
++            Some(&RuntimeValue::Bool(true))
++        );
+         let result = super::super::vm::step(
+             &program,
+             &mut restored,
+             super::super::vm::VmStepOptions {
+-                max_instructions: 4,
++                max_instructions: 2,
+             },
+         )
+         .unwrap();
+@@ -627,9 +656,11 @@ fn assignment_after_move_reinitializes_after_codec_restore_and_checkpoint() {
+         );
+         assert!(restored.frames[0].registers[0].is_vacant());
+         assert_eq!(restored.frames[0].registers[2].as_ref().cloned(), None);
+-        assert_eq!(
+-            restored.frames[0].registers[1].as_ref().cloned(),
+-            Some(RuntimeValue::Bool(true))
++        assert!(
++            restored.frames[0]
++                .registers
++                .iter()
++                .all(|slot| slot.is_vacant())
+         );
+         restored
+             .restore(checkpoint.clone(), &checkpoint_program(&owner))
+diff --git a/crates/arcweft-core/src/awbc/vm.rs b/crates/arcweft-core/src/awbc/vm.rs
+index b1ef886041675dd3f2c4e212f0084ea8bb30ddac..66a82fdfb12220627b516e7b72f7a522b60807b5 100644
+--- a/crates/arcweft-core/src/awbc/vm.rs
++++ b/crates/arcweft-core/src/awbc/vm.rs
+@@ -2891,14 +2891,6 @@ fn execute_terminator(
+     observations: &mut Vec<VmObservation>,
+ ) -> Result<VmExit, VmError> {
+     let context = execution.context;
+-    // These exits transfer registers before dropping frame custody. Reject an
+-    // invalid later cleanup before the first return value or argument moves.
+-    match terminator {
+-        AwbcTerminator::GotoStatic { .. } | AwbcTerminator::GotoDynamic { .. } => {
+-            fiber.validate_unwind_cleanup_inputs(program)?;
+-        }
+-        _ => {}
+-    }
+     match terminator {
+         AwbcTerminator::Jump { target } => {
+             jump(fiber, *target);
+@@ -2996,17 +2988,20 @@ fn execute_terminator(
+         }
+         AwbcTerminator::ProjectCall { call } => execute_project_call(program, fiber, context, call),
+         AwbcTerminator::GotoStatic { function, args } => {
+-            let args = fiber
+-                .active_frame_mut()?
+-                .take_register_values(program, args)?;
+-            emit_unwind_cleanup_observations(program, fiber, observations)?;
+-            fiber.replace_root_function_owned(program, *function, args)?;
+-            observations.push(VmObservation::Goto(*function));
++            execute_goto(
++                program,
++                fiber,
++                execution,
++                *function,
++                None,
++                args,
++                observations,
++            )?;
+             Ok(VmExit::Running)
+         }
+         AwbcTerminator::GotoDynamic { target, args } => {
+-            let target_value = fiber.active_frame_mut()?.take_register(*target)?;
+-            let target = match &target_value {
++            let target_value = fiber.active_frame()?.register(*target)?;
++            let function = match target_value {
+                 RuntimeValue::String(target) => program
+                     .resolve_flow_target_value(target)
+                     .map(|(_, function)| function)
+@@ -3029,12 +3024,15 @@ fn execute_terminator(
+                     )));
+                 }
+             };
+-            let args = fiber
+-                .active_frame_mut()?
+-                .take_register_values(program, args)?;
+-            emit_unwind_cleanup_observations(program, fiber, observations)?;
+-            fiber.replace_root_function_owned(program, target, args)?;
+-            observations.push(VmObservation::Goto(target));
++            execute_goto(
++                program,
++                fiber,
++                execution,
++                function,
++                Some(*target),
++                args,
++                observations,
++            )?;
+             Ok(VmExit::Running)
+         }
+         AwbcTerminator::Dialogue {
+@@ -3369,6 +3367,38 @@ fn execute_terminator(
+     }
+ }
+ 
++fn execute_goto(
++    program: &AwbcProgram,
++    fiber: &mut FiberState,
++    execution: &mut VmExecutionResources<'_>,
++    function: AwbcFunctionId,
++    target: Option<AwbcRegisterId>,
++    args: &[AwbcRegisterId],
++    observations: &mut Vec<VmObservation>,
++) -> Result<(), VmError> {
++    let references = args
++        .iter()
++        .map(|register| fiber.active_frame()?.register(*register))
++        .collect::<Result<Vec<_>, FiberStateError>>()?;
++    let mut replacement = fiber.prepare_root_replacement(program, function, &references)?;
++    let operands = target
++        .into_iter()
++        .chain(args.iter().copied())
++        .collect::<Vec<_>>();
++    let transfer = fiber
++        .active_frame()?
++        .prepare_register_values(program, &operands)?;
++    execution.exit_goto_scope(program, fiber, &mut replacement, args)?;
++    let mut values = transfer.commit(fiber.active_frame_mut()?);
++    if target.is_some() {
++        values.remove(0);
++    }
++    emit_unwind_cleanup_observations(program, fiber, observations)?;
++    fiber.commit_root_replacement(replacement, values);
++    observations.push(VmObservation::Goto(function));
++    Ok(())
++}
++
+ fn suspend(
+     fiber: &mut FiberState,
+     resume: AwbcResumePointId,
+diff --git a/crates/arcweft-core/src/awbc/vm/resources.rs b/crates/arcweft-core/src/awbc/vm/resources.rs
+index f4407415d34b7e787c1e83d0cded910cbb59fa02..f9ee2571b356a0aad8d1aa77be2a53dbd2de3192 100644
+--- a/crates/arcweft-core/src/awbc/vm/resources.rs
++++ b/crates/arcweft-core/src/awbc/vm/resources.rs
+@@ -23,22 +23,22 @@ impl VmExecutionResources<'_> {
+         registers: impl IntoIterator<Item = AwbcRegisterId>,
+     ) -> Result<(), VmError> {
+         fiber.validate_cleanup_inputs(program)?;
+-        let mut escaping = Vec::new();
+-        for register in registers {
+-            for handle in fiber
+-                .active_frame()?
+-                .register(register)?
+-                .view()
+-                .affine_handles()
+-                .map_err(|error| VmError::Runtime(error.to_string()))?
+-            {
+-                if let crate::value::ownership::RuntimeAffineHandle::Presentation {
+-                    token, ..
+-                } = handle
++        let mut escaping = Self::escaping_tokens(fiber, registers)?;
++        if let Some(return_to) = &fiber.active_frame()?.return_to {
++            return_to.continuation.visit_runtime_values(|value| {
++                if let crate::value::RuntimeValue::Opaque(opaque) = value
++                    && opaque.value_class()
++                        == crate::value::RuntimeOpaqueValueClass::PresentationHandle
+                 {
+-                    escaping.push(token);
++                    escaping.push(
++                        crate::runtime_id::RuntimePresentationHandleToken::try_decode_payload(
++                            opaque.payload(),
++                        )
++                        .map_err(|error| VmError::Runtime(error.to_string()))?,
++                    );
+                 }
+-            }
++                Ok::<_, VmError>(())
++            })?;
+         }
+         let (targets, destination) = fiber
+             .presentation_return_scopes_mut()
+@@ -61,6 +61,74 @@ impl VmExecutionResources<'_> {
+         Ok(())
+     }
+ 
++    pub(super) fn exit_goto_scope(
++        &mut self,
++        program: &AwbcProgram,
++        fiber: &mut FiberState,
++        replacement: &mut crate::awbc::fiber::PreparedFiberRootReplacement,
++        registers: &[AwbcRegisterId],
++    ) -> Result<(), VmError> {
++        fiber.validate_cleanup_inputs(program)?;
++        let escaping = Self::escaping_tokens(fiber, registers.iter().copied())?;
++        let instance = fiber.instance;
++        let targets = fiber
++            .presentation_unwind_scopes_mut()
++            .map_err(|error| FiberStateError::Snapshot(error.into()))?;
++        if targets.is_empty() && escaping.is_empty() {
++            return Ok(());
++        }
++        let banks = self.presentation.as_deref_mut().ok_or_else(|| {
++            FiberStateError::Snapshot(
++                crate::presentation::RuntimePresentationError::MissingLedger.into(),
++            )
++        })?;
++        let owner = self
++            .context
++            .ok_or(VmError::MissingExecutionContext)?
++            .program_owner(program)?;
++        banks
++            .exit_scope_contour(
++                &owner,
++                targets,
++                Some(crate::presentation::resources::PresentationScopeExit {
++                    execution: crate::runtime_id::ExecutionInstanceId::from_allocated(
++                        instance.get(),
++                    ),
++                    fiber: crate::runtime_id::RuntimePersistentFiberId::from_allocated(
++                        instance.get().get(),
++                    ),
++                    scope: replacement.presentation_scope_target(),
++                }),
++                &escaping,
++            )
++            .map_err(|error| FiberStateError::Snapshot(error.into()))?;
++        Ok(())
++    }
++
++    fn escaping_tokens(
++        fiber: &FiberState,
++        registers: impl IntoIterator<Item = AwbcRegisterId>,
++    ) -> Result<Vec<crate::runtime_id::RuntimePresentationHandleToken>, VmError> {
++        let mut escaping = Vec::new();
++        for register in registers {
++            for handle in fiber
++                .active_frame()?
++                .register(register)?
++                .view()
++                .affine_handles()
++                .map_err(|error| VmError::Runtime(error.to_string()))?
++            {
++                if let crate::value::ownership::RuntimeAffineHandle::Presentation {
++                    token, ..
++                } = handle
++                {
++                    escaping.push(token);
++                }
++            }
++        }
++        Ok(escaping)
++    }
++
+     /// All cleanup declarations and actual scope grants precede body movement.
+     /// Without a bank, the standalone VM can unwind resource-free frames only.
+     pub(super) fn retire_unwind(
+diff --git a/crates/arcweft-core/src/presentation/resources/banks/tests/transition.rs b/crates/arcweft-core/src/presentation/resources/banks/tests/transition.rs
+index 5a5b52b3b993e038503e6ae9f89fa9f106287938..cc3a6f1f70e578fe1e22b2aafbf79df84c30ef32 100644
+--- a/crates/arcweft-core/src/presentation/resources/banks/tests/transition.rs
++++ b/crates/arcweft-core/src/presentation/resources/banks/tests/transition.rs
+@@ -379,3 +379,123 @@ fn terminal_escape_keeps_exact_lease_and_requires_an_actual_retained_value_owner
+         RuntimeValue::Bool(true)
+     );
+ }
++
++#[test]
++fn receipt_from_an_independent_scope_moves_to_the_actual_receiver_before_issuer_exit() {
++    let (program, artifact, expected, dialogue) = fixture();
++    let mut banks = PresentationBanks::new(
++        program.clone(),
++        artifact,
++        PresentationLedgerLimits {
++            handles: 4,
++            scopes: 4,
++        },
++    );
++    let mut issuer = RuntimeEnv::default();
++    let mut source = RuntimeEnv::default();
++    let mut receiver = RuntimeEnv::default();
++    let escaped = register(&mut banks, &program, dialogue, &mut issuer, expected, true);
++    let discarded = register(&mut banks, &program, dialogue, &mut issuer, expected, false);
++    bind(
++        &mut banks,
++        RuntimePresentationBankId::Root,
++        &program,
++        &mut source,
++    );
++    exit(
++        &mut banks,
++        &program,
++        &mut source,
++        Some(&mut receiver),
++        std::slice::from_ref(&escaped),
++    )
++    .unwrap();
++    let receiving_owner = receiver.presentation_scope_binding().unwrap().grants[&dialogue].owner;
++    assert_eq!(
++        banks.ledgers[&dialogue].state.leases[&escaped.issuance()].owner,
++        Some(receiving_owner)
++    );
++    banks
++        .retire_bound_scope(
++            &program,
++            execution(),
++            fiber(),
++            issuer.presentation_scope_target().unwrap(),
++        )
++        .unwrap();
++    assert_eq!(
++        banks
++            .retirements()
++            .iter()
++            .map(|item| item.token.clone())
++            .collect::<Vec<_>>(),
++        [discarded]
++    );
++    assert!(
++        banks.ledgers[&dialogue]
++            .validate_handle(&program, &escaped, Some(receiving_owner))
++            .is_ok()
++    );
++    banks
++        .retire_bound_scope(
++            &program,
++            execution(),
++            fiber(),
++            receiver.presentation_scope_target().unwrap(),
++        )
++        .unwrap();
++    assert_eq!(banks.retirements()[1].token, escaped);
++}
++
++#[test]
++fn terminal_receipt_detaches_from_an_independent_issuer_before_that_scope_ends() {
++    let (program, artifact, expected, dialogue) = fixture();
++    let mut banks = PresentationBanks::new(
++        program.clone(),
++        artifact,
++        PresentationLedgerLimits {
++            handles: 4,
++            scopes: 4,
++        },
++    );
++    let mut issuer = RuntimeEnv::default();
++    let mut source = RuntimeEnv::default();
++    let escaped = register(&mut banks, &program, dialogue, &mut issuer, expected, true);
++    bind(
++        &mut banks,
++        RuntimePresentationBankId::Root,
++        &program,
++        &mut source,
++    );
++    exit(
++        &mut banks,
++        &program,
++        &mut source,
++        None,
++        std::slice::from_ref(&escaped),
++    )
++    .unwrap();
++    banks
++        .retire_bound_scope(
++            &program,
++            execution(),
++            fiber(),
++            issuer.presentation_scope_target().unwrap(),
++        )
++        .unwrap();
++    assert!(banks.retirements().is_empty());
++    assert!(
++        banks.ledgers[&dialogue]
++            .validate_handle(&program, &escaped, None)
++            .is_ok()
++    );
++    assert!(
++        banks
++            .ledgers
++            .get_mut(&dialogue)
++            .unwrap()
++            .release(&program, &escaped, None)
++            .unwrap()
++            .is_some()
++    );
++}
+diff --git a/crates/arcweft-core/src/presentation/resources/banks/transition.rs b/crates/arcweft-core/src/presentation/resources/banks/transition.rs
+index ade0bf8c87c40a29e34c7e5c7684123fb28dca01..ddfd9bcb5ae4a1c82e405d4627b43dcbf0651863 100644
+--- a/crates/arcweft-core/src/presentation/resources/banks/transition.rs
++++ b/crates/arcweft-core/src/presentation/resources/banks/transition.rs
+@@ -37,7 +37,7 @@ impl<V> PresentationBanks<V> {
+             }),
+         )?;
+         self.preflight_scope_retirements(&owners, &selected)?;
+-        if let Some(receiver) = &destination {
++        let receiving_owners = if let Some(receiver) = &destination {
+             let receiving = self.inspect_scope_contour(
+                 program,
+                 std::iter::once(PresentationScopeExit {
+@@ -49,7 +49,10 @@ impl<V> PresentationBanks<V> {
+             if !owners.is_disjoint(&receiving) {
+                 return Err(RuntimePresentationError::InvalidState);
+             }
+-        }
++            receiving
++        } else {
++            BTreeSet::new()
++        };
+         let mut moves = Vec::new();
+         let mut receiving = BTreeMap::new();
+         for token in escaping {
+@@ -63,9 +66,12 @@ impl<V> PresentationBanks<V> {
+                 .get(&token.issuance())
+                 .ok_or(RuntimePresentationError::UnknownHandle)?;
+             ledger.validate_handle(program, token, lease.owner)?;
+-            // A caller/ancestor's grant already outlives this exit. Leaving it
+-            // in its owning scope does not manufacture a new release duty.
+-            if lease.owner.is_some_and(|owner| !owners.contains(&owner)) {
++            // Only the actual receiver's existing grant already owns this
++            // receipt. A grant in another execution can end independently.
++            if lease
++                .owner
++                .is_some_and(|owner| receiving_owners.contains(&owner))
++            {
+                 continue;
+             }
+             if let Some(receiver) = &destination {
+diff --git a/docs/02-runtime/save-replay.md b/docs/02-runtime/save-replay.md
+index b0c0113533feac13d482ae3ab9fb47bec95b5f4b..c202fbb54dc1f08b1200cb1b6e51c76a1f82cfe5 100644
+--- a/docs/02-runtime/save-replay.md
++++ b/docs/02-runtime/save-replay.md
+@@ -284,6 +284,14 @@ scopeのversion 1 snapshotはbank順のgrant行を持ち、重複bankは後続gr
+ 全grant・bodyを保持する。許可後はscopeのunwind順、同一scope内ではbank順で一度だけ
+ 回収し、空になったscopeのbindingを除く。
+ 
++scopeの外へ渡す値は、元のbankとtokenを保持したまま受け取り先の実grantへ移す。
++同じ受け取り先grantがすでに所有するleaseは維持するが、独立に終了できる別scopeの
++grantを受け取り先の代わりにはしない。terminal結果は元leaseをdetachし、保持値の
++グラフに一意なHandleを残す。移管前に全token、実際の終了contour、受け取り先anchorと
++発行cursorを検査し、回収待ち容量には外へ渡すbodyを含めない。終了grantの解放分は
++受け取り先grantの容量に充当できる。拒否時は値・grant・cursorを移動せず、許可後は
++終了したframeの残りの値を破棄してから、その結果を保持・保存する。
++
+ Presentation bodyへの所有権移動も既存のlive保持状態と同じbankで検査し、元の型・
+ function binding・候補body・Handle custodyがすべて成立してからscope束縛と発行へ進む。
+ 失敗時は候補bodyを呼出側へ返し、既存のbody・slot・発行cursorを変更しない。

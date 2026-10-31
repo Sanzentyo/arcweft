@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "1d72adc17b197b7860f67ea0f7c5b20c6112049b",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--locked"
+  ],
+  "exitCode": 0,
+  "sourceInputs": 4031,
+  "sourceDrift": 0,
+  "startedAt": "2026-10-31T15:24:54.1959770Z",
+  "finishedAt": "2026-10-31T15:25:42.2858393Z"
+}

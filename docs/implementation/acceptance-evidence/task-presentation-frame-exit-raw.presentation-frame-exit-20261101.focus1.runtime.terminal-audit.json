@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "base": "68d84bad2fa911126c1de198ffa927ca37b2bb42",
+  "run": "presentation-frame-exit-20261101.focus1.runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.144s] 6 tests run: 4 passed, 2 failed, 2150 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 6,
+  "passed": 4,
+  "failed": 2,
+  "skipped": 2150,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4031,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::presentation::transfers::goto_capacity_refusal_keeps_arguments_target_frame_cursor_and_budget_for_retry"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::presentation::transfers::static_and_dynamic_goto_move_the_original_handle_into_the_actual_new_root"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-31T15:08:40.6354182Z"
+}

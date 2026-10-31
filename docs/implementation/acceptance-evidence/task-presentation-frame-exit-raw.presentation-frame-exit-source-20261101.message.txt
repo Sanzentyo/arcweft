@@ -1,0 +1,7 @@
+Transfer presentation custody through actual VM frame exits
+
+Prepare the next root and complete operand packet before Goto consumes inputs. Admit the actual receiving scope and original-bank leases, including receipts whose previous issuer can finish independently. Keep continuation values with their return and move receiver state from its owning callee.
+
+Preserve mutation, result, codec and rollback assertions before root storage exits, then assert terminal vacancy. Existing VM slice totals and bounded refusal policies remain unchanged.
+
+Validation: Core all-feature locked nextest 2211 passed with no excluded cases; 4031 frozen inputs and catalog/executable audits have zero drift. Full workspace quality gates follow. Source presentation ABI and full downstream acceptance remain separate.

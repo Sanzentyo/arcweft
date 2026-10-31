@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "base": "68d84bad2fa911126c1de198ffa927ca37b2bb42",
+  "run": "presentation-frame-exit-20261101.owner1.runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [ 110.857s] 2211 tests run: 2202 passed (1 slow), 9 failed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 2211,
+  "passed": 2202,
+  "failed": 9,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4031,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::direct_need_uses_the_first_terminal_sequence"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::presentation::transfers::goto_capacity_refusal_keeps_arguments_target_frame_cursor_and_budget_for_retry"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::presentation::transfers::static_and_dynamic_goto_move_the_original_handle_into_the_actual_new_root"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::ready_direct_need_returns_its_payload_unchanged_in_the_same_step"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::ready_result_error_payload_is_resumed_without_trapping"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::tests::instruction_call_execution::mut_trait_return_updates_receiver_on_the_same_saved_fiber"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::tests::local_assignment::assignment_after_move_reinitializes_after_codec_restore_and_checkpoint"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::tests::local_assignment::partial_record_move_survives_codec_snapshot_and_restore_then_reinitializes"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::tests::nominal_field_sequence_pop_front_roundtrips_verifies_mutates_and_survives_restore"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-31T15:15:17.8238888Z"
+}

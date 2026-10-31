@@ -1,0 +1,295 @@
+use super::*;
+use crate::awbc::product_step::checkpoint::ProductCheckpointTarget;
+use crate::awbc::schema::*;
+use crate::pattern::{RuntimeCheckedType, RuntimeOpaqueTypeAdmission};
+use crate::value::{RuntimeOpaquePersistence, RuntimeOpaqueValue, RuntimeOpaqueValueClass};
+
+fn handle_program(nested: bool) -> (AwbcProgram, AwbcTypeId) {
+    let mut program = return_program();
+    let producer = AwbcStringId(program.strings.len().try_into().unwrap());
+    program.strings.push("std.presentation.image_handle".into());
+    let handle = AwbcTypeId(program.runtime_types.len().try_into().unwrap());
+    program.runtime_types.push(AwbcRuntimeType::new(
+        RuntimeSemanticTypeId::from_bytes([0x9a; 32]),
+        AwbcRuntimeTypeShape::Opaque {
+            producer,
+            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+            value_class: RuntimeOpaqueValueClass::PresentationHandle,
+            persistence: RuntimeOpaquePersistence::SnapshotOnly,
+            arguments: vec![],
+        },
+    ));
+    program.runtime_types.push(AwbcRuntimeType::new(
+        RuntimeCheckedType::Bool.semantic_identity_digest(),
+        AwbcRuntimeTypeShape::Bool,
+    ));
+    program.signatures[0].params = vec![handle, handle];
+    program.signatures[0].result = Some(handle);
+    program.frame_layouts[0].slots = (0..2)
+        .map(|_| AwbcFrameSlot {
+            name: None,
+            ty: handle,
+            role: AwbcFrameSlotRole::Parameter,
+            scope_depth: 0,
+        })
+        .collect();
+    program.functions[0].input_ownership = (0..2)
+        .map(|position| {
+            AwbcFunctionInputOwnership::parameter(
+                manual_awbc_formal_identity(&format!("presentation.transfer.input-{position}")),
+                position,
+                crate::plan::RuntimeFunctionParameterPassing::Affine,
+            )
+        })
+        .collect();
+    program.blocks[0].terminator = AwbcTerminator::Return {
+        value: Some(AwbcRegisterId(0)),
+    };
+    if nested {
+        let mut callee = program.functions[0].clone();
+        callee.definition = crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+            *blake3::hash(b"presentation.transfer.callee.v1\0").as_bytes(),
+        );
+        callee.kind = AwbcFunctionKind::Ordinary;
+        callee.public_id = None;
+        callee.blocks = AwbcTableRange::new(2, 1);
+        callee.entry_block = AwbcBlockId(2);
+        program.functions.push(callee);
+        program.functions[0].blocks = AwbcTableRange::new(0, 2);
+        program.blocks[0].terminator = AwbcTerminator::CallFunction {
+            function: AwbcFunctionId(1),
+            args: vec![AwbcRegisterId(0), AwbcRegisterId(1)],
+            dst: Some(AwbcRegisterId(0)),
+            resume: AwbcResumePointId(0),
+        };
+        for owner in [AwbcFunctionId(0), AwbcFunctionId(1)] {
+            program.blocks.push(AwbcBlock {
+                owner,
+                instructions: AwbcTableRange::new(0, 0),
+                terminator: AwbcTerminator::Return {
+                    value: Some(AwbcRegisterId(0)),
+                },
+                safe_point: AwbcSafePointKind::Return,
+                source_map: None,
+            });
+        }
+        program.resume_points.push(AwbcResumePoint {
+            function: AwbcFunctionId(0),
+            block: AwbcBlockId(1),
+            frame_layout: AwbcFrameLayoutId(0),
+            kind: AwbcSafePointKind::CallableBoundary,
+        });
+    }
+    (program, handle)
+}
+
+fn fixture(
+    nested: bool,
+    queued: bool,
+) -> (AwbcProductStepExecutor, Vec<RuntimePresentationHandleToken>) {
+    let (program, handle) = handle_program(nested);
+    let mut executor = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 64).unwrap();
+    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
+    executor.presentation = Some(PresentationBanks::new(
+        owner.clone(),
+        executor.artifact_fingerprint,
+        PresentationLedgerLimits {
+            handles: 2,
+            scopes: 4,
+        },
+    ));
+    if queued {
+        let ledger = executor
+            .presentation
+            .as_mut()
+            .unwrap()
+            .ledger_mut(RuntimePresentationBankId::Root)
+            .unwrap();
+        let scope = executor
+            .fiber
+            .bind_presentation_scope(&owner, ledger)
+            .unwrap();
+        for _ in 0..2 {
+            ledger
+                .register(
+                    &owner,
+                    scope,
+                    PresentationRegistrationSite::Independent(PresentationResourceKind::Image),
+                    PresentationBody {
+                        expected: RuntimeCheckedType::Bool.semantic_identity_digest(),
+                        binding: None,
+                        value: RuntimePayload(RuntimeValue::Bool(false)),
+                    },
+                )
+                .unwrap();
+        }
+        let retired = executor
+            .fiber
+            .release_presentation_scope(
+                &owner,
+                executor
+                    .presentation
+                    .as_mut()
+                    .unwrap()
+                    .ledger_mut(RuntimePresentationBankId::Root)
+                    .unwrap(),
+            )
+            .unwrap();
+        executor
+            .presentation
+            .as_mut()
+            .unwrap()
+            .retirements_mut()
+            .extend(retired);
+    }
+    let ledger = executor
+        .presentation
+        .as_mut()
+        .unwrap()
+        .ledger_mut(RuntimePresentationBankId::Root)
+        .unwrap();
+    let scope = executor
+        .fiber
+        .bind_presentation_scope(&owner, ledger)
+        .unwrap();
+    let tokens: Vec<_> = [true, false]
+        .into_iter()
+        .map(|value| {
+            ledger
+                .register(
+                    &owner,
+                    scope,
+                    PresentationRegistrationSite::Independent(PresentationResourceKind::Image),
+                    PresentationBody {
+                        expected: RuntimeCheckedType::Bool.semantic_identity_digest(),
+                        binding: None,
+                        value: RuntimePayload(RuntimeValue::Bool(value)),
+                    },
+                )
+                .unwrap()
+                .0
+        })
+        .collect();
+    let opaque = executor.program.opaque_owner(handle).unwrap().unwrap();
+    let values = tokens
+        .iter()
+        .map(|token| {
+            RuntimeValue::Opaque(RuntimeOpaqueValue::new_exact(
+                &opaque,
+                token.encode_payload(),
+            ))
+        })
+        .collect();
+    executor
+        .fiber
+        .active_frame_mut()
+        .unwrap()
+        .bind_positional_arguments_owned(&executor.program, values)
+        .unwrap();
+    executor.snapshot().unwrap();
+    (executor, tokens)
+}
+
+fn step(executor: &mut AwbcProductStepExecutor) {
+    let output = executor.step(Default::default(), one_op());
+    assert!(
+        output.output.diagnostics.is_empty(),
+        "{:?}",
+        output.output.diagnostics
+    );
+}
+
+fn one_op() -> RuntimeStepOptions {
+    RuntimeStepOptions {
+        budget: crate::step::RuntimeStepBudget { max_ops: 1 },
+        ..Default::default()
+    }
+}
+
+#[test]
+fn root_return_retains_the_original_handle_and_drops_exited_storage_before_snapshot() {
+    let (mut executor, tokens) = fixture(false, false);
+    let before = executor.snapshot().unwrap();
+    let checkpoint = executor
+        .execution_checkpoint(ProductCheckpointTarget::Main)
+        .unwrap();
+    step(&mut executor);
+    assert_eq!(executor.fiber.status, FiberStatus::Returned);
+    assert!(
+        executor.fiber.frames[0]
+            .registers
+            .iter()
+            .all(|slot| slot.is_vacant())
+    );
+    assert!(executor.fiber.frames[0].root_presentation_scope.is_none());
+    assert_eq!(
+        executor.presentation.as_ref().unwrap().retirements()[0].token,
+        tokens[1]
+    );
+    let Some(FiberTerminalValue::Returned(Some(value))) = &executor.fiber.terminal else {
+        panic!("root owns result")
+    };
+    let handles = value.view().affine_handles().unwrap();
+    assert!(
+        matches!(&handles[..], [crate::value::ownership::RuntimeAffineHandle::Presentation { token, .. }] if token == &tokens[0])
+    );
+    executor.snapshot().unwrap();
+    checkpoint
+        .restore(
+            &mut executor.fiber,
+            &mut executor.presentation,
+            &executor.program,
+        )
+        .unwrap();
+    assert_eq!(executor.snapshot().unwrap(), before);
+}
+
+#[test]
+fn return_capacity_refusal_preserves_actual_handles_and_budget_then_retries() {
+    let (mut executor, tokens) = fixture(false, true);
+    let before = executor.snapshot().unwrap();
+    for _ in 0..2 {
+        let result = executor.step(Default::default(), one_op());
+        assert!(!result.output.diagnostics.is_empty());
+        assert_eq!(executor.snapshot().unwrap(), before);
+    }
+    executor
+        .presentation
+        .as_mut()
+        .unwrap()
+        .retirements_mut()
+        .clear();
+    step(&mut executor);
+    assert_eq!(executor.fiber.status, FiberStatus::Returned);
+    assert_eq!(
+        executor.presentation.as_ref().unwrap().retirements()[0].token,
+        tokens[1]
+    );
+    executor.snapshot().unwrap();
+}
+
+#[test]
+fn nested_return_preserves_the_original_ancestor_grant_and_terminal_result() {
+    let (mut executor, tokens) = fixture(true, false);
+    step(&mut executor);
+    assert_eq!(executor.fiber.frames.len(), 2);
+    executor.snapshot().unwrap();
+    step(&mut executor);
+    assert_eq!(executor.fiber.frames.len(), 1);
+    assert!(
+        executor
+            .presentation
+            .as_ref()
+            .unwrap()
+            .retirements()
+            .is_empty()
+    );
+    executor.snapshot().unwrap();
+    step(&mut executor);
+    assert_eq!(executor.fiber.status, FiberStatus::Returned);
+    assert_eq!(
+        executor.presentation.as_ref().unwrap().retirements()[0].token,
+        tokens[1]
+    );
+    executor.snapshot().unwrap();
+}

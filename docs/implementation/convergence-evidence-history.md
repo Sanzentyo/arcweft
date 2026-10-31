@@ -13651,3 +13651,13 @@ fixture修復Source 23cfb6bdbcb908873420e0055f304a0efe456b1d（parent 935fa74803
 [全公開SHA・102 raw artifact／22022291 bytes](acceptance-evidence/task-presentation-scope-grants-owner-validation.json)に初期compile失敗・各full run・限定run・最終workspace gate・公開patchを保持する。owner1／owner2の各13変更sourceは編集前に保存し、元bytesとsource-freeze SHA256の完全一致を確認した。focus3／owner4は公開checkpointの同じsource、owner5は修復Sourceと保持WIPに対応する。各epochを一つのrunへ合算しない。共有bank-row codecのRust source移動以外に、Cargo生成物の移動・コピー・退避と追加cleanは行っていない。
 
 Supersedes: 受け取り先に単一bankしか持てないという前提を削除し、複数bankのscope grant基盤を検証済みとして[current-status](current-status.md)一か所へ反映する。Return／Select／Gotoの実際のescaping Handle移動や元Product root結果の保持はまだ接続しておらず、今回の基盤受入をその完了と読み替えない。Native実借用parentの完全contour、Source ViewValue／driver、置換・画像parity・最終reverse／target matrixも別境界である。全体goalの未完了を理由にGeneric Matchや先行の取消／VM／lifecycle／control／Hostの受入を戻さず、既存の履歴prefixとraw原本を維持する。
+
+## 2026-11-01 — 元bankのscope移管とVM frame終了
+
+基盤を1455f4ff9e2599353c6e36e94ab748a52bf0dc46、Return接続の途中cutを68d84bad2fa911126c1de198ffa927ca37b2bb42、Gotoとfixture同期を1d72adc17b197b7860f67ea0f7c5b20c6112049bで通常commit／pushした。既存14 tracked／6実untracked WIPは保持し、検証は凍結checkoutに限る。
+
+基盤はCore全2,203 PASS。後続の実Handle parameter、実CallFunction、元tokenを保つReturn／静的・動的Goto、独立issuerの終了、容量拒否と同policy再試行、公開save往復とprivate rollbackを追加した。最終owner2はCore全2,211 PASS／失敗0／除外0。4,031入力・catalog・実行ファイルの差分0で、同じ入力のworkspace全97 package・全target・全feature check／Clippy、Core default check、doctest78、fmt52、Wasm Core／Player Web default compile、構造gateは終了0。構造は97 package／3,267 files／3,137 Rust files／1,775,558 physical Rust LOC／382 review trigger／blocking0。構造reviewでは、operand／次frameの準備をFiber所有型、lease移管を元bank集合のままに置き、置換前のroot APIを削除した責務分担を確認した。
+
+途中のcompile 101、fixture metadataの失敗、実Presentation Handleをline-only projectionが拒否した4件、最初の全owner 2,202 PASS／9 FAILも原本とそのsourceを保持した。terminalの旧Transferred markerは実結果保持へ同期し、receiver更新・nominal sequence・完全／部分placeと復元のassertionはroot終了前に保持した。VM slice総量8／4／16、1-op条件と上限policyを弱めず、終了後のstorage vacancyも検証した。Wasm初回は存在しないpackage名でコンパイル前に終了101、実package名に修正した同入力の再実行は終了0。異なるepochの結果は合算しない。
+
+[基盤の全SHA・原本](acceptance-evidence/task-presentation-scope-exit-owner-validation.json)、[frame終了の全SHA・失敗source・最終原本](acceptance-evidence/task-presentation-frame-exit-owner-validation.json)。Generic Matchと既受入cutの判定は維持した。Source ViewValue ABI／実driver、typed Dialogue結果のRoot受取・破棄・回収ACK、Native親contour、最終runtime matrixの受入はこの記録から推定しない。現在の判定は[現状一覧](current-status.md)に集約する。

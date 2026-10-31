@@ -1,0 +1,148 @@
+{
+  "version": 1,
+  "commit": "1d72adc17b197b7860f67ea0f7c5b20c6112049b",
+  "parent": "68d84bad2fa911126c1de198ffa927ca37b2bb42",
+  "tree": "640316b454df5610a4f7bf6b8ff6cf603eadd3c8",
+  "remote": "1d72adc17b197b7860f67ea0f7c5b20c6112049b",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber.rs",
+      "blob": "f82f31d97413440b03e417f1e7934fc2ad4fdea8"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber/input.rs",
+      "blob": "c747bd09ab50eacee708f33c0d9e10b62f0620c2"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+      "blob": "c86ade6e1e3e2e657515e46fa9ac737af9f8f46e"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+      "blob": "07c95db3833b31b2574e94268e1b11ff858ffbb8"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/tests.rs",
+      "blob": "4f74b10b39214c798714b18be61c575b8efe8400"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/tests/instruction_call_execution.rs",
+      "blob": "2b9b3987ace3c79d04f36bf241ba712026474a53"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/tests/local_assignment.rs",
+      "blob": "9245e7db555a4b9525b07b92d2d1ff96441df7d3"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/vm.rs",
+      "blob": "66a82fdfb12220627b516e7b72f7a522b60807b5"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/vm/resources.rs",
+      "blob": "f9ee2571b356a0aad8d1aa77be2a53dbd2de3192"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/banks/tests/transition.rs",
+      "blob": "cc3a6f1f70e578fe1e22b2aafbf79df84c30ef32"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/banks/transition.rs",
+      "blob": "ddfd9bcb5ae4a1c82e405d4627b43dcbf0651863"
+    },
+    {
+      "path": "docs/02-runtime/save-replay.md",
+      "blob": "c202fbb54dc1f08b1200cb1b6e51c76a1f82cfe5"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "9b5e612053dd14aed093b19828bd37fda0da140e6f12d1dbfb633eea6bf0d6d6",
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "separatelyHeld": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-owner-validation.json",
+      "sha256": "8bfac57835dbc9f7a0edd6250e9783461cbf04b2f6914baeb16213e6c51a29d4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.binaries-before.json",
+      "sha256": "cb4c441ee42a9a3c35f72df387e4dd658be2c7a7420aeaf0434287137eab45f4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.catalog.inventory.json",
+      "sha256": "09043dadedc38095a06dc8a87189918a4c4645a269e89d33d0c9450fc81bb146"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.catalog.json",
+      "sha256": "1cc193789e437855768f56bfe886a4b5d53f1186b6c2e55946c4eae893e9df47"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.catalog.log",
+      "sha256": "11ada69c26bcb065697168bed555c8af193e640726db0f1ed795a5bc4673d673"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.runtime.json",
+      "sha256": "2cb249a5ced9d68680fa15b250ea808bf906a843883f1628a52f747ad97ebac6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.runtime.log",
+      "sha256": "b12c88561bfde6ced63c58ab0621efd39397c2e163c413be6451648155198260"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.runtime.terminal-audit.json",
+      "sha256": "3ede44ba9cc63726dbeaa5d0b55349f593c1a149a6c83e69ef39a627e9fa2483"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.source-freeze.json",
+      "sha256": "be299442f7cfea0d96b13c3ad713905e61538d16ba5e16924401a21ce57b76ee"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.binaries-before.json",
+      "sha256": "045104cebe9b78c2538535524513c409c208a1eb6c1f1e07475268d5475a5747"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.catalog.inventory.json",
+      "sha256": "78700d870541119e3ee85361e36c31d42bc0e587b2f8ab5700716d56357956ed"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.catalog.json",
+      "sha256": "67f08c64934998a5c2b5dbe98d7cf1aa04159a4c96f3dbfffc4021548104e176"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.catalog.log",
+      "sha256": "034d61865fa49b689981474190987f913b3bb5e0ea57b3aade6cc25b6520ed7f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.runtime.json",
+      "sha256": "ffae153d34f1835fbedb60aaf3cb30962188eb89b2c9443883bfa5f2b8a4ff3f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.runtime.log",
+      "sha256": "9b92be8252e3646965eb1a5a066a7bf75bc63d3ecda169a3d428152d31375ca1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.runtime.terminal-audit.json",
+      "sha256": "2e8cc32776c8e8badff8c776ea26fb1e37bca9eb801f214336fc05bce7d1fcb0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.source-freeze.json",
+      "sha256": "d3d2f21f491687095a4cc00209aa889d0c352a2949c7f8aff66b75af0660ba5e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-domain-20261031.message.txt",
+      "sha256": "92b892e9979b980edd66a2ef0fd123a1976086f6047ea0d1a3c3f6c461b135f0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-domain-20261031.prepared.json",
+      "sha256": "032c0b0f9ef61304bf39c7b488acf0e0b8cb2e49cd24bc825ed78ac839aef1d3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-domain-20261031.reviewed.patch",
+      "sha256": "8f5fba9d31b7620078459846eb2184e584160dbb101e2fc3edb9eb5473898030"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-domain-20261031.verified.json",
+      "sha256": "1b7dc858cc4b88be51fca099b0e99e4a8fe8eaa6f259aff298a94772f4f65059"
+    }
+  ],
+  "indexEmpty": true,
+  "at": "2026-10-31T15:18:42.1501374Z"
+}

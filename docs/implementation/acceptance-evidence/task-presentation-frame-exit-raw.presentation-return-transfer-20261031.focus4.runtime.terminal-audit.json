@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "base": "1455f4ff9e2599353c6e36e94ab748a52bf0dc46",
+  "run": "presentation-return-transfer-20261031.focus4.runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.067s] 4 tests run: 0 passed, 4 failed, 2150 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 4,
+  "passed": 0,
+  "failed": 4,
+  "skipped": 2150,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4031,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::presentation::transfers::callee_owned_handle_joins_the_actual_caller_scope_without_changing_its_token"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::presentation::transfers::return_capacity_refusal_preserves_actual_handles_and_budget_then_retries"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::presentation::transfers::root_return_retains_the_original_handle_and_drops_exited_storage_before_snapshot"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::presentation::transfers::nested_return_preserves_the_original_ancestor_grant_and_terminal_result"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-31T15:01:54.0709546Z"
+}

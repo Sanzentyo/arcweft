@@ -1,0 +1,67 @@
+[
+  {
+    "binary": "arcweft-core",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-0c9015e7d341051b.exe",
+    "sha256": "2452fc77db606de47edeca76f4742cd287eccad03b00ecaf16ae631fd219bb7b"
+  },
+  {
+    "binary": "arcweft-core::api_compile",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\api_compile-c72cdf9686415c0b.exe",
+    "sha256": "7631c08bd68b4957a010b3ce665b2655ee4d643dfc51649e3d291853d4723e66"
+  },
+  {
+    "binary": "arcweft-core::awbc_record_type",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_record_type-4e0c14a9d2134659.exe",
+    "sha256": "ac030441f9d4d64be13b5561f7121f7a06f618a23b342ebcdabdee3d0cae3900"
+  },
+  {
+    "binary": "arcweft-core::awbc_variant_types",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_variant_types-a0820659819d7a13.exe",
+    "sha256": "d00184800c9e66485044ccfe656f21ae38cb0d9b89fc94a923be83d154beff91"
+  },
+  {
+    "binary": "arcweft-core::builtin_payload_admission",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\builtin_payload_admission-28fcdcaf376e7e18.exe",
+    "sha256": "bd54b2caea17822c733ed939fc7894c3707d7677f415a6842f5bda652b302033"
+  },
+  {
+    "binary": "arcweft-core::direct_suspension",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\direct_suspension-ba8976b6e4c4bcf0.exe",
+    "sha256": "b9d55f19072ab1e3310a987e18e9a1a99366bcf8dc17869a0fe814c77465a80f"
+  },
+  {
+    "binary": "arcweft-core::nominal_schema_admission",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\nominal_schema_admission-5a543db3dd75de3e.exe",
+    "sha256": "5fd492083862c950b73248fa0f73a43da31fd70b5a7df7e6eaa8ff179a861998"
+  },
+  {
+    "binary": "arcweft-core::record_admission",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\record_admission-0c0c4f4fb5312093.exe",
+    "sha256": "90be03c2a829890dd1a9497780ef53f57f56e95cabc2376a0be5f010ea0a2256"
+  },
+  {
+    "binary": "arcweft-core::record_field_names",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\record_field_names-997bed5f6d8b1c8a.exe",
+    "sha256": "9e34ba3c069f1bb93411fe1b7e8ff03040725b52d586eb0ba64b671e8735fc27"
+  },
+  {
+    "binary": "arcweft-core::runtime_assertion_identity",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_assertion_identity-e686fc3b1de83bed.exe",
+    "sha256": "075537c0e1443d8c49454f35c3417a1f853285967c9ecdcc601a6256200579f3"
+  },
+  {
+    "binary": "arcweft-core::runtime_id_boundaries",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_id_boundaries-102738c4a78ad8f9.exe",
+    "sha256": "79301f73376b2570c943729cb8bcd58156c7a66a5a8f9666bbfab29380aacb4d"
+  },
+  {
+    "binary": "arcweft-core::task_admission",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\task_admission-d3840438f2b0f6ef.exe",
+    "sha256": "fd07d06cbd63bd1e555cfc9eeea4d8b0d4c5a0dc621aa03113f6cf2d2d8f9867"
+  },
+  {
+    "binary": "arcweft-core::task_plan_view_prefix",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\task_plan_view_prefix-37cd967583c93f69.exe",
+    "sha256": "e117dae18ab2913f465b174b2b1228bf5bbd76451c90eee735e9c50a0b72f7de"
+  }
+]

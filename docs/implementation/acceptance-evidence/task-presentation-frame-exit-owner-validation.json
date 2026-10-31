@@ -1,0 +1,1704 @@
+{
+  "version": 1,
+  "recordedAt": "2026-10-31T15:32:21.0869287Z",
+  "inspectedMain": "1d72adc17b197b7860f67ea0f7c5b20c6112049b",
+  "observedWorkingTree": "Published main plus the preserved 14 tracked and six actual untracked user WIP files; validation claims refer to frozen inputs, not a canonical-only checkout.",
+  "scope": "Original-bank scope exit and actual VM Return, receiver-state, continuation and static/dynamic Goto custody. Select uses the same exit path; typed D-to-Root delivery and Source/driver ABI acceptance are not inferred from it.",
+  "priorDomainEvidence": "task-presentation-scope-exit-owner-validation.json",
+  "sourcePublications": [
+    {
+      "version": 1,
+      "commit": "68d84bad2fa911126c1de198ffa927ca37b2bb42",
+      "parent": "1455f4ff9e2599353c6e36e94ab748a52bf0dc46",
+      "tree": "1365d63b5bab272aad7dc6d0b05f57e0f1b5eb9a",
+      "remote": "68d84bad2fa911126c1de198ffa927ca37b2bb42",
+      "paths": [
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber.rs",
+          "blob": "30d4e9a7516e9c6a1e454a92248a160872ceb5aa"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber/scope.rs",
+          "blob": "e3768b2d70e1a5cda9002c5d20b5212027cb1c9f"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step.rs",
+          "blob": "8970b1fd2a4702df84990e6b16886bdb4d0156b2"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "blob": "8dc87d1d250043f10f7dcef918cb227411fbbfce"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+          "blob": "a6d2ffc61058509c0f3bfdaf50ff63aa866a2b3e"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+          "blob": "4fc5faabe685a047dc67ab7fa9ecc6f3fcb72e57"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/vm.rs",
+          "blob": "b1ef886041675dd3f2c4e212f0084ea8bb30ddac"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/vm/resources.rs",
+          "blob": "f4407415d34b7e787c1e83d0cded910cbb59fa02"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "3d9cdbb894646b575678c9fae16d724ff2529416510cda05931abed7ff6dbaf4",
+      "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+      "separatelyHeld": [
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-owner-validation.json",
+          "sha256": "8bfac57835dbc9f7a0edd6250e9783461cbf04b2f6914baeb16213e6c51a29d4"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.binaries-before.json",
+          "sha256": "cb4c441ee42a9a3c35f72df387e4dd658be2c7a7420aeaf0434287137eab45f4"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.catalog.inventory.json",
+          "sha256": "09043dadedc38095a06dc8a87189918a4c4645a269e89d33d0c9450fc81bb146"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.catalog.json",
+          "sha256": "1cc193789e437855768f56bfe886a4b5d53f1186b6c2e55946c4eae893e9df47"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.catalog.log",
+          "sha256": "11ada69c26bcb065697168bed555c8af193e640726db0f1ed795a5bc4673d673"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.runtime.json",
+          "sha256": "2cb249a5ced9d68680fa15b250ea808bf906a843883f1628a52f747ad97ebac6"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.runtime.log",
+          "sha256": "b12c88561bfde6ced63c58ab0621efd39397c2e163c413be6451648155198260"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.runtime.terminal-audit.json",
+          "sha256": "3ede44ba9cc63726dbeaa5d0b55349f593c1a149a6c83e69ef39a627e9fa2483"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.source-freeze.json",
+          "sha256": "be299442f7cfea0d96b13c3ad713905e61538d16ba5e16924401a21ce57b76ee"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.binaries-before.json",
+          "sha256": "045104cebe9b78c2538535524513c409c208a1eb6c1f1e07475268d5475a5747"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.catalog.inventory.json",
+          "sha256": "78700d870541119e3ee85361e36c31d42bc0e587b2f8ab5700716d56357956ed"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.catalog.json",
+          "sha256": "67f08c64934998a5c2b5dbe98d7cf1aa04159a4c96f3dbfffc4021548104e176"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.catalog.log",
+          "sha256": "034d61865fa49b689981474190987f913b3bb5e0ea57b3aade6cc25b6520ed7f"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.runtime.json",
+          "sha256": "ffae153d34f1835fbedb60aaf3cb30962188eb89b2c9443883bfa5f2b8a4ff3f"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.runtime.log",
+          "sha256": "9b92be8252e3646965eb1a5a066a7bf75bc63d3ecda169a3d428152d31375ca1"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.runtime.terminal-audit.json",
+          "sha256": "2e8cc32776c8e8badff8c776ea26fb1e37bca9eb801f214336fc05bce7d1fcb0"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.source-freeze.json",
+          "sha256": "d3d2f21f491687095a4cc00209aa889d0c352a2949c7f8aff66b75af0660ba5e"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-domain-20261031.message.txt",
+          "sha256": "92b892e9979b980edd66a2ef0fd123a1976086f6047ea0d1a3c3f6c461b135f0"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-domain-20261031.prepared.json",
+          "sha256": "032c0b0f9ef61304bf39c7b488acf0e0b8cb2e49cd24bc825ed78ac839aef1d3"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-domain-20261031.reviewed.patch",
+          "sha256": "8f5fba9d31b7620078459846eb2184e584160dbb101e2fc3edb9eb5473898030"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-domain-20261031.verified.json",
+          "sha256": "1b7dc858cc4b88be51fca099b0e99e4a8fe8eaa6f259aff298a94772f4f65059"
+        }
+      ],
+      "indexEmpty": true,
+      "at": "2026-10-31T15:04:33.1971297Z"
+    },
+    {
+      "version": 1,
+      "commit": "1d72adc17b197b7860f67ea0f7c5b20c6112049b",
+      "parent": "68d84bad2fa911126c1de198ffa927ca37b2bb42",
+      "tree": "640316b454df5610a4f7bf6b8ff6cf603eadd3c8",
+      "remote": "1d72adc17b197b7860f67ea0f7c5b20c6112049b",
+      "paths": [
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber.rs",
+          "blob": "f82f31d97413440b03e417f1e7934fc2ad4fdea8"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber/input.rs",
+          "blob": "c747bd09ab50eacee708f33c0d9e10b62f0620c2"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+          "blob": "c86ade6e1e3e2e657515e46fa9ac737af9f8f46e"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+          "blob": "07c95db3833b31b2574e94268e1b11ff858ffbb8"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/tests.rs",
+          "blob": "4f74b10b39214c798714b18be61c575b8efe8400"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/tests/instruction_call_execution.rs",
+          "blob": "2b9b3987ace3c79d04f36bf241ba712026474a53"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/tests/local_assignment.rs",
+          "blob": "9245e7db555a4b9525b07b92d2d1ff96441df7d3"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/vm.rs",
+          "blob": "66a82fdfb12220627b516e7b72f7a522b60807b5"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/vm/resources.rs",
+          "blob": "f9ee2571b356a0aad8d1aa77be2a53dbd2de3192"
+        },
+        {
+          "path": "crates/arcweft-core/src/presentation/resources/banks/tests/transition.rs",
+          "blob": "cc3a6f1f70e578fe1e22b2aafbf79df84c30ef32"
+        },
+        {
+          "path": "crates/arcweft-core/src/presentation/resources/banks/transition.rs",
+          "blob": "ddfd9bcb5ae4a1c82e405d4627b43dcbf0651863"
+        },
+        {
+          "path": "docs/02-runtime/save-replay.md",
+          "blob": "c202fbb54dc1f08b1200cb1b6e51c76a1f82cfe5"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "9b5e612053dd14aed093b19828bd37fda0da140e6f12d1dbfb633eea6bf0d6d6",
+      "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+      "separatelyHeld": [
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-owner-validation.json",
+          "sha256": "8bfac57835dbc9f7a0edd6250e9783461cbf04b2f6914baeb16213e6c51a29d4"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.binaries-before.json",
+          "sha256": "cb4c441ee42a9a3c35f72df387e4dd658be2c7a7420aeaf0434287137eab45f4"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.catalog.inventory.json",
+          "sha256": "09043dadedc38095a06dc8a87189918a4c4645a269e89d33d0c9450fc81bb146"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.catalog.json",
+          "sha256": "1cc193789e437855768f56bfe886a4b5d53f1186b6c2e55946c4eae893e9df47"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.catalog.log",
+          "sha256": "11ada69c26bcb065697168bed555c8af193e640726db0f1ed795a5bc4673d673"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.runtime.json",
+          "sha256": "2cb249a5ced9d68680fa15b250ea808bf906a843883f1628a52f747ad97ebac6"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.runtime.log",
+          "sha256": "b12c88561bfde6ced63c58ab0621efd39397c2e163c413be6451648155198260"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.runtime.terminal-audit.json",
+          "sha256": "3ede44ba9cc63726dbeaa5d0b55349f593c1a149a6c83e69ef39a627e9fa2483"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.source-freeze.json",
+          "sha256": "be299442f7cfea0d96b13c3ad713905e61538d16ba5e16924401a21ce57b76ee"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.binaries-before.json",
+          "sha256": "045104cebe9b78c2538535524513c409c208a1eb6c1f1e07475268d5475a5747"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.catalog.inventory.json",
+          "sha256": "78700d870541119e3ee85361e36c31d42bc0e587b2f8ab5700716d56357956ed"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.catalog.json",
+          "sha256": "67f08c64934998a5c2b5dbe98d7cf1aa04159a4c96f3dbfffc4021548104e176"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.catalog.log",
+          "sha256": "034d61865fa49b689981474190987f913b3bb5e0ea57b3aade6cc25b6520ed7f"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.runtime.json",
+          "sha256": "ffae153d34f1835fbedb60aaf3cb30962188eb89b2c9443883bfa5f2b8a4ff3f"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.runtime.log",
+          "sha256": "9b92be8252e3646965eb1a5a066a7bf75bc63d3ecda169a3d428152d31375ca1"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.runtime.terminal-audit.json",
+          "sha256": "2e8cc32776c8e8badff8c776ea26fb1e37bca9eb801f214336fc05bce7d1fcb0"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.source-freeze.json",
+          "sha256": "d3d2f21f491687095a4cc00209aa889d0c352a2949c7f8aff66b75af0660ba5e"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-domain-20261031.message.txt",
+          "sha256": "92b892e9979b980edd66a2ef0fd123a1976086f6047ea0d1a3c3f6c461b135f0"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-domain-20261031.prepared.json",
+          "sha256": "032c0b0f9ef61304bf39c7b488acf0e0b8cb2e49cd24bc825ed78ac839aef1d3"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-domain-20261031.reviewed.patch",
+          "sha256": "8f5fba9d31b7620078459846eb2184e584160dbb101e2fc3edb9eb5473898030"
+        },
+        {
+          "path": "docs/implementation/acceptance-evidence/task-presentation-scope-exit-raw.presentation-scope-exit-domain-20261031.verified.json",
+          "sha256": "1b7dc858cc4b88be51fca099b0e99e4a8fe8eaa6f259aff298a94772f4f65059"
+        }
+      ],
+      "indexEmpty": true,
+      "at": "2026-10-31T15:18:42.1501374Z"
+    }
+  ],
+  "finalCore": {
+    "version": 1,
+    "base": "68d84bad2fa911126c1de198ffa927ca37b2bb42",
+    "run": "presentation-frame-exit-20261101.owner2.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  23.647s] 2211 tests run: 2211 passed, 0 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2211,
+    "passed": 2211,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4031,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-31T15:17:59.1359728Z"
+  },
+  "quality": [
+    {
+      "version": 1,
+      "base": "1d72adc17b197b7860f67ea0f7c5b20c6112049b",
+      "command": [
+        "check",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4031,
+      "sourceDrift": 0,
+      "startedAt": "2026-10-31T15:18:49.8430869Z",
+      "finishedAt": "2026-10-31T15:22:04.696355Z"
+    },
+    {
+      "version": 1,
+      "base": "1d72adc17b197b7860f67ea0f7c5b20c6112049b",
+      "command": [
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4031,
+      "sourceDrift": 0,
+      "startedAt": "2026-10-31T15:22:06.0083779Z",
+      "finishedAt": "2026-10-31T15:24:53.6626212Z"
+    },
+    {
+      "version": 1,
+      "base": "1d72adc17b197b7860f67ea0f7c5b20c6112049b",
+      "command": [
+        "check",
+        "-p",
+        "arcweft-core",
+        "--all-targets",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4031,
+      "sourceDrift": 0,
+      "startedAt": "2026-10-31T15:24:54.195977Z",
+      "finishedAt": "2026-10-31T15:25:42.2858393Z"
+    },
+    {
+      "version": 1,
+      "base": "1d72adc17b197b7860f67ea0f7c5b20c6112049b",
+      "command": [
+        "test",
+        "-p",
+        "arcweft-core",
+        "--doc",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4031,
+      "sourceDrift": 0,
+      "startedAt": "2026-10-31T15:25:42.7734373Z",
+      "finishedAt": "2026-10-31T15:25:52.3589623Z"
+    },
+    {
+      "version": 1,
+      "base": "1d72adc17b197b7860f67ea0f7c5b20c6112049b",
+      "command": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking",
+        "--write",
+        "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/product-execution-quality-20261031T151846532.structure-report"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4031,
+      "sourceDrift": 0,
+      "startedAt": "2026-10-31T15:25:52.7913812Z",
+      "finishedAt": "2026-10-31T15:25:56.6075992Z"
+    },
+    {
+      "version": 1,
+      "paths": [
+        "crates/arcweft-core/src/awbc/fiber.rs",
+        "crates/arcweft-core/src/awbc/fiber/input.rs",
+        "crates/arcweft-core/src/awbc/fiber/program_task.rs",
+        "crates/arcweft-core/src/awbc/fiber/scope.rs",
+        "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+        "crates/arcweft-core/src/awbc/product_step.rs",
+        "crates/arcweft-core/src/awbc/product_step/checkpoint.rs",
+        "crates/arcweft-core/src/awbc/product_step/control.rs",
+        "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+        "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+        "crates/arcweft-core/src/awbc/product_step/line.rs",
+        "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+        "crates/arcweft-core/src/awbc/product_step/program_fanout.rs",
+        "crates/arcweft-core/src/awbc/product_step/program_task/tests.rs",
+        "crates/arcweft-core/src/awbc/product_step/program.rs",
+        "crates/arcweft-core/src/awbc/product_step/root.rs",
+        "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+        "crates/arcweft-core/src/awbc/product_step/step_budget.rs",
+        "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+        "crates/arcweft-core/src/awbc/product_step/tests.rs",
+        "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+        "crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs",
+        "crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs",
+        "crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+        "crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+        "crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+        "crates/arcweft-core/src/awbc/tests.rs",
+        "crates/arcweft-core/src/awbc/tests/dialogue_callback_projection.rs",
+        "crates/arcweft-core/src/awbc/tests/instruction_call_execution.rs",
+        "crates/arcweft-core/src/awbc/tests/local_assignment.rs",
+        "crates/arcweft-core/src/awbc/vm.rs",
+        "crates/arcweft-core/src/awbc/vm/resources.rs",
+        "crates/arcweft-core/src/engine.rs",
+        "crates/arcweft-core/src/engine/rollback.rs",
+        "crates/arcweft-core/src/line_task.rs",
+        "crates/arcweft-core/src/line_task/activation.rs",
+        "crates/arcweft-core/src/line_task/activation/contour.rs",
+        "crates/arcweft-core/src/line_task/activation/contour/tests.rs",
+        "crates/arcweft-core/src/line_task/handle.rs",
+        "crates/arcweft-core/src/presentation/resources.rs",
+        "crates/arcweft-core/src/presentation/resources/bank_rows.rs",
+        "crates/arcweft-core/src/presentation/resources/banks.rs",
+        "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+        "crates/arcweft-core/src/presentation/resources/banks/tests/scope_grants.rs",
+        "crates/arcweft-core/src/presentation/resources/banks/tests/transition.rs",
+        "crates/arcweft-core/src/presentation/resources/banks/transition.rs",
+        "crates/arcweft-core/src/presentation/resources/execution.rs",
+        "crates/arcweft-core/src/presentation/resources/execution/tests.rs",
+        "crates/arcweft-core/src/presentation/resources/scope.rs",
+        "crates/arcweft-core/src/presentation/resources/storage.rs",
+        "crates/arcweft-core/src/presentation/resources/tests.rs",
+        "crates/arcweft-core/src/value/awbc_save/retained_admission.rs"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4031,
+      "sourceDrift": 0
+    },
+    {
+      "version": 1,
+      "base": "1d72adc17b197b7860f67ea0f7c5b20c6112049b",
+      "command": [
+        "check",
+        "-p",
+        "arcweft-core",
+        "-p",
+        "arcweft-player-web",
+        "--target",
+        "wasm32-unknown-unknown",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4031,
+      "sourceDrift": 0,
+      "startedAt": "2026-10-31T15:26:48.4715504Z",
+      "finishedAt": "2026-10-31T15:28:32.5081263Z"
+    }
+  ],
+  "qualityInputDrift": 0,
+  "initialWasmAttempt": {
+    "version": 1,
+    "base": "1d72adc17b197b7860f67ea0f7c5b20c6112049b",
+    "command": [
+      "check",
+      "-p",
+      "arcweft-core",
+      "-p",
+      "arcweft-web-player",
+      "--target",
+      "wasm32-unknown-unknown",
+      "--locked"
+    ],
+    "exitCode": 101,
+    "sourceInputs": 4031,
+    "sourceDrift": 0,
+    "startedAt": "2026-10-31T15:26:22.9529826Z",
+    "finishedAt": "2026-10-31T15:26:24.4112152Z"
+  },
+  "documentation": {
+    "date": "2026-11-01",
+    "base": "1d72adc17b197b7860f67ea0f7c5b20c6112049b",
+    "changed": [
+      "docs/implementation/convergence-evidence-history.md",
+      "docs/implementation/current-status.md"
+    ],
+    "checkedDocuments": 129,
+    "relativeLinks": 650,
+    "brokenLinks": [],
+    "unclosedFences": [],
+    "statusCommitIds": 48,
+    "unretainedIds": [],
+    "historicalRawChanges": [],
+    "historicalPrefixPreserved": true,
+    "heldFiles": 20,
+    "heldDrift": 0,
+    "partialCliOriginalWipProof": true,
+    "rustCargoRun": false
+  },
+  "meaningfulCoverage": [
+    "Real exact opaque Presentation Handle parameters bound through the original admitted function input ABI; original token identity remains unchanged.",
+    "Root terminal result retention, actual CallFunction callee/caller grants, independent issuer scope exit and terminal detachment.",
+    "Static and exact typed dynamic Flow Goto, actual next frame allocation, complete operand admission, bounded repeated refusal and unchanged-policy retry.",
+    "Public inert save serde/owned restore, complete private checkpoint rollback, and discarded root storage vacancy.",
+    "Existing receiver mutation, nominal sequence mutation, complete/partial place assignment and repeated codec/checkpoint assertions remain observable before root exit; original total VM slice allowances are preserved."
+  ],
+  "failureHistory": [
+    "Return focus1: compile 101, incorrect enum import and test constructor call; no test execution.",
+    "Return focus2: 0/3, fixture string table not canonical; focus3: 0/4, constructor arguments and callee safe-point metadata.",
+    "Return focus4: 0/4, actual Product line-only projection rejected Presentation handles; fixed through the shared typed resource graph. Focus5: 4/4.",
+    "Frame focus1: 4/6, target Flow lacked an entry role; focus2: 11/13, dynamic fixture lacked its required function flag.",
+    "Frame owner1: 2202/2211, nine failures retained. Three asserted the former transferred terminal marker, four observed local storage after root exit, and two used a reserved source-family string as a dynamic target. Payload and mutation assertions were retained, observation moved before exit with total budgets unchanged, and the target now uses its exact typed Flow identity.",
+    "Frame owner2: 2211/2211 with zero excluded cases; no failed prior epoch is merged into this run.",
+    "Initial Wasm command exited 101 before compilation because arcweft-web-player is not a package. The corrected command uses the actual arcweft-player-web package on the same source inputs; both command records and logs are retained."
+  ],
+  "designRationale": [
+    "Prepared input and root frame authority live on the owning fiber types; the actual original bank aggregate admits all source/receiver grants, tokens, capacity and cursors before movement.",
+    "An owner outside the exiting contour is not necessarily the actual receiver. Preserve only an existing receiving grant; otherwise transfer the original lease to the receiver, or detach it into an actual retained terminal value.",
+    "No fallback ledger, body cloning, token renaming, dual reader, contract version increment or Cargo dependency change was introduced."
+  ],
+  "notClaimed": [
+    "Source ViewValue callable/method/mount lowering and real display-driver acceptance",
+    "Actual typed Dialogue result delivery into a receiving Root grant and all resource-discard consumers",
+    "Native borrowed-parent full contour and active-bank replacement",
+    "Fresh complete downstream runtime/target matrix or Native/Web image parity"
+  ],
+  "artifacts": [
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus1.source-freeze.json",
+      "source": "presentation-return-transfer-20261031.focus1.source-freeze.json",
+      "originalPath": "",
+      "bytes": 788005,
+      "sha256": "bc959f3b58c08584cf13004e820892a7a9a7f40d1c3e6fd4ba07fd8526b0e980"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus1.catalog.json",
+      "source": "presentation-return-transfer-20261031.focus1.catalog.json",
+      "originalPath": "",
+      "bytes": 591,
+      "sha256": "422526a8565f8c792db5d32f1acd942cac83c2cccacf1b385943f837edadbb13"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus1.catalog.log",
+      "source": "presentation-return-transfer-20261031.focus1.catalog.log",
+      "originalPath": "",
+      "bytes": 12511,
+      "sha256": "f2467e5ca1cf880d3bfae2b5e6547d7616033d2b3645606658d941cf4ee6ccbb"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus1.sources.json",
+      "source": "presentation-return-transfer-20261031.focus1.sources.json",
+      "originalPath": "",
+      "bytes": 2487,
+      "sha256": "095a80c4acc5a7951af04d27b3ecaca718a215d437b9bcc299f1872e03ad73a9"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus1.runner.ps1",
+      "source": "run-presentation-return-transfer-20261031.focus1.ps1",
+      "originalPath": "",
+      "bytes": 6368,
+      "sha256": "e9380856ab30e248c8a94c22d2ba8529ae30bb71170c9d03ff6bdc3cc38ddab9"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus1.capture-01.txt",
+      "source": "presentation-return-transfer-20261031.focus1.sources/crates/arcweft-core/src/awbc/fiber.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/fiber.rs",
+      "bytes": 292727,
+      "sha256": "f490f4e762342411052f6d50edaf32ffb065f3fbcf9f3bf1c9f40d2a18056ca2"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus1.capture-02.txt",
+      "source": "presentation-return-transfer-20261031.focus1.sources/crates/arcweft-core/src/awbc/fiber/scope.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/fiber/scope.rs",
+      "bytes": 35258,
+      "sha256": "247c8e3c1dfc90596e8dcaf22f8c76c294ab2f69ed2d0e8a3b9f51e9c4548aeb"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus1.capture-03.txt",
+      "source": "presentation-return-transfer-20261031.focus1.sources/crates/arcweft-core/src/awbc/product_step.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/product_step.rs",
+      "bytes": 248666,
+      "sha256": "f7409c1e52f930a7d26cae3c5341be23df6445c464854dc2bd4ac84436251871"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus1.capture-04.txt",
+      "source": "presentation-return-transfer-20261031.focus1.sources/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "bytes": 37225,
+      "sha256": "32101fecea5f35bd2992858b71e6edf217c8c93e75635aa34f12a7086873a0e1"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus1.capture-05.txt",
+      "source": "presentation-return-transfer-20261031.focus1.sources/crates/arcweft-core/src/awbc/vm.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/vm.rs",
+      "bytes": 224559,
+      "sha256": "9ee9fcc8935825db2feb3d050bc742f08ae990fafa5be8d38dd58e1dda2af729"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus1.capture-06.txt",
+      "source": "presentation-return-transfer-20261031.focus1.sources/crates/arcweft-core/src/awbc/vm/resources.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/vm/resources.rs",
+      "bytes": 3423,
+      "sha256": "1fc186a63bf4ae3ab10ff0e9b01657dd74fa3fb0d09093dd31e484d9c9a0db10"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus1.capture-07.txt",
+      "source": "presentation-return-transfer-20261031.focus1.sources/crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+      "bytes": 10063,
+      "sha256": "374ea0eefdb8bcdf7b545cdc6c8db3568d8baf7deb1e96c10cdfd7496e5fee8d"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus2.source-freeze.json",
+      "source": "presentation-return-transfer-20261031.focus2.source-freeze.json",
+      "originalPath": "",
+      "bytes": 788005,
+      "sha256": "edce24a8781a5e3ce0ab686acba5118a2dbc8281c874734996469e89710c9cc3"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus2.catalog.json",
+      "source": "presentation-return-transfer-20261031.focus2.catalog.json",
+      "originalPath": "",
+      "bytes": 589,
+      "sha256": "ef48b6b8f9b0a7a147084614641818647a996bc5dd62f72e08cfdf9522bc4cc3"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus2.catalog.log",
+      "source": "presentation-return-transfer-20261031.focus2.catalog.log",
+      "originalPath": "",
+      "bytes": 452901,
+      "sha256": "09ff67b19d7b4c1e82bc14f915226f5d5f98914de72d77634637c01d765f8e81"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus2.catalog.inventory.json",
+      "source": "presentation-return-transfer-20261031.focus2.catalog.inventory.json",
+      "originalPath": "",
+      "bytes": 549406,
+      "sha256": "f60ea162ea4eaa79398eedf30cd2e4d50df00c8585f61cbb20b409b39931bfc8"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus2.binaries-before.json",
+      "source": "presentation-return-transfer-20261031.focus2.binaries-before.json",
+      "originalPath": "",
+      "bytes": 202,
+      "sha256": "e08322a3d4d0ed8b517a6feb33d0c9d09725aed781e92bc93075c54a50148955"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus2.runtime.json",
+      "source": "presentation-return-transfer-20261031.focus2.runtime.json",
+      "originalPath": "",
+      "bytes": 683,
+      "sha256": "60e8806af3ed904e8195e40457fde587ed3e024d47e3ea9664f5459d443e17a4"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus2.runtime.log",
+      "source": "presentation-return-transfer-20261031.focus2.runtime.log",
+      "originalPath": "",
+      "bytes": 694299,
+      "sha256": "ac341eeaccf7d1157b1d36ebc1037a3ba67ec42c3537686fa5083c0f5fce29b3"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus2.runtime.terminal-audit.json",
+      "source": "presentation-return-transfer-20261031.focus2.runtime.terminal-audit.json",
+      "originalPath": "",
+      "bytes": 1295,
+      "sha256": "5c93b2c6141a3a61dccdb11f890381e7ee43252e1c110067a636f02a9f1c1177"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus2.sources.json",
+      "source": "presentation-return-transfer-20261031.focus2.sources.json",
+      "originalPath": "",
+      "bytes": 2487,
+      "sha256": "5f18523e1ea71c37b0dbd21ea604eecfc9be49063790074b0a3ffd7ce93124ad"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus2.runner.ps1",
+      "source": "run-presentation-return-transfer-20261031.focus2.ps1",
+      "originalPath": "",
+      "bytes": 6368,
+      "sha256": "6ca838febaf175012fe35bef971dbf0d594dda981767b42e00ee51d931bad76b"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus2.capture-01.txt",
+      "source": "presentation-return-transfer-20261031.focus2.sources/crates/arcweft-core/src/awbc/fiber.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/fiber.rs",
+      "bytes": 292727,
+      "sha256": "f490f4e762342411052f6d50edaf32ffb065f3fbcf9f3bf1c9f40d2a18056ca2"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus2.capture-02.txt",
+      "source": "presentation-return-transfer-20261031.focus2.sources/crates/arcweft-core/src/awbc/fiber/scope.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/fiber/scope.rs",
+      "bytes": 35258,
+      "sha256": "247c8e3c1dfc90596e8dcaf22f8c76c294ab2f69ed2d0e8a3b9f51e9c4548aeb"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus2.capture-03.txt",
+      "source": "presentation-return-transfer-20261031.focus2.sources/crates/arcweft-core/src/awbc/product_step.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/product_step.rs",
+      "bytes": 248666,
+      "sha256": "f7409c1e52f930a7d26cae3c5341be23df6445c464854dc2bd4ac84436251871"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus2.capture-04.txt",
+      "source": "presentation-return-transfer-20261031.focus2.sources/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "bytes": 37225,
+      "sha256": "32101fecea5f35bd2992858b71e6edf217c8c93e75635aa34f12a7086873a0e1"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus2.capture-05.txt",
+      "source": "presentation-return-transfer-20261031.focus2.sources/crates/arcweft-core/src/awbc/vm.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/vm.rs",
+      "bytes": 224559,
+      "sha256": "9ee9fcc8935825db2feb3d050bc742f08ae990fafa5be8d38dd58e1dda2af729"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus2.capture-06.txt",
+      "source": "presentation-return-transfer-20261031.focus2.sources/crates/arcweft-core/src/awbc/vm/resources.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/vm/resources.rs",
+      "bytes": 3486,
+      "sha256": "b1409473bf62c8784351242950ccf318f27288634795e795ed8331eb0f4d5d06"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus2.capture-07.txt",
+      "source": "presentation-return-transfer-20261031.focus2.sources/crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+      "bytes": 10081,
+      "sha256": "7000424f10878cb9acc6da275648a447a8fec6dc8b0b14c7be56b81a60fe2929"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus3.source-freeze.json",
+      "source": "presentation-return-transfer-20261031.focus3.source-freeze.json",
+      "originalPath": "",
+      "bytes": 788005,
+      "sha256": "eed94f02c71ab61e439d9191637d3b336d514969c12c124a6637c3aba7f54e87"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus3.catalog.json",
+      "source": "presentation-return-transfer-20261031.focus3.catalog.json",
+      "originalPath": "",
+      "bytes": 589,
+      "sha256": "455d4e5c4cec97d182a88600dada0a564773e7659e113157c77fb01c22954b66"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus3.catalog.log",
+      "source": "presentation-return-transfer-20261031.focus3.catalog.log",
+      "originalPath": "",
+      "bytes": 453100,
+      "sha256": "2337b83780400baa1c80b0f7ea3f14c96d9c8ea603f029dbc0789f9cd4f16e41"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus3.catalog.inventory.json",
+      "source": "presentation-return-transfer-20261031.focus3.catalog.inventory.json",
+      "originalPath": "",
+      "bytes": 549687,
+      "sha256": "76a90c6cb13e8b32b6ffd105ebf7f5369270e933523c3c088f2cf3132070014c"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus3.binaries-before.json",
+      "source": "presentation-return-transfer-20261031.focus3.binaries-before.json",
+      "originalPath": "",
+      "bytes": 202,
+      "sha256": "e0f45d2a13c6cd4e229ab11b2a4e8bed31e83ae5cc584d2b0514879c327ea8d7"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus3.runtime.json",
+      "source": "presentation-return-transfer-20261031.focus3.runtime.json",
+      "originalPath": "",
+      "bytes": 683,
+      "sha256": "1b85afaed6e8feccdd9d861244ea250e68d7044673493e42c6bc1e9b2497f23c"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus3.runtime.log",
+      "source": "presentation-return-transfer-20261031.focus3.runtime.log",
+      "originalPath": "",
+      "bytes": 695610,
+      "sha256": "d270d1fcffd4fe995bd9a26fd432bf640cd24739d489f48ed8ca4f31279ffc4a"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus3.runtime.terminal-audit.json",
+      "source": "presentation-return-transfer-20261031.focus3.runtime.terminal-audit.json",
+      "originalPath": "",
+      "bytes": 1514,
+      "sha256": "218d878cb59962add8ccda7881e7917dde06d39b418589142b91e5f8ac8fba11"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus3.sources.json",
+      "source": "presentation-return-transfer-20261031.focus3.sources.json",
+      "originalPath": "",
+      "bytes": 2487,
+      "sha256": "21185f3220a5d5aa55bdaa3d672f734c60019cd13e61e0c16cf9d8da469146f7"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus3.runner.ps1",
+      "source": "run-presentation-return-transfer-20261031.focus3.ps1",
+      "originalPath": "",
+      "bytes": 6368,
+      "sha256": "71eddda9ce27d0fab0db1eb30a08f6ecb4914db5ea199d66e202240454a7e5fc"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus3.capture-01.txt",
+      "source": "presentation-return-transfer-20261031.focus3.sources/crates/arcweft-core/src/awbc/fiber.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/fiber.rs",
+      "bytes": 292727,
+      "sha256": "f490f4e762342411052f6d50edaf32ffb065f3fbcf9f3bf1c9f40d2a18056ca2"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus3.capture-02.txt",
+      "source": "presentation-return-transfer-20261031.focus3.sources/crates/arcweft-core/src/awbc/fiber/scope.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/fiber/scope.rs",
+      "bytes": 35258,
+      "sha256": "247c8e3c1dfc90596e8dcaf22f8c76c294ab2f69ed2d0e8a3b9f51e9c4548aeb"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus3.capture-03.txt",
+      "source": "presentation-return-transfer-20261031.focus3.sources/crates/arcweft-core/src/awbc/product_step.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/product_step.rs",
+      "bytes": 248666,
+      "sha256": "f7409c1e52f930a7d26cae3c5341be23df6445c464854dc2bd4ac84436251871"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus3.capture-04.txt",
+      "source": "presentation-return-transfer-20261031.focus3.sources/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "bytes": 37225,
+      "sha256": "32101fecea5f35bd2992858b71e6edf217c8c93e75635aa34f12a7086873a0e1"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus3.capture-05.txt",
+      "source": "presentation-return-transfer-20261031.focus3.sources/crates/arcweft-core/src/awbc/vm.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/vm.rs",
+      "bytes": 224559,
+      "sha256": "9ee9fcc8935825db2feb3d050bc742f08ae990fafa5be8d38dd58e1dda2af729"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus3.capture-06.txt",
+      "source": "presentation-return-transfer-20261031.focus3.sources/crates/arcweft-core/src/awbc/vm/resources.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/vm/resources.rs",
+      "bytes": 3486,
+      "sha256": "b1409473bf62c8784351242950ccf318f27288634795e795ed8331eb0f4d5d06"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus3.capture-07.txt",
+      "source": "presentation-return-transfer-20261031.focus3.sources/crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+      "bytes": 12979,
+      "sha256": "f18b7c98be41788a7acf6fe51f03aebd45922b72096c937bb65e65d8c54c4512"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus4.source-freeze.json",
+      "source": "presentation-return-transfer-20261031.focus4.source-freeze.json",
+      "originalPath": "",
+      "bytes": 788005,
+      "sha256": "0390f86d39c90a667ec4ede4e7c35936957014cfc65c4e9b7b0cd69376bfdcba"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus4.catalog.json",
+      "source": "presentation-return-transfer-20261031.focus4.catalog.json",
+      "originalPath": "",
+      "bytes": 589,
+      "sha256": "4beeaa07de2c5357a3efd71ba78515bbf6ea1da55e32b4263ae694cdc177f347"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus4.catalog.log",
+      "source": "presentation-return-transfer-20261031.focus4.catalog.log",
+      "originalPath": "",
+      "bytes": 453100,
+      "sha256": "c124844a0f664fa07a7c6fa005d1330a91d9ba5ba9b07c51ab3a3531dfc193c5"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus4.catalog.inventory.json",
+      "source": "presentation-return-transfer-20261031.focus4.catalog.inventory.json",
+      "originalPath": "",
+      "bytes": 549687,
+      "sha256": "76a90c6cb13e8b32b6ffd105ebf7f5369270e933523c3c088f2cf3132070014c"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus4.binaries-before.json",
+      "source": "presentation-return-transfer-20261031.focus4.binaries-before.json",
+      "originalPath": "",
+      "bytes": 202,
+      "sha256": "6ac679b045587f293c7bcde557adc9e1d627f740cf6d86ae9d4c3b313c56f18e"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus4.runtime.json",
+      "source": "presentation-return-transfer-20261031.focus4.runtime.json",
+      "originalPath": "",
+      "bytes": 683,
+      "sha256": "5efba79906021a7fb8372f0f29e7e4a131c3901ed9f65b7f144611aac5caa65f"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus4.runtime.log",
+      "source": "presentation-return-transfer-20261031.focus4.runtime.log",
+      "originalPath": "",
+      "bytes": 695588,
+      "sha256": "b0dc6c7aef90df8fe984851871427fa2b85976492d54a94456c1024109101ddf"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus4.runtime.terminal-audit.json",
+      "source": "presentation-return-transfer-20261031.focus4.runtime.terminal-audit.json",
+      "originalPath": "",
+      "bytes": 1514,
+      "sha256": "6c2cbe81c625e36ce90c1a7dd2bd4118f391cae68ae5c2ccb9b8b6bc93ccfff4"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus4.sources.json",
+      "source": "presentation-return-transfer-20261031.focus4.sources.json",
+      "originalPath": "",
+      "bytes": 2487,
+      "sha256": "1dcb06baa5efa1c8c28a0ea319e702dbde03b27dfb0c39a9c05d796dc3f173d4"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus4.runner.ps1",
+      "source": "run-presentation-return-transfer-20261031.focus4.ps1",
+      "originalPath": "",
+      "bytes": 6368,
+      "sha256": "f356c1de42d6bca12be4660d9091af3fa4e7fa43bfa6725e804548e0f02842d2"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus4.capture-01.txt",
+      "source": "presentation-return-transfer-20261031.focus4.sources/crates/arcweft-core/src/awbc/fiber.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/fiber.rs",
+      "bytes": 292727,
+      "sha256": "f490f4e762342411052f6d50edaf32ffb065f3fbcf9f3bf1c9f40d2a18056ca2"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus4.capture-02.txt",
+      "source": "presentation-return-transfer-20261031.focus4.sources/crates/arcweft-core/src/awbc/fiber/scope.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/fiber/scope.rs",
+      "bytes": 35258,
+      "sha256": "247c8e3c1dfc90596e8dcaf22f8c76c294ab2f69ed2d0e8a3b9f51e9c4548aeb"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus4.capture-03.txt",
+      "source": "presentation-return-transfer-20261031.focus4.sources/crates/arcweft-core/src/awbc/product_step.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/product_step.rs",
+      "bytes": 248666,
+      "sha256": "f7409c1e52f930a7d26cae3c5341be23df6445c464854dc2bd4ac84436251871"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus4.capture-04.txt",
+      "source": "presentation-return-transfer-20261031.focus4.sources/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "bytes": 37225,
+      "sha256": "32101fecea5f35bd2992858b71e6edf217c8c93e75635aa34f12a7086873a0e1"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus4.capture-05.txt",
+      "source": "presentation-return-transfer-20261031.focus4.sources/crates/arcweft-core/src/awbc/vm.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/vm.rs",
+      "bytes": 224559,
+      "sha256": "9ee9fcc8935825db2feb3d050bc742f08ae990fafa5be8d38dd58e1dda2af729"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus4.capture-06.txt",
+      "source": "presentation-return-transfer-20261031.focus4.sources/crates/arcweft-core/src/awbc/vm/resources.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/vm/resources.rs",
+      "bytes": 3486,
+      "sha256": "b1409473bf62c8784351242950ccf318f27288634795e795ed8331eb0f4d5d06"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus4.capture-07.txt",
+      "source": "presentation-return-transfer-20261031.focus4.sources/crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+      "bytes": 13635,
+      "sha256": "8e3c00f642791c450cb33cbc1d69cbcf174641cb4269b205c9bf2de23e4df282"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus5.source-freeze.json",
+      "source": "presentation-return-transfer-20261031.focus5.source-freeze.json",
+      "originalPath": "",
+      "bytes": 788005,
+      "sha256": "2e8f75ef6d87644a750cfb711a3bb91ffa4833016925fae365b7765926808324"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus5.catalog.json",
+      "source": "presentation-return-transfer-20261031.focus5.catalog.json",
+      "originalPath": "",
+      "bytes": 589,
+      "sha256": "a63de2a7a2841a08271b05c9910044f6e2a125bdde2b2ca47d808a8c350d5424"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus5.catalog.log",
+      "source": "presentation-return-transfer-20261031.focus5.catalog.log",
+      "originalPath": "",
+      "bytes": 453100,
+      "sha256": "58e6d54c880f8b31cd67f52279432c41b6e20a957af02ed4c996544fd453a6eb"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus5.catalog.inventory.json",
+      "source": "presentation-return-transfer-20261031.focus5.catalog.inventory.json",
+      "originalPath": "",
+      "bytes": 549687,
+      "sha256": "76a90c6cb13e8b32b6ffd105ebf7f5369270e933523c3c088f2cf3132070014c"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus5.binaries-before.json",
+      "source": "presentation-return-transfer-20261031.focus5.binaries-before.json",
+      "originalPath": "",
+      "bytes": 202,
+      "sha256": "90693fe6df32f071af823b6edf3c8cfcb58b37617a186ae606299641e7ea91c9"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus5.runtime.json",
+      "source": "presentation-return-transfer-20261031.focus5.runtime.json",
+      "originalPath": "",
+      "bytes": 681,
+      "sha256": "95cf8820fdc478fdd9710dec8dcf1161cdbe8bc636298f68938063cf3ed61968"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus5.runtime.log",
+      "source": "presentation-return-transfer-20261031.focus5.runtime.log",
+      "originalPath": "",
+      "bytes": 691757,
+      "sha256": "aaa731637f474312241441b4c94157d7bf2def0040e784dc54578395820959a2"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus5.runtime.terminal-audit.json",
+      "source": "presentation-return-transfer-20261031.focus5.runtime.terminal-audit.json",
+      "originalPath": "",
+      "bytes": 627,
+      "sha256": "8c58955c1058b8bcd6dd59b19a124daaf76e9fbc9539c991599e02b2c69051ad"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-20261031.focus5.runner.ps1",
+      "source": "run-presentation-return-transfer-20261031.focus5.ps1",
+      "originalPath": "",
+      "bytes": 6368,
+      "sha256": "c38cd05f3cf01c3fcf9a66a43a2bacfe2720a63cb82094724927dc4cc6057ec6"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus1.source-freeze.json",
+      "source": "presentation-frame-exit-20261101.focus1.source-freeze.json",
+      "originalPath": "",
+      "bytes": 788005,
+      "sha256": "3f62cdd02b561827f0517ad4d3b8eaa2a1cebf9623d696659ab743f95f4eea22"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus1.catalog.json",
+      "source": "presentation-frame-exit-20261101.focus1.catalog.json",
+      "originalPath": "",
+      "bytes": 584,
+      "sha256": "f574a50ef8e88a48f16fd4c38c0d48cfb9061fe8fc79857d07e23ecf51c1584d"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus1.catalog.log",
+      "source": "presentation-frame-exit-20261101.focus1.catalog.log",
+      "originalPath": "",
+      "bytes": 453497,
+      "sha256": "a21a994272e8d421dd1f866b6254d6422bb37968797d1048f33ee6c56d3127ce"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus1.catalog.inventory.json",
+      "source": "presentation-frame-exit-20261101.focus1.catalog.inventory.json",
+      "originalPath": "",
+      "bytes": 550248,
+      "sha256": "3346414244230f66a2a1e383aaa7feca98221791f4ff412e93e8bc011b5216ee"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus1.binaries-before.json",
+      "source": "presentation-frame-exit-20261101.focus1.binaries-before.json",
+      "originalPath": "",
+      "bytes": 202,
+      "sha256": "93e689bd5c511eabe3eb134f6fb2502aef00e78a9c16b5f9fae361f45bd49f3f"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus1.runtime.json",
+      "source": "presentation-frame-exit-20261101.focus1.runtime.json",
+      "originalPath": "",
+      "bytes": 678,
+      "sha256": "6b4f74a3d7e33b55de94d581c74d53dd3f5cf702e2a349d674e5ac5ddd0c2de6"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus1.runtime.log",
+      "source": "presentation-frame-exit-20261101.focus1.runtime.log",
+      "originalPath": "",
+      "bytes": 694626,
+      "sha256": "59fbfbb370de32994fa9772d253188b069cd06a0d8ebfbc44935bc5d0f19dfef"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus1.runtime.terminal-audit.json",
+      "source": "presentation-frame-exit-20261101.focus1.runtime.terminal-audit.json",
+      "originalPath": "",
+      "bytes": 1075,
+      "sha256": "0a6e1ee9ec22dadf4b5c166f5e5840649ca47267437599f77a20b806542f8c50"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus1.sources.json",
+      "source": "presentation-frame-exit-20261101.focus1.sources.json",
+      "originalPath": "",
+      "bytes": 1732,
+      "sha256": "8195cad80991f5e9844630edaf1229854226c76196730232014ec77697867269"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus1.runner.ps1",
+      "source": "run-presentation-frame-exit-20261101.focus1.ps1",
+      "originalPath": "",
+      "bytes": 6363,
+      "sha256": "8452ed3e25357e5433eb926f22e01078af0d6e9e69bbfd69ab2549d1898dff3b"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus1.capture-01.txt",
+      "source": "presentation-frame-exit-20261101.focus1.sources/crates/arcweft-core/src/awbc/fiber.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/fiber.rs",
+      "bytes": 293855,
+      "sha256": "3e1692dabde34e3c71f49d28e8dad0b56031bd92a76e74b147a4bef2e9df6653"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus1.capture-02.txt",
+      "source": "presentation-frame-exit-20261101.focus1.sources/crates/arcweft-core/src/awbc/fiber/input.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/fiber/input.rs",
+      "bytes": 24349,
+      "sha256": "083a9b7ada9b262231f19de7ebedf4943564eb718dd1d4baaf23550c4e0687d3"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus1.capture-03.txt",
+      "source": "presentation-frame-exit-20261101.focus1.sources/crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+      "bytes": 19628,
+      "sha256": "d915f9ad19b3ffa778ec281454811b74c9338a6f6be3cb394a585bac328d3fb4"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus1.capture-04.txt",
+      "source": "presentation-frame-exit-20261101.focus1.sources/crates/arcweft-core/src/awbc/vm.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/vm.rs",
+      "bytes": 225121,
+      "sha256": "ceacad5d7aa6501fae59ad8282b2f185453bcb9f3ccc1027244f477739cfe990"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus1.capture-05.txt",
+      "source": "presentation-frame-exit-20261101.focus1.sources/crates/arcweft-core/src/awbc/vm/resources.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/vm/resources.rs",
+      "bytes": 6251,
+      "sha256": "0305a2a82c7cf396c0dd210b09ee034e8a0078823600e8cd179eaa882d51180a"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus2.source-freeze.json",
+      "source": "presentation-frame-exit-20261101.focus2.source-freeze.json",
+      "originalPath": "",
+      "bytes": 788005,
+      "sha256": "a45361461fdeebac6a4a9d2f82b89eb092bf30f13f1c4f117a1e3654ead32a52"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus2.catalog.json",
+      "source": "presentation-frame-exit-20261101.focus2.catalog.json",
+      "originalPath": "",
+      "bytes": 644,
+      "sha256": "0a8fca64244d7f552c160ba0df8f57a1119c48a37b2274a6a4ce1fdba6b62366"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus2.catalog.log",
+      "source": "presentation-frame-exit-20261101.focus2.catalog.log",
+      "originalPath": "",
+      "bytes": 453782,
+      "sha256": "8583ae4b97763beaf303296091fa1836d37c10b44c79c3ecc294745f9d410b75"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus2.catalog.inventory.json",
+      "source": "presentation-frame-exit-20261101.focus2.catalog.inventory.json",
+      "originalPath": "",
+      "bytes": 550807,
+      "sha256": "50371caec11be43549966b3b54bdb90367e5ff1814e97d3216cc8b72dc907208"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus2.binaries-before.json",
+      "source": "presentation-frame-exit-20261101.focus2.binaries-before.json",
+      "originalPath": "",
+      "bytes": 202,
+      "sha256": "831ad43550a43e282ed790a22be9dfcbc7dda8632f9337d5b73296388fc26f2a"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus2.runtime.json",
+      "source": "presentation-frame-exit-20261101.focus2.runtime.json",
+      "originalPath": "",
+      "bytes": 738,
+      "sha256": "a2b42b953c2bd3eaa5a2ad4ae28ce907ab910da6c7ed70e2c449c86855579cd9"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus2.runtime.log",
+      "source": "presentation-frame-exit-20261101.focus2.runtime.log",
+      "originalPath": "",
+      "bytes": 720951,
+      "sha256": "5772f7a9efa264caf758537dcbd31c9b18f0a10dda813c97c4aeb7e4cad75b37"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus2.runtime.terminal-audit.json",
+      "source": "presentation-frame-exit-20261101.focus2.runtime.terminal-audit.json",
+      "originalPath": "",
+      "bytes": 1079,
+      "sha256": "87bede5e442f7b48aa87d7c2fe7805ed3125d4a0c6b0797d5ecc24733d9c00af"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus2.sources.json",
+      "source": "presentation-frame-exit-20261101.focus2.sources.json",
+      "originalPath": "",
+      "bytes": 2514,
+      "sha256": "9cdb8b16b77a1f040689c13825ea7d816af11c276c5ba2522e2a04e172b0a7b3"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus2.runner.ps1",
+      "source": "run-presentation-frame-exit-20261101.focus2.ps1",
+      "originalPath": "",
+      "bytes": 6424,
+      "sha256": "106334777bad9d417b1ecd95c26f571b44558bc343294e3a4a54378b59ce70db"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus2.capture-01.txt",
+      "source": "presentation-frame-exit-20261101.focus2.sources/crates/arcweft-core/src/awbc/fiber.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/fiber.rs",
+      "bytes": 293855,
+      "sha256": "3e1692dabde34e3c71f49d28e8dad0b56031bd92a76e74b147a4bef2e9df6653"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus2.capture-02.txt",
+      "source": "presentation-frame-exit-20261101.focus2.sources/crates/arcweft-core/src/awbc/fiber/input.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/fiber/input.rs",
+      "bytes": 24349,
+      "sha256": "083a9b7ada9b262231f19de7ebedf4943564eb718dd1d4baaf23550c4e0687d3"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus2.capture-03.txt",
+      "source": "presentation-frame-exit-20261101.focus2.sources/crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+      "bytes": 20120,
+      "sha256": "addc0b91e6954b1a5c5b4b44116732b965df48d66ab28b63e8d81931eb81ecd7"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus2.capture-04.txt",
+      "source": "presentation-frame-exit-20261101.focus2.sources/crates/arcweft-core/src/awbc/vm.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/vm.rs",
+      "bytes": 225121,
+      "sha256": "ceacad5d7aa6501fae59ad8282b2f185453bcb9f3ccc1027244f477739cfe990"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus2.capture-05.txt",
+      "source": "presentation-frame-exit-20261101.focus2.sources/crates/arcweft-core/src/awbc/vm/resources.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/vm/resources.rs",
+      "bytes": 6251,
+      "sha256": "0305a2a82c7cf396c0dd210b09ee034e8a0078823600e8cd179eaa882d51180a"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus2.capture-06.txt",
+      "source": "presentation-frame-exit-20261101.focus2.sources/crates/arcweft-core/src/presentation/resources/banks/tests/transition.rs",
+      "originalPath": "crates/arcweft-core/src/presentation/resources/banks/tests/transition.rs",
+      "bytes": 15059,
+      "sha256": "41c5f13e271c8b57812276c0a0a808debb140ceb8ace91448ccafaf2ce54417b"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.focus2.capture-07.txt",
+      "source": "presentation-frame-exit-20261101.focus2.sources/crates/arcweft-core/src/presentation/resources/banks/transition.rs",
+      "originalPath": "crates/arcweft-core/src/presentation/resources/banks/transition.rs",
+      "bytes": 5425,
+      "sha256": "05c17826b0a2b602194794ac113efb3ade6ac73f1066fe0783c2392989dd045f"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.owner1.source-freeze.json",
+      "source": "presentation-frame-exit-20261101.owner1.source-freeze.json",
+      "originalPath": "",
+      "bytes": 788005,
+      "sha256": "796b583cbb5bc2e251d1d916008825c3fc47189deab76988e25b0ccba7fd1525"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.owner1.catalog.json",
+      "source": "presentation-frame-exit-20261101.owner1.catalog.json",
+      "originalPath": "",
+      "bytes": 492,
+      "sha256": "4d9c97ed7877e19e45aabfca14f2f2040988fe812fafbfb3a282de0ca08f9288"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.owner1.catalog.log",
+      "source": "presentation-frame-exit-20261101.owner1.catalog.log",
+      "originalPath": "",
+      "bytes": 468359,
+      "sha256": "bb08c372f170a16acf52918ff6b6fa1559ff669138bb54e395de4819fc012cbd"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.owner1.catalog.inventory.json",
+      "source": "presentation-frame-exit-20261101.owner1.catalog.inventory.json",
+      "originalPath": "",
+      "bytes": 561061,
+      "sha256": "57ca6e33b05ffc8985daa4ddc396e75db5f73d4b36392d33e45aaf411649ba43"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.owner1.binaries-before.json",
+      "source": "presentation-frame-exit-20261101.owner1.binaries-before.json",
+      "originalPath": "",
+      "bytes": 3108,
+      "sha256": "a00341781e00733af9513a0d68fcc104e2b75a279f7f69ba1345879b6dcceec0"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.owner1.runtime.json",
+      "source": "presentation-frame-exit-20261101.owner1.runtime.json",
+      "originalPath": "",
+      "bytes": 586,
+      "sha256": "6bfcca7599708fcd52238fa496e2609260e8233ecd2d5a9fa217a1f7a324c6cf"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.owner1.runtime.log",
+      "source": "presentation-frame-exit-20261101.owner1.runtime.log",
+      "originalPath": "",
+      "bytes": 766899,
+      "sha256": "e05a0444161e86699047e62bd7410b4d2b720a8022982c9fbb5be5cba4e3609b"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.owner1.runtime.terminal-audit.json",
+      "source": "presentation-frame-exit-20261101.owner1.runtime.terminal-audit.json",
+      "originalPath": "",
+      "bytes": 2368,
+      "sha256": "7f4ad60513dc31436100b18e4edf2a607f04fe14d888a16801553dd1ef27fcd5"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.owner1.sources.json",
+      "source": "presentation-frame-exit-20261101.owner1.sources.json",
+      "originalPath": "",
+      "bytes": 2514,
+      "sha256": "3e1750cfaa781656ae1e6e8b171bbdaddb59fe23a1ef4fbace5d1d80a8666474"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.owner1.runner.ps1",
+      "source": "run-presentation-frame-exit-20261101.owner1.ps1",
+      "originalPath": "",
+      "bytes": 6292,
+      "sha256": "1762a9ba4b0fb6748c90183d1fc120732441286bf34f4e8924525c918997c414"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.owner1.capture-01.txt",
+      "source": "presentation-frame-exit-20261101.owner1.sources/crates/arcweft-core/src/awbc/fiber.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/fiber.rs",
+      "bytes": 293855,
+      "sha256": "3e1692dabde34e3c71f49d28e8dad0b56031bd92a76e74b147a4bef2e9df6653"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.owner1.capture-02.txt",
+      "source": "presentation-frame-exit-20261101.owner1.sources/crates/arcweft-core/src/awbc/fiber/input.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/fiber/input.rs",
+      "bytes": 24349,
+      "sha256": "083a9b7ada9b262231f19de7ebedf4943564eb718dd1d4baaf23550c4e0687d3"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.owner1.capture-03.txt",
+      "source": "presentation-frame-exit-20261101.owner1.sources/crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+      "bytes": 20252,
+      "sha256": "649600d572aaf1ad790591861a8bf0c9ca7e3bb18a5d7eaec353985aa32ddb72"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.owner1.capture-04.txt",
+      "source": "presentation-frame-exit-20261101.owner1.sources/crates/arcweft-core/src/awbc/vm.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/vm.rs",
+      "bytes": 225121,
+      "sha256": "ceacad5d7aa6501fae59ad8282b2f185453bcb9f3ccc1027244f477739cfe990"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.owner1.capture-05.txt",
+      "source": "presentation-frame-exit-20261101.owner1.sources/crates/arcweft-core/src/awbc/vm/resources.rs",
+      "originalPath": "crates/arcweft-core/src/awbc/vm/resources.rs",
+      "bytes": 6251,
+      "sha256": "0305a2a82c7cf396c0dd210b09ee034e8a0078823600e8cd179eaa882d51180a"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.owner1.capture-06.txt",
+      "source": "presentation-frame-exit-20261101.owner1.sources/crates/arcweft-core/src/presentation/resources/banks/tests/transition.rs",
+      "originalPath": "crates/arcweft-core/src/presentation/resources/banks/tests/transition.rs",
+      "bytes": 15059,
+      "sha256": "41c5f13e271c8b57812276c0a0a808debb140ceb8ace91448ccafaf2ce54417b"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.owner1.capture-07.txt",
+      "source": "presentation-frame-exit-20261101.owner1.sources/crates/arcweft-core/src/presentation/resources/banks/transition.rs",
+      "originalPath": "crates/arcweft-core/src/presentation/resources/banks/transition.rs",
+      "bytes": 5425,
+      "sha256": "05c17826b0a2b602194794ac113efb3ade6ac73f1066fe0783c2392989dd045f"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.owner2.source-freeze.json",
+      "source": "presentation-frame-exit-20261101.owner2.source-freeze.json",
+      "originalPath": "",
+      "bytes": 788005,
+      "sha256": "0e34c04f6d904f1056d0b2e5aceed6c69b56d9665f38ebe71d29f2d5174393dc"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.owner2.catalog.json",
+      "source": "presentation-frame-exit-20261101.owner2.catalog.json",
+      "originalPath": "",
+      "bytes": 492,
+      "sha256": "00261d10830a9cdf898598c9ade3079ece166e1d2ec954fefd382775668dcd80"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.owner2.catalog.log",
+      "source": "presentation-frame-exit-20261101.owner2.catalog.log",
+      "originalPath": "",
+      "bytes": 468343,
+      "sha256": "6bd794463df51e36698b57e578712ceecc2351cccd012cc3411d3d8d46697713"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.owner2.catalog.inventory.json",
+      "source": "presentation-frame-exit-20261101.owner2.catalog.inventory.json",
+      "originalPath": "",
+      "bytes": 561061,
+      "sha256": "57ca6e33b05ffc8985daa4ddc396e75db5f73d4b36392d33e45aaf411649ba43"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.owner2.binaries-before.json",
+      "source": "presentation-frame-exit-20261101.owner2.binaries-before.json",
+      "originalPath": "",
+      "bytes": 3108,
+      "sha256": "9e6d3c474b42393a427482e181a5fd85195449ce99d23668f101b6e9939e51e1"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.owner2.runtime.json",
+      "source": "presentation-frame-exit-20261101.owner2.runtime.json",
+      "originalPath": "",
+      "bytes": 584,
+      "sha256": "29b540b7ea89d14f3613a0d50664167463943460728ecec7c3081ff29b22d843"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.owner2.runtime.log",
+      "source": "presentation-frame-exit-20261101.owner2.runtime.log",
+      "originalPath": "",
+      "bytes": 759033,
+      "sha256": "3987528f738043b38eff8d2142d60aac022d4c9a6c61c052ff6a5ef5eef727b8"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.owner2.runtime.terminal-audit.json",
+      "source": "presentation-frame-exit-20261101.owner2.runtime.terminal-audit.json",
+      "originalPath": "",
+      "bytes": 628,
+      "sha256": "0e711033a7ab29721dd34d85b02c3a1ee883d65ebb06887d0e6c027ac12d6983"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-20261101.owner2.runner.ps1",
+      "source": "run-presentation-frame-exit-20261101.owner2.ps1",
+      "originalPath": "",
+      "bytes": 6292,
+      "sha256": "63ce79a0ea3588aae4a8ec8bb8dec8b09975e201d6e2d08e2bd1f194a44b64cc"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.product-execution-quality-20261031T151846532.workspace-check.json",
+      "source": "product-execution-quality-20261031T151846532.workspace-check.json",
+      "originalPath": "",
+      "bytes": 355,
+      "sha256": "a5daf45ad2dc64f24107ed887da3ce3312ba5d27b7b7244e1377afa00083c0f2"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.product-execution-quality-20261031T151846532.workspace-check.log",
+      "source": "product-execution-quality-20261031T151846532.workspace-check.log",
+      "originalPath": "",
+      "bytes": 111586,
+      "sha256": "c19f290f5538ba724469fd73bf56cd6e942fd3401250ceae09b46b99e557162d"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.product-execution-quality-20261031T151846532.clippy.json",
+      "source": "product-execution-quality-20261031T151846532.clippy.json",
+      "originalPath": "",
+      "bytes": 356,
+      "sha256": "68beaa3741ff33d5ea11e46507fec1c341cf7d8bfb0e44049ccc177cf6f07994"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.product-execution-quality-20261031T151846532.clippy.log",
+      "source": "product-execution-quality-20261031T151846532.clippy.log",
+      "originalPath": "",
+      "bytes": 8550218,
+      "sha256": "84e11d09620b5c0fc8becfd85f558d6d18fbe552d7fec441f8163f47b5627356"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.product-execution-quality-20261031T151846532.default-check.json",
+      "source": "product-execution-quality-20261031T151846532.default-check.json",
+      "originalPath": "",
+      "bytes": 344,
+      "sha256": "751cee0404ec08d2e294b061ba6f6e61662c16fbd8e277ef774c447288ed8f32"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.product-execution-quality-20261031T151846532.default-check.log",
+      "source": "product-execution-quality-20261031T151846532.default-check.log",
+      "originalPath": "",
+      "bytes": 83417,
+      "sha256": "e1ed1f294ccb85032cb56a798508d83b6f26826dd1a1a1f796a4c5b689d2335f"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.product-execution-quality-20261031T151846532.doctest.json",
+      "source": "product-execution-quality-20261031T151846532.doctest.json",
+      "originalPath": "",
+      "bytes": 358,
+      "sha256": "f1582c432907dcd6054b0b003da5fd50ebf66f18c59807b16cf5d227cf3f40ec"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.product-execution-quality-20261031T151846532.doctest.log",
+      "source": "product-execution-quality-20261031T151846532.doctest.log",
+      "originalPath": "",
+      "bytes": 81765,
+      "sha256": "c7a254403d70839ea94d18b0bf2b67f8e2ba2c6dd2578295ef2cba38ab40d8ac"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.product-execution-quality-20261031T151846532.structure.json",
+      "source": "product-execution-quality-20261031T151846532.structure.json",
+      "originalPath": "",
+      "bytes": 539,
+      "sha256": "c0a1c350c90ce4bdd8f38933eddf7f5368f7586c8085675ea1775119015da262"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.product-execution-quality-20261031T151846532.structure.log",
+      "source": "product-execution-quality-20261031T151846532.structure.log",
+      "originalPath": "",
+      "bytes": 65048,
+      "sha256": "a17340d212d156b445e3988969bdade6d561d913e75609c38d20702766b56335"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.product-execution-quality-20261031T151846532.fmt.json",
+      "source": "product-execution-quality-20261031T151846532.fmt.json",
+      "originalPath": "",
+      "bytes": 3454,
+      "sha256": "f0b95b6da22a63674acf6b9e1508e4133f8f2db88c883dd6ea9ed3ef30fc6841"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.product-execution-quality-20261031T151846532.fmt.log",
+      "source": "product-execution-quality-20261031T151846532.fmt.log",
+      "originalPath": "",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.product-execution-quality-20261031T151846532.wasm-check2.json",
+      "source": "product-execution-quality-20261031T151846532.wasm-check2.json",
+      "originalPath": "",
+      "bytes": 408,
+      "sha256": "f4bade22ab024754704470a5f2e0f37dfaa90281de3302ba9e12866981f07f57"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.product-execution-quality-20261031T151846532.wasm-check2.log",
+      "source": "product-execution-quality-20261031T151846532.wasm-check2.log",
+      "originalPath": "",
+      "bytes": 83376,
+      "sha256": "3fa2c2528d6db4f95548358b344723c9f6454c59f0af2b92e0f4a769d969a572"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.product-execution-quality-20261031T151846532.source-freeze.json",
+      "source": "product-execution-quality-20261031T151846532.source-freeze.json",
+      "originalPath": "",
+      "bytes": 788047,
+      "sha256": "aa65464473858d262feae11a453d0ef8a22d089679edefe44ce162e60363db7e"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.product-execution-quality-20261031T151846532.wasm-check.json",
+      "source": "product-execution-quality-20261031T151846532.wasm-check.json",
+      "originalPath": "",
+      "bytes": 410,
+      "sha256": "a672fc47852249114145fc25797ff62f75afe27b8e8ff6e1442f84f38b906f94"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.product-execution-quality-20261031T151846532.wasm-check.log",
+      "source": "product-execution-quality-20261031T151846532.wasm-check.log",
+      "originalPath": "",
+      "bytes": 81,
+      "sha256": "92d9391dbb0150d688c137de175bf0221ff19bde59ec398aba204d067b1eb2b3"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.documentation-audit.json",
+      "source": "presentation-frame-exit-doc-audit.json",
+      "originalPath": "",
+      "bytes": 535,
+      "sha256": "b554fa150396f0a02b307997a97ac298f9cbf8f239b2a0980e2ed45c652a868a"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.documentation-audit.ps1",
+      "source": "audit-wait-reverse-docs.ps1",
+      "originalPath": "",
+      "bytes": 5844,
+      "sha256": "6e9daa6431e813df03bcb2a9c8dfaac1478164af37e6b102ad82f0c8ce598deb"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.workspace-quality.runner.ps1",
+      "source": "run-presentation-scope-workspace-quality.ps1",
+      "originalPath": "",
+      "bytes": 3125,
+      "sha256": "443991710cd03039960cd6dde6fc67d74347a9ea8ff488d6b399fa049e156928"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.wasm-initial.runner.ps1",
+      "source": "run-presentation-frame-wasm-check.ps1",
+      "originalPath": "",
+      "bytes": 1261,
+      "sha256": "2be7f354f1880183b55c661b0333d2f5242f493621871a09d1ead9054f7a5b30"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.wasm-final.runner.ps1",
+      "source": "run-presentation-frame-wasm-check2.ps1",
+      "originalPath": "",
+      "bytes": 1264,
+      "sha256": "9258608d04fa7292d612ae387efc7d178d1bd6fa3ef9017d623f4f822342105f"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.product-execution-quality-20261031T151846532.structure-report.dependency_edges.csv",
+      "source": "product-execution-quality-20261031T151846532.structure-report/dependency_edges.csv",
+      "originalPath": "",
+      "bytes": 77544,
+      "sha256": "529e738d348314f7a4c0d909b165620d03ec57478b68ad42b06aa349b30e13f4"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.product-execution-quality-20261031T151846532.structure-report.file_metrics.csv",
+      "source": "product-execution-quality-20261031T151846532.structure-report/file_metrics.csv",
+      "originalPath": "",
+      "bytes": 330960,
+      "sha256": "f50a30ddfceaee478b7b54adff725a3fce3a5e0712180a9feacd16963aedb48d"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.product-execution-quality-20261031T151846532.structure-report.findings.md",
+      "source": "product-execution-quality-20261031T151846532.structure-report/findings.md",
+      "originalPath": "",
+      "bytes": 122295,
+      "sha256": "3ca838f85353e41fc7aed73769e661ff6f0a17aac92e841b106e4bce5aa84c7d"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.product-execution-quality-20261031T151846532.structure-report.package_metrics.csv",
+      "source": "product-execution-quality-20261031T151846532.structure-report/package_metrics.csv",
+      "originalPath": "",
+      "bytes": 6444,
+      "sha256": "c2df26363c079ef3c17be71810df334c6e4825ab5987b4951b3f1432368b85f2"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.product-execution-quality-20261031T151846532.structure-report.public_type_duplicates.csv",
+      "source": "product-execution-quality-20261031T151846532.structure-report/public_type_duplicates.csv",
+      "originalPath": "",
+      "bytes": 17238,
+      "sha256": "6cbaa427fef9360e8adb6245ea1eec66f5fdaf2624a24979e82d4877a28e31ac"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-source-20261101.prepared.json",
+      "source": "presentation-return-transfer-source-20261101.prepared.json",
+      "originalPath": "",
+      "bytes": 7517,
+      "sha256": "fa2441e1cd87ab175a5cd4a4c720cd24d5250ca5ac0d58d5f82253ae757e3dc4"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-source-20261101.reviewed.patch",
+      "source": "presentation-return-transfer-source-20261101.reviewed.patch",
+      "originalPath": "",
+      "bytes": 34477,
+      "sha256": "3d9cdbb894646b575678c9fae16d724ff2529416510cda05931abed7ff6dbaf4"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-source-20261101.verified.json",
+      "source": "presentation-return-transfer-source-20261101.verified.json",
+      "originalPath": "",
+      "bytes": 6822,
+      "sha256": "97a6d77f0aaf17f93b0b49980a316f1465c21d989a2d42f636bc6425c3f5e82c"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-return-transfer-source-20261101.message.txt",
+      "source": "presentation-return-transfer-source-20261101.message.txt",
+      "originalPath": "",
+      "bytes": 565,
+      "sha256": "fc0b319498ff95d7ec8148ca15799eb70f378a6177473f39ac6806deca464440"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-source-20261101.prepared.json",
+      "source": "presentation-frame-exit-source-20261101.prepared.json",
+      "originalPath": "",
+      "bytes": 8102,
+      "sha256": "98a83494ffb2ea4b429a7e97525591d12de2c8c992c08612a5ef99b3b0588478"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-source-20261101.reviewed.patch",
+      "source": "presentation-frame-exit-source-20261101.reviewed.patch",
+      "originalPath": "",
+      "bytes": 43711,
+      "sha256": "9b5e612053dd14aed093b19828bd37fda0da140e6f12d1dbfb633eea6bf0d6d6"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-source-20261101.verified.json",
+      "source": "presentation-frame-exit-source-20261101.verified.json",
+      "originalPath": "",
+      "bytes": 7407,
+      "sha256": "26b1ad32ff4f22ac26ff5340038493108d045a5908047b2414e504f1a3c1af21"
+    },
+    {
+      "path": "task-presentation-frame-exit-raw.presentation-frame-exit-source-20261101.message.txt",
+      "source": "presentation-frame-exit-source-20261101.message.txt",
+      "originalPath": "",
+      "bytes": 800,
+      "sha256": "8fc55626c7ef993713c903a1719381437dfc7c319d9ff614577b7ce90327c814"
+    }
+  ],
+  "artifactCount": 165,
+  "artifactBytes": 36612815.0,
+  "rawByteDrift": 0
+}

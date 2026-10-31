@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "68d84bad2fa911126c1de198ffa927ca37b2bb42",
+  "run": "presentation-frame-exit-20261101.owner2.runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  23.647s] 2211 tests run: 2211 passed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 2211,
+  "passed": 2211,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4031,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-31T15:17:59.1359728Z"
+}

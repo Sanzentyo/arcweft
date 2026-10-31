@@ -1,0 +1,848 @@
+diff --git a/crates/arcweft-core/src/awbc/fiber.rs b/crates/arcweft-core/src/awbc/fiber.rs
+index 3a4fdc16c82a2796773bb0214a1d5e00339e250b..30d4e9a7516e9c6a1e454a92248a160872ceb5aa 100644
+--- a/crates/arcweft-core/src/awbc/fiber.rs
++++ b/crates/arcweft-core/src/awbc/fiber.rs
+@@ -449,6 +449,19 @@ pub(crate) struct PreparedInitialFlow {
+     state_register: AwbcRegisterId,
+ }
+ 
++/// Borrowed return admission, before result or receiver state leaves the callee.
++pub(crate) struct PreparedFiberReturn {
++    frame: RuntimeFrameInstanceId,
++    implicit_unit: bool,
++    receiver_update: Option<(AwbcRegisterId, AwbcRegisterId)>,
++}
++
++impl PreparedFiberReturn {
++    pub(crate) fn receiver_register(&self) -> Option<AwbcRegisterId> {
++        self.receiver_update.map(|(_, source)| source)
++    }
++}
++
+ impl PreparedInitialFlow {
+     pub(crate) fn bind_state(mut self, value: RuntimeValue) -> Self {
+         self.frame.registers[self.state_register.index()] = value.into();
+@@ -3749,6 +3762,15 @@ impl FiberState {
+         program: &AwbcProgram,
+         value: Option<RuntimeValue>,
+     ) -> Result<(Option<FiberReturnPoint>, Option<RuntimeValue>), FiberStateError> {
++        let prepared = self.prepare_return(program, value.as_ref())?;
++        self.finish_return_prepared(program, value, prepared)
++    }
++
++    pub(crate) fn prepare_return(
++        &self,
++        program: &AwbcProgram,
++        value: Option<&RuntimeValue>,
++    ) -> Result<PreparedFiberReturn, FiberStateError> {
+         self.require_status(FiberStatus::Running)?;
+         if self.frames.len() == 1 {
+             let frame = self.active_frame()?;
+@@ -3757,15 +3779,18 @@ impl FiberState {
+                 .get(frame.function.index())
+                 .and_then(|function| program.signatures.get(function.signature.index()))
+                 .ok_or(FiberStateError::InvalidFrame)?;
+-            if let Some(value) = &value
++            if let Some(value) = value
+                 && !signature
+                     .result
+                     .is_some_and(|expected| frame.value_matches_type(program, value, expected))
+             {
+                 return Err(FiberStateError::ReturnValueMismatch);
+             }
+-            self.mark_returned(value)?;
+-            return Ok((None, None));
++            return Ok(PreparedFiberReturn {
++                frame: frame.instance,
++                implicit_unit: false,
++                receiver_update: None,
++            });
+         }
+         let returning_frame = self.frames.last().ok_or(FiberStateError::MissingFrame)?;
+         let return_to = returning_frame
+@@ -3776,12 +3801,7 @@ impl FiberState {
+             .frames
+             .get(self.frames.len() - 2)
+             .ok_or(FiberStateError::MissingFrame)?;
+-        if matches!(
+-            &return_to.continuation,
+-            FiberReturnContinuation::InstructionCall { .. }
+-        ) {
+-            validate_return_point(program, caller_frame, returning_frame.function, &return_to)?;
+-        }
++        validate_return_point(program, caller_frame, returning_frame.function, return_to)?;
+         let returning_function = program
+             .functions
+             .get(returning_frame.function.index())
+@@ -3792,7 +3812,7 @@ impl FiberState {
+             .ok_or(FiberStateError::InvalidFrame)?;
+         let return_value = match (signature.result, value) {
+             (Some(expected), Some(value))
+-                if returning_frame.value_matches_type(program, &value, expected) =>
++                if returning_frame.value_matches_type(program, value, expected) =>
+             {
+                 Some(value)
+             }
+@@ -3807,9 +3827,9 @@ impl FiberState {
+                         expected,
+                     ) =>
+             {
+-                Some(RuntimeValue::Unit)
++                Some(&RuntimeValue::Unit)
+             }
+-            (None, None) if return_to.destination.is_some() => Some(RuntimeValue::Unit),
++            (None, None) if return_to.destination.is_some() => Some(&RuntimeValue::Unit),
+             (None, None) => None,
+             _ => return Err(FiberStateError::ReturnValueMismatch),
+         };
+@@ -3821,7 +3841,7 @@ impl FiberState {
+         {
+             return Err(FiberStateError::ReturnValueMismatch);
+         }
+-        if let (Some(destination), Some(value)) = (return_to.destination, return_value.as_ref()) {
++        if let (Some(destination), Some(value)) = (return_to.destination, return_value) {
+             if destination.index() >= caller_frame.registers.len() {
+                 return Err(FiberStateError::RegisterOutOfBounds {
+                     register: destination.0,
+@@ -3844,6 +3864,34 @@ impl FiberState {
+             returning_frame,
+             &return_to.continuation,
+         )?;
++        Ok(PreparedFiberReturn {
++            frame: returning_frame.instance,
++            implicit_unit: value.is_none() && return_value.is_some(),
++            receiver_update,
++        })
++    }
++
++    pub(crate) fn finish_return_prepared(
++        &mut self,
++        program: &AwbcProgram,
++        value: Option<RuntimeValue>,
++        prepared: PreparedFiberReturn,
++    ) -> Result<(Option<FiberReturnPoint>, Option<RuntimeValue>), FiberStateError> {
++        assert_eq!(self.active_frame()?.instance, prepared.frame);
++        if self.frames.len() == 1 {
++            self.clear_exited_frame_storage()?;
++            self.mark_returned(value)?;
++            return Ok((None, None));
++        }
++        let return_value = value.or_else(|| prepared.implicit_unit.then_some(RuntimeValue::Unit));
++        let receiver_update = prepared
++            .receiver_update
++            .map(|(destination, source)| {
++                self.active_frame_mut()?
++                    .take_register(source)
++                    .map(|value| (destination, value))
++            })
++            .transpose()?;
+         let popped = self
+             .pop_call_frame(program)?
+             .ok_or(FiberStateError::InvalidFrame)?;
+@@ -3881,6 +3929,18 @@ impl FiberState {
+         Ok((Some(popped), None))
+     }
+ 
++    /// Terminal root metadata stays available to snapshots; exited value
++    /// storage must not retain tokens whose scopes have already retired.
++    pub(super) fn clear_exited_frame_storage(&mut self) -> Result<(), FiberStateError> {
++        let frame = self.active_frame_mut()?;
++        for register in &mut frame.registers {
++            *register = Default::default();
++        }
++        frame.format = None;
++        frame.format_attempts.clear();
++        Ok(())
++    }
++
+     pub fn mark_returned(&mut self, value: Option<RuntimeValue>) -> Result<(), FiberStateError> {
+         self.require_status(FiberStatus::Running)?;
+         self.discard_format_attempts();
+@@ -5084,7 +5144,7 @@ fn instruction_call_receiver_update(
+     caller: &FiberFrame,
+     callee: &FiberFrame,
+     continuation: &FiberReturnContinuation,
+-) -> Result<Option<(AwbcRegisterId, RuntimeValue)>, FiberStateError> {
++) -> Result<Option<(AwbcRegisterId, AwbcRegisterId)>, FiberStateError> {
+     let FiberReturnContinuation::InstructionCall { site } = continuation else {
+         return Ok(None);
+     };
+@@ -5103,17 +5163,17 @@ fn instruction_call_receiver_update(
+     let slot = method
+         .receiver_state_slot
+         .ok_or(FiberStateError::InvalidFrame)?;
+-    let value = callee.register(slot)?.clone();
++    let value = callee.register(slot)?;
+     let expected = program
+         .frame_layouts
+         .get(caller.layout.index())
+         .and_then(|layout| layout.slots.get(destination.index()))
+         .map(|slot| slot.ty)
+         .ok_or(FiberStateError::InvalidFrame)?;
+-    if !caller.value_matches_type(program, &value, expected) {
++    if !caller.value_matches_type(program, value, expected) {
+         return Err(FiberStateError::ReturnValueMismatch);
+     }
+-    Ok(Some((*destination, value)))
++    Ok(Some((*destination, slot)))
+ }
+ 
+ fn validate_project_call_stage_values<V, B, R, P: FiberCallablePendingStorage, G>(
+diff --git a/crates/arcweft-core/src/awbc/fiber/scope.rs b/crates/arcweft-core/src/awbc/fiber/scope.rs
+index cbe5f416cc1a328cb6a9658a0ae85d8db80b5e66..e3768b2d70e1a5cda9002c5d20b5212027cb1c9f 100644
+--- a/crates/arcweft-core/src/awbc/fiber/scope.rs
++++ b/crates/arcweft-core/src/awbc/fiber/scope.rs
+@@ -60,7 +60,7 @@ impl super::FiberFrame {
+         }
+     }
+ 
+-    fn presentation_scope_target(
++    pub(crate) fn presentation_scope_target(
+         &mut self,
+     ) -> crate::presentation::resources::PresentationScopeTarget<'_> {
+         match self.scopes.last_mut() {
+@@ -79,6 +79,49 @@ impl super::FiberFrame {
+ }
+ 
+ impl super::FiberState {
++    /// The exiting callee and the caller's actual current lexical destination.
++    pub(crate) fn presentation_return_scopes_mut(
++        &mut self,
++    ) -> Result<
++        (
++            Vec<PresentationScopeExit<PresentationScopeTarget<'_>>>,
++            Option<PresentationScopeExit<PresentationScopeTarget<'_>>>,
++        ),
++        crate::presentation::RuntimePresentationError,
++    > {
++        self.root
++            .validate_presentation_bank(self.presentation_bank)?;
++        let execution = crate::runtime_id::ExecutionInstanceId::from_allocated(self.instance.get());
++        let fiber =
++            crate::runtime_id::RuntimePersistentFiberId::from_allocated(self.instance.get().get());
++        let (callee, callers) = self
++            .frames
++            .split_last_mut()
++            .ok_or(crate::presentation::RuntimePresentationError::MissingScope)?;
++        let mut targets = Vec::new();
++        for (scope, binding) in callee
++            .scopes
++            .iter_mut()
++            .rev()
++            .map(|scope| (Some(scope.id), &mut scope.presentation_scope))
++            .chain(std::iter::once((None, &mut callee.root_presentation_scope)))
++        {
++            if binding.is_some() {
++                targets.push(PresentationScopeExit {
++                    execution,
++                    fiber,
++                    scope: PresentationScopeTarget::awbc(binding, callee.instance, scope),
++                });
++            }
++        }
++        let destination = callers.last_mut().map(|caller| PresentationScopeExit {
++            execution,
++            fiber,
++            scope: caller.presentation_scope_target(),
++        });
++        Ok((targets, destination))
++    }
++
+     pub(crate) fn presentation_unwind_scopes(
+         &self,
+     ) -> Result<
+diff --git a/crates/arcweft-core/src/awbc/product_step.rs b/crates/arcweft-core/src/awbc/product_step.rs
+index 20be6255b330e1865863ae0af1b3896b186bd23a..8970b1fd2a4702df84990e6b16886bdb4d0156b2 100644
+--- a/crates/arcweft-core/src/awbc/product_step.rs
++++ b/crates/arcweft-core/src/awbc/product_step.rs
+@@ -2831,13 +2831,14 @@ impl AwbcProductStepExecutor {
+                 if let Err(error) = self.preflight_control_traps(&vm_output.observations) {
+                     return self.fail_main_vm_step(checkpoint, error, output, vm_output.executed);
+                 }
+-                if matches!(
+-                    self.fiber.root,
+-                    crate::awbc::fiber::AwbcFiberRoot::Program(_)
+-                        | crate::awbc::fiber::AwbcFiberRoot::RootInitializer(_)
+-                ) && let VmExit::Returned(value) = &mut vm_output.exit
+-                {
+-                    let Some(value) = value.take() else {
++                if let VmExit::Returned(value) = &mut vm_output.exit {
++                    if value.is_none()
++                        && matches!(
++                            self.fiber.root,
++                            crate::awbc::fiber::AwbcFiberRoot::Program(_)
++                                | crate::awbc::fiber::AwbcFiberRoot::RootInitializer(_)
++                        )
++                    {
+                         return self.fail_main_vm_step(
+                             checkpoint,
+                             ProductStepError::Internal(
+@@ -2846,9 +2847,11 @@ impl AwbcProductStepExecutor {
+                             output,
+                             vm_output.executed,
+                         );
+-                    };
+-                    self.fiber.return_summary = Some(crate::value::runtime_value_label(&value));
+-                    self.fiber.terminal = Some(FiberTerminalValue::Returned(Some(value)));
++                    }
++                    if let Some(value) = value.take() {
++                        self.fiber.return_summary = Some(crate::value::runtime_value_label(&value));
++                        self.fiber.terminal = Some(FiberTerminalValue::Returned(Some(value)));
++                    }
+                 }
+                 let (drop_policy, observations) =
+                     match partition_drop_observation(vm_output.observations) {
+diff --git a/crates/arcweft-core/src/awbc/product_step/line.rs b/crates/arcweft-core/src/awbc/product_step/line.rs
+index ba712efedd1b267230ad739925496de311f8e4ab..8dc87d1d250043f10f7dcef918cb227411fbbfce 100644
+--- a/crates/arcweft-core/src/awbc/product_step/line.rs
++++ b/crates/arcweft-core/src/awbc/product_step/line.rs
+@@ -4279,8 +4279,16 @@ pub(super) fn unique_line_handles_view(
+ ) -> Result<Vec<crate::value::ownership::RuntimeAffineLineHandle>, ProductStepError> {
+     let handles = value
+         .inspect()
+-        .affine_line_handles()
+-        .map_err(|_| LineRuntimeError::InvalidHandlePayload)?;
++        .affine_handles()
++        .map_err(|_| LineRuntimeError::InvalidHandlePayload)?
++        .into_iter()
++        .filter_map(|handle| match handle {
++            crate::value::ownership::RuntimeAffineHandle::Line(handle) => Some(handle),
++            // The complete Product contour admits these under its original
++            // presentation banks; a line lease never decodes their tokens.
++            crate::value::ownership::RuntimeAffineHandle::Presentation { .. } => None,
++        })
++        .collect::<Vec<_>>();
+     let mut unique = BTreeSet::new();
+     for handle in &handles {
+         if !unique.insert(handle.token().clone()) {
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs b/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
+index 2ecfa2e138e2644f6a82b920c33ecaa2b7acecc6..a6d2ffc61058509c0f3bfdaf50ff63aa866a2b3e 100644
+--- a/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
++++ b/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
+@@ -7,6 +7,7 @@ use arcweft_interaction_model::presentation::PresentationResourceKind;
+ 
+ mod cancellation_resume;
+ mod terminal_requests;
++mod transfers;
+ mod trap_lifecycle;
+ mod traps;
+ 
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs b/crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..4fc5faabe685a047dc67ab7fa9ecc6f3fcb72e57
+--- /dev/null
++++ b/crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs
+@@ -0,0 +1,390 @@
++use super::*;
++use crate::awbc::product_step::checkpoint::ProductCheckpointTarget;
++use crate::awbc::schema::*;
++use crate::pattern::{RuntimeCheckedType, RuntimeOpaqueTypeAdmission};
++use crate::value::{RuntimeOpaquePersistence, RuntimeOpaqueValue, RuntimeOpaqueValueClass};
++
++fn handle_program(nested: bool) -> (AwbcProgram, AwbcTypeId) {
++    let mut program = return_program();
++    let producer = AwbcStringId(program.strings.len().try_into().unwrap());
++    program.strings.push("std.presentation.image_handle".into());
++    let handle = AwbcTypeId(program.runtime_types.len().try_into().unwrap());
++    program.runtime_types.push(AwbcRuntimeType::new(
++        RuntimeSemanticTypeId::from_bytes([0x9a; 32]),
++        AwbcRuntimeTypeShape::Opaque {
++            producer,
++            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
++            value_class: RuntimeOpaqueValueClass::PresentationHandle,
++            persistence: RuntimeOpaquePersistence::SnapshotOnly,
++            arguments: vec![],
++        },
++    ));
++    program.runtime_types.push(AwbcRuntimeType::new(
++        RuntimeCheckedType::Bool.semantic_identity_digest(),
++        AwbcRuntimeTypeShape::Bool,
++    ));
++    program.signatures[0].params = vec![handle, handle];
++    program.signatures[0].result = Some(handle);
++    program.frame_layouts[0].slots = (0..2)
++        .map(|_| AwbcFrameSlot {
++            name: None,
++            ty: handle,
++            role: AwbcFrameSlotRole::Parameter,
++            scope_depth: 0,
++        })
++        .collect();
++    program.functions[0].input_ownership = (0..2)
++        .map(|position| {
++            AwbcFunctionInputOwnership::parameter(
++                manual_awbc_formal_identity(&format!("presentation.transfer.input-{position}")),
++                position,
++                crate::plan::RuntimeFunctionParameterPassing::Affine,
++            )
++        })
++        .collect();
++    program.blocks[0].terminator = AwbcTerminator::Return {
++        value: Some(AwbcRegisterId(0)),
++    };
++    if nested {
++        let mut callee = program.functions[0].clone();
++        callee.definition = crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
++            *blake3::hash(b"presentation.transfer.callee.v1\0").as_bytes(),
++        );
++        callee.kind = AwbcFunctionKind::Ordinary;
++        callee.public_id = None;
++        callee.blocks = AwbcTableRange::new(2, 1);
++        callee.entry_block = AwbcBlockId(2);
++        program.functions.push(callee);
++        program.functions[0].blocks = AwbcTableRange::new(0, 2);
++        program.blocks[0].terminator = AwbcTerminator::CallFunction {
++            function: AwbcFunctionId(1),
++            args: vec![AwbcRegisterId(0), AwbcRegisterId(1)],
++            dst: Some(AwbcRegisterId(0)),
++            resume: AwbcResumePointId(0),
++        };
++        for owner in [AwbcFunctionId(0), AwbcFunctionId(1)] {
++            program.blocks.push(AwbcBlock {
++                owner,
++                instructions: AwbcTableRange::new(0, 0),
++                terminator: AwbcTerminator::Return {
++                    value: Some(AwbcRegisterId(0)),
++                },
++                safe_point: if owner == AwbcFunctionId(1) {
++                    AwbcSafePointKind::CallableBoundary
++                } else {
++                    AwbcSafePointKind::Return
++                },
++                source_map: None,
++            });
++        }
++        program.resume_points.push(AwbcResumePoint {
++            function: AwbcFunctionId(0),
++            block: AwbcBlockId(1),
++            frame_layout: AwbcFrameLayoutId(0),
++            kind: AwbcSafePointKind::CallableBoundary,
++        });
++    }
++    program.canonicalize_string_table();
++    (program, handle)
++}
++
++fn fixture(
++    nested: bool,
++    queued: bool,
++) -> (AwbcProductStepExecutor, Vec<RuntimePresentationHandleToken>) {
++    let (program, handle) = handle_program(nested);
++    let program = crate::awbc::product_step::AwbcProductProgram::admit(
++        std::sync::Arc::new(program),
++        Default::default(),
++        Default::default(),
++        Default::default(),
++        None,
++    )
++    .unwrap();
++    let artifact = AwbcProductStepExecutor::artifact_fingerprint(&program).unwrap();
++    let fiber = FiberState::for_function(
++        &program,
++        crate::awbc::fiber::AwbcFiberRoot::Function(AwbcFunctionId(0)),
++        AwbcFunctionId(0),
++        0,
++        64,
++    )
++    .unwrap();
++    let mut executor =
++        AwbcProductStepExecutor::for_fiber(program, fiber, artifact, GenerationId::new(0));
++    executor.entry_bound = true;
++    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
++    executor.presentation = Some(PresentationBanks::new(
++        owner.clone(),
++        executor.artifact_fingerprint,
++        if queued {
++            PresentationLedgerLimits {
++                handles: 2,
++                scopes: 4,
++            }
++        } else {
++            PresentationLedgerLimits::for_schema(crate::entry::RuntimeSchemaLimits::engine_default())
++        },
++    ));
++    if queued {
++        let ledger = executor
++            .presentation
++            .as_mut()
++            .unwrap()
++            .ledger_mut(RuntimePresentationBankId::Root)
++            .unwrap();
++        let scope = executor
++            .fiber
++            .bind_presentation_scope(&owner, ledger)
++            .unwrap();
++        for _ in 0..2 {
++            ledger
++                .register(
++                    &owner,
++                    scope,
++                    PresentationRegistrationSite::Independent(PresentationResourceKind::Image),
++                    PresentationBody {
++                        expected: RuntimeCheckedType::Bool.semantic_identity_digest(),
++                        binding: None,
++                        value: RuntimePayload(RuntimeValue::Bool(false)),
++                    },
++                )
++                .unwrap();
++        }
++        let retired = executor
++            .fiber
++            .release_presentation_scope(
++                &owner,
++                executor
++                    .presentation
++                    .as_mut()
++                    .unwrap()
++                    .ledger_mut(RuntimePresentationBankId::Root)
++                    .unwrap(),
++            )
++            .unwrap();
++        executor
++            .presentation
++            .as_mut()
++            .unwrap()
++            .retirements_mut()
++            .extend(retired);
++    }
++    let ledger = executor
++        .presentation
++        .as_mut()
++        .unwrap()
++        .ledger_mut(RuntimePresentationBankId::Root)
++        .unwrap();
++    let scope = executor
++        .fiber
++        .bind_presentation_scope(&owner, ledger)
++        .unwrap();
++    let tokens: Vec<_> = [true, false]
++        .into_iter()
++        .map(|value| {
++            ledger
++                .register(
++                    &owner,
++                    scope,
++                    PresentationRegistrationSite::Independent(PresentationResourceKind::Image),
++                    PresentationBody {
++                        expected: RuntimeCheckedType::Bool.semantic_identity_digest(),
++                        binding: None,
++                        value: RuntimePayload(RuntimeValue::Bool(value)),
++                    },
++                )
++                .unwrap()
++                .0
++        })
++        .collect();
++    let opaque = executor.program.opaque_owner(handle).unwrap().unwrap();
++    let values = tokens
++        .iter()
++        .map(|token| {
++            RuntimeValue::Opaque(RuntimeOpaqueValue::new_exact(
++                &opaque,
++                token.encode_payload(),
++            ))
++        })
++        .collect();
++    executor
++        .fiber
++        .active_frame_mut()
++        .unwrap()
++        .bind_positional_arguments_owned(&executor.program, values)
++        .unwrap();
++    executor.snapshot().unwrap();
++    (executor, tokens)
++}
++
++fn step(executor: &mut AwbcProductStepExecutor) {
++    let output = executor.step(Default::default(), one_op());
++    assert!(
++        output.output.diagnostics.is_empty(),
++        "{:?}",
++        output.output.diagnostics
++    );
++}
++
++fn one_op() -> RuntimeStepOptions {
++    RuntimeStepOptions {
++        budget: crate::step::RuntimeStepBudget { max_ops: 1 },
++        ..Default::default()
++    }
++}
++
++#[test]
++fn root_return_retains_the_original_handle_and_drops_exited_storage_before_snapshot() {
++    let (mut executor, tokens) = fixture(false, false);
++    let before = executor.snapshot().unwrap();
++    let checkpoint = executor
++        .execution_checkpoint(ProductCheckpointTarget::Main)
++        .unwrap();
++    step(&mut executor);
++    assert_eq!(executor.fiber.status, FiberStatus::Returned);
++    assert!(
++        executor.fiber.frames[0]
++            .registers
++            .iter()
++            .all(|slot| slot.is_vacant())
++    );
++    assert!(executor.fiber.frames[0].root_presentation_scope.is_none());
++    assert_eq!(
++        executor.presentation.as_ref().unwrap().retirements()[0].token,
++        tokens[1]
++    );
++    let Some(FiberTerminalValue::Returned(Some(value))) = &executor.fiber.terminal else {
++        panic!("root owns result")
++    };
++    let handles = value.view().affine_handles().unwrap();
++    assert!(
++        matches!(&handles[..], [crate::value::ownership::RuntimeAffineHandle::Presentation { token, .. }] if token == &tokens[0])
++    );
++    executor.snapshot().unwrap();
++    checkpoint
++        .restore(
++            &mut executor.fiber,
++            &mut executor.presentation,
++            &executor.program,
++        )
++        .unwrap();
++    assert_eq!(executor.snapshot().unwrap(), before);
++    step(&mut executor);
++    let saved = AwbcProductExecutorSaveSnapshot::from_live(
++        &executor.snapshot_for_save().unwrap(),
++        executor.admitted_program(),
++    )
++    .unwrap();
++    let bytes = serde_json::to_vec(&saved).unwrap();
++    let saved = serde_json::from_slice(&bytes).unwrap();
++    let before_restore = executor.snapshot().unwrap();
++    let restored = executor.restore_inert_snapshot_owned(saved).unwrap();
++    assert_eq!(restored.snapshot().unwrap(), before_restore);
++}
++
++#[test]
++fn return_capacity_refusal_preserves_actual_handles_and_budget_then_retries() {
++    let (mut executor, tokens) = fixture(false, true);
++    let before = executor.snapshot().unwrap();
++    for _ in 0..2 {
++        let result = executor.step(Default::default(), one_op());
++        assert!(!result.output.diagnostics.is_empty());
++        assert_eq!(executor.snapshot().unwrap(), before);
++    }
++    executor
++        .presentation
++        .as_mut()
++        .unwrap()
++        .retirements_mut()
++        .clear();
++    step(&mut executor);
++    assert_eq!(executor.fiber.status, FiberStatus::Returned);
++    assert_eq!(
++        executor.presentation.as_ref().unwrap().retirements()[0].token,
++        tokens[1]
++    );
++    executor.snapshot().unwrap();
++}
++
++#[test]
++fn nested_return_preserves_the_original_ancestor_grant_and_terminal_result() {
++    let (mut executor, tokens) = fixture(true, false);
++    step(&mut executor);
++    assert_eq!(executor.fiber.frames.len(), 2);
++    executor.snapshot().unwrap();
++    step(&mut executor);
++    assert_eq!(executor.fiber.frames.len(), 1);
++    assert!(
++        executor
++            .presentation
++            .as_ref()
++            .unwrap()
++            .retirements()
++            .is_empty()
++    );
++    executor.snapshot().unwrap();
++    step(&mut executor);
++    assert_eq!(executor.fiber.status, FiberStatus::Returned);
++    assert_eq!(
++        executor.presentation.as_ref().unwrap().retirements()[0].token,
++        tokens[1]
++    );
++    executor.snapshot().unwrap();
++}
++
++#[test]
++fn callee_owned_handle_joins_the_actual_caller_scope_without_changing_its_token() {
++    let (mut executor, tokens) = fixture(true, false);
++    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
++    let source = executor
++        .fiber
++        .bind_presentation_scope(
++            &owner,
++            executor
++                .presentation
++                .as_mut()
++                .unwrap()
++                .ledger_mut(RuntimePresentationBankId::Root)
++                .unwrap(),
++        )
++        .unwrap();
++    step(&mut executor); // The actual CallFunction allocated this callee.
++    let banks = executor.presentation.as_mut().unwrap();
++    let ledger = banks.ledger_mut(RuntimePresentationBankId::Root).unwrap();
++    let callee = executor
++        .fiber
++        .bind_presentation_scope(&owner, ledger)
++        .unwrap();
++    for token in &tokens {
++        ledger
++            .transfer(&owner, token, Some(source), Some(callee))
++            .unwrap();
++    }
++    let instance = executor.fiber.instance;
++    banks
++        .retire_bound_scope(
++            &owner,
++            crate::runtime_id::ExecutionInstanceId::from_allocated(instance.get()),
++            crate::runtime_id::RuntimePersistentFiberId::from_allocated(instance.get().get()),
++            executor.fiber.frames[0].presentation_scope_target(),
++        )
++        .unwrap();
++    assert!(executor.fiber.frames[0].root_presentation_scope.is_none());
++    executor.snapshot().unwrap();
++    step(&mut executor);
++    assert_eq!(executor.fiber.frames.len(), 1);
++    assert!(executor.fiber.frames[0].root_presentation_scope.is_some());
++    assert_eq!(
++        executor.presentation.as_ref().unwrap().retirements()[0].token,
++        tokens[1]
++    );
++    executor.snapshot().unwrap();
++    step(&mut executor);
++    let Some(FiberTerminalValue::Returned(Some(value))) = &executor.fiber.terminal else {
++        panic!("root result")
++    };
++    assert!(matches!(&value.view().affine_handles().unwrap()[..],
++        [crate::value::ownership::RuntimeAffineHandle::Presentation { token, .. }] if token == &tokens[0]));
++    executor.snapshot().unwrap();
++}
+diff --git a/crates/arcweft-core/src/awbc/vm.rs b/crates/arcweft-core/src/awbc/vm.rs
+index 1ff023d92642f624b330d5142a59bb197a8a1b85..b1ef886041675dd3f2c4e212f0084ea8bb30ddac 100644
+--- a/crates/arcweft-core/src/awbc/vm.rs
++++ b/crates/arcweft-core/src/awbc/vm.rs
+@@ -2897,11 +2897,6 @@ fn execute_terminator(
+         AwbcTerminator::GotoStatic { .. } | AwbcTerminator::GotoDynamic { .. } => {
+             fiber.validate_unwind_cleanup_inputs(program)?;
+         }
+-        AwbcTerminator::Return { .. }
+-        | AwbcTerminator::Complete
+-        | AwbcTerminator::SelectDialogueResult { .. } => {
+-            fiber.validate_active_frame_cleanup_inputs(program)?;
+-        }
+         _ => {}
+     }
+     match terminator {
+@@ -3267,13 +3262,24 @@ fn execute_terminator(
+                 AwbcTerminator::Complete => None,
+                 _ => unreachable!("return/completion dispatch"),
+             };
++            let prepared = fiber.prepare_return(
++                program,
++                value
++                    .map(|register| fiber.active_frame()?.register(register))
++                    .transpose()?,
++            )?;
++            execution.exit_return_scope(
++                program,
++                fiber,
++                value.into_iter().chain(prepared.receiver_register()),
++            )?;
+             let value = value
+                 .map(|value| fiber.active_frame_mut()?.take_register(value))
+                 .transpose()?;
+             drain_active_frame_cleanups(program, fiber, observations)?;
+             let returning_function = fiber.active_frame()?.function;
+             let (return_to, returned_value) =
+-                fiber.finish_return_with_continuation(program, value)?;
++                fiber.finish_return_prepared(program, value, prepared)?;
+             if let Some(return_to) = return_to {
+                 let FiberReturnPoint {
+                     cursor,
+@@ -3321,8 +3327,11 @@ fn execute_terminator(
+                     "dialogue result selection cannot terminate a nested call frame".to_owned(),
+                 ));
+             }
++            fiber.active_frame()?.register(*value)?;
++            execution.exit_return_scope(program, fiber, [*value])?;
+             let value = fiber.active_frame_mut()?.take_register(*value)?;
+             drain_active_frame_cleanups(program, fiber, observations)?;
++            fiber.clear_exited_frame_storage()?;
+             fiber.mark_dialogue_result_selected(value)?;
+             Ok(terminal_exit(fiber))
+         }
+diff --git a/crates/arcweft-core/src/awbc/vm/resources.rs b/crates/arcweft-core/src/awbc/vm/resources.rs
+index a4acaa5a6718ca6c86cdbd847af475f8bea9c308..f4407415d34b7e787c1e83d0cded910cbb59fa02 100644
+--- a/crates/arcweft-core/src/awbc/vm/resources.rs
++++ b/crates/arcweft-core/src/awbc/vm/resources.rs
+@@ -1,6 +1,8 @@
+ //! Actual execution authority borrowed for one VM slice, never a saved owner.
+ 
+-use super::{AwbcProgram, FiberState, FiberStateError, VmError, VmExecutionContext};
++use super::{
++    AwbcProgram, AwbcRegisterId, FiberState, FiberStateError, VmError, VmExecutionContext,
++};
+ use crate::presentation::resources::{PresentationBanks, PresentationBody};
+ use crate::value::RuntimePayload;
+ 
+@@ -11,6 +13,54 @@ pub(super) struct VmExecutionResources<'execution> {
+ }
+ 
+ impl VmExecutionResources<'_> {
++    /// Admit every actual result resource while it still lives in its source
++    /// register. A nested return receives it in the caller's current scope;
++    /// a terminal result owns its detached original-bank lease.
++    pub(super) fn exit_return_scope(
++        &mut self,
++        program: &AwbcProgram,
++        fiber: &mut FiberState,
++        registers: impl IntoIterator<Item = AwbcRegisterId>,
++    ) -> Result<(), VmError> {
++        fiber.validate_cleanup_inputs(program)?;
++        let mut escaping = Vec::new();
++        for register in registers {
++            for handle in fiber
++                .active_frame()?
++                .register(register)?
++                .view()
++                .affine_handles()
++                .map_err(|error| VmError::Runtime(error.to_string()))?
++            {
++                if let crate::value::ownership::RuntimeAffineHandle::Presentation {
++                    token, ..
++                } = handle
++                {
++                    escaping.push(token);
++                }
++            }
++        }
++        let (targets, destination) = fiber
++            .presentation_return_scopes_mut()
++            .map_err(|error| FiberStateError::Snapshot(error.into()))?;
++        if targets.is_empty() && escaping.is_empty() {
++            return Ok(());
++        }
++        let banks = self.presentation.as_deref_mut().ok_or_else(|| {
++            FiberStateError::Snapshot(
++                crate::presentation::RuntimePresentationError::MissingLedger.into(),
++            )
++        })?;
++        let owner = self
++            .context
++            .ok_or(VmError::MissingExecutionContext)?
++            .program_owner(program)?;
++        banks
++            .exit_scope_contour(&owner, targets, destination, &escaping)
++            .map_err(|error| FiberStateError::Snapshot(error.into()))?;
++        Ok(())
++    }
++
+     /// All cleanup declarations and actual scope grants precede body movement.
+     /// Without a bank, the standalone VM can unwind resource-free frames only.
+     pub(super) fn retire_unwind(

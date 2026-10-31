@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "commit": "1455f4ff9e2599353c6e36e94ab748a52bf0dc46",
+  "parent": "1c99622f8488130fda7eb31792e5a7817bd3a5ae",
+  "tree": "daa68babe36750002a6702e9714c133845d793a4",
+  "remote": "1455f4ff9e2599353c6e36e94ab748a52bf0dc46",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/presentation/resources.rs",
+      "blob": "1edb2a23f3ea407cf994f147ef0bfc90dd952499"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/banks.rs",
+      "blob": "786bf736d647cf8a2df02323c26ef78ae616c3fe"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+      "blob": "0a1b8cb29bbcb204e89ca90d868229fcf78ca10f"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/banks/tests/transition.rs",
+      "blob": "5a5b52b3b993e038503e6ae9f89fa9f106287938"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/banks/transition.rs",
+      "blob": "ade0bf8c87c40a29e34c7e5c7684123fb28dca01"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/tests.rs",
+      "blob": "17a5731b5e8e4c8622bedb860c2ae13f73ef8c52"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "8f5fba9d31b7620078459846eb2184e584160dbb101e2fc3edb9eb5473898030",
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-31T14:51:46.2423684Z"
+}

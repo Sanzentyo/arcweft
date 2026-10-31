@@ -1,0 +1,27 @@
+[
+  {
+    "path": "crates/arcweft-core/src/awbc/fiber.rs",
+    "capture": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-frame-exit-20261101.focus1.sources/crates/arcweft-core/src/awbc/fiber.rs",
+    "sha256": "3e1692dabde34e3c71f49d28e8dad0b56031bd92a76e74b147a4bef2e9df6653"
+  },
+  {
+    "path": "crates/arcweft-core/src/awbc/fiber/input.rs",
+    "capture": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-frame-exit-20261101.focus1.sources/crates/arcweft-core/src/awbc/fiber/input.rs",
+    "sha256": "083a9b7ada9b262231f19de7ebedf4943564eb718dd1d4baaf23550c4e0687d3"
+  },
+  {
+    "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+    "capture": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-frame-exit-20261101.focus1.sources/crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+    "sha256": "d915f9ad19b3ffa778ec281454811b74c9338a6f6be3cb394a585bac328d3fb4"
+  },
+  {
+    "path": "crates/arcweft-core/src/awbc/vm.rs",
+    "capture": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-frame-exit-20261101.focus1.sources/crates/arcweft-core/src/awbc/vm.rs",
+    "sha256": "ceacad5d7aa6501fae59ad8282b2f185453bcb9f3ccc1027244f477739cfe990"
+  },
+  {
+    "path": "crates/arcweft-core/src/awbc/vm/resources.rs",
+    "capture": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-frame-exit-20261101.focus1.sources/crates/arcweft-core/src/awbc/vm/resources.rs",
+    "sha256": "0305a2a82c7cf396c0dd210b09ee034e8a0078823600e8cd179eaa882d51180a"
+  }
+]

@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "1c99622f8488130fda7eb31792e5a7817bd3a5ae",
+  "run": "presentation-scope-exit-20261031.owner1.runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  99.802s] 2203 tests run: 2203 passed (1 slow), 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 2203,
+  "passed": 2203,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4030,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-31T14:51:26.5747964Z"
+}

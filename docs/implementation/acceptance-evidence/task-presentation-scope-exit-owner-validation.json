@@ -1,0 +1,220 @@
+{
+  "version": 1,
+  "recordedAt": "2026-10-31T15:00:11.2793156Z",
+  "scope": "Atomic original-bank scope exit and escaping-resource lease movement. VM integration recorded separately after verification.",
+  "sourcePublication": {
+    "version": 1,
+    "commit": "1455f4ff9e2599353c6e36e94ab748a52bf0dc46",
+    "parent": "1c99622f8488130fda7eb31792e5a7817bd3a5ae",
+    "tree": "daa68babe36750002a6702e9714c133845d793a4",
+    "remote": "1455f4ff9e2599353c6e36e94ab748a52bf0dc46",
+    "paths": [
+      {
+        "path": "crates/arcweft-core/src/presentation/resources.rs",
+        "blob": "1edb2a23f3ea407cf994f147ef0bfc90dd952499"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/banks.rs",
+        "blob": "786bf736d647cf8a2df02323c26ef78ae616c3fe"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+        "blob": "0a1b8cb29bbcb204e89ca90d868229fcf78ca10f"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/banks/tests/transition.rs",
+        "blob": "5a5b52b3b993e038503e6ae9f89fa9f106287938"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/banks/transition.rs",
+        "blob": "ade0bf8c87c40a29e34c7e5c7684123fb28dca01"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/tests.rs",
+        "blob": "17a5731b5e8e4c8622bedb860c2ae13f73ef8c52"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "8f5fba9d31b7620078459846eb2184e584160dbb101e2fc3edb9eb5473898030",
+    "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-10-31T14:51:46.2423684Z"
+  },
+  "validation": [
+    {
+      "version": 1,
+      "base": "1c99622f8488130fda7eb31792e5a7817bd3a5ae",
+      "run": "presentation-scope-exit-20261031.focus1.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   0.056s] 5 tests run: 5 passed, 2145 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 2145,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4030,
+      "sourceDrift": 0,
+      "held": 14,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-10-31T14:46:40.4087425Z"
+    },
+    {
+      "version": 1,
+      "base": "1c99622f8488130fda7eb31792e5a7817bd3a5ae",
+      "run": "presentation-scope-exit-20261031.owner1.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [  99.802s] 2203 tests run: 2203 passed (1 slow), 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2203,
+      "passed": 2203,
+      "failed": 0,
+      "skipped": 0,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4030,
+      "sourceDrift": 0,
+      "held": 14,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-10-31T14:51:26.5747964Z"
+    }
+  ],
+  "notClaimed": [
+    "VM Return/Select/Goto integration at this source cut",
+    "Source ViewValue command ABI or real display driver acceptance",
+    "Final reverse-dependency runtime matrix"
+  ],
+  "artifacts": [
+    {
+      "path": "task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.source-freeze.json",
+      "source": "presentation-scope-exit-20261031.focus1.source-freeze.json",
+      "bytes": 787791,
+      "sha256": "be299442f7cfea0d96b13c3ad713905e61538d16ba5e16924401a21ce57b76ee"
+    },
+    {
+      "path": "task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.catalog.log",
+      "source": "presentation-scope-exit-20261031.focus1.catalog.log",
+      "bytes": 452194,
+      "sha256": "11ada69c26bcb065697168bed555c8af193e640726db0f1ed795a5bc4673d673"
+    },
+    {
+      "path": "task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.catalog.json",
+      "source": "presentation-scope-exit-20261031.focus1.catalog.json",
+      "bytes": 583,
+      "sha256": "1cc193789e437855768f56bfe886a4b5d53f1186b6c2e55946c4eae893e9df47"
+    },
+    {
+      "path": "task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.catalog.inventory.json",
+      "source": "presentation-scope-exit-20261031.focus1.catalog.inventory.json",
+      "bytes": 548563,
+      "sha256": "09043dadedc38095a06dc8a87189918a4c4645a269e89d33d0c9450fc81bb146"
+    },
+    {
+      "path": "task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.binaries-before.json",
+      "source": "presentation-scope-exit-20261031.focus1.binaries-before.json",
+      "bytes": 202,
+      "sha256": "cb4c441ee42a9a3c35f72df387e4dd658be2c7a7420aeaf0434287137eab45f4"
+    },
+    {
+      "path": "task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.runtime.log",
+      "source": "presentation-scope-exit-20261031.focus1.runtime.log",
+      "bytes": 690315,
+      "sha256": "b12c88561bfde6ced63c58ab0621efd39397c2e163c413be6451648155198260"
+    },
+    {
+      "path": "task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.runtime.json",
+      "source": "presentation-scope-exit-20261031.focus1.runtime.json",
+      "bytes": 675,
+      "sha256": "2cb249a5ced9d68680fa15b250ea808bf906a843883f1628a52f747ad97ebac6"
+    },
+    {
+      "path": "task-presentation-scope-exit-raw.presentation-scope-exit-20261031.focus1.runtime.terminal-audit.json",
+      "source": "presentation-scope-exit-20261031.focus1.runtime.terminal-audit.json",
+      "bytes": 622,
+      "sha256": "3ede44ba9cc63726dbeaa5d0b55349f593c1a149a6c83e69ef39a627e9fa2483"
+    },
+    {
+      "path": "task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.source-freeze.json",
+      "source": "presentation-scope-exit-20261031.owner1.source-freeze.json",
+      "bytes": 787791,
+      "sha256": "d3d2f21f491687095a4cc00209aa889d0c352a2949c7f8aff66b75af0660ba5e"
+    },
+    {
+      "path": "task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.catalog.log",
+      "source": "presentation-scope-exit-20261031.owner1.catalog.log",
+      "bytes": 467782,
+      "sha256": "034d61865fa49b689981474190987f913b3bb5e0ea57b3aade6cc25b6520ed7f"
+    },
+    {
+      "path": "task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.catalog.json",
+      "source": "presentation-scope-exit-20261031.owner1.catalog.json",
+      "bytes": 492,
+      "sha256": "67f08c64934998a5c2b5dbe98d7cf1aa04159a4c96f3dbfffc4021548104e176"
+    },
+    {
+      "path": "task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.catalog.inventory.json",
+      "source": "presentation-scope-exit-20261031.owner1.catalog.inventory.json",
+      "bytes": 558817,
+      "sha256": "78700d870541119e3ee85361e36c31d42bc0e587b2f8ab5700716d56357956ed"
+    },
+    {
+      "path": "task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.binaries-before.json",
+      "source": "presentation-scope-exit-20261031.owner1.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "045104cebe9b78c2538535524513c409c208a1eb6c1f1e07475268d5475a5747"
+    },
+    {
+      "path": "task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.runtime.log",
+      "source": "presentation-scope-exit-20261031.owner1.runtime.log",
+      "bytes": 757337,
+      "sha256": "9b92be8252e3646965eb1a5a066a7bf75bc63d3ecda169a3d428152d31375ca1"
+    },
+    {
+      "path": "task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.runtime.json",
+      "source": "presentation-scope-exit-20261031.owner1.runtime.json",
+      "bytes": 584,
+      "sha256": "ffae153d34f1835fbedb60aaf3cb30962188eb89b2c9443883bfa5f2b8a4ff3f"
+    },
+    {
+      "path": "task-presentation-scope-exit-raw.presentation-scope-exit-20261031.owner1.runtime.terminal-audit.json",
+      "source": "presentation-scope-exit-20261031.owner1.runtime.terminal-audit.json",
+      "bytes": 637,
+      "sha256": "2e8cc32776c8e8badff8c776ea26fb1e37bca9eb801f214336fc05bce7d1fcb0"
+    },
+    {
+      "path": "task-presentation-scope-exit-raw.presentation-scope-exit-domain-20261031.reviewed.patch",
+      "source": "presentation-scope-exit-domain-20261031.reviewed.patch",
+      "bytes": 29537,
+      "sha256": "8f5fba9d31b7620078459846eb2184e584160dbb101e2fc3edb9eb5473898030"
+    },
+    {
+      "path": "task-presentation-scope-exit-raw.presentation-scope-exit-domain-20261031.prepared.json",
+      "source": "presentation-scope-exit-domain-20261031.prepared.json",
+      "bytes": 2156,
+      "sha256": "032c0b0f9ef61304bf39c7b488acf0e0b8cb2e49cd24bc825ed78ac839aef1d3"
+    },
+    {
+      "path": "task-presentation-scope-exit-raw.presentation-scope-exit-domain-20261031.verified.json",
+      "source": "presentation-scope-exit-domain-20261031.verified.json",
+      "bytes": 1461,
+      "sha256": "1b7dc858cc4b88be51fca099b0e99e4a8fe8eaa6f259aff298a94772f4f65059"
+    },
+    {
+      "path": "task-presentation-scope-exit-raw.presentation-scope-exit-domain-20261031.message.txt",
+      "source": "presentation-scope-exit-domain-20261031.message.txt",
+      "bytes": 413,
+      "sha256": "92b892e9979b980edd66a2ef0fd123a1976086f6047ea0d1a3c3f6c461b135f0"
+    }
+  ],
+  "rawByteDrift": 0,
+  "artifactCount": 20,
+  "artifactBytes": 5091060.0
+}

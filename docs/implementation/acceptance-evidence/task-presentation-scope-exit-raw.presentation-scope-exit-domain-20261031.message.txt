@@ -1,0 +1,5 @@
+Preflight escaping presentation resources across scope exits
+
+Admit the complete original-bank exit and receiver before moving leases. Exclude escaping bodies from retirement capacity and replace released scope grants atomically.
+
+Validation: Core all-feature nextest 2203 passed, zero exclusions and input drift; six changed Rust files rustfmt checked. VM Return/Select/Goto integration follows this domain cut.

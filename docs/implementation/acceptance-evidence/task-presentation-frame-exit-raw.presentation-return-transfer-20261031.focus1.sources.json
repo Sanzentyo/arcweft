@@ -1,0 +1,37 @@
+[
+  {
+    "path": "crates/arcweft-core/src/awbc/fiber.rs",
+    "capture": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-return-transfer-20261031.focus1.sources/crates/arcweft-core/src/awbc/fiber.rs",
+    "sha256": "f490f4e762342411052f6d50edaf32ffb065f3fbcf9f3bf1c9f40d2a18056ca2"
+  },
+  {
+    "path": "crates/arcweft-core/src/awbc/fiber/scope.rs",
+    "capture": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-return-transfer-20261031.focus1.sources/crates/arcweft-core/src/awbc/fiber/scope.rs",
+    "sha256": "247c8e3c1dfc90596e8dcaf22f8c76c294ab2f69ed2d0e8a3b9f51e9c4548aeb"
+  },
+  {
+    "path": "crates/arcweft-core/src/awbc/product_step.rs",
+    "capture": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-return-transfer-20261031.focus1.sources/crates/arcweft-core/src/awbc/product_step.rs",
+    "sha256": "f7409c1e52f930a7d26cae3c5341be23df6445c464854dc2bd4ac84436251871"
+  },
+  {
+    "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+    "capture": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-return-transfer-20261031.focus1.sources/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+    "sha256": "32101fecea5f35bd2992858b71e6edf217c8c93e75635aa34f12a7086873a0e1"
+  },
+  {
+    "path": "crates/arcweft-core/src/awbc/vm.rs",
+    "capture": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-return-transfer-20261031.focus1.sources/crates/arcweft-core/src/awbc/vm.rs",
+    "sha256": "9ee9fcc8935825db2feb3d050bc742f08ae990fafa5be8d38dd58e1dda2af729"
+  },
+  {
+    "path": "crates/arcweft-core/src/awbc/vm/resources.rs",
+    "capture": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-return-transfer-20261031.focus1.sources/crates/arcweft-core/src/awbc/vm/resources.rs",
+    "sha256": "1fc186a63bf4ae3ab10ff0e9b01657dd74fa3fb0d09093dd31e484d9c9a0db10"
+  },
+  {
+    "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+    "capture": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-return-transfer-20261031.focus1.sources/crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+    "sha256": "374ea0eefdb8bcdf7b545cdc6c8db3568d8baf7deb1e96c10cdfd7496e5fee8d"
+  }
+]

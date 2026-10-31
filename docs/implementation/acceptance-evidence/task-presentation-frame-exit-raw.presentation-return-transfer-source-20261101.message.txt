@@ -1,0 +1,5 @@
+Move original presentation leases with VM return values
+
+Preflight return and receiver state before moving registers, retire exited scopes, retain Product root results and clear exited root storage. Select typed line resources from the shared resource graph while presentation banks admit their own leases.
+
+Validation: four focused real typed Presentation Handle tests passed, including bounded retry, actual callee/caller custody, public save round trip and private checkpoint rollback. Full owner gates follow; Source presentation ABI is still outside this cut.

@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "1455f4ff9e2599353c6e36e94ab748a52bf0dc46",
+  "run": "presentation-return-transfer-20261031.focus5.runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [   0.067s] 4 tests run: 4 passed, 2150 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 4,
+  "passed": 4,
+  "failed": 0,
+  "skipped": 2150,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4031,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-31T15:04:01.0314669Z"
+}
