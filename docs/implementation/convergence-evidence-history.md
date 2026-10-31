@@ -13471,3 +13471,15 @@ Supersedes: AWBC実行bank選択の実装進捗を記録する。公開save deco
 初回owner1は2155件中2147 PASS／8 FAIL・0 skipped・source4015差分0。8件は旧fixtureのRoot context／未割当fiber／未発行namespaceが新しい境界で拒否された。owner2のcatalogはmutable-reference fixtureの再borrowによるE0596で終了101、runtime未実行。修正したowner3は2157／2157 PASS・0 skipped・終了0、source4015／binary／catalog差分0。新規9件はnamespace・親／bank関係とsticky failure、bind／releaseとlive／inert grantの失敗原子性、実Product公開saveのbank往復・重複activation fiber・不正bodyより前のmetadata拒否を確認した。先行check0と各失敗は別入力の履歴として保持し、最終owner結果へ合算しない。qualityと全逆依存は後続Core cohortで実施する。
 
 Supersedes: a47b3ebb24d2e0c35e451ece261cb4c394bdf829の検証途中記録を、上記の終端結果と早期検査追加で更新する。AWBCの実行bank生成／Product保存の当該境界を、全実行checkpoint／VM cleanup、Sourceの11 callable・mount(ViewValue)・6 method、Native借用Dialogue、driver・置換・画像parityの受入へ拡張しない。Generic Matchと他の既受入は維持する。
+
+## VM終了前のcleanup custody検査と値保持 — 2026-10-31
+
+確認base 9bfeeaeb00789fbb81b8b0647da2f135e1567f2f（AWBC bank早期検査の通常公開、parent a47b3ebb24d2e0c35e451ece261cb4c394bdf829、tree cb6bff251807cf7ee58ecd0bd963fd2f2d5bf30a、patch SHA256 77f1fa8aecff9b989c1d13dc7691d94cecbfa173745479467aeffdda6872556b、9 path、remote／blob差分0）。
+
+新たに再現した不具合: VM ReturnとSelectDialogueResultは、scope cleanupが元ledgerを必要とする場合でも、結果registerをtakeした後でMissingLedgerを返していた。通常returnでは実affine StageActor handleが失われ、Dialogue結果選択ではString registerがNoneになった。redの限定2件は両方FAIL・2104選択外でこの実値損失を示した。これはGeneric Matchなど既受入の取り消しではなく、Presentation scopeを持つVM終了という新しい境界の不具合である。
+
+FiberStateに、active frameとwhole-stack unwindそれぞれのread-only cleanup preflightを置いた。VM Return／Complete／結果選択はactive frame、静的／動的gotoは全frameを、結果・target・引数を動かす前に検査する。既存のcleanupを取り出す処理も同じpreflightを使う。scope回収後の再実行で同じaffine tokenが一度だけ返ること、Dialogue選択値が保持され再実行できることを確認した。MissingLedgerを隠したり、別bankや新しいownerへ退避したりしていない。
+
+修正したgreenはCore全2159／2159 PASS・0 skipped・終了0、4015入力／binary／catalog差分0。全件の後にfiber.rsのprivate methodのdoc commentのみを修正し、実行コード／testは変更していない。qualityはこの注釈修正後の4015入力を別途凍結して実行している。Core Clippyは終了0、default／doctest／構造／fmtは記録時点で進行中。各runの原本とfull SHAを次の検証記録へ保持する。既存14 tracked／6 untracked WIPを維持する。
+
+Supersedes: 既存cleanup条件を値移動前に検査する修復であり、bankを伴う全checkpointやVMの自動cleanup接続の完了ではない。Sourceの11 callable・mount(ViewValue)・6 method、Native Dialogue借用contour、driver・置換・画像parityも別の未達条件として維持する。

@@ -5,6 +5,135 @@ use crate::presentation::resources::{
 use crate::runtime_id::{RuntimePresentationBankId, RuntimePresentationHandleToken};
 use arcweft_interaction_model::presentation::PresentationResourceKind;
 
+#[test]
+fn vm_terminal_return_preserves_the_affine_result_until_scope_custody_is_available() {
+    use crate::program_invocation::RuntimeProgramInput;
+    let (executor, program, token) = completed_handle_program();
+    let mut executor = executor
+        .continue_program(program, vec![RuntimeProgramInput::PreviousResult])
+        .unwrap();
+    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
+    let mut banks = PresentationBanks::<PresentationBody<RuntimePayload>>::new(
+        owner.clone(),
+        executor.artifact_fingerprint,
+        PresentationLedgerLimits::for_schema(crate::entry::RuntimeSchemaLimits::engine_default()),
+    );
+    let ledger = banks.ledger_mut(RuntimePresentationBankId::Root).unwrap();
+    executor
+        .fiber
+        .bind_presentation_scope(&owner, ledger)
+        .unwrap();
+    let cursor = executor.fiber.cursor;
+    let error = crate::awbc::vm::step(
+        &executor.program,
+        &mut executor.fiber,
+        crate::awbc::vm::VmStepOptions {
+            max_instructions: 64,
+        },
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains(&crate::presentation::RuntimePresentationError::MissingLedger.to_string()),
+        "{error}"
+    );
+    let retained = executor.fiber.active_frame().unwrap().registers[0]
+        .as_ref()
+        .expect("failed return must retain the affine register");
+    assert_eq!(retained.affine_line_handles().unwrap()[0].token(), &token);
+    assert_eq!(executor.fiber.cursor, cursor);
+    assert_eq!(executor.fiber.status, FiberStatus::Running);
+    assert!(
+        executor
+            .fiber
+            .release_presentation_scope(&owner, ledger)
+            .unwrap()
+            .is_empty()
+    );
+    let output = crate::awbc::vm::step(
+        &executor.program,
+        &mut executor.fiber,
+        crate::awbc::vm::VmStepOptions {
+            max_instructions: 64,
+        },
+    )
+    .unwrap();
+    let crate::awbc::vm::VmExit::Returned(Some(value)) = output.exit else {
+        panic!("return resumes after original scope retirement")
+    };
+    assert_eq!(value.affine_line_handles().unwrap()[0].token(), &token);
+}
+
+#[test]
+fn vm_terminal_dialogue_selection_preserves_its_value_until_scope_custody_is_available() {
+    let program = mark_selector_program(
+        arcweft_interaction_model::input::InputActionId::new("dialogue.cancel.cleanup").unwrap(),
+    );
+    let mut executor = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 64).unwrap();
+    let activation = issue_test_dialogue(&mut executor, AwbcContentUnitId(0));
+    let mut fiber = create_test_dialogue_fiber(&mut executor, activation, AwbcFunctionId(2));
+    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
+    let mut banks = PresentationBanks::<PresentationBody<RuntimePayload>>::new(
+        owner.clone(),
+        executor.artifact_fingerprint,
+        PresentationLedgerLimits::for_schema(crate::entry::RuntimeSchemaLimits::engine_default()),
+    );
+    let ledger = banks
+        .ledger_mut(RuntimePresentationBankId::Dialogue { activation })
+        .unwrap();
+    fiber.bind_presentation_scope(&owner, ledger).unwrap();
+    crate::awbc::vm::step(
+        &executor.program,
+        &mut fiber,
+        crate::awbc::vm::VmStepOptions {
+            max_instructions: 1,
+        },
+    )
+    .unwrap();
+    let cursor = fiber.cursor;
+    let error = crate::awbc::vm::step(
+        &executor.program,
+        &mut fiber,
+        crate::awbc::vm::VmStepOptions {
+            max_instructions: 1,
+        },
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains(&crate::presentation::RuntimePresentationError::MissingLedger.to_string()),
+        "{error}"
+    );
+    assert_eq!(
+        fiber.active_frame().unwrap().registers[0].as_ref(),
+        Some(&RuntimeValue::String("selected-result".into()))
+    );
+    assert_eq!(fiber.cursor, cursor);
+    assert_eq!(fiber.status, FiberStatus::Running);
+    assert!(
+        fiber
+            .release_presentation_scope(&owner, ledger)
+            .unwrap()
+            .is_empty()
+    );
+    let output = crate::awbc::vm::step(
+        &executor.program,
+        &mut fiber,
+        crate::awbc::vm::VmStepOptions {
+            max_instructions: 1,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        output.exit,
+        crate::awbc::vm::VmExit::DialogueResultSelected(RuntimeValue::String(
+            "selected-result".into()
+        ))
+    );
+}
+
 fn fixture() -> (AwbcProductStepExecutor, RuntimePresentationHandleToken) {
     let mut program = return_program();
     let expected = crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest();

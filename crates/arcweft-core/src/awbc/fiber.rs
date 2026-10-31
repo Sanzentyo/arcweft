@@ -3943,22 +3943,27 @@ impl FiberState {
         }
         Ok(())
     }
-    /// Detaches all registered cleanups in whole-stack unwind order.
-    ///
-    /// Frames unwind from callee to caller. Each frame first drains lexical
-    /// scopes from innermost to outermost and then drains frame-root cleanups.
-    /// Entries are removed while collecting them, so a later terminal signal
-    /// cannot execute the same cleanup twice.
-    pub(super) fn take_unwind_cleanups(
-        &mut self,
+    /// Checks whole-stack custody before a goto moves its target or arguments.
+    pub(super) fn validate_unwind_cleanup_inputs(
+        &self,
         program: &AwbcProgram,
-    ) -> Result<Vec<FiberCleanupDispatch>, FiberStateError> {
+    ) -> Result<(), FiberStateError> {
         if self.frames.iter().any(FiberFrame::has_presentation_scopes) {
             return Err(FiberStateError::Snapshot(
                 crate::presentation::RuntimePresentationError::MissingLedger.into(),
             ));
         }
-        self.validate_cleanup_inputs(program)?;
+        self.validate_cleanup_inputs(program)
+    }
+
+    /// Detaches all registered cleanups in whole-stack unwind order.
+    /// Frames unwind from callee to caller, lexical scopes before root cleanups.
+    /// Removing entries here prevents a later terminal signal from repeating them.
+    pub(super) fn take_unwind_cleanups(
+        &mut self,
+        program: &AwbcProgram,
+    ) -> Result<Vec<FiberCleanupDispatch>, FiberStateError> {
+        self.validate_unwind_cleanup_inputs(program)?;
         let mut cleanups = Vec::new();
         for frame in self.frames.iter_mut().rev() {
             for scope in frame.scopes.iter_mut().rev() {
@@ -3973,16 +3978,24 @@ impl FiberState {
         Ok(cleanups)
     }
 
-    pub(super) fn take_active_frame_cleanups(
-        &mut self,
+    /// Checks return/selection custody without moving the result register.
+    pub(super) fn validate_active_frame_cleanup_inputs(
+        &self,
         program: &AwbcProgram,
-    ) -> Result<Vec<FiberCleanupDispatch>, FiberStateError> {
+    ) -> Result<(), FiberStateError> {
         if self.active_frame()?.has_presentation_scopes() {
             return Err(FiberStateError::Snapshot(
                 crate::presentation::RuntimePresentationError::MissingLedger.into(),
             ));
         }
-        self.validate_cleanup_inputs(program)?;
+        self.validate_cleanup_inputs(program)
+    }
+
+    pub(super) fn take_active_frame_cleanups(
+        &mut self,
+        program: &AwbcProgram,
+    ) -> Result<Vec<FiberCleanupDispatch>, FiberStateError> {
+        self.validate_active_frame_cleanup_inputs(program)?;
         let frame = self.active_frame_mut()?;
         let mut cleanups = Vec::new();
         for scope in frame.scopes.iter_mut().rev() {

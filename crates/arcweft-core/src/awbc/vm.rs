@@ -2823,15 +2823,16 @@ fn execute_terminator(
 ) -> Result<VmExit, VmError> {
     // These exits transfer registers before dropping frame custody. Reject an
     // invalid later cleanup before the first return value or argument moves.
-    if matches!(
-        terminator,
-        AwbcTerminator::GotoStatic { .. }
-            | AwbcTerminator::GotoDynamic { .. }
-            | AwbcTerminator::Return { .. }
-            | AwbcTerminator::Complete
-            | AwbcTerminator::SelectDialogueResult { .. }
-    ) {
-        fiber.validate_cleanup_inputs(program)?;
+    match terminator {
+        AwbcTerminator::GotoStatic { .. } | AwbcTerminator::GotoDynamic { .. } => {
+            fiber.validate_unwind_cleanup_inputs(program)?;
+        }
+        AwbcTerminator::Return { .. }
+        | AwbcTerminator::Complete
+        | AwbcTerminator::SelectDialogueResult { .. } => {
+            fiber.validate_active_frame_cleanup_inputs(program)?;
+        }
+        _ => {}
     }
     match terminator {
         AwbcTerminator::Jump { target } => {
