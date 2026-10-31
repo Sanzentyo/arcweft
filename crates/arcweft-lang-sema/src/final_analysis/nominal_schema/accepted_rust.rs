@@ -46,6 +46,7 @@ pub struct RuntimeAcceptedRustNominalProjection {
     world: RegisteredSemanticWorld,
     generation: Arc<arcweft_lang_hir::project::AcceptedHirProjectGeneration>,
     default_programs: Box<[crate::callable::CheckedRustFieldDefaultProgram]>,
+    work: graph::RuntimeNominalGraphProjectionWork,
 }
 
 impl PartialEq for RuntimeAcceptedRustNominalProjection {
@@ -161,6 +162,10 @@ impl RuntimeAcceptedRustNominalProjection {
         &self.graph
     }
 
+    pub(crate) const fn work(&self) -> graph::RuntimeNominalGraphProjectionWork {
+        self.work
+    }
+
     /// Rejects stale or foreign evidence before a consumer stages runtime rows.
     pub fn validate_for(
         &self,
@@ -203,7 +208,7 @@ impl FinalSemanticAnalysis {
         if !self.matches_registered_world(world) {
             return Err(RuntimeNominalGraphProjectionError::StaleGeneration);
         }
-        let (root, graph, metadata, defaults) = graph::NominalGraphProjection::new(
+        let (root, graph, metadata, defaults, work) = graph::NominalGraphProjection::new(
             Some(world.environment()),
             world.symbols(),
             self.accepted_types(),
@@ -251,6 +256,7 @@ impl FinalSemanticAnalysis {
             world: world.clone(),
             generation: Arc::clone(self.hir_generation()),
             default_programs,
+            work,
         })
     }
 }

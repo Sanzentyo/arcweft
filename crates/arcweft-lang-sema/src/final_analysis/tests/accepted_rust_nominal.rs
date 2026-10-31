@@ -101,6 +101,482 @@ struct MetadataFixture {
     package: RustPackageId,
 }
 
+#[test]
+fn structural_rust_retention_uses_the_accepted_nominal_schema_owner() {
+    use crate::ownership::{CheckedOwnershipLimits, RetainedValueDisposition};
+    use arcweft_core::{entry::RuntimeSchemaLimits, value::RuntimeValue};
+
+    let input = MetadataFixture::new();
+    let fixture = input.build(
+        vec![(
+            "Owned",
+            1,
+            RustTypeMetadataPublicationKind::Newtype {
+                inner: input.parameter(),
+            },
+        )],
+        None,
+    );
+    let analysis = analyze(&fixture).unwrap();
+    let nominal = input.nominal("Owned", vec![TypeKind::Bool]);
+    let projected = analysis
+        .project_accepted_rust_nominal(&fixture.registered, &nominal, Limits::PRODUCTION)
+        .unwrap();
+    let value = projected
+        .graph()
+        .try_record_value(
+            projected.root(),
+            vec![RuntimeValue::Bool(true)],
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap();
+    projected
+        .graph()
+        .accepts_value(
+            projected.root(),
+            &value,
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap();
+    let ty = TypeKind::AcceptedNominal(nominal);
+    let certificate = fixture
+        .registered
+        .checked_ownership(&analysis, &ty, CheckedOwnershipLimits::PRODUCTION)
+        .expect("accepted Rust data with its schema owner can be retained");
+    assert_eq!(
+        certificate.disposition(),
+        RetainedValueDisposition::SnapshotClone
+    );
+    let classifier = crate::ownership::RuntimeProducerArgumentClassifier::try_new(
+        &analysis,
+        &fixture.registered,
+    )
+    .unwrap();
+    let admitted = classifier.classify(&ty).unwrap();
+    admitted.validate_live_value(&value).unwrap();
+    assert!(!admitted.permits_copy());
+}
+
+#[test]
+fn recursive_rust_retention_closes_the_graph_and_checks_the_complete_value() {
+    use crate::ownership::{CheckedOwnershipLimits, RetainedValueDisposition};
+    use arcweft_core::{entry::RuntimeSchemaLimits, value::RuntimeValue};
+
+    let input = MetadataFixture::new();
+    let fixture = input.build(vec![("Node", 1, input.recursive_kind())], None);
+    let analysis = analyze(&fixture).unwrap();
+    let nominal = input.nominal("Node", vec![TypeKind::Bool]);
+    let projected = analysis
+        .project_accepted_rust_nominal(&fixture.registered, &nominal, Limits::PRODUCTION)
+        .unwrap();
+    let limits = RuntimeSchemaLimits::engine_default();
+    let leaf = projected
+        .graph()
+        .try_record_value(
+            projected.root(),
+            vec![RuntimeValue::Bool(true), RuntimeValue::option_none()],
+            limits,
+        )
+        .unwrap();
+    let value = projected
+        .graph()
+        .try_record_value(
+            projected.root(),
+            vec![RuntimeValue::Bool(false), RuntimeValue::option_some(leaf)],
+            limits,
+        )
+        .unwrap();
+    let ty = TypeKind::AcceptedNominal(nominal);
+    let certificate = fixture
+        .registered
+        .checked_ownership(&analysis, &ty, CheckedOwnershipLimits::PRODUCTION)
+        .unwrap();
+    assert_eq!(
+        certificate.disposition(),
+        RetainedValueDisposition::SnapshotClone
+    );
+    let classifier = crate::ownership::RuntimeProducerArgumentClassifier::try_new(
+        &analysis,
+        &fixture.registered,
+    )
+    .unwrap();
+    let admitted = classifier.classify(&ty).unwrap();
+    admitted.validate_live_value(&value).unwrap();
+    let RuntimeValue::NominalRecord(record) = value.clone() else {
+        panic!("record");
+    };
+    let invalid = RuntimeValue::NominalRecord(record.map_fields(|_| RuntimeValue::Unit));
+    assert!(admitted.validate_live_value(&invalid).is_err());
+    let other = TypeKind::AcceptedNominal(input.nominal("Node", vec![TypeKind::I32]));
+    assert!(
+        classifier
+            .classify(&other)
+            .unwrap()
+            .validate_live_value(&value)
+            .is_err()
+    );
+    assert_ne!(
+        certificate.evidence(),
+        fixture
+            .registered
+            .checked_ownership(&analysis, &other, CheckedOwnershipLimits::PRODUCTION)
+            .unwrap()
+            .evidence()
+    );
+}
+
+#[test]
+fn rust_retention_spends_one_shared_type_edge_and_evidence_allowance() {
+    use crate::ownership::{CheckedOwnershipError, CheckedOwnershipLimits};
+
+    let input = MetadataFixture::new();
+    let fixture = input.build(
+        vec![(
+            "Owned",
+            1,
+            RustTypeMetadataPublicationKind::Newtype {
+                inner: input.parameter(),
+            },
+        )],
+        None,
+    );
+    let analysis = analyze(&fixture).unwrap();
+    let single = TypeKind::AcceptedNominal(input.nominal("Owned", vec![TypeKind::Bool]));
+    let pair = TypeKind::Tuple(vec![single.clone(), single.clone()]);
+    let minimum = |ty: &TypeKind, edges: bool| {
+        (0..4096_u64)
+            .find(|limit| {
+                let mut limits = CheckedOwnershipLimits::PRODUCTION;
+                if edges {
+                    limits.max_nominal_edges = *limit;
+                } else {
+                    limits.max_type_nodes = *limit;
+                }
+                fixture
+                    .registered
+                    .checked_ownership(&analysis, ty, limits)
+                    .is_ok()
+            })
+            .expect("bounded data retention succeeds under the production allowance")
+    };
+    let single_nodes = minimum(&single, false);
+    assert_eq!(minimum(&pair, false), 2 * single_nodes + 1);
+    let single_edges = minimum(&single, true);
+    assert_eq!(minimum(&pair, true), 2 * single_edges);
+    let only_one = CheckedOwnershipLimits {
+        max_evidence_rows: 1,
+        ..CheckedOwnershipLimits::PRODUCTION
+    };
+    fixture
+        .registered
+        .checked_ownership(&analysis, &single, only_one)
+        .unwrap();
+    assert_eq!(
+        fixture
+            .registered
+            .checked_ownership(&analysis, &pair, only_one)
+            .unwrap_err(),
+        CheckedOwnershipError::WorkLimit
+    );
+    let shallow = CheckedOwnershipLimits {
+        max_recursion_depth: 0,
+        ..CheckedOwnershipLimits::PRODUCTION
+    };
+    assert_eq!(
+        fixture
+            .registered
+            .checked_ownership(&analysis, &single, shallow)
+            .unwrap_err(),
+        CheckedOwnershipError::WorkLimit
+    );
+    fixture
+        .registered
+        .checked_ownership(&analysis, &single, CheckedOwnershipLimits::PRODUCTION)
+        .unwrap();
+}
+
+#[test]
+fn rust_retention_keeps_function_and_need_value_certificates_closed() {
+    use crate::ownership::{CheckedOwnershipLimits, RuntimeOwnershipRejection};
+
+    let input = MetadataFixture::new();
+    let fixture = input.build(
+        vec![(
+            "Owned",
+            1,
+            RustTypeMetadataPublicationKind::Newtype {
+                inner: input.parameter(),
+            },
+        )],
+        None,
+    );
+    let analysis = analyze(&fixture).unwrap();
+    let function = TypeKind::Function {
+        binder: crate::types::GenericBinder::EMPTY,
+        predicate: crate::effect_row::EffectPredicate::unconstrained(),
+        params: vec![TypeKind::I32],
+        return_type: Box::new(TypeKind::Unit),
+        effects: EffectRow::closed(crate::effects::EffectSet::new()),
+    };
+    let function_identity: arcweft_core::pattern::RuntimeSemanticTypeId =
+        function.semantic_identity_digest().unwrap().into();
+    let nominal = input.nominal("Owned", vec![function]);
+    let projected = analysis
+        .project_accepted_rust_nominal(&fixture.registered, &nominal, Limits::PRODUCTION)
+        .unwrap();
+    let definition = projected.graph().definition(projected.root()).unwrap();
+    assert!(definition.data_codec().is_none());
+    let RuntimeNominalSchemaBody::Record { fields, .. } = definition.body() else {
+        panic!("newtype");
+    };
+    assert_eq!(
+        fields[0].schema(),
+        &RuntimeTypeSchema::ExecutableRef(function_identity)
+    );
+    assert!(
+        matches!(arcweft_core::entry::RuntimeCodecUse::from_schema(fields[0].schema(),
+        arcweft_core::entry::RuntimeSchemaLimits::engine_default()),
+        Err(arcweft_core::entry::RuntimeCodecUseError::ExecutableType { semantic_type })
+            if semantic_type == function_identity)
+    );
+    let ty = TypeKind::AcceptedNominal(nominal);
+    let classifier = crate::ownership::RuntimeProducerArgumentClassifier::try_new(
+        &analysis,
+        &fixture.registered,
+    )
+    .unwrap();
+    assert_eq!(
+        classifier.classify(&ty).unwrap_err().rejection(),
+        Some(RuntimeOwnershipRejection::FunctionValueRequiresCertificate)
+    );
+    assert!(
+        fixture
+            .registered
+            .checked_ownership(&analysis, &ty, CheckedOwnershipLimits::PRODUCTION)
+            .is_err()
+    );
+    let need = TypeKind::AcceptedNominal(
+        input.nominal("Owned", vec![TypeKind::Need(Box::new(TypeKind::Bool))]),
+    );
+    assert!(
+        fixture
+            .registered
+            .checked_ownership(&analysis, &need, CheckedOwnershipLimits::PRODUCTION)
+            .is_err()
+    );
+    let valid = TypeKind::AcceptedNominal(input.nominal("Owned", vec![TypeKind::Bool]));
+    fixture
+        .registered
+        .checked_ownership(&analysis, &valid, CheckedOwnershipLimits::PRODUCTION)
+        .unwrap();
+}
+
+#[test]
+fn executable_rust_members_keep_type_projection_without_a_data_codec() {
+    use crate::ownership::CheckedOwnershipLimits;
+    let input = MetadataFixture::new();
+    let fixture = input.build(
+        vec![
+            (
+                "New",
+                1,
+                RustTypeMetadataPublicationKind::Newtype {
+                    inner: input.parameter(),
+                },
+            ),
+            (
+                "Tuple",
+                1,
+                RustTypeMetadataPublicationKind::Struct {
+                    shape: RustStructMetadataInput::Tuple(
+                        vec![
+                            input.parameter(),
+                            input.node(EnvironmentTypeProjectionKind::Bool),
+                        ]
+                        .into(),
+                    ),
+                },
+            ),
+            (
+                "Record",
+                1,
+                RustTypeMetadataPublicationKind::Struct {
+                    shape: RustStructMetadataInput::Record(
+                        vec![
+                            EnvironmentRecordField::new("callback", input.parameter()),
+                            EnvironmentRecordField::new(
+                                "flag",
+                                input.node(EnvironmentTypeProjectionKind::Bool),
+                            ),
+                        ]
+                        .into(),
+                    ),
+                },
+            ),
+            (
+                "Cases",
+                1,
+                RustTypeMetadataPublicationKind::Enum {
+                    variants: vec![
+                        RustVariantMetadataInput::new(
+                            "Unit".to_owned(),
+                            RustVariantPayloadInput::Unit,
+                            input.source(),
+                        ),
+                        RustVariantMetadataInput::new(
+                            "One".to_owned(),
+                            RustVariantPayloadInput::Tuple(vec![input.parameter()].into()),
+                            input.source(),
+                        ),
+                        RustVariantMetadataInput::new(
+                            "Many".to_owned(),
+                            RustVariantPayloadInput::Tuple(
+                                vec![
+                                    input.parameter(),
+                                    input.node(EnvironmentTypeProjectionKind::Bool),
+                                ]
+                                .into(),
+                            ),
+                            input.source(),
+                        ),
+                        RustVariantMetadataInput::new(
+                            "Record".to_owned(),
+                            RustVariantPayloadInput::Record(
+                                vec![EnvironmentRecordField::new("callback", input.parameter())]
+                                    .into(),
+                            ),
+                            input.source(),
+                        ),
+                    ]
+                    .into(),
+                },
+            ),
+        ],
+        None,
+    );
+    let analysis = analyze(&fixture).unwrap();
+    let function = TypeKind::Function {
+        binder: crate::types::GenericBinder::EMPTY,
+        predicate: crate::effect_row::EffectPredicate::unconstrained(),
+        params: vec![TypeKind::Bool],
+        return_type: Box::new(TypeKind::Unit),
+        effects: EffectRow::closed(crate::effects::EffectSet::new()),
+    };
+    let expected =
+        RuntimeTypeSchema::ExecutableRef(function.semantic_identity_digest().unwrap().into());
+    for name in ["New", "Tuple", "Record", "Cases"] {
+        let nominal = input.nominal(name, vec![function.clone()]);
+        let projected = analysis
+            .project_accepted_rust_nominal(&fixture.registered, &nominal, Limits::PRODUCTION)
+            .unwrap();
+        let definition = projected.graph().definition(projected.root()).unwrap();
+        assert_eq!(definition.arguments(), [expected.clone()]);
+        assert!(definition.data_codec().is_none());
+        assert!(
+            fixture
+                .registered
+                .checked_ownership(
+                    &analysis,
+                    &TypeKind::AcceptedNominal(nominal),
+                    CheckedOwnershipLimits::PRODUCTION
+                )
+                .is_err()
+        );
+        let data_nominal = input.nominal(name, vec![TypeKind::Bool]);
+        let data = analysis
+            .project_accepted_rust_nominal(&fixture.registered, &data_nominal, Limits::PRODUCTION)
+            .unwrap();
+        assert!(
+            data.graph()
+                .definition(data.root())
+                .unwrap()
+                .data_codec()
+                .is_some()
+        );
+        fixture
+            .registered
+            .checked_ownership(
+                &analysis,
+                &TypeKind::AcceptedNominal(data_nominal),
+                CheckedOwnershipLimits::PRODUCTION,
+            )
+            .unwrap();
+    }
+}
+
+#[test]
+fn non_data_rust_members_do_not_skip_later_default_binding() {
+    use crate::{callable::RustFieldDefaultBindingError, env::rust_metadata::RustFieldDefault};
+    let input = MetadataFixture::new();
+    let missing_default = || {
+        EnvironmentRecordField::new("flag", input.node(EnvironmentTypeProjectionKind::Bool))
+            .with_data_default(
+                Some(RustFieldDefault::Function(
+                    RustItemPath::try_new("rust_graph::missing_default").unwrap(),
+                )),
+                false,
+            )
+    };
+    let fixture = input.build(
+        vec![
+            (
+                "Record",
+                1,
+                RustTypeMetadataPublicationKind::Struct {
+                    shape: RustStructMetadataInput::Record(
+                        vec![
+                            EnvironmentRecordField::new("callback", input.parameter()),
+                            missing_default(),
+                        ]
+                        .into(),
+                    ),
+                },
+            ),
+            (
+                "Cases",
+                1,
+                RustTypeMetadataPublicationKind::Enum {
+                    variants: vec![
+                        RustVariantMetadataInput::new(
+                            "Callback".to_owned(),
+                            RustVariantPayloadInput::Tuple(vec![input.parameter()].into()),
+                            input.source(),
+                        ),
+                        RustVariantMetadataInput::new(
+                            "Config".to_owned(),
+                            RustVariantPayloadInput::Record(vec![missing_default()].into()),
+                            input.source(),
+                        ),
+                    ]
+                    .into(),
+                },
+            ),
+        ],
+        None,
+    );
+    let analysis = analyze(&fixture).unwrap();
+    let function = TypeKind::Function {
+        binder: crate::types::GenericBinder::EMPTY,
+        predicate: crate::effect_row::EffectPredicate::unconstrained(),
+        params: vec![],
+        return_type: Box::new(TypeKind::Unit),
+        effects: EffectRow::closed(crate::effects::EffectSet::new()),
+    };
+    for name in ["Record", "Cases"] {
+        assert!(matches!(
+            analysis.project_accepted_rust_nominal(
+                &fixture.registered,
+                &input.nominal(name, vec![function.clone()]),
+                Limits::PRODUCTION
+            ),
+            Err(ProjectionError::FieldDefault {
+                source: RustFieldDefaultBindingError::Missing,
+                ..
+            })
+        ));
+    }
+}
+
 impl MetadataFixture {
     fn new() -> Self {
         Self {
@@ -336,6 +812,18 @@ fn accepted_rust_shapes_preserve_empty_and_single_payload_forms() {
         ("RecordStruct", RuntimeNominalRecordShape::Record, 2),
         ("Newtype", RuntimeNominalRecordShape::Newtype, 1),
     ] {
+        assert_eq!(
+            fixture
+                .registered
+                .checked_ownership(
+                    &analysis,
+                    &TypeKind::AcceptedNominal(input.nominal(name, vec![])),
+                    crate::ownership::CheckedOwnershipLimits::PRODUCTION
+                )
+                .unwrap()
+                .disposition(),
+            crate::ownership::RetainedValueDisposition::SnapshotClone
+        );
         let projection = analysis
             .project_accepted_rust_nominal(
                 &fixture.registered,
@@ -775,13 +1263,10 @@ fn mutual_recursion_is_finite_and_limits_reject_without_publication() {
         &fixture.registered,
     )
     .unwrap();
-    assert_eq!(
-        classifier
-            .classify(&TypeKind::AcceptedNominal(nominal))
-            .unwrap_err()
-            .rejection(),
-        Some(crate::ownership::RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner)
-    );
+    let admitted = classifier
+        .classify(&TypeKind::AcceptedNominal(nominal))
+        .unwrap();
+    assert!(!admitted.permits_copy());
 }
 
 #[test]

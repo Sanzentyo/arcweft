@@ -8,6 +8,8 @@
 
 use std::collections::BTreeSet;
 
+mod nominal;
+
 use arcweft_core::{
     entry::{RuntimeSchemaError, RuntimeSchemaLimits, RuntimeValueDigest},
     pattern::{
@@ -68,7 +70,7 @@ impl OwnershipEvidenceDigest {
 /// ordered by its canonical byte representation.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum OwnershipEvidenceRow {
-    ProjectNominal {
+    NominalGraph {
         semantic_identity: [u8; 32],
         checked_type: [u8; 32],
         declaration_shape: [u8; 32],
@@ -105,7 +107,7 @@ impl OwnershipEvidenceDigest {
         );
         for row in rows {
             match row {
-                OwnershipEvidenceRow::ProjectNominal {
+                OwnershipEvidenceRow::NominalGraph {
                     semantic_identity,
                     checked_type,
                     declaration_shape,
@@ -269,7 +271,7 @@ pub(crate) enum RuntimeOwnershipPathSegment {
     ProbeResult,
     DataShapeItem,
     AcceptedNominalArgument(u32),
-    ProjectNominalMember(u32),
+    NominalMember(u32),
 }
 
 /// Typed path of the first semantic admission failure.
@@ -318,8 +320,8 @@ impl std::fmt::Display for RuntimeOwnershipPath {
                 RuntimeOwnershipPathSegment::AcceptedNominalArgument(index) => {
                     write!(formatter, ".nominal[{index}]")?;
                 }
-                RuntimeOwnershipPathSegment::ProjectNominalMember(index) => {
-                    write!(formatter, ".project_nominal[{index}]")?;
+                RuntimeOwnershipPathSegment::NominalMember(index) => {
+                    write!(formatter, ".nominal[{index}]")?;
                 }
             }
         }
@@ -739,7 +741,10 @@ impl OwnershipTraversal {
         self.active_nominals.remove(&identity);
     }
 
-    fn push_evidence(&mut self, row: OwnershipEvidenceRow) -> Result<(), RuntimeOwnershipError> {
+    fn push_evidence(
+        &mut self,
+        row: impl FnOnce() -> OwnershipEvidenceRow,
+    ) -> Result<(), RuntimeOwnershipError> {
         let next_evidence_len = u64::try_from(self.evidence.len())
             .map_err(|_| RuntimeOwnershipError::WorkLimit)?
             .checked_add(1)
@@ -747,7 +752,7 @@ impl OwnershipTraversal {
         if next_evidence_len > self.limits.max_evidence_rows {
             return Err(RuntimeOwnershipError::WorkLimit);
         }
-        self.evidence.push(row);
+        self.evidence.push(row());
         Ok(())
     }
 }
@@ -1496,7 +1501,7 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                     for field in projected.record_fields() {
                         self.classify_at(
                             field.ty(),
-                            &path.pushed(RuntimeOwnershipPathSegment::ProjectNominalMember(
+                            &path.pushed(RuntimeOwnershipPathSegment::NominalMember(
                                 field.declaration_ordinal(),
                             )),
                             OwnershipTraversal::child_depth(depth)?,
@@ -1516,10 +1521,9 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                         let payload = variant
                             .payload()
                             .map(|ty| {
-                                let member_path =
-                                    path.pushed(RuntimeOwnershipPathSegment::ProjectNominalMember(
-                                        variant.ordinal(),
-                                    ));
+                                let member_path = path.pushed(
+                                    RuntimeOwnershipPathSegment::NominalMember(variant.ordinal()),
+                                );
                                 self.classify_at(
                                     ty,
                                     &member_path,
@@ -1547,7 +1551,7 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                     }
                 }
             };
-            traversal.push_evidence(OwnershipEvidenceRow::ProjectNominal {
+            traversal.push_evidence(|| OwnershipEvidenceRow::NominalGraph {
                 semantic_identity: *identity.as_bytes(),
                 checked_type: *semantic_type.as_bytes(),
                 declaration_shape: *projected.layout().as_bytes(),
@@ -1592,44 +1596,7 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                 )
             })?;
         if matches!(record.semantics(), AcceptedNominalSemantics::RustAdt) {
-            let limits = RuntimeNominalGraphProjectionLimits {
-                max_type_nodes: traversal
-                    .limits
-                    .max_type_nodes
-                    .saturating_sub(traversal.type_nodes),
-                max_nominal_edges: traversal
-                    .limits
-                    .max_nominal_edges
-                    .saturating_sub(traversal.nominal_edges),
-                max_active_nominal_depth: traversal
-                    .limits
-                    .max_active_nominal_depth
-                    .saturating_sub(traversal.active_nominals.len() as u64),
-                ..RuntimeNominalGraphProjectionLimits::PRODUCTION
-            };
-            analysis
-                .project_accepted_rust_nominal(world, nominal, limits)
-                .map_err(|source| match source {
-                    RuntimeNominalGraphProjectionError::Limit { .. } => {
-                        RuntimeOwnershipError::WorkLimit
-                    }
-                    RuntimeNominalGraphProjectionError::StaleGeneration => {
-                        RuntimeOwnershipError::rejected(
-                            path,
-                            RuntimeOwnershipRejection::StaleAuthority,
-                        )
-                    }
-                    source => RuntimeOwnershipError::NominalSchemaProjection {
-                        path: path.clone(),
-                        source: Box::new(source),
-                    },
-                })?;
-            // C2 reuses the final graph. Structural retention remains closed
-            // until plan admission and program-bound snapshot restoration exist.
-            return Err(RuntimeOwnershipError::rejected(
-                path,
-                RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
-            ));
+            return self.classify_rust_nominal(nominal, path, depth, traversal);
         }
         for (ordinal, argument) in nominal.arguments().iter().enumerate() {
             let ordinal = u32::try_from(ordinal).unwrap_or(u32::MAX);
@@ -1656,7 +1623,7 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                 RuntimeOwnershipRejection::AffineValue,
             ));
         }
-        traversal.push_evidence(OwnershipEvidenceRow::AcceptedOpaque {
+        traversal.push_evidence(|| OwnershipEvidenceRow::AcceptedOpaque {
             semantic_identity: *semantic_identity.as_bytes(),
             runtime_producer: carrier.producer().as_str().to_owned(),
             value_class: carrier.value_class(),
@@ -1705,7 +1672,7 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                 RuntimeOwnershipRejection::AffineValue,
             ));
         }
-        traversal.push_evidence(OwnershipEvidenceRow::AcceptedOpaque {
+        traversal.push_evidence(|| OwnershipEvidenceRow::AcceptedOpaque {
             semantic_identity: *semantic_identity.as_bytes(),
             runtime_producer: carrier.producer().as_str().to_owned(),
             value_class: carrier.value_class(),
@@ -1995,7 +1962,7 @@ fn record_agent_evidence(
     traversal: &mut OwnershipTraversal,
     kind: RuntimeAgentOperationalType,
 ) -> Result<(), RuntimeOwnershipError> {
-    traversal.push_evidence(OwnershipEvidenceRow::AgentDto {
+    traversal.push_evidence(|| OwnershipEvidenceRow::AgentDto {
         kind: kind.semantic_tag(),
         snapshot_contract: kind.snapshot_contract_digest(),
     })

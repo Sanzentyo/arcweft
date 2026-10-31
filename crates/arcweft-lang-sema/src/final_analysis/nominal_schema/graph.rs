@@ -11,6 +11,7 @@ mod project;
 mod variants;
 use crate::{env::nominal::AcceptedNominalId, types::TypeInstantiationError};
 use arcweft_core::entry::RuntimeNominalSchemaGraphError;
+pub(crate) use limits::RuntimeNominalGraphProjectionWork;
 pub use limits::{RuntimeNominalGraphProjectionLimitKind, RuntimeNominalGraphProjectionLimits};
 use thiserror::Error;
 
@@ -110,6 +111,7 @@ impl<'a> NominalGraphProjection<'a> {
             RuntimeNominalSchemaGraph,
             InstantiatedRustTypeMetadata,
             Vec<crate::callable::RegisteredRustFieldDefaultProgram>,
+            RuntimeNominalGraphProjectionWork,
         ),
         Error,
     > {
@@ -150,6 +152,7 @@ impl<'a> NominalGraphProjection<'a> {
             graph,
             metadata,
             self.default_programs.into_values().collect(),
+            self.budget.work(),
         ))
     }
 

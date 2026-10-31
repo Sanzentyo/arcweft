@@ -6,6 +6,7 @@ use crate::types::{TypeProjectionControl, TypeProjectionNodeKind};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RuntimeNominalGraphProjectionLimits {
     pub max_type_nodes: u64,
+    pub max_type_depth: u64,
     pub max_nominal_edges: u64,
     pub max_definitions: u64,
     pub max_fields_and_cases: u64,
@@ -15,6 +16,7 @@ pub struct RuntimeNominalGraphProjectionLimits {
 impl RuntimeNominalGraphProjectionLimits {
     pub const PRODUCTION: Self = Self {
         max_type_nodes: 65_536,
+        max_type_depth: RuntimeSchemaLimits::engine_default().max_depth as u64,
         max_nominal_edges: 16_384,
         max_definitions: 16_384,
         max_fields_and_cases: 65_536,
@@ -49,6 +51,14 @@ pub(in crate::final_analysis::nominal_schema) struct ProjectionBudget {
     fields_and_cases: u64,
 }
 
+/// Work already bounded and spent by one original graph projection. The
+/// enclosing ownership traversal commits this receipt to its same allowance.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct RuntimeNominalGraphProjectionWork {
+    pub(crate) type_nodes: u64,
+    pub(crate) nominal_edges: u64,
+}
+
 impl ProjectionBudget {
     pub(in crate::final_analysis::nominal_schema) fn new(
         limits: RuntimeNominalGraphProjectionLimits,
@@ -56,6 +66,7 @@ impl ProjectionBudget {
         let hard = RuntimeNominalGraphProjectionLimits::PRODUCTION;
         for (kind, actual, maximum) in [
             (Kind::TypeNodes, limits.max_type_nodes, hard.max_type_nodes),
+            (Kind::TypeDepth, limits.max_type_depth, hard.max_type_depth),
             (
                 Kind::NominalEdges,
                 limits.max_nominal_edges,
@@ -106,11 +117,16 @@ impl ProjectionBudget {
     ) -> Result<(), Error> {
         self.type_nodes = self.type_nodes.saturating_add(1);
         Self::check_limit(Kind::TypeNodes, self.type_nodes, self.limits.max_type_nodes)?;
-        Self::check_limit(
-            Kind::TypeDepth,
-            depth,
-            u64::from(RuntimeSchemaLimits::engine_default().max_depth),
-        )
+        Self::check_limit(Kind::TypeDepth, depth, self.limits.max_type_depth)
+    }
+
+    pub(in crate::final_analysis::nominal_schema) const fn work(
+        &self,
+    ) -> RuntimeNominalGraphProjectionWork {
+        RuntimeNominalGraphProjectionWork {
+            type_nodes: self.type_nodes,
+            nominal_edges: self.nominal_edges,
+        }
     }
 
     pub(in crate::final_analysis::nominal_schema) fn edge(&mut self) -> Result<(), Error> {

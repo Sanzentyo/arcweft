@@ -8,6 +8,28 @@ use arcweft_core::entry::{
 use super::*;
 use crate::env::EnvironmentRecordField;
 
+/// Executable members have no standalone data codec. This is an absent
+/// capability, not a failure of the original executable type/schema owner.
+fn schema_codec(schema: &Schema) -> Result<Option<Use>, Error> {
+    match Use::from_schema(schema, RuntimeSchemaLimits::engine_default()) {
+        Ok(codec) => Ok(Some(codec)),
+        Err(arcweft_core::entry::RuntimeCodecUseError::ExecutableType { .. }) => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn schema_codecs<'a>(
+    schemas: impl Iterator<Item = &'a Schema>,
+) -> Result<Option<Box<[Use]>>, Error> {
+    // Visit all members before deciding the complete capability. In record and
+    // enum callers, later members may retain legitimate constructor defaults.
+    Ok(schemas
+        .map(schema_codec)
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .collect())
+}
+
 fn tag_style(source: &arcweft_rust_abi::ArcweftRustEnumTagStyle) -> RuntimeEnumTagStyle {
     use arcweft_rust_abi::ArcweftRustEnumTagStyle as Tag;
     match source {
@@ -70,22 +92,13 @@ impl NominalGraphProjection<'_> {
                     shape: AcceptedRustStructShape::Tuple(_),
                 },
                 RuntimeNominalSchemaBody::Record { fields, .. },
-            ) => Some(Use::Tuple {
-                items: fields
-                    .iter()
-                    .map(|field| {
-                        Use::from_schema(field.schema(), RuntimeSchemaLimits::engine_default())
-                    })
-                    .collect::<Result<_, _>>()?,
-            }),
+            ) => schema_codecs(fields.iter().map(|field| field.schema()))?
+                .map(|items| Use::Tuple { items }),
             (
                 AcceptedRustTypeMetadataKind::Newtype { .. },
                 RuntimeNominalSchemaBody::Record { fields, .. },
-            ) => Some(Use::Newtype {
-                inner: Box::new(Use::from_schema(
-                    fields[0].schema(),
-                    RuntimeSchemaLimits::engine_default(),
-                )?),
+            ) => schema_codec(fields[0].schema())?.map(|inner| Use::Newtype {
+                inner: Box::new(inner),
             }),
             (
                 AcceptedRustTypeMetadataKind::Struct {
@@ -94,12 +107,12 @@ impl NominalGraphProjection<'_> {
                 RuntimeNominalSchemaBody::Record {
                     fields: schemas, ..
                 },
-            ) => Some(self.rust_record_codec(
+            ) => self.rust_record_codec(
                 metadata,
                 &name,
                 fields,
                 schemas.iter().map(|field| field.schema()),
-            )?),
+            )?,
             (
                 AcceptedRustTypeMetadataKind::Enum { variants },
                 RuntimeNominalSchemaBody::Variant { cases },
@@ -112,36 +125,36 @@ impl NominalGraphProjection<'_> {
                             (EnumVariantPayload::Tuple(fields), Some(Schema::Tuple(schemas)))
                                 if fields.len() == 1 && schemas.len() == 1 =>
                             {
-                                Some(Use::Newtype {
-                                    inner: Box::new(Use::from_schema(
-                                        &schemas[0],
-                                        RuntimeSchemaLimits::engine_default(),
-                                    )?),
+                                schema_codec(&schemas[0])?.map(|inner| {
+                                    Some(Use::Newtype {
+                                        inner: Box::new(inner),
+                                    })
                                 })
                             }
                             (
                                 EnumVariantPayload::Record(fields),
                                 Some(Schema::RecordValue { fields: schemas }),
-                            ) => Some(self.rust_record_codec(
-                                metadata,
-                                &format!("{name}::{}", variant.name()),
-                                fields,
-                                schemas.iter().map(|field| field.schema()),
-                            )?),
-                            (_, Some(schema)) => Some(Use::from_schema(
-                                schema,
-                                RuntimeSchemaLimits::engine_default(),
-                            )?),
-                            (_, None) => None,
+                            ) => self
+                                .rust_record_codec(
+                                    metadata,
+                                    &format!("{name}::{}", variant.name()),
+                                    fields,
+                                    schemas.iter().map(|field| field.schema()),
+                                )?
+                                .map(Some),
+                            (_, Some(schema)) => schema_codec(schema)?.map(Some),
+                            (_, None) => Some(None),
                         };
-                        Ok(RuntimeVariantCodecUse {
+                        Ok(payload.map(|payload| RuntimeVariantCodecUse {
                             wire_name: variant.wire_name().to_owned(),
                             discriminant: variant.discriminant(),
                             payload,
-                        })
+                        }))
                     })
-                    .collect::<Result<Box<[_]>, Error>>()?;
-                Some(Use::Enum {
+                    .collect::<Result<Vec<_>, Error>>()?
+                    .into_iter()
+                    .collect::<Option<Box<[_]>>>();
+                cases.map(|cases| Use::Enum {
                     name,
                     tag: tag_style(&metadata.data_policy().tag),
                     repr: metadata.data_policy().repr.map(enum_repr),
@@ -162,7 +175,7 @@ impl NominalGraphProjection<'_> {
         name: &str,
         fields: &[EnvironmentRecordField],
         schemas: impl Iterator<Item = &'a Schema>,
-    ) -> Result<Use, Error> {
+    ) -> Result<Option<Use>, Error> {
         let fields = fields
             .iter()
             .zip(schemas)
@@ -185,22 +198,25 @@ impl NominalGraphProjection<'_> {
                         Ok::<_, Error>(id)
                     })
                     .transpose()?;
-                Ok(RuntimeFieldCodecUse {
+                let value = schema_codec(schema)?;
+                Ok(value.map(|value| RuntimeFieldCodecUse {
                     wire_name: field.wire_name().to_owned(),
                     has_default: field.data_default().is_some(),
                     default_program,
                     skip: field.skip(),
                     bytes_format: field.bytes_format().map(bytes_format),
-                    value: Use::from_schema(schema, RuntimeSchemaLimits::engine_default())?,
-                })
+                    value,
+                }))
             })
-            .collect::<Result<_, Error>>()?;
+            .collect::<Result<Vec<_>, Error>>()?
+            .into_iter()
+            .collect::<Option<Box<[_]>>>();
         // These are the standard Rust data record/tag semantics. The admitted
         // default edge, rather than a bool annotation, grants value generation.
-        Ok(Use::Record {
+        Ok(fields.map(|fields| Use::Record {
             name: name.to_owned(),
             deny_unknown_fields: metadata.data_policy().deny_unknown_fields,
             fields,
-        })
+        }))
     }
 }

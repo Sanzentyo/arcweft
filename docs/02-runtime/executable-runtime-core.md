@@ -237,6 +237,21 @@ not a standalone data schema or value predicate. Standalone codec admission
 rejects it. The existing version-one schema codecs encode the reference in
 place, without a separate function schema or compatibility reader.
 
+Type-directed retention of a joined Rust ADT uses its original accepted schema
+graph and generation lease. It checks ordered type arguments and every reachable
+field/case, closing nominal body back-edges by semantic identity. Graph projection
+and retention consume the same enclosing type-node and nominal-edge allowances;
+nested nominal requests do not reset them. Recursion depth and evidence rows are
+bounded before admitting the ownership certificate. Executable members still
+require a value certificate, and affine members cannot receive a type-only
+retention certificate.
+
+A Rust ADT containing executable members may have an admitted executable schema
+without a standalone data codec. The absent codec does not reject its type
+projection or skip validation of later field defaults. Default bindings remain
+owned by the original accepted declaration; executable references do not acquire
+a data codec through this distinction.
+
 Entry state/event roles contain nominal identity, semantic identity and layout;
 their version-one encoding contains no copied schema. Initializer values,
 incoming events, committed reducer state and restored root values are admitted
