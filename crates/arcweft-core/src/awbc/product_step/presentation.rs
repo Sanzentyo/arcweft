@@ -83,6 +83,18 @@ impl AwbcProductProgram {
     }
 }
 
+impl AwbcProductProgram {
+    pub(super) fn trap_fiber(
+        &self,
+        fiber: &mut FiberState,
+        presentation: &mut Option<PresentationBanks<PresentationBody<RuntimePayload>>>,
+        trap: crate::awbc::fiber::FiberTrap,
+    ) -> Result<crate::awbc::vm::VmStepOutput, crate::awbc::vm::VmError> {
+        self.retire_fiber_scopes(presentation, std::iter::once(&mut *fiber))?;
+        crate::awbc::vm::trap_fiber(self, fiber, trap)
+    }
+}
+
 impl ProductChildFiberOwner {
     fn presentation_role(&self) -> PresentationExecutionRole {
         match self {

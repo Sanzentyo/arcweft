@@ -4,7 +4,7 @@ use crate::awbc::schema::*;
 use crate::presentation::RuntimePresentationError;
 use crate::step::RuntimeStepOutput;
 
-fn roundtrip(executor: AwbcProductStepExecutor) -> AwbcProductStepExecutor {
+pub(super) fn roundtrip(executor: AwbcProductStepExecutor) -> AwbcProductStepExecutor {
     let snapshot = executor.snapshot().unwrap();
     let save = AwbcProductExecutorSaveSnapshot::from_live(&snapshot, &executor.program).unwrap();
     let wire = serde_json::to_vec(&save).unwrap();

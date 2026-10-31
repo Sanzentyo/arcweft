@@ -111,7 +111,13 @@ pub(super) fn nested_program() -> AwbcProgram {
 pub(super) fn nested_fixture(
     queued: bool,
 ) -> (AwbcProductStepExecutor, Vec<RuntimePresentationHandleToken>) {
-    let program = nested_program();
+    nested_fixture_with_program(nested_program(), queued)
+}
+
+pub(super) fn nested_fixture_with_program(
+    program: AwbcProgram,
+    queued: bool,
+) -> (AwbcProductStepExecutor, Vec<RuntimePresentationHandleToken>) {
     let mut executor = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 64).unwrap();
     let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
     executor.presentation = Some(PresentationBanks::new(

@@ -6,6 +6,7 @@ use crate::runtime_id::{RuntimePresentationBankId, RuntimePresentationHandleToke
 use arcweft_interaction_model::presentation::PresentationResourceKind;
 
 mod cancellation_resume;
+mod terminal_requests;
 mod trap_lifecycle;
 mod traps;
 

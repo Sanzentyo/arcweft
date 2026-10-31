@@ -1,6 +1,6 @@
 use super::{AwbcProductStepExecutor, ProductStepError};
-use crate::awbc::fiber::FiberTrap;
 use crate::awbc::schema::AwbcTrapCode;
+use crate::awbc::vm::VmObservation;
 use crate::effect::LineEffectRequest;
 use crate::plan::FlowEvent;
 use crate::step::RuntimeStepOutput;
@@ -13,6 +13,37 @@ enum ProductControlEffect {
 }
 
 impl AwbcProductStepExecutor {
+    /// Admit a terminating control failure while its producing instruction's
+    /// original checkpoint still owns the bank, cursor, budget and arguments.
+    pub(super) fn preflight_control_traps(
+        &self,
+        observations: &[VmObservation],
+    ) -> Result<(), ProductStepError> {
+        let trap = observations.iter().any(|observation| {
+            let VmObservation::Effect { effect, args } = observation else {
+                return false;
+            };
+            let super::MappedEffect::Line(effect) = self.program.map_product_effect(*effect, args)
+            else {
+                return false;
+            };
+            match control_effect(&effect) {
+                Some(ProductControlEffect::Failed(_)) => true,
+                Some(ProductControlEffect::Goto(target)) => {
+                    self.program.resolve_flow_target_value(&target).is_err()
+                }
+                Some(ProductControlEffect::Return(_)) | None => false,
+            }
+        });
+        if trap {
+            self.program.preflight_fiber_unwinds(
+                self.presentation.as_ref(),
+                std::iter::once(&self.fiber),
+            )?;
+        }
+        Ok(())
+    }
+
     pub(super) fn apply_control_effects(
         &mut self,
         output: &mut RuntimeStepOutput,
@@ -39,11 +70,7 @@ impl AwbcProductStepExecutor {
             }
             ProductControlEffect::Goto(target) => self.goto_effect_target(&target, output),
             ProductControlEffect::Failed(message) => {
-                self.fiber.mark_trapped(FiberTrap {
-                    code: AwbcTrapCode::ExplicitPanic,
-                    message: Some(message),
-                    source_map: None,
-                });
+                self.fail_with_trap(AwbcTrapCode::ExplicitPanic, message, None, output);
             }
         }
         true
@@ -53,11 +80,12 @@ impl AwbcProductStepExecutor {
         let (target_id, function) = match self.program.resolve_flow_target_value(target) {
             Ok(target) => target,
             Err(error) => {
-                self.fiber.mark_trapped(FiberTrap {
-                    code: AwbcTrapCode::MissingDynamicTarget,
-                    message: Some(error.to_string()),
-                    source_map: None,
-                });
+                self.fail_with_trap(
+                    AwbcTrapCode::MissingDynamicTarget,
+                    error.to_string(),
+                    None,
+                    output,
+                );
                 return;
             }
         };

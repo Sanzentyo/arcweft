@@ -8,7 +8,7 @@ use crate::runtime_id::RuntimePresentationHandleToken;
 use crate::step::RuntimeStepOutput;
 use arcweft_interaction_model::presentation::PresentationResourceKind;
 
-fn install_resource(
+pub(super) fn install_resource(
     executor: &mut AwbcProductStepExecutor,
     child: Option<usize>,
     blocked: bool,
@@ -184,7 +184,7 @@ fn need_cancellation_capacity_refusal_preserves_the_publication_and_complete_sna
     executor.snapshot().unwrap();
 }
 
-fn awaiting_many(threaded: bool) -> AwbcProductStepExecutor {
+pub(super) fn awaiting_many(threaded: bool) -> AwbcProductStepExecutor {
     let program = await_many_product_program_with_thread(
         if threaded {
             AwaitManyFixtureOutput::Result
@@ -375,7 +375,7 @@ fn genuine_program_child_await_many_cancellation_preserves_event_journal_and_ban
     }
 }
 
-fn fanout_fixture(
+pub(super) fn fanout_fixture(
     nested: bool,
 ) -> (
     AwbcProductStepExecutor,
@@ -425,7 +425,7 @@ fn fanout_fixture(
     panic!("genuine decoded Source did not start both Fanout workers");
 }
 
-fn worker_index(
+pub(super) fn worker_index(
     executor: &AwbcProductStepExecutor,
     correlation: crate::task::TaskCorrelation,
 ) -> usize {
@@ -433,7 +433,7 @@ fn worker_index(
         ProductChildFiberOwner::Program { launch, .. } if launch.handle().correlation == correlation)).unwrap()
 }
 
-fn step_child_at(executor: &mut AwbcProductStepExecutor, index: usize) {
+pub(super) fn step_child_at(executor: &mut AwbcProductStepExecutor, index: usize) {
     let child = executor.child_fibers.remove(index).unwrap();
     executor.child_fibers.push_front(child);
     let mut output = RuntimeStepOutput::default();
@@ -470,7 +470,7 @@ fn cancel_worker(
     ));
 }
 
-fn install_bool_resource(
+pub(super) fn install_bool_resource(
     executor: &mut AwbcProductStepExecutor,
     index: usize,
     blocked: bool,

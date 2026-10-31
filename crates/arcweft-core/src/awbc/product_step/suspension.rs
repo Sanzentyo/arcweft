@@ -1582,6 +1582,7 @@ impl AwbcProductStepExecutor {
         child: &mut super::ProductChildFiber,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl crate::pure::RuntimeCallBackend,
+        journal: &mut super::DeferredChildResumeJournal,
     ) -> Result<(), ProductStepError> {
         let Some(suspension) = child.fiber.suspension.as_ref() else {
             return Ok(());
@@ -1606,7 +1607,7 @@ impl AwbcProductStepExecutor {
             | DeferredSuspensionDispatch::BudgetYield => {}
             DeferredSuspensionDispatch::AwaitMany => {
                 let diagnostics = output.diagnostics.len();
-                self.fill_await_many_for_child(child, output, pure_backend);
+                self.fill_await_many_for_child(child, output, pure_backend, journal);
                 if output.diagnostics.len() > diagnostics {
                     return Err(ProductStepError::Internal(
                         output.diagnostics.last().map_or_else(
@@ -1766,16 +1767,14 @@ impl AwbcProductStepExecutor {
         let local_launch = self.need_producers.launch_for_correlation(correlation);
         let (cursor, state) = if let Some(launch) = local_launch {
             if states.iter().any(|state| &state.correlation == correlation) {
-                mark_child_trapped(
-                    fiber,
+                journal.stage_trap(
                     AwbcTrapCode::InternalInvariant,
                     "external Need state attempts to publish a Product-owned Need".to_owned(),
                 );
                 return true;
             }
             if let Some(fault) = launch.task_fault() {
-                mark_child_trapped(
-                    fiber,
+                journal.stage_trap(
                     AwbcTrapCode::HostAbiMismatch,
                     format!("Need producer task failed: {fault}"),
                 );
@@ -1836,8 +1835,7 @@ impl AwbcProductStepExecutor {
                 Some(Ordering::Greater) => {}
                 Some(Ordering::Equal | Ordering::Less) => return false,
                 None => {
-                    mark_child_trapped(
-                        fiber,
+                    journal.stage_trap(
                         AwbcTrapCode::InternalInvariant,
                         "Need publication cursor changed source for one Await".to_owned(),
                     );
@@ -1857,7 +1855,7 @@ impl AwbcProductStepExecutor {
         match state {
             AwaitNeedPublicationKind::InfrastructureFailure(failure) => {
                 journal.record_default_drop_policy();
-                mark_child_trapped(fiber, AwbcTrapCode::HostAbiMismatch, failure.to_string());
+                journal.stage_trap(AwbcTrapCode::HostAbiMismatch, failure.to_string());
                 true
             }
             AwaitNeedPublicationKind::NotStarted => false,
@@ -1873,6 +1871,7 @@ impl AwbcProductStepExecutor {
                         observer,
                         progress.clone(),
                         output,
+                        journal,
                     )
                 })
             }
@@ -1897,8 +1896,7 @@ impl AwbcProductStepExecutor {
                     })
                 };
                 let Some((value, external)) = selected else {
-                    mark_child_trapped(
-                        fiber,
+                    journal.stage_trap(
                         AwbcTrapCode::InternalInvariant,
                         "selected deferred Need Ready payload is unavailable".to_owned(),
                     );
@@ -1910,8 +1908,7 @@ impl AwbcProductStepExecutor {
                     item_type,
                     0,
                 ) {
-                    mark_child_trapped(
-                        fiber,
+                    journal.stage_trap(
                         AwbcTrapCode::HostAbiMismatch,
                         format!(
                             "Need {} published a Ready payload outside its checked item type",
@@ -1923,11 +1920,7 @@ impl AwbcProductStepExecutor {
                 let resume_proof = match fiber.validate_resume_at(&self.program, resume) {
                     Ok(proof) => proof,
                     Err(error) => {
-                        mark_child_trapped(
-                            fiber,
-                            AwbcTrapCode::InternalInvariant,
-                            error.to_string(),
-                        );
+                        journal.stage_trap(AwbcTrapCode::InternalInvariant, error.to_string());
                         return true;
                     }
                 };
@@ -1940,11 +1933,7 @@ impl AwbcProductStepExecutor {
                     ) {
                         Ok(proof) => proof,
                         Err(error) => {
-                            mark_child_trapped(
-                                fiber,
-                                AwbcTrapCode::PatternMismatch,
-                                error.to_string(),
-                            );
+                            journal.stage_trap(AwbcTrapCode::PatternMismatch, error.to_string());
                             return true;
                         }
                     };
@@ -1957,8 +1946,7 @@ impl AwbcProductStepExecutor {
                         })
                     });
                     if !vacant {
-                        mark_child_trapped(
-                            fiber,
+                        journal.stage_trap(
                             AwbcTrapCode::TypeMismatch,
                             "deferred Need Ready binding destination is occupied".to_owned(),
                         );
@@ -1978,11 +1966,7 @@ impl AwbcProductStepExecutor {
                     {
                         Ok(proof) => proof,
                         Err(error) => {
-                            mark_child_trapped(
-                                fiber,
-                                AwbcTrapCode::InternalInvariant,
-                                error.to_string(),
-                            );
+                            journal.stage_trap(AwbcTrapCode::InternalInvariant, error.to_string());
                             return true;
                         }
                     };
@@ -1994,7 +1978,7 @@ impl AwbcProductStepExecutor {
                     resume: resume_proof,
                     binding: binding_proof,
                 }) {
-                    mark_child_trapped(fiber, AwbcTrapCode::InternalInvariant, error.to_string());
+                    journal.stage_trap(AwbcTrapCode::InternalInvariant, error.to_string());
                     return true;
                 }
                 output.flow_events.push(FlowEvent::AwaitReady {
@@ -2004,8 +1988,7 @@ impl AwbcProductStepExecutor {
                 true
             }
             AwaitNeedPublicationKind::ReadyTransferred => {
-                mark_child_trapped(
-                    fiber,
+                journal.stage_trap(
                     AwbcTrapCode::HostAbiMismatch,
                     "Need Ready payload has already transferred to its unique waiter".to_owned(),
                 );
@@ -2017,11 +2000,9 @@ impl AwbcProductStepExecutor {
                         journal.record_drop_policy(crate::effect::RuntimeDropPolicy::Cancel);
                         journal.record_deferred_observations(cancellation.observations);
                     }
-                    Err(error) => mark_child_trapped(
-                        fiber,
-                        AwbcTrapCode::InternalInvariant,
-                        error.to_string(),
-                    ),
+                    Err(error) => {
+                        journal.stage_trap(AwbcTrapCode::InternalInvariant, error.to_string())
+                    }
                 }
                 true
             }
@@ -2049,16 +2030,14 @@ impl AwbcProductStepExecutor {
                         _ => None,
                     })
             else {
-                mark_child_trapped(
-                    &mut child.fiber,
+                journal.stage_trap(
                     AwbcTrapCode::InternalInvariant,
                     "deferred child host-call suspension lost its argument owner".to_owned(),
                 );
                 return true;
             };
             if args.iter().any(|value| !value.ownership().permits_copy()) {
-                mark_child_trapped(
-                    &mut child.fiber,
+                journal.stage_trap(
                     AwbcTrapCode::HostAbiMismatch,
                     "external host-call arguments require deep Copy carriers".to_owned(),
                 );
@@ -2077,8 +2056,7 @@ impl AwbcProductStepExecutor {
         };
         if pending.call != call {
             child.pending_host_call = None;
-            mark_child_trapped(
-                &mut child.fiber,
+            journal.stage_trap(
                 AwbcTrapCode::HostAbiMismatch,
                 "pending deferred child host call does not match its continuation".to_owned(),
             );
@@ -2104,8 +2082,7 @@ impl AwbcProductStepExecutor {
                     });
                 if !checked {
                     child.pending_host_call = None;
-                    mark_child_trapped(
-                        &mut child.fiber,
+                    journal.stage_trap(
                         AwbcTrapCode::HostAbiMismatch,
                         "deferred child host-call result violates its checked type".to_owned(),
                     );
@@ -2114,11 +2091,7 @@ impl AwbcProductStepExecutor {
                 let prepared_resume = match child.fiber.validate_resume_at(&self.program, resume) {
                     Ok(prepared) => prepared,
                     Err(error) => {
-                        mark_child_trapped(
-                            &mut child.fiber,
-                            AwbcTrapCode::InternalInvariant,
-                            error.to_string(),
-                        );
+                        journal.stage_trap(AwbcTrapCode::InternalInvariant, error.to_string());
                         return true;
                     }
                 };
@@ -2130,8 +2103,7 @@ impl AwbcProductStepExecutor {
                             .is_some_and(crate::value::RuntimePlaceStorage::is_vacant)
                     });
                     if !vacant {
-                        mark_child_trapped(
-                            &mut child.fiber,
+                        journal.stage_trap(
                             AwbcTrapCode::TypeMismatch,
                             "deferred host-call destination register is unavailable".to_owned(),
                         );
@@ -2151,11 +2123,7 @@ impl AwbcProductStepExecutor {
                     },
                 };
                 if let Err(error) = journal.stage_host_call(stage) {
-                    mark_child_trapped(
-                        &mut child.fiber,
-                        AwbcTrapCode::InternalInvariant,
-                        error.to_string(),
-                    );
+                    journal.stage_trap(AwbcTrapCode::InternalInvariant, error.to_string());
                 }
                 true
             }
@@ -2173,11 +2141,7 @@ impl AwbcProductStepExecutor {
                     },
                 };
                 if let Err(error) = journal.stage_host_call(stage) {
-                    mark_child_trapped(
-                        &mut child.fiber,
-                        AwbcTrapCode::InternalInvariant,
-                        error.to_string(),
-                    );
+                    journal.stage_trap(AwbcTrapCode::InternalInvariant, error.to_string());
                 }
                 true
             }
@@ -2189,6 +2153,7 @@ impl AwbcProductStepExecutor {
         child: &mut super::ProductChildFiber,
         output: &mut RuntimeStepOutput,
         backend: &mut impl crate::pure::RuntimeCallBackend,
+        journal: &mut super::DeferredChildResumeJournal,
     ) {
         let fiber = &mut child.fiber;
         let Some(suspension) = fiber.suspension.as_mut() else {
@@ -2216,7 +2181,7 @@ impl AwbcProductStepExecutor {
             suspension.reason = FiberSuspensionReason::AwaitMany(state);
         }
         if let Err(error) = result {
-            mark_child_trapped(fiber, error.trap_code(), error.to_string());
+            journal.stage_trap(error.trap_code(), error.to_string());
         }
     }
     fn resume_deferred_await_many(
@@ -2231,8 +2196,7 @@ impl AwbcProductStepExecutor {
         let fiber = &mut child.fiber;
         if state.results.len() != state.items.len() {
             journal.record_default_drop_policy();
-            mark_child_trapped(
-                fiber,
+            journal.stage_trap(
                 AwbcTrapCode::InternalInvariant,
                 "deferred AwaitMany result slots disagree with the admitted item count".to_owned(),
             );
@@ -2270,8 +2234,7 @@ impl AwbcProductStepExecutor {
             match &event.kind {
                 TaskEventKind::ProgramTerminal(_) => {
                     journal.record_default_drop_policy();
-                    mark_child_trapped(
-                        fiber,
+                    journal.stage_trap(
                         AwbcTrapCode::HostAbiMismatch,
                         "a Host AwaitMany child cannot accept a Program retirement acknowledgement"
                             .into(),
@@ -2284,9 +2247,7 @@ impl AwbcProductStepExecutor {
                     {
                         let task_id = event.correlation.task_id;
                         journal.record_default_drop_policy();
-                        mark_child_trapped(
-                            fiber,
-                            AwbcTrapCode::HostAbiMismatch,
+                        journal.stage_trap(AwbcTrapCode::HostAbiMismatch,
                             format!(
                                 "await task {} published a payload outside its checked outcome contract",
                                 task_id
@@ -2304,11 +2265,7 @@ impl AwbcProductStepExecutor {
                         Ok(value) => value,
                         Err(error) => {
                             journal.record_default_drop_policy();
-                            mark_child_trapped(
-                                fiber,
-                                AwbcTrapCode::InternalInvariant,
-                                error.to_string(),
-                            );
+                            journal.stage_trap(AwbcTrapCode::InternalInvariant, error.to_string());
                             return true;
                         }
                     };
@@ -2335,7 +2292,7 @@ impl AwbcProductStepExecutor {
                         event.correlation.task_id, state.in_flight[position].index, error
                     );
                     journal.record_default_drop_policy();
-                    mark_child_trapped(fiber, AwbcTrapCode::HostAbiMismatch, message);
+                    journal.stage_trap(AwbcTrapCode::HostAbiMismatch, message);
                     return true;
                 }
                 TaskEventKind::Cancelled => {
@@ -2344,11 +2301,9 @@ impl AwbcProductStepExecutor {
                             journal.record_drop_policy(crate::effect::RuntimeDropPolicy::Cancel);
                             journal.record_deferred_observations(cancellation.observations);
                         }
-                        Err(error) => mark_child_trapped(
-                            fiber,
-                            AwbcTrapCode::InternalInvariant,
-                            error.to_string(),
-                        ),
+                        Err(error) => {
+                            journal.stage_trap(AwbcTrapCode::InternalInvariant, error.to_string())
+                        }
                     }
                     return true;
                 }
@@ -2360,8 +2315,7 @@ impl AwbcProductStepExecutor {
         {
             let Some(base) = &state.base else {
                 journal.record_default_drop_policy();
-                mark_child_trapped(
-                    fiber,
+                journal.stage_trap(
                     AwbcTrapCode::InternalInvariant,
                     "AwaitMany has no accepted base".into(),
                 );
@@ -2372,7 +2326,7 @@ impl AwbcProductStepExecutor {
                 Ok(prepared) => prepared,
                 Err(error) => {
                     journal.record_default_drop_policy();
-                    mark_child_trapped(fiber, AwbcTrapCode::InternalInvariant, error.to_string());
+                    journal.stage_trap(AwbcTrapCode::InternalInvariant, error.to_string());
                     return true;
                 }
             };
@@ -2424,7 +2378,7 @@ impl AwbcProductStepExecutor {
                     Ok(prepared) => prepared,
                     Err(error) => {
                         journal.record_default_drop_policy();
-                        mark_child_trapped(fiber, AwbcTrapCode::PatternMismatch, error.to_string());
+                        journal.stage_trap(AwbcTrapCode::PatternMismatch, error.to_string());
                         return true;
                     }
                 };
@@ -2438,8 +2392,7 @@ impl AwbcProductStepExecutor {
                 });
                 if !vacant {
                     journal.record_default_drop_policy();
-                    mark_child_trapped(
-                        fiber,
+                    journal.stage_trap(
                         AwbcTrapCode::TypeMismatch,
                         "deferred AwaitMany binding destination is occupied".to_owned(),
                     );
@@ -2470,14 +2423,13 @@ impl AwbcProductStepExecutor {
         }
         let request_count = output.requests.tasks.len();
         let diagnostic_count = output.diagnostics.len();
-        self.fill_await_many_for_child(child, output, pure_backend);
-        if child.fiber.status == crate::awbc::fiber::FiberStatus::Trapped {
+        self.fill_await_many_for_child(child, output, pure_backend, journal);
+        if journal.has_staged_trap() {
             journal.record_default_drop_policy();
         }
         if output.diagnostics.len() > diagnostic_count {
             journal.record_default_drop_policy();
-            mark_child_trapped(
-                &mut child.fiber,
+            journal.stage_trap(
                 AwbcTrapCode::InternalInvariant,
                 output.diagnostics.last().map_or_else(
                     || "deferred await-many request failed".to_owned(),
@@ -2935,36 +2887,29 @@ impl AwbcProductStepExecutor {
     }
 }
 
-fn mark_child_trapped(fiber: &mut FiberState, code: AwbcTrapCode, message: String) {
-    fiber.mark_trapped(crate::awbc::fiber::FiberTrap {
-        code,
-        message: Some(message),
-        source_map: None,
-    });
-}
-
 fn resume_deferred_await_progress(
     program: &AwbcProgram,
     fiber: &mut FiberState,
     observer: AwbcAwaitObserverResume,
     progress: arcweft_need::Progress,
     _output: &mut RuntimeStepOutput,
+    journal: &mut super::DeferredChildResumeJournal,
 ) -> bool {
     let value = RuntimeValue::Progress(progress);
     match fiber.active_frame_mut() {
         Ok(frame) => {
             if let Err(error) = frame.set_register(observer.destination, value) {
-                mark_child_trapped(fiber, AwbcTrapCode::TypeMismatch, error.to_string());
+                journal.stage_trap(AwbcTrapCode::TypeMismatch, error.to_string());
                 return true;
             }
         }
         Err(error) => {
-            mark_child_trapped(fiber, AwbcTrapCode::InternalInvariant, error.to_string());
+            journal.stage_trap(AwbcTrapCode::InternalInvariant, error.to_string());
             return true;
         }
     }
     if let Err(error) = fiber.resume_await_observer_at(program, observer.resume) {
-        mark_child_trapped(fiber, AwbcTrapCode::InternalInvariant, error.to_string());
+        journal.stage_trap(AwbcTrapCode::InternalInvariant, error.to_string());
     }
     true
 }

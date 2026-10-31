@@ -1084,6 +1084,7 @@ struct PendingHostCall {
 /// events. The data-only cursors are copied, while consumed events stay owned
 /// by this journal until the child step commits.
 pub(super) struct DeferredChildResumeJournal {
+    staged_trap: Option<FiberTrap>,
     need_publications_before: BTreeMap<
         (
             crate::runtime_id::RuntimePersistentFiberId,
@@ -1155,8 +1156,23 @@ pub(super) enum PreparedHostResultOutcome {
 }
 
 impl DeferredChildResumeJournal {
+    pub(super) fn stage_trap(&mut self, code: AwbcTrapCode, message: String) {
+        if self.staged_trap.is_none() {
+            self.staged_trap = Some(FiberTrap {
+                code,
+                message: Some(message),
+                source_map: None,
+            });
+        }
+    }
+
+    pub(super) fn has_staged_trap(&self) -> bool {
+        self.staged_trap.is_some()
+    }
+
     fn capture(executor: &AwbcProductStepExecutor) -> Self {
         Self {
+            staged_trap: None,
             need_publications_before: executor.need_publications.clone(),
             remaining_new_task_requests_before: executor.remaining_new_task_requests,
             next_host_call_sequence_before: executor.next_host_call_sequence,
@@ -1219,6 +1235,20 @@ impl DeferredChildResumeJournal {
             return Err(ProductStepError::Internal(
                 "deferred child already has a staged host or Need result".to_owned(),
             ));
+        }
+        if let PreparedHostResultTarget::Deferred {
+            outcome: PreparedHostResultOutcome::Failed { kind, message },
+            ..
+        } = &stage.target
+        {
+            let code = match kind {
+                crate::step::RuntimeHostCallErrorKind::UnsupportedCapability => {
+                    AwbcTrapCode::CapabilityDenied
+                }
+                crate::step::RuntimeHostCallErrorKind::Rejected
+                | crate::step::RuntimeHostCallErrorKind::Failed => AwbcTrapCode::HostAbiMismatch,
+            };
+            self.stage_trap(code, message.clone());
         }
         self.staged_host_call = Some(stage);
         Ok(())
@@ -1330,22 +1360,11 @@ impl DeferredChildResumeJournal {
                 }
                 child.fiber.resume_at_prepared(resume);
             }
-            PreparedHostResultOutcome::Failed { kind, message } => {
-                let code = match kind {
-                    crate::step::RuntimeHostCallErrorKind::UnsupportedCapability => {
-                        AwbcTrapCode::CapabilityDenied
-                    }
-                    crate::step::RuntimeHostCallErrorKind::Rejected
-                    | crate::step::RuntimeHostCallErrorKind::Failed => {
-                        AwbcTrapCode::HostAbiMismatch
-                    }
-                };
-                child.pending_host_call = None;
-                child.fiber.mark_trapped(FiberTrap {
-                    code,
-                    message: Some(message),
-                    source_map: None,
-                });
+            PreparedHostResultOutcome::Failed { .. } => {
+                assert!(
+                    matches!(child.fiber.terminal, Some(FiberTerminalValue::Trapped(_))),
+                    "the real child owner admitted Host failure custody before consuming its result"
+                );
             }
         }
         child.pending_host_call = None;
@@ -2799,6 +2818,9 @@ impl AwbcProductStepExecutor {
             &mut host,
         ) {
             Ok(mut vm_output) => {
+                if let Err(error) = self.preflight_control_traps(&vm_output.observations) {
+                    return self.fail_main_vm_step(checkpoint, error, output, vm_output.executed);
+                }
                 if matches!(
                     self.fiber.root,
                     crate::awbc::fiber::AwbcFiberRoot::Program(_)
@@ -3043,6 +3065,28 @@ impl AwbcProductStepExecutor {
         }
     }
 
+    fn commit_deferred_trap(
+        &mut self,
+        child: &mut ProductChildFiber,
+        journal: &mut DeferredChildResumeJournal,
+    ) -> Result<Option<VmExit>, crate::awbc::vm::VmError> {
+        let Some(trap) = journal.staged_trap.take() else {
+            return Ok(None);
+        };
+        let step = self
+            .program
+            .trap_fiber(&mut child.fiber, &mut self.presentation, trap)?;
+        journal.record_default_drop_policy();
+        // The completion owner reports the terminal metadata. The journal
+        // retains only its cleanup work, as for the original non-VM failures.
+        journal.record_deferred_observations(
+            step.observations
+                .into_iter()
+                .filter(|observation| !matches!(observation, VmObservation::Trap(_))),
+        );
+        Ok(Some(step.exit))
+    }
+
     fn rollback_selected_child_step(
         &mut self,
         mut child: ProductChildFiber,
@@ -3088,11 +3132,14 @@ impl AwbcProductStepExecutor {
         // by a progressing step are scheduled by the next caller-owned turn.
         let candidates = self.child_fibers.len();
         let already_trapped = self.fiber.status == FiberStatus::Trapped;
+        let diagnostics_before = output.diagnostics.len();
         for _ in 0..candidates {
             if self.step_front_child(output, pure_backend, input, need_states) {
                 return true;
             }
-            if !already_trapped && self.fiber.status == FiberStatus::Trapped {
+            if output.diagnostics.len() > diagnostics_before
+                || (!already_trapped && self.fiber.status == FiberStatus::Trapped)
+            {
                 return false;
             }
         }
@@ -3238,14 +3285,19 @@ impl AwbcProductStepExecutor {
             let request_count = output.requests.host_calls.len()
                 + output.requests.tasks.len()
                 + output.requests.ensure_content.len();
-            match self.resume_deferred_child_suspension(
+            let resumed = self.resume_deferred_child_suspension(
                 &mut child,
                 need_states,
                 &mut input.host_call_results,
                 &mut staged_resume_output,
                 &mut resume_journal,
                 pure_backend,
-            ) {
+            );
+            if let Err(error) = &resumed {
+                resume_journal.stage_trap(error.trap_code(), error.to_string());
+            }
+            match resumed {
+                _ if resume_journal.has_staged_trap() => {}
                 Ok(true)
                     if matches!(
                         child.fiber.status,
@@ -3272,14 +3324,21 @@ impl AwbcProductStepExecutor {
                         + output.requests.ensure_content.len()
                         > request_count;
                 }
-                Err(error) => {
-                    child.fiber.mark_trapped(FiberTrap {
-                        code: error.trap_code(),
-                        message: Some(error.to_string()),
-                        source_map: None,
-                    });
-                }
+                Err(_) => unreachable!("deferred resume errors stage a terminal request"),
             }
+        }
+        if let Err(error) = self.commit_deferred_trap(&mut child, &mut resume_journal) {
+            if self.rollback_selected_child_step(
+                child,
+                checkpoint,
+                pending_host_call_before,
+                resume_journal,
+                need_states,
+                output,
+            ) {
+                self.record_error(ProductStepError::Vm(error), output);
+            }
+            return false;
         }
         child.fiber.replenish_budget();
         let mut candidate_stats = self.compact_pure_stats;
@@ -3414,6 +3473,33 @@ impl AwbcProductStepExecutor {
                 }
             }
         };
+        if !skip_vm_instruction && deferred_owner && child.fiber.status == FiberStatus::Suspended {
+            if let Err(error) = self.initialize_deferred_child_suspension(
+                &mut child,
+                &mut staged_resume_output,
+                pure_backend,
+                &mut resume_journal,
+            ) {
+                resume_journal.stage_trap(error.trap_code(), error.to_string());
+            }
+            match self.commit_deferred_trap(&mut child, &mut resume_journal) {
+                Ok(Some(exit)) => vm_output.exit = exit,
+                Ok(None) => {}
+                Err(error) => {
+                    if self.rollback_selected_child_step(
+                        child,
+                        checkpoint,
+                        pending_host_call_before,
+                        resume_journal,
+                        need_states,
+                        output,
+                    ) {
+                        self.record_error(ProductStepError::Vm(error), output);
+                    }
+                    return false;
+                }
+            }
+        }
         if let crate::awbc::fiber::AwbcFiberRoot::RootReducer(entry) = child.fiber.root {
             let returned = match &mut vm_output.exit {
                 VmExit::Returned(value) => Some(value.take().ok_or_else(|| {
@@ -3517,17 +3603,6 @@ impl AwbcProductStepExecutor {
             }
         };
         if matches!(&owner, ProductChildFiberOwner::Program { .. }) {
-            if !skip_vm_instruction
-                && child.fiber.status == FiberStatus::Suspended
-                && let Err(error) =
-                    self.initialize_deferred_child_suspension(&mut child, output, pure_backend)
-            {
-                child.fiber.mark_trapped(FiberTrap {
-                    code: error.trap_code(),
-                    message: Some(error.to_string()),
-                    source_map: None,
-                });
-            }
             // Program children use the prepared Ready/Host-result transfer
             // without a dialogue transaction. Commit the payload and resume
             // before retaining the fiber; a cursor alone leaves Await stale.
@@ -3713,18 +3788,7 @@ impl AwbcProductStepExecutor {
             }
             return self.begin_product_dialogue_failure(transaction, error.into(), output);
         }
-        if !skip_vm_instruction
-            && child.fiber.status == FiberStatus::Suspended
-            && deferred.is_some()
-            && let Err(error) =
-                self.initialize_deferred_child_suspension(&mut child, output, pure_backend)
-        {
-            child.fiber.mark_trapped(FiberTrap {
-                code: error.trap_code(),
-                message: Some(error.to_string()),
-                source_map: None,
-            });
-        }
+
         if child.fiber.status == FiberStatus::Running
             || (child.fiber.status == FiberStatus::Suspended && deferred.is_some())
         {
@@ -3834,8 +3898,7 @@ impl AwbcProductStepExecutor {
                         );
                     }
                     if let Some(trap) = failure {
-                        resume_journal.commit(self, staged_resume_output, output);
-                        self.record_trap(&trap, output);
+                        let reported = trap.clone();
                         let (transaction, batch) =
                             match self.prepare_product_dialogue_failure(transaction, trap, batch) {
                                 Ok(prepared) => prepared,
@@ -3850,6 +3913,10 @@ impl AwbcProductStepExecutor {
                                     return true;
                                 }
                             };
+                        resume_journal
+                            .commit_staged_host_call(&mut input.host_call_results, &mut child);
+                        resume_journal.commit(self, staged_resume_output, output);
+                        self.record_trap(&reported, output);
                         return self.commit_product_dialogue_failure_close(
                             transaction,
                             batch,
@@ -4035,6 +4102,7 @@ impl AwbcProductStepExecutor {
                     return true;
                 }
             };
+            resume_journal.commit_staged_host_call(&mut input.host_call_results, &mut child);
             self.realize_line_task_commands(&mut transaction, &mut batch, prepared);
             let receipt = self.dialogues.commit_prepared(transaction, proof);
             resume_journal.commit(self, staged_resume_output, output);

@@ -510,6 +510,35 @@ pub fn cancel_fiber(
     })
 }
 
+/// Applies a resource-free trap. Scoped resources require the real execution
+/// owner to retire grants first; the ordinary unwind guard remains enforced.
+pub(crate) fn trap_fiber(
+    program: &AwbcProgram,
+    fiber: &mut FiberState,
+    trap: FiberTrap,
+) -> Result<VmStepOutput, VmError> {
+    let mut observations = Vec::new();
+    if matches!(fiber.status, FiberStatus::Running | FiberStatus::Suspended) {
+        terminate_with_trap(
+            program,
+            fiber,
+            &mut VmExecutionResources {
+                context: None,
+                presentation: None,
+            },
+            trap.code,
+            trap.message,
+            trap.source_map,
+            &mut observations,
+        )?;
+    }
+    Ok(VmStepOutput {
+        executed: 0,
+        observations,
+        exit: terminal_exit(fiber),
+    })
+}
+
 #[allow(clippy::too_many_lines)]
 pub fn step_with_host(
     program: &AwbcProgram,
