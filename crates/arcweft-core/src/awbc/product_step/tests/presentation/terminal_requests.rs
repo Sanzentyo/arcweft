@@ -239,12 +239,12 @@ fn genuine_program_await_many_fault_keeps_the_event_and_complete_checkpoint_unti
                 .expect("actual HostMetadata retirement emitted its authenticated completion");
             let task = executor
                 .need_producers
-                .launch_for_correlation(&producer)
-                .unwrap()
-                .task();
+                .task_admissions()
+                .find(|task| task.handle().correlation == producer)
+                .expect("the issuing journal retains the actual accepted Program receipt");
             let acknowledgement = report
                 .bind_publication(
-                    task,
+                    &task,
                     crate::task::TaskDispatchIdentity::new(
                         producer,
                         LogicalEpoch(7),
