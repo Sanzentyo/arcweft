@@ -386,6 +386,71 @@ fn awbc_cancel_without_the_original_presentation_bank_is_atomic() {
 }
 
 #[test]
+fn live_and_inert_scope_headers_observe_identical_metadata_quota_boundaries() {
+    use crate::presentation::resources::PresentationScopeStorage;
+
+    let mut fixture = Fixture::new(4);
+    fixture.bind();
+    let image = fixture.image();
+    let frame = fixture.fiber.active_frame().unwrap();
+    let binding = frame.root_presentation_scope.as_ref().unwrap();
+    let snapshot = image.frames[0].root_presentation_scope.as_ref().unwrap();
+    let admit = |limits, inert: bool| -> Result<(), AwbcRuntimeValueSnapshotError> {
+        let mut admission =
+            RuntimeRetainedValueAdmission::for_program(fixture.owner.clone(), limits);
+        let proof =
+            fixture
+                .ledger
+                .admit_ownership(&fixture.owner, fixture.artifact, &mut admission)?;
+        admission.bind_presentation_custody(proof)?;
+        fixture.ledger.admit_bodies(&mut admission)?;
+        if inert {
+            snapshot.admit_awbc_scope(
+                &mut admission,
+                fixture.fiber.instance,
+                frame.instance,
+                None,
+            )?;
+        } else {
+            binding.admit_awbc_scope(
+                &mut admission,
+                fixture.fiber.instance,
+                frame.instance,
+                None,
+            )?;
+        }
+        admission.finish_presentation_custody()
+    };
+    for kind in ["metadata bytes", "validation work", "metadata depth"] {
+        let mut accepted = 0;
+        let limit_count = match kind {
+            "metadata depth" => {
+                u64::from(crate::entry::RuntimeSchemaLimits::engine_default().max_depth) + 1
+            }
+            _ => 512,
+        };
+        for limit in 0..limit_count {
+            let mut limits = crate::entry::RuntimeSchemaLimits::engine_default();
+            match kind {
+                "metadata bytes" => limits.max_metadata_bytes = limit,
+                "validation work" => limits.max_validation_work = limit,
+                "metadata depth" => limits.max_depth = u32::try_from(limit).unwrap(),
+                _ => unreachable!(),
+            }
+            let live = admit(limits, false);
+            let inert = admit(limits, true);
+            assert_eq!(
+                live.is_ok(),
+                inert.is_ok(),
+                "{kind} limit {limit}: live {live:?}, inert {inert:?}"
+            );
+            accepted += usize::from(live.is_ok());
+        }
+        assert!(accepted > 0, "{kind} must include successful admission");
+    }
+}
+
+#[test]
 fn live_and_inert_scope_headers_share_one_sticky_custody_contour() {
     let mut fixture = Fixture::new(4);
     fixture.register(true);
