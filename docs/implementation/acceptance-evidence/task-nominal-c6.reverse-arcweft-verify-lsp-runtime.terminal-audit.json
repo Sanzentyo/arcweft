@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "1bf138d190c826841935b38bf01c3048fb43c3cb",
+  "run": "nominal-c6.reverse-arcweft-verify-lsp-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [   0.069s] 14 tests run: 14 passed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 14,
+  "passed": 14,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4007,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-31T06:18:20.5451232Z"
+}

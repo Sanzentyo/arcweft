@@ -1,0 +1,1244 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "clock::tests::clock_converts_quantized_millis_to_core_time",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "clock::tests::clock_rejects_implicit_zero_time",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "display::tests::canonical_background_pairs_replace_and_clear_exact_slots",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "display::tests::canonical_default_background_uses_stage_geometry_and_typed_options",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "display::tests::canonical_image_command_mutates_direct_runtime_state",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "display::tests::choices_preserve_a_missing_id_without_synthesizing_from_the_label",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "display::tests::dynamic_character_dialogue_context_tests::dynamic_context_uses_admitted_config_and_rejects_generation_or_character_mismatch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "display::tests::dynamic_character_dialogue_context_tests::fallback_style_capture_uses_original_role_schema_and_one_config_wire",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "display::tests::dynamic_character_dialogue_context_tests::inert_display_frame_retains_original_roles_and_rejects_forged_configuration",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "display::tests::dynamic_character_dialogue_context_tests::presentation_capture_admission_rejects_foreign_lease_and_standalone_downgrade",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "display::tests::dynamic_character_dialogue_context_tests::presentation_frames_use_one_value_allowance_across_dialogue_and_view",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "display::tests::image_handle_lifecycle_filters_presentation_images",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "display::tests::inline_image_call_accepts_runtime_length_labels",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "display::tests::malformed_background_arguments_fail_atomically",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "display::tests::malformed_background_clear_preserves_the_existing_slot",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "display::tests::malformed_inline_image_arguments_are_rejected_atomically",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "display::tests::presentation_snapshot_serializes_handle_epoch_and_tombstones",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "display::tests::unknown_image_argument_does_not_mutate_direct_runtime_state",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "display::tests::unknown_presentation_commands_do_not_mutate_direct_runtime_state",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "display::tests::view_handle_lifecycle_filters_focus_resources",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "display::tests::view_handle_lifecycle_filters_runtime_controls",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "display::tests::view_handle_lifecycle_filters_scroll_regions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "display::tests::view_handle_lifecycle_filters_surfaces",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "display::viewport::tests::canonical_viewport_command_mutates_direct_runtime_state",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "display::viewport::tests::malformed_viewport_arguments_are_rejected_atomically",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "display::viewport::tests::viewport_command_without_a_known_shape_is_rejected_atomically",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "display::viewport::tests::viewport_effect_sets_and_clears_runtime_fit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "fx_runtime::tests::restore_failures_have_typed_missing_definition_and_abi_diagnostics",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "fx_runtime::tests::retained_instance_keeps_activation_seed_and_updates_parameter_snapshot",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "fx_runtime::tests::runtime_snapshot_codec_round_trips_u32_parameter_boundaries",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "generation_runtime::tests::table_keeps_runtime_payloads_by_generation_id",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "generation_runtime::tests::table_prunes_non_live_runtime_images",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "generation_runtime::tests::table_reports_missing_generation_deterministically",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "presentation_handles::tests::create_hide_and_release_transitions_are_deterministic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "presentation_handles::tests::create_is_idempotent_for_same_live_handle",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "presentation_handles::tests::double_dispose_reports_structured_diagnostic_without_revival",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "presentation_handles::tests::handle_table_epoch_survives_serde_roundtrip_and_rollback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "presentation_handles::tests::invalid_handle_identity_cannot_enter_a_presentation_snapshot",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "presentation_handles::tests::mounted_handle_keeps_resource_visible_after_retained_tombstone",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "presentation_handles::tests::reusable_resource_can_have_independent_live_handles",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "presentation_handles::tests::view_owned_runtime_controls_require_visible_view_handle",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "session::environment::tests::multi_field_update_advances_global_once_and_changed_fields_once",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "session::environment::tests::precedence_hidden_updates_and_override_removal_are_exact",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "session::environment::tests::preflight_overflow_does_not_mutate_sources_or_effective_state",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "session::environment::tests::same_value_update_preserves_all_revisions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "session::hot_swap::presentation_generation_tests::content_only_replacement_switches_presentation_owner_without_relabeling_the_fiber",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "session::hot_swap::presentation_generation_tests::generation_counter_exhaustion_rejects_swap_before_commit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "session::hot_swap::presentation_generation_tests::local_task_cancellation_reaches_runtime_and_releases_its_generation_pin",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "session::hot_swap::presentation_generation_tests::restore_rejects_a_retired_installed_presentation_before_reinterpreting_its_view_state",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "session::hot_swap::presentation_generation_tests::restore_rejects_reused_generation_counter",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "session::hot_swap::presentation_generation_tests::retained_runtime_image_keeps_its_original_artifact_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "session::hot_swap::presentation_generation_tests::retired_presentation_survives_chained_content_only_swap_and_fiber_completion",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "session::hot_swap::presentation_generation_tests::source_only_style_change_retains_content_only_compatibility",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "session::hot_swap::presentation_generation_tests::task_sequence_uses_last_available_identity_once",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "session::hot_swap::presentation_generation_tests::unchanged_active_bundle_is_a_noop_while_a_retired_presentation_is_installed",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "session::hot_swap::tests::hot_swap_preserves_matching_runtime_text_value_and_drops_removed_controls",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "session::replay::admission::tests::borrowed_transition_outcomes_share_the_owned_wire_grammar",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "session::replay::admission::tests::external_failure_metadata_uses_one_sticky_allowance_without_value_nodes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "session::text_control::tests::write_back_updates_runtime_overlay_and_returns_typed_event",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "session::view_handler_queue_tests::action_receive_preserves_an_explicit_empty_text_payload",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "session::view_handler_queue_tests::action_receive_rejects_a_missing_payload_instead_of_synthesizing_empty_text",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "session::view_handler_queue_tests::dialogue_input_action_uses_the_observed_activation_and_rejects_stale_revision",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "session::view_handler_queue_tests::session_queues_the_exact_token_selected_by_the_player_invocation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "session::view_handler_queue_tests::session_runtime_and_executor_share_the_exact_awbc_generation_lease",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "swap::character_generation_tests::a_changed_dialogue_declaration_keeps_a_separate_runtime_generation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "swap::retirement_tests::pending_and_unretired_transaction_phases_still_reject_another_prepare",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "swap::retirement_tests::retired_generation_pins_survive_subsequent_committed_generations",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "swap::retirement_tests::retirement_collection_preserves_a_prepared_transaction",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "swap::retirement_tests::retiring_cannot_prepare_during_a_runtime_step",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "task::tests::completion_preserves_correlation_and_separates_publication_from_attempt",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "task::tests::dispatch_binding_checks_full_receipt_and_reserves_next_publication",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "task::tests::local_cancellation_advances_the_last_publication_revision",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "task::tests::registry_cancels_all_tasks_deterministically_and_idempotently",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "task::tests::registry_cancels_one_task_by_task_id",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "task::tests::registry_cancels_tasks_by_scope",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "task::tests::registry_lists_active_tasks_and_filters_completed_by_default",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "task::tests::registry_rejects_unknown_or_mismatched_dispatch_events",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "task::tests::registry_reports_failed_and_cancelled_tasks_only_when_completed_are_included",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "task::tests::registry_requires_new_revision_within_one_dispatch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "task::tests::restartable_dispatch_restore_preserves_tuple_and_publication_frontier",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "view_projection::tests::dialogue_button_projection_fails_closed_without_a_root_mount",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "view_projection::tests::dialogue_button_projection_uses_matching_root_mount_and_overwrites_input_provenance",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "view_runtime::axis_seed::tests::hidden_unmounted_terminal_and_remount_lifecycle_retains_or_replaces_exact_state",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "view_runtime::axis_seed::tests::host_seed_mode_matrix_and_known_handle_rejections_are_exact_and_atomic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "view_runtime::axis_seed::tests::live_update_is_checked_noop_or_generation_advancing_without_wrap",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "view_runtime::axis_seed::tests::nested_mount_host_mutation_is_rejected_without_changing_runtime_state",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "view_runtime::axis_seed::tests::ordinary_and_dialogue_restore_roots_cannot_share_a_handle_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "view_runtime::axis_seed::tests::pending_seed_prepare_is_transactional_and_later_commit_consumes_it_once",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "view_runtime::axis_seed::tests::reservation_last_write_cancel_and_mount_identity_are_deterministic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "view_runtime::axis_seed::tests::restore_cross_table_matrix_is_strict_and_replay_is_exact",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "view_runtime::axis_seed::tests::restore_rejects_duplicates_tampering_and_non_view_lifecycle_atomically",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "view_runtime::axis_seed::tests::same_evaluation_non_view_resolution_discards_pending_seed_and_emits_one_diagnostic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "view_runtime::axis_seed::tests::snapshot_wire_rejects_unknown_fields_and_preserves_duplicate_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "view_runtime::owner_tests::anonymous_and_public_rust_owners_project_only_stable_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "view_runtime::owner_tests::public_rust_owner_restores_through_stable_view_and_schema_in_a_fresh_registry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "view_runtime::part::tests::public_rust_owner_cannot_mint_an_arcweft_exported_part_capability",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "view_runtime::replacement::tests::replacement_counters_accept_exact_max_and_reject_one_over",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "view_runtime::snapshot::tests::view_snapshot_metadata_preflight_precedes_earlier_payload_rejection",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "view_runtime::snapshot::tests::view_snapshot_tables_are_bounded_before_inert_activation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "view_runtime::value::tests::u32_runtime_argument_rejects_non_exact_unsigned_widths",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver",
+      "test": "view_runtime::value::tests::u32_runtime_values_project_at_boundaries",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "awbc_product_bundle_session_from_awfb_requires_and_uses_product_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "awbc_product_bundle_session_save_bytes_round_trip_restore",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "awbc_product_session_save_preserves_exact_same_label_flow_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "awbc_save_load_preserves_cleanup_stacks",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "bundle_session_omits_successful_runtime_assertion",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "bundle_session_returns_failed_runtime_assertion_as_typed_core_data",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "cold_observation_callable_restore_binds_the_installed_current_program",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "content_swap_preserves_active_locale_when_project_default_changes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "default_session_import_requires_catalog_validator_for_asset_handles",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "fx_instances_and_logical_time_restore_atomically_with_the_session",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "live_product_observation_restore_and_hotpatch_install_the_checked_program_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "logical_session_save_rejects_a_different_bundle_manifest",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "observation_only_asset_catalog_refusal_restores_the_complete_prior_session",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "observation_only_asset_restore_requires_the_existing_catalog_validator",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "presentation_handle_rollback_restores_tombstones",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "presentation_handle_save_load_restores_lifecycle_table",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "rejected_content_patch_keeps_active_fx_presentation_unchanged",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "rejected_session_restore_does_not_partially_mutate_the_live_session",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "restartable_need_session_save_reensures_the_exact_dispatch_once",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "restored_dialogue_action_button_requires_sealed_mount_provenance",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "save_007_predecessor_v1_missing_runtime_generation_pin_is_rejected",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "save_007_unknown_nested_session_field_is_rejected",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "save_decode_rejects_mismatched_bundle_generation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "save_decode_rejects_same_root_from_a_different_bundle_manifest",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "save_envelope_strict_decode_rejects_future_or_trailing_payloads",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "session_catalog_refusal_precedes_executor_construction_for_wire_and_snapshot",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "session_frame_admission_precedes_catalog_for_wire_and_snapshot",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "session_restore_preflights_root_presence_and_preserves_executor",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "session_restore_rebinds_awbc_callable_to_selected_program_and_rejects_unknown_state",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "session_restore_rebuilds_facade_fiber",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "session_save_rejects_pending_input_events",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "session_save_restores_host_selected_locale_into_default_session",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "session_save_round_trips_opaque_values_and_rejects_invalid_producer_atomically",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "session_save_round_trips_program_owned_awbc_callable_values",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "session_view_metadata_limits_precede_live_restore_and_preserve_executor",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "session_view_wire_rebinds_callable_capture_and_rejects_unknown_state_atomically",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "session_view_wire_rejects_affine_leaf_before_catalog_validation_and_publication",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "session_view_wire_requires_strict_axis_seed_registry_atomically",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "supplied_session_value_validator_rejects_forged_asset_digest_before_commit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::awbc_product_session",
+      "test": "typed_entry_override_precedes_bundle_default_and_is_catalog_checked",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::dialogue_view_store",
+      "test": "authored_view_definitions_keep_independent_order_and_revisions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::dialogue_view_store",
+      "test": "same_view_history_mounts_only_its_active_occurrence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::dialogue_view_store",
+      "test": "snapshot_with_retained_entries_but_no_active_entry_is_rejected",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::dialogue_view_store",
+      "test": "store_round_trip_does_not_reuse_occurrence_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::dialogue_view_store",
+      "test": "unknown_waiting_activation_is_rejected_without_mutating_the_store",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "accepted_catalog_rejects_host_owner_collision_before_publication",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "authored_click_handler_enters_the_catalog_as_control_activation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "branch_reacts_per_mount_and_missing_input_never_uses_placeholder",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "core_free_view_rejects_a_repeat_replacement_without_changing_live_state",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "core_repeat_requires_awbc_at_construction_even_when_the_source_is_empty",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "dialogue_selected_style_is_scoped_after_view_defaults_and_clear_removes_it",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "duplicate_repeat_keys_fail_structurally_instead_of_reusing_one_child",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "exact_i32_width_is_enforced_at_the_runtime_boundary",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "exported_part_access_does_not_cross_two_nested_view_boundaries",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "hot_reload_definition_removal_retires_repeat_nested_mounts_atomically",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "hot_reload_exported_part_change_invalidates_owner_and_direct_caller_only",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "hot_reload_prepared_candidate_rejects_stale_runtime_without_mutation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "hot_reload_program_identity_mismatch_leaves_runtime_unchanged",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "hot_reload_removed_nested_call_retires_only_the_child_mount",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "hot_reload_semantic_replacement_reconciles_multiple_mounts_and_reintroduction_is_fresh",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "hot_reload_treats_style_provenance_as_source_only_and_rejects_style_semantic_changes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "hot_reload_unchanged_and_source_only_candidates_preserve_runtime_generation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "hot_reload_unexported_local_edit_does_not_invalidate_direct_caller",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "logical_time_updates_context_cache_and_reduce_motion_freezes_it",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "repeat_style_inventory_retains_one_collision_free_path_per_executed_item",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "replacement_cannot_remove_or_retype_a_live_dialogue_view_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "runtime_rejects_handcrafted_dialogue_projection_with_wrong_parameter_role",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "standard_dialogue_handler_seals_once_reseals_on_capture_change_and_rejects_stale_routes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "style_path_words_are_little_endian_injective_and_feed_the_single_node_key",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "style_scope_enters_call_view_before_recursion_and_protects_private_parts",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "style_scope_follows_subtrees_without_leaking_to_siblings",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "style_scope_rejects_inline_patch_on_non_rendered_definition_root",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "typed_dialogue_projection_uses_one_persistent_authored_mount_per_occurrence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "typed_text_stores_resolve_localized_rich_and_display_sources_without_string_fallback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "view_identity_catalog_preserves_host_views_and_registers_arcweft_definitions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "binary": "arcweft-runtime-driver::view_runtime",
+      "test": "view_save_round_trips_stable_nested_owners_and_allocator_stays_fresh",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

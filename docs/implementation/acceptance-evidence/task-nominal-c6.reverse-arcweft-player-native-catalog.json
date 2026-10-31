@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "1bf138d190c826841935b38bf01c3048fb43c3cb",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-player-native",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\nominal-c6.reverse-arcweft-player-native-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-31T05:56:04.2757514Z",
+  "finishedAt": "2026-10-31T05:59:35.2131750Z"
+}

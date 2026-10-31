@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "1bf138d190c826841935b38bf01c3048fb43c3cb",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-player-web",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\nominal-c6.reverse-arcweft-player-web-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-31T06:05:30.5099828Z",
+  "finishedAt": "2026-10-31T06:05:32.5450443Z"
+}

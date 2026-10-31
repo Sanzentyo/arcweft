@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "1bf138d190c826841935b38bf01c3048fb43c3cb",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-verify-z3",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\nominal-c6.reverse-arcweft-verify-z3-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-31T06:20:01.1509948Z",
+  "finishedAt": "2026-10-31T06:20:06.3588793Z"
+}

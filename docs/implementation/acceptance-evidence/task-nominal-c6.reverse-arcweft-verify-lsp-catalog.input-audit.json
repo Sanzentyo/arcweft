@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "run": "nominal-c6.reverse-arcweft-verify-lsp-catalog",
+  "actualExitCode": 0,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-verify-lsp",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 4007,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-31T06:18:17.6640882Z"
+}

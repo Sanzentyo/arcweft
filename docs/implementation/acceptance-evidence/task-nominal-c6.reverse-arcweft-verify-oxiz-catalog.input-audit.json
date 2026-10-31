@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "run": "nominal-c6.reverse-arcweft-verify-oxiz-catalog",
+  "actualExitCode": 0,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-verify-oxiz",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 4007,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-31T06:19:57.9189553Z"
+}

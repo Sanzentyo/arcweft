@@ -1,0 +1,26 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-test",
+      "binary": "arcweft-test",
+      "test": "agent::tests::fixture_agent_session_matches_exact_call_sequence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-test",
+      "binary": "arcweft-test",
+      "test": "agent::tests::fixture_agent_session_reports_mismatched_call",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-test",
+      "binary": "arcweft-test",
+      "test": "script_manifest::tests::collects_typed_script_test_and_bench_manifest",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

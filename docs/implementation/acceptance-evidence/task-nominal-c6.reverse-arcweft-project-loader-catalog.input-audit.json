@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "run": "nominal-c6.reverse-arcweft-project-loader-catalog",
+  "actualExitCode": 0,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-project-loader",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 4007,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-31T06:06:41.0077232Z"
+}

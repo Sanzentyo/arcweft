@@ -1,0 +1,194 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling",
+      "test": "agent_repl::tests::repl_classify_cell_reports_incomplete_control_continuations",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling",
+      "test": "agent_repl::tests::repl_classify_cell_reports_incomplete_expression_boundaries",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling",
+      "test": "agent_repl::tests::repl_classify_cell_reports_incomplete_string_boundary",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling",
+      "test": "agent_repl::tests::repl_classify_cell_uses_shared_agent_fragment_parser",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling",
+      "test": "agent_repl::tests::repl_completion_exposes_current_agent_prelude_intrinsics",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling",
+      "test": "agent_repl::tests::repl_completion_exposes_read_resource_uri_parameter",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling",
+      "test": "agent_repl::tests::repl_completion_filters_choice_refs_for_choose_call",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling",
+      "test": "agent_repl::tests::repl_completion_uses_observed_layer_and_object_ids_for_capture_meta",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling",
+      "test": "agent_repl::tests::repl_highlight_tokens_classify_agent_fragment_surface",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling",
+      "test": "agent_repl::tests::repl_highlight_tokens_classify_meta_command_and_unclosed_string",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling",
+      "test": "agent_repl::tests::source_free_classifier_does_not_fabricate_an_item_fragment_family",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling",
+      "test": "tests::agent_format_is_idempotent_for_action_resource_and_rag_samples",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling",
+      "test": "tests::attached_style_formatter_orders_fields_and_normalizes_percentage",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling",
+      "test": "tests::attached_style_formatter_preserves_recovered_environment_nodes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling",
+      "test": "tests::default_format_preserves_authoring_surface",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling",
+      "test": "tests::format_accepts_controller_function_source_without_extension_dispatch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling",
+      "test": "tests::formatter_canonicalizes_typed_attached_content_parameter_presence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling",
+      "test": "tests::formatter_preserves_lossless_predicate_proof_nodes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling",
+      "test": "tests::formatter_projects_attached_content_from_all_admitted_callable_owners",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling",
+      "test": "tests::text_edit_planning_preserves_structured_edit_errors",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling::capability_policy",
+      "test": "formatter_preserves_canonical_capability_members_without_synthesizing_policy",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling::capability_policy",
+      "test": "formatter_preserves_unknown_capability_member_bytes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling::public_api",
+      "test": "detached_text_tooling_entrypoints_are_unavailable",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling::runtime_assertion_diagnostic",
+      "test": "reloaded_artifact_without_exact_source_association_stays_unassociated",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling::runtime_assertion_diagnostic",
+      "test": "runtime_projection_emits_stable_diagnostic_without_message_parsing",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling::view_export_part",
+      "test": "canonicalizes_valid_export_and_local_part_without_reordering",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-tooling",
+      "binary": "arcweft-tooling::view_export_part",
+      "test": "malformed_export_is_untouched_while_valid_surrounding_syntax_is_formatted",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

@@ -13407,3 +13407,11 @@ Supersedes: 現状一覧の「Sema ownerのみ検証済み」を、元定義に�
 Source 1bf138d190c826841935b38bf01c3048fb43c3cbと保持WIPの4,007入力で、package単独all-feature／locked／native nextestは692件中649 PASS／43 FAIL・23 ignored・実終了100。元Source c3b6ea79a7b16674ed0cbcd644b9e7bdd6c95030の全CLI失敗IDと新規0・解消0で完全一致した。catalog／source／binary／終端case集合の差分0。全21 consumerの残りは実行中であり、CLI終端と混同しない。[全CLI原本・失敗比較・範囲](acceptance-evidence/task-nominal-c6-cli-acceptance.json)。
 
 Supersedes: 現状一覧のCLI行を今回のSourceと確定原本へ更新した。以前の692件の結果は元Sourceの履歴として保持し、今回の43 FAILも成功扱いにしない。Generic Match・構造的nominalの既存受入・実View capture等の個別成功を、全体goalやCLI統合の未完了を理由に戻していない。
+
+## Rust ADT retention／Copyの全22逆依存終端 — 2026-10-31
+
+Source 1bf138d190c826841935b38bf01c3048fb43c3cb、元Sema owner3の1,370 PASSを再利用し、実際のCargo resolved graphの残21 consumerを同じpackage単位all-feature／locked／native条件で終端した。全22は3955件中3912 PASS／43 FAIL、consumerは2585件中2542 PASS／43 FAIL・23選択外。全catalog成功、4,007入力・binary・catalog／終端集合の差分0。失敗IDは既存全CLIとの新規0・解消0で、保持失敗を成功扱いにしない。追加の限定compiler 1 PASSを全件結果へ二重計上せず、異なるSource epochのowner結果とも合算しない。[統合終端・全原本・既存43件との比較](acceptance-evidence/task-nominal-c6-reverse-acceptance.json)。
+
+Supersedes: 現状一覧のRust ADT「逆依存を検証中」を全22終端へ更新し、CLI行の最新原本を今回のSourceに置き換えた。先行Rust ADT retention／Copy／実View captureの受入と、Generic Match・C1–C5の受入は維持する。過去のconsumer red、Sema owner1の1 FAIL、初回red 1 FAIL、元Sourceの全CLI 43 FAILは履歴として変更しない。型だけの関数値証明、active taskの各step save／rollback、Native/Web画像parityを、このdata captureケースとconsumer終端から受入済みに拡張しない。
+
+公開・確認履歴の保持: retention ownerの検証記録41db45e42c00ca3485329610e80f4a85f3e93013、Copy／実captureの検証記録5f06de3881856f6b36fd5c593ce403c2e9d1d0fc、CLI全件記録c2d57f0c9a103cb4b141633b647489fe77bd3691を通常pushし、各remote・blob照合は差分0だった。現状一覧の確認mainをc2d57f0c9a103cb4b141633b647489fe77bd3691へ更新する際、資料監査1回目が旧確認点5f06de3881856f6b36fd5c593ce403c2e9d1d0fcの履歴欠落を検出したため、この補記で過去の確認SHAとして保持する。元の検証結果・raw bytes・履歴prefixは変更しない。

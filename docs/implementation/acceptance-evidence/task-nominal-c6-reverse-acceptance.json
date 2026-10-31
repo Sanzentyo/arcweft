@@ -1,0 +1,1746 @@
+{
+  "version": 1,
+  "sourceCommit": "1bf138d190c826841935b38bf01c3048fb43c3cb",
+  "matrixStatus": "terminal",
+  "selectedPackages": 22,
+  "newConsumerPackages": 21,
+  "reusedOwnerExecuted": 1370,
+  "reusedOwnerPassed": 1370,
+  "consumerExecuted": 2585.0,
+  "consumerPassed": 2542.0,
+  "consumerFailed": 43.0,
+  "totalExecuted": 3955.0,
+  "totalPassed": 3912.0,
+  "totalFailed": 43.0,
+  "consumerSkipped": 23.0,
+  "catalogFailures": [],
+  "allCatalogsPassed": true,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_hit_test_capture_time_updates_unpinned_animated_image_frame_metadata"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_raw_blob"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_hit_test_reports_animated_image_object_proxy_metadata"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_captures_clipped_animated_image_object"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_image_alignment_sample_uses_authored_alignment_geometry"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_accented_latin_word_geometry"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_greek_latin_unit_geometry"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_hyphenated_western_word_geometry"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_numeric_unit_geometry"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_accented_latin_word_raw_crops"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_greek_latin_unit_raw_crops"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_hyphenated_western_word_raw_crops"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_unit_raw_crops"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_read_uri_preserves_animated_image_layer_frame_pixels"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_read_uri_preserves_animated_image_object_frame_metadata"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_reports_missing_scope_for_released_image_handle_object"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_rag_query_indexes_multiple_sources"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_reports_text_presentation_z_index_depth"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_checks_runtime_assert_sections"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_branching_for_loop_pure_jit_characteristics"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_scalar_for_pure_jit_perf_guard"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_mixed_for_iter_pure_jit_fixture"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_headless_runtime_sections"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_skips_adapter_only_script_benches"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_runtime_match_to_pure_jit_characteristics"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_validates_headless_script_benches"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "bundle_json_packages_image_animation_sample_assets_and_run_bundle_validates_them"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "plan_json_lists_runtime_task_graph"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "profile_json_reports_phase_timings_and_runtime_stats_without_absolute_source"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "profile_json_runs_native_file_tasks_without_absolute_source"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_executes_traverse_parallel_file_tasks"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "spec_rejected_edge_fixtures_fail_with_diagnostics"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "spec_valid_run_edge_fixture_now_executes"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "test_json_executes_headless_scenario_expectations"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "unsafe_json_lists_audit_regions"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_records_required_solver_checks"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_reports_missing_promotion_proof"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_reports_semantic_thread_join_conflict"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_respects_semantic_defer_cancel_discharge"
+    }
+  ],
+  "comparisonBaseline": "docs/implementation/acceptance-evidence/task-presentation-awbc-scopes-reverse-acceptance.json",
+  "comparisonBaselineSource": "c3b6ea79a7b16674ed0cbcd644b9e7bdd6c95030",
+  "newFailureIds": [],
+  "resolvedBaselineFailureIds": [],
+  "sourceInputs": 4007,
+  "sourceDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "duplicatePackages": 0,
+  "rows": [
+    {
+      "package": "arcweft-adapter-sema",
+      "catalog": "nominal-c6.reverse-arcweft-adapter-sema-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "nominal-c6.reverse-arcweft-adapter-sema-runtime",
+      "actualExitCode": 0,
+      "executed": 13,
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4007,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 1,
+      "binaryDrift": 0,
+      "failureSet": []
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "catalog": "nominal-c6.reverse-arcweft-agent-mcp-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "nominal-c6.reverse-arcweft-agent-mcp-runtime",
+      "actualExitCode": 0,
+      "executed": 31,
+      "passed": 31,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4007,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 3,
+      "binaryDrift": 0,
+      "failureSet": []
+    },
+    {
+      "package": "arcweft-agent-mcp-client",
+      "catalog": "nominal-c6.reverse-arcweft-agent-mcp-client-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "nominal-c6.reverse-arcweft-agent-mcp-client-runtime",
+      "actualExitCode": 0,
+      "executed": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4007,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 1,
+      "binaryDrift": 0,
+      "failureSet": []
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "catalog": "nominal-c6.reverse-arcweft-agent-repl-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "nominal-c6.reverse-arcweft-agent-repl-runtime",
+      "actualExitCode": 0,
+      "executed": 37,
+      "passed": 37,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4007,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 9,
+      "binaryDrift": 0,
+      "failureSet": []
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "catalog": "nominal-c6.reverse-arcweft-agent-runner-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "nominal-c6.reverse-arcweft-agent-runner-runtime",
+      "actualExitCode": 0,
+      "executed": 69,
+      "passed": 69,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4007,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 1,
+      "binaryDrift": 0,
+      "failureSet": []
+    },
+    {
+      "package": "arcweft-cli",
+      "catalog": "nominal-c6.reverse-arcweft-cli-catalog",
+      "catalogExitCode": 0,
+      "status": "tests-failed",
+      "runtime": "nominal-c6.reverse-arcweft-cli-runtime",
+      "actualExitCode": 100,
+      "executed": 692,
+      "passed": 649,
+      "failed": 43,
+      "skipped": 23,
+      "sourceInputs": 4007,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 13,
+      "binaryDrift": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_hit_test_capture_time_updates_unpinned_animated_image_frame_metadata"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_raw_blob"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_hit_test_reports_animated_image_object_proxy_metadata"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_native_captures_clipped_animated_image_object"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_image_alignment_sample_uses_authored_alignment_geometry"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_accented_latin_word_geometry"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_greek_latin_unit_geometry"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_hyphenated_western_word_geometry"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_numeric_unit_geometry"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_accented_latin_word_raw_crops"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_greek_latin_unit_raw_crops"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_hyphenated_western_word_raw_crops"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_unit_raw_crops"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_read_uri_preserves_animated_image_layer_frame_pixels"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_read_uri_preserves_animated_image_object_frame_metadata"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_reports_missing_scope_for_released_image_handle_object"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_rag_query_indexes_multiple_sources"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_reports_text_presentation_z_index_depth"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "bench_json_checks_runtime_assert_sections"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "bench_json_measures_branching_for_loop_pure_jit_characteristics"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "bench_json_measures_checked_in_scalar_for_pure_jit_perf_guard"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "bench_json_measures_checked_in_mixed_for_iter_pure_jit_fixture"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "bench_json_measures_headless_runtime_sections"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "bench_json_skips_adapter_only_script_benches"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "bench_json_measures_runtime_match_to_pure_jit_characteristics"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "bench_json_validates_headless_script_benches"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "bundle_json_packages_image_animation_sample_assets_and_run_bundle_validates_them"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "plan_json_lists_runtime_task_graph"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "profile_json_reports_phase_timings_and_runtime_stats_without_absolute_source"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "profile_json_runs_native_file_tasks_without_absolute_source"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "run_json_executes_traverse_parallel_file_tasks"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "spec_rejected_edge_fixtures_fail_with_diagnostics"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "spec_valid_run_edge_fixture_now_executes"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "test_json_executes_headless_scenario_expectations"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "unsafe_json_lists_audit_regions"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_records_required_solver_checks"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_reports_missing_promotion_proof"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_reports_semantic_thread_join_conflict"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_respects_semantic_defer_cancel_discharge"
+        }
+      ]
+    },
+    {
+      "package": "arcweft-compiler",
+      "catalog": "nominal-c6.reverse-arcweft-compiler-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "nominal-c6.reverse-arcweft-compiler-runtime",
+      "actualExitCode": 0,
+      "executed": 662,
+      "passed": 662,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4007,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 26,
+      "binaryDrift": 0,
+      "failureSet": []
+    },
+    {
+      "package": "arcweft-lsp",
+      "catalog": "nominal-c6.reverse-arcweft-lsp-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "nominal-c6.reverse-arcweft-lsp-runtime",
+      "actualExitCode": 0,
+      "executed": 223,
+      "passed": 223,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4007,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 5,
+      "binaryDrift": 0,
+      "failureSet": []
+    },
+    {
+      "package": "arcweft-player-native",
+      "catalog": "nominal-c6.reverse-arcweft-player-native-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "nominal-c6.reverse-arcweft-player-native-runtime",
+      "actualExitCode": 0,
+      "executed": 63,
+      "passed": 63,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4007,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 7,
+      "binaryDrift": 0,
+      "failureSet": []
+    },
+    {
+      "package": "arcweft-player-scene",
+      "catalog": "nominal-c6.reverse-arcweft-player-scene-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "nominal-c6.reverse-arcweft-player-scene-runtime",
+      "actualExitCode": 0,
+      "executed": 128,
+      "passed": 128,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4007,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 10,
+      "binaryDrift": 0,
+      "failureSet": []
+    },
+    {
+      "package": "arcweft-player-web",
+      "catalog": "nominal-c6.reverse-arcweft-player-web-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "nominal-c6.reverse-arcweft-player-web-runtime",
+      "actualExitCode": 0,
+      "executed": 36,
+      "passed": 36,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4007,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 6,
+      "binaryDrift": 0,
+      "failureSet": []
+    },
+    {
+      "package": "arcweft-project-loader",
+      "catalog": "nominal-c6.reverse-arcweft-project-loader-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "nominal-c6.reverse-arcweft-project-loader-runtime",
+      "actualExitCode": 0,
+      "executed": 158,
+      "passed": 158,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4007,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 4,
+      "binaryDrift": 0,
+      "failureSet": []
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "catalog": "nominal-c6.reverse-arcweft-runtime-driver-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "nominal-c6.reverse-arcweft-runtime-driver-runtime",
+      "actualExitCode": 0,
+      "executed": 177,
+      "passed": 177,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4007,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 4,
+      "binaryDrift": 0,
+      "failureSet": []
+    },
+    {
+      "package": "arcweft-runtime-host",
+      "catalog": "nominal-c6.reverse-arcweft-runtime-host-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "nominal-c6.reverse-arcweft-runtime-host-runtime",
+      "actualExitCode": 0,
+      "executed": 72,
+      "passed": 72,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4007,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 5,
+      "binaryDrift": 0,
+      "failureSet": []
+    },
+    {
+      "package": "arcweft-runtime-plan",
+      "catalog": "nominal-c6.reverse-arcweft-runtime-plan-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "nominal-c6.reverse-arcweft-runtime-plan-runtime",
+      "actualExitCode": 0,
+      "executed": 163,
+      "passed": 163,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4007,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 5,
+      "binaryDrift": 0,
+      "failureSet": []
+    },
+    {
+      "package": "arcweft-test",
+      "catalog": "nominal-c6.reverse-arcweft-test-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "nominal-c6.reverse-arcweft-test-runtime",
+      "actualExitCode": 0,
+      "executed": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4007,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 1,
+      "binaryDrift": 0,
+      "failureSet": []
+    },
+    {
+      "package": "arcweft-tooling",
+      "catalog": "nominal-c6.reverse-arcweft-tooling-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "nominal-c6.reverse-arcweft-tooling-runtime",
+      "actualExitCode": 0,
+      "executed": 27,
+      "passed": 27,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4007,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 5,
+      "binaryDrift": 0,
+      "failureSet": []
+    },
+    {
+      "package": "arcweft-verify",
+      "catalog": "nominal-c6.reverse-arcweft-verify-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "nominal-c6.reverse-arcweft-verify-runtime",
+      "actualExitCode": 0,
+      "executed": 8,
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4007,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 1,
+      "binaryDrift": 0,
+      "failureSet": []
+    },
+    {
+      "package": "arcweft-verify-lsp",
+      "catalog": "nominal-c6.reverse-arcweft-verify-lsp-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "nominal-c6.reverse-arcweft-verify-lsp-runtime",
+      "actualExitCode": 0,
+      "executed": 14,
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4007,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 1,
+      "binaryDrift": 0,
+      "failureSet": []
+    },
+    {
+      "package": "arcweft-verify-oxiz",
+      "catalog": "nominal-c6.reverse-arcweft-verify-oxiz-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "nominal-c6.reverse-arcweft-verify-oxiz-runtime",
+      "actualExitCode": 0,
+      "executed": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4007,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 1,
+      "binaryDrift": 0,
+      "failureSet": []
+    },
+    {
+      "package": "arcweft-verify-z3",
+      "catalog": "nominal-c6.reverse-arcweft-verify-z3-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "nominal-c6.reverse-arcweft-verify-z3-runtime",
+      "actualExitCode": 0,
+      "executed": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4007,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 1,
+      "binaryDrift": 0,
+      "failureSet": []
+    }
+  ],
+  "startedAt": "2026-10-31T05:22:36.9618636Z",
+  "finishedAt": "2026-10-31T06:20:09.3887901Z",
+  "recordedAt": "2026-10-31T06:21:40.828829Z",
+  "ownerAcceptance": "task-nominal-c6-copy-acceptance.json",
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-adapter-sema-catalog.input-audit.json",
+      "bytes": 375,
+      "sha256": "f095159dd34dbbd3e80b4f84f0071ee1429e1fb699e06c8d5346e912062c4204"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-adapter-sema-catalog.inventory.json",
+      "bytes": 3372,
+      "sha256": "a3793541d659785221052accc881ddca75ed71b2cbf36d3e9c206a50cb233835"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-adapter-sema-catalog.json",
+      "bytes": 507,
+      "sha256": "ec8b53972380fea7a7c8006cadb092fff827ad48448083ce0e25464be5872d22"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-adapter-sema-catalog.log",
+      "bytes": 86959,
+      "sha256": "832167131d206ad2fb451c397524821d0e566d098240a3d4e5f5cf59962700ff"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-adapter-sema-runtime.binaries-before.json",
+      "bytes": 218,
+      "sha256": "f70b2c155edf1f2b65f64d569c400793192f80596b9eaecf9b65f867b05e4cb9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-adapter-sema-runtime.json",
+      "bytes": 599,
+      "sha256": "4cee1c9dc9e6926c5f5ce819a73c2966e2b0d1ea754629b4455b44e4b1f8a592"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-adapter-sema-runtime.log",
+      "bytes": 87585,
+      "sha256": "3d746af3bb4bc51572e385a39ceb425a233e12347bd3ca19ef545487c7fbf6c0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-adapter-sema-runtime.terminal-audit.json",
+      "bytes": 620,
+      "sha256": "f372727e4ad87774284af979b3b208a4750eff3be288e675475729101cd3ba8b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-mcp-catalog.input-audit.json",
+      "bytes": 369,
+      "sha256": "ef08a4f24593b3967ac9f3a42de25f9902343320a470d09ec3f226a331b6fb18"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-mcp-catalog.inventory.json",
+      "bytes": 7027,
+      "sha256": "af39fb21fcf9b1c669d454ea9ed31115058e050ef0d2d080fe05c0e7686fe015"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-mcp-catalog.json",
+      "bytes": 501,
+      "sha256": "e70fb5e090fa988f9c663174b0dbe99dc11ccfff25049b6d86a5c57b9a624fdd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-mcp-catalog.log",
+      "bytes": 91704,
+      "sha256": "f10764768fb50b615e9c7dadadb19f0ee56a1bd1c8ba26f276bf068d7780abbf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-mcp-client-catalog.input-audit.json",
+      "bytes": 383,
+      "sha256": "20e5a92fdd0a9de3f85600cfd211294f5e04aa5e37bd127a43dda0432c754a77"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-mcp-client-catalog.inventory.json",
+      "bytes": 525,
+      "sha256": "90de1fe1c171d83bba76625b6f3941f5078c4379e46897a84f44f411231b1397"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-mcp-client-catalog.json",
+      "bytes": 515,
+      "sha256": "44dd9e02c0793785685fca18b2f81e590af584a441b30757ec2a73373ae92666"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-mcp-client-catalog.log",
+      "bytes": 86686,
+      "sha256": "ab0c50808d7842221ffb30c6fe6e46da6f42289126235e74793677fe4109a9bb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-mcp-client-runtime.binaries-before.json",
+      "bytes": 226,
+      "sha256": "45d208b700f157dc14d47d8d3604111bd2c7ae0e040dfabc3cda6114b4909f58"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-mcp-client-runtime.json",
+      "bytes": 607,
+      "sha256": "66b3264661a8c23ca7766aefedf61a4ec3fdba8150e5cf63ac2675fd0fc4df17"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-mcp-client-runtime.log",
+      "bytes": 85876,
+      "sha256": "305bf60ed5f611730474e4bbfacfd85cdd6bd889f67249e5f69e8bbf401f57cf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-mcp-client-runtime.terminal-audit.json",
+      "bytes": 620,
+      "sha256": "ef033aa3b72fe4005251d5696f3a4f7b727f83f62eb9da6f34bf58a4d008c2b4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-mcp-runtime.binaries-before.json",
+      "bytes": 710,
+      "sha256": "d03e5e114995eb6a3f8f4a4d5569371947ec6593f04b8c212a093004a1be02ab"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-mcp-runtime.json",
+      "bytes": 593,
+      "sha256": "243271a1002293b486ad04b7ccee7d3ef3cabf858eb4b1f87a2da8bcd1e0656f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-mcp-runtime.log",
+      "bytes": 92541,
+      "sha256": "2a061834aaac2a7569ed40ddaef4840ade93b4e5c331285de68fdeb6be438e81"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-mcp-runtime.terminal-audit.json",
+      "bytes": 617,
+      "sha256": "074440f1666bdd946d1b7007f004e390ff28efcd3011b28a6d5e92a1f7ab0efa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-repl-catalog.input-audit.json",
+      "bytes": 371,
+      "sha256": "8866239ca20a33387627e3bcab37653ee8ee2a3c5b60fab19da2042f8b22808e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-repl-catalog.inventory.json",
+      "bytes": 8856,
+      "sha256": "b243903ae8d94e0e076d95d6ecea7fd58cc16b8719964862e17ca6fa9749e9ca"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-repl-catalog.json",
+      "bytes": 503,
+      "sha256": "c0ee6744debf4c53e781c749b2175c308da6844f4f3e9af505a1c45bdac6452e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-repl-catalog.log",
+      "bytes": 94915,
+      "sha256": "2ac024b77a42cf4d428024398b1eaddb733d19e76da2a534917e8c9e10a3a2b0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-repl-runtime.binaries-before.json",
+      "bytes": 2132,
+      "sha256": "7efbaf22498fa74d1c383f0218161c7573ced6fde0702e4faece305ad3ffe779"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-repl-runtime.json",
+      "bytes": 595,
+      "sha256": "26cc06e4606ad941a68389e9966eaf9f7ce232f0718dfa9ce876be249f3e0f8c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-repl-runtime.log",
+      "bytes": 95052,
+      "sha256": "168956da3946335c574944c20a97560f72efec9cefccda76891b78932392869e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-repl-runtime.terminal-audit.json",
+      "bytes": 627,
+      "sha256": "a4f7f4841368c40e4fa37339d01686eec7b3fd3636548b70ffa5b0e86f654bee"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-runner-catalog.input-audit.json",
+      "bytes": 375,
+      "sha256": "ab52983a67d8604b538146a0cfad9ceac3f8022015a8b252279dd739da599b57"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-runner-catalog.inventory.json",
+      "bytes": 16136,
+      "sha256": "8e738216eab954b11d3a7af850be142f9a77fa13b209d572f074e5dae558e106"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-runner-catalog.json",
+      "bytes": 507,
+      "sha256": "e7bb5ad148e09d4180d1479cb33ec9026b721a3c91ca659731a91798bf589044"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-runner-catalog.log",
+      "bytes": 96501,
+      "sha256": "10cfe8231e76096c8c66188b1b44ae56879a3a2075ef27b0bd23b81a073a7767"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-runner-runtime.binaries-before.json",
+      "bytes": 218,
+      "sha256": "ef2e15eb80071a1a91cb1ce370159829d294b5b1fa03929412e6cba32749dfdf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-runner-runtime.json",
+      "bytes": 599,
+      "sha256": "fcb4112e0ae82ed46506b4d2d7d6c2490c52d7479cf3cfffb08c340bfad1e9a7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-runner-runtime.log",
+      "bytes": 101485,
+      "sha256": "64a1e7d4b2d6db949f6ac9a18ac58f12918a9d77a2c37ce40aea141dcd88c084"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-agent-runner-runtime.terminal-audit.json",
+      "bytes": 620,
+      "sha256": "f98150c4ee3e23b2e89f4ccc1a463e34a7db068eff9f928b34772fb75830e514"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-cli-catalog.input-audit.json",
+      "bytes": 357,
+      "sha256": "d4279107adf88a4b6b6c27e121db64c849ad726fc1ddbe57878b9c185f52f878",
+      "reused": true
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-cli-catalog.inventory.json",
+      "bytes": 171469,
+      "sha256": "d91f9743cc38ac0862b3a11d097245578a56035ad0efa8260b7ee23013cd0b5d",
+      "reused": true
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-cli-catalog.json",
+      "bytes": 489,
+      "sha256": "dca47d83ecb0c31052e2f44c02cbbd9e287dc0795dd3a82e7e622db08c8aa842",
+      "reused": true
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-cli-catalog.log",
+      "bytes": 215302,
+      "sha256": "1be2cfa78eb88e4cc47ae70cbd0e8247dffca31869e5b15cce348d8e6a1b2d1f",
+      "reused": true
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-cli-failure-comparison.json",
+      "bytes": 559,
+      "sha256": "e283cd34d77066ae5336782d3136cd7493e0d2b3784396252f8d25661d74897f",
+      "reused": true
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-cli-runtime.binaries-before.json",
+      "bytes": 3078,
+      "sha256": "e12685d8182f2115c66f489c96945e8f05916a2cd762bf714adc1f5fc9df1f31",
+      "reused": true
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-cli-runtime.json",
+      "bytes": 583,
+      "sha256": "c9389f2826dd3c4e9ed01b574060442517b60a290d9a5bbd163959774c8f102f",
+      "reused": true
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-cli-runtime.log",
+      "bytes": 3406986,
+      "sha256": "b3a803cab5c3fc937a319fc1dd6c651a6dc6a016cf690a970175cefb9f637666",
+      "reused": true
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-cli-runtime.terminal-audit.json",
+      "bytes": 7944,
+      "sha256": "331f145d4fa5470d812ccebfcc4507b622f4c6cd8499f1d4649a3f8d86c8946e",
+      "reused": true
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-compiler-catalog.input-audit.json",
+      "bytes": 367,
+      "sha256": "46505d1adbbb0c7d6dc6ee4cff2c736677bbd699d28b0d15a07d9bccb1011559"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-compiler-catalog.inventory.json",
+      "bytes": 162967,
+      "sha256": "9681a2ee5fbdd6f302ed98772836918679b25fba485dcbfdd9cfefd156aa26c1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-compiler-catalog.json",
+      "bytes": 499,
+      "sha256": "dca7fc07e678ba31427f5d3c60d6c683be3dd48e676704c6ba21221eb0d60c95"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-compiler-catalog.log",
+      "bytes": 194362,
+      "sha256": "525339af783111c32b460d4e4edd65b8c1a21a84db598b19688a34bbf608dfa3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-compiler-runtime.binaries-before.json",
+      "bytes": 6275,
+      "sha256": "c1413fd223ca1a0dbf86d411a5b193c28d743f3c27a2603a3d4e0b689b43eaf7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-compiler-runtime.json",
+      "bytes": 591,
+      "sha256": "fd4f6d0bfe626278276d2f5d4645bf14dc0fadf31298280eb27403df1db4f618"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-compiler-runtime.log",
+      "bytes": 272650,
+      "sha256": "5e615c3303658ce0a7e014eb8d779cf5a5e8cc7d56ba5afa7ee16fd1676ec33c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-compiler-runtime.terminal-audit.json",
+      "bytes": 629,
+      "sha256": "797e3de946646908d41fe729f2b1857ef2182e5c00d810d1b460a65da614bdf4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-lsp-catalog.input-audit.json",
+      "bytes": 357,
+      "sha256": "5429656445621606a9730243b350071e697bf5ba4cf2c76a26ea1dd4642c7955"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-lsp-catalog.inventory.json",
+      "bytes": 52934,
+      "sha256": "0ddc99b38d47cded59f86c02407f3bc21859a27422c559409af548899dc5a121"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-lsp-catalog.json",
+      "bytes": 489,
+      "sha256": "f716c66bf3abcca27b9982d0bfd6c2c118c3c88748c9bd1ce83ebb6adccc667c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-lsp-catalog.log",
+      "bytes": 127191,
+      "sha256": "43809893ab75e93ad30288a1e371617330a69ce0a176302ae0609d6a44b8359c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-lsp-runtime.binaries-before.json",
+      "bytes": 1108,
+      "sha256": "de7742c510d60589b0ec037430d3e4fa56a33f7b2ca4fdedb0f8b8f96303e4b6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-lsp-runtime.json",
+      "bytes": 581,
+      "sha256": "b25427a4b6ba0c6aa450d554d0cbe6dc8dbc8d6de631a093bf8d0d254bbd24bc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-lsp-runtime.log",
+      "bytes": 147740,
+      "sha256": "121cdc6a7f41078595b148e0bc36cd640659188d1c0129d0ba66edd3b8612e8d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-lsp-runtime.terminal-audit.json",
+      "bytes": 624,
+      "sha256": "99d5838ff11a43ffd081beea4e3fc112460a3c56b43c495b995fff84d85295df"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-player-native-catalog.input-audit.json",
+      "bytes": 377,
+      "sha256": "2e4b6201d473ff5a93e883d3e9d150e4fb872ecc00830b6ec30de5f758608b6e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-player-native-catalog.inventory.json",
+      "bytes": 15855,
+      "sha256": "fad0e9f7f56f17a2bad4004305c0fde45f2d909dc14aac00667c50efcfe9422b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-player-native-catalog.json",
+      "bytes": 509,
+      "sha256": "ae81fdba19743076c326cb9fb85cd7701d7d26489de79799589f4b903788d68f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-player-native-catalog.log",
+      "bytes": 101715,
+      "sha256": "f7161467162cc1b9f4c652bfa43bc05f1a7da8bbae2d3f1c3b3b62e74854feb9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-player-native-runtime.binaries-before.json",
+      "bytes": 1718,
+      "sha256": "f2fb79449cf7e83e7959da06f3b12cb0094ff89c2d5d1a3351da399263866728"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-player-native-runtime.json",
+      "bytes": 601,
+      "sha256": "1bea4b8d69e9bbd8ceed12741e0aac1202f9a013984ca1a6069f8a0eb3159f9b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-player-native-runtime.log",
+      "bytes": 104456,
+      "sha256": "4e7fb062aeefe38f9c382ba6d75fccce5d6ab5b9cac8250e28ff599e5455c3c8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-player-native-runtime.terminal-audit.json",
+      "bytes": 621,
+      "sha256": "0a82b18eac173a0a663d145efcac8bb6ae417a3cda0473181928713f4f77d9b8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-player-scene-catalog.input-audit.json",
+      "bytes": 375,
+      "sha256": "fe60e56e558f7d1772eaa63d74004353d3519deb889972be5385556fb5bef1ef"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-player-scene-catalog.inventory.json",
+      "bytes": 31834,
+      "sha256": "26a4feb6f7ed0814ef0862c3bd2670daa4538a9abf0f385bfe8bb8400c3f8251"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-player-scene-catalog.json",
+      "bytes": 507,
+      "sha256": "c47829c979b90dda8d295d481e8c52d3742b7de288913e182cc60101e849a19f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-player-scene-catalog.log",
+      "bytes": 98008,
+      "sha256": "82932c6cfa94c1e72a1c58cb2587d957224ccb0295908b594678256d11bd4532"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-player-scene-runtime.binaries-before.json",
+      "bytes": 2503,
+      "sha256": "187dda4f7d1c875fefdb0d1d2885f720b31a5a0e1a6c5cfcf35edb4636486ed3"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-player-scene-runtime.json",
+      "bytes": 599,
+      "sha256": "c05c07db246693e57bb72f4c0bdd76278e155f343fa2da520b17361ef5b73a11"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-player-scene-runtime.log",
+      "bytes": 108621,
+      "sha256": "e4e5e0b3a9d4b7e65aa9ce0ac4c02c2f5e9637b81149169a9808194d9efd3317"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-player-scene-runtime.terminal-audit.json",
+      "bytes": 624,
+      "sha256": "7e2d67f637a770e138662fed9000560544b0c4a1fcfc0e67b86cbde99fcf4854"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-player-web-catalog.input-audit.json",
+      "bytes": 371,
+      "sha256": "552c59f68a12fc41299d90568d8f6734b8e6537c4f7817086604e9b0231b8aff"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-player-web-catalog.inventory.json",
+      "bytes": 8511,
+      "sha256": "b4776bdb8ea5dac3cc44ea7877b53e08f87c06a5db200a84b54b0785dbbd4f9e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-player-web-catalog.json",
+      "bytes": 503,
+      "sha256": "a9b47a814f6b912ba952e181897ac3e47a92c22fa62e569be1da9e465d056707"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-player-web-catalog.log",
+      "bytes": 95950,
+      "sha256": "c6cb11ac69fb7f8ebbbfb7480c9b1f8016676a50c3937724b3c69a51edd55848"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-player-web-runtime.binaries-before.json",
+      "bytes": 1395,
+      "sha256": "ca9f3590cd213d73a629e554ef526e63b56e1f456086200050aa589e3c671b48"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-player-web-runtime.json",
+      "bytes": 595,
+      "sha256": "2a82420e3292ed11126f84e666e485f17e868b74d49fc84844c66ed139ccc14b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-player-web-runtime.log",
+      "bytes": 94337,
+      "sha256": "d69b9197b95a6e842145d9e048bd55b8d1384ea466bead86fe6130a7648958f9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-player-web-runtime.terminal-audit.json",
+      "bytes": 618,
+      "sha256": "d9f31910819f31087a74c9d8b6c55cd2920a2cc73d7c4a086adfd782b8ec198e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-project-loader-catalog.input-audit.json",
+      "bytes": 379,
+      "sha256": "da29bc118392012c2610608dd4c9e624611fbc6b96b41c4ec49fe0f75cf7da3e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-project-loader-catalog.inventory.json",
+      "bytes": 39947,
+      "sha256": "69b8d4bb619bc77bac7436863cc959a54401db526a53a70f5e31f2bd6e277f90"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-project-loader-catalog.json",
+      "bytes": 511,
+      "sha256": "de6de9c178ff6383e5a6dbd7d9bd0095ef76817af2a3f400f2b1aa6b9d69ed9d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-project-loader-catalog.log",
+      "bytes": 110458,
+      "sha256": "63dd86359ef365b81f896b6c9899d90d4dfd4949629c547f117130877d4cb122"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-project-loader-runtime.binaries-before.json",
+      "bytes": 971,
+      "sha256": "e9dcb1826ad6154d17e08c3d300f9b3bc9ffe7c51f98f20b8151cf198fb63362"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-project-loader-runtime.json",
+      "bytes": 603,
+      "sha256": "bc843119e4ed2cc3d1cd34871a1af10208dcefab3b10b4f2c56b9ba7b2d7f462"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-project-loader-runtime.log",
+      "bytes": 128446,
+      "sha256": "986da612a361247af69dae6376d76fcc2d839de0723042f0569c5b941424865a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-project-loader-runtime.terminal-audit.json",
+      "bytes": 626,
+      "sha256": "47544980ce2fa7466a209fbd15e00c1ff1cb7384fa957858f81208275c8077db"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-runtime-driver-catalog.input-audit.json",
+      "bytes": 379,
+      "sha256": "f22db85f4a4af8622d0c24aff138de86a9d21dab80f89635065185f3363a1662"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-runtime-driver-catalog.inventory.json",
+      "bytes": 45972,
+      "sha256": "17ae1399faccf9829673e0ed2d661f83cd17c10032f21e14026cf835c219247a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-runtime-driver-catalog.json",
+      "bytes": 511,
+      "sha256": "f6fdada4aaf2b2fdc43c47063c11959aa2bd6f561d9869f030ef5a355946d025"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-runtime-driver-catalog.log",
+      "bytes": 115748,
+      "sha256": "9434ceded18d6f77cacf02791ec5b215c8c7d40cf9a8ad35bb2b9925d23b2aea"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-runtime-driver-runtime.binaries-before.json",
+      "bytes": 979,
+      "sha256": "693739130dcd3173c1543c936aadf7a6cb075f834cba945cece230987c6ac106"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-runtime-driver-runtime.json",
+      "bytes": 603,
+      "sha256": "b2fc0c29c7e78a26f0324cd3708a7da147d1e364850fcc9a6d4ba41b402ffa0d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-runtime-driver-runtime.log",
+      "bytes": 137713,
+      "sha256": "c4c7a1b0e818ccaf47e3f737d985b434fee0fad17aafb67ed9d04df5584be397"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-runtime-driver-runtime.terminal-audit.json",
+      "bytes": 626,
+      "sha256": "aab9a00270a7b944db9123a437aae1bea22a50c81ea0b00c1d2ec850261b1f6c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-runtime-host-catalog.input-audit.json",
+      "bytes": 375,
+      "sha256": "de74d86040ca57b52cebeacc337da589ffe30173c7d7025a40e21a114c1c939a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-runtime-host-catalog.inventory.json",
+      "bytes": 18118,
+      "sha256": "66347528f7e2177a2fa1b912af93ceb4948c4fd27fe7e7414967f750860744a1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-runtime-host-catalog.json",
+      "bytes": 507,
+      "sha256": "8d5293ae526bef6a1f5dc3edbbd827fd9bc395ea079da3e60e3313b01d5ed831"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-runtime-host-catalog.log",
+      "bytes": 102123,
+      "sha256": "15d805db2fc0b5a754675632b8a738a87241b5bd7ddffdc6970f0553deddbe0b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-runtime-host-runtime.binaries-before.json",
+      "bytes": 1232,
+      "sha256": "68df02ed4c1ca6806d119f818db3a786f155d1a4d0c2d1aab4b3bbfe1930147e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-runtime-host-runtime.json",
+      "bytes": 599,
+      "sha256": "a18cb75dfaf0ac6fefc99ec208f003a60bf48122bdd08ca4425778b349dad8cc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-runtime-host-runtime.log",
+      "bytes": 107786,
+      "sha256": "b4535bcade92dee9aa8e2467989968a0aaab0f4d586fc1d41650902b889af29e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-runtime-host-runtime.terminal-audit.json",
+      "bytes": 620,
+      "sha256": "d34fcbe45253bfbb8dbe36a40b8d445ac136c1171da7206975d5d17e8c203ab8"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-runtime-plan-catalog.input-audit.json",
+      "bytes": 375,
+      "sha256": "7a7d5699e5fbfc4f743b04990d92aa757f1c8e508302248eb5ee45eae1b68b3a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-runtime-plan-catalog.inventory.json",
+      "bytes": 41831,
+      "sha256": "11dfe6193741a320b3d5dd36edddd08f507c0f5e00e171a49a1eed4449e57dde"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-runtime-plan-catalog.json",
+      "bytes": 507,
+      "sha256": "b7bcd170a064369a8673fb8314f2cfd1f3df5129a6490947a4e2377018ad3475"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-runtime-plan-catalog.log",
+      "bytes": 113837,
+      "sha256": "a241e46bb31f8a43582ae3e13cee2218c6f389902e72d4de844a9f6794ee80a7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-runtime-plan-runtime.binaries-before.json",
+      "bytes": 1216,
+      "sha256": "b3dd37f2f0e82a7a9e454d1918dc26128dc8b2669feb67cf76c3eb7bf7e7e27d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-runtime-plan-runtime.json",
+      "bytes": 599,
+      "sha256": "0f06d93cfe2a6d178b04eb2657cd784edf161d030b8754a657d27e64110737e5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-runtime-plan-runtime.log",
+      "bytes": 133134,
+      "sha256": "48e6bad6fa30ec9e4d047743a89f1c77f6c81140a550543777a117cfda02c7c4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-runtime-plan-runtime.terminal-audit.json",
+      "bytes": 624,
+      "sha256": "3334b407522a7c0dcfad8c259b04f1f966f7c47a7a9125760b9985c38b83302c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-test-catalog.input-audit.json",
+      "bytes": 359,
+      "sha256": "a9ca55d12de70d3a3951c9423f08cf566bd3f1f7dd068dc63979e0893d41159e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-test-catalog.inventory.json",
+      "bytes": 691,
+      "sha256": "ad40514ffdcbebb66c542f915a5d0fbcd10079e4123db21e423891ebbb628ab4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-test-catalog.json",
+      "bytes": 491,
+      "sha256": "abe61a56c93fc1cbac300f0a67e085ec03402d26bd40007ef9b1ce5fa541c802"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-test-catalog.log",
+      "bytes": 76288,
+      "sha256": "c509b87ce2f7c5d5ac8f76c737ae8bc13acef3515d1ec5d230205c6ed973393d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-test-runtime.binaries-before.json",
+      "bytes": 202,
+      "sha256": "fffd4769595ec5c294cf822064d07f26340a9cf223dff46856d097e4644eb739"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-test-runtime.json",
+      "bytes": 583,
+      "sha256": "657332784794d2979fd63112bd2963774fcc1d7720f0676c5c14e7a3bdb2b941"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-test-runtime.log",
+      "bytes": 74619,
+      "sha256": "069f988e66aa56cc626afd433dcbb3cf4e50867264946ab60873dc3411809711"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-test-runtime.terminal-audit.json",
+      "bytes": 608,
+      "sha256": "eb7fad3f7dd46c69160740bed46991c8653b749cbb1a8e9f6737bb43171c0e15"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-tooling-catalog.input-audit.json",
+      "bytes": 365,
+      "sha256": "7e0d24e85adf64940e205fd8a0b0f413cedf3724a62a962c4a215184ee6ab5cf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-tooling-catalog.inventory.json",
+      "bytes": 6358,
+      "sha256": "3e25abb4a8a10e43115788a180c9c7039ace4aad0308199a7a6050456368c067"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-tooling-catalog.json",
+      "bytes": 497,
+      "sha256": "f01db88ef69f8889f9cfc05b96ec6a5558d48f437df04a89e05d94aa83f1864b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-tooling-catalog.log",
+      "bytes": 90896,
+      "sha256": "953b6c14fd77afc9417f7b9d46579d0a2a3c825c5ec0638df67db41b3b3c7c67"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-tooling-runtime.binaries-before.json",
+      "bytes": 1190,
+      "sha256": "33f7086d169203a217e8f8c0f283f111cbb6113d49adb363d0ad99ccd65c3cc2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-tooling-runtime.json",
+      "bytes": 589,
+      "sha256": "4a483e6d3b3dc13c7e7da3e76a668e0d0b81a9f05eefd94e1918f00d646fbb38"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-tooling-runtime.log",
+      "bytes": 91217,
+      "sha256": "b504e7045cbd3ebc2add4d2990092b60b55e80f9ace89f504a4b1411ef293be2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-tooling-runtime.terminal-audit.json",
+      "bytes": 615,
+      "sha256": "44a6b47404f9f5d7fd2dd520586c122960545e754e525b4186d6ef3b4ef71d3c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-catalog.input-audit.json",
+      "bytes": 363,
+      "sha256": "969dbfb5639961cfe7331298ce1b5ad05e946476bffba025db41312bb1db3a0c"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-catalog.inventory.json",
+      "bytes": 1895,
+      "sha256": "ef0d55ebfd05111f2879a7c56a90ba72f9daf43cf4f14228dc213446a07322d7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-catalog.json",
+      "bytes": 495,
+      "sha256": "b83bde1c90dfc34cba1757ff121a3398af45e0f1af148c8bfa7caa6fcd5fcb9d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-catalog.log",
+      "bytes": 86314,
+      "sha256": "d731419e85af833b62345f4a26b37704121df29b94f166d1f3a13784ab7ecc9a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-lsp-catalog.input-audit.json",
+      "bytes": 371,
+      "sha256": "661550af21b77949436dcf53a4d5ec6e3ad200497a9d1d44cd7ed2458682959a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-lsp-catalog.inventory.json",
+      "bytes": 3134,
+      "sha256": "30c6681e322da72ab03e2d7aeefad33f221dbf1a8f38108ac4c350e52c8787ef"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-lsp-catalog.json",
+      "bytes": 503,
+      "sha256": "6180a63a6a3b9becf42a9f855d7c986d35a2a4ff4dd62284c3da975222f5d607"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-lsp-catalog.log",
+      "bytes": 89993,
+      "sha256": "e312c17f19c5dd3449ab2cbf0f9285a24986f4f77b0e7d336ba271fde2e0715d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-lsp-runtime.binaries-before.json",
+      "bytes": 214,
+      "sha256": "2c790ccbb88cc6b9db298edaccbdfd6509771af7cab1540c8f44ef8f2fa17c68"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-lsp-runtime.json",
+      "bytes": 595,
+      "sha256": "a90fc34d3b80c9a0e0b31afd94e7b2e3012464d8a959494f1c394b2c934507e1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-lsp-runtime.log",
+      "bytes": 89218,
+      "sha256": "93ded4ace50c178d365f1c5f6a89ce1ee1771e4b91db9f467abf04727006aa5e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-lsp-runtime.terminal-audit.json",
+      "bytes": 618,
+      "sha256": "8b67d1d92d043009b7f5fe8a2ec275eb55afc9d06ed69b1d6587467570385398"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-oxiz-catalog.input-audit.json",
+      "bytes": 373,
+      "sha256": "6796837668975aef604ecc1e069340257d0b952dcc66a9e4328e21d32f5a2661"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-oxiz-catalog.inventory.json",
+      "bytes": 1095,
+      "sha256": "67857facf59bd64ef225d3863a1ade1d67e4a009fb5419b0472363dd330f981b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-oxiz-catalog.json",
+      "bytes": 505,
+      "sha256": "3979ce5bf375e67282be6399ab80399540d7a7586dbb7dacde1af12dbb412ccd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-oxiz-catalog.log",
+      "bytes": 85842,
+      "sha256": "2f89da955531d2b549330814cfe9748a7a9354e488cea108ece9e0b4674f1b2f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-oxiz-runtime.binaries-before.json",
+      "bytes": 216,
+      "sha256": "5f5711e3d67c832ff1d4693b87a70e25df8de5f2912687b627fa56198671e643"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-oxiz-runtime.json",
+      "bytes": 597,
+      "sha256": "cea5ad394fa55c53d2ed21e22d386622b9d594cd5357bc82ae5c85ab22498023"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-oxiz-runtime.log",
+      "bytes": 84826,
+      "sha256": "35f010039ceda0ba280bc8e8fea3310b20c55970ca8a9db91d313552bf5e90cf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-oxiz-runtime.terminal-audit.json",
+      "bytes": 615,
+      "sha256": "b4cf9cce94c60e1a8861fc1f3cb9ca854b3c6d8ea6a3921ad5d0892d299a124b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-runtime.binaries-before.json",
+      "bytes": 206,
+      "sha256": "837289f2c64064899cbd8d69806d70e07c23eb50567b38be937cf993445052d9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-runtime.json",
+      "bytes": 587,
+      "sha256": "6e7f0a27467806e370f1b164d0a4231277b5f2842027cf21297475f8d6bc5eb7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-runtime.log",
+      "bytes": 85822,
+      "sha256": "a326b27aa5d1fa7510460094b1b41301a82cd7b324711ff0541a8001102618aa"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-runtime.terminal-audit.json",
+      "bytes": 610,
+      "sha256": "7283a853efb86ff6ce8abca4729f020379d946a67aa9468e6d988b08c2ccc756"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-z3-catalog.input-audit.json",
+      "bytes": 369,
+      "sha256": "e3fa67ed17855aa0188e4e91438086c357db3d46fd32330e480dd77ffc7337bf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-z3-catalog.inventory.json",
+      "bytes": 458,
+      "sha256": "7687dc220c3abe8ca4e945b37dd2cfe2782ca15680d684f94c69c8cc980738c7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-z3-catalog.json",
+      "bytes": 501,
+      "sha256": "af0f2cf1fc616960d187268490e77a17b7f7430ae3dbf64bc077710cc364fa84"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-z3-catalog.log",
+      "bytes": 85014,
+      "sha256": "048c2ef3f3dfaaf30ca90a7d9ea7e0cbc1f2d4d304b77d7e6fac739072a78d8d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-z3-runtime.binaries-before.json",
+      "bytes": 212,
+      "sha256": "b7fc8c74176f0e1423f870b5d812328ddc2ee777302f04a942a3549b513b4029"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-z3-runtime.json",
+      "bytes": 593,
+      "sha256": "daa6a36b364110a0f2b823008cd096b8f81e7cb816b6944c71f56e5f02b06a85"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-z3-runtime.log",
+      "bytes": 84244,
+      "sha256": "3089d97f0d5e85f535f0f7a44135548cf771899274c073eaca11fe5eee9dda58"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-arcweft-verify-z3-runtime.terminal-audit.json",
+      "bytes": 613,
+      "sha256": "0686ba0325e7b8e6ae99ab7f9a1b238594ac6ce31069b78433edb604dfa5e248"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-reverse-matrix.json",
+      "bytes": 19369,
+      "sha256": "11109d2a532d6b12c0c48a94d90751efc164833f5bcbdd490247a31204f79c05"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-summary.json",
+      "bytes": 27359,
+      "sha256": "d64a3a00cb3e86826833a08c570a32421d93d440b9e01910a842ceead523167e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-doc-audit1.log",
+      "bytes": 524,
+      "sha256": "e722330fdfe513bcb5a3c14f8b9da45a7d6a164463225bf2a0182906f42aa0c0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-doc-audit2.log",
+      "bytes": 442,
+      "sha256": "61d52d9431159c8b72fe6da580ba91c6f9e95f864a36ea538a1aca13ce4d75ff"
+    }
+  ],
+  "scope": "Complete 22-package resolved reverse closure for the Rust ADT retention/Copy changes, using the final Sema owner once and all 21 downstream packages. Existing baseline failures remain failures.",
+  "preservation": {
+    "genericMatch": "accepted and published; unchanged",
+    "originalTrackedWip": 14,
+    "originalUntrackedActualFiles": 6,
+    "oldRuns": "preserved, not summed across epochs",
+    "bounds": "jobs, features, profiles, assertions and timeouts unchanged"
+  },
+  "documentationAudit1": {
+    "result": "failed",
+    "unretainedConfirmationSha": "5f06de3881856f6b36fd5c593ce403c2e9d1d0fc",
+    "correction": "Retain the previous inspected-main SHA as historical publication/confirmation evidence; no Rust source or existing raw evidence changed.",
+    "raw": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-doc-audit1.log"
+  },
+  "documentationAudit2": {
+    "result": "passed",
+    "checkedDocuments": 129,
+    "relativeLinks": 652,
+    "brokenLinks": 0,
+    "unretainedIds": 0,
+    "historicalRawChanges": 0,
+    "historicalPrefixPreserved": true,
+    "heldFiles": 20,
+    "heldDrift": 0,
+    "raw": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-doc-audit2.log"
+  }
+}

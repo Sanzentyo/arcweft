@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "1bf138d190c826841935b38bf01c3048fb43c3cb",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-runtime-host",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\nominal-c6.reverse-arcweft-runtime-host-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-31T06:09:38.5850842Z",
+  "finishedAt": "2026-10-31T06:11:03.5668084Z"
+}

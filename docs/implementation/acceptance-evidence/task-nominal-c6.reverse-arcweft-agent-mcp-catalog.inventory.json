@@ -1,0 +1,222 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp",
+      "test": "repl_command::tests::repl_command_mcp_tool_result_uses_structured_json_text",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp",
+      "test": "repl_command::tests::repl_command_mcp_trace_policy_conversion_is_typed",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp",
+      "test": "tests::agent_tools_describe_observe_and_resource_read",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp",
+      "test": "tests::debug_graph_inventory_tool_schema_is_described",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp",
+      "test": "tests::debug_read_tool_schemas_expose_max_privacy",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp",
+      "test": "tests::debug_read_tool_schemas_expose_state_signal_and_log_filters",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp",
+      "test": "tests::debug_source_files_tool_schema_is_described",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp",
+      "test": "tests::empty_trace_resource_uses_the_canonical_unknown_run_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp",
+      "test": "tests::hit_test_tool_schema_requires_viewport_coordinate",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp",
+      "test": "tests::image_agent_resource_maps_to_mcp_blob_and_image_tool_content",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp",
+      "test": "tests::image_tool_content_preserves_image_object_frame_metadata",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp",
+      "test": "tests::image_tool_content_preserves_object_rich_text_ref_metadata",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp",
+      "test": "tests::json_agent_resource_maps_to_mcp_text_resource",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp",
+      "test": "tests::mixed_run_trace_records_do_not_produce_a_resource",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp",
+      "test": "tests::rag_context_and_timeline_tool_schemas_are_described",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp",
+      "test": "tests::rag_query_tool_schema_exposes_source_project_inputs",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp",
+      "test": "tests::resource_list_and_observe_tool_result_expose_resource_links",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp",
+      "test": "tests::resource_templates_list_capture_uri_patterns",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp",
+      "test": "tests::runtime_assertion_diagnostic_survives_observation_policy_and_mcp_projection",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp",
+      "test": "tests::same_run_trace_resource_maps_to_mcp_text_resource_and_link",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp",
+      "test": "tests::tool_descriptors_include_script_run_surface",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp",
+      "test": "tests::tool_descriptors_include_wait_control_surface",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp",
+      "test": "tests::tool_schemas_do_not_advertise_unconsumed_dialogue_view_height",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp",
+      "test": "tests::tool_schemas_expose_image_capture_scope_and_uri",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp::descriptor_invariants",
+      "test": "required_schema_properties_are_declared",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp::descriptor_invariants",
+      "test": "tool_descriptors_have_unique_non_empty_names",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp::repl_command",
+      "test": "mcp_repl_command_cancels_all_task_and_scope_targets",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp::repl_command",
+      "test": "mcp_repl_command_lists_runtime_tasks_through_existing_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp::repl_command",
+      "test": "mcp_repl_command_preserves_warm_and_codegen_unsupported_backend_status",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp::repl_command",
+      "test": "mcp_repl_command_rejects_read_only_mutating_command",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "binary": "arcweft-agent-mcp::repl_command",
+      "test": "mcp_repl_command_reports_host_unavailable_as_typed_result",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

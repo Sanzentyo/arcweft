@@ -1,0 +1,27 @@
+[
+  {
+    "binary": "arcweft-runtime-plan::api_compile",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\api_compile-83de0e2625ddd97c.exe",
+    "sha256": "665c33fb0c9b8612ba0734d362b8093ed533450c86941b5242ffca9e30c784a5"
+  },
+  {
+    "binary": "arcweft-runtime-plan",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_runtime_plan-42a70d568acba1c8.exe",
+    "sha256": "d9b02ae02a12f47295961d8cb6da624d3a436265d1e1916bc97893693caa75f5"
+  },
+  {
+    "binary": "arcweft-runtime-plan::assertion_identity",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\assertion_identity-b931849773e06a15.exe",
+    "sha256": "efed18842809c53b4e309d7ec251328d7a807f37838aaf5cc7fbda4e80dc0602"
+  },
+  {
+    "binary": "arcweft-runtime-plan::awbc_product_parity",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\awbc_product_parity-fdf0d91bb12e8876.exe",
+    "sha256": "76b2ac199ac3165a047d570607cd6c9e2897a1b17d862a40b02fe9b099c55184"
+  },
+  {
+    "binary": "arcweft-runtime-plan::iterator_witness_awbc",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\iterator_witness_awbc-0e852f64436fdd72.exe",
+    "sha256": "a681d12209af655393969113b82c13ca90e366519c745bf14b0f8c25a42a4df5"
+  }
+]
