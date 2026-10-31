@@ -1,6 +1,145 @@
 use super::*;
 
 use crate::nominal::{ResolvedTypeNodePurpose, TypeNameResolution};
+use arcweft_interaction_model::presentation::PresentationResourceKind;
+
+#[test]
+fn generic_constructor_arguments_retain_semantic_types_and_specific_nonvalue_roles() {
+    for ty in [
+        "Vec<i64>",
+        "Array<i64, 3>",
+        "OrderedMap<String, i64>",
+        "Option<bool>",
+        "Result<i64, String>",
+        "Shared<String>",
+        "Need<i64>",
+        "Lease<ImageSurface>",
+    ] {
+        let world = fixture(
+            &format!(
+                "pub type Lease<T> = Handle<T>\nfn identity(value: {ty}) -> {ty} {{ value }}\n"
+            ),
+            None,
+        );
+        let analysis = analyze(&world).unwrap_or_else(|error| panic!("{ty}: {error:?}"));
+        let module = world
+            .project
+            .analysis_view()
+            .unwrap()
+            .module(&CanonicalModulePath::crate_root())
+            .unwrap();
+        let mut count = 0;
+        for (_, root) in module.types() {
+            let HirTypeKind::Generic(generic) = root.kind() else {
+                continue;
+            };
+            for argument in generic.arguments() {
+                let node = analysis
+                    .type_resolution_node(*argument)
+                    .expect("exact generic argument node");
+                assert!(matches!(
+                    node.purpose(),
+                    ResolvedTypeNodePurpose::TypeArgument
+                        | ResolvedTypeNodePurpose::ConstantArgument
+                ));
+                assert_eq!(analysis.ty(*argument), None);
+                if node.purpose() == ResolvedTypeNodePurpose::TypeArgument {
+                    assert!(node.recovered().is_some());
+                }
+                count += 1;
+            }
+        }
+        assert!(count > 0, "{ty}: checked generic arguments");
+    }
+}
+
+#[test]
+fn presentation_resource_arguments_preserve_direct_and_alias_resolution_without_runtime_rows() {
+    for resource in PresentationResourceKind::ALL {
+        for constructor in ["Handle", "SlotRef"] {
+            for aliased in [false, true] {
+                let name = resource.type_name();
+                let (prefix, argument) = if aliased {
+                    (format!("pub type SurfaceType = {name}\n"), "SurfaceType")
+                } else {
+                    (String::new(), name)
+                };
+                let source = format!(
+                    "{prefix}fn identity(value: {constructor}<{argument}>) -> {constructor}<{argument}> {{ value }}\n"
+                );
+                let world = fixture(&source, None);
+                let analysis = analyze(&world).expect("typed presentation resource arguments");
+                let module = world
+                    .project
+                    .analysis_view()
+                    .unwrap()
+                    .module(&CanonicalModulePath::crate_root())
+                    .unwrap();
+                let arguments = module
+                    .types()
+                    .filter_map(|(_, ty)| match ty.kind() {
+                        HirTypeKind::Generic(generic) => Some(generic.arguments()[0]),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(arguments.len(), 2);
+                for argument in arguments {
+                    let node = analysis.type_resolution_node(argument).unwrap();
+                    assert_eq!(node.purpose(), ResolvedTypeNodePurpose::TypeArgument);
+                    assert_eq!(
+                        node.recovered(),
+                        Some(&TypeKind::PresentationResource(resource))
+                    );
+                    assert_eq!(analysis.ty(argument), None);
+                    assert_eq!(
+                        matches!(node.outcome(), TypeNameResolution::Alias(_)),
+                        aliased
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn generic_presentation_resource_arguments_keep_their_semantic_binding() {
+    let world = fixture(
+        "fn identity<T>(value: Handle<T>) -> Handle<T> { value }\n",
+        None,
+    );
+    let analysis = analyze(&world).expect("generic handle argument role");
+    let arguments = analysis
+        .type_resolutions()
+        .flat_map(|(_, report)| report.outcome().product().nodes())
+        .filter(|node| node.purpose() == ResolvedTypeNodePurpose::TypeArgument)
+        .collect::<Vec<_>>();
+    assert_eq!(arguments.len(), 2);
+    for node in arguments {
+        assert!(matches!(node.recovered(), Some(TypeKind::GenericParam(_))));
+        assert!(matches!(node.outcome(), TypeNameResolution::Generic(_)));
+        assert_eq!(analysis.ty(node.node()), None);
+    }
+}
+
+#[test]
+fn standalone_presentation_resource_types_remain_value_type_nodes() {
+    let world = fixture(
+        "fn identity(value: ImageSurface) -> ImageSurface { value }\n",
+        None,
+    );
+    let analysis = analyze(&world).expect("resource body value types retain their own role");
+    for (_, report) in analysis.type_resolutions() {
+        for node in report.outcome().product().nodes() {
+            assert_eq!(node.purpose(), ResolvedTypeNodePurpose::ValueType);
+            assert_eq!(
+                analysis.ty(node.node()),
+                Some(&TypeKind::PresentationResource(
+                    PresentationResourceKind::Image
+                ))
+            );
+        }
+    }
+}
 
 #[test]
 fn admitted_entity_family_arguments_keep_exact_semantic_purpose() {

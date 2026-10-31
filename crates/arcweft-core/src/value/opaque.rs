@@ -3003,6 +3003,11 @@ impl RuntimeOpaqueValue {
 pub enum RuntimeOpaqueValueError {
     #[error(transparent)]
     PresentationToken(#[from] crate::runtime_id::RuntimePresentationHandleTokenDecodeError),
+    #[error("presentation handle expects {expected:?}, received {actual:?}")]
+    PresentationResource {
+        expected: arcweft_interaction_model::presentation::PresentationResourceKind,
+        actual: arcweft_interaction_model::presentation::PresentationResourceKind,
+    },
     #[error("producer-wide opaque type is not a concrete runtime value owner")]
     NonConcreteOwner {
         producer: RuntimeOpaqueTypeProducerId,

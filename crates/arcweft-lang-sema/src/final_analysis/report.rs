@@ -2930,7 +2930,13 @@ fn validate_type_resolution_reports(
     let covered = node_facts.keys().copied().collect::<BTreeSet<_>>();
     let recovered = node_facts
         .into_iter()
-        .filter_map(|(owner, (ty, _))| ty.map(|ty| (owner, ty)))
+        .filter_map(|(owner, (ty, purpose))| {
+            purpose
+                .has_runtime_type()
+                .then_some(ty)
+                .flatten()
+                .map(|ty| (owner, ty))
+        })
         .collect::<BTreeMap<_, _>>();
     if &covered != all_nodes || recovered != *types {
         let owner = all_nodes

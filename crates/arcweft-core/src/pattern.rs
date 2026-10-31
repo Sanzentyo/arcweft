@@ -1,4 +1,5 @@
 mod match_source;
+mod presentation;
 
 pub use match_source::{
     CanonicalMatchSource, MatchSourceArm, MatchSourceArmCoordinate, MatchSourceArmCoordinateOwner,
@@ -422,11 +423,9 @@ impl RuntimeOpaqueTypeOwner {
             && (self.admission == RuntimeOpaqueTypeAdmission::ProducerWide
                 || self.semantic_identity == actual.semantic_identity())
             && crate::value::standard_asset_opaque_payload_is_valid(self, actual.payload())
-            && (self.value_class != RuntimeOpaqueValueClass::PresentationHandle
-                || crate::runtime_id::RuntimePresentationHandleToken::try_decode_view(
-                    actual.payload(),
-                )
-                .is_ok())
+            && self
+                .validate_presentation_handle_payload(actual.payload())
+                .is_ok()
     }
 
     pub fn try_wrap(&self, payload: RuntimeValue) -> Result<RuntimeValue, RuntimeOpaqueValueError> {
@@ -441,9 +440,7 @@ impl RuntimeOpaqueTypeOwner {
                 producer: self.producer.clone(),
             });
         }
-        if self.value_class == RuntimeOpaqueValueClass::PresentationHandle {
-            crate::runtime_id::RuntimePresentationHandleToken::try_decode_view(payload.view())?;
-        }
+        self.validate_presentation_handle_payload(payload.view())?;
         Ok(RuntimeValue::Opaque(RuntimeOpaqueValue::new_exact(
             self, payload,
         )))

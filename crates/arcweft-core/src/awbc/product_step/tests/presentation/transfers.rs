@@ -1,21 +1,27 @@
 use super::*;
 use crate::awbc::product_step::checkpoint::ProductCheckpointTarget;
 use crate::awbc::schema::*;
-use crate::pattern::{RuntimeCheckedType, RuntimeOpaqueTypeAdmission};
-use crate::value::{RuntimeOpaquePersistence, RuntimeOpaqueValue, RuntimeOpaqueValueClass};
+use crate::pattern::{RuntimeCheckedType, RuntimeOpaqueTypeOwner};
+use crate::value::RuntimeOpaqueValue;
 
 fn handle_program(nested: bool) -> (AwbcProgram, AwbcTypeId) {
     let mut program = return_program();
+    let handle_owner = RuntimeOpaqueTypeOwner::presentation_handle(
+        PresentationResourceKind::Image,
+        RuntimeSemanticTypeId::from_bytes([0x9a; 32]),
+    );
     let producer = AwbcStringId(program.strings.len().try_into().unwrap());
-    program.strings.push("std.presentation.image_handle".into());
+    program
+        .strings
+        .push(handle_owner.producer().as_str().into());
     let handle = AwbcTypeId(program.runtime_types.len().try_into().unwrap());
     program.runtime_types.push(AwbcRuntimeType::new(
-        RuntimeSemanticTypeId::from_bytes([0x9a; 32]),
+        handle_owner.semantic_identity(),
         AwbcRuntimeTypeShape::Opaque {
             producer,
-            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
-            value_class: RuntimeOpaqueValueClass::PresentationHandle,
-            persistence: RuntimeOpaquePersistence::SnapshotOnly,
+            admission: handle_owner.admission(),
+            value_class: handle_owner.value_class(),
+            persistence: handle_owner.persistence(),
             arguments: vec![],
         },
     ));

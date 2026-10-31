@@ -20,6 +20,9 @@ mod executable_types;
 #[path = "lower/fx.rs"]
 pub(crate) mod fx;
 mod nominals;
+#[cfg(test)]
+#[path = "lower/presentation_tests.rs"]
+mod presentation_tests;
 pub(crate) mod programs;
 pub use programs::{CompiledDeterministicProgram, DeterministicProgramCompileError};
 mod project_instances;
@@ -5655,6 +5658,27 @@ fn runtime_type_scoped_at(
         TypeKind::CharacterDialogue(dialogue) => {
             let owner = dialogue.runtime_opaque_owner();
             debug_assert_eq!(owner.semantic_identity(), identity);
+            RuntimeTypeShape::Opaque {
+                producer: owner.producer().clone(),
+                admission: owner.admission(),
+                value_class: owner.value_class(),
+                persistence: owner.persistence(),
+                arguments: Box::new([]),
+            }
+        }
+        TypeKind::Handle {
+            item,
+            state:
+                arcweft_lang_sema::types::HandleState::Live
+                | arcweft_lang_sema::types::HandleState::Detached,
+            ..
+        } if matches!(item.as_ref(), TypeKind::PresentationResource(_)) => {
+            let TypeKind::PresentationResource(resource) = item.as_ref() else {
+                unreachable!("guard proves a presentation resource type")
+            };
+            let owner = arcweft_core::pattern::RuntimeOpaqueTypeOwner::presentation_handle(
+                *resource, identity,
+            );
             RuntimeTypeShape::Opaque {
                 producer: owner.producer().clone(),
                 admission: owner.admission(),

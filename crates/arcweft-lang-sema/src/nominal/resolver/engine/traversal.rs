@@ -230,6 +230,13 @@ impl Resolver<'_, '_> {
             resolved_args.push((child, resolved));
         }
         let result = self.resolve_name(context, owner, generic.base(), resolved_args, depth)?;
+        for child in generic.arguments() {
+            self.nodes
+                .iter_mut()
+                .rfind(|node| node.node() == *child)
+                .expect("the resolved type argument has its exact source node")
+                .mark_type_argument();
+        }
         Ok(self.finish_node(context, owner, result.value, result.outcome))
     }
 

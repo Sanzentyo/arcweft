@@ -1,8 +1,8 @@
 use super::*;
 use crate::awbc::schema::*;
 use crate::awbc::vm::{VmError, VmExecutionContext, VmExit, VmHost, VmStepOptions};
-use crate::pattern::{RuntimeCheckedType, RuntimeOpaqueTypeAdmission};
-use crate::value::{RuntimeOpaquePersistence, RuntimeOpaqueValue, RuntimeOpaqueValueClass};
+use crate::pattern::{RuntimeCheckedType, RuntimeOpaqueTypeOwner};
+use crate::value::RuntimeOpaqueValue;
 
 struct IssuedHandleHost(Option<RuntimeValue>);
 
@@ -44,21 +44,27 @@ fn advance(executor: &mut AwbcProductStepExecutor) {
 }
 
 fn program(discard: bool) -> AwbcProgram {
+    let handle_owner = RuntimeOpaqueTypeOwner::presentation_handle(
+        PresentationResourceKind::Image,
+        RuntimeSemanticTypeId::from_bytes([0xad; 32]),
+    );
     let mut program = mark_selector_program(
         arcweft_interaction_model::input::InputActionId::new("receipt.cancel").unwrap(),
     );
     let producer = AwbcStringId(program.strings.len().try_into().unwrap());
-    program.strings.push("fixture.presentation.handle".into());
+    program
+        .strings
+        .push(handle_owner.producer().as_str().into());
     program.content_units[0].public_id = AwbcStringId(program.strings.len().try_into().unwrap());
     program.strings.push("line.receipt".into());
     let handle = AwbcTypeId(3);
     program.runtime_types.push(AwbcRuntimeType::new(
-        RuntimeSemanticTypeId::from_bytes([0xad; 32]),
+        handle_owner.semantic_identity(),
         AwbcRuntimeTypeShape::Opaque {
             producer,
-            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
-            value_class: RuntimeOpaqueValueClass::PresentationHandle,
-            persistence: RuntimeOpaquePersistence::SnapshotOnly,
+            admission: handle_owner.admission(),
+            value_class: handle_owner.value_class(),
+            persistence: handle_owner.persistence(),
             arguments: vec![],
         },
     ));

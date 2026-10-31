@@ -285,7 +285,7 @@ impl Analyzer<'_, '_, '_> {
             }
         };
         for node in report.outcome().product().nodes() {
-            if node.is_contextual_alias_target() {
+            if node.is_contextual_alias_target() || !node.purpose().has_runtime_type() {
                 continue;
             }
             let Some(recovered) = node.recovered() else {

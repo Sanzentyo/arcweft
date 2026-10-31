@@ -1,12 +1,9 @@
 use super::*;
-use crate::pattern::{
-    RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId,
-};
+use crate::pattern::RuntimeOpaqueTypeOwner;
 use crate::plan::{
     RuntimeLocalDeclarationSeed, RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
 };
 use crate::value::RuntimeStoredValue;
-use crate::value::{RuntimeOpaquePersistence, RuntimeOpaqueValueClass};
 
 struct Fixture {
     engine: Engine,
@@ -21,12 +18,9 @@ impl Fixture {
         let body_type = crate::pattern::RuntimeSemanticTypeId::from_bytes([101; 32]);
         let handle_type = crate::pattern::RuntimeSemanticTypeId::from_bytes([102; 32]);
         let tuple_type = crate::pattern::RuntimeSemanticTypeId::from_bytes([103; 32]);
-        let producer = RuntimeOpaqueTypeProducerId::try_new("test.presentation.handle").unwrap();
-        let handle_owner = RuntimeOpaqueTypeOwner::exact_with(
-            producer.clone(),
+        let handle_owner = RuntimeOpaqueTypeOwner::presentation_handle(
+            PresentationResourceKind::View,
             handle_type,
-            RuntimeOpaqueValueClass::PresentationHandle,
-            RuntimeOpaquePersistence::SnapshotOnly,
         );
         let mut builder = RuntimePlanBuilder::new();
         let admitted = builder
@@ -36,10 +30,10 @@ impl Fixture {
                     RuntimePlanTypeSeed::new(
                         handle_type,
                         RuntimePlanTypeProjection::Opaque {
-                            producer,
-                            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
-                            value_class: RuntimeOpaqueValueClass::PresentationHandle,
-                            persistence: RuntimeOpaquePersistence::SnapshotOnly,
+                            producer: handle_owner.producer().clone(),
+                            admission: handle_owner.admission(),
+                            value_class: handle_owner.value_class(),
+                            persistence: handle_owner.persistence(),
                             arguments: Box::new([]),
                         },
                     ),

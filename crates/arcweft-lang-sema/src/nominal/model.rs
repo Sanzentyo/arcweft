@@ -159,6 +159,7 @@ pub enum ResolvedTypeNodePurpose {
     ValueType,
     ConstantArgument,
     EntityFamilyArgument(EntityKind),
+    TypeArgument,
     TraitPredicate,
 }
 
@@ -178,6 +179,7 @@ pub struct ResolvedTypeNode {
     reference_path: Option<HirPath>,
     recovered: Option<TypeKind>,
     outcome: TypeNameResolution,
+    purpose: ResolvedTypeNodePurpose,
 }
 
 /// One deterministic project-alias expansion step.
@@ -697,7 +699,7 @@ impl ResolvedAliasReference {
 }
 
 impl ResolvedTypeNode {
-    pub(crate) const fn new(
+    pub(crate) fn new(
         node: TypeId,
         contextual_alias_target: bool,
         source: TypeSourceEvidence,
@@ -706,6 +708,16 @@ impl ResolvedTypeNode {
         recovered: Option<TypeKind>,
         outcome: TypeNameResolution,
     ) -> Self {
+        let purpose = match &outcome {
+            TypeNameResolution::Structural(StructuralTypeNodeKind::ConstInt) => {
+                ResolvedTypeNodePurpose::ConstantArgument
+            }
+            TypeNameResolution::EntityFamily(family) => {
+                ResolvedTypeNodePurpose::EntityFamilyArgument(family.clone())
+            }
+            TypeNameResolution::TraitHead(_) => ResolvedTypeNodePurpose::TraitPredicate,
+            _ => ResolvedTypeNodePurpose::ValueType,
+        };
         Self {
             node,
             contextual_alias_target,
@@ -714,6 +726,7 @@ impl ResolvedTypeNode {
             reference_path,
             recovered,
             outcome,
+            purpose,
         }
     }
 
@@ -749,19 +762,16 @@ impl ResolvedTypeNode {
         self.recovered.as_ref()
     }
 
-    /// Purpose selected by the accepted nominal-resolution outcome.
+    /// Purpose selected by the accepted nominal resolution and constructor use.
     ///
     /// A missing recovered type is never used to infer semantic-only status.
     pub fn purpose(&self) -> ResolvedTypeNodePurpose {
-        match &self.outcome {
-            TypeNameResolution::Structural(StructuralTypeNodeKind::ConstInt) => {
-                ResolvedTypeNodePurpose::ConstantArgument
-            }
-            TypeNameResolution::EntityFamily(family) => {
-                ResolvedTypeNodePurpose::EntityFamilyArgument(family.clone())
-            }
-            TypeNameResolution::TraitHead(_) => ResolvedTypeNodePurpose::TraitPredicate,
-            _ => ResolvedTypeNodePurpose::ValueType,
+        self.purpose.clone()
+    }
+
+    pub(crate) fn mark_type_argument(&mut self) {
+        if self.purpose == ResolvedTypeNodePurpose::ValueType {
+            self.purpose = ResolvedTypeNodePurpose::TypeArgument;
         }
     }
 
