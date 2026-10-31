@@ -5,6 +5,7 @@
 //! carrier from a value which must transfer its one owner.
 
 mod authority;
+mod type_capability;
 pub use authority::CheckedLocalUseAuthority;
 
 use std::{
@@ -147,7 +148,7 @@ impl FinalSemanticAnalysis {
         ty: &TypeKind,
         scope: &crate::types::GenericScope,
     ) -> Result<CheckedTypeCopyCapability, CheckedLocalUseError> {
-        type_copy_capability(ty, self, None, scope, &mut BTreeSet::new())
+        type_capability::classify(ty, self, None, scope)
     }
 }
 
@@ -251,6 +252,8 @@ impl CheckedLocalValueTransfer {
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum CheckedLocalUseError {
+    #[error("local-use type ownership exceeded its bounded traversal allowance")]
+    TypeOwnershipWorkLimit,
     #[error("local-use closed instance is not bound to this declaration/generation")]
     ForeignInstance,
     #[error(transparent)]
@@ -989,7 +992,13 @@ impl<'a> LocalUseChecker<'a> {
     }
 
     fn type_is_copy(&self, ty: &TypeKind) -> Result<bool, CheckedLocalUseError> {
-        definitely_copy(ty, self.analysis, self.instance, &mut BTreeSet::new())
+        type_capability::classify(
+            ty,
+            self.analysis,
+            self.instance,
+            &crate::types::GenericScope::default(),
+        )
+        .map(|capability| capability == CheckedTypeCopyCapability::Unrestricted)
     }
 
     fn callable_body(
@@ -3367,193 +3376,6 @@ fn declaration_has_open_local_types(
                     .value_type()
                     .is_some_and(crate::types::contains_generic_parameter)
         })
-}
-
-fn definitely_copy(
-    ty: &TypeKind,
-    analysis: &FinalSemanticAnalysis,
-    instance: Option<CheckedLocalUseInstantiation<'_>>,
-    visiting: &mut BTreeSet<SemanticTypeDigest>,
-) -> Result<bool, CheckedLocalUseError> {
-    type_copy_capability(
-        ty,
-        analysis,
-        instance,
-        &crate::types::GenericScope::default(),
-        visiting,
-    )
-    .map(|capability| capability == CheckedTypeCopyCapability::Unrestricted)
-}
-
-fn type_copy_capability(
-    ty: &TypeKind,
-    analysis: &FinalSemanticAnalysis,
-    instance: Option<CheckedLocalUseInstantiation<'_>>,
-    scope: &crate::types::GenericScope,
-    visiting: &mut BTreeSet<SemanticTypeDigest>,
-) -> Result<CheckedTypeCopyCapability, CheckedLocalUseError> {
-    use CheckedTypeCopyCapability::{Unavailable, Unrestricted, ValueDependent};
-    match ty {
-        TypeKind::Bool
-        | TypeKind::I8
-        | TypeKind::I16
-        | TypeKind::I32
-        | TypeKind::I64
-        | TypeKind::I128
-        | TypeKind::ISize
-        | TypeKind::U8
-        | TypeKind::U16
-        | TypeKind::U32
-        | TypeKind::U64
-        | TypeKind::U128
-        | TypeKind::USize
-        | TypeKind::F32
-        | TypeKind::F64
-        | TypeKind::String
-        | TypeKind::Char
-        | TypeKind::Bytes
-        | TypeKind::Duration
-        | TypeKind::Progress
-        | TypeKind::DenseNumeric(_)
-        | TypeKind::Unit
-        | TypeKind::Never
-        | TypeKind::Ref(_)
-        | TypeKind::CompileTimeScalar(_) => Ok(Unrestricted),
-        TypeKind::Function { .. } | TypeKind::CharacterDialogue(_) => Ok(ValueDependent),
-        TypeKind::AcceptedNominal(nominal) => {
-            use crate::env::nominal::AcceptedNominalSemantics;
-            let plain = match analysis.accepted_nominal_semantics(nominal) {
-                Some(AcceptedNominalSemantics::Opaque(carrier)) => {
-                    carrier.value_class() == RuntimeOpaqueValueClass::Plain
-                }
-                Some(AcceptedNominalSemantics::Record(record)) => record
-                    .runtime_carrier()
-                    .is_some_and(|carrier| carrier.value_class() == RuntimeOpaqueValueClass::Plain),
-                _ => false,
-            };
-            if !plain {
-                return Ok(Unavailable);
-            }
-            nominal
-                .arguments()
-                .iter()
-                .try_fold(ValueDependent, |all, argument| {
-                    type_copy_capability(argument, analysis, instance, scope, visiting)
-                        .map(|next| all.join(next))
-                })
-        }
-        TypeKind::GenericParam(_) => {
-            let Some(instance) = instance else {
-                return Ok(Unavailable);
-            };
-            let closed = instance.instantiate_type(ty)?;
-            if closed == *ty {
-                return Err(CheckedLocalUseError::InvalidTopology);
-            }
-            type_copy_capability(&closed, analysis, None, scope, visiting)
-        }
-        TypeKind::Tuple(items) | TypeKind::Choice(items) => {
-            items.iter().try_fold(Unrestricted, |all, item| {
-                type_copy_capability(item, analysis, instance, scope, visiting)
-                    .map(|next| all.join(next))
-            })
-        }
-        TypeKind::Vec(item)
-        | TypeKind::Array { item, .. }
-        | TypeKind::Slice(item)
-        | TypeKind::Seq(item)
-        | TypeKind::Option(item)
-        | TypeKind::Range(item) => type_copy_capability(item, analysis, instance, scope, visiting),
-        TypeKind::Result { ok, error }
-        | TypeKind::Map {
-            key: ok,
-            value: error,
-            ..
-        } => Ok(
-            type_copy_capability(ok, analysis, instance, scope, visiting)?.join(
-                type_copy_capability(error, analysis, instance, scope, visiting)?,
-            ),
-        ),
-        TypeKind::ProjectNominal(_) => {
-            let Ok(digest) = ty
-                .semantic_identity_digest()
-                .or_else(|_| ty.semantic_identity_digest_in_scope(scope))
-            else {
-                return Ok(Unavailable);
-            };
-            if !visiting.insert(digest) {
-                return Ok(ValueDependent);
-            }
-            let result = (|| {
-                let Some(definition) = analysis.project_nominal_semantic(digest) else {
-                    return Ok(Unavailable);
-                };
-                let mut capability = Unrestricted;
-                if let Some(fields) = definition.fields() {
-                    for field in fields {
-                        capability = capability.join(type_copy_capability(
-                            field.ty(),
-                            analysis,
-                            instance,
-                            definition.nominal().scope(),
-                            visiting,
-                        )?);
-                    }
-                    return Ok(capability);
-                }
-                let Some(cases) = definition.cases() else {
-                    return Ok(Unavailable);
-                };
-                for case in cases {
-                    match case.payload() {
-                        VariantPayloadShape::Unit => {}
-                        VariantPayloadShape::Tuple(fields) => {
-                            for field in fields {
-                                capability = capability.join(type_copy_capability(
-                                    field.ty(),
-                                    analysis,
-                                    instance,
-                                    definition.nominal().scope(),
-                                    visiting,
-                                )?);
-                            }
-                        }
-                        VariantPayloadShape::Record(fields) => {
-                            for field in fields {
-                                capability = capability.join(type_copy_capability(
-                                    field.ty(),
-                                    analysis,
-                                    instance,
-                                    definition.nominal().scope(),
-                                    visiting,
-                                )?);
-                            }
-                        }
-                    }
-                }
-                Ok(capability)
-            })();
-            visiting.remove(&digest);
-            result
-        }
-        TypeKind::Named(name) => {
-            let Some(graph) = analysis.character_dialogue_policy_types() else {
-                return Ok(Unavailable);
-            };
-            let Some(owner) = CharacterDialoguePolicyTypeGraph::owner_for_language_type(name)
-            else {
-                return Ok(Unavailable);
-            };
-            Ok(
-                if policy_owner_is_copy(graph, owner, &mut BTreeSet::new()) {
-                    Unrestricted
-                } else {
-                    Unavailable
-                },
-            )
-        }
-        _ => Ok(Unavailable),
-    }
 }
 
 fn policy_owner_is_copy(

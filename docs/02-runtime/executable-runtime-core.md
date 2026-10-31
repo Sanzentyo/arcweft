@@ -252,6 +252,14 @@ projection or skip validation of later field defaults. Default bindings remain
 owned by the original accepted declaration; executable references do not acquire
 a data codec through this distinction.
 
+The semantic Copy/Move capability check also uses the original joined Rust
+declaration, substituting all arguments and visiting every field and case under
+one bounded traversal. An exact nominal body back-edge adds no new leaves.
+Unrestricted data members permit Copy; executable members remain value-dependent,
+and an affine member makes the complete aggregate unavailable for Copy. This
+possibility check supplies no permission to duplicate a value-dependent carrier;
+its actual producer or exact ingress must provide the existing value proof.
+
 Entry state/event roles contain nominal identity, semantic identity and layout;
 their version-one encoding contains no copied schema. Initializer values,
 incoming events, committed reducer state and restored root values are admitted

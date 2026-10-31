@@ -2018,6 +2018,27 @@ impl FinalSemanticAnalysis {
         }
     }
 
+    /// Substitutes the original joined Rust declaration under the consumer's
+    /// shared allowance. No nominal metadata is reconstructed or copied aside.
+    pub(super) fn instantiate_accepted_rust_nominal<C: crate::types::TypeProjectionControl>(
+        &self,
+        nominal: &crate::types::AcceptedNominalType,
+        control: &mut C,
+    ) -> Result<
+        Option<crate::env::rust_metadata::InstantiatedRustTypeMetadata>,
+        crate::env::rust_metadata::RustMetadataInstantiationError<C::Error>,
+    > {
+        match &self.authority {
+            FinalSemanticAnalysisAuthority::Registered(world) => world
+                .environment
+                .rust_metadata()
+                .instantiate_with_control(nominal, control)
+                .map(Some),
+            #[cfg(test)]
+            FinalSemanticAnalysisAuthority::Fixture => Ok(None),
+        }
+    }
+
     pub(super) fn character_dialogue_policy_types(
         &self,
     ) -> Option<&arcweft_dialogue::CharacterDialoguePolicyTypeGraph> {

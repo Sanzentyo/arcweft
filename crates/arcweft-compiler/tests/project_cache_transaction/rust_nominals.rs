@@ -340,3 +340,107 @@ fn source_rust_nominals_preserve_shapes_recursion_and_exact_arguments_in_native_
         }
     }
 }
+
+#[test]
+fn recursive_rust_nominal_handler_capture_executes_with_its_original_program() {
+    use arcweft_bundle::resource_codec::{
+        ViewProductValidationLimits, view::ViewProgramInstruction,
+    };
+    use arcweft_core::{
+        awbc::{product_step::AwbcProductProgram, verify::AwbcVerifyBudget},
+        plan::RuntimeTaskSourceArtifactLimits,
+        program_types::RuntimeProgramTypes,
+        pure::{RuntimeProgramExecutionContext, VmRuntimePureCallBackend},
+        task::RuntimeProgramOwner,
+        value::AwbcRuntimeValueSnapshot,
+    };
+
+    let source = r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> String { return "done" }
+view Main(node: Node<bool>) {
+    Button().on_click { let observed = node; let again = node; () }
+}
+"#;
+    let (project, registration, env) =
+        fixture_with_manifest(source, "rust-nominal-handler-capture", &fixture_manifest());
+    let compiled = AttachedCompiler::new(&project)
+        .compile(
+            &project,
+            &context(env, registration),
+            &mut RecordingCache::default(),
+        )
+        .expect("a recursive Rust data capture is snapshot-retainable");
+    let view = compiled.view_product().product().program().unwrap();
+    let handler = view
+        .resource()
+        .instructions
+        .iter()
+        .find_map(|instruction| match instruction {
+            ViewProgramInstruction::BindHandler { handler, .. } => Some(*handler),
+            _ => None,
+        })
+        .unwrap();
+    let specification = view.resource().handler_ref(handler).unwrap();
+    assert_eq!(specification.captures.len(), 1);
+    assert_eq!(specification.captures[0].parameter().unwrap().value(), 0);
+    let lowered = compiled.runtime_plan();
+    let plan = Arc::new(lowered.plan.clone());
+    let binding = plan
+        .pure_programs()
+        .iter()
+        .find(|binding| binding.program() == handler)
+        .unwrap();
+    let [identity] = binding.input_types() else {
+        panic!("the retained handler has exactly its Rust capture input");
+    };
+    let limits = RuntimeSchemaLimits::engine_default();
+    let node = |next| {
+        RuntimeProgramTypes::Plan(&plan)
+            .try_record_value(*identity, vec![RuntimeValue::Bool(true), next], limits)
+            .unwrap()
+    };
+    let input = node(RuntimeValue::option_some(node(RuntimeValue::option_none())));
+    let native_owner = RuntimeProgramOwner::Plan(Arc::clone(&plan));
+    let image =
+        AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&input, &native_owner).unwrap();
+    let awbc = AwbcLowerer::new(&plan, &lowered.dialogue_content_catalog, "rust-capture")
+        .lower()
+        .unwrap()
+        .program;
+    let awbc = Arc::new(
+        AwbcProgram::decode_canonical(
+            &awbc.encode_canonical().unwrap(),
+            AwbcDecodeBudget::default(),
+        )
+        .unwrap(),
+    );
+    let authority = view
+        .task_source_authority(ViewProductValidationLimits::default())
+        .unwrap();
+    let admitted = AwbcProductProgram::admit(
+        Arc::clone(&awbc),
+        AwbcVerifyBudget::default(),
+        arcweft_core::awbc::verify::AwbcVerifyContext {
+            require_entrypoint: false,
+            ..Default::default()
+        },
+        RuntimeTaskSourceArtifactLimits::default(),
+        Some(&authority),
+    )
+    .unwrap();
+    let awbc_owner = RuntimeProgramOwner::Awbc(Arc::clone(&awbc));
+    let restored = image.into_runtime_value_for_program(&awbc_owner).unwrap();
+    let native = RuntimeProgramExecutionContext::native(plan, Default::default())
+        .evaluate_pure_program(handler, &[input], &mut VmRuntimePureCallBackend::default())
+        .unwrap();
+    let decoded = RuntimeProgramExecutionContext::awbc(admitted, Default::default())
+        .evaluate_pure_program(
+            handler,
+            &[restored],
+            &mut VmRuntimePureCallBackend::default(),
+        )
+        .unwrap();
+    assert_eq!(native, RuntimeValue::Tuple(vec![RuntimeValue::Unit]));
+    assert_eq!(decoded, native);
+}

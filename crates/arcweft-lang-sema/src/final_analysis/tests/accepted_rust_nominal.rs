@@ -139,6 +139,12 @@ fn structural_rust_retention_uses_the_accepted_nominal_schema_owner() {
         )
         .unwrap();
     let ty = TypeKind::AcceptedNominal(nominal);
+    assert_eq!(
+        analysis
+            .type_copy_capability(&ty, &Default::default())
+            .unwrap(),
+        super::super::CheckedTypeCopyCapability::Unrestricted
+    );
     let certificate = fixture
         .registered
         .checked_ownership(&analysis, &ty, CheckedOwnershipLimits::PRODUCTION)
@@ -187,6 +193,12 @@ fn recursive_rust_retention_closes_the_graph_and_checks_the_complete_value() {
         )
         .unwrap();
     let ty = TypeKind::AcceptedNominal(nominal);
+    assert_eq!(
+        analysis
+            .type_copy_capability(&ty, &Default::default())
+            .unwrap(),
+        super::super::CheckedTypeCopyCapability::Unrestricted
+    );
     let certificate = fixture
         .registered
         .checked_ownership(&analysis, &ty, CheckedOwnershipLimits::PRODUCTION)
@@ -346,6 +358,12 @@ fn rust_retention_keeps_function_and_need_value_certificates_closed() {
     )
     .unwrap();
     assert_eq!(
+        analysis
+            .type_copy_capability(&ty, &Default::default())
+            .unwrap(),
+        super::super::CheckedTypeCopyCapability::ValueDependent
+    );
+    assert_eq!(
         classifier.classify(&ty).unwrap_err().rejection(),
         Some(RuntimeOwnershipRejection::FunctionValueRequiresCertificate)
     );
@@ -358,6 +376,12 @@ fn rust_retention_keeps_function_and_need_value_certificates_closed() {
     let need = TypeKind::AcceptedNominal(
         input.nominal("Owned", vec![TypeKind::Need(Box::new(TypeKind::Bool))]),
     );
+    assert_eq!(
+        analysis
+            .type_copy_capability(&need, &Default::default())
+            .unwrap(),
+        super::super::CheckedTypeCopyCapability::Unavailable
+    );
     assert!(
         fixture
             .registered
@@ -369,6 +393,41 @@ fn rust_retention_keeps_function_and_need_value_certificates_closed() {
         .registered
         .checked_ownership(&analysis, &valid, CheckedOwnershipLimits::PRODUCTION)
         .unwrap();
+}
+
+#[test]
+fn copy_type_capability_bounds_the_complete_enclosing_traversal() {
+    use super::super::{CheckedLocalUseError, CheckedTypeCopyCapability};
+    let input = MetadataFixture::new();
+    let fixture = input.build(vec![("Node", 1, input.recursive_kind())], None);
+    let analysis = analyze(&fixture).unwrap();
+    let wrap =
+        |depth: u64| (0..depth).fold(TypeKind::Bool, |item, _| TypeKind::Option(Box::new(item)));
+    let depth = crate::ownership::CheckedOwnershipLimits::PRODUCTION.max_recursion_depth;
+    assert_eq!(
+        analysis
+            .type_copy_capability(&wrap(depth), &Default::default())
+            .unwrap(),
+        CheckedTypeCopyCapability::Unrestricted
+    );
+    assert_eq!(
+        analysis.type_copy_capability(&wrap(depth + 1), &Default::default()),
+        Err(CheckedLocalUseError::TypeOwnershipWorkLimit)
+    );
+    let nodes = crate::ownership::CheckedOwnershipLimits::PRODUCTION.max_type_nodes;
+    let repeated = vec![TypeKind::Bool; usize::try_from(nodes).unwrap()];
+    assert_eq!(
+        analysis.type_copy_capability(&TypeKind::Tuple(repeated), &Default::default()),
+        Err(CheckedLocalUseError::TypeOwnershipWorkLimit)
+    );
+    let valid = TypeKind::AcceptedNominal(input.nominal("Node", vec![TypeKind::Bool]));
+    assert_eq!(
+        analysis
+            .type_copy_capability(&valid, &Default::default())
+            .unwrap(),
+        CheckedTypeCopyCapability::Unrestricted,
+        "a failed traversal must not retain partial state in the analysis"
+    );
 }
 
 #[test]
