@@ -13633,3 +13633,21 @@ red1は追加testのProductStepBudgets参照先が誤ったprivate moduleだっ�
 [全結果・公開SHA・54 raw artifact／12490623 bytes](acceptance-evidence/task-presentation-activation-host-owner-validation.json)に修復前の不成功と最終全件・品質検査・公開patchを保持する。先行の2,194件runと今回の2,195件runを加算しない。Cargo生成物の移動・コピー・退避と追加cleanは行っていない。
 
 Supersedes: 現状一覧の「activation Host失敗」を残作業から削除する根拠は、上記の再現・元bankへの接続・同policy拒否／再試行・receipt確定の検証である。全体goalの未完了を理由に、完了したcontrol failure・deferred子・VM／lifecycle／取消やGeneric Matchを未完了へ戻さない。outer step全体・Return／select／有効Goto・他のprotocolエラー・Native実借用parent・Source ViewValue／driver・置換／画像parity・最終matrixは別の境界として[current-status](current-status.md)一か所へまとめ、公開済み履歴prefixと旧raw原本を維持する。
+
+## 実scopeのbank別grantと登録roleの分離 — 2026-10-31
+
+Return／Dialogue結果が別bankへ渡る際、単一grantしか持てない実scopeでは元tokenを保った受取りが成立しないため、scope自身がbank別grantを保持する契約へ移行した。tokenを別bankとして再発行せず、ledgerがbody／leaseを所有し、実scope bindingが全grantを保持する。一方、frameの登録先bankは所有中の資源bankとは別の権限であり、実際のRoot／Dialogue／親子roleから認証する。現行保存仕様を同じversion 1で更新し、旧single-grant readerは残さない。
+
+checkpoint 935fa74803b1200f19eaf73dd08447a0a1b7dabd（parent c7a499b6c1ddef9a58be818c33ebb24985c49b55、tree 4f5622a915248c1f9d14e05bfcfb522a570a6240、明示19 path、patch SHA256 a839a9059b1ed2804c2598d42cffc7ac0cdc27a9d29af0db67e3c75e27123d8b）を通常pushした。scope identity／anchor／live-inert admissionを新しいscope.rsの同じ所有者へまとめ、元のbank-row codecを共通resource ownerへ移して再利用した。重複bankは次のgrantをdecodeする前に拒否する。終了は全scope・全bank・総回収容量を先に検査し、許可後はscopeのunwind順、同一scope内はbank順で回収する。全bankが空になったscope bindingだけを除く。
+
+owner1は旧private trait呼出し2か所の引数数が合わずcatalog compile終了101、runtime未実行。assertionを変更せず呼出しを移行した。owner2はCore全2,198件で2,194 PASS／4 FAIL／除外0。旧single-grant wire fixtureのmutation先を実際のbank行へ変更したほか、scope内の資源bankとの一致に依存していたRoot／Dialogue登録先の保護を、実行role自身の検査へ移した。AWBC intrinsic root、既存／staged line子の実owner、Nativeのquiescent main Rootが同じ規則を使う。元の偽装・anchor・途中回収拒否assertionは維持した。
+
+focus3は追加3件と旧4失敗の計7 PASS／2,138選択外で、この限定件数を最終全件へ加算しない。owner4は公開checkpointと完全一致する入力の全2,198件で2,196 PASS／2 FAIL／除外0。旧fixtureは、独立して妥当なforeign rootとしてEntryをDialogue bankに配置していた。強化した登録roleと両立するforeign Function rootへ移し、その単独admission成功を新たに明示して、元のactivation fiber root differsという正確な拒否を維持した。もう1件はjoined line子へRoot fiberのコピーを置いていたため、実際のDialogue子の発行APIへ移行し、子取消・activation除去・親Trapのassertionを維持した。
+
+fixture修復Source 23cfb6bdbcb908873420e0055f304a0efe456b1d（parent 935fa74803b1200f19eaf73dd08447a0a1b7dabd、tree 8cb42ef68009f82f5d1ad0e0a1bc751bbf5f72ec、1 path、patch SHA256 b33c0db6d73be137c4f10db26743df2dc7c05f6cb8b29461669d0bcdc949da7b）を通常pushし、両公開のremote／全blob／明示した旧codec pathの削除・index emptyを照合した。owner5は4,028凍結入力のCore全2,198／2,198 PASS・除外0。実Native env scopeでRoot／Dialogue両bankのgrant、同じ局所発行座標でも異なる元token、共有admission・scope wire・bank rollbackと全bodyを保持する。handles=2／scopes=4の同policyで2回の容量拒否時にbank全像と両grantを保持し、旧回収項目のACKを模した解放後に元tokenをbank順で一度だけ回収する。重複bankの後続grant前拒否と空capsule拒否後の同admission失敗固定も確認した。
+
+同じ4,028入力で全97 packageのworkspace全target／全feature check・Clippy、Core default全target check・doctest78／78・fmt45 path・構造gateは各終了0。crate内のRust 3,115 fileを凍結集合と照合し、未収録0。構造は97 package・3,264 files・3,134 Rust files・1,773,885 physical LOC・382 review trigger・blocking 0。20明示変更path（旧codec削除を含む）と新規352 LOCのscope ownerの責任・依存・実LOCをレビューした。新たな永続owner、fallback、Cargo edge、wire version fork、I/O境界は加えていない。警告と元14 tracked／6 untracked WIPを保持した。
+
+[全公開SHA・102 raw artifact／22022291 bytes](acceptance-evidence/task-presentation-scope-grants-owner-validation.json)に初期compile失敗・各full run・限定run・最終workspace gate・公開patchを保持する。owner1／owner2の各13変更sourceは編集前に保存し、元bytesとsource-freeze SHA256の完全一致を確認した。focus3／owner4は公開checkpointの同じsource、owner5は修復Sourceと保持WIPに対応する。各epochを一つのrunへ合算しない。共有bank-row codecのRust source移動以外に、Cargo生成物の移動・コピー・退避と追加cleanは行っていない。
+
+Supersedes: 受け取り先に単一bankしか持てないという前提を削除し、複数bankのscope grant基盤を検証済みとして[current-status](current-status.md)一か所へ反映する。Return／Select／Gotoの実際のescaping Handle移動や元Product root結果の保持はまだ接続しておらず、今回の基盤受入をその完了と読み替えない。Native実借用parentの完全contour、Source ViewValue／driver、置換・画像parity・最終reverse／target matrixも別境界である。全体goalの未完了を理由にGeneric Matchや先行の取消／VM／lifecycle／control／Hostの受入を戻さず、既存の履歴prefixとraw原本を維持する。

@@ -1,0 +1,210 @@
+[
+  {
+    "attempt": "owner1",
+    "path": "crates/arcweft-core/src/awbc/fiber/scope.rs",
+    "source": "scope-grants-owner1-source/crates/arcweft-core/src/awbc/fiber/scope.rs",
+    "bytes": 33303,
+    "sha256": "0243905bd66de57e0f7643831e111f894901f73cd54e99dd7decbcad82f5ab75",
+    "drift": 0
+  },
+  {
+    "attempt": "owner1",
+    "path": "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+    "source": "scope-grants-owner1-source/crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+    "bytes": 28223,
+    "sha256": "ac38ba85840024eb9040b4aa843a6c03ff469ac792ac9fcb3f7dc8090774a135",
+    "drift": 0
+  },
+  {
+    "attempt": "owner1",
+    "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+    "source": "scope-grants-owner1-source/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+    "bytes": 37210,
+    "sha256": "1ffb87ad06a7fd885a6759a210bd9653e07e68f39acdde61de45a025f31b5879",
+    "drift": 0
+  },
+  {
+    "attempt": "owner1",
+    "path": "crates/arcweft-core/src/engine/rollback.rs",
+    "source": "scope-grants-owner1-source/crates/arcweft-core/src/engine/rollback.rs",
+    "bytes": 47570,
+    "sha256": "e7fe32bacc0f24472c76c95196a872cda524cfaf8864d007d790648034e5bae3",
+    "drift": 0
+  },
+  {
+    "attempt": "owner1",
+    "path": "crates/arcweft-core/src/presentation/resources.rs",
+    "source": "scope-grants-owner1-source/crates/arcweft-core/src/presentation/resources.rs",
+    "bytes": 18072,
+    "sha256": "f8f9e238863dc285994d5c413779af45dd5b87c2b83001f045a58ccce3c69aad",
+    "drift": 0
+  },
+  {
+    "attempt": "owner1",
+    "path": "crates/arcweft-core/src/presentation/resources/bank_rows.rs",
+    "source": "scope-grants-owner1-source/crates/arcweft-core/src/presentation/resources/bank_rows.rs",
+    "bytes": 2906,
+    "sha256": "352d0c45166a254ab7878ea2be5481ec3a5d53d98f7a76edfb2ef1056b38198d",
+    "drift": 0
+  },
+  {
+    "attempt": "owner1",
+    "path": "crates/arcweft-core/src/presentation/resources/banks.rs",
+    "source": "scope-grants-owner1-source/crates/arcweft-core/src/presentation/resources/banks.rs",
+    "bytes": 15326,
+    "sha256": "c9b7a77520a2654ddbee4eeb745ac24bc8f684f3d39406b9d5b74a3c41792b16",
+    "drift": 0
+  },
+  {
+    "attempt": "owner1",
+    "path": "crates/arcweft-core/src/presentation/resources/scope.rs",
+    "source": "scope-grants-owner1-source/crates/arcweft-core/src/presentation/resources/scope.rs",
+    "bytes": 12427,
+    "sha256": "6352763beb2c8ab9e55e2bd97bef4676ac7652c7ad46874ec85cff45237dfc2f",
+    "drift": 0
+  },
+  {
+    "attempt": "owner1",
+    "path": "crates/arcweft-core/src/presentation/resources/storage.rs",
+    "source": "scope-grants-owner1-source/crates/arcweft-core/src/presentation/resources/storage.rs",
+    "bytes": 17149,
+    "sha256": "9b88611f67ba813ba6ed28b8e87fdfc741bf4f2fc0091daed18b56f531033073",
+    "drift": 0
+  },
+  {
+    "attempt": "owner1",
+    "path": "crates/arcweft-core/src/presentation/resources/tests.rs",
+    "source": "scope-grants-owner1-source/crates/arcweft-core/src/presentation/resources/tests.rs",
+    "bytes": 20335,
+    "sha256": "aa2979115f970624d49dcfec8a690c12ffb44de91ccdc0ddb9f96f61cbd83095",
+    "drift": 0
+  },
+  {
+    "attempt": "owner1",
+    "path": "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+    "source": "scope-grants-owner1-source/crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+    "bytes": 17784,
+    "sha256": "1c17b0d6f404e5b29118326ec27fdcd7cdb7f169abb1e326b1d4fc80956f34ba",
+    "drift": 0
+  },
+  {
+    "attempt": "owner1",
+    "path": "crates/arcweft-core/src/presentation/resources/banks/tests/scope_grants.rs",
+    "source": "scope-grants-owner1-source/crates/arcweft-core/src/presentation/resources/banks/tests/scope_grants.rs",
+    "bytes": 7134,
+    "sha256": "90c23b093d926f48252bccbc2b8522a078328a09d1a2668d52e2e0186b3b05ca",
+    "drift": 0
+  },
+  {
+    "attempt": "owner1",
+    "path": "crates/arcweft-core/src/value/awbc_save/retained_admission.rs",
+    "source": "scope-grants-owner1-source/crates/arcweft-core/src/value/awbc_save/retained_admission.rs",
+    "bytes": 27087,
+    "sha256": "da4f1c04f2160f9949372d99a24802ca7811d1f94c5c8b0bf7c1b96d0eae485d",
+    "drift": 0
+  },
+  {
+    "attempt": "owner2",
+    "path": "crates/arcweft-core/src/awbc/fiber/scope.rs",
+    "source": "scope-grants-owner2-source/crates/arcweft-core/src/awbc/fiber/scope.rs",
+    "bytes": 33303,
+    "sha256": "0243905bd66de57e0f7643831e111f894901f73cd54e99dd7decbcad82f5ab75",
+    "drift": 0
+  },
+  {
+    "attempt": "owner2",
+    "path": "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+    "source": "scope-grants-owner2-source/crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+    "bytes": 28121,
+    "sha256": "e34e52c064f5e2f3d171bdb4a5992c11ce991a57f1ccdc4268841b9864e8d721",
+    "drift": 0
+  },
+  {
+    "attempt": "owner2",
+    "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+    "source": "scope-grants-owner2-source/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+    "bytes": 37210,
+    "sha256": "1ffb87ad06a7fd885a6759a210bd9653e07e68f39acdde61de45a025f31b5879",
+    "drift": 0
+  },
+  {
+    "attempt": "owner2",
+    "path": "crates/arcweft-core/src/engine/rollback.rs",
+    "source": "scope-grants-owner2-source/crates/arcweft-core/src/engine/rollback.rs",
+    "bytes": 47570,
+    "sha256": "e7fe32bacc0f24472c76c95196a872cda524cfaf8864d007d790648034e5bae3",
+    "drift": 0
+  },
+  {
+    "attempt": "owner2",
+    "path": "crates/arcweft-core/src/presentation/resources.rs",
+    "source": "scope-grants-owner2-source/crates/arcweft-core/src/presentation/resources.rs",
+    "bytes": 18072,
+    "sha256": "f8f9e238863dc285994d5c413779af45dd5b87c2b83001f045a58ccce3c69aad",
+    "drift": 0
+  },
+  {
+    "attempt": "owner2",
+    "path": "crates/arcweft-core/src/presentation/resources/bank_rows.rs",
+    "source": "scope-grants-owner2-source/crates/arcweft-core/src/presentation/resources/bank_rows.rs",
+    "bytes": 2906,
+    "sha256": "352d0c45166a254ab7878ea2be5481ec3a5d53d98f7a76edfb2ef1056b38198d",
+    "drift": 0
+  },
+  {
+    "attempt": "owner2",
+    "path": "crates/arcweft-core/src/presentation/resources/banks.rs",
+    "source": "scope-grants-owner2-source/crates/arcweft-core/src/presentation/resources/banks.rs",
+    "bytes": 15326,
+    "sha256": "c9b7a77520a2654ddbee4eeb745ac24bc8f684f3d39406b9d5b74a3c41792b16",
+    "drift": 0
+  },
+  {
+    "attempt": "owner2",
+    "path": "crates/arcweft-core/src/presentation/resources/scope.rs",
+    "source": "scope-grants-owner2-source/crates/arcweft-core/src/presentation/resources/scope.rs",
+    "bytes": 12427,
+    "sha256": "6352763beb2c8ab9e55e2bd97bef4676ac7652c7ad46874ec85cff45237dfc2f",
+    "drift": 0
+  },
+  {
+    "attempt": "owner2",
+    "path": "crates/arcweft-core/src/presentation/resources/storage.rs",
+    "source": "scope-grants-owner2-source/crates/arcweft-core/src/presentation/resources/storage.rs",
+    "bytes": 17149,
+    "sha256": "9b88611f67ba813ba6ed28b8e87fdfc741bf4f2fc0091daed18b56f531033073",
+    "drift": 0
+  },
+  {
+    "attempt": "owner2",
+    "path": "crates/arcweft-core/src/presentation/resources/tests.rs",
+    "source": "scope-grants-owner2-source/crates/arcweft-core/src/presentation/resources/tests.rs",
+    "bytes": 20335,
+    "sha256": "aa2979115f970624d49dcfec8a690c12ffb44de91ccdc0ddb9f96f61cbd83095",
+    "drift": 0
+  },
+  {
+    "attempt": "owner2",
+    "path": "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+    "source": "scope-grants-owner2-source/crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+    "bytes": 17784,
+    "sha256": "1c17b0d6f404e5b29118326ec27fdcd7cdb7f169abb1e326b1d4fc80956f34ba",
+    "drift": 0
+  },
+  {
+    "attempt": "owner2",
+    "path": "crates/arcweft-core/src/presentation/resources/banks/tests/scope_grants.rs",
+    "source": "scope-grants-owner2-source/crates/arcweft-core/src/presentation/resources/banks/tests/scope_grants.rs",
+    "bytes": 7134,
+    "sha256": "90c23b093d926f48252bccbc2b8522a078328a09d1a2668d52e2e0186b3b05ca",
+    "drift": 0
+  },
+  {
+    "attempt": "owner2",
+    "path": "crates/arcweft-core/src/value/awbc_save/retained_admission.rs",
+    "source": "scope-grants-owner2-source/crates/arcweft-core/src/value/awbc_save/retained_admission.rs",
+    "bytes": 27087,
+    "sha256": "da4f1c04f2160f9949372d99a24802ca7811d1f94c5c8b0bf7c1b96d0eae485d",
+    "drift": 0
+  }
+]

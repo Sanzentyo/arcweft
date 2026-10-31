@@ -1,0 +1,197 @@
+{
+  "version": 1,
+  "base": "c7a499b6c1ddef9a58be818c33ebb24985c49b55",
+  "inspectedMain": "23cfb6bdbcb908873420e0055f304a0efe456b1d",
+  "heldTracked": 14,
+  "heldUntracked": 6,
+  "rows": [
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber.rs",
+      "owner": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 289735,
+      "basePhysicalLoc": 7599,
+      "bytes": 290371,
+      "physicalLoc": 7615
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber/scope.rs",
+      "owner": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 34152,
+      "basePhysicalLoc": 907,
+      "bytes": 33563,
+      "physicalLoc": 893
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+      "owner": "arcweft-core",
+      "classification": "test",
+      "baseBytes": 28137,
+      "basePhysicalLoc": 776,
+      "bytes": 28137,
+      "physicalLoc": 778
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+      "owner": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 187129,
+      "basePhysicalLoc": 4398,
+      "bytes": 187631,
+      "physicalLoc": 4408
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+      "owner": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 14023,
+      "basePhysicalLoc": 368,
+      "bytes": 14034,
+      "physicalLoc": 368
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+      "owner": "arcweft-core",
+      "classification": "test",
+      "baseBytes": 317217,
+      "basePhysicalLoc": 8021,
+      "bytes": 317744,
+      "physicalLoc": 8035
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "owner": "arcweft-core",
+      "classification": "test",
+      "baseBytes": 37187,
+      "basePhysicalLoc": 963,
+      "bytes": 37210,
+      "physicalLoc": 963
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/rollback.rs",
+      "owner": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 47979,
+      "basePhysicalLoc": 1186,
+      "bytes": 47768,
+      "physicalLoc": 1178
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources.rs",
+      "owner": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 27088,
+      "basePhysicalLoc": 794,
+      "bytes": 18072,
+      "physicalLoc": 533
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/bank_rows.rs",
+      "owner": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 0,
+      "basePhysicalLoc": 0,
+      "bytes": 2906,
+      "physicalLoc": 70
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/banks.rs",
+      "owner": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 14594,
+      "basePhysicalLoc": 397,
+      "bytes": 15326,
+      "physicalLoc": 416
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/banks/bank_rows.rs",
+      "owner": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 2908,
+      "basePhysicalLoc": 70,
+      "bytes": 0,
+      "physicalLoc": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+      "owner": "arcweft-core",
+      "classification": "test",
+      "baseBytes": 17765,
+      "basePhysicalLoc": 570,
+      "bytes": 17784,
+      "physicalLoc": 572
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/banks/tests/scope_grants.rs",
+      "owner": "arcweft-core",
+      "classification": "test",
+      "baseBytes": 0,
+      "basePhysicalLoc": 0,
+      "bytes": 7134,
+      "physicalLoc": 213
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/execution.rs",
+      "owner": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 6150,
+      "basePhysicalLoc": 161,
+      "bytes": 6539,
+      "physicalLoc": 174
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/scope.rs",
+      "owner": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 0,
+      "basePhysicalLoc": 0,
+      "bytes": 12427,
+      "physicalLoc": 352
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/storage.rs",
+      "owner": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 16845,
+      "basePhysicalLoc": 467,
+      "bytes": 17149,
+      "physicalLoc": 474
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/tests.rs",
+      "owner": "arcweft-core",
+      "classification": "test",
+      "baseBytes": 20272,
+      "basePhysicalLoc": 666,
+      "bytes": 20335,
+      "physicalLoc": 669
+    },
+    {
+      "path": "crates/arcweft-core/src/value/awbc_save/retained_admission.rs",
+      "owner": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 26589,
+      "basePhysicalLoc": 718,
+      "bytes": 27087,
+      "physicalLoc": 728
+    },
+    {
+      "path": "docs/02-runtime/save-replay.md",
+      "owner": "specification",
+      "classification": "specification",
+      "baseBytes": 59246,
+      "basePhysicalLoc": 747,
+      "bytes": 60170,
+      "physicalLoc": 757
+    }
+  ],
+  "disposition": [
+    "The complete domain permits a physical scope to receive resources from multiple issuing banks. Keeping one grant or renaming tokens would prevent real cross-bank Return/Dialogue transfer. The same scope binding now owns a bank-indexed grant map; it is the only grant authority and the ledger remains the sole body/lease owner.",
+    "The new scope.rs owns scope identities, anchors, borrowed grant targets and live/inert scope admission. Its growth above 300 LOC is cohesive with this domain; ledger slot/lease behavior stays in resources.rs. No public API widening was added for physical splitting.",
+    "The original bank-row codec was moved to the common resource owner and reused for both bank and scope maps. Duplicate keys are rejected before reading the next owned record. The old path and old single-grant reader are removed; the enclosing contract stays version 1.",
+    "Registration bank authority is independent of the banks of held grants. The shared execution role owns Root/Dialogue bank checks. AWBC intrinsic roots, actual existing/staged line-child owners, and quiescent Native root execution use that rule. Program parent links remain the actual execution contour responsibility.",
+    "Every grant across the whole actual scope contour and total pending-body capacity is checked before retirement. Retirements follow scope unwind order and bank order within a scope. Native env and AWBC live/inert snapshots retain the same grant grammar and original program lease.",
+    "This cut is the receiving-scope foundation. It does not implement Return/select/Goto transfer, Native borrowed-parent contour, Source ViewValue ABI or final reverse/target acceptance. No fallback owner, wire version fork, new Cargo edge or I/O boundary was added."
+  ]
+}

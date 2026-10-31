@@ -1,0 +1,7 @@
+From https://github.com/Sanzentyo/arcweft
+ * branch                main       -> FETCH_HEAD
+[main 23cfb6bdb] test(core): use admitted dialogue identities in scope grant fixtures
+ 1 file changed, 16 insertions(+), 2 deletions(-)
+To https://github.com/Sanzentyo/arcweft.git
+   935fa7480..23cfb6bdb  HEAD -> main
+{"commit":"23cfb6bdbcb908873420e0055f304a0efe456b1d","parent":"935fa74803b1200f19eaf73dd08447a0a1b7dabd","tree":"8cb42ef68009f82f5d1ad0e0a1bc751bbf5f72ec","paths":1,"blobDrift":0,"originalWip":14,"separatelyHeld":0,"patchSha256":"b33c0db6d73be137c4f10db26743df2dc7c05f6cb8b29461669d0bcdc949da7b","indexEmpty":true}

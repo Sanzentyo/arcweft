@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "base": "c7a499b6c1ddef9a58be818c33ebb24985c49b55",
+  "run": "presentation-scope-grants-20261031.owner2.runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [  75.501s] 2198 tests run: 2194 passed, 4 failed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 2198,
+  "passed": 2194,
+  "failed": 4,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4028,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::fiber::tests::presentation::awbc_scope_wire_requires_custody_and_rejects_exchanged_or_forged_headers"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::fiber::tests::presentation::live_and_saved_scope_grants_reject_a_forged_fiber_bank_before_copy"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::presentation::cancellation::later_child_bank_forgery_rejects_before_any_cancellation_or_grant_move"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "engine::presentation_tests::rollback_rejects_missing_ledger_duplicate_retirement_and_foreign_program"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-31T14:12:33.3674914Z"
+}

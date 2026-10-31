@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "23cfb6bdbcb908873420e0055f304a0efe456b1d",
+  "command": [
+    "clippy",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "exitCode": 0,
+  "sourceInputs": 4028,
+  "sourceDrift": 0,
+  "startedAt": "2026-10-31T14:28:38.0163746Z",
+  "finishedAt": "2026-10-31T14:30:49.9292959Z"
+}

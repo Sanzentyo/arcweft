@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "935fa74803b1200f19eaf73dd08447a0a1b7dabd",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-scope-grants-20261031.owner5.runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-31T14:23:18.9599880Z",
+  "finishedAt": "2026-10-31T14:23:37.9125704Z"
+}

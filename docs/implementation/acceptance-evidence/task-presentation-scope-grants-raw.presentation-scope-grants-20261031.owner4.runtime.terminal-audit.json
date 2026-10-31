@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "base": "c7a499b6c1ddef9a58be818c33ebb24985c49b55",
+  "run": "presentation-scope-grants-20261031.owner4.runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [  74.808s] 2198 tests run: 2196 passed, 2 failed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 2198,
+  "passed": 2196,
+  "failed": 2,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4028,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::dialogue_activation_rejects_an_independently_valid_foreign_root_before_copy"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::product_dialogue_failure_cancels_joined_child_before_abandoning"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-31T14:20:56.5995010Z"
+}

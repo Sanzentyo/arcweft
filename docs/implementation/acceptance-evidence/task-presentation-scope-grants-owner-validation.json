@@ -1,0 +1,1322 @@
+{
+  "version": 1,
+  "recordedAt": "2026-10-31T14:32:45.9328818Z",
+  "inspectedMain": "23cfb6bdbcb908873420e0055f304a0efe456b1d",
+  "scope": "Bank-indexed grants of one physical scope, shared live/inert admission, atomic multibank retirement and independent registration-role checks. Receiving-scope foundation only.",
+  "sourcePublication": {
+    "version": 1,
+    "commit": "23cfb6bdbcb908873420e0055f304a0efe456b1d",
+    "parent": "935fa74803b1200f19eaf73dd08447a0a1b7dabd",
+    "tree": "8cb42ef68009f82f5d1ad0e0a1bc751bbf5f72ec",
+    "remote": "23cfb6bdbcb908873420e0055f304a0efe456b1d",
+    "paths": [
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+        "blob": "1cfb4d3031c83870c637565f8d2353ea7cf89917"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "b33c0db6d73be137c4f10db26743df2dc7c05f6cb8b29461669d0bcdc949da7b",
+    "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-10-31T14:25:20.9793826Z"
+  },
+  "initialCheckpointPublication": {
+    "version": 1,
+    "commit": "935fa74803b1200f19eaf73dd08447a0a1b7dabd",
+    "parent": "c7a499b6c1ddef9a58be818c33ebb24985c49b55",
+    "tree": "4f5622a915248c1f9d14e05bfcfb522a570a6240",
+    "remote": "935fa74803b1200f19eaf73dd08447a0a1b7dabd",
+    "paths": [
+      {
+        "path": "crates/arcweft-core/src/awbc/fiber.rs",
+        "blob": "3a4fdc16c82a2796773bb0214a1d5e00339e250b"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/fiber/scope.rs",
+        "blob": "cbe5f416cc1a328cb6a9658a0ae85d8db80b5e66"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+        "blob": "1489242fd1d683832c121ba2885c03e76743f5e0"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+        "blob": "ba712efedd1b267230ad739925496de311f8e4ab"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+        "blob": "3c40089ba9ef8e03de97fd1cbdbe405982b9dd33"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+        "blob": "2ecfa2e138e2644f6a82b920c33ecaa2b7acecc6"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/rollback.rs",
+        "blob": "4214d7db059a2512643313444ca0b72e3181e0dc"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources.rs",
+        "blob": "1029f054fb87ff809d690f8d182df56fb934be4e"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/bank_rows.rs",
+        "blob": "e1ba45525ea6e427b208bb2ccf1b0852d3973e5b"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/banks.rs",
+        "blob": "a4a4e07ac1ec9640b7c1d8f5db75a881bc4acbe9"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+        "blob": "9b4fc03fa2d46fedf82897d89c2d40b30778b27b"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/banks/tests/scope_grants.rs",
+        "blob": "a45786da36024f698fffeefe069a768d2ddd6b9f"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/execution.rs",
+        "blob": "15b05142757e01320540386f61663fa86d6a293d"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/scope.rs",
+        "blob": "b3be0b7020945f4e3b8e8be3996f96bc56b082e2"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/storage.rs",
+        "blob": "0fcfaee7906acf64d434c42305d6d258e446e85f"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/tests.rs",
+        "blob": "f18d623d6d255fd676285fba839db467fc26c643"
+      },
+      {
+        "path": "crates/arcweft-core/src/value/awbc_save/retained_admission.rs",
+        "blob": "7f3d19106c791440e87fc6ae668077d066792503"
+      },
+      {
+        "path": "docs/02-runtime/save-replay.md",
+        "blob": "b0c0113533feac13d482ae3ab9fb47bec95b5f4b"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/banks/bank_rows.rs",
+        "blob": null
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "a839a9059b1ed2804c2598d42cffc7ac0cdc27a9d29af0db67e3c75e27123d8b",
+    "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-10-31T14:19:06.7883001Z"
+  },
+  "workingTree": {
+    "heldTracked": 14,
+    "heldUntracked": 6,
+    "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+    "coreDirty": false
+  },
+  "owner": {
+    "version": 1,
+    "base": "935fa74803b1200f19eaf73dd08447a0a1b7dabd",
+    "run": "presentation-scope-grants-20261031.owner5.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  16.914s] 2198 tests run: 2198 passed, 0 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2198,
+    "passed": 2198,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4028,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-31T14:23:38.8303144Z"
+  },
+  "ownerBinaryDrift": 0,
+  "ownerQualitySourceDrift": 0,
+  "quality": [
+    {
+      "kind": "workspace-check",
+      "receipt": {
+        "version": 1,
+        "base": "23cfb6bdbcb908873420e0055f304a0efe456b1d",
+        "command": [
+          "check",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4028,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T14:25:24.0554036Z",
+        "finishedAt": "2026-10-31T14:28:37.5800581Z"
+      }
+    },
+    {
+      "kind": "clippy",
+      "receipt": {
+        "version": 1,
+        "base": "23cfb6bdbcb908873420e0055f304a0efe456b1d",
+        "command": [
+          "clippy",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4028,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T14:28:38.0163746Z",
+        "finishedAt": "2026-10-31T14:30:49.9292959Z"
+      }
+    },
+    {
+      "kind": "default-check",
+      "receipt": {
+        "version": 1,
+        "base": "23cfb6bdbcb908873420e0055f304a0efe456b1d",
+        "command": [
+          "check",
+          "-p",
+          "arcweft-core",
+          "--all-targets",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4028,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T14:30:50.3711531Z",
+        "finishedAt": "2026-10-31T14:31:32.1989527Z"
+      }
+    },
+    {
+      "kind": "doctest",
+      "receipt": {
+        "version": 1,
+        "base": "23cfb6bdbcb908873420e0055f304a0efe456b1d",
+        "command": [
+          "test",
+          "-p",
+          "arcweft-core",
+          "--doc",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4028,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T14:31:32.6359599Z",
+        "finishedAt": "2026-10-31T14:31:41.169202Z"
+      }
+    },
+    {
+      "kind": "structure",
+      "receipt": {
+        "version": 1,
+        "base": "23cfb6bdbcb908873420e0055f304a0efe456b1d",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/product-execution-quality-20261031T142521455.structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4028,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T14:31:41.6421851Z",
+        "finishedAt": "2026-10-31T14:31:45.2440462Z"
+      }
+    },
+    {
+      "kind": "fmt",
+      "receipt": {
+        "version": 1,
+        "paths": [
+          "crates/arcweft-core/src/awbc/fiber.rs",
+          "crates/arcweft-core/src/awbc/fiber/program_task.rs",
+          "crates/arcweft-core/src/awbc/fiber/scope.rs",
+          "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+          "crates/arcweft-core/src/awbc/product_step.rs",
+          "crates/arcweft-core/src/awbc/product_step/checkpoint.rs",
+          "crates/arcweft-core/src/awbc/product_step/control.rs",
+          "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+          "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+          "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+          "crates/arcweft-core/src/awbc/product_step/program_fanout.rs",
+          "crates/arcweft-core/src/awbc/product_step/program_task/tests.rs",
+          "crates/arcweft-core/src/awbc/product_step/program.rs",
+          "crates/arcweft-core/src/awbc/product_step/root.rs",
+          "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+          "crates/arcweft-core/src/awbc/product_step/step_budget.rs",
+          "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+          "crates/arcweft-core/src/awbc/tests/dialogue_callback_projection.rs",
+          "crates/arcweft-core/src/awbc/vm.rs",
+          "crates/arcweft-core/src/awbc/vm/resources.rs",
+          "crates/arcweft-core/src/engine.rs",
+          "crates/arcweft-core/src/engine/rollback.rs",
+          "crates/arcweft-core/src/line_task.rs",
+          "crates/arcweft-core/src/line_task/activation.rs",
+          "crates/arcweft-core/src/line_task/activation/contour.rs",
+          "crates/arcweft-core/src/line_task/activation/contour/tests.rs",
+          "crates/arcweft-core/src/line_task/handle.rs",
+          "crates/arcweft-core/src/presentation/resources.rs",
+          "crates/arcweft-core/src/presentation/resources/bank_rows.rs",
+          "crates/arcweft-core/src/presentation/resources/banks.rs",
+          "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+          "crates/arcweft-core/src/presentation/resources/banks/tests/scope_grants.rs",
+          "crates/arcweft-core/src/presentation/resources/execution.rs",
+          "crates/arcweft-core/src/presentation/resources/execution/tests.rs",
+          "crates/arcweft-core/src/presentation/resources/scope.rs",
+          "crates/arcweft-core/src/presentation/resources/storage.rs",
+          "crates/arcweft-core/src/presentation/resources/tests.rs",
+          "crates/arcweft-core/src/value/awbc_save/retained_admission.rs"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4028,
+        "sourceDrift": 0
+      }
+    }
+  ],
+  "workspaceSourceCoverage": {
+    "version": 1,
+    "frozenInputs": 4028,
+    "frozenRust": 3146,
+    "crateRust": 3115,
+    "unfrozenCrateRust": [],
+    "sourceBase": "23cfb6bdbcb908873420e0055f304a0efe456b1d",
+    "at": "2026-10-31T14:30:19.2222597Z"
+  },
+  "attempts": [
+    {
+      "attempt": "owner1",
+      "catalog": {
+        "version": 1,
+        "base": "c7a499b6c1ddef9a58be818c33ebb24985c49b55",
+        "command": [
+          "nextest",
+          "list",
+          "-p",
+          "arcweft-core",
+          "--all-features",
+          "--locked",
+          "--message-format",
+          "json"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-scope-grants-20261031.owner1.catalog.log",
+        "exitCode": 101,
+        "startedAt": "2026-10-31T14:07:02.1734813Z",
+        "finishedAt": "2026-10-31T14:08:11.2411022Z"
+      },
+      "runtime": "Not run: two old test calls retained the removed registration-bank argument."
+    },
+    {
+      "version": 1,
+      "base": "c7a499b6c1ddef9a58be818c33ebb24985c49b55",
+      "run": "presentation-scope-grants-20261031.owner2.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [  75.501s] 2198 tests run: 2194 passed, 4 failed, 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2198,
+      "passed": 2194,
+      "failed": 4,
+      "skipped": 0,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4028,
+      "sourceDrift": 0,
+      "held": 14,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::fiber::tests::presentation::awbc_scope_wire_requires_custody_and_rejects_exchanged_or_forged_headers"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::fiber::tests::presentation::live_and_saved_scope_grants_reject_a_forged_fiber_bank_before_copy"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::cancellation::later_child_bank_forgery_rejects_before_any_cancellation_or_grant_move"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "engine::presentation_tests::rollback_rejects_missing_ledger_duplicate_retirement_and_foreign_program"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-10-31T14:12:33.3674914Z"
+    },
+    {
+      "version": 1,
+      "base": "c7a499b6c1ddef9a58be818c33ebb24985c49b55",
+      "run": "presentation-scope-grants-20261031.focus3.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   0.081s] 7 tests run: 7 passed, 2138 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 7,
+      "passed": 7,
+      "failed": 0,
+      "skipped": 2138,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4028,
+      "sourceDrift": 0,
+      "held": 14,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-10-31T14:17:53.0829636Z"
+    },
+    {
+      "version": 1,
+      "base": "c7a499b6c1ddef9a58be818c33ebb24985c49b55",
+      "run": "presentation-scope-grants-20261031.owner4.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [  74.808s] 2198 tests run: 2196 passed, 2 failed, 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2198,
+      "passed": 2196,
+      "failed": 2,
+      "skipped": 0,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4028,
+      "sourceDrift": 0,
+      "held": 14,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::dialogue_activation_rejects_an_independently_valid_foreign_root_before_copy"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::product_dialogue_failure_cancels_joined_child_before_abandoning"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-10-31T14:20:56.599501Z"
+    },
+    {
+      "version": 1,
+      "base": "935fa74803b1200f19eaf73dd08447a0a1b7dabd",
+      "run": "presentation-scope-grants-20261031.owner5.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [  16.914s] 2198 tests run: 2198 passed, 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2198,
+      "passed": 2198,
+      "failed": 0,
+      "skipped": 0,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4028,
+      "sourceDrift": 0,
+      "held": 14,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-10-31T14:23:38.8303144Z"
+    }
+  ],
+  "sourceProvenance": [
+    {
+      "attempt": "owner1",
+      "path": "crates/arcweft-core/src/awbc/fiber/scope.rs",
+      "source": "scope-grants-owner1-source/crates/arcweft-core/src/awbc/fiber/scope.rs",
+      "bytes": 33303,
+      "sha256": "0243905bd66de57e0f7643831e111f894901f73cd54e99dd7decbcad82f5ab75",
+      "drift": 0
+    },
+    {
+      "attempt": "owner1",
+      "path": "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+      "source": "scope-grants-owner1-source/crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+      "bytes": 28223,
+      "sha256": "ac38ba85840024eb9040b4aa843a6c03ff469ac792ac9fcb3f7dc8090774a135",
+      "drift": 0
+    },
+    {
+      "attempt": "owner1",
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "source": "scope-grants-owner1-source/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "bytes": 37210,
+      "sha256": "1ffb87ad06a7fd885a6759a210bd9653e07e68f39acdde61de45a025f31b5879",
+      "drift": 0
+    },
+    {
+      "attempt": "owner1",
+      "path": "crates/arcweft-core/src/engine/rollback.rs",
+      "source": "scope-grants-owner1-source/crates/arcweft-core/src/engine/rollback.rs",
+      "bytes": 47570,
+      "sha256": "e7fe32bacc0f24472c76c95196a872cda524cfaf8864d007d790648034e5bae3",
+      "drift": 0
+    },
+    {
+      "attempt": "owner1",
+      "path": "crates/arcweft-core/src/presentation/resources.rs",
+      "source": "scope-grants-owner1-source/crates/arcweft-core/src/presentation/resources.rs",
+      "bytes": 18072,
+      "sha256": "f8f9e238863dc285994d5c413779af45dd5b87c2b83001f045a58ccce3c69aad",
+      "drift": 0
+    },
+    {
+      "attempt": "owner1",
+      "path": "crates/arcweft-core/src/presentation/resources/bank_rows.rs",
+      "source": "scope-grants-owner1-source/crates/arcweft-core/src/presentation/resources/bank_rows.rs",
+      "bytes": 2906,
+      "sha256": "352d0c45166a254ab7878ea2be5481ec3a5d53d98f7a76edfb2ef1056b38198d",
+      "drift": 0
+    },
+    {
+      "attempt": "owner1",
+      "path": "crates/arcweft-core/src/presentation/resources/banks.rs",
+      "source": "scope-grants-owner1-source/crates/arcweft-core/src/presentation/resources/banks.rs",
+      "bytes": 15326,
+      "sha256": "c9b7a77520a2654ddbee4eeb745ac24bc8f684f3d39406b9d5b74a3c41792b16",
+      "drift": 0
+    },
+    {
+      "attempt": "owner1",
+      "path": "crates/arcweft-core/src/presentation/resources/scope.rs",
+      "source": "scope-grants-owner1-source/crates/arcweft-core/src/presentation/resources/scope.rs",
+      "bytes": 12427,
+      "sha256": "6352763beb2c8ab9e55e2bd97bef4676ac7652c7ad46874ec85cff45237dfc2f",
+      "drift": 0
+    },
+    {
+      "attempt": "owner1",
+      "path": "crates/arcweft-core/src/presentation/resources/storage.rs",
+      "source": "scope-grants-owner1-source/crates/arcweft-core/src/presentation/resources/storage.rs",
+      "bytes": 17149,
+      "sha256": "9b88611f67ba813ba6ed28b8e87fdfc741bf4f2fc0091daed18b56f531033073",
+      "drift": 0
+    },
+    {
+      "attempt": "owner1",
+      "path": "crates/arcweft-core/src/presentation/resources/tests.rs",
+      "source": "scope-grants-owner1-source/crates/arcweft-core/src/presentation/resources/tests.rs",
+      "bytes": 20335,
+      "sha256": "aa2979115f970624d49dcfec8a690c12ffb44de91ccdc0ddb9f96f61cbd83095",
+      "drift": 0
+    },
+    {
+      "attempt": "owner1",
+      "path": "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+      "source": "scope-grants-owner1-source/crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+      "bytes": 17784,
+      "sha256": "1c17b0d6f404e5b29118326ec27fdcd7cdb7f169abb1e326b1d4fc80956f34ba",
+      "drift": 0
+    },
+    {
+      "attempt": "owner1",
+      "path": "crates/arcweft-core/src/presentation/resources/banks/tests/scope_grants.rs",
+      "source": "scope-grants-owner1-source/crates/arcweft-core/src/presentation/resources/banks/tests/scope_grants.rs",
+      "bytes": 7134,
+      "sha256": "90c23b093d926f48252bccbc2b8522a078328a09d1a2668d52e2e0186b3b05ca",
+      "drift": 0
+    },
+    {
+      "attempt": "owner1",
+      "path": "crates/arcweft-core/src/value/awbc_save/retained_admission.rs",
+      "source": "scope-grants-owner1-source/crates/arcweft-core/src/value/awbc_save/retained_admission.rs",
+      "bytes": 27087,
+      "sha256": "da4f1c04f2160f9949372d99a24802ca7811d1f94c5c8b0bf7c1b96d0eae485d",
+      "drift": 0
+    },
+    {
+      "attempt": "owner2",
+      "path": "crates/arcweft-core/src/awbc/fiber/scope.rs",
+      "source": "scope-grants-owner2-source/crates/arcweft-core/src/awbc/fiber/scope.rs",
+      "bytes": 33303,
+      "sha256": "0243905bd66de57e0f7643831e111f894901f73cd54e99dd7decbcad82f5ab75",
+      "drift": 0
+    },
+    {
+      "attempt": "owner2",
+      "path": "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+      "source": "scope-grants-owner2-source/crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+      "bytes": 28121,
+      "sha256": "e34e52c064f5e2f3d171bdb4a5992c11ce991a57f1ccdc4268841b9864e8d721",
+      "drift": 0
+    },
+    {
+      "attempt": "owner2",
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "source": "scope-grants-owner2-source/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "bytes": 37210,
+      "sha256": "1ffb87ad06a7fd885a6759a210bd9653e07e68f39acdde61de45a025f31b5879",
+      "drift": 0
+    },
+    {
+      "attempt": "owner2",
+      "path": "crates/arcweft-core/src/engine/rollback.rs",
+      "source": "scope-grants-owner2-source/crates/arcweft-core/src/engine/rollback.rs",
+      "bytes": 47570,
+      "sha256": "e7fe32bacc0f24472c76c95196a872cda524cfaf8864d007d790648034e5bae3",
+      "drift": 0
+    },
+    {
+      "attempt": "owner2",
+      "path": "crates/arcweft-core/src/presentation/resources.rs",
+      "source": "scope-grants-owner2-source/crates/arcweft-core/src/presentation/resources.rs",
+      "bytes": 18072,
+      "sha256": "f8f9e238863dc285994d5c413779af45dd5b87c2b83001f045a58ccce3c69aad",
+      "drift": 0
+    },
+    {
+      "attempt": "owner2",
+      "path": "crates/arcweft-core/src/presentation/resources/bank_rows.rs",
+      "source": "scope-grants-owner2-source/crates/arcweft-core/src/presentation/resources/bank_rows.rs",
+      "bytes": 2906,
+      "sha256": "352d0c45166a254ab7878ea2be5481ec3a5d53d98f7a76edfb2ef1056b38198d",
+      "drift": 0
+    },
+    {
+      "attempt": "owner2",
+      "path": "crates/arcweft-core/src/presentation/resources/banks.rs",
+      "source": "scope-grants-owner2-source/crates/arcweft-core/src/presentation/resources/banks.rs",
+      "bytes": 15326,
+      "sha256": "c9b7a77520a2654ddbee4eeb745ac24bc8f684f3d39406b9d5b74a3c41792b16",
+      "drift": 0
+    },
+    {
+      "attempt": "owner2",
+      "path": "crates/arcweft-core/src/presentation/resources/scope.rs",
+      "source": "scope-grants-owner2-source/crates/arcweft-core/src/presentation/resources/scope.rs",
+      "bytes": 12427,
+      "sha256": "6352763beb2c8ab9e55e2bd97bef4676ac7652c7ad46874ec85cff45237dfc2f",
+      "drift": 0
+    },
+    {
+      "attempt": "owner2",
+      "path": "crates/arcweft-core/src/presentation/resources/storage.rs",
+      "source": "scope-grants-owner2-source/crates/arcweft-core/src/presentation/resources/storage.rs",
+      "bytes": 17149,
+      "sha256": "9b88611f67ba813ba6ed28b8e87fdfc741bf4f2fc0091daed18b56f531033073",
+      "drift": 0
+    },
+    {
+      "attempt": "owner2",
+      "path": "crates/arcweft-core/src/presentation/resources/tests.rs",
+      "source": "scope-grants-owner2-source/crates/arcweft-core/src/presentation/resources/tests.rs",
+      "bytes": 20335,
+      "sha256": "aa2979115f970624d49dcfec8a690c12ffb44de91ccdc0ddb9f96f61cbd83095",
+      "drift": 0
+    },
+    {
+      "attempt": "owner2",
+      "path": "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+      "source": "scope-grants-owner2-source/crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+      "bytes": 17784,
+      "sha256": "1c17b0d6f404e5b29118326ec27fdcd7cdb7f169abb1e326b1d4fc80956f34ba",
+      "drift": 0
+    },
+    {
+      "attempt": "owner2",
+      "path": "crates/arcweft-core/src/presentation/resources/banks/tests/scope_grants.rs",
+      "source": "scope-grants-owner2-source/crates/arcweft-core/src/presentation/resources/banks/tests/scope_grants.rs",
+      "bytes": 7134,
+      "sha256": "90c23b093d926f48252bccbc2b8522a078328a09d1a2668d52e2e0186b3b05ca",
+      "drift": 0
+    },
+    {
+      "attempt": "owner2",
+      "path": "crates/arcweft-core/src/value/awbc_save/retained_admission.rs",
+      "source": "scope-grants-owner2-source/crates/arcweft-core/src/value/awbc_save/retained_admission.rs",
+      "bytes": 27087,
+      "sha256": "da4f1c04f2160f9949372d99a24802ca7811d1f94c5c8b0bf7c1b96d0eae485d",
+      "drift": 0
+    }
+  ],
+  "attemptNotes": [
+    "owner1: catalog compile 101, runtime not run; two old private trait arity calls migrated without changing assertions.",
+    "owner2: 2194 PASS / 4 FAIL / 0 skipped. Migrated the old single-grant wire mutation to the actual bank row. Separating held grants from registration bank exposed three protections that had relied on equality of those distinct roles. Root and actual Dialogue child role checks now own those protections. All original rejection assertions remain.",
+    "focus3: 7 PASS / 2138 excluded; three new scope tests and the four earlier failures. These counts are not added to final owner5.",
+    "owner4: 2196 PASS / 2 FAIL / 0 skipped, exact published checkpoint 935fa74803b1200f19eaf73dd08447a0a1b7dabd source. The independently valid foreign-root fixture used an Entry in a Dialogue bank; it now uses an independently admitted foreign Function root while retaining the exact activation-root error. The joined-child cancellation fixture copied a Root fiber; it now uses the real allocated Dialogue child factory. All cancellation and failure assertions remain.",
+    "owner5: full 2198 PASS / 0 FAIL / 0 skipped, with catalog/source/binary drift zero. Workspace gates use the same 4028 frozen inputs, including all 3115 crate Rust files; held WIP remains part of that observed checkout."
+  ],
+  "doctest": {
+    "passed": 78,
+    "failed": 0,
+    "ignored": 0,
+    "filtered": 0
+  },
+  "structure": {
+    "packages": 97,
+    "files": 3264,
+    "rustFiles": 3134,
+    "rustPhysicalLoc": 1773885,
+    "reviewTriggers": 382,
+    "blocking": 0
+  },
+  "accepted": [
+    "One actual Native environment scope holds both Root and Dialogue issuing-bank grants, with distinct unchanged tokens even when local issuance coordinates match. Shared live admission, inert scope wire and bank rollback preserve both grants and exact bodies. Whole-scope retirement removes both grants in bank order and retires each body once.",
+    "Two capacity refusals under the same handles=2/scopes=4 policy preserve the complete bank image and both scope grants. After modeled old-retirement acknowledgement, the same policy retires both original tokens in deterministic order.",
+    "Duplicate bank wire is rejected before reading its second invalid grant. An empty grant capsule is rejected during admission and poisons the same retained allowance. Old reader/path are deleted, contract version remains 1.",
+    "Root registration and actual existing/staged Dialogue child registration are authenticated separately from held resource banks. Existing bank-forgery, source/anchor and original activation-root rejection coverage remains passing."
+  ],
+  "notClaimedByThisRun": [
+    "VM Return/select/static or dynamic Goto escaping-handle transfer or ordinary Product root result retention",
+    "Native complete actual borrowed-parent contour or Source ViewValue/callables/mount/methods/driver",
+    "Active-bank replacement, Native/Web image parity and final reverse-dependency/feature/target/workspace runtime acceptance"
+  ],
+  "currentStatusAuthority": "../current-status.md",
+  "priorAcceptance": [
+    "task-presentation-activation-host-owner-validation.json",
+    "task-presentation-terminal-request-owner-validation.json"
+  ],
+  "acceptedFeaturesRetained": "Generic Match and prior accepted cancellation/VM/lifecycle/control/Host boundaries remain accepted. A receiving-scope prerequisite is not completion of Return/Goto. Whole-goal incompleteness does not reopen accepted features.",
+  "warnings": "Existing compiler/Clippy warnings remain in raw logs; exit zero is not zero warnings.",
+  "artifacts": [
+    {
+      "path": "task-presentation-scope-grants-raw.record-presentation-scope-grants-evidence.ps1",
+      "source": "record-presentation-scope-grants-evidence.ps1",
+      "bytes": 14195,
+      "sha256": "466badfb677a62961a65e983920233136f7b4e473cbd600f49c702612f5c6194"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.run-presentation-scope-workspace-quality.ps1",
+      "source": "run-presentation-scope-workspace-quality.ps1",
+      "bytes": 3125,
+      "sha256": "443991710cd03039960cd6dde6fc67d74347a9ea8ff488d6b399fa049e156928"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.assert-no-arcweft-build.ps1",
+      "source": "assert-no-arcweft-build.ps1",
+      "bytes": 414,
+      "sha256": "c28fd39db526293d880c06ab8ed98aef8d73270ff3da6b3424643fe5653de70d"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.checkpoint-explicit-deletions-prepare.ps1",
+      "source": "checkpoint-explicit-deletions-prepare.ps1",
+      "bytes": 3730,
+      "sha256": "8f035b940be1f977d336dfb20cb9fe1700147e48bc4446599a94cc8ff00b1605"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.checkpoint-explicit-deletions-publish.ps1",
+      "source": "checkpoint-explicit-deletions-publish.ps1",
+      "bytes": 3741,
+      "sha256": "2e5bbf7857e2180d43a35a931ffe52431984fd3271e6578f8d29a4e951b94a48"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-owner-review.json",
+      "source": "presentation-scope-grants-owner-review.json",
+      "bytes": 7268,
+      "sha256": "7fef80735d3b77defa9cecab545205887997876ba94efc86335749f159229ec2"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-source-proofs.json",
+      "source": "presentation-scope-grants-source-proofs.json",
+      "bytes": 8641,
+      "sha256": "ac232d9dd7e2f1a11f6a67720b18ec91541fb97470d781639be85d2e898dddf7"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-workspace-source-coverage.json",
+      "source": "presentation-scope-grants-workspace-source-coverage.json",
+      "bytes": 222,
+      "sha256": "2df7a23996ca13269bf43e13ec128f67df69992b08722681ccbd6572fbabca84"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.scope-grants-owner1-source.crates.arcweft-core.src.awbc.fiber.scope.rs",
+      "source": "scope-grants-owner1-source/crates/arcweft-core/src/awbc/fiber/scope.rs",
+      "bytes": 33303,
+      "sha256": "0243905bd66de57e0f7643831e111f894901f73cd54e99dd7decbcad82f5ab75"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.scope-grants-owner1-source.crates.arcweft-core.src.awbc.fiber.tests.presentation.rs",
+      "source": "scope-grants-owner1-source/crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+      "bytes": 28223,
+      "sha256": "ac38ba85840024eb9040b4aa843a6c03ff469ac792ac9fcb3f7dc8090774a135"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.scope-grants-owner1-source.crates.arcweft-core.src.awbc.product_step.tests.presentation.rs",
+      "source": "scope-grants-owner1-source/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "bytes": 37210,
+      "sha256": "1ffb87ad06a7fd885a6759a210bd9653e07e68f39acdde61de45a025f31b5879"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.scope-grants-owner1-source.crates.arcweft-core.src.engine.rollback.rs",
+      "source": "scope-grants-owner1-source/crates/arcweft-core/src/engine/rollback.rs",
+      "bytes": 47570,
+      "sha256": "e7fe32bacc0f24472c76c95196a872cda524cfaf8864d007d790648034e5bae3"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.scope-grants-owner1-source.crates.arcweft-core.src.presentation.resources.rs",
+      "source": "scope-grants-owner1-source/crates/arcweft-core/src/presentation/resources.rs",
+      "bytes": 18072,
+      "sha256": "f8f9e238863dc285994d5c413779af45dd5b87c2b83001f045a58ccce3c69aad"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.scope-grants-owner1-source.crates.arcweft-core.src.presentation.resources.bank_rows.rs",
+      "source": "scope-grants-owner1-source/crates/arcweft-core/src/presentation/resources/bank_rows.rs",
+      "bytes": 2906,
+      "sha256": "352d0c45166a254ab7878ea2be5481ec3a5d53d98f7a76edfb2ef1056b38198d"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.scope-grants-owner1-source.crates.arcweft-core.src.presentation.resources.banks.rs",
+      "source": "scope-grants-owner1-source/crates/arcweft-core/src/presentation/resources/banks.rs",
+      "bytes": 15326,
+      "sha256": "c9b7a77520a2654ddbee4eeb745ac24bc8f684f3d39406b9d5b74a3c41792b16"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.scope-grants-owner1-source.crates.arcweft-core.src.presentation.resources.scope.rs",
+      "source": "scope-grants-owner1-source/crates/arcweft-core/src/presentation/resources/scope.rs",
+      "bytes": 12427,
+      "sha256": "6352763beb2c8ab9e55e2bd97bef4676ac7652c7ad46874ec85cff45237dfc2f"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.scope-grants-owner1-source.crates.arcweft-core.src.presentation.resources.storage.rs",
+      "source": "scope-grants-owner1-source/crates/arcweft-core/src/presentation/resources/storage.rs",
+      "bytes": 17149,
+      "sha256": "9b88611f67ba813ba6ed28b8e87fdfc741bf4f2fc0091daed18b56f531033073"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.scope-grants-owner1-source.crates.arcweft-core.src.presentation.resources.tests.rs",
+      "source": "scope-grants-owner1-source/crates/arcweft-core/src/presentation/resources/tests.rs",
+      "bytes": 20335,
+      "sha256": "aa2979115f970624d49dcfec8a690c12ffb44de91ccdc0ddb9f96f61cbd83095"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.scope-grants-owner1-source.crates.arcweft-core.src.presentation.resources.banks.tests.rs",
+      "source": "scope-grants-owner1-source/crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+      "bytes": 17784,
+      "sha256": "1c17b0d6f404e5b29118326ec27fdcd7cdb7f169abb1e326b1d4fc80956f34ba"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.scope-grants-owner1-source.crates.arcweft-core.src.presentation.resources.banks.tests.scope_grants.rs",
+      "source": "scope-grants-owner1-source/crates/arcweft-core/src/presentation/resources/banks/tests/scope_grants.rs",
+      "bytes": 7134,
+      "sha256": "90c23b093d926f48252bccbc2b8522a078328a09d1a2668d52e2e0186b3b05ca"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.scope-grants-owner1-source.crates.arcweft-core.src.value.awbc_save.retained_admission.rs",
+      "source": "scope-grants-owner1-source/crates/arcweft-core/src/value/awbc_save/retained_admission.rs",
+      "bytes": 27087,
+      "sha256": "da4f1c04f2160f9949372d99a24802ca7811d1f94c5c8b0bf7c1b96d0eae485d"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.scope-grants-owner2-source.crates.arcweft-core.src.awbc.fiber.scope.rs",
+      "source": "scope-grants-owner2-source/crates/arcweft-core/src/awbc/fiber/scope.rs",
+      "bytes": 33303,
+      "sha256": "0243905bd66de57e0f7643831e111f894901f73cd54e99dd7decbcad82f5ab75"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.scope-grants-owner2-source.crates.arcweft-core.src.awbc.fiber.tests.presentation.rs",
+      "source": "scope-grants-owner2-source/crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+      "bytes": 28121,
+      "sha256": "e34e52c064f5e2f3d171bdb4a5992c11ce991a57f1ccdc4268841b9864e8d721"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.scope-grants-owner2-source.crates.arcweft-core.src.awbc.product_step.tests.presentation.rs",
+      "source": "scope-grants-owner2-source/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "bytes": 37210,
+      "sha256": "1ffb87ad06a7fd885a6759a210bd9653e07e68f39acdde61de45a025f31b5879"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.scope-grants-owner2-source.crates.arcweft-core.src.engine.rollback.rs",
+      "source": "scope-grants-owner2-source/crates/arcweft-core/src/engine/rollback.rs",
+      "bytes": 47570,
+      "sha256": "e7fe32bacc0f24472c76c95196a872cda524cfaf8864d007d790648034e5bae3"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.scope-grants-owner2-source.crates.arcweft-core.src.presentation.resources.rs",
+      "source": "scope-grants-owner2-source/crates/arcweft-core/src/presentation/resources.rs",
+      "bytes": 18072,
+      "sha256": "f8f9e238863dc285994d5c413779af45dd5b87c2b83001f045a58ccce3c69aad"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.scope-grants-owner2-source.crates.arcweft-core.src.presentation.resources.bank_rows.rs",
+      "source": "scope-grants-owner2-source/crates/arcweft-core/src/presentation/resources/bank_rows.rs",
+      "bytes": 2906,
+      "sha256": "352d0c45166a254ab7878ea2be5481ec3a5d53d98f7a76edfb2ef1056b38198d"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.scope-grants-owner2-source.crates.arcweft-core.src.presentation.resources.banks.rs",
+      "source": "scope-grants-owner2-source/crates/arcweft-core/src/presentation/resources/banks.rs",
+      "bytes": 15326,
+      "sha256": "c9b7a77520a2654ddbee4eeb745ac24bc8f684f3d39406b9d5b74a3c41792b16"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.scope-grants-owner2-source.crates.arcweft-core.src.presentation.resources.scope.rs",
+      "source": "scope-grants-owner2-source/crates/arcweft-core/src/presentation/resources/scope.rs",
+      "bytes": 12427,
+      "sha256": "6352763beb2c8ab9e55e2bd97bef4676ac7652c7ad46874ec85cff45237dfc2f"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.scope-grants-owner2-source.crates.arcweft-core.src.presentation.resources.storage.rs",
+      "source": "scope-grants-owner2-source/crates/arcweft-core/src/presentation/resources/storage.rs",
+      "bytes": 17149,
+      "sha256": "9b88611f67ba813ba6ed28b8e87fdfc741bf4f2fc0091daed18b56f531033073"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.scope-grants-owner2-source.crates.arcweft-core.src.presentation.resources.tests.rs",
+      "source": "scope-grants-owner2-source/crates/arcweft-core/src/presentation/resources/tests.rs",
+      "bytes": 20335,
+      "sha256": "aa2979115f970624d49dcfec8a690c12ffb44de91ccdc0ddb9f96f61cbd83095"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.scope-grants-owner2-source.crates.arcweft-core.src.presentation.resources.banks.tests.rs",
+      "source": "scope-grants-owner2-source/crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+      "bytes": 17784,
+      "sha256": "1c17b0d6f404e5b29118326ec27fdcd7cdb7f169abb1e326b1d4fc80956f34ba"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.scope-grants-owner2-source.crates.arcweft-core.src.presentation.resources.banks.tests.scope_grants.rs",
+      "source": "scope-grants-owner2-source/crates/arcweft-core/src/presentation/resources/banks/tests/scope_grants.rs",
+      "bytes": 7134,
+      "sha256": "90c23b093d926f48252bccbc2b8522a078328a09d1a2668d52e2e0186b3b05ca"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.scope-grants-owner2-source.crates.arcweft-core.src.value.awbc_save.retained_admission.rs",
+      "source": "scope-grants-owner2-source/crates/arcweft-core/src/value/awbc_save/retained_admission.rs",
+      "bytes": 27087,
+      "sha256": "da4f1c04f2160f9949372d99a24802ca7811d1f94c5c8b0bf7c1b96d0eae485d"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-source-20261031.owned.txt",
+      "source": "presentation-scope-grants-source-20261031.owned.txt",
+      "bytes": 1046,
+      "sha256": "44e962f3096b03724e4146fd7d1d496187b3c893fc1f53c10a1cac64909c3384"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-source-20261031.prepared.json",
+      "source": "presentation-scope-grants-source-20261031.prepared.json",
+      "bytes": 3983,
+      "sha256": "97505ec9921b2a9103e0ca97e1e8a4b282f203ddf7b5a59428a0d16eb40b7242"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-source-20261031.verified.json",
+      "source": "presentation-scope-grants-source-20261031.verified.json",
+      "bytes": 3288,
+      "sha256": "bd7c6b6c5d270349d7011a280fa6fe6b342b860b84946c910eb1f0516468e6a6"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-source-20261031.reviewed.patch",
+      "source": "presentation-scope-grants-source-20261031.reviewed.patch",
+      "bytes": 62449,
+      "sha256": "a839a9059b1ed2804c2598d42cffc7ac0cdc27a9d29af0db67e3c75e27123d8b"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-source-20261031.publish.log",
+      "source": "presentation-scope-grants-source-20261031.publish.log",
+      "bytes": 902,
+      "sha256": "9d218e52c83c58a27a3ce67dae734d3badc3d0253c20e5253b1356b93e17f3b6"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-repair-source-20261031.owned.txt",
+      "source": "presentation-scope-grants-repair-source-20261031.owned.txt",
+      "bytes": 51,
+      "sha256": "c4ed17c77045be5f4d46bfcf80b05f6785d0de5f3cdd8d94a988527678c61390"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-repair-source-20261031.prepared.json",
+      "source": "presentation-scope-grants-repair-source-20261031.prepared.json",
+      "bytes": 1388,
+      "sha256": "553cb568c62fe12ea4877fdbf7fb34713075b6b5b1c3ef03554fa0569b4cdb21"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-repair-source-20261031.verified.json",
+      "source": "presentation-scope-grants-repair-source-20261031.verified.json",
+      "bytes": 693,
+      "sha256": "58b1544dc6e427f5789aacfac97056522bb34353c79d0f84405faf4d070cec3b"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-repair-source-20261031.reviewed.patch",
+      "source": "presentation-scope-grants-repair-source-20261031.reviewed.patch",
+      "bytes": 2700,
+      "sha256": "b33c0db6d73be137c4f10db26743df2dc7c05f6cb8b29461669d0bcdc949da7b"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-repair-source-20261031.publish.log",
+      "source": "presentation-scope-grants-repair-source-20261031.publish.log",
+      "bytes": 632,
+      "sha256": "002b1b04b625b8e35497a28e5af79c66633d7c0edc9206e65f31d2d973023a5a"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.run-presentation-scope-grants-20261031.owner1.ps1",
+      "source": "run-presentation-scope-grants-20261031.owner1.ps1",
+      "bytes": 6074,
+      "sha256": "48d7e6c60ce8235796c3a87be757ec6a570029f0a30a1ef4e82122c0fefd27c0"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.owner1.source-freeze.json",
+      "source": "presentation-scope-grants-20261031.owner1.source-freeze.json",
+      "bytes": 787372,
+      "sha256": "6f63f00cc7695690aae7ac86122af60bbf3847a99c67e71c4b2f341817bd70ef"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.owner1.catalog.json",
+      "source": "presentation-scope-grants-20261031.owner1.catalog.json",
+      "bytes": 496,
+      "sha256": "2ee80c57a4748e945c668db538eac1744559c1dada430c768de2037118bd4c50"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.owner1.catalog.log",
+      "source": "presentation-scope-grants-20261031.owner1.catalog.log",
+      "bytes": 78249,
+      "sha256": "f9b6ebfafa8a3e9199cd1c92ab04869fbe0931bc434e5a381eb339b5cfb89649"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.run-presentation-scope-grants-20261031.owner2.ps1",
+      "source": "run-presentation-scope-grants-20261031.owner2.ps1",
+      "bytes": 6074,
+      "sha256": "530fdfcb1960f660ff0ff3906897090d38d974ef03da9bc9e94f07202605aba9"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.owner2.source-freeze.json",
+      "source": "presentation-scope-grants-20261031.owner2.source-freeze.json",
+      "bytes": 787372,
+      "sha256": "aafee47d511ed22b627ae389deede368c94128fc1fbe57ad051cea9e2434029d"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.owner2.binaries-before.json",
+      "source": "presentation-scope-grants-20261031.owner2.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "f009873f4a3bd226a0975226555c3f732a32e1431f5d6c7509c773caa0e5a59e"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.owner2.catalog.inventory.json",
+      "source": "presentation-scope-grants-20261031.owner2.catalog.inventory.json",
+      "bytes": 557401,
+      "sha256": "36e7c8c3e27482a238b14b47d224703176a728adafaf43a65c4e271e6b0d3990"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.owner2.catalog.json",
+      "source": "presentation-scope-grants-20261031.owner2.catalog.json",
+      "bytes": 494,
+      "sha256": "e2c51846eb1b0cc593be27f93636de56ddb9043bec336ee71d2da4e58249f301"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.owner2.catalog.log",
+      "source": "presentation-scope-grants-20261031.owner2.catalog.log",
+      "bytes": 466367,
+      "sha256": "4cfeb3bc4c40b06ad7d0f7b0aa7e5c4c78649a11f7cdbf730a7778e8740920aa"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.owner2.runtime.json",
+      "source": "presentation-scope-grants-20261031.owner2.runtime.json",
+      "bytes": 588,
+      "sha256": "c3e794562baf0b60673758d322dbfc5f424cb3246f8af58743463f873cf60b9d"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.owner2.runtime.log",
+      "source": "presentation-scope-grants-20261031.owner2.runtime.log",
+      "bytes": 758294,
+      "sha256": "369f0c65af54cfa0dae785005a32a26144be93088c7324308b87ffd955776c0f"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.owner2.runtime.terminal-audit.json",
+      "source": "presentation-scope-grants-20261031.owner2.runtime.terminal-audit.json",
+      "bytes": 1441,
+      "sha256": "7db644c399ea4ab2750385fbec75193bdda068ffbadf7948ce6ed8003af684fe"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.run-presentation-scope-grants-20261031.focus3.ps1",
+      "source": "run-presentation-scope-grants-20261031.focus3.ps1",
+      "bytes": 6462,
+      "sha256": "4fc277c3e475515b791943f26c50889261dc640672db8583cdc98d3840681ce2"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.focus3.source-freeze.json",
+      "source": "presentation-scope-grants-20261031.focus3.source-freeze.json",
+      "bytes": 787372,
+      "sha256": "c662a887711a464c950117f7667f9ee5ae150babdc284ae18c913e78ae1f1af1"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.focus3.binaries-before.json",
+      "source": "presentation-scope-grants-20261031.focus3.binaries-before.json",
+      "bytes": 202,
+      "sha256": "48099ddd43c71bd668ca8c57eba815ab2d87d7dcd81d1b4c786b042974d9c268"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.focus3.catalog.inventory.json",
+      "source": "presentation-scope-grants-20261031.focus3.catalog.inventory.json",
+      "bytes": 547140,
+      "sha256": "8510155c54f86c770e074bcb841ebb889a8ffee6d0268914044895e5e8b384d8"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.focus3.catalog.json",
+      "source": "presentation-scope-grants-20261031.focus3.catalog.json",
+      "bytes": 903,
+      "sha256": "400e6ae5f40da56d4ae70082779d1d83a6a874cc649c6f410e2820a852a98797"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.focus3.catalog.log",
+      "source": "presentation-scope-grants-20261031.focus3.catalog.log",
+      "bytes": 451027,
+      "sha256": "a789469e0084db5e0c3ac58b8a64963435019e8c823a3f5d43336c197c664b0c"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.focus3.runtime.json",
+      "source": "presentation-scope-grants-20261031.focus3.runtime.json",
+      "bytes": 995,
+      "sha256": "1137c2b2cf273f1514483310c2b6b67104edb84e7747a8dc78e06da22c7079aa"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.focus3.runtime.log",
+      "source": "presentation-scope-grants-20261031.focus3.runtime.log",
+      "bytes": 688469,
+      "sha256": "a363914c3efb2c28a270854633a5be3db4a691e048987554b0b1ba5664c796e3"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.focus3.runtime.terminal-audit.json",
+      "source": "presentation-scope-grants-20261031.focus3.runtime.terminal-audit.json",
+      "bytes": 624,
+      "sha256": "05cbe7cb7f9189a5ad75863e0250115ed0796a3b56fb48f113e163032f6e23ae"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.run-presentation-scope-grants-20261031.owner4.ps1",
+      "source": "run-presentation-scope-grants-20261031.owner4.ps1",
+      "bytes": 6074,
+      "sha256": "54caf642e006b423ac1d37aebed7572caf1a154448caa846656df72c0f8f1975"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.owner4.source-freeze.json",
+      "source": "presentation-scope-grants-20261031.owner4.source-freeze.json",
+      "bytes": 787372,
+      "sha256": "cd1e40977ff5420731627fabaa04434ffc0576177e315d3b560f0fb29039bf27"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.owner4.binaries-before.json",
+      "source": "presentation-scope-grants-20261031.owner4.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "9bae021de34421cfbb903ac1f9cb9b70d92a9df406e8d1db4d39e1567372689d"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.owner4.catalog.inventory.json",
+      "source": "presentation-scope-grants-20261031.owner4.catalog.inventory.json",
+      "bytes": 557401,
+      "sha256": "36e7c8c3e27482a238b14b47d224703176a728adafaf43a65c4e271e6b0d3990"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.owner4.catalog.json",
+      "source": "presentation-scope-grants-20261031.owner4.catalog.json",
+      "bytes": 494,
+      "sha256": "a9721c7752af7c31f1bd0a74f19058dac5d30323749b6bb9e01c1f8548306122"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.owner4.catalog.log",
+      "source": "presentation-scope-grants-20261031.owner4.catalog.log",
+      "bytes": 466366,
+      "sha256": "bd1c7eab27b8ed0dcd20a5b388d9b53146d72061d5c63f9c5a459dfb2c7c75c9"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.owner4.runtime.json",
+      "source": "presentation-scope-grants-20261031.owner4.runtime.json",
+      "bytes": 588,
+      "sha256": "55eafc4b15d7c2b6b5fe9454c79fea7814d56cf63a862d5b8a898c12079e1f92"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.owner4.runtime.log",
+      "source": "presentation-scope-grants-20261031.owner4.runtime.log",
+      "bytes": 756532,
+      "sha256": "7f1a992e4048f110f27e87c6697cf415a2859bc04281812b5fdcdda61afa741e"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.owner4.runtime.terminal-audit.json",
+      "source": "presentation-scope-grants-20261031.owner4.runtime.terminal-audit.json",
+      "bytes": 1020,
+      "sha256": "ab84efbb9bea4c994ee6c6270c18e5b5c406914482cfc158037e12e51a3aaeab"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.run-presentation-scope-grants-20261031.owner5.ps1",
+      "source": "run-presentation-scope-grants-20261031.owner5.ps1",
+      "bytes": 6074,
+      "sha256": "c3eee7ab356a907c76deb7c99d4c3e96fa95028b7492f657d35420e0ebde91a4"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.owner5.source-freeze.json",
+      "source": "presentation-scope-grants-20261031.owner5.source-freeze.json",
+      "bytes": 787372,
+      "sha256": "d22c223541949cb40fef857efb0fae43faef5e4c4d6b59df148613fbd9826868"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.owner5.binaries-before.json",
+      "source": "presentation-scope-grants-20261031.owner5.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "68d14e80e2c28f3734e7a5600eed803bc3002ef58bf2814e0bfedccab5d05e94"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.owner5.catalog.inventory.json",
+      "source": "presentation-scope-grants-20261031.owner5.catalog.inventory.json",
+      "bytes": 557401,
+      "sha256": "36e7c8c3e27482a238b14b47d224703176a728adafaf43a65c4e271e6b0d3990"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.owner5.catalog.json",
+      "source": "presentation-scope-grants-20261031.owner5.catalog.json",
+      "bytes": 494,
+      "sha256": "72340466747ca34bf96789bf5a977b5aa3f0f05239200410755438890da01dbf"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.owner5.catalog.log",
+      "source": "presentation-scope-grants-20261031.owner5.catalog.log",
+      "bytes": 466367,
+      "sha256": "9cee6545acef82f5185e380bf16d14b41b7d449fd38abb91f65d8d39b0f66056"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.owner5.runtime.json",
+      "source": "presentation-scope-grants-20261031.owner5.runtime.json",
+      "bytes": 586,
+      "sha256": "742c29091952e0214bc5b5fa0db0a2138ccaa598d4352a3f142c45c37e7a8f4a"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.owner5.runtime.log",
+      "source": "presentation-scope-grants-20261031.owner5.runtime.log",
+      "bytes": 754957,
+      "sha256": "ed0dffbab298fa5fa084dbe55a3236388ede87b9de90b3fc03370371a3773d4f"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.presentation-scope-grants-20261031.owner5.runtime.terminal-audit.json",
+      "source": "presentation-scope-grants-20261031.owner5.runtime.terminal-audit.json",
+      "bytes": 630,
+      "sha256": "1f75d3f3e3fa4e8a70018fef4cef038ea0c55decbbf03d36f7990f437606e66e"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.product-execution-quality-20261031T142521455.source-freeze.json",
+      "source": "product-execution-quality-20261031T142521455.source-freeze.json",
+      "bytes": 787416,
+      "sha256": "92c7dcf454afceea7e6934f8d7fc5c7a0fe4566a4bf565ec0b21c3a1dea50b46"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.product-execution-quality-20261031T142521455.workspace-check.json",
+      "source": "product-execution-quality-20261031T142521455.workspace-check.json",
+      "bytes": 355,
+      "sha256": "90ad704b40fe97ca2bdd5287aedb4867ced3088da58a636b4c64edb3fecd802b"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.product-execution-quality-20261031T142521455.workspace-check.log",
+      "source": "product-execution-quality-20261031T142521455.workspace-check.log",
+      "bytes": 132160,
+      "sha256": "51d2320bc95cd05525944b13e4092cafaf836833438cc1faa0e7f0eaa611d2f6"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.product-execution-quality-20261031T142521455.clippy.json",
+      "source": "product-execution-quality-20261031T142521455.clippy.json",
+      "bytes": 356,
+      "sha256": "58cbff27ca1051decfede4622dde55635d562e6720eb2a04b303ab064561ab40"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.product-execution-quality-20261031T142521455.clippy.log",
+      "source": "product-execution-quality-20261031T142521455.clippy.log",
+      "bytes": 8532286,
+      "sha256": "5ebd1f20c3b4f0ed9dc7ced55d553bc94812b2d2fe766b3c86e6a385f27b88ce"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.product-execution-quality-20261031T142521455.default-check.json",
+      "source": "product-execution-quality-20261031T142521455.default-check.json",
+      "bytes": 344,
+      "sha256": "e00aa2b3315adcff97944297b82ec1a5851da35a4b0022968142876163275aaa"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.product-execution-quality-20261031T142521455.default-check.log",
+      "source": "product-execution-quality-20261031T142521455.default-check.log",
+      "bytes": 84035,
+      "sha256": "89c643465db74b87ee94d71be917d49811ed55134de3f0f5520b31fb0268c763"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.product-execution-quality-20261031T142521455.doctest.json",
+      "source": "product-execution-quality-20261031T142521455.doctest.json",
+      "bytes": 358,
+      "sha256": "35ef62889a3734a1bda64be42e06926b314d1a0f60734fd0f67a9d769eaa046a"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.product-execution-quality-20261031T142521455.doctest.log",
+      "source": "product-execution-quality-20261031T142521455.doctest.log",
+      "bytes": 82383,
+      "sha256": "4d918a926d1018aa74cfc801eefb04e823f07567d368dd52613e9d00690b7c60"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.product-execution-quality-20261031T142521455.structure.json",
+      "source": "product-execution-quality-20261031T142521455.structure.json",
+      "bytes": 539,
+      "sha256": "751d6c75291ef2be6f76341324ed8f060d6e99d130b329909876e6dd541a340a"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.product-execution-quality-20261031T142521455.structure.log",
+      "source": "product-execution-quality-20261031T142521455.structure.log",
+      "bytes": 65048,
+      "sha256": "95cde6d3d52fbdb73aba24fb7ac3073aea1632745ad7ee195e11910700d6761d"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.product-execution-quality-20261031T142521455.fmt.json",
+      "source": "product-execution-quality-20261031T142521455.fmt.json",
+      "bytes": 2982,
+      "sha256": "09d5108e4c20c5017d1fbab1bd6b0c04d3d809483c22def0452b59f426bc1d88"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.product-execution-quality-20261031T142521455.fmt.log",
+      "source": "product-execution-quality-20261031T142521455.fmt.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.product-execution-quality-20261031T142521455.structure-report.dependency_edges.csv",
+      "source": "product-execution-quality-20261031T142521455.structure-report/dependency_edges.csv",
+      "bytes": 77544,
+      "sha256": "529e738d348314f7a4c0d909b165620d03ec57478b68ad42b06aa349b30e13f4"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.product-execution-quality-20261031T142521455.structure-report.file_metrics.csv",
+      "source": "product-execution-quality-20261031T142521455.structure-report/file_metrics.csv",
+      "bytes": 330622,
+      "sha256": "4025cfb8613342ae9f02883f8b396ba763babcb2d6c0760c767b08a20ef00b35"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.product-execution-quality-20261031T142521455.structure-report.findings.md",
+      "source": "product-execution-quality-20261031T142521455.structure-report/findings.md",
+      "bytes": 122295,
+      "sha256": "73690deb6297125e84ae0c294bff2333d38c5484375830df1e3225b29232670b"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.product-execution-quality-20261031T142521455.structure-report.package_metrics.csv",
+      "source": "product-execution-quality-20261031T142521455.structure-report/package_metrics.csv",
+      "bytes": 6444,
+      "sha256": "c2df26363c079ef3c17be71810df334c6e4825ab5987b4951b3f1432368b85f2"
+    },
+    {
+      "path": "task-presentation-scope-grants-raw.product-execution-quality-20261031T142521455.structure-report.public_type_duplicates.csv",
+      "source": "product-execution-quality-20261031T142521455.structure-report/public_type_duplicates.csv",
+      "bytes": 17238,
+      "sha256": "6cbaa427fef9360e8adb6245ea1eec66f5fdaf2624a24979e82d4877a28e31ac"
+    }
+  ],
+  "artifactCount": 102,
+  "artifactBytes": 22022291,
+  "rawByteDrift": 0
+}

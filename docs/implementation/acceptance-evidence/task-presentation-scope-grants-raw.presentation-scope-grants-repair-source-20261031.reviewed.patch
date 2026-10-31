@@ -1,0 +1,52 @@
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests.rs b/crates/arcweft-core/src/awbc/product_step/tests.rs
+index eef0b7ad8d72b2a86175b84719b228e2cfe53665..1cfb4d3031c83870c637565f8d2353ea7cf89917 100644
+--- a/crates/arcweft-core/src/awbc/product_step/tests.rs
++++ b/crates/arcweft-core/src/awbc/product_step/tests.rs
+@@ -1899,6 +1899,7 @@ fn product_dialogue_failure_cancels_joined_child_before_abandoning() {
+             pending_activation_host_call: None,
+         })
+         .expect("activation begins");
++    let child_fiber = create_test_dialogue_fiber(&mut executor, activation, AwbcFunctionId(0));
+     executor.child_fibers.push_back(ProductChildFiber {
+         owner: ProductChildFiberOwner::LineTask {
+             content: AwbcContentUnitId(0),
+@@ -1906,7 +1907,7 @@ fn product_dialogue_failure_cancels_joined_child_before_abandoning() {
+             policy,
+             phase: ProductLineTaskFiberPhase::Active,
+         },
+-        fiber: copyable_fixture_fiber(&executor),
++        fiber: child_fiber,
+         runtime_generation: executor.runtime_generation,
+         pending_host_call: None,
+     });
+@@ -3105,8 +3106,19 @@ fn dialogue_activation_rejects_an_independently_valid_foreign_root_before_copy()
+     // Keep the issued physical coordinates valid so the original root-contract
+     // rejection remains the invariant under test, independently of bank checks.
+     foreign_root.instance = dialogue_instance;
++    foreign_root.root = crate::awbc::fiber::AwbcFiberRoot::Function(
++        executor.fiber.active_frame().unwrap().function,
++    );
+     foreign_root.presentation_bank =
+         crate::runtime_id::RuntimePresentationBankId::Dialogue { activation };
++    foreign_root
++        .admit_retained(
++            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
++                owner.clone(),
++                crate::entry::RuntimeSchemaLimits::engine_default(),
++            ),
++        )
++        .unwrap();
+     encoded["entries"][0]["Active"]["frame"]["phase"]["Activating"]["fiber"] =
+         serde_json::to_value(&foreign_root).unwrap();
+     snapshot.dialogues = serde_json::from_value(encoded).unwrap();
+@@ -3121,7 +3133,9 @@ fn dialogue_activation_rejects_an_independently_valid_foreign_root_before_copy()
+ 
+     let entry = FiberState::for_function_in_context(
+         &executor.program,
+-        crate::awbc::fiber::AwbcFiberRoot::Entry(AwbcEntryId(0)),
++        crate::awbc::fiber::AwbcFiberRoot::Function(
++            executor.fiber.active_frame().unwrap().function,
++        ),
+         executor.fiber.active_frame().unwrap().function,
+         crate::awbc::fiber::FiberCreationContext::new(
+             dialogue_instance,

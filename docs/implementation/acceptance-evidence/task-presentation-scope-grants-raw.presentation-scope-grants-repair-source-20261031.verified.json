@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "commit": "23cfb6bdbcb908873420e0055f304a0efe456b1d",
+  "parent": "935fa74803b1200f19eaf73dd08447a0a1b7dabd",
+  "tree": "8cb42ef68009f82f5d1ad0e0a1bc751bbf5f72ec",
+  "remote": "23cfb6bdbcb908873420e0055f304a0efe456b1d",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+      "blob": "1cfb4d3031c83870c637565f8d2353ea7cf89917"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "b33c0db6d73be137c4f10db26743df2dc7c05f6cb8b29461669d0bcdc949da7b",
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-31T14:25:20.9793826Z"
+}
