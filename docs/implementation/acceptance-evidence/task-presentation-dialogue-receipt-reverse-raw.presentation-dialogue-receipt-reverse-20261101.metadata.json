@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "ef49da12aa0aa0e40e30eea6a9a5fd6ca1335234",
+  "command": [
+    "metadata",
+    "--format-version",
+    "1",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-dialogue-receipt-reverse-20261101.metadata.log",
+  "exitCode": 0,
+  "sourceInputs": 4032,
+  "sourceDrift": 0,
+  "startedAt": "2026-10-31T16:56:40.8907723Z",
+  "finishedAt": "2026-10-31T16:56:46.3385645Z"
+}

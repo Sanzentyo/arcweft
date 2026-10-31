@@ -1,0 +1,2381 @@
+{
+  "version": 1,
+  "recordedAt": "2026-10-31T19:23:47.9822981Z",
+  "sourceCommit": "390304bc5308b8a2cb4eb2672a8f51e8fe59fa1e",
+  "rootResultConsumerCommit": "97092efcc46bb1ee53c93b39400941d992328464",
+  "scope": "Historical diagnostic and repair evidence only. This archive is not a current specification or a claim of final reverse/workspace acceptance.",
+  "archive": {
+    "path": "task-presentation-dialogue-handoff-repair-raw.zip",
+    "bytes": 11381605,
+    "sha256": "a859e81996a2cbea598082bd34c5080fc0abfe2b92f0e1f4bab4964eca6ac6e3",
+    "entries": 295,
+    "entryByteDrift": 0
+  },
+  "reconstruction": "Each source-capture.patch applies to the full base SHA in its source-capture-patch.json. Captured task Core/Compiler bytes were checked against the frozen input hashes. No Cargo binaries, caches, or held user WIP were copied.",
+  "clarifications": [
+    "debug1 through debug7 intentionally instrumented failures; their diagnostic source is retained only as historical patches and is absent from the published source.",
+    "owner1 and owner3 failed compilation. owner4 completed a library-only catalog but its expected count incorrectly included 53 integration cases; its wrapper rejected the count before runtime.",
+    "owner11 ran all 2218 Core tests: 2217 passed and the old queue fixture failed. Only that test body changed afterwards; all other 4033-input hashes and other Core test bodies were checked unchanged. focus17 passed its completed real-parent migration. These are separate runs, not one all-2218 passing epoch.",
+    "source1 passed four actual Source regressions and the forged child save test before the subsequent extra parent-instance alias check. It is not relabeled as a run on the final source input.",
+    "The first owner11 capture helper inspected unstaged paths after staging and found zero paths; it wrote no manifest. Its 13 original source captures were recovered from the still-pinned reviewed Git index and matched every frozen hash before that index was refreshed."
+  ],
+  "terminalResults": [
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug1.runtime.terminal-audit.json",
+      "diagnosticOnly": true,
+      "base": "97092efcc46bb1ee53c93b39400941d992328464",
+      "summary": "Summary [   0.219s] 1 test run: 0 passed, 1 failed, 6860 skipped",
+      "actualExitCode": 100,
+      "sourceInputs": 4032,
+      "sourceDrift": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-compiler::evaluated_effects",
+          "test": "physical_line_endings_normalize_display_without_erasing_inline_spaces_in_native_and_awbc"
+        }
+      ]
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug2.runtime.terminal-audit.json",
+      "diagnosticOnly": true,
+      "base": "97092efcc46bb1ee53c93b39400941d992328464",
+      "summary": "Summary [   0.360s] 1 test run: 0 passed, 1 failed, 6860 skipped",
+      "actualExitCode": 100,
+      "sourceInputs": 4032,
+      "sourceDrift": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-compiler::evaluated_effects",
+          "test": "physical_line_endings_normalize_display_without_erasing_inline_spaces_in_native_and_awbc"
+        }
+      ]
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug3.runtime.terminal-audit.json",
+      "diagnosticOnly": true,
+      "base": "97092efcc46bb1ee53c93b39400941d992328464",
+      "summary": "Summary [   0.751s] 1 test run: 0 passed, 1 failed, 48 skipped",
+      "actualExitCode": 100,
+      "sourceInputs": 4032,
+      "sourceDrift": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-compiler::evaluated_effects",
+          "test": "physical_line_endings_normalize_display_without_erasing_inline_spaces_in_native_and_awbc"
+        }
+      ]
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug4.runtime.terminal-audit.json",
+      "diagnosticOnly": true,
+      "base": "97092efcc46bb1ee53c93b39400941d992328464",
+      "summary": "Summary [   0.831s] 1 test run: 0 passed, 1 failed, 48 skipped",
+      "actualExitCode": 100,
+      "sourceInputs": 4032,
+      "sourceDrift": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-compiler::evaluated_effects",
+          "test": "physical_line_endings_normalize_display_without_erasing_inline_spaces_in_native_and_awbc"
+        }
+      ]
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug5.runtime.terminal-audit.json",
+      "diagnosticOnly": true,
+      "base": "97092efcc46bb1ee53c93b39400941d992328464",
+      "summary": "Summary [   0.834s] 1 test run: 0 passed, 1 failed, 48 skipped",
+      "actualExitCode": 100,
+      "sourceInputs": 4032,
+      "sourceDrift": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-compiler::evaluated_effects",
+          "test": "physical_line_endings_normalize_display_without_erasing_inline_spaces_in_native_and_awbc"
+        }
+      ]
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug6.runtime.terminal-audit.json",
+      "diagnosticOnly": true,
+      "base": "97092efcc46bb1ee53c93b39400941d992328464",
+      "summary": "Summary [   0.864s] 1 test run: 0 passed, 1 failed, 48 skipped",
+      "actualExitCode": 100,
+      "sourceInputs": 4032,
+      "sourceDrift": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-compiler::evaluated_effects",
+          "test": "physical_line_endings_normalize_display_without_erasing_inline_spaces_in_native_and_awbc"
+        }
+      ]
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug7.runtime.terminal-audit.json",
+      "diagnosticOnly": true,
+      "base": "97092efcc46bb1ee53c93b39400941d992328464",
+      "summary": "Summary [   0.868s] 1 test run: 0 passed, 1 failed, 48 skipped",
+      "actualExitCode": 100,
+      "sourceInputs": 4032,
+      "sourceDrift": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-compiler::evaluated_effects",
+          "test": "physical_line_endings_normalize_display_without_erasing_inline_spaces_in_native_and_awbc"
+        }
+      ]
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus10.runtime.terminal-audit.json",
+      "diagnosticOnly": false,
+      "base": "97092efcc46bb1ee53c93b39400941d992328464",
+      "summary": "Summary [   0.182s] 21 tests run: 19 passed, 2 failed, 2144 skipped",
+      "actualExitCode": 100,
+      "sourceInputs": 4033,
+      "sourceDrift": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budget"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::product_snapshot_visitor_finds_asset_handles_in_dialogue_captures"
+        }
+      ]
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus12.runtime.terminal-audit.json",
+      "diagnosticOnly": false,
+      "base": "97092efcc46bb1ee53c93b39400941d992328464",
+      "summary": "Summary [   0.059s] 1 test run: 0 passed, 1 failed, 2164 skipped",
+      "actualExitCode": 100,
+      "sourceInputs": 4033,
+      "sourceDrift": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budget"
+        }
+      ]
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus13.runtime.terminal-audit.json",
+      "diagnosticOnly": false,
+      "base": "97092efcc46bb1ee53c93b39400941d992328464",
+      "summary": "Summary [   0.051s] 1 test run: 0 passed, 1 failed, 2164 skipped",
+      "actualExitCode": 100,
+      "sourceInputs": 4033,
+      "sourceDrift": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budget"
+        }
+      ]
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus14.runtime.terminal-audit.json",
+      "diagnosticOnly": false,
+      "base": "97092efcc46bb1ee53c93b39400941d992328464",
+      "summary": "Summary [   0.052s] 1 test run: 0 passed, 1 failed, 2164 skipped",
+      "actualExitCode": 100,
+      "sourceInputs": 4033,
+      "sourceDrift": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budget"
+        }
+      ]
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus15.runtime.terminal-audit.json",
+      "diagnosticOnly": false,
+      "base": "97092efcc46bb1ee53c93b39400941d992328464",
+      "summary": "Summary [   0.082s] 1 test run: 0 passed, 1 failed, 2164 skipped",
+      "actualExitCode": 100,
+      "sourceInputs": 4033,
+      "sourceDrift": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budget"
+        }
+      ]
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus16.runtime.terminal-audit.json",
+      "diagnosticOnly": false,
+      "base": "97092efcc46bb1ee53c93b39400941d992328464",
+      "summary": "Summary [   0.066s] 1 test run: 0 passed, 1 failed, 2164 skipped",
+      "actualExitCode": 100,
+      "sourceInputs": 4033,
+      "sourceDrift": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budget"
+        }
+      ]
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus17.runtime.terminal-audit.json",
+      "diagnosticOnly": false,
+      "base": "97092efcc46bb1ee53c93b39400941d992328464",
+      "summary": "Summary [   0.075s] 1 test run: 1 passed, 2164 skipped",
+      "actualExitCode": 0,
+      "sourceInputs": 4033,
+      "sourceDrift": 0,
+      "failureSet": []
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus5.runtime.terminal-audit.json",
+      "diagnosticOnly": false,
+      "base": "97092efcc46bb1ee53c93b39400941d992328464",
+      "summary": "Summary [   0.147s] 19 tests run: 0 passed, 19 failed, 2197 skipped",
+      "actualExitCode": 100,
+      "sourceInputs": 4032,
+      "sourceDrift": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::product_snapshot_visitor_finds_asset_handles_in_dialogue_captures"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::cancellation::line_cancellation_retires_all_actual_child_scopes_before_removal_and_public_save_roundtrips"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::invalid_schedule_schema_preserves_admitted_captures_before_failure_close"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::activation_effect_moves_affine_handle_through_effect_observation_and_default_drop"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::cancellation::later_child_bank_forgery_rejects_before_any_cancellation_or_grant_move"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::execution_checkpoint_preserves_the_typed_bank_metadata_rejection"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::dialogue_activation_rejects_an_independently_valid_foreign_root_before_copy"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budget"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::dialogue_frame_joins_the_original_bank_before_capture_or_restore"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::actor_look_borrows_one_stage_actor_across_two_looks_and_out_return"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::mark_action_selection_restores_and_cancellation_can_override_it"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::cancellation::combined_child_retirement_capacity_rejects_without_partial_cancel_and_retry_preserves_order"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::dialogue_frame_cannot_replace_the_original_registry_activation"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::execution_checkpoint_includes_root_and_the_actual_withdrawn_dialogue_grants"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::terminal_requests::real_deferred_host_failure_consumes_its_receipt_only_after_resource_unwind_is_admitted"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::line_activation_register_defer_commits_captures_and_cursor"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::dialogue_bank_roundtrips_and_duplicate_activation_fiber_rejection_keeps_the_owner"
+        }
+      ]
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus6.runtime.terminal-audit.json",
+      "diagnosticOnly": false,
+      "base": "97092efcc46bb1ee53c93b39400941d992328464",
+      "summary": "Summary [   0.146s] 19 tests run: 0 passed, 19 failed, 2197 skipped",
+      "actualExitCode": 100,
+      "sourceInputs": 4032,
+      "sourceDrift": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::actor_look_borrows_one_stage_actor_across_two_looks_and_out_return"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::cancellation::later_child_bank_forgery_rejects_before_any_cancellation_or_grant_move"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budget"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::dialogue_bank_roundtrips_and_duplicate_activation_fiber_rejection_keeps_the_owner"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::line_activation_register_defer_commits_captures_and_cursor"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::activation_effect_moves_affine_handle_through_effect_observation_and_default_drop"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::dialogue_frame_joins_the_original_bank_before_capture_or_restore"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::mark_action_selection_restores_and_cancellation_can_override_it"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::execution_checkpoint_preserves_the_typed_bank_metadata_rejection"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::dialogue_activation_rejects_an_independently_valid_foreign_root_before_copy"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::terminal_requests::real_deferred_host_failure_consumes_its_receipt_only_after_resource_unwind_is_admitted"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::cancellation::line_cancellation_retires_all_actual_child_scopes_before_removal_and_public_save_roundtrips"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::execution_checkpoint_includes_root_and_the_actual_withdrawn_dialogue_grants"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::product_snapshot_visitor_finds_asset_handles_in_dialogue_captures"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::dialogue_frame_cannot_replace_the_original_registry_activation"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::cancellation::combined_child_retirement_capacity_rejects_without_partial_cancel_and_retry_preserves_order"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::invalid_schedule_schema_preserves_admitted_captures_before_failure_close"
+        }
+      ]
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus7.runtime.terminal-audit.json",
+      "diagnosticOnly": false,
+      "base": "97092efcc46bb1ee53c93b39400941d992328464",
+      "summary": "Summary [   0.133s] 21 tests run: 0 passed, 21 failed, 2144 skipped",
+      "actualExitCode": 100,
+      "sourceInputs": 4033,
+      "sourceDrift": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::dialogue_handoff::active_dialogue_save_rejects_missing_or_replaced_parent_receiver_without_changing_owners"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::dialogue_frame_joins_the_original_bank_before_capture_or_restore"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::activation_effect_moves_affine_handle_through_effect_observation_and_default_drop"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::actor_look_borrows_one_stage_actor_across_two_looks_and_out_return"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::invalid_schedule_schema_preserves_admitted_captures_before_failure_close"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::dialogue_activation_rejects_an_independently_valid_foreign_root_before_copy"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budget"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::cancellation::later_child_bank_forgery_rejects_before_any_cancellation_or_grant_move"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::dialogue_bank_roundtrips_and_duplicate_activation_fiber_rejection_keeps_the_owner"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::dialogue_frame_cannot_replace_the_original_registry_activation"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::dialogue_handoff::pending_dialogue_packet_roundtrips_and_failed_handoff_keeps_the_complete_session"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::execution_checkpoint_includes_root_and_the_actual_withdrawn_dialogue_grants"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::terminal_requests::real_deferred_host_failure_consumes_its_receipt_only_after_resource_unwind_is_admitted"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::mark_action_selection_restores_and_cancellation_can_override_it"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::cancellation::combined_child_retirement_capacity_rejects_without_partial_cancel_and_retry_preserves_order"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::cancellation::line_cancellation_retires_all_actual_child_scopes_before_removal_and_public_save_roundtrips"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::execution_checkpoint_preserves_the_typed_bank_metadata_rejection"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::line_activation_register_defer_commits_captures_and_cursor"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::product_snapshot_visitor_finds_asset_handles_in_dialogue_captures"
+        }
+      ]
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus8.runtime.terminal-audit.json",
+      "diagnosticOnly": false,
+      "base": "97092efcc46bb1ee53c93b39400941d992328464",
+      "summary": "Summary [   0.223s] 21 tests run: 9 passed, 12 failed, 2144 skipped",
+      "actualExitCode": 100,
+      "sourceInputs": 4033,
+      "sourceDrift": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::dialogue_frame_cannot_replace_the_original_registry_activation"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::dialogue_handoff::pending_dialogue_packet_roundtrips_and_failed_handoff_keeps_the_complete_session"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budget"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::cancellation::line_cancellation_retires_all_actual_child_scopes_before_removal_and_public_save_roundtrips"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::cancellation::later_child_bank_forgery_rejects_before_any_cancellation_or_grant_move"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::terminal_requests::real_deferred_host_failure_consumes_its_receipt_only_after_resource_unwind_is_admitted"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::mark_action_selection_restores_and_cancellation_can_override_it"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::line_activation_register_defer_commits_captures_and_cursor"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::cancellation::combined_child_retirement_capacity_rejects_without_partial_cancel_and_retry_preserves_order"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::product_snapshot_visitor_finds_asset_handles_in_dialogue_captures"
+        }
+      ]
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus9.runtime.terminal-audit.json",
+      "diagnosticOnly": false,
+      "base": "97092efcc46bb1ee53c93b39400941d992328464",
+      "summary": "Summary [   0.125s] 21 tests run: 0 passed, 21 failed, 2144 skipped",
+      "actualExitCode": 100,
+      "sourceInputs": 4033,
+      "sourceDrift": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::dialogue_frame_joins_the_original_bank_before_capture_or_restore"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::actor_look_borrows_one_stage_actor_across_two_looks_and_out_return"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::dialogue_activation_rejects_an_independently_valid_foreign_root_before_copy"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::execution_checkpoint_includes_root_and_the_actual_withdrawn_dialogue_grants"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::mark_action_selection_restores_and_cancellation_can_override_it"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budget"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::execution_checkpoint_preserves_the_typed_bank_metadata_rejection"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::cancellation::line_cancellation_retires_all_actual_child_scopes_before_removal_and_public_save_roundtrips"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::cancellation::later_child_bank_forgery_rejects_before_any_cancellation_or_grant_move"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::dialogue_frame_cannot_replace_the_original_registry_activation"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::invalid_schedule_schema_preserves_admitted_captures_before_failure_close"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::cancellation::combined_child_retirement_capacity_rejects_without_partial_cancel_and_retry_preserves_order"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::terminal_requests::real_deferred_host_failure_consumes_its_receipt_only_after_resource_unwind_is_admitted"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::activation_effect_moves_affine_handle_through_effect_observation_and_default_drop"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::line_activation_register_defer_commits_captures_and_cursor"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::dialogue_handoff::active_dialogue_save_rejects_missing_or_replaced_parent_receiver_without_changing_owners"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::dialogue_bank_roundtrips_and_duplicate_activation_fiber_rejection_keeps_the_owner"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::dialogue_handoff::pending_dialogue_packet_roundtrips_and_failed_handoff_keeps_the_complete_session"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::product_snapshot_visitor_finds_asset_handles_in_dialogue_captures"
+        }
+      ]
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner11.runtime.terminal-audit.json",
+      "diagnosticOnly": false,
+      "base": "97092efcc46bb1ee53c93b39400941d992328464",
+      "summary": "Summary [  78.625s] 2218 tests run: 2217 passed (1 slow), 1 failed, 0 skipped",
+      "actualExitCode": 100,
+      "sourceInputs": 4033,
+      "sourceDrift": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budget"
+        }
+      ]
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner2.runtime.terminal-audit.json",
+      "diagnosticOnly": false,
+      "base": "97092efcc46bb1ee53c93b39400941d992328464",
+      "summary": "Summary [  93.573s] 2216 tests run: 2197 passed (1 slow), 19 failed, 0 skipped",
+      "actualExitCode": 100,
+      "sourceInputs": 4032,
+      "sourceDrift": 0,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::activation_effect_moves_affine_handle_through_effect_observation_and_default_drop"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::actor_look_borrows_one_stage_actor_across_two_looks_and_out_return"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budget"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::dialogue_frame_cannot_replace_the_original_registry_activation"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::dialogue_activation_rejects_an_independently_valid_foreign_root_before_copy"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::dialogue_frame_joins_the_original_bank_before_capture_or_restore"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::invalid_schedule_schema_preserves_admitted_captures_before_failure_close"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::line_activation_register_defer_commits_captures_and_cursor"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::mark_action_selection_restores_and_cancellation_can_override_it"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::cancellation::combined_child_retirement_capacity_rejects_without_partial_cancel_and_retry_preserves_order"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::cancellation::later_child_bank_forgery_rejects_before_any_cancellation_or_grant_move"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::cancellation::line_cancellation_retires_all_actual_child_scopes_before_removal_and_public_save_roundtrips"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::dialogue_bank_roundtrips_and_duplicate_activation_fiber_rejection_keeps_the_owner"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::execution_checkpoint_includes_root_and_the_actual_withdrawn_dialogue_grants"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::execution_checkpoint_preserves_the_typed_bank_metadata_rejection"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::terminal_requests::real_deferred_host_failure_consumes_its_receipt_only_after_resource_unwind_is_admitted"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::product_snapshot_visitor_finds_asset_handles_in_dialogue_captures"
+        }
+      ]
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.source1.runtime.terminal-audit.json",
+      "diagnosticOnly": false,
+      "base": "97092efcc46bb1ee53c93b39400941d992328464",
+      "summary": "Summary [   0.894s] 5 tests run: 5 passed, 62 skipped",
+      "actualExitCode": 0,
+      "sourceInputs": 4033,
+      "sourceDrift": 0,
+      "failureSet": []
+    },
+    {
+      "entry": "presentation-root-result-consumers-20261101.focus1.runtime.terminal-audit.json",
+      "diagnosticOnly": false,
+      "base": "ef49da12aa0aa0e40e30eea6a9a5fd6ca1335234",
+      "summary": "Summary [   0.883s] 10 tests run: 10 passed, 6851 skipped",
+      "actualExitCode": 0,
+      "sourceInputs": 4032,
+      "sourceDrift": 0,
+      "failureSet": []
+    }
+  ],
+  "files": [
+    {
+      "entry": "archive-captured-source-patches.ps1",
+      "bytes": 2638,
+      "sha256": "3f49bf9e94f8065c4080f8402af67272b2471f334a0242b081843f392a75c175"
+    },
+    {
+      "entry": "archive-dialogue-handoff-repair.ps1",
+      "bytes": 5486,
+      "sha256": "75e93daddd3d345027dbdb86e61f8441e14e0517f288a6f2206bd284d4bebd89"
+    },
+    {
+      "entry": "audit-nextest-final-result.ps1",
+      "bytes": 5266,
+      "sha256": "9d136f5ff9dbe80e524a8c9adb2f11fc96cce75046e3e1fe3e93ba73888cc0ab"
+    },
+    {
+      "entry": "capture-frozen-changes.ps1",
+      "bytes": 1342,
+      "sha256": "0b22ee999ee7b932cf01056402e29bc6a4ad8077923a486740f835b223e5097b"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug1.binaries-before.json",
+      "bytes": 50108,
+      "sha256": "d3dafbf21d14f161177a0167d2c0db58fd2166f7505855977612afc931b3bd43"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug1.catalog.inventory.json",
+      "bytes": 1730047,
+      "sha256": "e9df59f442abb32873de8d303ba4b46251792421eaad613a44cc565dcefd242f"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug1.catalog.json",
+      "bytes": 2658,
+      "sha256": "86fad0ca8f16f40a84353cca8f6cb9441e20439fae0cedbdd6e7319688b86e1c"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug1.catalog.log",
+      "bytes": 1444040,
+      "sha256": "ddc34bece6848b564a8ae125c8494d717b81c8c6a8eba826990f681a95834228"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug1.runtime.json",
+      "bytes": 2752,
+      "sha256": "e19751e1c88d6d9ace4fe49faf1eb2bb235ff22617fde4e86f21f9c6d9f08568"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug1.runtime.log",
+      "bytes": 2117580,
+      "sha256": "92f22dbfeabe45087c1f0b8b47971c89852e60bf14c971c2620624f2b3bf83d4"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug1.runtime.terminal-audit.json",
+      "bytes": 2253,
+      "sha256": "64c7264b6f9cc0b9690750d4ac3c308702e92808dc76c6927b0e929e9e267a4c"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug1.source-capture-patch.json",
+      "bytes": 567,
+      "sha256": "484a74804b33b06d0c6bf042727ab22da5e13fd20df04e1928cb0d7ba34797f5"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug1.source-capture.patch",
+      "bytes": 991,
+      "sha256": "80b02352918457150ede71bc7cc7a830d8f53895bd6b12a831d4da1278553e87"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug1.source-freeze.json",
+      "bytes": 788196,
+      "sha256": "5922d0f460d9681c8e2c94c8e44ae2064194fb11249362413f8a4207c9b22828"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug1.sources.json",
+      "bytes": 362,
+      "sha256": "29faa03f0e0bef592ba73ab937e3add41104c7b2d93f8c486cda8452035abd6b"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug2.binaries-before.json",
+      "bytes": 50108,
+      "sha256": "47b221b4cf6bbf42385338cbaa39bea0bb315418b250e6c5e26ff67c039998f2"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug2.catalog.inventory.json",
+      "bytes": 1730047,
+      "sha256": "e9df59f442abb32873de8d303ba4b46251792421eaad613a44cc565dcefd242f"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug2.catalog.json",
+      "bytes": 2658,
+      "sha256": "8c2745685bf35010b49e4d1288ad69bac031c45c53ce01dc4856978a30c8e489"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug2.catalog.log",
+      "bytes": 1444040,
+      "sha256": "8892b11d7390420b7814f726849c1495903559441314f69c7ea41c1d95379301"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug2.runtime.json",
+      "bytes": 2752,
+      "sha256": "25927c2fcb7b718e2c2420465eb762240255cc36bf7083721b7577393b3ff730"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug2.runtime.log",
+      "bytes": 2629687,
+      "sha256": "0cb3b81c4c45a48382d72a157d7416df1ad6be74b125fdc5f2c5cc642beb8835"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug2.runtime.terminal-audit.json",
+      "bytes": 2253,
+      "sha256": "7ee79efe87bc3fd8a02ac55d7ef4f0a26f6f7b34bd6374e8950eb2bb96d9fbec"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug2.source-capture-patch.json",
+      "bytes": 567,
+      "sha256": "1e7281627448543db00f76a9308b85d3e1e4db7adddedf5d4d1df2e89cf21df7"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug2.source-capture.patch",
+      "bytes": 1073,
+      "sha256": "75076bc99378262866c62c1172dd6afb49fe6eb71c2bf03cffaf0cc48e90d67b"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug2.source-freeze.json",
+      "bytes": 788196,
+      "sha256": "13f5aeb5e03be8e713d26dfacf3965666c96334ee1ccf90ba72f5ec800dc6a0a"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug2.sources.json",
+      "bytes": 362,
+      "sha256": "949725ca6ecbc39d2ca6e59a9264256c68ddbb2e69f59928dbddd6d362dea930"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug3.binaries-before.json",
+      "bytes": 230,
+      "sha256": "63289b0dce7add3b2c93ecafd74ac3de3ec76ddac128f2207d77db8109484842"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug3.catalog.inventory.json",
+      "bytes": 12457,
+      "sha256": "0f1508119273a5667a614e978b5969c3fcc84c86e8739fe94fa014ec97bc6ec9"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug3.catalog.json",
+      "bytes": 702,
+      "sha256": "b235fd3b9af57918d57f75131c8ecc36f045124c2724ee8bd1ce24b2176c86a9"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug3.catalog.log",
+      "bytes": 99363,
+      "sha256": "569c517f56112e36bb37fa5457eefbd26fac448665dc544e97e8ec0ade7c0bdd"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug3.notes.json",
+      "bytes": 330,
+      "sha256": "8bc401034829a7da5aaab8bbd8ef360e23c9d5c105390914a4c005905818b619"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug3.runtime.json",
+      "bytes": 796,
+      "sha256": "2f1407a3574ed43f83a1b2e5fdadf82ec59d5a734827ed89ec20ff3945646c6c"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug3.runtime.log",
+      "bytes": 104547,
+      "sha256": "e4a3765cb7bb5b7168f070241bd473595ee2d697a95bd4b7fe4331c510e4c1a1"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug3.runtime.terminal-audit.json",
+      "bytes": 839,
+      "sha256": "0aa5137575517c6a21e975c8ea7eec13b8eba42e77d4f5ee57b92efc8a4d3a42"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug3.source-capture-patch.json",
+      "bytes": 571,
+      "sha256": "afd599186b009e090e78bb5d0ce4761fc7e63379b9a3786e4579b60cba3be549"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug3.source-capture.patch",
+      "bytes": 820,
+      "sha256": "bb8d39e8355314dedc5668aadefbde1ca40ce65096ffe29b566b0c472ffb504b"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug3.source-freeze.json",
+      "bytes": 788196,
+      "sha256": "8fcaf287027244c85517659d579a2f11bbb28c2ace9fa0e39e611b7d7141c320"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug3.sources.json",
+      "bytes": 370,
+      "sha256": "8b30aa64ee5fea40b09a51593b6f7a6e8230cbeb3e2ddf0a97a7544f283e4098"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug4.binaries-before.json",
+      "bytes": 230,
+      "sha256": "0aaf02c86235f8016eec6f768cdf9a30cdafc875bc296e24fff15ff2228dafc8"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug4.catalog.inventory.json",
+      "bytes": 12457,
+      "sha256": "0f1508119273a5667a614e978b5969c3fcc84c86e8739fe94fa014ec97bc6ec9"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug4.catalog.json",
+      "bytes": 702,
+      "sha256": "9d5e1122232e44364a13a73a8674e0402401bcb8a49360c1e95be4857da34cb1"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug4.catalog.log",
+      "bytes": 94603,
+      "sha256": "1c5345b6dd934a073292b693a96d09a40603dcc63cc220db00a0c394268d8231"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug4.runtime.json",
+      "bytes": 796,
+      "sha256": "5a1e812b7e7bc0109ae86029f74059c2ce5b2c5677189c52ba5ed60f782bea88"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug4.runtime.log",
+      "bytes": 852671,
+      "sha256": "65a2015410d05bc0abad5fecac67e469cdcb67b44927aaadcd784257c4f608c7"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug4.runtime.terminal-audit.json",
+      "bytes": 839,
+      "sha256": "f58c0f2d05b4abf4b3bc3d02f04682f577dbd3b7210fa98c78b79779f2a307ac"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug4.source-capture-patch.json",
+      "bytes": 739,
+      "sha256": "e59107f204df5ea74908e1a53c6c9ba6c3e7d216ca603d0ea5c6201c2219dd18"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug4.source-capture.patch",
+      "bytes": 2098,
+      "sha256": "ba55737fd58308dc5d1953c7b94cfb5634a9a4caa4ff61b59dccbabd8bc4d6e1"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug4.source-freeze.json",
+      "bytes": 788196,
+      "sha256": "2256ee0424ae6f2b6c1a5d816b6c45f4ec3ec38fcfdbe1dfde1613adc63ae03a"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug4.sources.json",
+      "bytes": 727,
+      "sha256": "a8f248cb856adf06e0700dedb6936ab7537ec893e7a495c9b3cfaced97ebeb64"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug5.binaries-before.json",
+      "bytes": 230,
+      "sha256": "6b54a606563849afd138e0aadaf82eed756a0a874657aa5e155237f0cbc661b9"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug5.catalog.inventory.json",
+      "bytes": 12457,
+      "sha256": "0f1508119273a5667a614e978b5969c3fcc84c86e8739fe94fa014ec97bc6ec9"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug5.catalog.json",
+      "bytes": 702,
+      "sha256": "6a0117347d49766dd17e8c57713b5d1b8dfd9e1f2b79325ced6f4cfe84a4daba"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug5.catalog.log",
+      "bytes": 96176,
+      "sha256": "e623b4daa1da44111326911606f7d258c8d131d00f8ce6d52184d3bcf62347a6"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug5.notes.json",
+      "bytes": 300,
+      "sha256": "07cd95ad6ff5c6eecc54e1902b69712745e953336e5a6a238f1b5da58c945782"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug5.runtime.json",
+      "bytes": 796,
+      "sha256": "3df8d1301cf355c2f435b7374f7ea7b6f414f519da79f0c97b1377d5d1464d2a"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug5.runtime.log",
+      "bytes": 852671,
+      "sha256": "3e1010737de6196a54438c7489d874214d86c8e7458034dfc9e31742d87494c0"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug5.runtime.terminal-audit.json",
+      "bytes": 839,
+      "sha256": "2d3b3bd20a4b1c01ab11e30cdb48da13c107c585ed989455e7b3e92fa6ed67c5"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug5.source-capture-patch.json",
+      "bytes": 1060,
+      "sha256": "d5f7bd4bdba7616f598e6b7d502429a658d9ca90d5f3eb1afa024bb92a407e8f"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug5.source-capture.patch",
+      "bytes": 34990,
+      "sha256": "00039524c58fdd8f9b343388b3c5c574f10be0a912c2653e7dd8418352479047"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug5.source-freeze.json",
+      "bytes": 788196,
+      "sha256": "800fc3a30a1db9da3e6641952510c91605d2a5b2b9b7b4f55970f14a5bfc92b5"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug5.sources.json",
+      "bytes": 1411,
+      "sha256": "723ef22ee074c4a5b40bfec4783b60e2b7fecb29e57bde4c18f7433f8b47c820"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug6.binaries-before.json",
+      "bytes": 230,
+      "sha256": "eae693320d6db74747fcd3bc691c5aeae92697a643aa7a3ef739e3c2c3b85ad0"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug6.catalog.inventory.json",
+      "bytes": 12457,
+      "sha256": "0f1508119273a5667a614e978b5969c3fcc84c86e8739fe94fa014ec97bc6ec9"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug6.catalog.json",
+      "bytes": 702,
+      "sha256": "a5f7656721971a8130b0c9817803c9d573fad88673a1bf9792c555614c361f31"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug6.catalog.log",
+      "bytes": 96176,
+      "sha256": "1acc60546a1e80c1a3c482c2d621758699fcb759af0fa155513df6161143cff3"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug6.runtime.json",
+      "bytes": 796,
+      "sha256": "9c71b30ef9a9c3bbbc18b09bae61cc881ae8260437bbe1e4ce15c4ae0c298f65"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug6.runtime.log",
+      "bytes": 852671,
+      "sha256": "48c8d550c0ce24c691bd5129c9637b37fb72cabbaef76767a723034749ef6990"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug6.runtime.terminal-audit.json",
+      "bytes": 839,
+      "sha256": "697543ea6965bcd86436bf8df9b3a740824a0f06d389ccd587e31b502feeaafd"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug6.source-capture-patch.json",
+      "bytes": 1060,
+      "sha256": "826fa430acd8ede356d1f4456b17f35f2a5c141e0230cd12844a545d5d6c934d"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug6.source-capture.patch",
+      "bytes": 35950,
+      "sha256": "06cfe8f69524ad2bb2a5cac944c3e4ae0050c3c42d923b21e82d005261a92eef"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug6.source-freeze.json",
+      "bytes": 788196,
+      "sha256": "9d7739d364cffdff3cb76b6d9d9aec635fc772236d1ee5cd2e180a74bae39894"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug6.sources.json",
+      "bytes": 1411,
+      "sha256": "3b9cb603a56b901eb82631776f446572ee908d58c42c0a88c1ffab7e10fb348c"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug7.binaries-before.json",
+      "bytes": 230,
+      "sha256": "de5d6cc8037448d7b86ba14e2e0b51887c4cacd128d96e42811d177b9bcc42e5"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug7.catalog.inventory.json",
+      "bytes": 12457,
+      "sha256": "0f1508119273a5667a614e978b5969c3fcc84c86e8739fe94fa014ec97bc6ec9"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug7.catalog.json",
+      "bytes": 702,
+      "sha256": "ba0553b4601d610aa68471629edfd5e7c4377486313ec9d2421cfedf13a36326"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug7.catalog.log",
+      "bytes": 96176,
+      "sha256": "50cde324b61c784ec2e793654f2ae950da51167018e6d16a996e2c7454d72741"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug7.runtime.json",
+      "bytes": 796,
+      "sha256": "18ea2497a3d6a7a8cdad4d1a16f70b8e5b276b7cc25268f78683333530f7edc8"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug7.runtime.log",
+      "bytes": 854787,
+      "sha256": "66f2c7100275c462e0d84b3ced57a7b2f19c3bd0ab3c7640d5cd12fe57cdd5ed"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug7.runtime.terminal-audit.json",
+      "bytes": 839,
+      "sha256": "ab7afe45eddc7120313e3f0e22448ce3113be2ff040d2554464ecb8a4a5026bf"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug7.source-capture-patch.json",
+      "bytes": 722,
+      "sha256": "2dadac010f7c529d501ed2a2efd4cc67d1fd5197ebb7ed312a1579cd4280a1a1"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug7.source-capture.patch",
+      "bytes": 2021,
+      "sha256": "0bc943978df4212dc5d9ff84609ac678361945af7adc113147452c32cca5161c"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug7.source-freeze.json",
+      "bytes": 788196,
+      "sha256": "d29255b8fdd2bb91d36341422586edd90f7d72a18143138656a43632cfc22a9a"
+    },
+    {
+      "entry": "presentation-dialogue-frame-20261101.debug7.sources.json",
+      "bytes": 693,
+      "sha256": "e21c83efc7fcb7392bb01b0d3caa40f5f875668633e6aa31b6a02bc16a6e8193"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus10.binaries-before.json",
+      "bytes": 202,
+      "sha256": "01bdc162e9f0d6bd2dda9a538daad6ce5879f90a9acffb65884f10d4684fe868"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus10.catalog.inventory.json",
+      "bytes": 552768,
+      "sha256": "67191a3146ab4f4945920e8dfe8db54253c285c2ab604e40b3949cb579d0a146"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus10.catalog.json",
+      "bytes": 2844,
+      "sha256": "35d56f3be038533a56d8d80c49712caee88348d6f8ba33456ba920a6fe425d60"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus10.catalog.log",
+      "bytes": 455147,
+      "sha256": "9597c44176293ce12b7a9d9040ed2e8e091cd9c4d1afc5ec05b998d5a58478a8"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus10.runtime.json",
+      "bytes": 2938,
+      "sha256": "28b32b36096cc8604e1c6e7a3d5869b235f304899f4909fffd090d9a066519eb"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus10.runtime.log",
+      "bytes": 722973,
+      "sha256": "98162f74c38ac2e3f992a2e01c539c1fc1845763ab197f10198173ba73997ea7"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus10.runtime.terminal-audit.json",
+      "bytes": 1029,
+      "sha256": "35228505d4ae0a39cbe5151de2ee9efd67773faa541d64a3ae2ab86932354f87"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus10.source-capture-patch.json",
+      "bytes": 2596,
+      "sha256": "26c2bb9d80cb49ad00c04d9c348a401f3aedfcf129c3991df5933eb838e2092e"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus10.source-capture.patch",
+      "bytes": 79603,
+      "sha256": "80d76d60f30702a50b219247c35a3f13874257fe4222d5c76b8aee479e2fb5cb"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus10.source-freeze.json",
+      "bytes": 788403,
+      "sha256": "768504ef3b8b81b56ac8fe48bdcac80fcf9fe2b05f3941c94d117717a24ce141"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus10.sources.json",
+      "bytes": 4705,
+      "sha256": "bd3229a35144ea197eaddcde61a924bf58f80edd6e7c0a293d70f7de91d93704"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus12.binaries-before.json",
+      "bytes": 202,
+      "sha256": "c49fb8d627a18b599ad24f6287f55cdc4e84f3df35ffb13beb70d48c4fda612e"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus12.catalog.inventory.json",
+      "bytes": 552788,
+      "sha256": "671a5fe228d89a546f945ced9fd995f6686026df53a03519907ca1fc7288a626"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus12.catalog.json",
+      "bytes": 692,
+      "sha256": "51b3b8519c3b51a2c265861820a6881d40d51ce252345acdb64172ee40379669"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus12.catalog.log",
+      "bytes": 455607,
+      "sha256": "275300a9546dc4364d9c4dfb3ce559e22a50250ceecada1113a820d18d0bc365"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus12.runtime.json",
+      "bytes": 786,
+      "sha256": "672d7e14a9c7734e5fad20e8c892c2f59c9320e925a2c1cbf7772a85a94746e8"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus12.runtime.log",
+      "bytes": 696655,
+      "sha256": "dc4bfbcb32c5982328588a3a876c0eccd673e63d86075e205fde259ad518ea78"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus12.runtime.terminal-audit.json",
+      "bytes": 841,
+      "sha256": "dcac8e56930068f780ddcd11190232510d8dc0f46350078c07a2ee235328f5d7"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus12.source-capture-patch.json",
+      "bytes": 2596,
+      "sha256": "92d17c7ab929a5d5ccf93b7504fabbabfa7680efe5efc363eb6e9671002d9129"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus12.source-capture.patch",
+      "bytes": 83797,
+      "sha256": "867ce17f8b7a6b7b75963e744a485332a62a9d40892caeb697dbdce92188d2d3"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus12.source-freeze.json",
+      "bytes": 788403,
+      "sha256": "e3f5b7b6724780abe0c983c84cd00c720316dca8ec85a25da1b791496c2acc02"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus12.sources.json",
+      "bytes": 4705,
+      "sha256": "e9bad6e995aa59e46077d7d8731664e2a3cd81795fcae9b2429e1c50fcdf2210"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus13.binaries-before.json",
+      "bytes": 202,
+      "sha256": "a79206d0c01391fa2f0988d8691dff5fbd818d8514f619925081df546a9ecdb8"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus13.catalog.inventory.json",
+      "bytes": 552788,
+      "sha256": "671a5fe228d89a546f945ced9fd995f6686026df53a03519907ca1fc7288a626"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus13.catalog.json",
+      "bytes": 692,
+      "sha256": "1223c9020833863fcb8e30308ebfad4f50e54826de6eeeefb3348a6a1b8aa622"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus13.catalog.log",
+      "bytes": 455607,
+      "sha256": "c243205bb7bb0d420d195c1f788f4aabfab654e708d2d41d6c5004103e3247d4"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus13.runtime.json",
+      "bytes": 786,
+      "sha256": "c17353c539360704e70b183adb3b0332b15b2ae79f86d97236a39206fd6d039c"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus13.runtime.log",
+      "bytes": 696582,
+      "sha256": "1f9d6988f72e17131c8b30ec5d3052dc418e51f36c3659b069892cdb49542cb1"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus13.runtime.terminal-audit.json",
+      "bytes": 841,
+      "sha256": "9940341518b149bcfe52647ebaf06d444eea81c949d74079d1a9f98e6d37201b"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus13.source-capture-patch.json",
+      "bytes": 2596,
+      "sha256": "96a0b7ae8763faa01d7891c701892105b00ac36b293a703a4d59b9ec04dab4a0"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus13.source-capture.patch",
+      "bytes": 84720,
+      "sha256": "fce5961fd9c481c141095df24f98e65962ca06a87760f4205b8fe8cebd0bc408"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus13.source-freeze.json",
+      "bytes": 788403,
+      "sha256": "7fb92b9890cf3e16319262ae77ec4bec6fbb8d7d3bc172b3a10f0569b18832fa"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus13.sources.json",
+      "bytes": 4705,
+      "sha256": "b22abbc0d0e57704c3cf6f842834dd0342691876f51a5d9ef388b29d13a895f1"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus14.binaries-before.json",
+      "bytes": 202,
+      "sha256": "2b6bbc1ccb7f2917dbfd47c3424caeff2d70b6e771542717a399d96615696137"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus14.catalog.inventory.json",
+      "bytes": 552788,
+      "sha256": "671a5fe228d89a546f945ced9fd995f6686026df53a03519907ca1fc7288a626"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus14.catalog.json",
+      "bytes": 692,
+      "sha256": "b1be733f0c48a0e0b0072fc8adb06b626e95d8bc4bb4fad7f7e716a494af054d"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus14.catalog.log",
+      "bytes": 455607,
+      "sha256": "29ae8f84de47eeae327ac62ed3d00caa374bbffcc87668f14a75f7b6b939c7af"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus14.runtime.json",
+      "bytes": 786,
+      "sha256": "4f44de69e423443ec0810b738e926473a2d2dcaa39103817a862a33885818c4d"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus14.runtime.log",
+      "bytes": 696585,
+      "sha256": "b69a2ea2b1d506fcddd87bbcd2a1785b84733c216a7324435c6fe56e830958bb"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus14.runtime.terminal-audit.json",
+      "bytes": 841,
+      "sha256": "c50007e74260adbedbc59a125e0eaf5d8ff5c5a58df9da55cbaa6d74bb129c1b"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus14.source-capture-patch.json",
+      "bytes": 2596,
+      "sha256": "bee034c7b8d23cfb6966a70b23bf9e321ce37fbcbe6fb058b989b92f7d0b4b49"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus14.source-capture.patch",
+      "bytes": 84562,
+      "sha256": "1a97f806fc34dd4522ff5cc5cec74f823f8a7c94af7ec1553368ec53e5dbd9ad"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus14.source-freeze.json",
+      "bytes": 788403,
+      "sha256": "ddbb6d06b60bd042174a8d5c72f6ef8f048f0643f39c34dbbbfa8ada92dc6b7d"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus14.sources.json",
+      "bytes": 4705,
+      "sha256": "3e256caec322de5e6226c24fbc4a09d31d07113c0877f5ce70ef7cbf92161291"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus15.binaries-before.json",
+      "bytes": 202,
+      "sha256": "4b6caba61417124a36c803529ed84116d9957e948f903f90d9b6eec700f5f8c0"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus15.catalog.inventory.json",
+      "bytes": 552788,
+      "sha256": "671a5fe228d89a546f945ced9fd995f6686026df53a03519907ca1fc7288a626"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus15.catalog.json",
+      "bytes": 692,
+      "sha256": "af0b46edad7969f88ff89f1688fc48545bc9745f70e3f7a09e9d87e928961024"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus15.catalog.log",
+      "bytes": 455607,
+      "sha256": "acefe9cbbc656aff715da4381abaa60ece8db5b147de7a881e8d97e3fcbc80a5"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus15.runtime.json",
+      "bytes": 786,
+      "sha256": "a3f42154e7fac4283c3c8cf766dd5421659c1b89a71c880c3bfb921547d5110f"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus15.runtime.log",
+      "bytes": 698025,
+      "sha256": "5ed4f56e6ba521ac216977969903308a28929f75eeb8a6630c9039e17648fb70"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus15.runtime.terminal-audit.json",
+      "bytes": 841,
+      "sha256": "ded7b4e45defd05c0a668b8d12f5318c05c9761780426230988b641e03fd02a4"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus15.source-capture-patch.json",
+      "bytes": 2596,
+      "sha256": "b8976dc02b27d78a6316d4ad4130188375440154dca89622d55fee1fe0ea5ebe"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus15.source-capture.patch",
+      "bytes": 86485,
+      "sha256": "4cf1f264a28a44e870c1cc8c9594069c7ccd124c0ac063d4cec2a030431f8cf4"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus15.source-freeze.json",
+      "bytes": 788403,
+      "sha256": "e2039a1480f318397fd0a9bb49d3bd347c5d3668386f6ae6a620564ebd98283b"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus15.sources.json",
+      "bytes": 4705,
+      "sha256": "2bff1544ab47f497a9b7ee68311a49c8b152196602b4df13c54cb4869cffb5a9"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus16.binaries-before.json",
+      "bytes": 202,
+      "sha256": "019d048c38da68789fd209a4b24644474769311a981aecf57fd9847fd1f04355"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus16.catalog.inventory.json",
+      "bytes": 552788,
+      "sha256": "671a5fe228d89a546f945ced9fd995f6686026df53a03519907ca1fc7288a626"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus16.catalog.json",
+      "bytes": 692,
+      "sha256": "5e2369a71844c386098245d79de7d108747efd5517b3fa552e83683acc41c06f"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus16.catalog.log",
+      "bytes": 455607,
+      "sha256": "fd0f9914c7026156941e4c7cc65592d6c148fe99da9e77916eb77119b878dd73"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus16.runtime.json",
+      "bytes": 786,
+      "sha256": "4f23d560be75798f27d541fd7aadccebba9d695fb2dd4bb7cf2e0c2cc147b2be"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus16.runtime.log",
+      "bytes": 696665,
+      "sha256": "0721c40b9d7458964f6ba489aa9fd56fbd019c2bbddd5d816adbb4eefd31af5a"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus16.runtime.terminal-audit.json",
+      "bytes": 841,
+      "sha256": "6d0b34f23af700329b9ab94d68ff0bb93d7b2ea6a76bc41b6adb63aba5264944"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus16.source-capture-patch.json",
+      "bytes": 2596,
+      "sha256": "73b714683841e84d433f3f5367802932eea73b43ef6cdea9492655bdbc2933d8"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus16.source-capture.patch",
+      "bytes": 88385,
+      "sha256": "fb18d12e7b4b27a9a26a09df8a0300ee2e3a97f3087197c708611e8c6e97f519"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus16.source-freeze.json",
+      "bytes": 788403,
+      "sha256": "1ee0973fba72dc3f710ffe5d8e99294f41e1bc6a5ffafff3158e4d7a6cc95243"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus16.sources.json",
+      "bytes": 4705,
+      "sha256": "96907804426ecb7ad2b0bff543d79041a658ac66b62bbe27481834469c78eda9"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus17.binaries-before.json",
+      "bytes": 202,
+      "sha256": "0d0ae99f12df7741bd26e85834623d9c7d1b3f0515888250063593f7eabe2270"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus17.catalog.inventory.json",
+      "bytes": 552788,
+      "sha256": "671a5fe228d89a546f945ced9fd995f6686026df53a03519907ca1fc7288a626"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus17.catalog.json",
+      "bytes": 692,
+      "sha256": "5936d1e4e4f92404f2b47dc444e17eb25f1375d8525aeb9f8885af1ef2dd2299"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus17.catalog.log",
+      "bytes": 455607,
+      "sha256": "30b2757e8731bc02236e4e947928278f85119211f663340a9d97e3e82d6c7242"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus17.runtime.json",
+      "bytes": 784,
+      "sha256": "51ca1f391bc3fb6f7785e2b7a26a6bf8d97466fb30001f2dfdedbc91f0a0afe6"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus17.runtime.log",
+      "bytes": 695743,
+      "sha256": "f7750f917687b1eee9787036f62d506bf44340c4833457fd73515d82b6652ff5"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus17.runtime.terminal-audit.json",
+      "bytes": 628,
+      "sha256": "440f79e277085cdc5af59a9097014fb104345a1773fd1f660129f0b07f7b6060"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus17.source-capture-patch.json",
+      "bytes": 2596,
+      "sha256": "81fb4d62edd2e27dc606a450fb0fbd28a34bd4406d1b9c6030afae8f4c92d846"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus17.source-capture.patch",
+      "bytes": 88299,
+      "sha256": "239d4bcc80e2aaf4790e1cde7bc4af43740d6f2a81d2234e1eee541cb61a56e8"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus17.source-freeze.json",
+      "bytes": 788403,
+      "sha256": "db47b98f964124fc16132f64424e6b4763d91e647cc336af8f66d656b4e76732"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus17.sources.json",
+      "bytes": 4705,
+      "sha256": "7bb9806b0af982ad8ee9453a622618cac97819eac0cf3256355afca971ecc800"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus5.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "dd4a2ba032f334558e60d282d1c71a60ca6e5d8e7baa867f6309d81e76becee4"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus5.catalog.inventory.json",
+      "bytes": 564659,
+      "sha256": "a1fd64464dc0253c51a5e3e54f74bfb4836ad9ce7dde32446d43ff5b9c85cbdc"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus5.catalog.json",
+      "bytes": 2802,
+      "sha256": "4ea3ef298d3b365c84082856a4fd17e9145b2a03cf141dea8a2417cdbd0fe0a2"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus5.catalog.log",
+      "bytes": 519865,
+      "sha256": "f4bc223e394fa3f5ff35cce25071bc0c6842d1f3ef3e1731647e60d3c8d1ca79"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus5.runtime.json",
+      "bytes": 2896,
+      "sha256": "470a260e3b1cc5962464b1c142fba72e1f1419e47f81aef89377366a43182c3c"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus5.runtime.log",
+      "bytes": 803665,
+      "sha256": "d0db01e033bd99faf7b4021c40dc58205d7adbc488cd77109f40fc6f23568988"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus5.runtime.terminal-audit.json",
+      "bytes": 4428,
+      "sha256": "4404a5985ebbee78c5a47db8825502df1cc1283f8ce1c4586ce617f3bc7b8e45"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus5.source-capture-patch.json",
+      "bytes": 2247,
+      "sha256": "932c3e7f1aacf6f5826d10b587b90d51bf35bca1d9da4464729407a2ea331e15"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus5.source-capture.patch",
+      "bytes": 70022,
+      "sha256": "ee16ef9b89cb9ca567fa3b397d26f35464a0c56a49967d9066a4d847cb7a5cac"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus5.source-freeze.json",
+      "bytes": 788196,
+      "sha256": "183474c793d142db76819f233c3f30359883757b146bd5ad1e207d6f4fe88a2b"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus5.sources.json",
+      "bytes": 3950,
+      "sha256": "82ddd776e484b592442a78f46096f97f8765c707e7b215e5109c065f55a8c983"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus6.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "73843d0bc6ab7aa92fd871e3a3c2633fe07df10f36aec8b18bccc21c5a26d7b1"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus6.catalog.inventory.json",
+      "bytes": 564659,
+      "sha256": "a1fd64464dc0253c51a5e3e54f74bfb4836ad9ce7dde32446d43ff5b9c85cbdc"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus6.catalog.json",
+      "bytes": 2802,
+      "sha256": "e70f68971f2f54ff2f7b36dd1b0da114b09bb4af9833f5afcf833adcaeed0c1b"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus6.catalog.log",
+      "bytes": 519865,
+      "sha256": "7b0590c9f9228ce98d809e1b39ed651e2cbda14b65c21319b9b67535299a3160"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus6.runtime.json",
+      "bytes": 2896,
+      "sha256": "fae8bed6e6ab74abe02bca43d5be09a5868d20ea950c7547e6b47bb00afe7bad"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus6.runtime.log",
+      "bytes": 803404,
+      "sha256": "2dca566dbbafd3c06311a51561fe0a0bee3053cccfc98e7c776e73030c1b1a87"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus6.runtime.terminal-audit.json",
+      "bytes": 4428,
+      "sha256": "8c1c72b331978119e3e12b42e21adb737ddf5f1cd5fc305185ea33957a772988"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus6.source-capture-patch.json",
+      "bytes": 2247,
+      "sha256": "1bb40ccb53b5459abb1dc475abe97254ac969d9d191d3ce76b5641736bd6a694"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus6.source-capture.patch",
+      "bytes": 71650,
+      "sha256": "3b53ae18fdf012718f1d2401ad3445d67d37b933229d4d80b328dc9bd920353d"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus6.source-freeze.json",
+      "bytes": 788196,
+      "sha256": "d763f79c04189fb98856ec48ded5d37ab3ceee2135fcc18c9214047b10924019"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus6.sources.json",
+      "bytes": 3950,
+      "sha256": "8a0f1bacf3ae99b30a996f3a2f28e1eac94f1b543fa7f1a6c27c0ca621a60db6"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus7.binaries-before.json",
+      "bytes": 202,
+      "sha256": "3ab789d99cf2f7e3ebdb1ba38e04ddf9d5ae39f20abcfff72bb18177b17e02d6"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus7.catalog.inventory.json",
+      "bytes": 552768,
+      "sha256": "67191a3146ab4f4945920e8dfe8db54253c285c2ab604e40b3949cb579d0a146"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus7.catalog.json",
+      "bytes": 2843,
+      "sha256": "7509bbf39583983a35853889b69e7807949f752f46e0ff6f335016edd86b1c8f"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus7.catalog.log",
+      "bytes": 455147,
+      "sha256": "b852beb90d4f744a2e5a723f6ca0a5feef4718cc33d250cbf2bd97d594b629c9"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus7.runtime.json",
+      "bytes": 2937,
+      "sha256": "4fae4f5d11d53a7ba5916d818a32d2ad0e06d432a690f9d3d63563e5bd144710"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus7.runtime.log",
+      "bytes": 739026,
+      "sha256": "495b421bc1b12e3e08f220c9b10af4a1da7142d63db60dacded84e5970250bc0"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus7.runtime.terminal-audit.json",
+      "bytes": 4868,
+      "sha256": "6d3a883ba943cb874c801904f19454cce68b2b86924a77c6dfc24f3e06fd2847"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus7.source-capture-patch.json",
+      "bytes": 2595,
+      "sha256": "e45d5715da27e08c0d282ded8f880f044df59fe2821ff2cf1a5795c3a36512dd"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus7.source-capture.patch",
+      "bytes": 77767,
+      "sha256": "7ddb270abc798af141365159f7bf96a40526c5e8defdb986023c8c2c60380c84"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus7.source-freeze.json",
+      "bytes": 788403,
+      "sha256": "7d9ec2bfc40245fbceabfc568e700f74f129ff6e4fe7cd585ec3350327ac1e57"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus7.sources.json",
+      "bytes": 4692,
+      "sha256": "8c7229a0cc1cf1fb29dc3b9acd4d70dc9ee20498da03fce5535278798c6b0025"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus8.binaries-before.json",
+      "bytes": 202,
+      "sha256": "0cf60c9115c8093a11368dd70d9f74511d311b34f2b9b08b01ab37b8ba41c795"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus8.catalog.inventory.json",
+      "bytes": 552768,
+      "sha256": "67191a3146ab4f4945920e8dfe8db54253c285c2ab604e40b3949cb579d0a146"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus8.catalog.json",
+      "bytes": 2843,
+      "sha256": "bc4d4698be4f02289340195fd89edf3233fee10e8fedfb9c5b8a5d917e96bbf9"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus8.catalog.log",
+      "bytes": 455147,
+      "sha256": "6f65e36489ff41a92dc192f0c06453c9eb9eb8f1cf238a4e5d1cbff780e391ba"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus8.runtime.json",
+      "bytes": 2937,
+      "sha256": "bb6bdc2ecc5c7cfb0d6f7d2407d58fd87dccef057fdc755edfa07a116272d501"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus8.runtime.log",
+      "bytes": 731742,
+      "sha256": "0ce2f2c7637c81112e98fa58ead6ed67b29ade4e6474194cdaa38d6b7fa8dc52"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus8.runtime.terminal-audit.json",
+      "bytes": 3080,
+      "sha256": "3a2ec035762df408cf8bdbac31b92076e98c7c7389bf1320244ff4c9811e5fb4"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus8.source-capture-patch.json",
+      "bytes": 2595,
+      "sha256": "6e8c7d26f918745d5dcc49b87c6dc1efb87f45d7bfebeec78bcbf17fbdd95bb3"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus8.source-capture.patch",
+      "bytes": 78237,
+      "sha256": "6c5cf6ccbae432c9c4e5bb4d42305090e81bf3c95169c6973609795fb7f983f4"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus8.source-freeze.json",
+      "bytes": 788403,
+      "sha256": "eccad323ae915d792fe44c8c71009558d8fca3a84600090142d96599a2c0f8a0"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus8.sources.json",
+      "bytes": 4692,
+      "sha256": "ab6aeddbe8e3fefcc231b0c58fb9bf0d632b29e48589e15d857199590e49130e"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus9.binaries-before.json",
+      "bytes": 202,
+      "sha256": "70d5786a3f10b0b621ee5278ebf688952f68ad2d1b2433b0c63d6d07b5abafbe"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus9.catalog.inventory.json",
+      "bytes": 552768,
+      "sha256": "67191a3146ab4f4945920e8dfe8db54253c285c2ab604e40b3949cb579d0a146"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus9.catalog.json",
+      "bytes": 2843,
+      "sha256": "c5e0545efe29a46cafa3791a7cc0486deb671af0923ed99f53d156483a721c93"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus9.catalog.log",
+      "bytes": 455147,
+      "sha256": "9c2486a7bb4576067edaed6f5b13ce93ee72b9cdc809d0902bf2ecc5c10eb317"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus9.runtime.json",
+      "bytes": 2937,
+      "sha256": "7f2930a688a005fad6cc860a1c646b8675543f993f1a17f7a393858bdae21185"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus9.runtime.log",
+      "bytes": 738654,
+      "sha256": "1c6b73364dcf736285b59aff0085c67f7989c3734c136e87ca27aec043fabcdb"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus9.runtime.terminal-audit.json",
+      "bytes": 4868,
+      "sha256": "f1e7dc1ab88d763f3606a06ca121690c9702e2e2df370b286ab621988784ab64"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus9.source-capture-patch.json",
+      "bytes": 2595,
+      "sha256": "a196f58aba394ca8cd713544c4fc17401be80607d3d4fcbed8765e7e768d7991"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus9.source-capture.patch",
+      "bytes": 79561,
+      "sha256": "02b0960e2df57085658530d3672393afd3a39d9bf6f9b3607999f9e70d77b3c6"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus9.source-freeze.json",
+      "bytes": 788403,
+      "sha256": "caa5d9ad5eb12de901e66112a682ee5ad13726f77cdfad87cace69d1f3679c26"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.focus9.sources.json",
+      "bytes": 4692,
+      "sha256": "b9618d8e5a86a8f2fb3b10c8478ba1bd461b65bb40e169a2ecad6659cf24c543"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner1.catalog.json",
+      "bytes": 546,
+      "sha256": "63d0073c79264a15eb579fab9e61a827f7c27d7979782e3cef3edf50bfd9a024"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner1.catalog.log",
+      "bytes": 18847,
+      "sha256": "a5fecddd64f87f266034e7676aeaeeb2c718144747ec95c62cf6dac546b28b05"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner1.source-capture-patch.json",
+      "bytes": 1898,
+      "sha256": "76d1feac9d67f3259f1912040a11f132c73888ce363185ebeda63d93f29e7bec"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner1.source-capture.patch",
+      "bytes": 39978,
+      "sha256": "094dd38245a90aa45f4d3bfb4dc68143b26ff7255f8dda3da708732a3ef387b9"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner1.source-freeze.json",
+      "bytes": 788196,
+      "sha256": "f0943159b3f3d0f2aba9cd70f700d91818915e2d44f4b8112840f55161ac3ee2"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner1.sources.json",
+      "bytes": 3206,
+      "sha256": "5c9416cef903f30e1b87a509c7f372431bd1c702b639705da86a6d019ea24405"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner11-focus17-reuse.json",
+      "bytes": 342,
+      "sha256": "e606659791c0dafc48e950b837e60e1d85a8df70e6c2a0f163a33675b0b3ccf1"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner11.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "00f70f03f6b759734bdbd0b476dba61edb48365854070ae9a01e0621edbc9485"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner11.catalog.inventory.json",
+      "bytes": 563023,
+      "sha256": "94c43fd5e30ab581b90a5bc1455c2554814c326922192baa9edc3596edab866f"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner11.catalog.json",
+      "bytes": 545,
+      "sha256": "68c76283ca0525b67609af16046cf0f07d1084df38b864913cafe9e8bb3a7bbd"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner11.catalog.log",
+      "bytes": 469734,
+      "sha256": "2529e7e037e141802b192abde5e15534c0f0cdab1de1c014d8ed5fe800f7828f"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner11.runtime.json",
+      "bytes": 639,
+      "sha256": "1c67bc3ffba8f741fba5582be88bae453def22111753050a85dd44e8131f1ef7"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner11.runtime.log",
+      "bytes": 762517,
+      "sha256": "09d6cff0e5e4172f71c6da39dad837c75f017e5afb778ae0d14759542a230e0d"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner11.runtime.terminal-audit.json",
+      "bytes": 857,
+      "sha256": "898318da5d2a7a523b7a431b4efa39d492ac2ff167ea4a272a3c06044ae5d417"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner11.source-capture-patch.json",
+      "bytes": 2596,
+      "sha256": "9930a0add7f59b9d5374c52588b4067d0b308748082c5c4f4dcc81dd0acefff2"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner11.source-capture.patch",
+      "bytes": 82728,
+      "sha256": "84eee14036a80b2a2254738b8755b719d1cbba84f9eec95fe76aa4e4e3a03d7e"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner11.source-freeze.json",
+      "bytes": 788403,
+      "sha256": "6c811f502ec066a0c300ec0ad3c3ad08302c5783945558164486974009f6d16f"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner11.sources.json",
+      "bytes": 7123,
+      "sha256": "c47e825d84663fb246ffd6a7c1b57b5b35a3608451e6dd04ca6391fd54504ff4"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner2.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "36a3d9ada5bb99ab161116aaf040d413de83e29bdd8e3ecb767eb493f255176c"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner2.catalog.inventory.json",
+      "bytes": 562459,
+      "sha256": "194832acb6936083e33eb5c4f6361d2028c800ddce2f41c6b7f7b33d200ef93d"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner2.catalog.json",
+      "bytes": 544,
+      "sha256": "0784d49ce1eb8e10c71807ac1114ffbef1910495221f39e65adc582a2297dc87"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner2.catalog.log",
+      "bytes": 469334,
+      "sha256": "73837e10e375b27318d96dd07675963a23253b23b18a5a1c8e09a280bba18155"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner2.runtime.json",
+      "bytes": 638,
+      "sha256": "578b38513c78e7612e79671c58a2567a03d67649211282a6270e7ce63d376b4e"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner2.runtime.log",
+      "bytes": 783657,
+      "sha256": "66169050177b59c8568b96142a1ac3f7e347b50dd3d4772ffefde9b190d6a85f"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner2.runtime.terminal-audit.json",
+      "bytes": 4441,
+      "sha256": "faa26614700d743d230cf5bd9b2df2641d3a03776337f6460660bedaf0538960"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner2.source-capture-patch.json",
+      "bytes": 1898,
+      "sha256": "e267958f65df11d4df5a002a83d6e5f1e537bc70a00c6eeae524226bb2358b6c"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner2.source-capture.patch",
+      "bytes": 41516,
+      "sha256": "a5a7baf39a775b3b270bbb8cdd1b4f2fcf265fcce695a866771375a47c943765"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner2.source-freeze.json",
+      "bytes": 788196,
+      "sha256": "36e65ec139ea69564ed55bd6fb2f49c8b0f2d68e0267b06483ea287ef7e341bd"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner2.sources.json",
+      "bytes": 3206,
+      "sha256": "6c4e790512a56e18041b749063bbb3b7e2e5719809297e07c2d597b9e511febe"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner3.catalog.json",
+      "bytes": 560,
+      "sha256": "7459ccbf3090df0f40deccfa719460c8da68a5c07b05c8e7a8a620a607b02c31"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner3.catalog.log",
+      "bytes": 10707,
+      "sha256": "0f5960ff7e1ab16efe48162d520eb88276ae326017cb3b055a06a5826ec4df2a"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner3.source-capture-patch.json",
+      "bytes": 2066,
+      "sha256": "c5f7ef4594de4b253cef2b870f2a8542914db692fc4a3b8cde7375cf13a002bb"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner3.source-capture.patch",
+      "bytes": 67029,
+      "sha256": "a43d219617f503b44734d40b15b030c6ab7ffaeeaf1081cefe5d2e0851c0b402"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner3.source-freeze.json",
+      "bytes": 788196,
+      "sha256": "b86b2920a42c230d79da2ecd8de46dae8ee3b83dd7e515cd0e4c37d0d83589ba"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner3.sources.json",
+      "bytes": 3565,
+      "sha256": "5a6c1ea6316c21c56c836bdc396ff8801af450f3af768ae9d8fc7eb828aeb2ca"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner4.catalog.inventory.json",
+      "bytes": 550057,
+      "sha256": "352714c0262948927216187a22113cde8370638e09c1df1ee7603ac2a4d25a0a"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner4.catalog.json",
+      "bytes": 558,
+      "sha256": "8848f29753eef0fc87717b0f5185af300c74d6639907b0f489e032d4fb5c2f8d"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner4.catalog.log",
+      "bytes": 405435,
+      "sha256": "7ab5dc90d355cf203142202355c0026602ff63b023dc0c622acbb9bef2c15a7f"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner4.source-capture-patch.json",
+      "bytes": 2066,
+      "sha256": "dc5c232f800373c7612bdcde3c0c48277449f680663f00e304d65a3952f48901"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner4.source-capture.patch",
+      "bytes": 67023,
+      "sha256": "a130988fa923659fdd921bad9a2ea624ed6ce5467df37e3e2dfdd7fd77f31923"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner4.source-freeze.json",
+      "bytes": 788196,
+      "sha256": "5601f146c1d8264d2df55bed9d90178c3659c3eb1cdf4c1acfcbd946d9461007"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.owner4.sources.json",
+      "bytes": 3565,
+      "sha256": "769784358824e3d671645d13f4a13ae3ef4e21afc99ff04dfd12af03c0733c64"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.source1.binaries-before.json",
+      "bytes": 477,
+      "sha256": "80904abf2a30dbe985af0e3ce9a98a127cd3d3331514d216cb42f80ba88cc6c8"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.source1.catalog.inventory.json",
+      "bytes": 16900,
+      "sha256": "82d9aa75dbf4d659ff5208df9b8c0461f430d42927d93198f38511f161572fd5"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.source1.catalog.json",
+      "bytes": 1063,
+      "sha256": "8e3548d06a1b4fe24126c738313f7ebdb29ae04ba84dda06f81795eeafb5750c"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.source1.catalog.log",
+      "bytes": 99483,
+      "sha256": "0daa8683ff2177efcc1c54d188724c72f6a836f02b91760228d33aa490272029"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.source1.runtime.json",
+      "bytes": 1155,
+      "sha256": "ceae5b8698f57a1770ca8c23356bd86a47cec01edc2f15da181f176764826a72"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.source1.runtime.log",
+      "bytes": 104956,
+      "sha256": "d2d7050758980b24741f56bdb64591c7daf0a5a700ef3434370a0897bd932aaf"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.source1.runtime.terminal-audit.json",
+      "bytes": 625,
+      "sha256": "0e52a27ce0bca5b293a887c4f04e889f9b44f839d6810a37083514fcf7eae1a0"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.source1.source-capture-patch.json",
+      "bytes": 2596,
+      "sha256": "7a2c0f32a1f1518ef8d91e50bc56b31ad03531273825bd75f333b8e7ae58708b"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.source1.source-capture.patch",
+      "bytes": 79603,
+      "sha256": "80d76d60f30702a50b219247c35a3f13874257fe4222d5c76b8aee479e2fb5cb"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.source1.source-freeze.json",
+      "bytes": 788403,
+      "sha256": "c7ba663ca858114a9b7128049e3be12ea13497c3d410cb504ff9fe44b4636c64"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-20261101.source1.sources.json",
+      "bytes": 4705,
+      "sha256": "e0cf68d7d38578059c516331a5eef3cf95501b307edf919727ee3d8755790bd0"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-source-20261101.fmt.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-source-20261101.message.txt",
+      "bytes": 986,
+      "sha256": "0b74461d80bd9c7c92e24dc31a2f112bb07c2eb80ca019701f397606e6dc0497"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-source-20261101.other.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-source-20261101.owned.txt",
+      "bytes": 718,
+      "sha256": "c1d33da3b78a58196de07e1a446d2e9bb421a7c5b76ef776867ac3e12bc0cbca"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-source-20261101.prepare-final.log",
+      "bytes": 1253,
+      "sha256": "b6decb253f30c7acfc56ef606ccfa57c2b4604debbe19aff7148c6ecc427bd6a"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-source-20261101.prepare.log",
+      "bytes": 1257,
+      "sha256": "1702bb03005bb7c57e6d61391b957d2bf5e14c58f10bd88990cc062eaff20d77"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-source-20261101.prepared.json",
+      "bytes": 3224,
+      "sha256": "5fd316a2fa628a1f8b0e41593bf99365118c9f09a768f7fdba4268b4e3a8af90"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-source-20261101.publish.log",
+      "bytes": 722,
+      "sha256": "c3d163b0dbbe1a18d49cb6bfbe2bd57becb76c5d2ae840b4bdd146c07603e898"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-source-20261101.reviewed.patch",
+      "bytes": 89864,
+      "sha256": "141f9232c5663dc550160f887bcfd194355b4af048cf2156fb81ef368dcd07d2"
+    },
+    {
+      "entry": "presentation-dialogue-handoff-source-20261101.verified.json",
+      "bytes": 2529,
+      "sha256": "faa13c60960ca83fa976d7aed695e052dde61e196f54a2dccfe5120b1d4def1a"
+    },
+    {
+      "entry": "presentation-root-result-consumers-20261101.focus1.binaries-before.json",
+      "bytes": 50108,
+      "sha256": "1402817d0d639dc0ee8577404c91cad0fdac64dd70469940d33064b914b7a92c"
+    },
+    {
+      "entry": "presentation-root-result-consumers-20261101.focus1.catalog.inventory.json",
+      "bytes": 1730038,
+      "sha256": "784a7333649aa5620739e8e6ee0b9bf1573e719da9fefbe70382c30dafb37f7a"
+    },
+    {
+      "entry": "presentation-root-result-consumers-20261101.focus1.catalog.json",
+      "bytes": 2685,
+      "sha256": "782607955a129c1d388fa53161f1a0caf7c42478f52b79e1d4a56fe51139fdb2"
+    },
+    {
+      "entry": "presentation-root-result-consumers-20261101.focus1.catalog.log",
+      "bytes": 1443833,
+      "sha256": "614e600b1d913d67516a0730692370bbf287508444c078df21a089bf6f41a2a2"
+    },
+    {
+      "entry": "presentation-root-result-consumers-20261101.focus1.runtime.json",
+      "bytes": 2777,
+      "sha256": "a65d22c7b281b25a782ecc782c6dc5f9059beac089df8e8574d5597f9d54b167"
+    },
+    {
+      "entry": "presentation-root-result-consumers-20261101.focus1.runtime.log",
+      "bytes": 2198897,
+      "sha256": "0b8b2d692641dd328e57eff504c5d9897095ce1ec26572ab69394edecc2f6707"
+    },
+    {
+      "entry": "presentation-root-result-consumers-20261101.focus1.runtime.terminal-audit.json",
+      "bytes": 2047,
+      "sha256": "ae6a84edb6d42ba66c3a8c38762d18a54aa2662c9eb467d860179e0be45028b6"
+    },
+    {
+      "entry": "presentation-root-result-consumers-20261101.focus1.source-freeze.json",
+      "bytes": 788196,
+      "sha256": "27972ee69fb8ace3e8f4987e5c6d34bc61df558b1683f43ad7741d550d54047d"
+    },
+    {
+      "entry": "presentation-root-result-consumers-source-20261101.message.txt",
+      "bytes": 636,
+      "sha256": "7f08e3e7acc9a261b597f773bfa8855262727619c266ceaf812c79349e1b03b6"
+    },
+    {
+      "entry": "presentation-root-result-consumers-source-20261101.other.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "entry": "presentation-root-result-consumers-source-20261101.owned.txt",
+      "bytes": 129,
+      "sha256": "704bc7f10c085070843ec640d99145e88bb79b0cdf40bb7134b3ef413c53f841"
+    },
+    {
+      "entry": "presentation-root-result-consumers-source-20261101.prepared.json",
+      "bytes": 1555,
+      "sha256": "ea02ab6a155212e324b39880f00b36add5b04de58a2b14461c4dc8d12b06c079"
+    },
+    {
+      "entry": "presentation-root-result-consumers-source-20261101.publish.log",
+      "bytes": 622,
+      "sha256": "f0270f91e1e6b6c3bed54c76a36dde877f91f2bc527c8258e36a275e5c57c98d"
+    },
+    {
+      "entry": "presentation-root-result-consumers-source-20261101.reviewed.patch",
+      "bytes": 2399,
+      "sha256": "18848b27a7f816b2b76d35e8d96dab562e8447bd458b4aa1c24a3e3a34fe3b25"
+    },
+    {
+      "entry": "presentation-root-result-consumers-source-20261101.verified.json",
+      "bytes": 860,
+      "sha256": "2ea1551710ca769bdf9d2b18077e64e7853a0e41a803a9ddb3a73d51fff9ba80"
+    },
+    {
+      "entry": "run-presentation-root-result-consumers-20261101.focus1.ps1",
+      "bytes": 629,
+      "sha256": "f789fef691e00731209144e51fd44dbb159af038621ef9e82a6688c98c529e97"
+    },
+    {
+      "entry": "run-source-frozen-nextest.ps1",
+      "bytes": 3684,
+      "sha256": "38cd04037165043381a708293a39a3f0c6807b30fab9fa0d15d7edb227e70440"
+    }
+  ]
+}

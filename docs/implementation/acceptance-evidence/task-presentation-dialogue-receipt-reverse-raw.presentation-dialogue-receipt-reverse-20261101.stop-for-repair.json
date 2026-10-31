@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "session": 38417,
+  "root": 55764,
+  "source": "ef49da12aa0aa0e40e30eea6a9a5fd6ca1335234",
+  "reason": "Library6845 terminal has15 confirmed failures, including4 actual Source Dialogue failures. Stop old-input CLI catalog compilation to repair; no CLI runtime result is claimed.",
+  "owned": [
+    {
+      "Name": "pwsh.exe",
+      "ProcessId": 55764,
+      "ParentProcessId": 33752,
+      "CreationDate": "2026-11-01T01:56:25.587222+09:00"
+    },
+    {
+      "Name": "conhost.exe",
+      "ProcessId": 24976,
+      "ParentProcessId": 55764,
+      "CreationDate": "2026-11-01T01:56:25.601512+09:00"
+    },
+    {
+      "Name": "rustup.exe",
+      "ProcessId": 56836,
+      "ParentProcessId": 55764,
+      "CreationDate": "2026-11-01T02:32:43.029688+09:00"
+    },
+    {
+      "Name": "cargo.exe",
+      "ProcessId": 56796,
+      "ParentProcessId": 56836,
+      "CreationDate": "2026-11-01T02:32:43.052869+09:00"
+    },
+    {
+      "Name": "cargo-nextest.exe",
+      "ProcessId": 55004,
+      "ParentProcessId": 56796,
+      "CreationDate": "2026-11-01T02:32:43.079374+09:00"
+    },
+    {
+      "Name": "cargo.exe",
+      "ProcessId": 15624,
+      "ParentProcessId": 55004,
+      "CreationDate": "2026-11-01T02:32:43.880449+09:00"
+    },
+    {
+      "Name": "rustc.exe",
+      "ProcessId": 55408,
+      "ParentProcessId": 15624,
+      "CreationDate": "2026-11-01T02:34:38.022226+09:00"
+    },
+    {
+      "Name": "rustc.exe",
+      "ProcessId": 3920,
+      "ParentProcessId": 15624,
+      "CreationDate": "2026-11-01T02:35:00.418395+09:00"
+    },
+    {
+      "Name": "rustc.exe",
+      "ProcessId": 19472,
+      "ParentProcessId": 15624,
+      "CreationDate": "2026-11-01T02:35:28.326688+09:00"
+    }
+  ],
+  "startedAt": "2026-10-31T17:35:39.1174450Z"
+}

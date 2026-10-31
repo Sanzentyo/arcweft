@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "base": "ef49da12aa0aa0e40e30eea6a9a5fd6ca1335234",
+  "source": "7be26409c08475e16b398611dc6861e0cd3b0bb4",
+  "status": "live, not a terminal result",
+  "session": 38417,
+  "stem": "presentation-dialogue-receipt-reverse-20261101",
+  "matchedLibraryCases": 6845,
+  "ignoredLibraryCases": 16,
+  "observedPanicCount": 15,
+  "staleRootAssertions": {
+    "paths": [
+      "crates/arcweft-compiler/tests/callable_cases/control_results.rs:56",
+      "crates/arcweft-compiler/tests/generic_continuation_snapshot.rs:524"
+    ],
+    "cases": 10,
+    "pendingPatch": "presentation-root-result-consumers.pending.patch",
+    "pendingGuard": "presentation-root-result-consumers.pending.json",
+    "fix": "Assert exact retained Root RuntimeValue::i64(42) and inert Bool(true), preserving all budgets, real returns, one-op execution and save/rollback assertions."
+  },
+  "productionDialogueRegression": {
+    "path": "crates/arcweft-compiler/tests/evaluated_effects.rs:248",
+    "diagnostic": "fiber frame function/layout pair is invalid",
+    "cases": [
+      "authored_space_after_interpolation_keeps_ruby_display_range_in_native_and_awbc",
+      "line_root_deferred_children_execute_in_native_and_awbc_lifo",
+      "physical_line_endings_normalize_display_without_erasing_inline_spaces_in_native_and_awbc",
+      "recursive_generic_closure_in_attached_default_reaches_verified_awbc"
+    ],
+    "next": "Reproduce focused cases after all frozen Cargo handles close. Identify the exact InvalidFrame producer in complete ProductSessionCheckpoint capture/admission/snapshot; repair the actual typed frame boundary without weakening checks or removing the session rollback."
+  },
+  "forgedSave": {
+    "path": "crates/arcweft-compiler/tests/flow_include.rs:480",
+    "case": "forged_program_child_save_rejects_without_losing_the_original_handle_or_result",
+    "observation": "bind_product_save_snapshot rejects the forged saved owner earlier with selected dynamic scope custody error; examine all three mutation cases and preserve original runtime/handle/result on rejection."
+  },
+  "rules": [
+    "Do not edit Rust while source-frozen session38417 is live. Do not kill unrelated moyu processes.",
+    "Do not treat all15 as stale assertions: four are real production Source Dialogue failures and require repair.",
+    "Do not reclassify accepted Generic Match or previous scoped cuts merely because this larger integration run fails. Preserve final failed runtime/source epoch before applying patches."
+  ],
+  "at": "2026-10-31T17:29:33.2919180Z"
+}

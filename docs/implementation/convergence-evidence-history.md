@@ -13679,3 +13679,19 @@ focus1は16 PASS／4,031入力。focus2は未移行test caller引数でcompile10
 Supersedes: 実typed Dialogue結果のRoot受取・破棄が未接続という現状説明を、上記の実実行と拒否／再試行・save／rollbackの根拠により削除する。実driver ACK、Source ABI、outer step全体、Native親contour、active-bank置換・画像parity・最終runtime matrixは別境界として[現状一覧](current-status.md)一か所に置く。全体goal未完了を理由にGeneric Matchと先行受入を戻さず、公開済み履歴prefixとraw原本を変更しない。
 
 同じ訂正で、DialogueView／Await行の「現入力」は「当該入力」へ改めた。既受入の55逆依存結果は各原本の凍結入力に属し、今回のmain全体を再実行したとの誤読を防ぐためであり、判定・件数・SHAは変更しない。
+
+## Dialogue入力handoffと現在の逆依存検証 — 2026-11-01
+
+Source/main `390304bc5308b8a2cb4eb2672a8f51e8fe59fa1e`（親 `97092efcc46bb1ee53c93b39400941d992328464`）を公開した。保持した14 tracked／6 untracked WIPの入力を区別し、検証4,033入力の差分0を照合した。現状の唯一の一覧は[current-status](current-status.md)とする。
+
+初回の[逆依存部分run](acceptance-evidence/task-presentation-dialogue-receipt-reverse-validation.json)は6,845実行／6,830 PASS／15 FAIL／16 ignoredで、CLI列挙を修復のため中断した。CLI runtime未実行を全53 packageの受入とはしない。10件は、既に保持するRoot実値を旧ReturnedTransferredとする内部期待だった。`97092efcc46bb1ee53c93b39400941d992328464`で実i64(42)／Bool(true)・保存形を検査する期待へ揃え、対象10件はPASSした。Generic Matchのsemantic transcriptや受入条件を未達に戻す理由にはならない。
+
+残る実不具合は、Dialogue入力を実registryへ渡した後も、親suspensionを空の入力packetとして検査していたことである。補間・effect・captureを宣言した元命令と空配列が矛盾し、Source4件がframe検証に失敗した。完全なpending packetと実activation IDを分け、元の親・命令・結果・target型と実受領側を照合する一つのgrammarへ移行した。開始失敗は完全sessionを戻し、公開saveは受領側欠落・別ID・親欠落・別親へのID複製を拒否する。Source4件と保存偽造1件は初回修復入力で5／5 PASSし、追加の親instance検査後も今回のCompiler全662件でPASSした。保存偽造は、元ownerを保って以前より早いmetadata bindingで拒否する場合も同じ拒否条件へ揃えた。
+
+直接activationを差し込む旧fixtureは実VMのDialogue入口・handoffへ移行した。unrestrictedな画像captureは保持captureと実引数の両方に存在するため、visitorの期待を実inventory2件へ訂正した。queue fixtureは実親の待機とUnit結果commitを用い、Nop→Returnを1opずつ、Host結果と進行入力を64op以内で処理し、二つのAlways deferを一度ずつ完了してRootのDoneまで保存復元実行と照合する。1op／64op上限は維持した。owner11の2,217 PASS／1 FAILと、最終fixture修復focus17の1 PASSは別runであり、合算した新規全2,218 PASSとは記録しない。今回の新しいlibrary群で全Core2,218件を改めてPASSとして終端照合した。
+
+[診断・修復原本](acceptance-evidence/task-presentation-dialogue-handoff-repair-raw.json)は295 entryのZIPと各entryのhashを保持する。7診断runの一時的なpanic計測は当該patchだけに保持し、公開Sourceへ残していない。owner11の最初のcapture collectorはstaging後のunstaged差分だけを見て0件となり、manifestを作らなかった。indexの更新前に、凍結hashと一致する13 sourceをそのreview済みGit blobから回収した。実行結果・凍結入力・source patch・公開full SHAを保持し、収集手順の訂正を隠さない。
+
+[現在の4群と品質gateの原本](acceptance-evidence/task-presentation-dialogue-handoff-validation.json)は、通常3群の6,847＋191＋29＝7,067 PASS／0 FAIL／16 ignoredと、追加CLI checkの415 PASS／43 FAIL／23 ignoredを区別する。旧43 IDをすべて再選択し同じ43 IDが失敗、新規ID0・解消0・未選択0である。Generic Matchの受入済み151 IDは151／151 PASS・除外0だった。同入力のworkspace97全target／全feature check・Clippy、Core default check、doctest78件、fmt57 path、Core／Player WebのWasm default check、構造blocking0も保持する。公開済みの各機能の判定を、全体goalや別のCLI境界の未達から戻さない。
+
+現状一覧の旧4,003入力・55 packageの横断2行と、Core行に重複していた旧ownerの詳細は、今回のCore共有契約4,033入力・53 packageの範囲を明確にするため履歴と原本へ集約した。旧R3616／R3617の9,140実行／9,097 PASS／43 FAIL／47 skipped、当時の品質gateと76 doctestは[当該原本](acceptance-evidence/task-wait-reverse-runtime-acceptance.json)に保持し、今回の別scopeへ読み替えない。Generic行のR3405の151件照合も履歴として保持し、現状欄は今回の新しい151件照合へ更新した。誤りの訂正と、入力・範囲が古くなった説明の整理を区別する。

@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "base": "ef49da12aa0aa0e40e30eea6a9a5fd6ca1335234",
+  "run": "presentation-dialogue-receipt-reverse-20261101.libraries.runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [ 868.868s] 6845 tests run: 6830 passed (9 slow), 15 failed, 16 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 6845,
+  "passed": 6830,
+  "failed": 15,
+  "skipped": 16,
+  "selectedPackages": 52,
+  "matchedPackages": 49,
+  "noMatchingSelectedTests": [
+    "arcweft",
+    "arcweft-bundle-assets",
+    "arcweft-render-web"
+  ],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4032,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_break_crosses_statement_while"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_shadowing_selects_the_nearest_same_name"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_break_crosses_nested_value_loop"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_continue_crosses_nested_value_loop"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_break_crosses_statement_while_let"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_enclosing_iterator_preserves_unlabelled_break_and_continue"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_break_crosses_statement_for"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_enclosing_while_preserves_unlabelled_break_and_continue"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_continue_crosses_statement_for"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "authored_space_after_interpolation_keeps_ruby_display_range_in_native_and_awbc"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "line_root_deferred_children_execute_in_native_and_awbc_lifo"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "physical_line_endings_normalize_display_without_erasing_inline_spaces_in_native_and_awbc"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "forged_program_child_save_rejects_without_losing_the_original_handle_or_result"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "recursive_generic_closure_in_attached_default_reaches_verified_awbc"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "awfb_session_save_restores_the_generic_prefix_into_its_pinned_program"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-31T17:32:42.4632671Z"
+}
