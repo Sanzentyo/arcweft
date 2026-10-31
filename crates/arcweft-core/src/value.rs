@@ -104,18 +104,18 @@ pub(crate) use view::{
     RuntimeValueView, RuntimeVariantView,
 };
 
-mod runtime_public_id {
+pub(crate) mod runtime_public_id {
     use arcweft_id::PublicId;
     use serde::{Deserialize, Deserializer, Serializer};
 
-    pub(super) fn serialize<S>(value: &PublicId, serializer: S) -> Result<S::Ok, S::Error>
+    pub(crate) fn serialize<S>(value: &PublicId, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         serializer.serialize_str(value.as_str())
     }
 
-    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<PublicId, D::Error>
+    pub(crate) fn deserialize<'de, D>(deserializer: D) -> Result<PublicId, D::Error>
     where
         D: Deserializer<'de>,
     {

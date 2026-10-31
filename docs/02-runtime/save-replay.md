@@ -270,6 +270,13 @@ function binding・候補body・Handle custodyがすべて成立してからscop
 失敗時は候補bodyを呼出側へ返し、既存のbody・slot・発行cursorを変更しない。
 inert tokenのcodec読取りは、このledgerへの取付けやlive Handleの発行権限にはならない。
 
+Presentation ledger の live と inert は同じ所有state grammarを使い、state codec は
+program leaseを含めない。bodyのreader／writerはinert storageだけに限定する。
+scope／leaseの重複IDは二つ目のbodyを読む前に拒否する。slot addressはbodyがない
+leaseでも同じ構築条件とmetadata allowanceで検査し、headerの失敗は同じbankに保持する。
+bodyのlive materializationへは、選択済みprogramとadmit済みSourceを含む元のrestore
+contextをそのまま渡し、別programのleaseを拒否する。
+
 AWBC の Presentation scope header は、実際の動的 fiber・frame と、その frame の
 root または検証済み lexical scope 宣言に束縛する。同じ宣言へ再入しても動的 grant を
 再利用しない。live binding は元 program lease を保持し、serde reader／writer を持たない。

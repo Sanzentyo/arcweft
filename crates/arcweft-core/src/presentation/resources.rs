@@ -236,9 +236,12 @@ impl RuntimePresentationScopeBinding {
     }
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct PresentationSlotAddress {
+    #[serde(with = "crate::value::runtime_public_id")]
     target: PublicId,
+    #[serde(with = "crate::value::runtime_public_id")]
     slot: PublicId,
     resource: PresentationResourceKind,
 }
@@ -249,21 +252,28 @@ impl PresentationSlotAddress {
         slot: PublicId,
         resource: PresentationResourceKind,
     ) -> Result<Self, RuntimePresentationError> {
-        if !target.as_str().starts_with("target.") || !slot.as_str().starts_with("slot.") {
-            return Err(RuntimePresentationError::InvalidAddress);
-        }
-        Ok(Self {
+        let address = Self {
             target,
             slot,
             resource,
-        })
+        };
+        address.validate()?;
+        Ok(address)
+    }
+
+    fn validate(&self) -> Result<(), RuntimePresentationError> {
+        if !self.target.as_str().starts_with("target.") || !self.slot.as_str().starts_with("slot.")
+        {
+            return Err(RuntimePresentationError::InvalidAddress);
+        }
+        Ok(())
     }
 }
 
 /// Slot replacement is meaningful only for a slot-bound registration. An
 /// independent object or controller has its own issuance and never displaces
 /// another resource merely because their resource families are equal.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) enum PresentationRegistrationSite {
     Slot(PresentationSlotAddress),
     Independent(PresentationResourceKind),
@@ -278,7 +288,8 @@ impl PresentationRegistrationSite {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 struct PresentationLease<V> {
     token: RuntimePresentationHandleToken,
     owner: Option<PresentationScopeOwner>,
@@ -298,7 +309,8 @@ impl<V> PresentationRetirement<V> {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct PresentationLedgerLimits {
     pub handles: usize,
     pub scopes: usize,
@@ -309,9 +321,21 @@ pub(crate) struct PresentationLedgerLimits {
 #[derive(Debug, PartialEq)]
 pub(crate) struct PresentationLedger<V> {
     program: RuntimeProgramOwner,
+    state: PresentationLedgerState<V>,
+}
+
+/// The single resource-state grammar, shared by the execution lease and inert
+/// save storage. Decoding state cannot attach a program or issue a live grant.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound(serialize = "V: Serialize", deserialize = "V: Deserialize<'de>")
+)]
+pub(crate) struct PresentationLedgerState<V> {
     artifact: RuntimeArtifactFingerprint,
     next: RuntimeIdCursor,
     next_scope: RuntimeIdCursor,
+    #[serde(deserialize_with = "storage::deserialize_unique_map")]
     scopes: BTreeMap<
         RuntimeScopeInstanceId,
         (
@@ -321,6 +345,7 @@ pub(crate) struct PresentationLedger<V> {
         ),
     >,
     limits: PresentationLedgerLimits,
+    #[serde(deserialize_with = "storage::deserialize_unique_map")]
     leases: BTreeMap<NonZeroU64, PresentationLease<V>>,
 }
 
@@ -336,9 +361,10 @@ impl<V> PresentationLedger<V> {
         &self,
         token: &RuntimePresentationHandleToken,
     ) -> Result<(), RuntimePresentationError> {
-        if token.artifact() != &self.artifact
-            || self.leases.contains_key(&token.issuance())
+        if token.artifact() != &self.state.artifact
+            || self.state.leases.contains_key(&token.issuance())
             || self
+                .state
                 .next
                 .last_issued()
                 .is_none_or(|last| token.issuance() > last)
@@ -352,10 +378,10 @@ impl<V> PresentationLedger<V> {
         program: &RuntimeProgramOwner,
     ) -> Result<(), RuntimePresentationError> {
         self.validate_program(program)?;
-        if self.leases.len() >= self.limits.handles {
+        if self.state.leases.len() >= self.state.limits.handles {
             return Err(RuntimePresentationError::Capacity);
         }
-        let mut next = self.next;
+        let mut next = self.state.next;
         next.take_next(RuntimeIdNamespace::AffineOwner)?;
         Ok(())
     }
@@ -364,7 +390,8 @@ impl<V> PresentationLedger<V> {
         binding: Option<&RuntimePresentationScopeBinding>,
     ) -> usize {
         binding.map_or(0, |binding| {
-            self.leases
+            self.state
+                .leases
                 .values()
                 .filter(|lease| lease.owner == Some(binding.owner) && lease.body.is_some())
                 .count()
@@ -377,12 +404,14 @@ impl<V> PresentationLedger<V> {
     ) -> Self {
         Self {
             program,
-            artifact,
-            next: RuntimeIdCursor::initial(),
-            next_scope: RuntimeIdCursor::initial(),
-            scopes: BTreeMap::new(),
-            limits,
-            leases: BTreeMap::new(),
+            state: PresentationLedgerState {
+                artifact,
+                next: RuntimeIdCursor::initial(),
+                next_scope: RuntimeIdCursor::initial(),
+                scopes: BTreeMap::new(),
+                limits,
+                leases: BTreeMap::new(),
+            },
         }
     }
 
@@ -407,10 +436,10 @@ impl<V> PresentationLedger<V> {
             self.validate_scope(binding.owner)?;
             return Ok(binding.owner);
         }
-        if self.scopes.len() >= self.limits.scopes {
+        if self.state.scopes.len() >= self.state.limits.scopes {
             return Err(RuntimePresentationError::ScopeCapacity);
         }
-        let mut next = self.next_scope;
+        let mut next = self.state.next_scope;
         let scope = RuntimeScopeInstanceId::from_allocated(
             next.take_next(RuntimeIdNamespace::ScopeInstance)?,
         );
@@ -424,8 +453,10 @@ impl<V> PresentationLedger<V> {
             owner,
             anchor: target.anchor,
         }));
-        self.scopes.insert(scope, (execution, fiber, target.anchor));
-        self.next_scope = next;
+        self.state
+            .scopes
+            .insert(scope, (execution, fiber, target.anchor));
+        self.state.next_scope = next;
         Ok(owner)
     }
 
@@ -434,6 +465,7 @@ impl<V> PresentationLedger<V> {
         owner: PresentationScopeOwner,
     ) -> Result<(), RuntimePresentationError> {
         if self
+            .state
             .scopes
             .get(&owner.scope)
             .is_none_or(|record| record.0 != owner.execution || record.1 != owner.fiber)
@@ -484,10 +516,10 @@ impl<V> PresentationLedger<V> {
         owner: Option<PresentationScopeOwner>,
     ) -> Result<NonZeroU64, RuntimePresentationError> {
         self.validate_program(program)?;
-        if token.artifact() != &self.artifact {
+        if token.artifact() != &self.state.artifact {
             return Err(RuntimePresentationError::Execution);
         }
-        let Some(lease) = self.leases.get(&token.issuance()) else {
+        let Some(lease) = self.state.leases.get(&token.issuance()) else {
             return Err(RuntimePresentationError::UnknownHandle);
         };
         if lease.token.execution() != token.execution() {
@@ -517,10 +549,10 @@ impl<V> PresentationLedger<V> {
         let prepared = (|| {
             self.validate_program(program)?;
             self.validate_scope(owner)?;
-            if self.leases.len() >= self.limits.handles {
+            if self.state.leases.len() >= self.state.limits.handles {
                 return Err(RuntimePresentationError::Capacity);
             }
-            let mut next = self.next;
+            let mut next = self.state.next;
             let issuance = next.take_next(RuntimeIdNamespace::AffineOwner)?;
             Ok((issuance, next))
         })();
@@ -533,13 +565,13 @@ impl<V> PresentationLedger<V> {
             PresentationRegistrationSite::Independent(_) => None,
         };
         let token = RuntimePresentationHandleToken::from_issued(
-            self.artifact,
+            self.state.artifact,
             site.resource(),
             owner.execution,
             owner.fiber,
             issuance,
         );
-        self.leases.insert(
+        self.state.leases.insert(
             issuance,
             PresentationLease {
                 token: token.clone(),
@@ -548,7 +580,7 @@ impl<V> PresentationLedger<V> {
                 body: Some(body),
             },
         );
-        self.next = next;
+        self.state.next = next;
         Ok((token, previous))
     }
 
@@ -562,7 +594,8 @@ impl<V> PresentationLedger<V> {
     }
 
     fn take_slot_body(&mut self, address: &PresentationSlotAddress) -> Option<V> {
-        self.leases
+        self.state
+            .leases
             .values_mut()
             .find_map(|lease| match &lease.site {
                 PresentationRegistrationSite::Slot(actual) if actual == address => {
@@ -583,7 +616,8 @@ impl<V> PresentationLedger<V> {
         if let Some(destination) = destination {
             self.validate_scope(destination)?;
         }
-        self.leases
+        self.state
+            .leases
             .get_mut(&issuance)
             .expect("validated issuing record")
             .owner = destination;
@@ -598,6 +632,7 @@ impl<V> PresentationLedger<V> {
     ) -> Result<Option<V>, RuntimePresentationError> {
         let issuance = self.validate_handle(program, token, owner)?;
         Ok(self
+            .state
             .leases
             .remove(&issuance)
             .expect("validated issuing record")
@@ -613,7 +648,7 @@ impl<V> PresentationLedger<V> {
         self.validate_program(program)?;
         self.validate_scope(owner)?;
         let mut bodies = Vec::new();
-        self.leases.retain(|_, lease| {
+        self.state.leases.retain(|_, lease| {
             if lease.owner != Some(owner) {
                 return true;
             }
@@ -625,7 +660,7 @@ impl<V> PresentationLedger<V> {
             }
             false
         });
-        self.scopes.remove(&owner.scope);
+        self.state.scopes.remove(&owner.scope);
         Ok(bodies)
     }
 }

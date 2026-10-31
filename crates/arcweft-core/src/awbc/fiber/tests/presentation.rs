@@ -451,6 +451,226 @@ fn live_and_inert_scope_headers_observe_identical_metadata_quota_boundaries() {
 }
 
 #[test]
+fn inert_presentation_bank_roundtrips_before_restoring_its_original_scope() {
+    use crate::presentation::resources::PresentationLedgerState;
+
+    let mut fixture = Fixture::new(4);
+    fixture.register(true);
+    let image = fixture.image();
+    let inert = fixture.ledger.snapshot_admitted().unwrap();
+    let bytes = serde_json::to_vec(inert.inert_state()).unwrap();
+    let state: PresentationLedgerState<PresentationBody<AwbcRuntimeValueSnapshot>> =
+        serde_json::from_slice(&bytes).unwrap();
+    let decoded = state.retain_program(fixture.owner.clone());
+    assert_eq!(decoded.inert_state(), inert.inert_state());
+
+    let mut admission = RuntimeRetainedValueAdmission::for_program(
+        fixture.owner.clone(),
+        crate::entry::RuntimeSchemaLimits::engine_default(),
+    );
+    let proof = decoded
+        .admit_ownership(&fixture.owner, fixture.artifact, &mut admission)
+        .unwrap();
+    admission.bind_presentation_custody(proof).unwrap();
+    decoded.admit_bodies(&mut admission).unwrap();
+    image.admit_retained(&mut admission).unwrap();
+    admission.finish_presentation_custody().unwrap();
+
+    let Fixture {
+        owner,
+        mut fiber,
+        ledger,
+        ..
+    } = fixture;
+    drop(ledger);
+    let mut restored = decoded.into_admitted_live(&owner).unwrap();
+    let retired = fiber
+        .release_presentation_scope(&owner, &mut restored)
+        .unwrap();
+    assert_eq!(retired.len(), 1);
+    assert_eq!(
+        retired.into_iter().next().unwrap().body.value.0,
+        RuntimeValue::Bool(true)
+    );
+    assert!(
+        fiber
+            .release_presentation_scope(&owner, &mut restored)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn inert_presentation_bank_rejects_duplicate_ids_before_reading_a_second_body() {
+    use crate::presentation::resources::PresentationLedgerState;
+    type InertBank = PresentationLedgerState<PresentationBody<AwbcRuntimeValueSnapshot>>;
+
+    let mut fixture = Fixture::new(4);
+    fixture.register(true);
+    fixture.image();
+    let inert = fixture.ledger.snapshot_admitted().unwrap();
+    let value = serde_json::to_value(inert.inert_state()).unwrap();
+    let original = serde_json::to_string(&value).unwrap();
+    for field in ["scopes", "leases"] {
+        let map = value[field].as_object().unwrap();
+        let (key, row) = map.iter().next().unwrap();
+        let key = serde_json::to_string(key).unwrap();
+        let row = serde_json::to_string(row).unwrap();
+        let map_wire = serde_json::to_string(map).unwrap();
+        let replaced = original.replace(
+            &format!("\"{field}\":{map_wire}"),
+            &format!("\"{field}\":{{{key}:{row},{key}:null}}"),
+        );
+        assert_ne!(replaced, original);
+        let error = serde_json::from_str::<InertBank>(&replaced).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("duplicate presentation identity")
+        );
+    }
+    let mut unknown = value;
+    unknown["program"] = serde_json::Value::Null;
+    assert!(serde_json::from_value::<InertBank>(unknown).is_err());
+    assert_eq!(fixture.retire(), vec![RuntimeValue::Bool(true)]);
+}
+
+#[test]
+fn inert_presentation_bank_rejects_a_foreign_materialization_lease() {
+    let mut fixture = Fixture::new(4);
+    fixture.register(true);
+    fixture.image();
+    let inert = fixture.ledger.snapshot_admitted().unwrap();
+    let foreign = Fixture::new(4);
+    assert!(matches!(
+        inert.into_admitted_live(&foreign.owner),
+        Err(AwbcRuntimeValueSnapshotError::Presentation(
+            RuntimePresentationError::Program
+        ))
+    ));
+    assert_eq!(fixture.retire(), vec![RuntimeValue::Bool(true)]);
+}
+
+#[test]
+fn inert_presentation_slot_admission_uses_the_original_address_and_sticky_bank() {
+    use crate::presentation::resources::{PresentationLedgerState, PresentationSlotAddress};
+    type InertBank = PresentationLedgerState<PresentationBody<AwbcRuntimeValueSnapshot>>;
+
+    let mut fixture = Fixture::new(4);
+    let scope = fixture.bind();
+    let address = PresentationSlotAddress::try_new(
+        arcweft_id::PublicId::try_new("target.scene").unwrap(),
+        arcweft_id::PublicId::try_new("slot.background.main").unwrap(),
+        PresentationResourceKind::Background,
+    )
+    .unwrap();
+    fixture
+        .ledger
+        .register(
+            &fixture.owner,
+            scope,
+            PresentationRegistrationSite::Slot(address),
+            PresentationBody {
+                expected: crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest(),
+                binding: None,
+                value: RuntimePayload(RuntimeValue::Bool(true)),
+            },
+        )
+        .unwrap();
+    fixture.image();
+    let inert = fixture.ledger.snapshot_admitted().unwrap();
+    let mut value = serde_json::to_value(inert.inert_state()).unwrap();
+    let decoded: InertBank = serde_json::from_value(value.clone()).unwrap();
+    assert_eq!(&decoded, inert.inert_state());
+    let row = value["leases"]
+        .as_object_mut()
+        .unwrap()
+        .values_mut()
+        .next()
+        .unwrap();
+    row["site"]["Slot"]["target"] = serde_json::json!("asset.invalid");
+    let decoded = serde_json::from_value::<InertBank>(value)
+        .unwrap()
+        .retain_program(fixture.owner.clone());
+    let mut admission = RuntimeRetainedValueAdmission::for_program(
+        fixture.owner.clone(),
+        crate::entry::RuntimeSchemaLimits::engine_default(),
+    );
+    let error = decoded
+        .admit_ownership(&fixture.owner, fixture.artifact, &mut admission)
+        .err()
+        .unwrap();
+    assert!(matches!(
+        error,
+        AwbcRuntimeValueSnapshotError::Presentation(RuntimePresentationError::InvalidAddress)
+    ));
+    assert!(matches!(
+        admission.validate_metadata(&0_u8),
+        Err(AwbcRuntimeValueSnapshotError::Presentation(
+            RuntimePresentationError::InvalidAddress
+        ))
+    ));
+    assert_eq!(fixture.retire(), vec![RuntimeValue::Bool(true)]);
+}
+
+#[test]
+fn cleared_presentation_slots_still_charge_their_retained_address_metadata() {
+    use crate::presentation::resources::PresentationSlotAddress;
+
+    let build = |slot: &str| {
+        let mut fixture = Fixture::new(4);
+        let scope = fixture.bind();
+        let address = PresentationSlotAddress::try_new(
+            arcweft_id::PublicId::try_new("target.scene").unwrap(),
+            arcweft_id::PublicId::try_new(slot).unwrap(),
+            PresentationResourceKind::Background,
+        )
+        .unwrap();
+        fixture
+            .ledger
+            .register(
+                &fixture.owner,
+                scope,
+                PresentationRegistrationSite::Slot(address.clone()),
+                PresentationBody {
+                    expected: crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest(),
+                    binding: None,
+                    value: RuntimePayload(RuntimeValue::Bool(true)),
+                },
+            )
+            .unwrap();
+        let removed = fixture
+            .ledger
+            .clear(&fixture.owner, &address)
+            .unwrap()
+            .unwrap();
+        assert_eq!(removed.value.0, RuntimeValue::Bool(true));
+        fixture.image();
+        fixture
+    };
+    let mut short = build("slot.background.a");
+    let mut long = build("slot.background.retained_address_after_body_removal");
+    let first_accepted = |fixture: &Fixture| {
+        let defaults = crate::entry::RuntimeSchemaLimits::engine_default();
+        (0..defaults.max_metadata_bytes.min(4096))
+            .find(|limit| {
+                let mut limits = defaults;
+                limits.max_metadata_bytes = *limit;
+                let mut admission =
+                    RuntimeRetainedValueAdmission::for_program(fixture.owner.clone(), limits);
+                fixture
+                    .ledger
+                    .admit_ownership(&fixture.owner, fixture.artifact, &mut admission)
+                    .is_ok()
+            })
+            .expect("the header fits a quota below the production default")
+    };
+    assert!(first_accepted(&long) > first_accepted(&short));
+    assert!(short.retire().is_empty());
+    assert!(long.retire().is_empty());
+}
+
+#[test]
 fn live_and_inert_scope_headers_share_one_sticky_custody_contour() {
     let mut fixture = Fixture::new(4);
     fixture.register(true);

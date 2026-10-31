@@ -2125,7 +2125,7 @@ impl Engine {
             )?,
             presentation: image
                 .presentation
-                .map(|ledger| ledger.into_admitted_live())
+                .map(|ledger| ledger.into_admitted_live(owner))
                 .transpose()
                 .map_err(|error| error.to_string())?,
             presentation_retirements: image

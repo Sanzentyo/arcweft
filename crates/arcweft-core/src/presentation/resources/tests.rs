@@ -111,7 +111,7 @@ fn replacement_and_clear_move_non_clone_bodies_without_old_handle_clearing_new_s
         ledger.release(&program, &third, Some(outer)).unwrap(),
         Some(CapturedBody(Box::new(33)))
     );
-    assert!(ledger.leases.is_empty());
+    assert!(ledger.state.leases.is_empty());
 }
 
 #[test]
@@ -159,7 +159,7 @@ fn original_lease_exact_token_owner_and_replay_checks_are_failure_atomic() {
             ledger.release(&selected, &token, selected_owner),
             Err(expected)
         );
-        assert_eq!(ledger.leases.len(), 1);
+        assert_eq!(ledger.state.leases.len(), 1);
     }
     let decoded =
         RuntimePresentationHandleToken::try_decode_payload(&token.encode_payload()).unwrap();
@@ -240,7 +240,7 @@ fn capacity_and_cursor_exhaustion_return_body_and_preserve_prior_slot_and_cursor
             1,
         )
         .unwrap();
-    let cursor = ledger.next;
+    let cursor = ledger.state.next;
     assert_eq!(
         ledger.register(
             &program,
@@ -253,12 +253,12 @@ fn capacity_and_cursor_exhaustion_return_body_and_preserve_prior_slot_and_cursor
             body: 2
         })
     );
-    assert_eq!(ledger.next, cursor);
+    assert_eq!(ledger.state.next, cursor);
     assert_eq!(
         ledger.release(&program, &token, Some(owner)).unwrap(),
         Some(1)
     );
-    ledger.next = RuntimeIdCursor::Exhausted;
+    ledger.state.next = RuntimeIdCursor::Exhausted;
     let error = ledger
         .register(
             &program,
@@ -269,8 +269,8 @@ fn capacity_and_cursor_exhaustion_return_body_and_preserve_prior_slot_and_cursor
         .unwrap_err();
     assert!(matches!(error.cause, RuntimePresentationError::Identity(_)));
     assert_eq!(error.body, 3);
-    assert_eq!(ledger.next, RuntimeIdCursor::Exhausted);
-    assert!(ledger.leases.is_empty());
+    assert_eq!(ledger.state.next, RuntimeIdCursor::Exhausted);
+    assert!(ledger.state.leases.is_empty());
 }
 
 #[test]
@@ -335,7 +335,7 @@ fn independent_resources_of_every_family_never_replace_each_other() {
 fn last_identity_is_issued_once_and_foreign_registration_does_not_consume_it() {
     let program = new_program();
     let mut ledger = new_ledger(program.clone(), 3);
-    ledger.next = RuntimeIdCursor::Next(NonZeroU64::MAX);
+    ledger.state.next = RuntimeIdCursor::Next(NonZeroU64::MAX);
     let owner = new_scope(&mut ledger, &program, 0);
     assert_eq!(
         ledger.register(
@@ -349,7 +349,7 @@ fn last_identity_is_issued_once_and_foreign_registration_does_not_consume_it() {
             body: 12
         })
     );
-    assert_eq!(ledger.next, RuntimeIdCursor::Next(NonZeroU64::MAX));
+    assert_eq!(ledger.state.next, RuntimeIdCursor::Next(NonZeroU64::MAX));
     let (token, _) = ledger
         .register(
             &program,
@@ -392,7 +392,7 @@ fn reached_scope_binding_is_stable_and_exhaustion_never_changes_the_frame_or_gra
             env.presentation_scope_target().unwrap(),
         )
         .unwrap();
-    ledger.next_scope = RuntimeIdCursor::Exhausted;
+    ledger.state.next_scope = RuntimeIdCursor::Exhausted;
     assert_eq!(
         ledger
             .bind_scope(
@@ -415,8 +415,8 @@ fn reached_scope_binding_is_stable_and_exhaustion_never_changes_the_frame_or_gra
         Err(RuntimePresentationError::Identity(_))
     ));
     assert!(env.presentation_scope_binding().is_none());
-    assert_eq!(ledger.scopes.len(), 1);
-    assert_eq!(ledger.next_scope, RuntimeIdCursor::Exhausted);
+    assert_eq!(ledger.state.scopes.len(), 1);
+    assert_eq!(ledger.state.next_scope, RuntimeIdCursor::Exhausted);
     env.pop_scope();
     assert_eq!(
         ledger
@@ -492,14 +492,14 @@ fn foreign_context_cannot_adopt_a_reached_scope_grant() {
         Err(RuntimePresentationError::Owner)
     );
     assert_eq!(env.presentation_scope_binding().unwrap().owner, owner);
-    assert_eq!(ledger.scopes.len(), 1);
+    assert_eq!(ledger.state.scopes.len(), 1);
 }
 
 #[test]
 fn scope_grant_limit_is_checked_before_issuing_or_binding_the_reached_frame() {
     let program = new_program();
     let mut ledger = new_ledger::<i32>(program.clone(), 2);
-    ledger.limits.scopes = 1;
+    ledger.state.limits.scopes = 1;
     let fiber = RuntimePersistentFiberId::from_allocated(3);
     let mut env = crate::value::RuntimeEnv::default();
     let owner = ledger
@@ -510,7 +510,7 @@ fn scope_grant_limit_is_checked_before_issuing_or_binding_the_reached_frame() {
             env.presentation_scope_target().unwrap(),
         )
         .unwrap();
-    let before = ledger.next_scope;
+    let before = ledger.state.next_scope;
     env.push_scope();
     assert_eq!(
         ledger.bind_scope(
@@ -522,8 +522,8 @@ fn scope_grant_limit_is_checked_before_issuing_or_binding_the_reached_frame() {
         Err(RuntimePresentationError::ScopeCapacity)
     );
     assert!(env.presentation_scope_binding().is_none());
-    assert_eq!(ledger.scopes.len(), 1);
-    assert_eq!(ledger.next_scope, before);
+    assert_eq!(ledger.state.scopes.len(), 1);
+    assert_eq!(ledger.state.next_scope, before);
     env.pop_scope();
     assert_eq!(
         ledger

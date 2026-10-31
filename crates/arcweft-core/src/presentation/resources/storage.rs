@@ -7,7 +7,55 @@ use crate::value::{
     RuntimeRetainedValueAdmission, RuntimeStoredValue,
 };
 
-#[derive(Debug, PartialEq)]
+/// Reject duplicate identities before decoding their second owned body. Both
+/// ledger indexes use this visitor under the enclosing bounded save decoder.
+pub(super) fn deserialize_unique_map<'de, D, K, V>(
+    deserializer: D,
+) -> Result<BTreeMap<K, V>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    K: Deserialize<'de> + Ord,
+    V: Deserialize<'de>,
+{
+    struct UniqueMap<K, V>(std::marker::PhantomData<(K, V)>);
+
+    impl<'de, K, V> serde::de::Visitor<'de> for UniqueMap<K, V>
+    where
+        K: Deserialize<'de> + Ord,
+        V: Deserialize<'de>,
+    {
+        type Value = BTreeMap<K, V>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("a map with unique presentation identities")
+        }
+
+        fn visit_map<A: serde::de::MapAccess<'de>>(
+            self,
+            mut input: A,
+        ) -> Result<Self::Value, A::Error> {
+            let mut values = BTreeMap::new();
+            while let Some(key) = input.next_key()? {
+                if values.contains_key(&key) {
+                    return Err(serde::de::Error::custom("duplicate presentation identity"));
+                }
+                values.insert(key, input.next_value()?);
+            }
+            Ok(values)
+        }
+    }
+
+    deserializer.deserialize_map(UniqueMap(std::marker::PhantomData))
+}
+
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "V: crate::value::InertRuntimeValueStorage",
+        deserialize = "V: crate::value::InertRuntimeValueStorage"
+    )
+)]
 pub(crate) struct PresentationBody<V> {
     pub expected: RuntimeSemanticTypeId,
     pub binding: Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
@@ -55,14 +103,14 @@ impl PresentationBody<RuntimePayload> {
 }
 
 impl PresentationBody<AwbcRuntimeValueSnapshot> {
-    pub(crate) fn into_admitted_live(
+    pub(crate) fn into_admitted_live<'a>(
         self,
-        owner: &RuntimeProgramOwner,
+        context: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> Result<PresentationBody<RuntimePayload>, AwbcRuntimeValueSnapshotError> {
         Ok::<_, AwbcRuntimeValueSnapshotError>(PresentationBody {
             expected: self.expected,
             binding: self.binding,
-            value: RuntimePayload(self.value.into_admitted_runtime_value(owner)?),
+            value: RuntimePayload(self.value.into_admitted_runtime_value(context.into())?),
         })
     }
 }
@@ -157,73 +205,86 @@ impl<V: RuntimeStoredValue> PresentationLedger<PresentationBody<V>> {
         artifact: RuntimeArtifactFingerprint,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<PresentationAdmission, AwbcRuntimeValueSnapshotError> {
-        let invalid =
-            || AwbcRuntimeValueSnapshotError::from(RuntimePresentationError::InvalidState);
-        if !self.program.same_program(owner)
-            || self.artifact != artifact
-            || self.leases.len() > self.limits.handles
-            || self.scopes.len() > self.limits.scopes
-        {
-            return Err(invalid());
-        }
-        admission.validate_metadata(&(
-            self.artifact,
-            self.next,
-            self.next_scope,
-            self.limits.handles,
-            self.limits.scopes,
-        ))?;
-        admission.validate_metadata_collection(self.scopes.len())?;
-        let issued_scope = self.next_scope.last_issued();
-        for (scope, (execution, fiber, anchor)) in &self.scopes {
-            admission.validate_metadata(&(scope, execution, fiber, anchor))?;
-            if issued_scope.is_none_or(|last| scope.get() > last) {
-                return Err(invalid());
-            }
-        }
-        admission.validate_metadata_collection(self.leases.len())?;
-        let mut occupied = std::collections::BTreeSet::new();
-        for (issuance, lease) in &self.leases {
-            admission.validate_metadata(&(issuance, &lease.token))?;
-            if let Some(owner) = lease.owner {
-                admission.validate_metadata(&(owner.execution, owner.fiber, owner.scope))?;
-            }
-            if lease.token.issuance() != *issuance
-                || lease.token.artifact() != &self.artifact
-                || self.next.last_issued().is_none_or(|last| *issuance > last)
-                || lease.token.resource() != lease.site.resource()
-                || lease
-                    .owner
-                    .is_some_and(|owner| self.validate_scope(owner).is_err())
+        let result = (|| {
+            let invalid =
+                || AwbcRuntimeValueSnapshotError::from(RuntimePresentationError::InvalidState);
+            if !self.program.same_program(owner)
+                || self.state.artifact != artifact
+                || self.state.leases.len() > self.state.limits.handles
+                || self.state.scopes.len() > self.state.limits.scopes
             {
                 return Err(invalid());
             }
-            if lease.body.is_some() {
+            admission.validate_metadata(&(
+                self.state.artifact,
+                self.state.next,
+                self.state.next_scope,
+                self.state.limits.handles,
+                self.state.limits.scopes,
+            ))?;
+            admission.validate_metadata_collection(self.state.scopes.len())?;
+            let issued_scope = self.state.next_scope.last_issued();
+            for (scope, (execution, fiber, anchor)) in &self.state.scopes {
+                admission.validate_metadata(&(scope, execution, fiber, anchor))?;
+                if issued_scope.is_none_or(|last| scope.get() > last) {
+                    return Err(invalid());
+                }
+            }
+            admission.validate_metadata_collection(self.state.leases.len())?;
+            let mut occupied = std::collections::BTreeSet::new();
+            for (issuance, lease) in &self.state.leases {
+                admission.validate_metadata(&(issuance, &lease.token))?;
+                admission.validate_metadata(&lease.site)?;
                 if let PresentationRegistrationSite::Slot(address) = &lease.site {
-                    admission
-                        .validate_metadata(&(address.target.as_str(), address.slot.as_str()))?;
-                    if !occupied.insert(address) {
-                        return Err(invalid());
+                    address.validate()?;
+                }
+                if let Some(owner) = lease.owner {
+                    admission.validate_metadata(&(owner.execution, owner.fiber, owner.scope))?;
+                }
+                if lease.token.issuance() != *issuance
+                    || lease.token.artifact() != &self.state.artifact
+                    || self
+                        .state
+                        .next
+                        .last_issued()
+                        .is_none_or(|last| *issuance > last)
+                    || lease.token.resource() != lease.site.resource()
+                    || lease
+                        .owner
+                        .is_some_and(|owner| self.validate_scope(owner).is_err())
+                {
+                    return Err(invalid());
+                }
+                if lease.body.is_some() {
+                    if let PresentationRegistrationSite::Slot(address) = &lease.site {
+                        if !occupied.insert(address) {
+                            return Err(invalid());
+                        }
                     }
                 }
             }
-        }
-        Ok(PresentationAdmission {
-            program: self.program.clone(),
-            unseen: self.scopes.keys().copied().collect(),
-            scopes: self.scopes.clone(),
-            handles: self
-                .leases
-                .values()
-                .map(|lease| lease.token.clone())
-                .collect(),
-            seen_handles: Default::default(),
-            detached: self
-                .leases
-                .values()
-                .filter(|lease| lease.owner.is_none())
-                .map(|lease| lease.token.clone())
-                .collect(),
+            Ok(PresentationAdmission {
+                program: self.program.clone(),
+                unseen: self.state.scopes.keys().copied().collect(),
+                scopes: self.state.scopes.clone(),
+                handles: self
+                    .state
+                    .leases
+                    .values()
+                    .map(|lease| lease.token.clone())
+                    .collect(),
+                seen_handles: Default::default(),
+                detached: self
+                    .state
+                    .leases
+                    .values()
+                    .filter(|lease| lease.owner.is_none())
+                    .map(|lease| lease.token.clone())
+                    .collect(),
+            })
+        })();
+        result.inspect_err(|error: &AwbcRuntimeValueSnapshotError| {
+            admission.retain_failure(error.clone());
         })
     }
 
@@ -231,7 +292,7 @@ impl<V: RuntimeStoredValue> PresentationLedger<PresentationBody<V>> {
         &self,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
-        for lease in self.leases.values() {
+        for lease in self.state.leases.values() {
             if let Some(body) = &lease.body {
                 body.admit_retained(admission)?;
             }
@@ -244,26 +305,7 @@ impl Clone for PresentationLedger<PresentationBody<AwbcRuntimeValueSnapshot>> {
     fn clone(&self) -> Self {
         Self {
             program: self.program.clone(),
-            artifact: self.artifact,
-            next: self.next,
-            next_scope: self.next_scope,
-            scopes: self.scopes.clone(),
-            limits: self.limits,
-            leases: self
-                .leases
-                .iter()
-                .map(|(id, lease)| {
-                    (
-                        *id,
-                        PresentationLease {
-                            token: lease.token.clone(),
-                            owner: lease.owner,
-                            site: lease.site.clone(),
-                            body: lease.body.clone(),
-                        },
-                    )
-                })
-                .collect(),
+            state: self.state.clone(),
         }
     }
 }
@@ -276,6 +318,7 @@ impl PresentationLedger<PresentationBody<RuntimePayload>> {
         AwbcRuntimeValueSnapshotError,
     > {
         let leases = self
+            .state
             .leases
             .iter()
             .map(|(id, lease)| {
@@ -288,16 +331,7 @@ impl PresentationLedger<PresentationBody<RuntimePayload>> {
                         body: lease
                             .body
                             .as_ref()
-                            .map(|body| {
-                                Ok::<_, AwbcRuntimeValueSnapshotError>(PresentationBody {
-                                    expected: body.expected,
-                                    binding: body.binding.clone(),
-                                    value: AwbcRuntimeValueSnapshot::from_admitted_runtime_value(
-                                        body.value.value(),
-                                        &self.program,
-                                    )?,
-                                })
-                            })
+                            .map(|body| body.snapshot_admitted(&self.program))
                             .transpose()?,
                     },
                 ))
@@ -305,22 +339,37 @@ impl PresentationLedger<PresentationBody<RuntimePayload>> {
             .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?;
         Ok(PresentationLedger {
             program: self.program.clone(),
-            artifact: self.artifact,
-            next: self.next,
-            next_scope: self.next_scope,
-            scopes: self.scopes.clone(),
-            limits: self.limits,
-            leases,
+            state: PresentationLedgerState {
+                artifact: self.state.artifact,
+                next: self.state.next,
+                next_scope: self.state.next_scope,
+                scopes: self.state.scopes.clone(),
+                limits: self.state.limits,
+                leases,
+            },
         })
     }
 }
 
 impl PresentationLedger<PresentationBody<AwbcRuntimeValueSnapshot>> {
-    pub(crate) fn into_admitted_live(
+    #[cfg(test)]
+    pub(crate) fn inert_state(
+        &self,
+    ) -> &PresentationLedgerState<PresentationBody<AwbcRuntimeValueSnapshot>> {
+        &self.state
+    }
+
+    pub(crate) fn into_admitted_live<'a>(
         self,
+        context: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
     ) -> Result<PresentationLedger<PresentationBody<RuntimePayload>>, AwbcRuntimeValueSnapshotError>
     {
+        let context = context.into();
+        if !self.program.same_program(context.owner()) {
+            return Err(RuntimePresentationError::Program.into());
+        }
         let leases = self
+            .state
             .leases
             .into_iter()
             .map(|(id, lease)| {
@@ -332,15 +381,7 @@ impl PresentationLedger<PresentationBody<AwbcRuntimeValueSnapshot>> {
                         site: lease.site,
                         body: lease
                             .body
-                            .map(|body| {
-                                Ok::<_, AwbcRuntimeValueSnapshotError>(PresentationBody {
-                                    expected: body.expected,
-                                    binding: body.binding,
-                                    value: RuntimePayload(
-                                        body.value.into_admitted_runtime_value(&self.program)?,
-                                    ),
-                                })
-                            })
+                            .map(|body| body.into_admitted_live(context))
                             .transpose()?,
                     },
                 ))
@@ -348,12 +389,29 @@ impl PresentationLedger<PresentationBody<AwbcRuntimeValueSnapshot>> {
             .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?;
         Ok(PresentationLedger {
             program: self.program,
-            artifact: self.artifact,
-            next: self.next,
-            next_scope: self.next_scope,
-            scopes: self.scopes,
-            limits: self.limits,
-            leases,
+            state: PresentationLedgerState {
+                artifact: self.state.artifact,
+                next: self.state.next,
+                next_scope: self.state.next_scope,
+                scopes: self.state.scopes,
+                limits: self.state.limits,
+                leases,
+            },
         })
+    }
+}
+
+#[cfg(test)]
+impl PresentationLedgerState<PresentationBody<AwbcRuntimeValueSnapshot>> {
+    /// Retains the caller's selected lease with inert storage. Complete Product
+    /// admission must still verify every header before any live materialization.
+    pub(crate) fn retain_program(
+        self,
+        program: RuntimeProgramOwner,
+    ) -> PresentationLedger<PresentationBody<AwbcRuntimeValueSnapshot>> {
+        PresentationLedger {
+            program,
+            state: self,
+        }
     }
 }
