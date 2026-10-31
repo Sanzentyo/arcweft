@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "c35fc69a52db5709b98c0b135d6df559acd24af9",
+  "run": "presentation-awbc-scopes.reverse-arcweft-launch-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [   0.222s] 45 tests run: 45 passed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 45,
+  "passed": 45,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4005,
+  "sourceDrift": 0,
+  "held": 0,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-31T02:26:54.3190989Z"
+}

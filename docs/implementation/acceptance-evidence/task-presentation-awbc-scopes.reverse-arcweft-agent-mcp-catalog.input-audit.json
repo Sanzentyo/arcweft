@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "run": "presentation-awbc-scopes.reverse-arcweft-agent-mcp-catalog",
+  "actualExitCode": 0,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-agent-mcp",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 4005,
+  "sourceDrift": 0,
+  "held": 0,
+  "at": "2026-10-31T01:44:20.8417336Z"
+}

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "run": "presentation-awbc-scopes.reverse-arcweft-host-adapter-catalog",
+  "actualExitCode": 0,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-host-adapter",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 4005,
+  "sourceDrift": 0,
+  "held": 0,
+  "at": "2026-10-31T02:20:35.0915482Z"
+}

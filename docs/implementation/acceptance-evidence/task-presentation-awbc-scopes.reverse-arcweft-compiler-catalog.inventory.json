@@ -1,0 +1,4632 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "content_partition::tests::finite_dynamic_sets_retain_all_members_in_current_domain",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "content_partition::tests::startup_reachability_wins_over_on_demand",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "content_partition::tests::unreachable_nodes_are_omitted_and_ensure_partitions_content",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "effect_manifest::tests::inferred_effect_digest_is_deterministic_and_ordered",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "incremental::tests::persistent_query_snapshot_status_records_rebuild_reason",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "incremental::tests::runtime_plan_key_is_bound_to_profile_entries_and_accepted_source_snapshot",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "link::tests::link_project_orders_entries_and_modules",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "link::tests::link_project_rejects_duplicate_objects",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::character_dialogue::tests::actor_look_omission_and_explicit_crossfade_keep_concrete_durations",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::character_dialogue::tests::application::application_evaluates_target_before_content_slots_and_lowers_to_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::character_dialogue::tests::application::application_target_runs_flow_effects_before_the_line",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::character_dialogue::tests::application::configured_application_keeps_the_whole_factory_value_without_rebuilding_it",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::character_dialogue::tests::application::configured_application_target_is_owned_by_each_closed_function_instance",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::character_dialogue::tests::application::reference_application_retains_its_once_evaluated_target_and_empty_factory",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::character_dialogue::tests::application::unit_function_return_evaluates_its_body_before_the_declared_unit_return",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::character_dialogue::tests::branch_factory_projection_preserves_both_selected_character_targets",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::character_dialogue::tests::character_look_value_projects_inside_a_closed_function_instance",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::character_dialogue::tests::factory_and_reconfigure_project_manifest_owned_look_cases",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::character_dialogue::tests::factory_projection_accepts_a_character_reference_value_through_a_local",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::character_dialogue::tests::factory_projection_evaluates_callee_before_authored_patch_and_clear",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::character_dialogue::tests::factory_projection_preserves_the_accepted_source_voice_enum",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::character_dialogue::tests::generation::a_loaded_visual_manifest_does_not_invent_a_logical_character",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::character_dialogue::tests::generation::an_admitted_profile_emits_its_generation_without_character_or_line_use",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::character_dialogue::tests::generation::an_external_line_without_accepted_name_evidence_is_rejected_precisely",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::character_dialogue::tests::generation::an_unused_custom_field_roots_its_source_type_and_owns_its_descriptor_digest",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::character_dialogue::tests::generation::any_target_retains_one_generation_across_distinct_characters_and_closed_instances",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::character_dialogue::tests::generation::external_character_factory_is_a_logical_member_without_a_hir_declaration",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::character_dialogue::tests::generation::factory_only_program_roots_generation_types_in_native_and_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::character_dialogue::tests::generation::generation_fingerprints_the_accepted_style_resource_without_a_profile_selection",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::character_dialogue::tests::generation::unused_visual_character_retains_its_accepted_look_schema",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::character_dialogue::tests::lowered_factory_materializes_every_operand_before_producing_the_value",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::character_dialogue::tests::presentation_lifetime_projects_as_its_closed_environment_enum",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::character_dialogue::tests::reconfigure_projection_keeps_dynamic_character_dialogue_target_type",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::environment_record_pattern_tests::accepted_environment_record_pattern_projects_its_exact_nominal_fields",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::authored_map_callback_execution_survives_single_op_budget_and_native_rollback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::authored_map_callback_failure_retains_its_owning_execution_and_no_result",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::authored_map_callbacks_share_native_and_awbc_function_return_authority",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::authored_recursive_executable_vm_invocation_charges_one_explicit_owner_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::authored_scalar_executable_retains_its_function_site_in_vm_aot_and_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::authored_sequence_equality_uses_checked_family_and_logical_elements_in_native_and_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::binding_program_exports_selected_pattern_locals_through_native_and_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::callable_creation_and_invocation_keep_different_program_abis",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::captured_body_uses_program_ingress_instead_of_the_ordinary_parent_frame",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::closed_program_materializes_instances_outside_ordinary_call_reachability",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::closed_program_selects_exact_generic_instance_catalog_and_frame",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::collection_owner_tests::source_collection_length_matches_native_and_canonical_awbc_storage",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::collection_owner_tests::source_collection_sum_matches_native_and_canonical_awbc_for_all_integer_widths",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::collection_owner_tests::source_collection_sum_retains_first_exact_rejection_in_native_and_canonical_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::declared_program_executes_full_formal_inputs_through_native_and_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::declared_program_owns_its_catalog_when_same_body_has_an_ordinary_instance",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::declared_program_retains_destructuring_unused_formals_and_exact_signature",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::implicit_body_uses_its_checked_synthetic_formal_through_both_engines",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::program_body_retains_all_argument_group_coordinates",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::program_format_call_uses_its_own_template_scope",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::program_nested_closure_uses_the_program_parent_frame",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::program_only_format_call_selects_its_closed_display_method",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::program_only_generic_calls_discover_and_execute_their_transitive_instances",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::program_projection_rejects_a_foreign_report_even_with_identical_types",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::selected_unused_function_retains_full_formals_in_pure_aot_and_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::programs::tests::source_entity_reference_fields_execute_through_the_accepted_native_and_awbc_root",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::project_instances::tests::a_disallowed_edge_does_not_mutate_the_graph",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::project_instances::tests::a_zero_work_bound_rejects_the_first_visit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::project_instances::tests::admitted_target_does_not_authorize_an_undiscovered_dependency",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::project_instances::tests::an_admitted_instance_does_not_authorize_a_different_root",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::project_instances::tests::cancellation_after_discovery_prevents_materialization",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::project_instances::tests::cancellation_is_checked_at_admission_transition_and_publication",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::project_instances::tests::dropping_in_flight_work_cannot_publish_or_skip_it",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::project_instances::tests::graph_limits_are_inclusive_and_failure_cannot_publish_partial_work",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::project_instances::tests::graph_work_overflow_is_an_abort_before_mutation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::project_instances::tests::instance_key_encoding_spends_the_same_projection_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::project_instances::tests::materialization_cannot_add_a_target_to_the_sealed_graph",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::project_instances::tests::mismatched_keys_are_rejected_before_graph_mutation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::project_instances::tests::pending_work_prevents_graph_publication",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::project_instances::tests::projection_depth_failure_retains_the_precise_origin_and_first_abort",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::project_instances::tests::recursive_and_repeated_requests_share_the_admitted_instance",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::project_instances::tests::repeated_recursive_edges_charge_work_without_consuming_another_edge_slot",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::project_instances::tests::same_key_requires_equal_closed_evidence_in_both_phases",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::project_instances::tests::sealed_graph_materialization_uses_the_discovery_work_ledger",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::project_instances::tests::structural_projection_charges_constants_and_rejects_the_next_occurrence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "lower::project_instances::tests::work_from_another_session_is_rejected_even_for_the_same_key",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "object::tests::module_object_digest_depends_on_payload",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "persistent::tests::persistent_fact_builder_rejects_wrong_key_kind",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "persistent::tests::persistent_facts_are_identical_across_syntax_and_hir_sessions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "persistent::tests::persistent_function_signature_digest_tracks_entity_family_arguments",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "persistent::tests::persistent_hir_body_facts_round_trip_without_hir_serialization",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "persistent::tests::persistent_interface_summary_facts_round_trip_without_hir_serialization",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "persistent::tests::persistent_parse_facts_encode_deterministically",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "persistent::tests::persistent_query_actual_bytecode_builder_produces_verified_reusable_payload",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "persistent::tests::persistent_query_actual_link_builder_keeps_ordered_descriptor",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "persistent::tests::persistent_query_soft_miss_does_not_block_source_rebuild",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::entry_tests::agent_artifact_requires_an_exact_agent_entry_and_matching_project_index",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::entry_tests::agent_bundle_reuses_portable_admitted_source_names_without_diagnostic_reconstruction",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::entry_tests::agent_controller_uses_callable_local_type_evidence_after_unbound_function",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::entry_tests::body_only_change_preserves_binding_and_changes_compile_artifact_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::entry_tests::checked_non_stateful_entry_keeps_its_exact_common_binding",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::entry_tests::dense_numeric_bench_entries_preserve_all_four_checked_contract_roles",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::entry_tests::each_agent_controller_restarts_evidence_at_its_exact_callable_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::entry_tests::entry_event_payload_definitions_are_admitted_without_constructor_expressions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::entry_tests::generated_agent_controller_namespace_cannot_alias_an_authored_flow",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::entry_tests::ordinary_agent_entry_round_trips_and_runs_with_exact_artifact_binding",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::entry_tests::producer_contract::agent_host_producer_contract_is_the_selected_schema_across_argument_changes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::entry_tests::sel_005_checks_selected_entry_identity_and_kind_before_runtime_lowering",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::entry_tests::selected_agent_controller_lowers_diagnostics_method_into_typed_predicate",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::entry_tests::selected_agent_controller_lowers_typed_probe_comparison_into_wait_request",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::entry_tests::selected_agent_controller_owns_its_intrinsic_call",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::entry_tests::selected_agent_entry_lowers_only_its_exact_ordinary_controller",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::entry_tests::selected_entry_reaches_choice_goto_flow_without_rooting_unrelated_flows",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::entry_tests::shared_controller_keeps_one_callable_identity_and_distinct_entry_artifacts",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::entry_tests::stateful_project_lowering_requires_explicit_adapter_command_policy",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::entry_tests::unbound_agent_effect_function_is_not_discovered_as_a_controller",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::registration::tests::accepted_launch_input_retains_one_exact_typed_object_graph",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::agent_project_graph_preserves_canonical_public_flow_ids_across_modules",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::analysis_lease::semantic_lease_is_absent_when_analysis_does_not_complete",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::analysis_lease::semantic_lease_is_the_compiled_projects_exact_ancestor",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::analysis_lease::semantic_lease_survives_call_rejection_without_committing_compile_cache",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::analysis_lease::semantic_lease_survives_later_entry_selection_failure",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::analysis_lease::view_runtime_facts_keep_the_exact_original_match_catalog_and_checked_root",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::callback_definitions_and_capture_origins_survive_body_and_source_revisions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::closed_dialogue_effect_captures_reject_foreign_transfer_authority",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::closed_implicit_callable_definition_cannot_be_rebound_to_another_expression",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::closure_definition_and_capture_origins_survive_source_revisions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::compiled_project_modules_retain_typed_non_blocking_lints",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::continuation_captured_parameters_retain_accepted_passing",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::defer_capture_transfer_drives_registration_and_ingress",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::dialogue_effect_capture_transfer_drives_creation_and_ingress",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::dialogue_line_reference_reaches_runtime_lowering_from_one_accepted_generation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::failed_project_build_preserves_the_previous_accepted_hir_project_arc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::fatal_pre_hir_failure_exposes_no_tooling_lease",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::flow_facts_retain_the_accepted_body_and_complete_formals",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::function_sites_preserve_accepted_parameter_passing_separately_from_ingress",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::generic_dialogue_interpolation_rejects_an_unsupported_closed_instance",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::generic_display_text_publishes_distinct_closed_method_instances",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::generic_implicit_callable_instances_share_the_accepted_definition_and_capture_origin",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::generic_project_closure_instances_are_closed_per_parent_without_global_fallback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::generic_project_dialogue_instances_own_closed_templates_without_global_fallback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::generic_project_function_instances_close_one_body_under_distinct_runtime_types",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::generic_suspending_function_uses_its_closed_await_frame",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::implicit_callable_definition_and_capture_origins_survive_source_revisions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::implicit_capture_transfer_is_selected_per_closed_instance",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::lowered_host_arguments_keep_the_checked_request_role_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::multi_module_authored_proof_alias_to_unit_uses_one_semantic_project_transaction",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::named_make_need_arguments_keep_the_checked_request_role_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::noop_project_rebuild_reuses_the_exact_accepted_hir_project_arc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::ordinary_function_formals_retain_accepted_whole_parameter_coordinates",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::pending_store_state_is_one_way",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::pending_stores_discard_on_registration_error",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::producer_slots::compact_and_expression_need_spreads_emit_in_order_then_resume_native_and_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::project_compile_diagnostics_own_typed_diagnostic_and_source_snapshot",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::project_dialogue_collision_projects_exact_cross_module_source_labels",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::project_display_context_runs_from_source_flow",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::project_parse_diagnostics_retain_the_attached_source_payload",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::recovered_module_never_enters_runtime_plan_or_compile_cache",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::recovered_source_commits_poisoned_hir_for_tooling",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::registration_diagnostic_retains_accepted_source_document",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::registration_failure_discards_project",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::root_closure_capture_transfer_proof_drives_creation_and_ingress",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::root_implicit_capture_transfer_drives_creation_and_ingress",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::runtime_call_facts_retain_named_argument_source_order_and_abi_destinations",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::runtime_dialogue_projection_keeps_the_admitted_profile_product_lease",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::runtime_project_materialization_indexes_the_source_row_for_rest_spread",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::selected_need_producer_projects_its_instantiated_result_and_admission",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::selected_project_display_methods_are_reachable_from_fmt_and_interpolation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::semantic_rejection_retains_original_error_and_pre_executable_lease",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::source_project_call_failure_enters_fmt_inline_fallback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::type_purpose::ref_asset_signature_retains_every_type_owner_and_rejects_wrong_purpose_projection",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "project::tests::type_purpose::ref_flow_signature_retains_every_type_owner_and_rejects_wrong_purpose_projection",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "runtime_diagnostics::tests::runtime_artifact_fingerprint_copies_the_canonical_artifact_key_digest",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "source::tests::canonical_content_fx_application_uses_one_sealed_project_definition",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "source::tests::canonical_content_fx_application_uses_the_checked_builtin_catalog",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "source::tests::guarded_affine_tuple_copies_only_the_scalar_binding_through_runtime_lowering",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "source::tests::single_source_dialogue_uses_the_language_owned_character_name_default",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler",
+      "test": "source::tests::source_compiler_entrypoints_reject_removed_role_declarations_at_parse",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::agent_enum_execution",
+      "test": "agent_enum_cases_match_after_awbc_function_arguments",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::agent_enum_execution",
+      "test": "agent_enum_cases_match_after_native_function_arguments",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::agent_enum_execution",
+      "test": "agent_resource_body_text_payload_matches_after_native_and_awbc_arguments",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::api_compile",
+      "test": "removed_compiler_apis_are_unavailable",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::assertions",
+      "test": "compile_source_rejects_unresolved_prove_before_emitting_a_plan",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::assertions",
+      "test": "predicate_and_non_unit_proof_missing_tails_are_exact_semantic_diagnostics",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::assertions",
+      "test": "project_assertion_profile_is_the_only_debug_runtime_admission_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::assertions",
+      "test": "proof_and_predicate_assertion_context_errors_are_final_sema_diagnostics",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::assertions",
+      "test": "proof_body_prove_is_admitted_until_the_verifier_requires_discharge",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::assertions",
+      "test": "reloaded_artifact_uses_fresh_inventory_without_old_stmt_equality",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::assertions",
+      "test": "unit_proof_omitted_tail_remains_implicit_unit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::assertions",
+      "test": "verifier_consumes_predicate_proof_arena_records",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "affine_match_guard_borrows_copy_fields_and_moves_only_the_selected_arm::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "affine_match_guard_borrows_copy_fields_and_moves_only_the_selected_arm::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "and_skips_the_right_call::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "and_skips_the_right_call::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "callable_origins_remain_distinct_across_a_branch::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "callable_origins_remain_distinct_across_a_branch::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "callback_returns_a_nonterminal_prefix::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "callback_returns_a_nonterminal_prefix::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "callback_with_inferred_effects::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "callback_with_inferred_effects::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "callback_with_project_call_body::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "callback_with_project_call_body::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "capacity_hints_preserve_bytes_value::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "capacity_hints_preserve_bytes_value::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "capacity_hints_preserve_string_value::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "capacity_hints_preserve_string_value::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "capacity_hints_preserve_the_empty_vec_result::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "capacity_hints_preserve_the_empty_vec_result::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "character_factory_branches_preserve_values_through_native_and_decoded_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "closure_retains_a_project_prefix::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "closure_retains_a_project_prefix::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "closure_terminal_return_uses_its_own_frame::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "closure_terminal_return_uses_its_own_frame::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "conditional_rhs_consumption_preserves_static_cleanup_and_reinitializes::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "conditional_rhs_consumption_preserves_static_cleanup_and_reinitializes::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "contextual_closure_in_a_block_argument::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "contextual_closure_in_a_block_argument::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "contextual_constructor_sources_combine_complementary_type_evidence::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "contextual_constructor_sources_combine_complementary_type_evidence::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "contextual_prefix_keeps_its_fixed_later_type_through_the_middle_group::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "contextual_prefix_keeps_its_fixed_later_type_through_the_middle_group::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "contextual_project_constructor_infers_an_unselected_case_parameter::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "contextual_project_constructor_infers_an_unselected_case_parameter::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "contextual_project_constructor_retains_the_enclosing_parameter::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "contextual_project_constructor_retains_the_enclosing_parameter::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "contextual_project_unit_constructor_closes_with_a_later_argument::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "contextual_project_unit_constructor_closes_with_a_later_argument::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "contextual_project_variant_payload_closes_its_owner::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "contextual_project_variant_payload_closes_its_owner::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::control_branch_context_runs_both_orders_in_native_and_decoded_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::control_branch_generic_capture_runs_native_and_decoded_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_break_crosses_nested_value_loop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_break_crosses_statement_for",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_break_crosses_statement_while",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_break_crosses_statement_while_let",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_continue_crosses_nested_value_loop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_continue_crosses_statement_for",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_enclosing_iterator_preserves_unlabelled_break_and_continue",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_enclosing_while_preserves_unlabelled_break_and_continue",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "control_results::labelled_loop_shadowing_selects_the_nearest_same_name",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "copied_index_item_executes_in_native_and_decoded_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "correlated_ordinary_call_closes_from_a_later_parent_argument::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "correlated_ordinary_call_closes_from_a_later_parent_argument::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "correlated_ordinary_calls_combine_complementary_parent_evidence::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "correlated_ordinary_calls_combine_complementary_parent_evidence::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "curried_prefix_as_callback::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "curried_prefix_as_callback::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "curried_terminal_effect::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "curried_terminal_effect::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "direct_call::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "direct_call::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "direct_nominal_vec_field_pop_front_drains_the_original_field::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "direct_nominal_vec_field_pop_front_drains_the_original_field::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "direct_variant_constructor_keeps_unselected_payload_types::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "direct_variant_constructor_keeps_unselected_payload_types::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "fixed_numeric_arrays_retain_their_checked_element_and_length::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "fixed_numeric_arrays_retain_their_checked_element_and_length::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "function_callee_is_captured_before_a_later_call_argument::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "function_callee_is_captured_before_a_later_call_argument::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "function_value_calls_do_not_merge_argument_groups",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "generic_option_payload_keeps_the_instantiated_owner::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "generic_option_payload_keeps_the_instantiated_owner::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "generic_prefix_as_monomorphic_callback::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "generic_prefix_as_monomorphic_callback::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "generic_prefix_origin_branch::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "generic_prefix_origin_branch::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "generic_prefix_origin_branch_has_deterministic_canonical_awbc_bytes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "if_let_skips_the_unselected_branch_call::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "if_let_skips_the_unselected_branch_call::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "implicit_generic_record_value_inputs_close_per_frame::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "implicit_generic_record_value_inputs_close_per_frame::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "implicit_nominal_selection_captures_the_base_type::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "implicit_nominal_selection_captures_the_base_type::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "implicit_record_inputs_share_the_callable_frame::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "implicit_record_inputs_share_the_callable_frame::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "implicit_record_shorthand_closes_generic_inputs::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "implicit_record_shorthand_closes_generic_inputs::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "implicit_terminal_return_uses_its_own_frame::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "implicit_terminal_return_uses_its_own_frame::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "later_argument_closes_a_project_enum_owner::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "later_argument_closes_a_project_enum_owner::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "later_argument_closes_an_earlier_contextual_variant::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "later_argument_closes_an_earlier_contextual_variant::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "local_vec_pop_front_drains_the_local::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "local_vec_pop_front_drains_the_local::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "match_skips_unselected_arm_calls::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "match_skips_unselected_arm_calls::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "maybe_moved_local_initializes_at_a_branch_join::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "maybe_moved_local_initializes_at_a_branch_join::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "moved_local_reinitializes_and_accepts_rhs_self_transfer::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "moved_local_reinitializes_and_accepts_rhs_self_transfer::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "mutually_recursive_functions::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "mutually_recursive_functions::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "mutually_recursive_generics_execute_for_distinct_types::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "mutually_recursive_generics_execute_for_distinct_types::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "named_call_keeps_reads_before_and_after_its_last_control_transfer_in_source_order::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "named_call_keeps_reads_before_and_after_its_last_control_transfer_in_source_order::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "named_curried_function_value::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "named_curried_function_value::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "nested_affine_field_reinitializes_while_siblings_remain_available::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "nested_affine_field_reinitializes_while_siblings_remain_available::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "nested_awbc_places_reject_empty_paths_invalid_prefixes_and_wrong_leaf_types",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "nested_closure_captures_bind_to_their_own_frame_in_native_and_decoded_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "nested_closure_variant_keeps_unselected_payload_types::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "nested_closure_variant_keeps_unselected_payload_types::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "nested_generic_assignment_closes_every_field_schema_in_both_backends::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "nested_generic_assignment_closes_every_field_schema_in_both_backends::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "nested_generic_calls::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "nested_generic_calls::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "nested_mutation_loan_allows_a_disjoint_affine_sibling_move::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "nested_mutation_loan_allows_a_disjoint_affine_sibling_move::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "nested_need_field_reinitialization_preserves_static_ownership::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "nested_need_field_reinitialization_preserves_static_ownership::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "nested_places_reject_moved_ancestors_and_overlapping_mutation_loans",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "nested_record_places_share_assignment_and_sequence_mutation_in_both_backends",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "nested_root_closure_returns_an_executable_capture::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "nested_root_closure_returns_an_executable_capture::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "nominal_binary_read_precedes_later_operand_evaluation::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "nominal_binary_read_precedes_later_operand_evaluation::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "nominal_field_awbc_roundtrip_rejects_wrong_ordinals_and_replacement_types",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "or_skips_the_right_call::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "or_skips_the_right_call::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "ordinary_closure_parameters_reject_trailing_input",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "project_variant_constructor_keeps_unselected_payload_types::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "project_variant_constructor_keeps_unselected_payload_types::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "project_variant_keeps_unselected_payload_types::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "project_variant_keeps_unselected_payload_types::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "pure_helper_replacement_updates_the_outer_declaration::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "pure_helper_replacement_updates_the_outer_declaration::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "qualified_nullary_variant_line_output_reaches_typed_plan_and_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "qualified_nullary_variants_preserve_global_and_function_owners_in_native_and_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "record_field_reads_preserve_the_owner_in_native_and_decoded_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "recursive_generic::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "recursive_generic::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "root_closure_capture_and_project_call_share_one_frame::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "root_closure_capture_and_project_call_share_one_frame::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "root_closure_captures_its_enclosing_local::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "root_closure_captures_its_enclosing_local::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "root_closure_variant_keeps_unselected_payload_types::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "root_closure_variant_keeps_unselected_payload_types::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "shared_prefix_with_distinct_later_types::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "shared_prefix_with_distinct_later_types::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "short_circuit_evaluates_the_selected_call::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "short_circuit_evaluates_the_selected_call::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "source_dialogue_reveal_and_advance_keep_the_original_line_groups",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "standard_map_control::array::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "standard_map_control::array::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "standard_map_control::option_none::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "standard_map_control::option_none::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "standard_map_control::option_some::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "standard_map_control::option_some::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "standard_map_control::result_err::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "standard_map_control::result_err::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "standard_map_control::result_ok::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "standard_map_control::result_ok::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "standard_map_control::seq_and_slice_preserve_owned_inputs_in_native_and_decoded_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "standard_map_control::vec::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "standard_map_control::vec::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "standard_map_program::an_opaque_map_capture_does_not_invent_a_local_copy_guarantee",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "standard_map_program::compiled_map_consumption_owns_source_aliases_and_preserves_one_op_execution",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "standard_map_program::creating_a_map_prefix_keeps_its_callback_effects_latent",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "standard_map_program::direct_map_evaluates_receiver_before_mapping",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "standard_map_program::every_map_family_uses_a_control_program_with_exact_values_and_callback_count",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "standard_map_program::map_callback_effects_cannot_enter_a_pure_invocation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "standard_map_program::opaque_map_mapping_requires_an_executed_ownership_guard",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "standard_map_program::retained_map_prefix_can_reuse_a_copy_mapping",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "standard_map_program::retained_map_prefix_evaluates_mapping_once_and_keeps_source_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "standard_map_program::retained_map_prefix_invokes_each_callback_with_its_declared_effects",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "standard_map_program::retained_map_prefix_reuses_an_opaque_mapping_through_checked_ingress",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "traversal::source_parallel_executes_callbacks_with_public_save_quiescence_and_private_rollback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "traversal::source_parallel_lowers_direct_environment_function_values_in_flow",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "traversal::source_parallel_moves_affine_need_items_and_restores_the_product_each_step",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "traversal::source_traversal_does_not_enter_the_callback_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "traversal::source_traversal_keeps_owned_collections_and_callbacks_without_starting_children",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "traversal::source_traversal_retains_computed_source_and_callback_operands",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "typed_mutable_affine_binding_reinitializes_after_move::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "typed_mutable_affine_binding_reinitializes_after_move::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "uninvoked_callback_with_inferred_effects::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "uninvoked_callback_with_inferred_effects::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "vec_pop_front_rejects_indexed_nominal_fields",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "vec_push_and_pop_mutate_a_direct_nominal_field::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "vec_push_and_pop_mutate_a_direct_nominal_field::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "vec_push_and_pop_mutate_the_same_local::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "vec_push_and_pop_mutate_the_same_local::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "vec_push_inside_function_returns_updated_value::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "vec_push_inside_function_returns_updated_value::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "whole_live_local_replacement_survives_nested_scope_exit::awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::callable_execution",
+      "test": "whole_live_local_replacement_survives_nested_scope_exit::native",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::catalog_asset_execution",
+      "test": "catalog_asset_references_execute_through_ordinary_native_and_decoded_awbc_calls",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::catalog_asset_execution",
+      "test": "concrete_asset_projection_survives_generic_callable_type_instantiation_in_native_and_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::catalog_asset_execution",
+      "test": "constant_type_arguments_execute_through_ordinary_native_and_decoded_awbc_calls",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::choice_static",
+      "test": "compact_choice_goto_preserves_checked_ids_and_flow_target_through_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::data_format_nominal",
+      "test": "data_format_uses_its_source_owned_nominal_variant_domain",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::data_format_nominal",
+      "test": "dynamic_decode_uses_complete_standard_data_nominal_domains",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::diagnostic_ownership",
+      "test": "compiler_lint_facade_preserves_independent_lint_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::diagnostic_ownership",
+      "test": "syntax_parser_preserves_statement_error_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::dialogue_profile_admission",
+      "test": "authored_dialogue_profile_retains_typed_text_extents_and_typography_sources",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::dialogue_profile_admission",
+      "test": "authored_dialogue_typography_rejects_properties_outside_the_current_registry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::dialogue_profile_admission",
+      "test": "authored_dialogue_typography_rejects_unconverted_units_and_wrong_types",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::dialogue_profile_admission",
+      "test": "authored_style_selector_targets_share_the_checked_text_and_control_schema",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::dialogue_profile_admission",
+      "test": "compiler_admits_profile_against_the_same_view_product_and_revision",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::dialogue_profile_admission",
+      "test": "direct_project_compilation_admits_a_revision_bound_project_default",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::dialogue_profile_admission",
+      "test": "omitted_dialogue_fields_admit_the_engine_standard_view",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::dialogue_profile_admission",
+      "test": "profile_admission_rejects_missing_or_non_dialogue_catalog_entries",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::dialogue_profile_admission",
+      "test": "profile_admission_requires_the_exact_resource_registry_arc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::dialogue_profile_admission",
+      "test": "unreachable_dialogue_view_function_does_not_enter_runtime_projection",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "authored_space_after_hard_break_keeps_vertical_text_run_in_native_and_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "authored_space_after_interpolation_keeps_ruby_display_range_in_native_and_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "cancellation_out_selects_the_dialogue_result_in_native_and_decoded_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "candidate_capture_selection_crosses_each_nested_closure",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "candidate_control_target_failure_stays_in_the_rejected_interpretation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "candidate_generated_content_types_follow_their_selected_producer",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "candidate_local_type_failure_does_not_publish_an_unselected_type",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "candidate_only_local_use_does_not_become_an_executable_capture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "candidate_recovery_is_selected_before_callable_execution_role",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "candidate_selection_recomputes_capture_order_and_access",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "dialogue_content_callbacks_and_delays_reach_their_exact_runtime_owners_and_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "dialogue_mark_projection_is_content_ordered_and_uses_the_exact_checked_trigger",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "dialogue_mark_projection_keeps_equal_local_names_content_qualified",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "dialogue_point_call_receives_a_checked_rgb_color_in_native_and_awbc_plans",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "dialogue_readiness::authored_capture_steps_reveal_the_same_dialogue_before_native_and_awbc_capture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "dialogue_readiness::decoded_awbc_activation_quantum_and_portable_restore_resume_once_at_the_next_step",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "dialogue_readiness::decoded_awbc_dialogue_duration_wait_public_save_resumes_the_same_activation_once",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "dialogue_readiness::dialogue_drain_finishes_owned_scoped_init_defer_before_reveal",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "dialogue_readiness::dialogue_drain_reaches_ready_without_spending_host_steps_on_internal_activation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "dialogue_readiness::dialogue_duration_wait_blocks_reveal_until_later_logical_time",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "dialogue_readiness::dialogue_game_returns_on_reveal_after_non_presentation_init_observations",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "dialogue_readiness::dialogue_init_recursive_function_value_preserves_capture_and_one_op_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "dialogue_readiness::dialogue_line_output_and_owned_child_resume_once_after_budgeted_activation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "dialogue_readiness::dialogue_one_op_and_drain_budget_yield_keep_the_actual_activation_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "dialogue_readiness::failed_dialogue_activation_never_publishes_the_reveal_frame",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "evaluated_effect_operands_reach_awbc_from_final_checked_sources",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "explicit_typed_text_proxy_materializes_only_from_final_sema_authority",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "init_out_remains_inside_the_pre_reveal_scope_in_runtime_plan",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "inline_colon_dialogue_plan_reaches_compiler_hir",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "lifetime_scopes::lifetime_scoped_function_value_survives_partial_application_in_native_and_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "line_root_deferred_children_execute_in_native_and_awbc_lifo",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "mark_out_selects_an_on_only_non_unit_result_in_native_and_decoded_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "nested_fx_effects_use_the_body_content_effect_plan",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "nested_modifier_effects_use_the_body_content_effect_plan",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "ordinary_dialogue_calls_lower_inside_their_exact_content_and_delay_callbacks",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "parent_and_nested_effect_ordinals_remain_local_before_runtime_rebasing",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "physical_line_endings_normalize_display_without_erasing_inline_spaces_in_native_and_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "pipe_tail_effect_has_one_operation_and_verified_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "project_function_effect_tails_have_one_closed_operation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "project_inline_record_enum_pattern_binds_fields_in_native_and_decoded_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "raw_content_uses_the_checked_literal_without_interpreting_braces_or_page_marks",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "reached_line_defers_keep_capture_order_and_verified_awbc_sites",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "recursive_generic_closure_in_attached_default_reaches_verified_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "reference_only_dialogue_id_argument_survives_runtime_reachability",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "ruby_content_with_a_recovered_closure_candidate_reaches_verified_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "sibling_thread_dialogue_callbacks_join_their_own_activation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "statement_match_expression_effect_arms_preserve_native_awbc_effects",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "statement_match_pure_value_arms_are_discarded_in_native_and_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::evaluated_effects",
+      "test": "typed_text_proxy_schema_preserves_enum_defaults_order_and_optional_fields",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_effects",
+      "test": "authored_and_inferred_flow_effects_authorize_ordinary_calls",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_effects",
+      "test": "authored_flow_permissions_keep_unused_members_and_scopes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_effects",
+      "test": "curried_prefix_has_argument_effects_but_keeps_body_effects_latent",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_effects",
+      "test": "curried_terminal_application_executes_the_body_effects",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_effects",
+      "test": "static_and_dynamic_flow_transfers_change_the_active_effect_scope",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_effects",
+      "test": "wait_operands_reach_one_typed_awbc_input_through_global_and_specialized_bodies",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "awbc_returned_thread_handle_preserves_capture_and_result_through_each_step_save",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "forged_program_child_save_rejects_without_losing_the_original_handle_or_result",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "forward_include_implicitly_completes_and_resumes_native_and_decoded_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "generic_thread_capture_is_copied_under_its_original_binding_and_survives_save",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "goto_inside_an_include_replaces_the_actual_flow_without_returning_to_its_caller",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "include_explicit_unit_and_value_returns_resume_native_and_decoded_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "include_in_a_function_owned_thread_joins_before_its_flow_caller_returns",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "include_rejects_a_parameterized_flow_before_executable_publication",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "mutually_recursive_includes_execute_under_the_original_one_operation_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "native_nested_thread_finishes_its_own_descendants_before_the_outer_flow",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "native_returned_thread_handle_delivers_its_actual_non_unit_value",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "native_sibling_thread_includes_return_to_their_callers_without_mutual_join",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "native_spawn_function_returns_before_its_child_finishes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "native_thread_capture_source_and_child_resume_under_one_operation_steps",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "native_thread_quota_rejection_publishes_no_child_or_task",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "native_thread_retires_its_actual_non_unit_source_result_contract",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "repeated_and_nested_includes_share_original_functions_and_resume_their_callers",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_include",
+      "test": "returned_thread_result_waits_for_its_actual_nested_child_through_each_step_save",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "decoded_awbc_child_wait_can_finish_while_parent_waits_and_is_saved",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "decoded_awbc_compatible_body_replacement_keeps_elapsed_wait_and_uses_new_tail",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "decoded_awbc_one_operation_steps_save_before_and_during_the_wait",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "decoded_awbc_wait_cold_restore_uses_the_original_instruction_and_remainder",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "decoded_awbc_wait_preserves_remaining_time_through_each_step_public_save",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "decoded_awbc_wait_rejects_a_replaced_source_instruction_atomically",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "decoded_awbc_wait_rejects_forged_resume_status_and_source_without_mutation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "decoded_awbc_wait_resumes_under_zero_budget_without_executing_its_tail",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "decoded_awbc_zero_and_sequential_waits_keep_the_original_time_boundary",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "effectful_duration_operand_is_evaluated_once_across_native_and_awbc_suspension",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "generic_thread_wait_retains_its_duration_capture_and_return_value",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "loop_waits_preserve_the_owning_continuation_across_save_and_time_overshoot",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "native_child_wait_progresses_while_its_parent_has_a_longer_wait",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "native_computed_wait_consumes_only_later_step_durations",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "native_wait_ages_at_ingress_without_spending_a_zero_operation_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "native_wait_overshoot_does_not_age_a_later_wait",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "native_zero_wait_never_requires_elapsed_time",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::flow_wait",
+      "test": "standalone_awbc_cancellation_retires_wait_without_executing_the_tail",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "authored_formatter_transaction_restores_its_original_staging_and_completes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "authored_lazy_context_executes_in_native_and_restores_the_awbc_callback_cause",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "awbc_callable_snapshot_rejects_a_forged_retained_type",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "awbc_verifier_rejects_a_generic_bound_type_at_a_forged_depth",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "awfb_session_save_preserves_a_live_local_before_nested_replacement",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "awfb_session_save_restores_the_generic_prefix_into_its_pinned_program",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "empty_never_statement_match_preserves_let_else_in_native_and_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "inhabited_empty_statement_match_cannot_publish_a_native_plan",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "native_generic_continuation_keeps_its_scheme_origin_position_and_prefix",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "standard_map::captured_map_restores_its_original_callback_and_continues_remaining_rows",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::generic_continuation_snapshot",
+      "test": "standard_map::retained_map_prefix_restores_its_mapping_and_original_captured_callback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::inline_failure_policy",
+      "test": "one_string_fallback_can_be_used_by_multiple_character_dialogues",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::iterator_witness_source",
+      "test": "bounded_calls::native_for_keeps_the_original_thirty_two_single_operation_steps",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::iterator_witness_source",
+      "test": "source_iterator_identity_witness_executes_on_verified_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::iterator_witness_source",
+      "test": "source_iterator_witness_lowers_trait_methods_and_for_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::local_declaration_source",
+      "test": "authored_closure_capture_keeps_the_captured_declaration_source",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::local_declaration_source",
+      "test": "authored_retained_storage_survives_view_lowering_to_core_rows",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::local_declaration_source",
+      "test": "authored_shadowing_keeps_distinct_declared_mutability_in_core_rows",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::local_declaration_source",
+      "test": "capture_slot_mutability_is_independent_of_the_captured_source_declaration",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::local_declaration_source",
+      "test": "closed_frames_declare_each_materialized_slot_in_one_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::local_declaration_source",
+      "test": "closed_program_and_function_frames_do_not_leave_global_template_slots",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::named_scopes",
+      "test": "match_guard_calls_and_return_keep_the_enclosing_control_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::named_scopes",
+      "test": "mixed_scope_choice_ids_and_active_frames_survive_awbc_save_restore",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::named_scopes",
+      "test": "named_scope_result_is_bound_in_the_parent_before_its_continuation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::named_scopes",
+      "test": "pure_function_scope_keeps_its_lexical_identity_and_value_in_both_backends",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::parser_diagnostic",
+      "test": "compiler_retains_the_exact_parse_diagnostic_in_a_readiness_failure",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "accepted_nominal_owner_and_path_invalidate_persistent_query_keys",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "character_digest_cannot_key_semantic_reuse",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "compiled_project_contains_no_linked_hir",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "compiled_project_holds_one_registered_world",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "compiled_snapshot_carries_the_registered_environment_digest",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "conditional_recovery_edits_invalidate_positive_and_negative_cache_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "failed_instance_projection_preserves_the_prior_accepted_generation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "identical_accepted_environment_reuses_the_persistent_query_key",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "lowered_hir_cache_hit_remains_read_only",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "lowered_hir_cache_rejects_another_document_identity_with_the_same_bytes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "lowered_hir_cache_rejects_exact_source_from_another_syntax_and_hir_session",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "nested_callable_type_change_invalidates_persistent_query_keys",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "pending_stores_discard_on_type_error",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "pending_stores_flush_after_complete_success",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "runtime_plan_consumes_project_view_without_flattening",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "runtime_semantic_facts_retain_exact_runtime_domain_types_and_omit_presentation_owners",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "runtime_variant_facts_retain_the_complete_normalized_project_case_table",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "rust_codec_policy::every_rust_wire_policy_change_is_committed_to_the_source_layout",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "rust_codec_policy::malformed_rust_wire_policies_cannot_publish_an_abi_manifest",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "rust_codec_policy::rust_codec_policy_matches_reflect_after_plan_and_awbc_publication",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "rust_defaults::awbc_root_initialization_uses_remaining_drain_allowance_for_initial_flow",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "rust_defaults::awbc_root_initializer_resumes_after_rust_call_without_repeating_it",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "rust_defaults::content_only_replacement_retains_the_root_generation_after_its_initial_flow_returns",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "rust_defaults::native_root_initializer_uses_budgeted_frame_and_selected_rust_locale",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "rust_defaults::root_replay_recording_after_step_failure_returns_the_actual_transition",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "rust_defaults::root_replay_recording_rejection_returns_unexecuted_input_and_clock",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "rust_defaults::root_replay_records_observed_initialization_before_queued_event_transition",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "rust_defaults::root_replay_trace_bytes_preserve_the_observed_awfb_artifact_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "rust_defaults::root_replay_trace_codec_bounds_wire_and_rejects_unknown_duplicate_and_trailing_data",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "rust_defaults::rust_declared_defaults_reach_plan_awbc_and_execute_only_on_missing_fields",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "rust_defaults::rust_default_producer_tampering_fails_before_runtime_publication",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "rust_defaults::rust_defaults_for_primitive_foreign_and_generic_fields_share_checked_bindings",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "rust_defaults::rust_trait_default_bindings_reject_missing_wrong_and_duplicate_producers",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "rust_defaults::view_expression_locale_is_execution_input_and_invalidates_only_changed_cache",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "rust_nominals::source_rust_nominals_preserve_shapes_recursion_and_exact_arguments_in_native_and_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "source_revision_change_invalidates_the_compile_unit_cache",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "static_selectors::effectful_external_callable_value_keeps_its_frame_and_source_order_across_awbc_restoration",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "static_selectors::external_callable_value_keeps_exact_source_order_in_native_and_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "static_selectors::external_callable_value_retains_groups_and_captured_arguments_in_native_and_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "static_selectors::static_selector_and_value_callee_keep_exact_source_order_in_native_and_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "symbol_table_revision_invalidates_exact_changed_modules",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "unreachable_assignment_retains_checked_place_but_publishes_no_runtime_fact",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_function_instances",
+      "test": "body_and_nested_closure_projection_obey_the_same_depth_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_function_instances",
+      "test": "curried_project_call_lowers_continue_then_invoke_without_pure_helper_fallback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_function_instances",
+      "test": "distinct_generic_substitutions_publish_distinct_closed_instances",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_function_instances",
+      "test": "growing_instance_graph_stops_at_the_configured_inclusive_bound",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_function_instances",
+      "test": "growing_types_stop_at_the_depth_bound_before_exhausting_instance_slots",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_function_instances",
+      "test": "implicit_callable_site_is_distinct_for_each_closed_generic_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_function_instances",
+      "test": "instance_closure_obeys_the_structural_node_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_function_instances",
+      "test": "named_project_call_lowers_source_ordered_operands_into_typed_anf",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_function_instances",
+      "test": "rest_project_call_lowers_spread_once_and_materializes_source_indices",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_function_instances",
+      "test": "same_type_recursion_reuses_the_single_allowed_instance",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_function_instances",
+      "test": "shared_curried_prefix_keeps_one_lineage_and_one_closed_instance_key",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::project_function_instances",
+      "test": "specialized_agent_call_materializes_source_order_before_abi_reads",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::runtime_color",
+      "test": "rgb_residualizes_to_a_canonical_awbc_color_constant",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::runtime_color",
+      "test": "rgba8_color_survives_ordinary_function_parameter_and_return_in_both_backends",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::scope_propagation",
+      "test": "an_inner_carrier_remains_inside_the_named_pure_scope",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::scope_propagation",
+      "test": "anonymous_statement_scope_propagation_skips_the_outer_success_continuation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::scope_propagation",
+      "test": "flow_scope_propagates_to_its_outer_carrier_after_leaving_the_frame",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::scope_propagation",
+      "test": "long_contextual_await_tail_lowers_inside_nested_scopes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::scope_propagation",
+      "test": "nested_flow_scopes_unwind_only_the_frames_crossed_by_the_residual",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::scope_propagation",
+      "test": "nested_pure_scopes_join_their_own_success_type_before_callable_propagation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::scope_propagation",
+      "test": "pure_scope_statements_join_before_the_remaining_function_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::scope_propagation",
+      "test": "scope_carrier_slots_restore_at_each_active_frame_instruction",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::try_pipe",
+      "test": "carrier_block_catches_try_before_the_function_boundary",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::try_pipe",
+      "test": "nested_try_lifts_the_surrounding_expression_into_the_carrier",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::try_pipe",
+      "test": "ordinary_terminal_try_is_not_implicitly_wrapped_for_the_return_type",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::try_pipe",
+      "test": "pipe_left_binding_precedes_try_in_the_pipe_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::try_pipe",
+      "test": "pipe_lowers_the_left_value_once_through_the_admitted_local",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::try_pipe",
+      "test": "try_inside_an_ordinary_block_keeps_the_outer_continuation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::try_pipe",
+      "test": "try_remains_inside_its_if_branch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::try_pipe",
+      "test": "try_remains_inside_its_match_arm",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "affine_view_parameter_is_rejected_even_when_its_initial_value_is_empty_or_unused",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "authored_button_input_failures_preserve_authored_evaluation_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "authored_button_inputs_use_typed_expression_execution",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "authored_element_geometry_inputs_reach_typed_layout",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "authored_element_geometry_refuses_units_without_a_layout_conversion",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "authored_expression_programs_keep_distinct_operation_roots",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "authored_keyed_iteration_reaches_the_retained_program",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "authored_local_state_follows_repeat_keys_and_rolls_back_failed_initialization",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "authored_local_state_identity_uses_name_and_scope_instead_of_initializer_or_position",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "authored_local_state_initializes_once_per_mount_and_survives_cold_restore",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "authored_local_state_rejects_nonretained_and_latent_scopes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "authored_local_state_replacement_preserves_fields_rejects_types_and_removes_fields",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "authored_local_state_scope_retirement_keeps_inactive_sources_and_retires_descendants",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "authored_nested_views_pass_core_values_locals_aliases_and_defaults",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "authored_text_expression_cache_and_restore_preserve_budget_failure",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "authored_text_expression_executes_and_refreshes_typed_parameter_inputs",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "authored_text_expression_rejects_unproven_dynamic_callback_suspension",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "authored_view_block_locals_keep_patterns_scopes_and_cold_restore",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "authored_view_conditional_does_not_execute_the_unselected_arm_and_recovers_from_failure",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "authored_view_conditionals_use_core_and_isolate_arm_locals",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "authored_view_match_failures_publish_no_partial_frame_and_recover",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "authored_view_match_pattern_families_share_the_core_selector",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "authored_view_matches_select_core_patterns_and_export_arm_bindings",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "compiler_defaults_execute_general_values_and_refresh_preceding_inputs",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "compiler_lowers_checked_on_click_to_typed_bundle_handler_without_fx_conflation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "compiler_lowers_every_typed_view_into_one_validated_product",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "compiler_lowers_project_fx_view_binding_through_the_shared_catalog",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "compiler_lowers_project_views_in_canonical_module_and_source_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "compiler_lowers_view_fx_closed_and_reactive_bindings_from_checked_authority",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "compiler_qualifies_view_fx_parameter_slots_by_definition",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "compiler_rejects_affine_view_handler_capture_before_bundle_publication",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "compiler_rejects_every_unknown_text_control_and_scroll_policy_symbol",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "compiler_rejects_general_view_calls_at_the_unimplemented_runtime_boundary",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "compiler_rejects_invalid_builtin_view_arguments",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "compiler_rejects_nested_view_recovery_before_product_acceptance",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "compiler_source_maps_reject_a_file_outside_the_accepted_project_root",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "compiler_source_maps_use_project_coordinates_and_preserve_local_diagnostics",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "forged_state_write_cannot_retarget_another_same_typed_retained_field",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "handler_capture_abi_uses_canonical_inputs_instead_of_first_use_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "handler_local_captures_use_core_inputs_and_revoke_changed_or_restored_routes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "keyed_iteration_failure_and_empty_source_are_cache_and_restore_transparent",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "keyed_iteration_uses_checked_ranges_discard_patterns_and_nested_scopes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "match_source::admitted_view_awbc_keeps_original_source_through_owned_restore",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "match_source::admitted_view_source_reaches_entry_flow_replacement_and_inert_restore",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "match_source::complete_product_preflights_all_retained_sources_with_one_exact_allowance",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "match_source::decoded_view_source_binding_index_is_bounded_and_rejects_a_changed_product",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "match_source::decoded_view_source_reseals_exact_original_bindings_in_a_fresh_namespace",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "match_source::every_retained_semantic_field_and_original_coordinate_is_revalidated",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "match_source::retained_definitions_round_trip_and_match_only_their_original_checked_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "match_source::retained_match_source_is_required_and_rejects_unknown_definition_fields",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "match_source::view_binding_join_rejects_missing_extra_duplicate_stale_and_foreign_coordinates",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "match_source::view_binding_limits_cover_all_source_bytes_and_failure_leaves_the_slot_unbound",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "match_source::view_source_assertions_reject_missing_duplicate_and_foreign_admissions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "match_source::view_task_bindings_resolve_only_in_the_original_completed_core_plan",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "match_source::view_task_key_ignores_revision_only_replacement_and_tracks_exact_match_admission",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "nominal_default_constructed_from_scoped_input_keeps_its_origin",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "nominal_defaults_keep_distinct_scope_widths_and_share_equal_scopes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "nominal_enum_default_constructed_from_scoped_input_keeps_its_origin",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "nonreturning_empty_match_keeps_frame_failure_atomic_after_restore",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "repeated_retained_operations_keep_their_own_lexical_definitions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "retained_keyed_transition_updates_one_cell_and_restores_without_replaying_handler",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "retained_nested_transition_early_return_matches_native_and_decoded_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "retained_state_handler_publishes_update_only_on_routed_event",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "retained_transition_failure_leaves_every_cell_and_route_unchanged",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "retained_transition_refreshes_unchanged_routes_and_keeps_other_mounts_independent",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "spacing::integer_pixel_spacing_reaches_canonical_style_and_physical_child_layout",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "spacing::spacing_conversion_has_exact_nonnegative_fixed_point_bounds",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "spacing::spacing_uses_the_typed_scalar_and_physical_flow_admission",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "uninhabited_view_match_keeps_an_empty_case_inventory",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "view_match_catalog_distinguishes_equal_authored_sites_in_one_program",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "view_match_catalog_keeps_stable_sites_exact_admissions_and_current_product_stamps",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-compiler",
+      "binary": "arcweft-compiler::view_product",
+      "test": "view_or_patterns_refuse_inconsistent_binding_positions",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

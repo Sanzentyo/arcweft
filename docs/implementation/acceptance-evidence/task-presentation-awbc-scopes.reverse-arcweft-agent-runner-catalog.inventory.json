@@ -1,0 +1,488 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "label_parse::tests::composite_predicates_reject_empty_operands",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "runtime_args::tests::capture_requests_retain_typed_format_and_kind_cases",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "runtime_args::tests::pointer_requests_retain_typed_button_cases",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "runtime_args::tests::runtime_enum_arguments_reject_labels_wrong_owners_and_malformed_cases",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::assertion_host_request_fails_deny_with_structured_event",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::assertion_host_request_records_passed_expect",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::capture_format_parser_accepts_only_raster_formats",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::capture_requires_policy_capability",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::checkpoint_requires_an_explicit_name_on_both_controller_routes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::controller_awbc_dispatches_effect_calls_to_runner_host_boundary",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::controller_awbc_executes_and_resumes_direct_agent_host_call",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::controller_awbc_propagates_invalid_host_response_admission",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::controller_awbc_rejects_explicit_non_agent_entry_before_execution",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::controller_awbc_resumes_bound_capture_response",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::controller_awbc_resumes_bound_entity_metadata_response_fields",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::controller_awbc_resumes_bound_resource_response_fields",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::controller_awbc_resumes_bound_wait_response",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::controller_awbc_resumes_project_graph_neighborhood_fields",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::controller_bundle_enforces_agent_manifest_capture_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::controller_bundle_rejects_compatible_project_entity_mismatch_before_execution",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::controller_bundle_rejects_host_request_absent_from_verified_effects",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::controller_bundle_rejects_strict_project_binding_mismatch_before_execution",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::controller_bundle_rejects_tampered_entry_bound_manifest_fields",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::controller_bundle_requires_launch_grant_for_verified_effects_before_execution",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::controller_bundle_runs_through_product_awbc_host_boundary",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::controller_runtime_assertion_uses_typed_failure_report_not_agent_expect_request",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::custom_task_attach_records_runtime_resource_payload",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::disabled_rag_service_rejects_instead_of_fabricating_an_empty_context",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::effect_form_advance_text_call_lowers_to_host_action",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::effect_form_invoke_call_lowers_to_host_action",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::effect_form_observe_defaults_to_object_payloads",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::effect_form_pointer_click_lowers_to_physical_action",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::effect_form_wait_call_lowers_action_enabled_predicate",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::effect_form_wait_call_lowers_composite_predicate",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::effect_form_wait_call_lowers_to_host_wait_request",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::effect_form_wait_rejects_empty_composite_predicates",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::entity_source_and_positions_retain_each_option_boundary",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::host_response_serialization_failure_maps_to_typed_runner_error",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::observation_object_projection_rejects_invalid_protocol_shape_with_index_path",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::observation_payload_exposes_action_targets_for_contains_checks",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::observation_payload_exposes_observed_objects_for_visual_regression_scripts",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::observation_payload_rejects_invalid_action_target_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::observation_signal_projection_rejects_non_finite_numbers",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::observed_object_options_distinguish_absent_from_explicit_empty",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::physical_pointer_click_requires_runtime_policy_grant",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::project_graph_neighborhood_uses_exact_symbol_identity_when_public_labels_match",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::project_graph_symbol_options_distinguish_absent_from_explicit_empty",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::rag_context_projection_rejects_missing_required_fields",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::rag_context_projection_rejects_noncanonical_schema_version",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::rag_context_runtime_payload_exposes_summary_fields",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::replay_agent_session_rejects_out_of_order_host_response",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::replay_agent_session_replays_recorded_host_responses_in_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::resource_json_null_is_the_explicit_runtime_unit_value",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::resource_runtime_payload_preserves_bytes_body_value",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::resource_runtime_payload_preserves_json_body_value",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::resource_runtime_payload_preserves_text_body_value",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::resource_runtime_payload_rejects_missing_fields_and_unknown_body_kinds",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::runner_predicate_equality_preserves_entity_and_string_kinds",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::runtime_value_json_projection_rejects_non_finite_numbers",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::runtime_value_json_projection_rejects_program_bound_data_shape_witness",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::runtime_wait_predicate_accepts_only_the_typed_agent_algebra",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::wait_matches_composite_float_predicate",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::wait_matches_diagnostics_has_error_predicate",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::wait_matches_enabled_action_target_predicate",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::wait_matches_entity_probe_only_against_typed_entity_observation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::wait_matches_metric_and_typed_metric_observation_field",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::wait_matches_state_and_observation_field_predicates",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::wait_rejects_same_text_string_for_an_entity_probe",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "binary": "arcweft-agent-runner",
+      "test": "tests::wait_requires_stable_predicate_matches",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

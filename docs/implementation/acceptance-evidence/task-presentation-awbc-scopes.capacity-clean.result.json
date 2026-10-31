@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "head": "d70e079dba7c448cd168fbf8de36e99721f068c3",
+  "authorization": "User explicitly selected whole cargo clean instead of incremental-only removal; repeated here after confirmed OS error112, with source/test inputs unchanged.",
+  "workspace": "D:\\git\\arcweft",
+  "target": "D:\\git\\arcweft\\target",
+  "reparsePoints": false,
+  "activeCargoProcessesBefore": 0,
+  "command": [
+    "cargo",
+    "clean",
+    "--target-dir",
+    "D:\\git\\arcweft\\target"
+  ],
+  "exitCode": 0,
+  "freeBytesBefore": 0,
+  "freeBytesAfter": 372696805376,
+  "sourceInputs": 4005,
+  "sourceDrift": 0,
+  "startedAt": "2026-10-31T02:34:34.9555561Z",
+  "finishedAt": "2026-10-31T02:35:48.4592503Z"
+}

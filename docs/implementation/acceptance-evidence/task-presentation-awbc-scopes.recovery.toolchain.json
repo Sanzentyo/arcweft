@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "recordedAt": "2026-10-31T02:36:57.2344616Z",
+  "rustc": [
+    "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "binary: rustc",
+    "commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67",
+    "commit-date: 2026-10-13",
+    "host: x86_64-pc-windows-msvc",
+    "release: 1.99.1",
+    "LLVM version: 23.1.1"
+  ],
+  "cargo": [
+    "cargo 1.99.1 (5f94df478 2026-08-27)"
+  ],
+  "nextest": [
+    "cargo-nextest 0.9.146 (8af696ddc 2026-09-21)",
+    "release: 0.9.146",
+    "commit-hash: 8af696ddcce8fff2962d6a5168b6d138b8616a35",
+    "commit-date: 2026-09-21",
+    "host: x86_64-pc-windows-msvc"
+  ]
+}

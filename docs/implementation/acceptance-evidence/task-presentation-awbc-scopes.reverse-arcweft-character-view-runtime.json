@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "c35fc69a52db5709b98c0b135d6df559acd24af9",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-character-view",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\presentation-awbc-scopes.reverse-arcweft-character-view-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-31T02:01:58.6261317Z",
+  "finishedAt": "2026-10-31T02:01:59.9656250Z"
+}

@@ -1,0 +1,173 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-glyphon",
+      "binary": "arcweft-glyphon",
+      "test": "physical_bounds::tests::accepts_largest_f32_pixel_below_the_signed_upper_boundary",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-glyphon",
+      "binary": "arcweft-glyphon",
+      "test": "physical_bounds::tests::rejects_finite_physical_values_outside_the_signed_pixel_domain",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-glyphon",
+      "binary": "arcweft-glyphon",
+      "test": "physical_bounds::tests::rejects_non_finite_logical_values_and_far_edge_overflow",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-glyphon",
+      "binary": "arcweft-glyphon",
+      "test": "physical_bounds::tests::rejects_positive_and_negative_scale_multiplication_overflow",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-glyphon",
+      "binary": "arcweft-glyphon",
+      "test": "physical_bounds::tests::rounds_outward_only_after_checked_physical_scaling",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-glyphon",
+      "binary": "arcweft-glyphon",
+      "test": "physical_bounds::tests::validates_extreme_and_invalid_scales_without_fallback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-glyphon",
+      "binary": "arcweft-glyphon",
+      "test": "prepared_text::tests::effective_opacity_includes_the_closed_mask_chain",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-glyphon",
+      "binary": "arcweft-glyphon",
+      "test": "prepared_text::tests::paint_validation_accepts_only_closed_mask_payloads",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-glyphon",
+      "binary": "arcweft-glyphon",
+      "test": "prepared_text::tests::view_affine_rejects_non_finite_geometry_and_out_of_range_opacity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-glyphon",
+      "binary": "arcweft-glyphon",
+      "test": "prepared_text::tests::view_affine_transforms_origin_advance_shape_and_opacity_once",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-glyphon",
+      "binary": "arcweft-glyphon",
+      "test": "prepared_text::tests::view_shear_uses_the_same_matrix_for_origin_and_raster_shape",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-glyphon",
+      "binary": "arcweft-glyphon",
+      "test": "text_engine::tests::cache_is_bounded_and_flow_changes_miss",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-glyphon",
+      "binary": "arcweft-glyphon",
+      "test": "text_engine::tests::cache_rebases_source_ranges_and_excludes_paint_color",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-glyphon",
+      "binary": "arcweft-glyphon",
+      "test": "text_engine::tests::conformant_engine_rejects_empty_and_invalid_font_inventory",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-glyphon",
+      "binary": "arcweft-glyphon",
+      "test": "text_engine::tests::ligatures_and_combining_marks_use_shaped_clusters_and_real_ink",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-glyphon",
+      "binary": "arcweft-glyphon",
+      "test": "text_engine::tests::negative_word_spacing_never_silently_clamps",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-glyphon",
+      "binary": "arcweft-glyphon::shared_text_layout",
+      "test": "exact_project_fonts_shape_ligature_combining_cjk_emoji_with_stable_hash",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-glyphon",
+      "binary": "arcweft-glyphon::shared_text_layout",
+      "test": "explicit_rtl_uses_bidi_visual_order_but_keeps_logical_ordinals",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-glyphon",
+      "binary": "arcweft-glyphon::shared_text_layout",
+      "test": "hard_break_uses_distinct_visual_lines_with_real_baselines",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-glyphon",
+      "binary": "arcweft-glyphon::shared_text_layout",
+      "test": "measured_ruby_allocation_follows_the_same_real_glyph_paint_and_view_affine",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-glyphon",
+      "binary": "arcweft-glyphon::shared_text_layout",
+      "test": "prepared_batch_reuses_layout_for_paint_and_interaction",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-glyphon",
+      "binary": "arcweft-glyphon::shared_text_layout",
+      "test": "prepared_item_rejects_finite_clip_scale_overflow_with_numeric_context",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-glyphon",
+      "binary": "arcweft-glyphon::shared_text_layout",
+      "test": "real_overheight_ruby_tracks_are_complete_and_fit_the_same_issued_container",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-glyphon",
+      "binary": "arcweft-glyphon::shared_text_layout",
+      "test": "vertical_text_combine_sideways_latin_and_ruby_share_shaped_geometry",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

@@ -1,0 +1,5 @@
+   Compiling arcweft-core v0.1.0 (D:\git\arcweft\crates\arcweft-core)
+error: error writing dependencies to `D:\git\arcweft\target\debug\deps\arcweft_core-6cbdd597e178863c.d`: ディスクに十分な空き領域がありません。 (os error 112)
+
+error: could not compile `arcweft-core` (lib) due to 1 previous error
+error: command `'C:\Users\sanze\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin\cargo.exe' '--color=auto' test --no-run --message-format json-render-diagnostics --package arcweft-render-wgpu --all-features --locked` exited with code 101

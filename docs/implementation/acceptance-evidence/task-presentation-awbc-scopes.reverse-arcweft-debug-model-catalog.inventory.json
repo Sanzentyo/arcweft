@@ -1,0 +1,19 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-debug-model",
+      "binary": "arcweft-debug-model",
+      "test": "embedding::tests::embedding_input_policy_filters_before_provider_visibility",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-debug-model",
+      "binary": "arcweft-debug-model",
+      "test": "embedding::tests::embedding_input_preserves_hash_privacy_and_stable_text",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

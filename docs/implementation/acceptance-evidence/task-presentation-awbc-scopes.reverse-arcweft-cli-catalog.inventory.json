@@ -1,0 +1,5010 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::mcp_stdio::tests::stderr_publication_preserves_bounded_data_and_reports_eof_or_read_failure",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::mcp_stdio::tests::stdio_transport_roundtrips_agent_session_calls_through_fake_child",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::mcp_stdio::tests::stdio_transport_shutdown_requests_protocol_exit_before_kill",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::mcp_stdio::tests::stdio_transport_times_out_and_retains_bounded_stderr_tail",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::mcp_protocol::latest_capture_tests::session_info_reuses_the_published_latest_capture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::mcp_protocol::tests::mcp_repl_command_omits_cli_local_diagnostics_when_requested",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::mcp_protocol::tests::mcp_repl_command_rejects_cli_local_mutation_in_read_only_trace",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::mcp_protocol::tests::mcp_repl_command_returns_cli_local_protocol_json",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::capture::tests::capture_binding_rejects_other_owner_mount_parent_and_sample",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::capture::tests::cleared_ruby_and_body_selection_bind_the_actual_context_and_prepared_ordinals",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::capture::tests::distinct_dialogue_content_targets_share_context_while_duplicate_prepared_ownership_rejects",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::capture::tests::issued_capture_uri_keeps_its_context_and_rejects_another_retained_sample",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::capture::tests::mixed_dialogue_owners_resolve_each_child_and_capture_target_for_every_prepared_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::capture::tests::native_capture_cluster_ordinal_keeps_atomic_source_siblings_outside_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::capture::tests::native_capture_foreign_cluster_cannot_contribute_or_relabel_current_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::capture::tests::native_capture_multiglyph_word_retains_its_physical_members_and_issued_cell",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::capture::tests::native_capture_ruby_base_keeps_actual_body_partitions_and_annotation_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::capture::tests::transported_equal_context_does_not_admit_a_prepared_frame",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::tests::fx_diagnostic_projection_coalesces_duplicates_and_retains_distinct_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::tests::hidden_image_object_capture_scope_reports_missing_scope_diagnostic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::tests::missing_requested_capture_scopes_report_structured_diagnostics",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::tests::native_agent_runtime_assertion_projection_uses_compiled_session_capability",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::tests::player_image_object_observation_skips_hidden_source_and_frame",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::tests::player_image_object_observation_uses_scroll_clipped_visible_quad",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::tests::player_semantic_actions_become_agent_action_targets",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::tests::player_semantic_objects_preserve_runtime_view_parent",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::player_observation::tests::released_image_object_capture_scope_reports_missing_scope_diagnostic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::prepared_text_observation::owner::tests::dialogue_owner_identity_distinguishes_speaker_content_entry_mount_and_text_target",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::prepared_text_observation::view::tests::prepared_view_text_root_identity_encodes_semantic_ids_injectively",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::prepared_text_observation::view::tests::prepared_view_text_root_identity_includes_mount_occurrence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::dispatch::tests::repl_cli_inspection_read_only_trace_permits_inspection_cli_commands",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::dispatch::tests::repl_cli_inspection_read_only_trace_rejects_mutating_cli_commands",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::dispatch::tests::successful_cli_report_without_result_evidence_is_a_typed_error",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::format::tests::repl_cli_inspection_cli_formatter_preserves_trace_json_without_formatted_text",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::format::tests::repl_cli_inspection_cli_formatter_reports_read_only_rejection",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::parse::tests::repl_cli_inspection_capture_target_is_structured",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::parse::tests::repl_cli_inspection_cli_parser_does_not_overlap_shared_command_names",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::parse::tests::repl_cli_inspection_connect_profile_manifest_is_structured",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::parse::tests::repl_cli_inspection_malformed_cli_command_reports_cli_diagnostic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::parse::tests::repl_cli_inspection_parser_selects_cli_command_second",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::parse::tests::repl_cli_inspection_parser_selects_shared_repl_command_first",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::parse::tests::repl_cli_inspection_unknown_command_reports_after_both_parser_stages",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::protocol::tests::repl_cli_protocol_json_can_omit_diagnostics",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::protocol::tests::repl_cli_protocol_json_is_typed_without_formatted_text",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::protocol::tests::repl_cli_protocol_rejects_mutating_command_in_read_only_trace",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_cli_command::protocol::tests::repl_cli_protocol_reports_unavailable_for_read_only_cli_command",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_command_bridge::parse_diagnostic_tests::agent_repl_parse_failure_json_preserves_typed_diagnostics",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_command_bridge::tests::repl_command_bridge_reports_two_stage_unknown_command",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_command_bridge::tests::repl_command_bridge_routes_cli_command_to_typed_json",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_command_format::tests::repl_command_formatter_formats_background_warm_queue",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_command_format::tests::repl_command_formatter_formats_help_with_typed_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_command_format::tests::repl_command_formatter_preserves_task_json",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::repl_command_format::tests::repl_command_formatter_reports_read_only_rejection_diagnostic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::runtime_observation::scroll_observation_tests::authored_scroll_is_one_action_target_with_internal_parts_metadata",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::runtime_observation::scroll_observation_tests::virtual_list_observation_keeps_off_window_stable_targets",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_hit_test_reports_generic_image_object_bbox_hit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_hit_test_uses_image_object_polygon_inside_bbox",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_allowed_trace_keeps_canonical_uri_across_list_and_read",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_debug_close_stale_sessions_abandons_running_sessions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_debug_graph_inventory_reads_program_symbols_and_edges",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_debug_read_tools_enforce_max_privacy",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_debug_read_tools_return_cached_observation_data",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_debug_repl_cells_reads_persisted_cells",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_debug_script_runs_enforces_max_privacy",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_debug_source_files_reads_program_inventory",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_local_dev_mode_allows_color_capture_and_scrubs_metadata",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_local_dev_mode_still_withholds_auxiliary_captures",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_rag_context_pack_deduplicates_semantic_hashes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_rag_explain_and_context_read_use_cached_pack",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_rag_explain_and_context_read_use_persisted_audit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_rag_query_enforces_max_privacy",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_rag_query_persists_observation_context_to_debug_store",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_rag_query_reads_debug_store_graph_and_history_channels",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_rag_query_reads_preindexed_debug_store_chunks",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_rag_query_records_local_embedding_fallback_diagnostic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_rag_query_returns_explainable_context_pack",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_rag_query_uses_local_embedding_debug_store_channel",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_resource_read_enforces_capture_privacy",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_script_run_options_accept_native_runtime_arguments",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_script_run_rejects_unknown_arguments",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_scroll_action_uses_observed_region_and_checked_i32_deltas",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_session_context_resource_is_available_for_trace_only_session",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_session_context_resource_redacts_source_and_enforces_privacy",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_strict_mode_withholds_color_capture_without_visual_classifier",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_mcp_trace_resource_read_audits_allowed_and_sensitive_denied",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_observe_layout_scene_graph_records_raw_content_rect",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_observe_output_extension_must_match_image_mime",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_repl_parse_stdio_connection_preserves_program_and_args",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_repl_parse_stdio_connection_rejects_shell_syntax",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_repl_project_hash_change_preserves_only_literal_bindings",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_repl_project_hash_unchanged_keeps_bindings_without_decisions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_repl_reedline_completer_uses_tooling_candidates",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_repl_reedline_validator_uses_fragment_completion",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::agent_repl_stdio_connect_reports_project_hash_binding_policy",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::mcp_capture_time_prefers_explicit_time_then_capture_step_then_report_time",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::native_agent_invoke_requires_enabled_semantic_action",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::native_assignment_predicates_preserve_kinds_and_metric_probes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::native_observation_envelope_preserves_typed_assignments_and_metrics",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::native_observation_envelope_rejects_duplicate_assignment_identities",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::native_observation_payload_rejects_serialization_failure",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::native_wait_json_preserves_signal_and_metric_value_kinds",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::observed_views_drop_hidden_only_parent_scope",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::observed_views_group_visible_objects_by_parent_id",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::raster_capture_requires_retained_prepared_frame_attachments",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::shared_capture_mask_filters_a_view_to_its_member_objects",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::shared_capture_object_id_preserves_supplied_painter_order",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::shared_capture_scoped_color_uses_the_object_id_attachment_as_its_mask",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::shared_capture_viewport_color_is_the_exact_retained_frame",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::shared_layer_object_id_uses_direct_object_identity_for_descendant_coverage",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::uri_capture_request_preserves_report_capture_time",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::native::tests::view_uri_capture_request_parses_scope_and_kind",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::script::registered_environment_reuse_tests::native_registered_environment_republishes_exact_ingress_for_agent_controller_compilation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::script::removed_role_tests::awfagent_compiler_consumer_rejects_removed_role_declarations",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::script::removed_role_tests::decoded_agent_bundle_projects_persisted_runtime_assertion_without_changing_status",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::tests::agent_rag_context_pack_deduplicates_overlapping_source_spans",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::agent::tests::agent_rag_context_pack_deduplicates_semantic_hashes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::bundle::tests::bundle_host_inventory_includes_nested_ordinary_function_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::bundle::tests::bundle_hydrates_default_view_localization_from_matching_content_text_key",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::bundle::tests::collect_bundle_image_assets_decodes_static_and_animated_webp_metadata",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::bundle::tests::collect_bundle_image_assets_rejects_invalid_stable_identity_components",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::bundle::tests::collect_bundle_image_assets_rejects_normalized_identity_collisions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::bundle::tests::launch_profile_compiles_without_enumerating_default_source_root",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::bundle::tests::profile_bundle_carries_external_character_package_and_generation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::bundle::tests::project_bundle_uses_schema_one_asset_root_and_project_local_state",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::bundle::tests::view_part_recovery::ordinary_view_recovery_cannot_create_exported_part_facts",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::bundle::tests::view_scroll_rejects_both_axis_authoring",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::bundle::tests::view_style_rule_rejects_interactive_overflow_on_non_scroll_element",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::cache::tests::explain_accepts_persistent_query_key_digest",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::cache::tests::explain_rejects_invalid_digest_query",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::cache::tests::fetch_external_populates_cache_from_file_awfr_archive",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::cache::tests::fetch_external_rejects_invalid_descriptor_id",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::cache::tests::fetch_populates_cache_from_file_release_manifest",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::cache::tests::fetch_rejects_invalid_content_root_digest",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::cache::tests::missing_cache_root_has_empty_stats_and_verifies_ok",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::cache::tests::prune_missing_cache_root_is_empty_dry_run",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::debug::tests::checked_blob_file_path_rejects_paths_outside_blob_dir",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::debug::tests::delete_blob_files_removes_only_safe_existing_files",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::debug::tests::parse_debug_retention_duration_accepts_explicit_units",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::diagnostics::renderer_tests::plain_renderer_consumes_shared_runtime_assertion_diagnostic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::diagnostics::renderer_tests::plain_renderer_includes_code_label_and_patch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::diagnostics::renderer_tests::plain_renderer_includes_verifier_proof_stub_patch_preview",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::diagnostics::renderer_tests::plain_renderer_includes_verifier_unsafe_audit_patch_preview",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::diagnostics::renderer_tests::plain_renderer_preserves_typed_parser_code_without_injecting_kind_label",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::diagnostics::tests::adapter_parity_keeps_the_concrete_edit_in_a_separate_typed_test_fixture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::diagnostics::tests::adapter_parity_omits_or_rejects_stale_diagnostic_and_edit_spans",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::diagnostics::tests::cli_diagnostics_render_exact_revision_spans",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::import::tests::clap_accepts_the_psd_character_surface",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::inspect::tests::inspect_command_rejects_non_awfb_input",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::inspect::tests::inspect_report_describes_awfb_sections",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::progress::tests::progress_duration_format_is_compact",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::progress::tests::progress_status_label_uses_cargo_style",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::project::tests::direct_source_entry_is_required_and_canonical",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::project::tests::direct_source_inside_project_uses_manifest_owned_resource_roots",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::project::tests::launch_kind_maps_to_the_compiler_entry_selection_without_string_dispatch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::project_commands::tests::cache_build_writes_persistent_query_evidence_and_preserves_awfb_root",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::project_commands::tests::cache_clean_build_records_corrupt_object_rebuild_reason",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::project_commands::tests::cache_watch_in_memory_hits_take_precedence_over_corrupt_disk_records",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::project_commands::tests::compile_emit_owns_output_path_policy",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::project_commands::tests::project_report_counts_flows_across_modules",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::project_commands::tests::release_project_diagnostics_reject_dynamic_goto",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::project_commands::tests::runtime_plan_cache_envelope_rejects_wrong_schema_and_fingerprint",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::release::tests::publish_artifact_parser_accepts_windows_absolute_source_path",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::release::tests::publish_artifact_spec_requires_source_and_destination",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::release_sign::tests::sign_awfb_bytes_appends_verifiable_release_signature",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::remote_embedding::tests::remote_command_provider_normalizes_fixture_vectors",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::remote_embedding::tests::remote_command_provider_rejects_missing_chunk_vectors",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::executor::tests::runtime_executor_product_flow_and_repeated_bench_preserve_original_program_and_inputs",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::executor::tests::runtime_executor_product_never_falls_back_for_missing_executable_or_foreign_flow_schema",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::executor::tests::runtime_executor_selection_starts_the_actual_tier_and_original_product_entry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::expectations::tests::nested_script_scope_keeps_the_goto_and_rejects_unhandled_commands",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::run::tests::watch_file_state_tracks_size_changes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::run::tests::watch_inputs_detect_authored_file_additions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::run::tests::watch_inputs_detect_modules_added_by_an_explicit_project_reload",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::run::tests::watch_inputs_include_authored_asset_and_content_files",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::run::tests::watch_inputs_include_project_manifest_and_modules",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::run::tests::watch_patch_transport_action_restarts_only_for_non_live_compatibility",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::run::tests::watch_patch_transport_envelope_writes_restart_fallback_action",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::run::tests::watch_patch_transport_output_path_replaces_awfb_extension",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::run::tests::web_entry_query_uses_rfc3986_component_encoding",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::runtime::source::tests::source_headless_run_resolves_bundled_png_with_view_source_in_both_tiers",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::verify::tests::z3_bin_env_accepts_direct_executable_path",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "app::verify::tests::z3_bin_env_points_to_platform_executable",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "output::denied_analysis_tests::diagnostic_json_preserves_complete_graph_and_exact_source_revision",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "server_adapter::tests::native_http_adapter_reports_runtime_assertion_without_changing_flow_status",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "server_adapter::tests::native_http_adapter_requires_respond_host_call_manifest",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "server_adapter::tests::native_http_adapter_routes_request_to_flow",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "toolchain_profile::tests::arcweft_bench_report_summarizes_measured_samples_only",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "toolchain_profile::tests::arcweft_bench_sample_extracts_path_free_runtime_counters",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "toolchain_profile::tests::count_lines_does_not_allocate_utf8_strings",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "toolchain_profile::tests::math_bench_report_summarizes_backend_timings",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli",
+      "test": "toolchain_profile::tests::math_bench_sample_extracts_backend_counters",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::arcw_fixtures_check_run",
+      "test": "await_context_option_boundaries_fixture_passes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::arcw_fixtures_check_run",
+      "test": "capability_fs_spec_fixture_checks_with_selected_adapter",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::arcw_fixtures_check_run",
+      "test": "cli_stdout_spec_fixture_runs_with_selected_adapter",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::arcw_fixtures_check_run",
+      "test": "current_check_fixtures_pass",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::arcw_fixtures_check_run",
+      "test": "current_run_fixtures_pass",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::arcw_fixtures_check_run",
+      "test": "spec_should_fail_fixtures_fail",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::arcw_fixtures_check_run",
+      "test": "spec_should_pass_check_fixtures_pass_after_refactor",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::arcw_fixtures_check_run",
+      "test": "spec_should_pass_run_fixtures_pass_after_refactor",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::bracket_numeric_batch",
+      "test": "a_source_equivalent_foreign_plan_owner_does_not_authorize_a_numeric_packet",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::bracket_numeric_batch",
+      "test": "named_bracket_rows_keep_unused_whole_formals_in_the_original_abi",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::bracket_numeric_batch",
+      "test": "nary_bracket_calls_batch_four_complete_rows_with_the_original_eight_op_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::bracket_numeric_batch",
+      "test": "nary_bracket_calls_keep_one_op_results_and_ordinary_continuations",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::bracket_numeric_batch",
+      "test": "nary_bracket_calls_keep_the_original_continuation_when_the_packet_cannot_fit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_mcp_stdio_reads_agent_trace_resource",
+      "ignored": true,
+      "status": "ignored"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_check_rejects_unknown_builtin_motion_function",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_hit_test_capture_time_follows_animated_text_proxy_bounds",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_hit_test_capture_time_updates_unpinned_animated_image_frame_metadata",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_hit_test_reports_animated_image_object_proxy_metadata",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_hit_test_reports_depth_sorted_rich_text_proxy",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_mcp_stdio_debug_script_runs_reads_persisted_runs",
+      "ignored": true,
+      "status": "ignored"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_mcp_stdio_debug_search_filters_chunks_by_privacy",
+      "ignored": true,
+      "status": "ignored"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_mcp_stdio_lists_resource_templates_before_observe",
+      "ignored": true,
+      "status": "ignored"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_image_alignment_sample_uses_authored_alignment_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_json_reports_rich_text_display_objects",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_json_reports_rich_text_reset_controls_and_host_markers",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_raw_blob",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_authored_profile_text_extent_and_typography_reach_the_same_capture_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_capture_step_defaults_capture_time_for_typewriter",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_captures_clipped_animated_image_object",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_closed_motion_functions_keep_native_capture_and_issued_resources",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_dialogue_initialization_has_no_missing_presentation_diagnostic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_dialogue_view_capture_bounds_include_ruby_extents",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_dialogue_view_capture_bounds_include_vertical_columns",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_applies_builtin_effect_post_process_phase",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_applies_shader_glyph_color_phase",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_applies_shader_post_process_phase",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_captures_clear_after_page_layer",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_captures_clear_after_page_object",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_captures_combined_typewriter_animation_sample",
+      "ignored": true,
+      "status": "ignored"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_handles_clear_in_rich_text_layer_capture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_matches_checked_in_imq_golden_fixture_vertical_jlreq_preset_loose",
+      "ignored": true,
+      "status": "ignored"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_matches_checked_in_imq_golden_fixture_vertical_jlreq_preset_normal",
+      "ignored": true,
+      "status": "ignored"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_matches_checked_in_imq_golden_fixture_vertical_lr_ruby_text_combine",
+      "ignored": true,
+      "status": "ignored"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_matches_checked_in_imq_golden_fixture_vertical_tutr",
+      "ignored": true,
+      "status": "ignored"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_capture_step_metadata",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_decomposed_kana_strict_class_mix_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_emoji_modifier_strict_class_mix_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_expanded_jlreq_normal_pair_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_expanded_jlreq_pair_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_fullwidth_bracket_pair_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_fullwidth_colon_semicolon_hanging_punctuation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_fullwidth_question_mark_hanging_punctuation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_halfwidth_corner_bracket_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_halfwidth_full_stop_hanging_punctuation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_halfwidth_ideographic_comma_hanging_punctuation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_halfwidth_middle_dot_and_prolonged_sound_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_halfwidth_small_kana_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_jlreq_line_end_prohibited_opening_punctuation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_jlreq_paragraph_column_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_jlreq_preset_specific_column_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_jlreq_punctuation_compression_and_hanging",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_katakana_phonetic_extension_small_kana_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_keycap_strict_class_mix_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_long_vertical_ruby_expansion_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_accented_latin_word_class_mix_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_accented_latin_word_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_apostrophe_western_word_class_mix_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_apostrophe_western_word_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_cent_prefixed_abbreviation_class_mix_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_decomposed_accented_latin_word_class_mix_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_decomposed_temperature_class_mix_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_european_numeral_sequence_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_greek_latin_unit_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_greek_subscript_object_class_mix_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_greek_superscript_object_class_mix_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_hyphenated_western_word_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_ideographic_abbreviation_class_mix_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_latin_unit_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_numeric_abbreviation_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_numeric_separator_class_mix_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_numeric_separator_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_numeric_unit_class_mix_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_numeric_unit_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_parenthesized_reference_mark_class_mix_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_parenthesized_reference_mark_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_plain_western_word_class_mix_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_postfixed_abbreviation_class_mix_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_prefixed_abbreviation_class_mix_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_reference_mark_class_mix_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_reference_mark_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_subscript_object_class_mix_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_subscript_object_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_temperature_suffix_class_mix_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_unit_symbol_class_mix_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_western_word_class_mix_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_western_word_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_yen_prefixed_abbreviation_class_mix_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_regional_indicator_strict_class_mix_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_short_vertical_rl_ruby_at_edge",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_small_curly_and_tortoise_bracket_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_small_parenthesis_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_strict_jlreq_closing_opening_column_plan",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_strict_jlreq_hard_break_segment_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_strict_jlreq_middle_dot_opening_pair_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_strict_jlreq_middle_dot_pair_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_strict_jlreq_paragraph_class_mix_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_strict_jlreq_ruby_text_combine_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_strict_jlreq_style_split_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_variation_selector_strict_class_mix_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_vertical_cluster_orientation_metadata",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_vertical_column_progression_direction",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_vertical_goal_clear_smoke_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_vertical_grapheme_cluster_metadata",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_vertical_inter_character_ruby_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_vertical_lr_jlreq_edge_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_vertical_lr_jlreq_paragraph_column_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_vertical_lr_ruby_text_combine_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_vertical_presentation_compact_bracket_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_vertical_presentation_curly_and_square_bracket_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_vertical_presentation_leader_chain_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_vertical_ruby_collision_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_vertical_ruby_under_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_vertical_two_dot_leader_chain_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_vertical_zwj_cluster_metadata",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_windows_fonts_sample_vertical_rl_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_zwj_grapheme_strict_class_mix_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_decomposed_kana_strict_class_mix_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_emoji_modifier_strict_class_mix_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_fullwidth_bracket_pair_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_fullwidth_colon_semicolon_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_fullwidth_question_mark_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_halfwidth_corner_bracket_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_halfwidth_full_stop_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_halfwidth_ideographic_comma_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_halfwidth_middle_dot_and_prolonged_sound_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_halfwidth_small_kana_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_jlreq_compact_bracket_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_jlreq_compressed_punctuation_mask_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_jlreq_compressed_punctuation_object_id_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_jlreq_dash_mark_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_jlreq_iteration_mark_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_jlreq_leader_mark_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_jlreq_opening_punctuation_mask_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_jlreq_opening_punctuation_object_id_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_jlreq_prolonged_sound_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_jlreq_small_kana_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_katakana_phonetic_extension_small_kana_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_keycap_strict_class_mix_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_long_vertical_ruby_mask_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_long_vertical_ruby_object_id_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_overheight_vertical_ruby_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_accented_latin_word_class_mix_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_accented_latin_word_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_apostrophe_western_word_class_mix_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_apostrophe_western_word_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_cent_prefixed_abbreviation_class_mix_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_decomposed_accented_latin_word_class_mix_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_decomposed_temperature_class_mix_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_european_numeral_sequence_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_greek_latin_unit_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_greek_subscript_object_class_mix_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_greek_superscript_object_class_mix_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_hyphenated_western_word_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_ideographic_abbreviation_class_mix_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_ideographic_numeric_abbreviation_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_latin_unit_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_prefix_abbreviation_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_separator_class_mix_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_separator_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_suffix_abbreviation_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_unit_class_mix_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_unit_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_parenthesized_reference_mark_class_mix_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_parenthesized_reference_mark_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_plain_western_word_class_mix_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_postfixed_abbreviation_class_mix_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_prefixed_abbreviation_class_mix_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_reference_mark_class_mix_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_reference_mark_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_subscript_object_class_mix_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_subscript_object_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_temperature_suffix_class_mix_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_unit_symbol_class_mix_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_western_word_class_mix_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_western_word_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_yen_prefixed_abbreviation_class_mix_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_regional_indicator_strict_class_mix_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_rich_text_layer_mask_attachment",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_rich_text_layer_object_id_attachment",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_rich_text_layer_png_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_ruby_mask_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_small_curly_and_tortoise_bracket_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_small_parenthesis_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_strict_jlreq_closing_opening_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_strict_jlreq_hard_break_segment_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_strict_jlreq_middle_dot_opening_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_strict_jlreq_middle_dot_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_strict_jlreq_paragraph_class_mix_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_strict_jlreq_ruby_text_combine_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_strict_jlreq_style_split_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_text_combine_mask_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_text_combine_object_id_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_variation_selector_strict_class_mix_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_goal_clear_smoke_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_grapheme_cluster_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_inter_character_ruby_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_jlreq_compact_bracket_mask_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_jlreq_compact_bracket_object_id_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_jlreq_compressed_punctuation_mask_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_jlreq_compressed_punctuation_object_id_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_jlreq_dash_mark_mask_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_jlreq_dash_mark_object_id_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_jlreq_hanging_punctuation_mask_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_jlreq_hanging_punctuation_object_id_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_jlreq_iteration_mark_mask_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_jlreq_iteration_mark_object_id_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_jlreq_leader_mark_mask_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_jlreq_leader_mark_object_id_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_jlreq_opening_punctuation_mask_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_jlreq_opening_punctuation_object_id_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_jlreq_prolonged_sound_mask_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_jlreq_prolonged_sound_object_id_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_jlreq_small_kana_mask_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_jlreq_small_kana_object_id_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_ruby_mask_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_ruby_object_id_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_strict_jlreq_closing_opening_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_strict_jlreq_middle_dot_mask_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_strict_jlreq_middle_dot_object_id_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_text_combine_mask_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_text_combine_object_id_raw_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_presentation_compact_bracket_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_presentation_curly_and_square_bracket_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_presentation_leader_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_ruby_under_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_text_glyph_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_two_dot_leader_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_zwj_cluster_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_zwj_grapheme_strict_class_mix_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_rich_text_reports_structured_visual_diagnostics",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_typewriter_capture_time_changes_visibility_without_relayout",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_typewriter_capture_time_controls_object_id",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_typewriter_ruby_capture_time_controls_base_and_annotation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_typewriter_ruby_capture_time_controls_object_id",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_typewriter_text_combine_capture_time_controls_all_glyphs",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_typewriter_text_combine_capture_time_controls_object_id",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_vertical_capture_matches_imq_reference",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_vertical_lr_typewriter_ruby_capture_time_controls_base_and_annotation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_vertical_lr_typewriter_ruby_capture_time_controls_object_id",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_vertical_lr_typewriter_text_combine_capture_time_controls_all_glyphs",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_vertical_lr_typewriter_text_combine_capture_time_controls_object_id",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_read_uri_preserves_animated_image_layer_frame_pixels",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_read_uri_preserves_animated_image_object_frame_metadata",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_read_uri_returns_latest_native_layer_image",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_read_uri_uses_native_renderer_without_selected_image",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_reports_explicit_rich_text_proxy_struct_metadata",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_reports_missing_scope_for_released_image_handle_object",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_reports_signal_and_visual_effects",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_reports_text_presentation_z_index_depth",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_shared_renderer_writes_dialogue_layer_masked_framebuffer_crop",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_writes_layer_png_and_object_raw_images",
+      "ignored": true,
+      "status": "ignored"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::native_checked_in_visual_golden_artifacts_are_well_formed",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::visual_smoke_object_id_and_mask_captures_have_debug_pixels_and_metadata",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::visual_smoke_viewport_layer_and_object_captures_expose_selected_metadata",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_rag_query_indexes_multiple_sources",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_rag_query_indexes_source_directories",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_rag_query_indexes_source_project_chunks",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_rag_query_records_local_embedding_fallback_diagnostic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_rag_query_uses_debug_db_graph_and_history_channels",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_rag_query_uses_local_embedding_debug_db_channel",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_repl_connects_source_from_input_session",
+      "ignored": true,
+      "status": "ignored"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_repl_executes_and_saves_physical_pointer_cell",
+      "ignored": true,
+      "status": "ignored"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_repl_inspects_fragments_and_captures_from_input_session",
+      "ignored": true,
+      "status": "ignored"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_repl_marks_failed_cells_partially_effectful_from_host_events",
+      "ignored": true,
+      "status": "ignored"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_repl_observes_and_lists_actions_from_input_session",
+      "ignored": true,
+      "status": "ignored"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_repl_reads_trace_in_read_only_input_session",
+      "ignored": true,
+      "status": "ignored"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_repl_reuses_serialized_live_bindings_between_cells",
+      "ignored": true,
+      "status": "ignored"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_repl_saves_loads_and_drops_bindings_from_input_session",
+      "ignored": true,
+      "status": "ignored"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_script_run_admits_infallible_host_result",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_script_run_executes_read_resource_metadata_projection_smoke",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_script_run_json_executes_advance_text_smoke",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_script_run_json_executes_cli_session_smoke",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_script_run_json_executes_pointer_click_smoke",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_script_run_json_executes_read_resource_smoke",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_script_run_json_executes_read_resource_value_smoke",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_script_run_native_source_captures_native_resource",
+      "ignored": true,
+      "status": "ignored"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_script_run_native_source_dispatches_advance_text_in_game_mode",
+      "ignored": true,
+      "status": "ignored"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_script_run_native_source_dispatches_semantic_choice_action",
+      "ignored": true,
+      "status": "ignored"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_script_run_native_source_dispatches_semantic_invoke_action",
+      "ignored": true,
+      "status": "ignored"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_script_run_native_source_resolves_project_entities",
+      "ignored": true,
+      "status": "ignored"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_script_run_persists_attach_capture_debug_record",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_script_run_persists_attach_resource_debug_record",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_script_run_persists_debug_session_and_script_run",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_script_run_trace_records_capture_blob_refs",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_completion::failed_runtime_never_publishes_a_measurement",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_completion::incomplete_warmup_never_publishes_a_measurement",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_completion::last_allowed_step_completes_but_one_step_less_cannot_measure",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_completion::later_failure_discards_earlier_successful_samples",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_completion::zero_work_is_rejected_before_execution",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_batches_bracket_sequence_pure_aot_on_worker_pool",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_batches_bracket_sequence_pure_jit_calls",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_batches_map_closure_pure_aot_on_worker_pool",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_batches_map_closure_pure_jit_calls",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_can_measure_aot_executor_sections",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_checks_runtime_assert_sections",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_fails_native_file_assertions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_fails_runtime_assert_sections",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_fuses_bracket_sequence_pure_sum_jit_calls",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_fuses_map_closure_pure_sum_jit_calls",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_branching_for_loop_pure_jit_characteristics",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_branching_iter_pure_jit_fixture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_dense_f32_map_pure_batch_fixture_with_auto_jit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_dense_f64_map_pure_batch_fixture_with_auto_jit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_dense_i128_map_pure_batch_fixture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_dense_i32_map_pure_batch_fixture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_dense_integer_widths_fixture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_dense_scalar_len_fixture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_dense_target_size_integer_map_pure_batch_fixtures",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_dense_textual_scalar_len_fixture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_dense_u128_map_pure_batch_fixture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_dense_u32_map_pure_batch_fixture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_dense_u64_map_pure_batch_fixture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_dense_wide_numeric_len_fixture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_hot_for_pure_auto_jit_fixture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_inferred_pure_jit_fixture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_large_map_pure_batch_fixture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_linear_aot_fixture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_matrix_add_f64_math_fixture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_matrix_f64_math_fixture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_mixed_aot_prefix_fixture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_mixed_for_iter_pure_jit_fixture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_mixed_width_for_iter_pure_jit_fixture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_nonuniform_map_pure_batch_fixture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_scalar_for_pure_jit_perf_guard",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_small_dense_integer_map_pure_batch_fixtures",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_system_info_thread_fixture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_tensor_f64_math_fixture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_thread_scheduling_fixture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_checked_in_wide_for_pure_jit_fixture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_for_loop_pure_jit_without_arg_vec_allocation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_headless_runtime_sections",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_native_file_tasks",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_profile_inference_matmul_bias_adapter_fixture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_pure_helper_with_vm_aot_and_jit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_runtime_match_to_pure_jit_characteristics",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_thread_scheduling_characteristics",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_threaded_native_read_scheduling",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_measures_traverse_parallel_file_tasks",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_skips_adapter_only_script_benches",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bench_json_validates_headless_script_benches",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bundle_json_packages_image_animation_sample_assets_and_run_bundle_validates_them",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "bundle_json_packages_save_files_and_run_bundle_executes_native_file_tasks",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "check_accepts_state_write_effect_contract",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "check_accepts_valid_arcw_file",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "check_allows_redundant_decl_identity_warning",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "check_json_reports_compiler_pipeline_summary",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "check_registry_write_accepts_an_ordinary_call_rhs",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "check_registry_write_preserves_lazy_rhs_branches",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "check_rejects_decl_binding_mismatch_lint_error",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "check_rejects_direct_non_arcw_edge_extensions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "check_rejects_invalid_arcw_file",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "check_rejects_malformed_line_plan_init",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "check_rejects_non_arcw_file_extension",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "cli_json_selects_cli_entry_and_binds_args",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "cli_test_and_bench_profiles_use_profile_sources",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "closed_source_map_kernel_preserves_every_formal_and_one_op_continuation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "closed_source_map_log_does_not_hide_a_later_array_observer",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "control_local_admission::array_map_admits_extreme_length_with_constant_local_inventory",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "debug_db_close_stale_sessions_abandons_old_running_sessions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "debug_db_embed_indexes_privacy_filtered_local_hash_embeddings",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "debug_db_embed_records_remote_provider_unavailable_diagnostic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "debug_db_embed_remote_command_indexes_provider_vectors",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "debug_db_prune_removes_rows_older_than_duration",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "debug_db_repl_cells_reports_persisted_cells",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "debug_db_search_diagnostics_and_tests_filter_by_privacy",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "debug_db_search_filters_chunks_by_privacy",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "debug_db_search_graph_filters_chunks_by_privacy",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "debug_db_search_history_filters_chunks_by_privacy",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "debug_db_search_vector_filters_chunks_by_privacy",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "debug_db_sessions_reports_persisted_product_sessions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "debug_db_timeline_reports_privacy_filtered_events",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "debug_db_vacuum_reports_page_counts",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "fmt_accepts_awfagent_path_and_preserves_agent_source_json",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "fmt_preserves_sugar_by_default",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "fmt_rejects_unknown_option_without_rewriting_source",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "jit_check_json_can_compare_julia_baseline_without_absolute_source",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "jit_check_json_compares_cranelift_and_vm",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "jit_check_json_measures_accumulation_mix_case",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "jit_check_json_measures_branch_mix_case_with_julia_baseline",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "jit_check_json_measures_four_input_mix_case",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "jit_check_json_measures_let_chain_case",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "jit_check_json_uses_source_pure_helper",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "plan_json_lists_runtime_task_graph",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "plan_json_lists_stream_generation_plans_without_source_roots",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "plan_json_reports_syntax_denial_with_exact_source_spans",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "profile_check_accepts_explicit_route_parameters",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "profile_check_rejects_ambient_route_params",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "profile_json_can_select_aot_executor_without_absolute_source",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "profile_json_reports_phase_timings_and_runtime_stats_without_absolute_source",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "profile_json_reports_runtime_math_backend_selection",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "profile_json_runs_native_file_tasks_without_absolute_source",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "profile_rejects_unknown_adapter",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "profile_source_and_path_are_mutually_exclusive",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "pure_measurement_boundary_tests::pure_bench_effectful_helper_is_rejected_before_invocation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "pure_measurement_boundary_tests::pure_bench_exhausted_explicit_budget_is_terminal_on_every_requested_backend",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "pure_measurement_boundary_tests::pure_bench_explicit_vm_aot_auto_share_checked_source_and_input_series",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "pure_measurement_boundary_tests::pure_bench_fallible_native_body_uses_bounded_vm_in_configured_aot_auto_batch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "pure_measurement_boundary_tests::pure_bench_non_i64_abi_is_rejected_without_rebinding_or_coercion",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "pure_measurement_boundary_tests::pure_bench_unknown_helper_is_rejected_from_the_checked_catalog",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "pure_measurement_boundary_tests::pure_bench_zero_argument_checked_function_is_invoked_for_every_row",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "run_bundle_rejects_image_asset_metadata_mismatch_before_execution",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "run_explicit_flow_library_preserves_selection_without_public_entry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "run_flow_values_are_sealed_once_by_parameter_coordinate",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "run_flow_values_reject_incomplete_or_ambiguous_external_inventory",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_can_record_aot_object_artifact_stats_when_requested",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_can_select_aot_executor",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_executes_f64_math_intrinsic_with_cli_matrix_bindings",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_executes_math_intrinsic_with_cli_matrix_bindings",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_executes_native_file_tasks_through_bytecode_vm",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_executes_owned_line_child_without_host_proxy",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_executes_scope_and_loop_value_bindings",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_executes_source_thread_through_actual_program_completion",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_executes_traverse_parallel_file_tasks",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_fuses_jit_map_closure_pure_sum",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_keeps_three_step_line_child_activation_prefix",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_lists_stream_runtime_state_without_source_state",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_modes_and_budget_drive_engine_step_boundary",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_reports_headless_observations",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_reports_runtime_system_info_tasks",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_retains_original_budget_and_one_op_scalar_continuations",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_retains_original_for_loop_one_op_budget_and_workload",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_steps_runtime_plan",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_uses_jit_for_for_loop_pure_calls_without_arg_vec_allocation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_uses_jit_for_map_closure_pure_batch",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "run_json_uses_jit_for_runtime_pure_calls_without_arg_vec_allocation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "scalar_live_budget_owner_tests::one_op_with_a_large_budget_keeps_native_and_awbc_source_continuations",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "scalar_live_budget_owner_tests::pending_joined_source_work_keeps_the_original_scalar_return_continuation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "scalar_live_budget_owner_tests::physical_source_body_charges_the_same_native_driver_control_ops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "scalar_live_budget_owner_tests::physical_source_body_declines_when_its_exact_remaining_budget_does_not_fit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "scalar_live_budget_owner_tests::single_return_source_call_span_is_exactly_dispatch_plus_original_return",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "scalar_live_budget_owner_tests::source_goto_linear_return_drains_joined_children_before_native_or_aot_completion",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "scalar_live_budget_owner_tests::successful_fallthrough_scopes_charge_generated_exit_operations",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "scalar_live_budget_owner_tests::successful_scoped_branch_completion_charges_generated_scopes_and_discards_return_suffixes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "scalar_live_budget_owner_tests::unequal_early_return_costs_decline_physical_source_completion",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "serve_json_lists_server_routes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "serve_json_treats_server_run_entry_as_default_route",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "serve_json_typechecks_explicit_route_parameters",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "serve_profile_alias_lists_server_routes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "source_map_batch_owner_tests::source_array_map_batches_the_admitted_apply_span_and_consuming_sum",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "source_map_batch_owner_tests::source_array_map_charges_its_exact_existing_apply_span",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "source_map_batch_owner_tests::source_array_map_original_low_and_one_op_budgets_keep_native_awbc_parity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "source_map_batch_owner_tests::source_map_batch_declines_a_foreign_plan_with_colliding_sites",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "source_map_batch_owner_tests::source_map_batch_preserves_original_captured_and_unused_formals",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "source_map_batch_owner_tests::source_map_batch_uses_the_exact_existing_loop_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "source_map_batch_owner_tests::source_map_copy_sum_elision_declines_later_reuse_and_capture",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "source_map_batch_owner_tests::source_map_fallible_callback_preserves_prior_rows_and_failure_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "source_map_batch_owner_tests::source_map_forwarding_scope_uses_the_original_native_schedule_and_full_formals",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "source_map_batch_owner_tests::source_map_hidden_second_call_declines_batch_and_executes_each_original_call_once",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "source_map_batch_owner_tests::source_map_lexical_aliases_preserve_original_cost_and_full_formals",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "source_map_batch_owner_tests::source_map_one_op_and_under_budget_keep_native_and_awbc_continuations",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "source_map_batch_owner_tests::source_map_sum_fuses_only_the_consuming_checked_sum",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "source_map_batch_owner_tests::source_map_wide_output_retains_batch_and_the_checked_sum_failure",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "source_map_batch_owner_tests::source_repeated_i64_sum_uses_core_wrapping_reduction",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "source_map_dense_u32_program_keeps_typed_callbacks_under_the_default_budget",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "source_map_retains_zero_argument_target_calls_when_source_items_are_unused",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "spec_rejected_edge_fixtures_fail_with_diagnostics",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "spec_valid_run_edge_fixture_now_executes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "standalone_pure_batch_owner_tests::compiler_named_function_query_uses_one_checked_root_and_strict_uniqueness",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "standalone_pure_batch_owner_tests::standalone_batch_foreign_plan_and_incomplete_formals_reject_before_execution",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "standalone_pure_batch_owner_tests::standalone_batch_mapping_fault_preserves_completed_prefix_without_native_retry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "standalone_pure_batch_owner_tests::standalone_batch_nested_control_uses_bounded_vm_on_explicit_aot_auto_decline",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "standalone_pure_batch_owner_tests::standalone_batch_original_control_cost_bounds_vm_aot_jit_auto_before_completion",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "test_json_executes_headless_scenario_expectations",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "test_json_lists_script_tests",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "toolchain_profile_json_plans_path_free_workspace_commands",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "tooling_commands_reject_direct_non_arcw_paths",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "tooling_directory_scan_ignores_non_arcw_files",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "unsafe_json_lists_audit_regions",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_accepts_effect_capability_from_flow_contract",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_accepts_inferred_effect_row_without_source_upper_bound",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_records_required_solver_checks",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_reports_effect_capability_obligation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_reports_invalid_proof_body",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_reports_missing_promotion_proof",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_reports_semantic_denial_before_solver_or_artifact_output",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_reports_semantic_thread_join_conflict",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_reports_unknown_proof_dependency",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "verify_json_respects_semantic_defer_cancel_discharge",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "verify_types_json_reports_type_and_runtime_validation_without_absolute_source",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "wide_source_map_sum_uses_complete_input_bounds_before_materialization",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check_core_cli",
+      "test": "check_keeps_explicit_id_lint_on_the_independent_lint_path",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check_core_cli",
+      "test": "check_reports_final_call_diagnostics_once",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check_core_cli",
+      "test": "check_reports_typed_statement_unknown_mode_once",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check_core_cli",
+      "test": "help_is_available_without_project_files",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check_core_cli",
+      "test": "runtime_dialogue::bundled_dialogue_binds_original_generation_for_report_and_resumable_hosts",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check_core_cli",
+      "test": "runtime_dialogue::headless_dialogue_binds_original_generation_for_entry_and_flow_in_every_tier",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check_core_cli",
+      "test": "runtime_exit::headless_budget_stop_remains_a_successful_bounded_observation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check_core_cli",
+      "test": "runtime_exit::headless_completed_execution_keeps_a_successful_exit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check_core_cli",
+      "test": "runtime_exit::headless_runtime_failure_returns_nonzero_after_publishing_its_report",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check_core_cli",
+      "test": "unknown_top_level_option_fails_with_diagnostic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::environment_callable_tensor",
+      "test": "environment_tensor_value_preserves_elements_and_one_op_restoration",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::native_host_contracts",
+      "test": "authored_externs_cannot_change_manifest_types_or_omit_manifest_effects",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::native_host_contracts",
+      "test": "cli_process_calls_require_matching_arguments_and_selected_manifest",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::native_host_contracts",
+      "test": "host_calls_require_the_selected_target_effects",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::native_host_contracts",
+      "test": "implicit_native_policy_cannot_exit_the_embedding_process",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::native_host_contracts",
+      "test": "pure_host_calls_require_membership_in_the_selected_manifest",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::native_host_contracts",
+      "test": "selected_native_cli_preserves_cli_arguments",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::native_host_contracts",
+      "test": "selected_native_cli_writes_streams_and_exits_without_a_never_payload",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::native_host_contracts",
+      "test": "typed_virtual_paths_read_and_write_through_native_and_awbc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::native_style_parity_sample",
+      "test": "native_style_parity_sample_authors_observable_and_view_styles_in_dsl",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::release_trust_json",
+      "test": "release_publish_remote_dry_run_json_does_not_write_objects",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::release_trust_json",
+      "test": "release_publish_remote_json_then_release_verify_json_succeeds",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::release_trust_json",
+      "test": "release_verify_json_failure_still_prints_typed_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::release_trust_json",
+      "test": "release_verify_json_success_reports_machine_readable_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::release_trust_json",
+      "test": "release_verify_json_wrong_policy_is_failure_for_same_archive",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::runtime_native_options",
+      "test": "session_io_rejects_headless_runner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::runtime_native_options",
+      "test": "session_io_rejects_watch_mode",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::runtime_native_options",
+      "test": "text_input_trace_rejects_headless_runner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::seq04_8_4_persistent_cache_build_cli_goldens",
+      "test": "multi_module_build_cli_golden_reports_typed_conservative_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::seq04_8_4_persistent_cache_build_cli_goldens",
+      "test": "normal_single_module_build_cli_goldens_cover_actual_reuse_and_corrupt_record",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 23
+}

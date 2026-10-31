@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "c35fc69a52db5709b98c0b135d6df559acd24af9",
+  "run": "presentation-awbc-scopes.reverse-arcweft-agent-mcp-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [   0.157s] 31 tests run: 31 passed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 31,
+  "passed": 31,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4005,
+  "sourceDrift": 0,
+  "held": 0,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-31T01:44:23.7702554Z"
+}

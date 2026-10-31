@@ -1,0 +1,49 @@
+   Compiling arcweft-interaction-model v0.1.0 (D:\git\arcweft\crates\arcweft-interaction-model)
+warning: use of deprecated method `std::sync::atomic::Atomic::<u64>::fetch_update`: renamed to `try_update` for consistency
+  --> crates\arcweft-lang-syntax\src\attachment\snapshot.rs:47:14
+   |
+47 |             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |              ^^^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+help: replace the use of the deprecated method
+   |
+47 -             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+47 +             .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |
+
+warning: `arcweft-lang-syntax` (lib) generated 1 warning (run `cargo fix --lib -p arcweft-lang-syntax` to apply 1 suggestion)
+warning: use of deprecated method `std::sync::atomic::Atomic::<u64>::fetch_update`: renamed to `try_update` for consistency
+  --> crates\arcweft-lang-hir\src\identity.rs:26:10
+   |
+26 |         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |          ^^^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+help: replace the use of the deprecated method
+   |
+26 -         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+26 +         .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+   |
+
+warning: `arcweft-lang-hir` (lib) generated 1 warning (run `cargo fix --lib -p arcweft-lang-hir` to apply 1 suggestion)
+   Compiling arcweft-core v0.1.0 (D:\git\arcweft\crates\arcweft-core)
+   Compiling arcweft-presentation v0.1.0 (D:\git\arcweft\crates\arcweft-presentation)
+   Compiling arcweft-audio-core v0.1.0 (D:\git\arcweft\crates\arcweft-audio-core)
+   Compiling arcweft-audio-codec v0.1.0 (D:\git\arcweft\crates\arcweft-audio-codec)
+rustc-LLVM ERROR: IO failure on output stream: no space on device
+error: could not compile `arcweft-audio-core` (lib)
+
+Caused by:
+  process didn't exit successfully: `C:\Users\sanze\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin\rustc.exe --crate-name arcweft_audio_core --edition=2024 crates\arcweft-audio-core\src\lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debuginfo=line-tables-only --warn=clippy::pedantic --forbid=unsafe_code --allow=clippy::must_use_candidate --allow=clippy::module_name_repetitions --allow=clippy::missing_errors_doc --check-cfg cfg(docsrs,test) --check-cfg "cfg(feature, values())" -C metadata=8d787a0940275d8e -C extra-filename=-8b6e0068f0a74c23 --out-dir D:\git\arcweft\target\debug\deps -C incremental=D:\git\arcweft\target\debug\incremental -L dependency=D:\git\arcweft\target\debug\deps --extern arcweft_interaction_model=D:\git\arcweft\target\debug\deps\libarcweft_interaction_model-5423f3f81c31deb4.rmeta --extern serde=D:\git\arcweft\target\debug\deps\libserde-f2578c2c961697c7.rmeta --extern thiserror=D:\git\arcweft\target\debug\deps\libthiserror-d987ffb5909ca99c.rmeta -L native=D:\git\arcweft\target\debug\build\blake3-10d058e1ab0beac6\out -L native=D:\git\arcweft\target\debug\build\blake3-10d058e1ab0beac6\out -L "native=C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\atlmfc\lib\x64" -L "native=C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\atlmfc\lib\x64"` (exit code: 101)
+warning: build failed, waiting for other jobs to finish...
+error: failed to write to `D:\git\arcweft\target\debug\deps\rmetaYtaRw8\full.rmeta`: ディスクに十分な空き領域がありません。 (os error 112)
+
+error: could not compile `arcweft-audio-codec` (lib) due to 1 previous error
+error: error writing dependencies to `D:\git\arcweft\target\debug\deps\arcweft_core-10118f07770a6e10.d`: ディスクに十分な空き領域がありません。 (os error 112)
+
+error: could not compile `arcweft-core` (lib) due to 1 previous error
+error: failed to write to `D:\git\arcweft\target\debug\deps\rmetatXiPJG\full.rmeta`: ディスクに十分な空き領域がありません。 (os error 112)
+
+error: could not compile `arcweft-presentation` (lib) due to 1 previous error
+error: command `'C:\Users\sanze\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin\cargo.exe' '--color=auto' test --no-run --message-format json-render-diagnostics --package arcweft-player-web --all-features --locked` exited with code 101

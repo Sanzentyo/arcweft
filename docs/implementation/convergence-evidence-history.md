@@ -13343,3 +13343,13 @@ Supersedes: 現状一覧のPresentation行にあった重複した旧検証説�
 確認したmainはd4fbb2a785afccd5634c6fbddcba64e91493b265、実装Sourceはc3b6ea79a7b16674ed0cbcd644b9e7bdd6c95030。同じ4,005凍結入力・差分0、CLI executable SHA256 5485b91109a0dabf7529fc0ba1e55adadff205995befab633f024248e6c9953dで、別々の一時package4件を実際のarcw checkへ渡した。scalar controlは終了0、View構築は終了1でViewValueのclosed runtime representation不足、mount(42)／mount(ProbePanel())は各終了1で未解決関数mountとなった。前者のscalar mountはlookup用の不正型入力であり、正しいmount引数として受入したものではない。[入力・manifest・command・原診断](acceptance-evidence/task-presentation-mount-source-probe.json)。
 
 Supersedes: Source ABIの残範囲を既存11 callable／6 methodだけで表していた列挙を補正した。共有surfaceの現行仕様が構築とmountを分離し、普通のintrinsic mount(value)を要求していることと、上記の実再現が根拠である。既存のrole schema移行やretained Viewのlibrary／Source admission、Core custody、AWBC scope、Generic Matchを未完了へ戻す判定ではない。現状一覧のscope検証の詳細は既存原本へのリンクへ整理した。CLI check4件をnextestやruntime・保存復元・画像parityの受入に合算しない。
+
+## Scope逆依存runの容量失敗と全体clean／再開 — 2026-10-31
+
+確認main d70e079dba7c448cd168fbf8de36e99721f068c3、実装Source c3b6ea79a7b16674ed0cbcd644b9e7bdd6c95030。4,005凍結入力に変更はない。初回52 consumerのうち25 packageは終端を得て、3,490件中3,447 PASS／43 FAIL。CLI全692件は649 PASS／43 FAIL・23 ignored除外で、R3616の43件と新規0・解消0の完全一致、入力／binary／catalog／終端差分0だった。[全CLI終端](acceptance-evidence/task-presentation-awbc-scopes.reverse-arcweft-cli-runtime.terminal-audit.json)、[失敗ID照合](acceptance-evidence/task-presentation-awbc-scopes.cli-failure-comparison.json)。Coreの先行2,133件とCLI4独立probeを、このconsumer数へ再加算しない。
+
+LSP catalogはquery-cache書込みのOS error112で失敗した。LSPを含む10 packageの閉じたcatalogに空き容量不足またはLLVMのno space on deviceを確認した。実行中だったresource-model catalogの終了codeは観測していない。これらをSource退行やruntime FAILへ読み替えず、原logと最後の35行のmatrix状態を保持した。容量回復のため、task scriptの一致を確認したshellとその7子孫だけを停止し、primary sessionの実終了-1を確認した。途中のread-only PID調査loopも、空のchild集合で終了しない条件を修正して停止した。
+
+Cargo／nextest／rustc／linkが存在しないこと、現在のCargo metadataがworkspace D:/git/arcweft、target D:/git/arcweft/targetを指し両者がreparse pointでないことを確認した。ユーザー指定の全体cargo cleanを再実行し終了0、268,867 files／362.4GiBを削除、D:空き0から372,696,805,376 bytesへ回復、4,005入力差分0。build生成物の移動・コピー・退避は行っていない。
+
+Toolchainの同一性を確認し、同じpackage単位all-features／locked／native targetで、未実行・catalog失敗・中断分の27 packageだけを再開した。Coreや終端済みCLIを再実行せず、成功したcatalog／runtimeと実行前後のbinary照合を再利用する。jobs・profile・assertion・timeout・budgetは変更しない。現状一覧の「検証中」をこの回復状態へ同期し、CLI行の最新全件原本を更新した。受入済みGeneric MatchやCoreの各機能を未完了へ戻していない。[中断・clean・再開の範囲と全原本](acceptance-evidence/task-presentation-scope-capacity-recovery.json)。

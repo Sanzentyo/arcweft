@@ -1,0 +1,264 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl",
+      "test": "command::json::tests::transaction_attached_parse_json_preserves_revision_bound_payload",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl",
+      "test": "compile::tests::compiler_reuses_the_accepted_synthetic_source_identity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl",
+      "test": "diagnostics::tests::runtime_assertion_debug_projection_persists_only_core_identity_and_source_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl",
+      "test": "diagnostics::tests::runtime_assertion_projection_preserves_condition_and_statement_labels",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl",
+      "test": "diagnostics::tests::shared_diagnostic_projection_preserves_the_test_only_edit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl",
+      "test": "diagnostics::tests::shared_diagnostic_projection_rejects_stale_diagnostics_and_edits",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl",
+      "test": "diagnostics::tests::syntax_diagnostic_projection_dewraps_an_exact_synthetic_prefix",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl",
+      "test": "diagnostics::tests::syntax_diagnostic_projection_preserves_and_validates_related_ranges",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl",
+      "test": "diagnostics::tests::syntax_diagnostic_projection_preserves_the_attached_source_payload",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl",
+      "test": "source::tests::accepted_cell_retains_the_exact_synthetic_parse_lease",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl",
+      "test": "source::tests::ordinary_function_item_uses_a_whole_synthetic_document",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl",
+      "test": "source::tests::typed_item_failure_keeps_synthetic_source_coordinates",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::api_compile",
+      "test": "internal_repl_source_module_is_unavailable",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::repl_cell",
+      "test": "repl_cell_command_input_is_not_committed",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::repl_cell",
+      "test": "repl_cell_records_literal_binding_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::repl_cell",
+      "test": "repl_item_cell_compiles_through_a_synthetic_controller_entry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::repl_command",
+      "test": "repl_command_agent_session_adapter_reuses_existing_observe_boundary",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::repl_command",
+      "test": "repl_command_background_sink_receives_typed_warm_request",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::repl_command",
+      "test": "repl_command_cells_and_capabilities_are_deterministic_read_only_results",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::repl_command",
+      "test": "repl_command_parse_distinguishes_commands_from_cells",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::repl_command",
+      "test": "repl_command_parse_reports_stable_unknown_command_error",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::repl_command",
+      "test": "repl_command_parse_reserves_typed_warm_and_codegen_targets",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::repl_command",
+      "test": "repl_command_reset_empty_session_reports_return_to_base_evidence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::repl_command",
+      "test": "repl_command_undo_empty_session_reports_typed_session_error",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::repl_task_adapter",
+      "test": "repl_runtime_task_adapter_cancels_through_runtime_owner",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::repl_task_adapter",
+      "test": "repl_runtime_task_adapter_lists_runtime_owned_projection",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::repl_tiering",
+      "test": "repl_tiering_codegen_reports_status_only_surface",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::repl_tiering",
+      "test": "repl_tiering_immediate_product_awbc_execution_remains_available_after_status_only_requests",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::repl_tiering",
+      "test": "repl_tiering_warm_without_backend_is_deterministic_product_awbc_fallback",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::repl_trace",
+      "test": "repl_trace_allows_read_only_inspection_commands",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::repl_trace",
+      "test": "repl_trace_allows_replay_host_reads_without_overlay_mutation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::repl_trace",
+      "test": "repl_trace_rejects_cancel_before_host_mutation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::repl_trace",
+      "test": "repl_trace_rejects_cell_submission_before_execution",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::repl_trace",
+      "test": "repl_trace_rejects_mutating_session_commands",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::repl_transaction",
+      "test": "repl_transaction_base_change_advances_generation",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::repl_transaction",
+      "test": "repl_transaction_reset_returns_empty_overlay",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "binary": "arcweft-agent-repl::runtime_assertion_diagnostic",
+      "test": "agent_debug_diagnostic_projects_fresh_session_fault",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

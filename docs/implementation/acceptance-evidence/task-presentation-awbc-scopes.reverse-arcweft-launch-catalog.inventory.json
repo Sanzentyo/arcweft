@@ -1,0 +1,320 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "accepted::tests::accepted_consumers_reuse_one_manifest_decode",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "accepted::tests::accepted_products_retain_the_exact_supplied_document_arc",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "accepted::tests::content_accessors_project_exact_existing_source_map_spans",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "accepted::tests::dialogue_token_paths_publish_the_exact_accepted_document_spans",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::applied_inline_fallback_styles_publish_every_nested_source_span",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::canonical_manifest_serialization_omits_an_empty_dialogue_profile",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::canonical_profile_decodes_typed_policies_and_nested_source_map",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::dialogue_profile_uses_nominal_view_and_style_ids_with_exact_source_map_entries",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::dialogue_view_and_style_accept_authored_and_engine_owned_nominal_ids",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::dialogue_view_and_style_ids_distinguish_malformed_text_from_wrong_family",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::direct_tree_decode_preserves_root_records_and_source_map",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::equivalent_dotted_policy_forms_decode_without_synthetic_tables",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::every_inline_failure_policy_variant_uses_the_owned_strict_wire_type",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::every_typed_root_map_rejects_quoted_and_unquoted_duplicate_ids",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::generated_module_profile_decodes_bindings_and_array_sources",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::incomplete_inline_policy_uses_policy_diagnostic",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::inline_failure_unknown_fields_and_kinds_have_no_aliases",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::nested_table_and_field_duplicates_survive_inline_table_indexing",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::obsolete_shapes_are_rejected_by_the_current_grammar_without_special_recognizers",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::profile_array_duplicates_keep_first_and_later_element_ranges",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::profile_scalar_policy_boundaries_are_typed_and_strict",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::project_locale_bounds_fallbacks_and_rejects_unknown_or_inert_fields",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::project_locale_defaults_to_japanese_and_maps_each_authored_token",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::project_locale_rejects_noncanonical_and_duplicate_fallbacks_at_exact_spans",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::quoted_and_unquoted_profile_ids_collide_at_raw_map_key_ranges",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::removed_dialogue_defaults_is_rejected_as_an_unknown_profile_field",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::reports_are_deterministic_and_malformed_toml_is_fail_closed",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::required_and_typed_value_failures_use_exact_ranges",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::resource_type_manifest_is_one_optional_normalized_root_path",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::resource_type_manifest_reuses_the_normalized_contained_path_boundary",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::source_map_builder_rejects_a_span_from_another_document_revision",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::source_map_ranges_are_exact_utf8_byte_boundaries",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::unknown_shape_and_duplicates_retain_raw_first_and_later_ranges",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "decode::tests::viewport_resolved_defaults_and_raw_constraints_are_explicit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "resolve::tests::cross_reference_failures_are_ordered_and_prevent_resolution",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "resolve::tests::resolved_profile_joins_selected_modules_activity_and_content",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "resolve::tests::selected_profile_carries_project_locale_policy",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "resolve::tests::selection_failures_do_not_fall_back",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "resolve::tests::selection_uses_explicit_default_previous_then_lexical_precedence",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "tree_de::tests::externally_tagged_enum_rejects_ambiguous_tables",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "tree_de::tests::typed_deserialization_retains_strict_record_rules",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "tree_de::tests::typed_deserialization_supports_one_entry_externally_tagged_enums",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch",
+      "test": "tree_de::tests::typed_deserialization_walks_the_existing_tree",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch::maintained_manifests",
+      "test": "maintained_manifests_decode_through_the_canonical_public_surface",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-launch",
+      "binary": "arcweft-launch::maintained_manifests",
+      "test": "root_level_samples_use_canonical_source_roots_and_existing_profile_sources",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

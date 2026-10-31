@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "c35fc69a52db5709b98c0b135d6df559acd24af9",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-adapter-sema",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\presentation-awbc-scopes.reverse-arcweft-adapter-sema-runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-31T01:41:07.2656288Z",
+  "finishedAt": "2026-10-31T01:41:08.9102177Z"
+}

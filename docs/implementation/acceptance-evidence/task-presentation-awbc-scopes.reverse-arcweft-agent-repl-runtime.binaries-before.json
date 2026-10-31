@@ -1,0 +1,47 @@
+[
+  {
+    "binary": "arcweft-agent-repl::api_compile",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\api_compile-6fbd0567d739239d.exe",
+    "sha256": "99cea2307258215bef040439ee47f6d0df04b5f91fb75da6b1920b2bd83186f5"
+  },
+  {
+    "binary": "arcweft-agent-repl",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_agent_repl-0154650d7e50aed3.exe",
+    "sha256": "58011ec385e88290efe6bf871462eb1c1b28302648671af1e7c3965b8a1cb638"
+  },
+  {
+    "binary": "arcweft-agent-repl::repl_cell",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_cell-6cee3b94c16d925d.exe",
+    "sha256": "aab6895980b0e285e0e16c998dd3bd93a88ff0c2bdcbc78d3a3ddf3ae6473212"
+  },
+  {
+    "binary": "arcweft-agent-repl::repl_command",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_command-1557c7d0013da6da.exe",
+    "sha256": "a9bf47fe469233e56dc1d20abaa3381ea3c808d958fef5b3a820a8ccec94696c"
+  },
+  {
+    "binary": "arcweft-agent-repl::repl_task_adapter",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_task_adapter-f405afc19b4ccb51.exe",
+    "sha256": "81ef35c9239b95538761673188e4aaac4e99440049e2bc8f7d3626f3efc3fd19"
+  },
+  {
+    "binary": "arcweft-agent-repl::repl_tiering",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_tiering-3f9c6a99e05c81a2.exe",
+    "sha256": "128a83e05c25cd9243123c7422968a68dd0186e35c1bc44e6ef2a26d931a4682"
+  },
+  {
+    "binary": "arcweft-agent-repl::repl_trace",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_trace-ac5aae42f5b1503e.exe",
+    "sha256": "6672d8260562648f65b61b93dee595cd62a10c3b8f629b8825ceee6dc5e004ed"
+  },
+  {
+    "binary": "arcweft-agent-repl::repl_transaction",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\repl_transaction-c280c265a11b7d7f.exe",
+    "sha256": "d9ad339a3c7f199c9680e321b0acb8a01b391407f8a5b64fbd9de89ae459ebad"
+  },
+  {
+    "binary": "arcweft-agent-repl::runtime_assertion_diagnostic",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\runtime_assertion_diagnostic-bf19abae7eb8a02b.exe",
+    "sha256": "6b3541145b54b94d47a121cc24cb3363d0e0af74fc7ae352687ce64d9c71fb37"
+  }
+]

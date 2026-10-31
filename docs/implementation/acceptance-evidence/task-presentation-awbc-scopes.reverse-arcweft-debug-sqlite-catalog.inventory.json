@@ -1,0 +1,159 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-debug-sqlite",
+      "binary": "arcweft-debug-sqlite",
+      "test": "encoding::tests::vector_blob_round_trips",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-debug-sqlite",
+      "binary": "arcweft-debug-sqlite",
+      "test": "store::tests::debug_script_run_round_trips_and_finishes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-debug-sqlite",
+      "binary": "arcweft-debug-sqlite",
+      "test": "store::tests::debug_session_round_trips_and_finishes",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-debug-sqlite",
+      "binary": "arcweft-debug-sqlite",
+      "test": "store::tests::delete_unreferenced_blobs_keeps_referenced_capture_blobs",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-debug-sqlite",
+      "binary": "arcweft-debug-sqlite",
+      "test": "store::tests::diagnostic_and_test_result_search_filter_project_privacy_before_limit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-debug-sqlite",
+      "binary": "arcweft-debug-sqlite",
+      "test": "store::tests::embedding_inputs_apply_provider_privacy_policy_before_adapter_io",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-debug-sqlite",
+      "binary": "arcweft-debug-sqlite",
+      "test": "store::tests::embedding_round_trips_without_unsafe_casts",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-debug-sqlite",
+      "binary": "arcweft-debug-sqlite",
+      "test": "store::tests::graph_inventory_round_trips_for_program",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-debug-sqlite",
+      "binary": "arcweft-debug-sqlite",
+      "test": "store::tests::graph_search_filters_project_privacy_before_limit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-debug-sqlite",
+      "binary": "arcweft-debug-sqlite",
+      "test": "store::tests::history_search_filters_project_privacy_before_limit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-debug-sqlite",
+      "binary": "arcweft-debug-sqlite",
+      "test": "store::tests::lexical_search_filters_by_max_privacy_before_limit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-debug-sqlite",
+      "binary": "arcweft-debug-sqlite",
+      "test": "store::tests::migration_and_japanese_fts_work",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-debug-sqlite",
+      "binary": "arcweft-debug-sqlite",
+      "test": "store::tests::prune_before_removes_old_rebuildable_debug_rows",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-debug-sqlite",
+      "binary": "arcweft-debug-sqlite",
+      "test": "store::tests::rag_query_audit_round_trips_and_filters_privacy_before_limit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-debug-sqlite",
+      "binary": "arcweft-debug-sqlite",
+      "test": "store::tests::reindex_rebuilds_fts_and_reports_chunk_count",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-debug-sqlite",
+      "binary": "arcweft-debug-sqlite",
+      "test": "store::tests::repl_cell_round_trips_for_session",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-debug-sqlite",
+      "binary": "arcweft-debug-sqlite",
+      "test": "store::tests::script_runs_list_filters_by_session_and_limit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-debug-sqlite",
+      "binary": "arcweft-debug-sqlite",
+      "test": "store::tests::session_timeline_filters_privacy_before_limit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-debug-sqlite",
+      "binary": "arcweft-debug-sqlite",
+      "test": "store::tests::source_file_round_trips_for_program",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-debug-sqlite",
+      "binary": "arcweft-debug-sqlite",
+      "test": "store::tests::stale_running_sessions_are_abandoned_by_lifecycle_policy",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-debug-sqlite",
+      "binary": "arcweft-debug-sqlite",
+      "test": "store::tests::vacuum_reports_page_counts",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-debug-sqlite",
+      "binary": "arcweft-debug-sqlite",
+      "test": "store::tests::vector_search_filters_by_max_privacy_before_limit",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

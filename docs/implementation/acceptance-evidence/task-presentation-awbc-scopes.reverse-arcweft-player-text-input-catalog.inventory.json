@@ -1,0 +1,96 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-player-text-input",
+      "binary": "arcweft-player-text-input",
+      "test": "player_text_input_bridge::tests::focus_update_and_blur_emit_common_host_commands",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-text-input",
+      "binary": "arcweft-player-text-input",
+      "test": "player_text_input_bridge::tests::platform_dispatch_routes_text_and_rejects_stale_serial",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-text-input",
+      "binary": "arcweft-player-text-input",
+      "test": "player_text_input_bridge::tests::repeated_identical_focus_sync_is_idle",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-text-input",
+      "binary": "arcweft-player-text-input",
+      "test": "player_text_input_bridge::tests::secure_focus_redacts_snapshot_and_geometry_commands",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-text-input",
+      "binary": "arcweft-player-text-input",
+      "test": "player_text_input_bridge::tests::shortcuts_follow_dispatch_composition_state",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-text-input",
+      "binary": "arcweft-player-text-input",
+      "test": "player_text_input_bridge::tests::user_activation_republishes_identical_focus",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-text-input",
+      "binary": "arcweft-player-text-input",
+      "test": "text_input_dispatch::tests::blur_policy_emits_commit_cancel_or_platform_default_commands",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-text-input",
+      "binary": "arcweft-player-text-input",
+      "test": "text_input_dispatch::tests::japanese_composition_trace_keeps_preedit_visual_until_commit",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-text-input",
+      "binary": "arcweft-player-text-input",
+      "test": "text_input_dispatch::tests::platform_fixture_events_map_to_expected_operations",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-text-input",
+      "binary": "arcweft-player-text-input",
+      "test": "text_input_dispatch::tests::secure_activation_redacts_snapshot_and_marks_batches_sensitive",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-text-input",
+      "binary": "arcweft-player-text-input",
+      "test": "text_input_dispatch::tests::secure_clipboard_and_ime_consumed_shortcuts_are_blocked",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-text-input",
+      "binary": "arcweft-player-text-input",
+      "test": "text_input_dispatch::tests::stale_serial_and_focus_generation_are_rejected",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-player-text-input",
+      "binary": "arcweft-player-text-input",
+      "test": "text_input_dispatch::tests::web_without_editcontext_reports_unsupported_without_hidden_textarea",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}

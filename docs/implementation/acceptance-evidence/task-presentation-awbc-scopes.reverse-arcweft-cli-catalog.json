@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "c35fc69a52db5709b98c0b135d6df559acd24af9",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-cli",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\presentation-awbc-scopes.reverse-arcweft-cli-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-31T02:02:01.1077851Z",
+  "finishedAt": "2026-10-31T02:06:01.6810771Z"
+}

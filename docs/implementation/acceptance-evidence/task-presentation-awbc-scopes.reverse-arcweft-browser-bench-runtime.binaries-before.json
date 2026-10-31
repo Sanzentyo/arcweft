@@ -1,0 +1,12 @@
+[
+  {
+    "binary": "arcweft-browser-bench",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_browser_bench-3032ffc66625b5cd.exe",
+    "sha256": "ec43c712598ad03f385c3e81dbb03bc2f4111903a57e1075db5b83d8d329d680"
+  },
+  {
+    "binary": "arcweft-browser-bench::bin/browser_bench_host",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\browser_bench_host-c5f03b7100ff6933.exe",
+    "sha256": "33e4a48861a76450bc5b278931de485f7726d8e5b2f3808c7a7a14ee0b903af6"
+  }
+]

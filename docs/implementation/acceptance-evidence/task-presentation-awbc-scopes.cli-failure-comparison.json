@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "current": "presentation-awbc-scopes.reverse-arcweft-cli-runtime",
+  "baseline": "task-r3616-arcweft-cli-runtime.terminal-audit.json",
+  "executed": 692,
+  "passed": 649,
+  "failed": 43,
+  "newFailureIds": [],
+  "resolvedFailureIds": [],
+  "sourceInputs": 4005,
+  "sourceDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0
+}

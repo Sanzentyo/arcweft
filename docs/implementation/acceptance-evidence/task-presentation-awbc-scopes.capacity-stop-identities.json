@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "reason": "Confirmed OS error112 during LSP catalog; stop only this source-frozen matrix before capacity recovery",
+  "root": [
+    {
+      "ProcessId": 38780,
+      "ParentProcessId": 33752,
+      "Name": "pwsh.exe",
+      "CreationDate": "2026-10-31T10:35:23.313006+09:00",
+      "CommandLine": "\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command \"try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}\n& 'C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/run-presentation-awbc-scopes-reverse.ps1'\""
+    }
+  ],
+  "descendants": [
+    {
+      "ProcessId": 44740,
+      "ParentProcessId": 38780,
+      "Name": "conhost.exe",
+      "CreationDate": "2026-10-31T10:35:23.320665+09:00",
+      "CommandLine": "\\??\\C:\\WINDOWS\\system32\\conhost.exe 0x4"
+    },
+    {
+      "ProcessId": 43676,
+      "ParentProcessId": 38780,
+      "Name": "rustup.exe",
+      "CreationDate": "2026-10-31T11:32:09.702601+09:00",
+      "CommandLine": "\"C:\\Users\\sanze\\.cargo\\bin\\cargo.exe\" nextest list -p arcweft-resource-model --all-features --locked --message-format json"
+    },
+    {
+      "ProcessId": 45720,
+      "ParentProcessId": 43676,
+      "Name": "cargo.exe",
+      "CreationDate": "2026-10-31T11:32:09.724745+09:00",
+      "CommandLine": "\"C:\\Users\\sanze\\.rustup\\toolchains\\stable-x86_64-pc-windows-msvc\\bin\\cargo.exe\" nextest list -p arcweft-resource-model --all-features --locked --message-format json"
+    },
+    {
+      "ProcessId": 28664,
+      "ParentProcessId": 45720,
+      "Name": "cargo-nextest.exe",
+      "CreationDate": "2026-10-31T11:32:09.750836+09:00",
+      "CommandLine": "\"C:\\Users\\sanze\\.cargo\\bin\\cargo-nextest.exe\" nextest list -p arcweft-resource-model --all-features --locked --message-format json"
+    },
+    {
+      "ProcessId": 13344,
+      "ParentProcessId": 28664,
+      "Name": "cargo.exe",
+      "CreationDate": "2026-10-31T11:32:10.539538+09:00",
+      "CommandLine": "\"C:\\Users\\sanze\\.rustup\\toolchains\\stable-x86_64-pc-windows-msvc\\bin\\cargo.exe\" --color=auto test --no-run --message-format json-render-diagnostics --package arcweft-resource-model --all-features --locked"
+    },
+    {
+      "ProcessId": 31272,
+      "ParentProcessId": 13344,
+      "Name": "rustc.exe",
+      "CreationDate": "2026-10-31T11:32:11.042857+09:00",
+      "CommandLine": "\"C:\\Users\\sanze\\.rustup\\toolchains\\stable-x86_64-pc-windows-msvc\\bin\\rustc.exe\" --crate-name identity_contract --edition=2024 crates\\arcweft-resource-model\\tests\\identity_contract.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C embed-bitcode=no -C debuginfo=line-tables-only --warn=clippy::pedantic --forbid=unsafe_code --allow=clippy::must_use_candidate --allow=clippy::module_name_repetitions --allow=clippy::missing_errors_doc --test --check-cfg cfg(docsrs,test) --check-cfg \"cfg(feature, values())\" -C metadata=02b89f02c0b87363 -C extra-filename=-4c96d9e6fd157df8 --out-dir D:\\git\\arcweft\\target\\debug\\deps -C incremental=D:\\git\\arcweft\\target\\debug\\incremental -L dependency=D:\\git\\arcweft\\target\\debug\\deps --extern arcweft_core=D:\\git\\arcweft\\target\\debug\\deps\\libarcweft_core-0b9d3198acb097d3.rlib --extern arcweft_id=D:\\git\\arcweft\\target\\debug\\deps\\libarcweft_id-526fa240bbdb137c.rlib --extern arcweft_interaction_model=D:\\git\\arcweft\\target\\debug\\deps\\libarcweft_interaction_model-3008dc5e004de4a1.rlib --extern arcweft_layout=D:\\git\\arcweft\\target\\debug\\deps\\libarcweft_layout-c2aff0f8bfc88805.rlib --extern arcweft_manifest_model=D:\\git\\arcweft\\target\\debug\\deps\\libarcweft_manifest_model-cc183dd613340ccb.rlib --extern arcweft_resource_model=D:\\git\\arcweft\\target\\debug\\deps\\libarcweft_resource_model-653693f3aa904b09.rlib --extern arcweft_source=D:\\git\\arcweft\\target\\debug\\deps\\libarcweft_source-789734c9f67af0f0.rlib --extern serde=D:\\git\\arcweft\\target\\debug\\deps\\libserde-c8435710e7ec08a1.rlib --extern serde_json=D:\\git\\arcweft\\target\\debug\\deps\\libserde_json-be763777c34d44b0.rlib --extern thiserror=D:\\git\\arcweft\\target\\debug\\deps\\libthiserror-75f0ae3af0a0d907.rlib -L native=D:\\git\\arcweft\\target\\debug\\build\\blake3-8898e2c2297e3ea0\\out -L native=D:\\git\\arcweft\\target\\debug\\build\\blake3-8898e2c2297e3ea0\\out -L \"native=C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\atlmfc\\lib\\x64\" -L \"native=C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\atlmfc\\lib\\x64\""
+    },
+    {
+      "ProcessId": 43240,
+      "ParentProcessId": 13344,
+      "Name": "rustc.exe",
+      "CreationDate": "2026-10-31T11:32:11.048087+09:00",
+      "CommandLine": "\"C:\\Users\\sanze\\.rustup\\toolchains\\stable-x86_64-pc-windows-msvc\\bin\\rustc.exe\" --crate-name retained_identity_contract --edition=2024 crates\\arcweft-resource-model\\tests\\retained_identity_contract.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C embed-bitcode=no -C debuginfo=line-tables-only --warn=clippy::pedantic --forbid=unsafe_code --allow=clippy::must_use_candidate --allow=clippy::module_name_repetitions --allow=clippy::missing_errors_doc --test --check-cfg cfg(docsrs,test) --check-cfg \"cfg(feature, values())\" -C metadata=eb634a31fe177398 -C extra-filename=-3857fbde5a069e85 --out-dir D:\\git\\arcweft\\target\\debug\\deps -C incremental=D:\\git\\arcweft\\target\\debug\\incremental -L dependency=D:\\git\\arcweft\\target\\debug\\deps --extern arcweft_core=D:\\git\\arcweft\\target\\debug\\deps\\libarcweft_core-0b9d3198acb097d3.rlib --extern arcweft_id=D:\\git\\arcweft\\target\\debug\\deps\\libarcweft_id-526fa240bbdb137c.rlib --extern arcweft_interaction_model=D:\\git\\arcweft\\target\\debug\\deps\\libarcweft_interaction_model-3008dc5e004de4a1.rlib --extern arcweft_layout=D:\\git\\arcweft\\target\\debug\\deps\\libarcweft_layout-c2aff0f8bfc88805.rlib --extern arcweft_manifest_model=D:\\git\\arcweft\\target\\debug\\deps\\libarcweft_manifest_model-cc183dd613340ccb.rlib --extern arcweft_resource_model=D:\\git\\arcweft\\target\\debug\\deps\\libarcweft_resource_model-653693f3aa904b09.rlib --extern arcweft_source=D:\\git\\arcweft\\target\\debug\\deps\\libarcweft_source-789734c9f67af0f0.rlib --extern serde=D:\\git\\arcweft\\target\\debug\\deps\\libserde-c8435710e7ec08a1.rlib --extern serde_json=D:\\git\\arcweft\\target\\debug\\deps\\libserde_json-be763777c34d44b0.rlib --extern thiserror=D:\\git\\arcweft\\target\\debug\\deps\\libthiserror-75f0ae3af0a0d907.rlib -L native=D:\\git\\arcweft\\target\\debug\\build\\blake3-8898e2c2297e3ea0\\out -L native=D:\\git\\arcweft\\target\\debug\\build\\blake3-8898e2c2297e3ea0\\out -L \"native=C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\atlmfc\\lib\\x64\" -L \"native=C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\atlmfc\\lib\\x64\""
+    }
+  ],
+  "observedAt": "2026-10-31T02:32:37.6846878Z"
+}
