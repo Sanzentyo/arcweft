@@ -29,7 +29,7 @@ fn exit(
     destination: Option<&mut RuntimeEnv>,
     escaping: &[RuntimePresentationHandleToken],
 ) -> Result<(), RuntimePresentationError> {
-    banks.exit_scope_contour(
+    banks.transition_scope_contour(
         program,
         vec![PresentationScopeExit {
             execution: execution(),
@@ -42,6 +42,7 @@ fn exit(
             scope: env.presentation_scope_target().unwrap(),
         }),
         escaping,
+        &[],
     )
 }
 
@@ -498,4 +499,230 @@ fn terminal_receipt_detaches_from_an_independent_issuer_before_that_scope_ends()
             .unwrap()
             .is_some()
     );
+}
+
+#[test]
+fn one_receipt_keeps_its_original_bank_and_discards_both_scoped_and_external_values_once() {
+    let (program, artifact, expected, dialogue) = fixture();
+    let root = RuntimePresentationBankId::Root;
+    let mut banks = PresentationBanks::new(
+        program.clone(),
+        artifact,
+        PresentationLedgerLimits {
+            handles: 4,
+            scopes: 4,
+        },
+    );
+    let mut source = RuntimeEnv::default();
+    let mut issuer = RuntimeEnv::default();
+    let mut receiver = RuntimeEnv::default();
+    let scoped = register(&mut banks, &program, root, &mut source, expected, false);
+    let kept = register(&mut banks, &program, dialogue, &mut issuer, expected, true);
+    let dropped = register(&mut banks, &program, dialogue, &mut issuer, expected, false);
+    let sentinel = register(&mut banks, &program, root, &mut receiver, expected, true);
+    banks
+        .transition_scope_contour(
+            &program,
+            vec![PresentationScopeExit {
+                execution: execution(),
+                fiber: fiber(),
+                scope: source.presentation_scope_target().unwrap(),
+            }],
+            Some(PresentationScopeExit {
+                execution: execution(),
+                fiber: fiber(),
+                scope: receiver.presentation_scope_target().unwrap(),
+            }),
+            std::slice::from_ref(&kept),
+            &[dropped.clone(), scoped.clone()],
+        )
+        .unwrap();
+    assert!(source.presentation_scope_binding().is_none());
+    assert_eq!(
+        banks
+            .retirements()
+            .iter()
+            .map(|item| item.token.clone())
+            .collect::<Vec<_>>(),
+        [scoped, dropped]
+    );
+    let owner = receiver.presentation_scope_binding().unwrap().grants[&dialogue].owner;
+    assert!(
+        banks.ledgers[&dialogue]
+            .validate_handle(&program, &kept, Some(owner))
+            .is_ok()
+    );
+    banks
+        .retire_bound_scope(
+            &program,
+            execution(),
+            fiber(),
+            issuer.presentation_scope_target().unwrap(),
+        )
+        .unwrap();
+    assert_eq!(banks.retirements().len(), 2);
+    banks
+        .retire_bound_scope(
+            &program,
+            execution(),
+            fiber(),
+            receiver.presentation_scope_target().unwrap(),
+        )
+        .unwrap();
+    assert_eq!(
+        banks.retirements()[2..]
+            .iter()
+            .map(|item| item.token.clone())
+            .collect::<Vec<_>>(),
+        [sentinel, kept]
+    );
+}
+
+#[test]
+fn receipt_capacity_includes_unwind_and_external_discard_before_any_input_moves() {
+    let (program, artifact, expected, dialogue) = fixture();
+    let root = RuntimePresentationBankId::Root;
+    let mut banks = PresentationBanks::new(
+        program.clone(),
+        artifact,
+        PresentationLedgerLimits {
+            handles: 3,
+            scopes: 4,
+        },
+    );
+    let mut prior = RuntimeEnv::default();
+    register(&mut banks, &program, root, &mut prior, expected, false);
+    banks
+        .retire_bound_scope(
+            &program,
+            execution(),
+            fiber(),
+            prior.presentation_scope_target().unwrap(),
+        )
+        .unwrap();
+    let mut source = RuntimeEnv::default();
+    let mut issuer = RuntimeEnv::default();
+    let mut receiver = RuntimeEnv::default();
+    let scoped = register(&mut banks, &program, root, &mut source, expected, false);
+    let other = register(&mut banks, &program, root, &mut source, expected, false);
+    let kept = register(&mut banks, &program, dialogue, &mut issuer, expected, true);
+    let dropped = register(&mut banks, &program, dialogue, &mut issuer, expected, false);
+    let before = banks.snapshot_admitted().unwrap();
+    let original_scope = source
+        .presentation_scope_binding()
+        .unwrap()
+        .snapshot_admitted(&program)
+        .unwrap();
+    for _ in 0..2 {
+        assert_eq!(
+            banks.transition_scope_contour(
+                &program,
+                vec![PresentationScopeExit {
+                    execution: execution(),
+                    fiber: fiber(),
+                    scope: source.presentation_scope_target().unwrap(),
+                }],
+                Some(PresentationScopeExit {
+                    execution: execution(),
+                    fiber: fiber(),
+                    scope: receiver.presentation_scope_target().unwrap(),
+                }),
+                std::slice::from_ref(&kept),
+                &[dropped.clone(), scoped.clone()]
+            ),
+            Err(RuntimePresentationError::RetirementCapacity)
+        );
+        assert_eq!(banks.snapshot_admitted().unwrap(), before);
+        assert_eq!(
+            source
+                .presentation_scope_binding()
+                .unwrap()
+                .snapshot_admitted(&program)
+                .unwrap(),
+            original_scope
+        );
+        assert!(receiver.presentation_scope_binding().is_none());
+    }
+    banks.retirements_mut().clear();
+    banks
+        .transition_scope_contour(
+            &program,
+            vec![PresentationScopeExit {
+                execution: execution(),
+                fiber: fiber(),
+                scope: source.presentation_scope_target().unwrap(),
+            }],
+            Some(PresentationScopeExit {
+                execution: execution(),
+                fiber: fiber(),
+                scope: receiver.presentation_scope_target().unwrap(),
+            }),
+            std::slice::from_ref(&kept),
+            &[dropped.clone(), scoped.clone()],
+        )
+        .unwrap();
+    assert_eq!(
+        banks
+            .retirements()
+            .iter()
+            .map(|item| item.token.clone())
+            .collect::<Vec<_>>(),
+        [scoped, other, dropped]
+    );
+    assert!(receiver.presentation_scope_binding().is_some());
+}
+
+#[test]
+fn invalid_or_overlapping_discard_cannot_follow_an_earlier_escape_move() {
+    let (program, artifact, expected, _) = fixture();
+    let root = RuntimePresentationBankId::Root;
+    let mut banks = PresentationBanks::new(
+        program.clone(),
+        artifact,
+        PresentationLedgerLimits {
+            handles: 4,
+            scopes: 4,
+        },
+    );
+    let mut source = RuntimeEnv::default();
+    let mut receiver = RuntimeEnv::default();
+    let kept = register(&mut banks, &program, root, &mut source, expected, true);
+    let dropped = register(&mut banks, &program, root, &mut source, expected, false);
+    let invalid = RuntimePresentationHandleToken::from_issued(
+        artifact,
+        PresentationResourceKind::Image,
+        execution(),
+        fiber(),
+        NonZeroU64::new(99).unwrap(),
+        root,
+    );
+    let before = banks.snapshot_admitted().unwrap();
+    for discarded in [
+        vec![kept.clone()],
+        vec![dropped.clone(), dropped.clone()],
+        vec![dropped, invalid],
+    ] {
+        assert!(
+            banks
+                .transition_scope_contour(
+                    &program,
+                    vec![PresentationScopeExit {
+                        execution: execution(),
+                        fiber: fiber(),
+                        scope: source.presentation_scope_target().unwrap(),
+                    }],
+                    Some(PresentationScopeExit {
+                        execution: execution(),
+                        fiber: fiber(),
+                        scope: receiver.presentation_scope_target().unwrap(),
+                    }),
+                    std::slice::from_ref(&kept),
+                    &discarded
+                )
+                .is_err()
+        );
+        assert_eq!(banks.snapshot_admitted().unwrap(), before);
+        assert!(source.presentation_scope_binding().is_some());
+        assert!(receiver.presentation_scope_binding().is_none());
+    }
 }

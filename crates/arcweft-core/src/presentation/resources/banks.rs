@@ -133,7 +133,11 @@ impl<V> PresentationBanks<V> {
         targets: impl IntoIterator<Item = PresentationScopeExit<PresentationScopeRef<'scope>>>,
     ) -> Result<(), RuntimePresentationError> {
         let owners = self.inspect_scope_contour(program, targets)?;
-        self.preflight_scope_retirements(&owners, &std::collections::BTreeSet::new())
+        self.preflight_scope_retirements(
+            &owners,
+            &std::collections::BTreeSet::new(),
+            &std::collections::BTreeSet::new(),
+        )
     }
 
     fn inspect_scope_contour<'scope>(
@@ -186,6 +190,7 @@ impl<V> PresentationBanks<V> {
         &self,
         owners: &std::collections::BTreeSet<PresentationScopeOwner>,
         escaping: &std::collections::BTreeSet<RuntimePresentationHandleToken>,
+        discarding: &std::collections::BTreeSet<RuntimePresentationHandleToken>,
     ) -> Result<(), RuntimePresentationError> {
         let root = self
             .ledgers
@@ -196,7 +201,8 @@ impl<V> PresentationBanks<V> {
             .values()
             .flat_map(|ledger| ledger.state.leases.values())
             .filter(|lease| {
-                lease.owner.is_some_and(|owner| owners.contains(&owner))
+                (lease.owner.is_some_and(|owner| owners.contains(&owner))
+                    || discarding.contains(&lease.token))
                     && lease.body.is_some()
                     && !escaping.contains(&lease.token)
             })

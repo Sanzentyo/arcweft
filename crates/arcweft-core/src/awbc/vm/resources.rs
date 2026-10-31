@@ -56,7 +56,7 @@ impl VmExecutionResources<'_> {
             .ok_or(VmError::MissingExecutionContext)?
             .program_owner(program)?;
         banks
-            .exit_scope_contour(&owner, targets, destination, &escaping)
+            .transition_scope_contour(&owner, targets, destination, &escaping, &[])
             .map_err(|error| FiberStateError::Snapshot(error.into()))?;
         Ok(())
     }
@@ -87,7 +87,7 @@ impl VmExecutionResources<'_> {
             .ok_or(VmError::MissingExecutionContext)?
             .program_owner(program)?;
         banks
-            .exit_scope_contour(
+            .transition_scope_contour(
                 &owner,
                 targets,
                 Some(crate::presentation::resources::PresentationScopeExit {
@@ -100,6 +100,7 @@ impl VmExecutionResources<'_> {
                     scope: replacement.presentation_scope_target(),
                 }),
                 &escaping,
+                &[],
             )
             .map_err(|error| FiberStateError::Snapshot(error.into()))?;
         Ok(())
