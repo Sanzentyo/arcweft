@@ -1,0 +1,1378 @@
+diff --git a/crates/arcweft-core/src/awbc/product_step.rs b/crates/arcweft-core/src/awbc/product_step.rs
+index ff2e1ee00f02bb56cd20dc80b3848f5342192444..8f39bd71799fe139567bf79deb527d8873847d33 100644
+--- a/crates/arcweft-core/src/awbc/product_step.rs
++++ b/crates/arcweft-core/src/awbc/product_step.rs
+@@ -1084,6 +1084,7 @@ struct PendingHostCall {
+ /// events. The data-only cursors are copied, while consumed events stay owned
+ /// by this journal until the child step commits.
+ pub(super) struct DeferredChildResumeJournal {
++    staged_trap: Option<FiberTrap>,
+     need_publications_before: BTreeMap<
+         (
+             crate::runtime_id::RuntimePersistentFiberId,
+@@ -1155,8 +1156,23 @@ pub(super) enum PreparedHostResultOutcome {
+ }
+ 
+ impl DeferredChildResumeJournal {
++    pub(super) fn stage_trap(&mut self, code: AwbcTrapCode, message: String) {
++        if self.staged_trap.is_none() {
++            self.staged_trap = Some(FiberTrap {
++                code,
++                message: Some(message),
++                source_map: None,
++            });
++        }
++    }
++
++    pub(super) fn has_staged_trap(&self) -> bool {
++        self.staged_trap.is_some()
++    }
++
+     fn capture(executor: &AwbcProductStepExecutor) -> Self {
+         Self {
++            staged_trap: None,
+             need_publications_before: executor.need_publications.clone(),
+             remaining_new_task_requests_before: executor.remaining_new_task_requests,
+             next_host_call_sequence_before: executor.next_host_call_sequence,
+@@ -1220,6 +1236,20 @@ impl DeferredChildResumeJournal {
+                 "deferred child already has a staged host or Need result".to_owned(),
+             ));
+         }
++        if let PreparedHostResultTarget::Deferred {
++            outcome: PreparedHostResultOutcome::Failed { kind, message },
++            ..
++        } = &stage.target
++        {
++            let code = match kind {
++                crate::step::RuntimeHostCallErrorKind::UnsupportedCapability => {
++                    AwbcTrapCode::CapabilityDenied
++                }
++                crate::step::RuntimeHostCallErrorKind::Rejected
++                | crate::step::RuntimeHostCallErrorKind::Failed => AwbcTrapCode::HostAbiMismatch,
++            };
++            self.stage_trap(code, message.clone());
++        }
+         self.staged_host_call = Some(stage);
+         Ok(())
+     }
+@@ -1330,22 +1360,11 @@ impl DeferredChildResumeJournal {
+                 }
+                 child.fiber.resume_at_prepared(resume);
+             }
+-            PreparedHostResultOutcome::Failed { kind, message } => {
+-                let code = match kind {
+-                    crate::step::RuntimeHostCallErrorKind::UnsupportedCapability => {
+-                        AwbcTrapCode::CapabilityDenied
+-                    }
+-                    crate::step::RuntimeHostCallErrorKind::Rejected
+-                    | crate::step::RuntimeHostCallErrorKind::Failed => {
+-                        AwbcTrapCode::HostAbiMismatch
+-                    }
+-                };
+-                child.pending_host_call = None;
+-                child.fiber.mark_trapped(FiberTrap {
+-                    code,
+-                    message: Some(message),
+-                    source_map: None,
+-                });
++            PreparedHostResultOutcome::Failed { .. } => {
++                assert!(
++                    matches!(child.fiber.terminal, Some(FiberTerminalValue::Trapped(_))),
++                    "the real child owner admitted Host failure custody before consuming its result"
++                );
+             }
+         }
+         child.pending_host_call = None;
+@@ -2799,6 +2818,9 @@ impl AwbcProductStepExecutor {
+             &mut host,
+         ) {
+             Ok(mut vm_output) => {
++                if let Err(error) = self.preflight_control_traps(&vm_output.observations) {
++                    return self.fail_main_vm_step(checkpoint, error, output, vm_output.executed);
++                }
+                 if matches!(
+                     self.fiber.root,
+                     crate::awbc::fiber::AwbcFiberRoot::Program(_)
+@@ -3043,6 +3065,28 @@ impl AwbcProductStepExecutor {
+         }
+     }
+ 
++    fn commit_deferred_trap(
++        &mut self,
++        child: &mut ProductChildFiber,
++        journal: &mut DeferredChildResumeJournal,
++    ) -> Result<Option<VmExit>, crate::awbc::vm::VmError> {
++        let Some(trap) = journal.staged_trap.take() else {
++            return Ok(None);
++        };
++        let step = self
++            .program
++            .trap_fiber(&mut child.fiber, &mut self.presentation, trap)?;
++        journal.record_default_drop_policy();
++        // The completion owner reports the terminal metadata. The journal
++        // retains only its cleanup work, as for the original non-VM failures.
++        journal.record_deferred_observations(
++            step.observations
++                .into_iter()
++                .filter(|observation| !matches!(observation, VmObservation::Trap(_))),
++        );
++        Ok(Some(step.exit))
++    }
++
+     fn rollback_selected_child_step(
+         &mut self,
+         mut child: ProductChildFiber,
+@@ -3088,11 +3132,14 @@ impl AwbcProductStepExecutor {
+         // by a progressing step are scheduled by the next caller-owned turn.
+         let candidates = self.child_fibers.len();
+         let already_trapped = self.fiber.status == FiberStatus::Trapped;
++        let diagnostics_before = output.diagnostics.len();
+         for _ in 0..candidates {
+             if self.step_front_child(output, pure_backend, input, need_states) {
+                 return true;
+             }
+-            if !already_trapped && self.fiber.status == FiberStatus::Trapped {
++            if output.diagnostics.len() > diagnostics_before
++                || (!already_trapped && self.fiber.status == FiberStatus::Trapped)
++            {
+                 return false;
+             }
+         }
+@@ -3238,14 +3285,19 @@ impl AwbcProductStepExecutor {
+             let request_count = output.requests.host_calls.len()
+                 + output.requests.tasks.len()
+                 + output.requests.ensure_content.len();
+-            match self.resume_deferred_child_suspension(
++            let resumed = self.resume_deferred_child_suspension(
+                 &mut child,
+                 need_states,
+                 &mut input.host_call_results,
+                 &mut staged_resume_output,
+                 &mut resume_journal,
+                 pure_backend,
+-            ) {
++            );
++            if let Err(error) = &resumed {
++                resume_journal.stage_trap(error.trap_code(), error.to_string());
++            }
++            match resumed {
++                _ if resume_journal.has_staged_trap() => {}
+                 Ok(true)
+                     if matches!(
+                         child.fiber.status,
+@@ -3272,15 +3324,22 @@ impl AwbcProductStepExecutor {
+                         + output.requests.ensure_content.len()
+                         > request_count;
+                 }
+-                Err(error) => {
+-                    child.fiber.mark_trapped(FiberTrap {
+-                        code: error.trap_code(),
+-                        message: Some(error.to_string()),
+-                        source_map: None,
+-                    });
+-                }
++                Err(_) => unreachable!("deferred resume errors stage a terminal request"),
+             }
+         }
++        if let Err(error) = self.commit_deferred_trap(&mut child, &mut resume_journal) {
++            if self.rollback_selected_child_step(
++                child,
++                checkpoint,
++                pending_host_call_before,
++                resume_journal,
++                need_states,
++                output,
++            ) {
++                self.record_error(ProductStepError::Vm(error), output);
++            }
++            return false;
++        }
+         child.fiber.replenish_budget();
+         let mut candidate_stats = self.compact_pure_stats;
+         let context = self.vm_execution_context();
+@@ -3414,6 +3473,33 @@ impl AwbcProductStepExecutor {
+                 }
+             }
+         };
++        if !skip_vm_instruction && deferred_owner && child.fiber.status == FiberStatus::Suspended {
++            if let Err(error) = self.initialize_deferred_child_suspension(
++                &mut child,
++                &mut staged_resume_output,
++                pure_backend,
++                &mut resume_journal,
++            ) {
++                resume_journal.stage_trap(error.trap_code(), error.to_string());
++            }
++            match self.commit_deferred_trap(&mut child, &mut resume_journal) {
++                Ok(Some(exit)) => vm_output.exit = exit,
++                Ok(None) => {}
++                Err(error) => {
++                    if self.rollback_selected_child_step(
++                        child,
++                        checkpoint,
++                        pending_host_call_before,
++                        resume_journal,
++                        need_states,
++                        output,
++                    ) {
++                        self.record_error(ProductStepError::Vm(error), output);
++                    }
++                    return false;
++                }
++            }
++        }
+         if let crate::awbc::fiber::AwbcFiberRoot::RootReducer(entry) = child.fiber.root {
+             let returned = match &mut vm_output.exit {
+                 VmExit::Returned(value) => Some(value.take().ok_or_else(|| {
+@@ -3517,17 +3603,6 @@ impl AwbcProductStepExecutor {
+             }
+         };
+         if matches!(&owner, ProductChildFiberOwner::Program { .. }) {
+-            if !skip_vm_instruction
+-                && child.fiber.status == FiberStatus::Suspended
+-                && let Err(error) =
+-                    self.initialize_deferred_child_suspension(&mut child, output, pure_backend)
+-            {
+-                child.fiber.mark_trapped(FiberTrap {
+-                    code: error.trap_code(),
+-                    message: Some(error.to_string()),
+-                    source_map: None,
+-                });
+-            }
+             // Program children use the prepared Ready/Host-result transfer
+             // without a dialogue transaction. Commit the payload and resume
+             // before retaining the fiber; a cursor alone leaves Await stale.
+@@ -3713,18 +3788,7 @@ impl AwbcProductStepExecutor {
+             }
+             return self.begin_product_dialogue_failure(transaction, error.into(), output);
+         }
+-        if !skip_vm_instruction
+-            && child.fiber.status == FiberStatus::Suspended
+-            && deferred.is_some()
+-            && let Err(error) =
+-                self.initialize_deferred_child_suspension(&mut child, output, pure_backend)
+-        {
+-            child.fiber.mark_trapped(FiberTrap {
+-                code: error.trap_code(),
+-                message: Some(error.to_string()),
+-                source_map: None,
+-            });
+-        }
++
+         if child.fiber.status == FiberStatus::Running
+             || (child.fiber.status == FiberStatus::Suspended && deferred.is_some())
+         {
+@@ -3834,8 +3898,7 @@ impl AwbcProductStepExecutor {
+                         );
+                     }
+                     if let Some(trap) = failure {
+-                        resume_journal.commit(self, staged_resume_output, output);
+-                        self.record_trap(&trap, output);
++                        let reported = trap.clone();
+                         let (transaction, batch) =
+                             match self.prepare_product_dialogue_failure(transaction, trap, batch) {
+                                 Ok(prepared) => prepared,
+@@ -3850,6 +3913,10 @@ impl AwbcProductStepExecutor {
+                                     return true;
+                                 }
+                             };
++                        resume_journal
++                            .commit_staged_host_call(&mut input.host_call_results, &mut child);
++                        resume_journal.commit(self, staged_resume_output, output);
++                        self.record_trap(&reported, output);
+                         return self.commit_product_dialogue_failure_close(
+                             transaction,
+                             batch,
+@@ -4035,6 +4102,7 @@ impl AwbcProductStepExecutor {
+                     return true;
+                 }
+             };
++            resume_journal.commit_staged_host_call(&mut input.host_call_results, &mut child);
+             self.realize_line_task_commands(&mut transaction, &mut batch, prepared);
+             let receipt = self.dialogues.commit_prepared(transaction, proof);
+             resume_journal.commit(self, staged_resume_output, output);
+diff --git a/crates/arcweft-core/src/awbc/product_step/control.rs b/crates/arcweft-core/src/awbc/product_step/control.rs
+index 6ba6fa733bc9321d0f33156eb6dc963dbca58028..30fbcdd8d3e577516bd92727261410d03eceb901 100644
+--- a/crates/arcweft-core/src/awbc/product_step/control.rs
++++ b/crates/arcweft-core/src/awbc/product_step/control.rs
+@@ -1,6 +1,6 @@
+ use super::{AwbcProductStepExecutor, ProductStepError};
+-use crate::awbc::fiber::FiberTrap;
+ use crate::awbc::schema::AwbcTrapCode;
++use crate::awbc::vm::VmObservation;
+ use crate::effect::LineEffectRequest;
+ use crate::plan::FlowEvent;
+ use crate::step::RuntimeStepOutput;
+@@ -13,6 +13,37 @@ enum ProductControlEffect {
+ }
+ 
+ impl AwbcProductStepExecutor {
++    /// Admit a terminating control failure while its producing instruction's
++    /// original checkpoint still owns the bank, cursor, budget and arguments.
++    pub(super) fn preflight_control_traps(
++        &self,
++        observations: &[VmObservation],
++    ) -> Result<(), ProductStepError> {
++        let trap = observations.iter().any(|observation| {
++            let VmObservation::Effect { effect, args } = observation else {
++                return false;
++            };
++            let super::MappedEffect::Line(effect) = self.program.map_product_effect(*effect, args)
++            else {
++                return false;
++            };
++            match control_effect(&effect) {
++                Some(ProductControlEffect::Failed(_)) => true,
++                Some(ProductControlEffect::Goto(target)) => {
++                    self.program.resolve_flow_target_value(&target).is_err()
++                }
++                Some(ProductControlEffect::Return(_)) | None => false,
++            }
++        });
++        if trap {
++            self.program.preflight_fiber_unwinds(
++                self.presentation.as_ref(),
++                std::iter::once(&self.fiber),
++            )?;
++        }
++        Ok(())
++    }
++
+     pub(super) fn apply_control_effects(
+         &mut self,
+         output: &mut RuntimeStepOutput,
+@@ -39,11 +70,7 @@ impl AwbcProductStepExecutor {
+             }
+             ProductControlEffect::Goto(target) => self.goto_effect_target(&target, output),
+             ProductControlEffect::Failed(message) => {
+-                self.fiber.mark_trapped(FiberTrap {
+-                    code: AwbcTrapCode::ExplicitPanic,
+-                    message: Some(message),
+-                    source_map: None,
+-                });
++                self.fail_with_trap(AwbcTrapCode::ExplicitPanic, message, None, output);
+             }
+         }
+         true
+@@ -53,11 +80,12 @@ impl AwbcProductStepExecutor {
+         let (target_id, function) = match self.program.resolve_flow_target_value(target) {
+             Ok(target) => target,
+             Err(error) => {
+-                self.fiber.mark_trapped(FiberTrap {
+-                    code: AwbcTrapCode::MissingDynamicTarget,
+-                    message: Some(error.to_string()),
+-                    source_map: None,
+-                });
++                self.fail_with_trap(
++                    AwbcTrapCode::MissingDynamicTarget,
++                    error.to_string(),
++                    None,
++                    output,
++                );
+                 return;
+             }
+         };
+diff --git a/crates/arcweft-core/src/awbc/product_step/presentation.rs b/crates/arcweft-core/src/awbc/product_step/presentation.rs
+index 9badb2c29ac75b525c8be59f9e8ad86cb220f6af..ff0708a9b0802edd3695870cf8108e20d2d9919a 100644
+--- a/crates/arcweft-core/src/awbc/product_step/presentation.rs
++++ b/crates/arcweft-core/src/awbc/product_step/presentation.rs
+@@ -83,6 +83,18 @@ impl AwbcProductProgram {
+     }
+ }
+ 
++impl AwbcProductProgram {
++    pub(super) fn trap_fiber(
++        &self,
++        fiber: &mut FiberState,
++        presentation: &mut Option<PresentationBanks<PresentationBody<RuntimePayload>>>,
++        trap: crate::awbc::fiber::FiberTrap,
++    ) -> Result<crate::awbc::vm::VmStepOutput, crate::awbc::vm::VmError> {
++        self.retire_fiber_scopes(presentation, std::iter::once(&mut *fiber))?;
++        crate::awbc::vm::trap_fiber(self, fiber, trap)
++    }
++}
++
+ impl ProductChildFiberOwner {
+     fn presentation_role(&self) -> PresentationExecutionRole {
+         match self {
+diff --git a/crates/arcweft-core/src/awbc/product_step/suspension.rs b/crates/arcweft-core/src/awbc/product_step/suspension.rs
+index 7cd65b21447f67f110b126150897590c9e09030c..a379a04278a26a7bf2f0c4f22801730e9e145b8c 100644
+--- a/crates/arcweft-core/src/awbc/product_step/suspension.rs
++++ b/crates/arcweft-core/src/awbc/product_step/suspension.rs
+@@ -1582,6 +1582,7 @@ impl AwbcProductStepExecutor {
+         child: &mut super::ProductChildFiber,
+         output: &mut RuntimeStepOutput,
+         pure_backend: &mut impl crate::pure::RuntimeCallBackend,
++        journal: &mut super::DeferredChildResumeJournal,
+     ) -> Result<(), ProductStepError> {
+         let Some(suspension) = child.fiber.suspension.as_ref() else {
+             return Ok(());
+@@ -1606,7 +1607,7 @@ impl AwbcProductStepExecutor {
+             | DeferredSuspensionDispatch::BudgetYield => {}
+             DeferredSuspensionDispatch::AwaitMany => {
+                 let diagnostics = output.diagnostics.len();
+-                self.fill_await_many_for_child(child, output, pure_backend);
++                self.fill_await_many_for_child(child, output, pure_backend, journal);
+                 if output.diagnostics.len() > diagnostics {
+                     return Err(ProductStepError::Internal(
+                         output.diagnostics.last().map_or_else(
+@@ -1766,16 +1767,14 @@ impl AwbcProductStepExecutor {
+         let local_launch = self.need_producers.launch_for_correlation(correlation);
+         let (cursor, state) = if let Some(launch) = local_launch {
+             if states.iter().any(|state| &state.correlation == correlation) {
+-                mark_child_trapped(
+-                    fiber,
++                journal.stage_trap(
+                     AwbcTrapCode::InternalInvariant,
+                     "external Need state attempts to publish a Product-owned Need".to_owned(),
+                 );
+                 return true;
+             }
+             if let Some(fault) = launch.task_fault() {
+-                mark_child_trapped(
+-                    fiber,
++                journal.stage_trap(
+                     AwbcTrapCode::HostAbiMismatch,
+                     format!("Need producer task failed: {fault}"),
+                 );
+@@ -1836,8 +1835,7 @@ impl AwbcProductStepExecutor {
+                 Some(Ordering::Greater) => {}
+                 Some(Ordering::Equal | Ordering::Less) => return false,
+                 None => {
+-                    mark_child_trapped(
+-                        fiber,
++                    journal.stage_trap(
+                         AwbcTrapCode::InternalInvariant,
+                         "Need publication cursor changed source for one Await".to_owned(),
+                     );
+@@ -1857,7 +1855,7 @@ impl AwbcProductStepExecutor {
+         match state {
+             AwaitNeedPublicationKind::InfrastructureFailure(failure) => {
+                 journal.record_default_drop_policy();
+-                mark_child_trapped(fiber, AwbcTrapCode::HostAbiMismatch, failure.to_string());
++                journal.stage_trap(AwbcTrapCode::HostAbiMismatch, failure.to_string());
+                 true
+             }
+             AwaitNeedPublicationKind::NotStarted => false,
+@@ -1873,6 +1871,7 @@ impl AwbcProductStepExecutor {
+                         observer,
+                         progress.clone(),
+                         output,
++                        journal,
+                     )
+                 })
+             }
+@@ -1897,8 +1896,7 @@ impl AwbcProductStepExecutor {
+                     })
+                 };
+                 let Some((value, external)) = selected else {
+-                    mark_child_trapped(
+-                        fiber,
++                    journal.stage_trap(
+                         AwbcTrapCode::InternalInvariant,
+                         "selected deferred Need Ready payload is unavailable".to_owned(),
+                     );
+@@ -1910,8 +1908,7 @@ impl AwbcProductStepExecutor {
+                     item_type,
+                     0,
+                 ) {
+-                    mark_child_trapped(
+-                        fiber,
++                    journal.stage_trap(
+                         AwbcTrapCode::HostAbiMismatch,
+                         format!(
+                             "Need {} published a Ready payload outside its checked item type",
+@@ -1923,11 +1920,7 @@ impl AwbcProductStepExecutor {
+                 let resume_proof = match fiber.validate_resume_at(&self.program, resume) {
+                     Ok(proof) => proof,
+                     Err(error) => {
+-                        mark_child_trapped(
+-                            fiber,
+-                            AwbcTrapCode::InternalInvariant,
+-                            error.to_string(),
+-                        );
++                        journal.stage_trap(AwbcTrapCode::InternalInvariant, error.to_string());
+                         return true;
+                     }
+                 };
+@@ -1940,11 +1933,7 @@ impl AwbcProductStepExecutor {
+                     ) {
+                         Ok(proof) => proof,
+                         Err(error) => {
+-                            mark_child_trapped(
+-                                fiber,
+-                                AwbcTrapCode::PatternMismatch,
+-                                error.to_string(),
+-                            );
++                            journal.stage_trap(AwbcTrapCode::PatternMismatch, error.to_string());
+                             return true;
+                         }
+                     };
+@@ -1957,8 +1946,7 @@ impl AwbcProductStepExecutor {
+                         })
+                     });
+                     if !vacant {
+-                        mark_child_trapped(
+-                            fiber,
++                        journal.stage_trap(
+                             AwbcTrapCode::TypeMismatch,
+                             "deferred Need Ready binding destination is occupied".to_owned(),
+                         );
+@@ -1978,11 +1966,7 @@ impl AwbcProductStepExecutor {
+                     {
+                         Ok(proof) => proof,
+                         Err(error) => {
+-                            mark_child_trapped(
+-                                fiber,
+-                                AwbcTrapCode::InternalInvariant,
+-                                error.to_string(),
+-                            );
++                            journal.stage_trap(AwbcTrapCode::InternalInvariant, error.to_string());
+                             return true;
+                         }
+                     };
+@@ -1994,7 +1978,7 @@ impl AwbcProductStepExecutor {
+                     resume: resume_proof,
+                     binding: binding_proof,
+                 }) {
+-                    mark_child_trapped(fiber, AwbcTrapCode::InternalInvariant, error.to_string());
++                    journal.stage_trap(AwbcTrapCode::InternalInvariant, error.to_string());
+                     return true;
+                 }
+                 output.flow_events.push(FlowEvent::AwaitReady {
+@@ -2004,8 +1988,7 @@ impl AwbcProductStepExecutor {
+                 true
+             }
+             AwaitNeedPublicationKind::ReadyTransferred => {
+-                mark_child_trapped(
+-                    fiber,
++                journal.stage_trap(
+                     AwbcTrapCode::HostAbiMismatch,
+                     "Need Ready payload has already transferred to its unique waiter".to_owned(),
+                 );
+@@ -2017,11 +2000,9 @@ impl AwbcProductStepExecutor {
+                         journal.record_drop_policy(crate::effect::RuntimeDropPolicy::Cancel);
+                         journal.record_deferred_observations(cancellation.observations);
+                     }
+-                    Err(error) => mark_child_trapped(
+-                        fiber,
+-                        AwbcTrapCode::InternalInvariant,
+-                        error.to_string(),
+-                    ),
++                    Err(error) => {
++                        journal.stage_trap(AwbcTrapCode::InternalInvariant, error.to_string())
++                    }
+                 }
+                 true
+             }
+@@ -2049,16 +2030,14 @@ impl AwbcProductStepExecutor {
+                         _ => None,
+                     })
+             else {
+-                mark_child_trapped(
+-                    &mut child.fiber,
++                journal.stage_trap(
+                     AwbcTrapCode::InternalInvariant,
+                     "deferred child host-call suspension lost its argument owner".to_owned(),
+                 );
+                 return true;
+             };
+             if args.iter().any(|value| !value.ownership().permits_copy()) {
+-                mark_child_trapped(
+-                    &mut child.fiber,
++                journal.stage_trap(
+                     AwbcTrapCode::HostAbiMismatch,
+                     "external host-call arguments require deep Copy carriers".to_owned(),
+                 );
+@@ -2077,8 +2056,7 @@ impl AwbcProductStepExecutor {
+         };
+         if pending.call != call {
+             child.pending_host_call = None;
+-            mark_child_trapped(
+-                &mut child.fiber,
++            journal.stage_trap(
+                 AwbcTrapCode::HostAbiMismatch,
+                 "pending deferred child host call does not match its continuation".to_owned(),
+             );
+@@ -2104,8 +2082,7 @@ impl AwbcProductStepExecutor {
+                     });
+                 if !checked {
+                     child.pending_host_call = None;
+-                    mark_child_trapped(
+-                        &mut child.fiber,
++                    journal.stage_trap(
+                         AwbcTrapCode::HostAbiMismatch,
+                         "deferred child host-call result violates its checked type".to_owned(),
+                     );
+@@ -2114,11 +2091,7 @@ impl AwbcProductStepExecutor {
+                 let prepared_resume = match child.fiber.validate_resume_at(&self.program, resume) {
+                     Ok(prepared) => prepared,
+                     Err(error) => {
+-                        mark_child_trapped(
+-                            &mut child.fiber,
+-                            AwbcTrapCode::InternalInvariant,
+-                            error.to_string(),
+-                        );
++                        journal.stage_trap(AwbcTrapCode::InternalInvariant, error.to_string());
+                         return true;
+                     }
+                 };
+@@ -2130,8 +2103,7 @@ impl AwbcProductStepExecutor {
+                             .is_some_and(crate::value::RuntimePlaceStorage::is_vacant)
+                     });
+                     if !vacant {
+-                        mark_child_trapped(
+-                            &mut child.fiber,
++                        journal.stage_trap(
+                             AwbcTrapCode::TypeMismatch,
+                             "deferred host-call destination register is unavailable".to_owned(),
+                         );
+@@ -2151,11 +2123,7 @@ impl AwbcProductStepExecutor {
+                     },
+                 };
+                 if let Err(error) = journal.stage_host_call(stage) {
+-                    mark_child_trapped(
+-                        &mut child.fiber,
+-                        AwbcTrapCode::InternalInvariant,
+-                        error.to_string(),
+-                    );
++                    journal.stage_trap(AwbcTrapCode::InternalInvariant, error.to_string());
+                 }
+                 true
+             }
+@@ -2173,11 +2141,7 @@ impl AwbcProductStepExecutor {
+                     },
+                 };
+                 if let Err(error) = journal.stage_host_call(stage) {
+-                    mark_child_trapped(
+-                        &mut child.fiber,
+-                        AwbcTrapCode::InternalInvariant,
+-                        error.to_string(),
+-                    );
++                    journal.stage_trap(AwbcTrapCode::InternalInvariant, error.to_string());
+                 }
+                 true
+             }
+@@ -2189,6 +2153,7 @@ impl AwbcProductStepExecutor {
+         child: &mut super::ProductChildFiber,
+         output: &mut RuntimeStepOutput,
+         backend: &mut impl crate::pure::RuntimeCallBackend,
++        journal: &mut super::DeferredChildResumeJournal,
+     ) {
+         let fiber = &mut child.fiber;
+         let Some(suspension) = fiber.suspension.as_mut() else {
+@@ -2216,7 +2181,7 @@ impl AwbcProductStepExecutor {
+             suspension.reason = FiberSuspensionReason::AwaitMany(state);
+         }
+         if let Err(error) = result {
+-            mark_child_trapped(fiber, error.trap_code(), error.to_string());
++            journal.stage_trap(error.trap_code(), error.to_string());
+         }
+     }
+     fn resume_deferred_await_many(
+@@ -2231,8 +2196,7 @@ impl AwbcProductStepExecutor {
+         let fiber = &mut child.fiber;
+         if state.results.len() != state.items.len() {
+             journal.record_default_drop_policy();
+-            mark_child_trapped(
+-                fiber,
++            journal.stage_trap(
+                 AwbcTrapCode::InternalInvariant,
+                 "deferred AwaitMany result slots disagree with the admitted item count".to_owned(),
+             );
+@@ -2270,8 +2234,7 @@ impl AwbcProductStepExecutor {
+             match &event.kind {
+                 TaskEventKind::ProgramTerminal(_) => {
+                     journal.record_default_drop_policy();
+-                    mark_child_trapped(
+-                        fiber,
++                    journal.stage_trap(
+                         AwbcTrapCode::HostAbiMismatch,
+                         "a Host AwaitMany child cannot accept a Program retirement acknowledgement"
+                             .into(),
+@@ -2284,9 +2247,7 @@ impl AwbcProductStepExecutor {
+                     {
+                         let task_id = event.correlation.task_id;
+                         journal.record_default_drop_policy();
+-                        mark_child_trapped(
+-                            fiber,
+-                            AwbcTrapCode::HostAbiMismatch,
++                        journal.stage_trap(AwbcTrapCode::HostAbiMismatch,
+                             format!(
+                                 "await task {} published a payload outside its checked outcome contract",
+                                 task_id
+@@ -2304,11 +2265,7 @@ impl AwbcProductStepExecutor {
+                         Ok(value) => value,
+                         Err(error) => {
+                             journal.record_default_drop_policy();
+-                            mark_child_trapped(
+-                                fiber,
+-                                AwbcTrapCode::InternalInvariant,
+-                                error.to_string(),
+-                            );
++                            journal.stage_trap(AwbcTrapCode::InternalInvariant, error.to_string());
+                             return true;
+                         }
+                     };
+@@ -2335,7 +2292,7 @@ impl AwbcProductStepExecutor {
+                         event.correlation.task_id, state.in_flight[position].index, error
+                     );
+                     journal.record_default_drop_policy();
+-                    mark_child_trapped(fiber, AwbcTrapCode::HostAbiMismatch, message);
++                    journal.stage_trap(AwbcTrapCode::HostAbiMismatch, message);
+                     return true;
+                 }
+                 TaskEventKind::Cancelled => {
+@@ -2344,11 +2301,9 @@ impl AwbcProductStepExecutor {
+                             journal.record_drop_policy(crate::effect::RuntimeDropPolicy::Cancel);
+                             journal.record_deferred_observations(cancellation.observations);
+                         }
+-                        Err(error) => mark_child_trapped(
+-                            fiber,
+-                            AwbcTrapCode::InternalInvariant,
+-                            error.to_string(),
+-                        ),
++                        Err(error) => {
++                            journal.stage_trap(AwbcTrapCode::InternalInvariant, error.to_string())
++                        }
+                     }
+                     return true;
+                 }
+@@ -2360,8 +2315,7 @@ impl AwbcProductStepExecutor {
+         {
+             let Some(base) = &state.base else {
+                 journal.record_default_drop_policy();
+-                mark_child_trapped(
+-                    fiber,
++                journal.stage_trap(
+                     AwbcTrapCode::InternalInvariant,
+                     "AwaitMany has no accepted base".into(),
+                 );
+@@ -2372,7 +2326,7 @@ impl AwbcProductStepExecutor {
+                 Ok(prepared) => prepared,
+                 Err(error) => {
+                     journal.record_default_drop_policy();
+-                    mark_child_trapped(fiber, AwbcTrapCode::InternalInvariant, error.to_string());
++                    journal.stage_trap(AwbcTrapCode::InternalInvariant, error.to_string());
+                     return true;
+                 }
+             };
+@@ -2424,7 +2378,7 @@ impl AwbcProductStepExecutor {
+                     Ok(prepared) => prepared,
+                     Err(error) => {
+                         journal.record_default_drop_policy();
+-                        mark_child_trapped(fiber, AwbcTrapCode::PatternMismatch, error.to_string());
++                        journal.stage_trap(AwbcTrapCode::PatternMismatch, error.to_string());
+                         return true;
+                     }
+                 };
+@@ -2438,8 +2392,7 @@ impl AwbcProductStepExecutor {
+                 });
+                 if !vacant {
+                     journal.record_default_drop_policy();
+-                    mark_child_trapped(
+-                        fiber,
++                    journal.stage_trap(
+                         AwbcTrapCode::TypeMismatch,
+                         "deferred AwaitMany binding destination is occupied".to_owned(),
+                     );
+@@ -2470,14 +2423,13 @@ impl AwbcProductStepExecutor {
+         }
+         let request_count = output.requests.tasks.len();
+         let diagnostic_count = output.diagnostics.len();
+-        self.fill_await_many_for_child(child, output, pure_backend);
+-        if child.fiber.status == crate::awbc::fiber::FiberStatus::Trapped {
++        self.fill_await_many_for_child(child, output, pure_backend, journal);
++        if journal.has_staged_trap() {
+             journal.record_default_drop_policy();
+         }
+         if output.diagnostics.len() > diagnostic_count {
+             journal.record_default_drop_policy();
+-            mark_child_trapped(
+-                &mut child.fiber,
++            journal.stage_trap(
+                 AwbcTrapCode::InternalInvariant,
+                 output.diagnostics.last().map_or_else(
+                     || "deferred await-many request failed".to_owned(),
+@@ -2935,36 +2887,29 @@ impl AwbcProductStepExecutor {
+     }
+ }
+ 
+-fn mark_child_trapped(fiber: &mut FiberState, code: AwbcTrapCode, message: String) {
+-    fiber.mark_trapped(crate::awbc::fiber::FiberTrap {
+-        code,
+-        message: Some(message),
+-        source_map: None,
+-    });
+-}
+-
+ fn resume_deferred_await_progress(
+     program: &AwbcProgram,
+     fiber: &mut FiberState,
+     observer: AwbcAwaitObserverResume,
+     progress: arcweft_need::Progress,
+     _output: &mut RuntimeStepOutput,
++    journal: &mut super::DeferredChildResumeJournal,
+ ) -> bool {
+     let value = RuntimeValue::Progress(progress);
+     match fiber.active_frame_mut() {
+         Ok(frame) => {
+             if let Err(error) = frame.set_register(observer.destination, value) {
+-                mark_child_trapped(fiber, AwbcTrapCode::TypeMismatch, error.to_string());
++                journal.stage_trap(AwbcTrapCode::TypeMismatch, error.to_string());
+                 return true;
+             }
+         }
+         Err(error) => {
+-            mark_child_trapped(fiber, AwbcTrapCode::InternalInvariant, error.to_string());
++            journal.stage_trap(AwbcTrapCode::InternalInvariant, error.to_string());
+             return true;
+         }
+     }
+     if let Err(error) = fiber.resume_await_observer_at(program, observer.resume) {
+-        mark_child_trapped(fiber, AwbcTrapCode::InternalInvariant, error.to_string());
++        journal.stage_trap(AwbcTrapCode::InternalInvariant, error.to_string());
+     }
+     true
+ }
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs b/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
+index 29fc1c731af2bdb684365f740a0d3344a1807350..88414c088cd373dc2d1b5e0e8652eb78b94c8be3 100644
+--- a/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
++++ b/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
+@@ -6,6 +6,7 @@ use crate::runtime_id::{RuntimePresentationBankId, RuntimePresentationHandleToke
+ use arcweft_interaction_model::presentation::PresentationResourceKind;
+ 
+ mod cancellation_resume;
++mod terminal_requests;
+ mod trap_lifecycle;
+ mod traps;
+ 
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs b/crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs
+index e967e454fea85dca78dd78f14ee3adf310a5e69f..6f969940084f76ede0bb38479c7acaee08aaa165 100644
+--- a/crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs
++++ b/crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs
+@@ -8,7 +8,7 @@ use crate::runtime_id::RuntimePresentationHandleToken;
+ use crate::step::RuntimeStepOutput;
+ use arcweft_interaction_model::presentation::PresentationResourceKind;
+ 
+-fn install_resource(
++pub(super) fn install_resource(
+     executor: &mut AwbcProductStepExecutor,
+     child: Option<usize>,
+     blocked: bool,
+@@ -184,7 +184,7 @@ fn need_cancellation_capacity_refusal_preserves_the_publication_and_complete_sna
+     executor.snapshot().unwrap();
+ }
+ 
+-fn awaiting_many(threaded: bool) -> AwbcProductStepExecutor {
++pub(super) fn awaiting_many(threaded: bool) -> AwbcProductStepExecutor {
+     let program = await_many_product_program_with_thread(
+         if threaded {
+             AwaitManyFixtureOutput::Result
+@@ -375,7 +375,7 @@ fn genuine_program_child_await_many_cancellation_preserves_event_journal_and_ban
+     }
+ }
+ 
+-fn fanout_fixture(
++pub(super) fn fanout_fixture(
+     nested: bool,
+ ) -> (
+     AwbcProductStepExecutor,
+@@ -425,7 +425,7 @@ fn fanout_fixture(
+     panic!("genuine decoded Source did not start both Fanout workers");
+ }
+ 
+-fn worker_index(
++pub(super) fn worker_index(
+     executor: &AwbcProductStepExecutor,
+     correlation: crate::task::TaskCorrelation,
+ ) -> usize {
+@@ -433,7 +433,7 @@ fn worker_index(
+         ProductChildFiberOwner::Program { launch, .. } if launch.handle().correlation == correlation)).unwrap()
+ }
+ 
+-fn step_child_at(executor: &mut AwbcProductStepExecutor, index: usize) {
++pub(super) fn step_child_at(executor: &mut AwbcProductStepExecutor, index: usize) {
+     let child = executor.child_fibers.remove(index).unwrap();
+     executor.child_fibers.push_front(child);
+     let mut output = RuntimeStepOutput::default();
+@@ -470,7 +470,7 @@ fn cancel_worker(
+     ));
+ }
+ 
+-fn install_bool_resource(
++pub(super) fn install_bool_resource(
+     executor: &mut AwbcProductStepExecutor,
+     index: usize,
+     blocked: bool,
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs b/crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..4b51826f8304ee0ff75d25d1a67428e21e1208df
+--- /dev/null
++++ b/crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs
+@@ -0,0 +1,393 @@
++use super::cancellation_resume::{
++    awaiting_many, fanout_fixture, install_bool_resource, install_resource, step_child_at,
++    worker_index,
++};
++use super::trap_lifecycle::roundtrip;
++use super::*;
++use crate::awbc::fiber::{FiberAwaitTarget, FiberSuspensionReason, FiberTerminalValue};
++use crate::awbc::schema::*;
++use crate::presentation::RuntimePresentationError;
++use crate::step::{
++    RuntimeHostCallError, RuntimeHostCallErrorKind, RuntimeHostCallResult, RuntimeStepOutput,
++};
++
++fn one_op() -> RuntimeStepOptions {
++    RuntimeStepOptions {
++        budget: crate::step::RuntimeStepBudget { max_ops: 1 },
++        ..Default::default()
++    }
++}
++
++fn control_fixture(
++    kind: AwbcEffectKind,
++    blocked: bool,
++) -> (AwbcProductStepExecutor, Vec<RuntimePresentationHandleToken>) {
++    let mut program = super::traps::nested_program();
++    let effect = push_effect_plan(&mut program, kind);
++    program.instructions.push(AwbcInstruction::EmitEffect {
++        effect,
++        args: vec![],
++    });
++    program.blocks[2].instructions = AwbcTableRange::new(0, 2);
++    program.canonicalize_string_table();
++    super::traps::nested_fixture_with_program(program, blocked)
++}
++
++#[test]
++fn control_failures_retire_actual_nested_scopes_and_roundtrip_the_public_owner() {
++    for kind in [
++        AwbcEffectKind::Panic,
++        AwbcEffectKind::Fail,
++        AwbcEffectKind::Bail,
++        AwbcEffectKind::Goto,
++    ] {
++        let (mut executor, tokens) = control_fixture(kind, false);
++        let output = executor.step(Default::default(), one_op());
++        assert_eq!(
++            executor.fiber.status,
++            FiberStatus::Trapped,
++            "{kind:?}: {:?}",
++            output.output.diagnostics
++        );
++        let Some(FiberTerminalValue::Trapped(trap)) = &executor.fiber.terminal else {
++            unreachable!()
++        };
++        assert_eq!(
++            trap.code,
++            if kind == AwbcEffectKind::Goto {
++                AwbcTrapCode::MissingDynamicTarget
++            } else {
++                AwbcTrapCode::ExplicitPanic
++            }
++        );
++        assert_eq!(
++            executor
++                .presentation
++                .as_ref()
++                .unwrap()
++                .retirements()
++                .iter()
++                .map(|item| item.token.clone())
++                .collect::<Vec<_>>(),
++            tokens
++        );
++        roundtrip(executor);
++    }
++}
++
++#[test]
++fn control_failure_capacity_refusal_restores_the_producing_instruction_before_effect_publication() {
++    for kind in [
++        AwbcEffectKind::Panic,
++        AwbcEffectKind::Fail,
++        AwbcEffectKind::Bail,
++        AwbcEffectKind::Goto,
++    ] {
++        let (mut executor, tokens) = control_fixture(kind, true);
++        let before = executor.snapshot().unwrap();
++        for _ in 0..2 {
++            let output = executor.step(Default::default(), one_op());
++            assert_eq!(output.output.diagnostics.len(), 1, "{kind:?}");
++            assert!(
++                output.output.diagnostics[0]
++                    .message
++                    .contains(&RuntimePresentationError::RetirementCapacity.to_string())
++            );
++            assert!(output.output.effects.line.is_empty());
++            assert!(output.output.flow_events.is_empty());
++            assert!(output.output.requests.line_commands.is_empty());
++            assert_eq!(executor.snapshot().unwrap(), before, "{kind:?}");
++        }
++        executor
++            .presentation
++            .as_mut()
++            .unwrap()
++            .retirements_mut()
++            .clear();
++        executor.step(Default::default(), one_op());
++        assert_eq!(executor.fiber.status, FiberStatus::Trapped);
++        assert_eq!(
++            executor
++                .presentation
++                .as_ref()
++                .unwrap()
++                .retirements()
++                .iter()
++                .map(|item| item.token.clone())
++                .collect::<Vec<_>>(),
++            tokens
++        );
++    }
++}
++
++fn selected_step(
++    executor: &mut AwbcProductStepExecutor,
++    input: &mut RuntimeStepInput,
++    needs: &mut Vec<RuntimeNeedState>,
++) -> (bool, RuntimeStepOutput) {
++    let mut output = RuntimeStepOutput::default();
++    let progressed = executor.step_next_child(
++        &mut output,
++        &mut crate::pure::VmRuntimePureCallBackend::default(),
++        input,
++        needs,
++    );
++    (progressed, output)
++}
++
++fn assert_refused(output: &RuntimeStepOutput) {
++    assert_eq!(output.diagnostics.len(), 1, "{:?}", output.diagnostics);
++    assert!(
++        output.diagnostics[0]
++            .message
++            .contains(&RuntimePresentationError::RetirementCapacity.to_string())
++    );
++    assert!(output.flow_events.is_empty());
++    assert!(output.requests.line_commands.is_empty());
++    assert!(output.requests.host_calls.is_empty());
++    assert!(output.requests.tasks.is_empty());
++}
++
++#[test]
++fn genuine_program_await_many_fault_keeps_the_event_and_complete_checkpoint_until_unwind_is_admitted()
++ {
++    for blocked in [false, true] {
++        let mut executor = awaiting_many(true);
++        let instance = executor.child_fibers[0].fiber.instance;
++        let ProductChildFiberOwner::Program { launch, .. } = &executor.child_fibers[0].owner else {
++            unreachable!()
++        };
++        let producer = launch.handle().correlation;
++        let token = install_resource(&mut executor, Some(0), blocked);
++        let Some(FiberSuspensionReason::AwaitMany(state)) = executor.child_fibers[0]
++            .fiber
++            .suspension
++            .as_ref()
++            .map(|s| &s.reason)
++        else {
++            unreachable!()
++        };
++        let correlation = state.in_flight[0].handle.correlation();
++        let failure = crate::task::RuntimeTaskFailure::new(
++            crate::task::RuntimeTaskFailureKind::WorkerFailure,
++            "worker fault",
++        );
++        let mut output = RuntimeStepOutput::default();
++        executor.latch_task_events(
++            vec![producer_task_event(
++                correlation.generation,
++                correlation,
++                0,
++                TaskEventKind::InfrastructureFailure(failure),
++            )],
++            &mut output,
++        );
++        assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
++        let before = executor.snapshot().unwrap();
++        if blocked {
++            for _ in 0..2 {
++                let (progressed, output) = selected_step(
++                    &mut executor,
++                    &mut RuntimeStepInput::default(),
++                    &mut Vec::new(),
++                );
++                assert!(!progressed);
++                assert_refused(&output);
++                assert_eq!(executor.snapshot().unwrap(), before);
++                assert_eq!(executor.queued_task_events.len(), 1);
++            }
++            executor
++                .presentation
++                .as_mut()
++                .unwrap()
++                .retirements_mut()
++                .clear();
++        }
++        let (_, completed) = selected_step(
++            &mut executor,
++            &mut RuntimeStepInput::default(),
++            &mut Vec::new(),
++        );
++        assert!(executor.queued_task_events.is_empty());
++        assert_eq!(
++            executor.presentation.as_ref().unwrap().retirements()[0].token,
++            token
++        );
++        assert!(
++            !executor
++                .child_fibers
++                .iter()
++                .any(|child| child.fiber.instance == instance)
++        );
++        let fault = executor
++            .need_producers
++            .launch_for_correlation(&producer)
++            .unwrap()
++            .task_fault()
++            .expect("ordinary Program retirement publishes its actual failure");
++        assert_eq!(
++            fault.kind,
++            crate::task::RuntimeTaskFailureKind::WorkerFailure
++        );
++        assert!(fault.to_string().contains("worker fault"));
++        if !blocked {
++            let report = completed
++                .requests
++                .program_task_completions
++                .into_iter()
++                .find(|report| report.handle().correlation == producer)
++                .expect("actual HostMetadata retirement emitted its authenticated completion");
++            let task = executor
++                .need_producers
++                .launch_for_correlation(&producer)
++                .unwrap()
++                .task();
++            let acknowledgement = report
++                .bind_publication(
++                    task,
++                    crate::task::TaskDispatchIdentity::new(
++                        producer,
++                        LogicalEpoch(7),
++                        TaskSequence(0),
++                    ),
++                    crate::task::TaskPublicationRevision::FIRST,
++                )
++                .unwrap()
++                .into_event();
++            let mut acknowledged = RuntimeStepOutput::default();
++            executor.latch_task_events(vec![acknowledgement], &mut acknowledged);
++            assert!(
++                acknowledged.diagnostics.is_empty(),
++                "{:?}",
++                acknowledged.diagnostics
++            );
++            roundtrip(executor);
++        }
++    }
++}
++
++#[test]
++fn genuine_nested_need_rejects_a_foreign_publication_without_losing_its_resource_owner() {
++    for blocked in [false, true] {
++        let (mut executor, _, flights) = fanout_fixture(true);
++        let mut awaited = None;
++        for _ in 0..64 {
++            let index = worker_index(&executor, flights[0]);
++            if let Some(FiberSuspensionReason::Await {
++                target: FiberAwaitTarget::Need { need, .. },
++                ..
++            }) = executor.child_fibers[index]
++                .fiber
++                .suspension
++                .as_ref()
++                .map(|s| &s.reason)
++            {
++                awaited = Some(need.correlation());
++                break;
++            }
++            step_child_at(&mut executor, index);
++        }
++        let correlation = awaited.expect("real Source worker awaits its nested Program Need");
++        let index = worker_index(&executor, flights[0]);
++        let token = install_bool_resource(&mut executor, index, blocked);
++        let child = executor.child_fibers.remove(index).unwrap();
++        let instance = child.fiber.instance;
++        executor.child_fibers.push_front(child);
++        let before = executor.snapshot().unwrap();
++        let mut needs = vec![RuntimeNeedState::new(correlation, None, Need::NotStarted)];
++        if blocked {
++            for _ in 0..2 {
++                let (progressed, output) =
++                    selected_step(&mut executor, &mut RuntimeStepInput::default(), &mut needs);
++                assert!(!progressed);
++                assert_refused(&output);
++                assert_eq!(executor.snapshot().unwrap(), before);
++                assert_eq!(needs.len(), 1);
++            }
++            executor
++                .presentation
++                .as_mut()
++                .unwrap()
++                .retirements_mut()
++                .clear();
++        }
++        selected_step(&mut executor, &mut RuntimeStepInput::default(), &mut needs);
++        let child = executor
++            .child_fibers
++            .iter()
++            .find(|child| child.fiber.instance == instance)
++            .unwrap();
++        assert_eq!(child.fiber.status, FiberStatus::Trapped);
++        assert_eq!(
++            executor.presentation.as_ref().unwrap().retirements()[0].token,
++            token
++        );
++        if !blocked {
++            roundtrip(executor);
++        }
++    }
++}
++
++#[test]
++fn real_deferred_host_failure_consumes_its_receipt_only_after_resource_unwind_is_admitted() {
++    for kind in [
++        RuntimeHostCallErrorKind::UnsupportedCapability,
++        RuntimeHostCallErrorKind::Rejected,
++        RuntimeHostCallErrorKind::Failed,
++    ] {
++        for blocked in [false, true] {
++            let (mut executor, activation, _) =
++                registered_root_defer_executor(defer_host_call_program());
++            assert!(prepare_root_defer_child(&mut executor, &activation).0);
++            let (_, output) = selected_step(
++                &mut executor,
++                &mut RuntimeStepInput::default(),
++                &mut Vec::new(),
++            );
++            let [request] = output.requests.host_calls.as_slice() else {
++                panic!("real deferred child emits its Host call")
++            };
++            let mut input = RuntimeStepInput {
++                host_call_results: vec![RuntimeHostCallResult {
++                    id: request.id.clone(),
++                    outcome: Err(RuntimeHostCallError {
++                        kind,
++                        message: "host fault".into(),
++                    }),
++                }],
++                ..Default::default()
++            };
++            let token = install_resource(&mut executor, Some(0), blocked);
++            let before = executor.snapshot().unwrap();
++            if blocked {
++                for _ in 0..2 {
++                    let (progressed, output) =
++                        selected_step(&mut executor, &mut input, &mut Vec::new());
++                    assert!(!progressed);
++                    assert_refused(&output);
++                    assert_eq!(executor.snapshot().unwrap(), before);
++                    assert_eq!(input.host_call_results.len(), 1);
++                    assert!(
++                        matches!(&input.host_call_results[0].outcome, Err(error) if error.kind == kind && error.message == "host fault")
++                    );
++                }
++                executor
++                    .presentation
++                    .as_mut()
++                    .unwrap()
++                    .retirements_mut()
++                    .clear();
++            }
++            selected_step(&mut executor, &mut input, &mut Vec::new());
++            assert!(input.host_call_results.is_empty());
++            assert_eq!(
++                executor.presentation.as_ref().unwrap().retirements()[0].token,
++                token
++            );
++            executor.snapshot().unwrap();
++            if !blocked {
++                roundtrip(executor);
++            }
++        }
++    }
++}
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs b/crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs
+index 44b2da57eb2e66bdf4e6e9435dc51737046ac0cf..7722e825659b0fa28bfdec64548cd1e500fa211e 100644
+--- a/crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs
++++ b/crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs
+@@ -4,7 +4,7 @@ use crate::awbc::schema::*;
+ use crate::presentation::RuntimePresentationError;
+ use crate::step::RuntimeStepOutput;
+ 
+-fn roundtrip(executor: AwbcProductStepExecutor) -> AwbcProductStepExecutor {
++pub(super) fn roundtrip(executor: AwbcProductStepExecutor) -> AwbcProductStepExecutor {
+     let snapshot = executor.snapshot().unwrap();
+     let save = AwbcProductExecutorSaveSnapshot::from_live(&snapshot, &executor.program).unwrap();
+     let wire = serde_json::to_vec(&save).unwrap();
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs b/crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs
+index e9b016d682696eff1f4afe6eae7f5d1ee1e390f2..dcda00dd87e244d587fde929e7371a276b7ba862 100644
+--- a/crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs
++++ b/crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs
+@@ -111,7 +111,13 @@ pub(super) fn nested_program() -> AwbcProgram {
+ pub(super) fn nested_fixture(
+     queued: bool,
+ ) -> (AwbcProductStepExecutor, Vec<RuntimePresentationHandleToken>) {
+-    let program = nested_program();
++    nested_fixture_with_program(nested_program(), queued)
++}
++
++pub(super) fn nested_fixture_with_program(
++    program: AwbcProgram,
++    queued: bool,
++) -> (AwbcProductStepExecutor, Vec<RuntimePresentationHandleToken>) {
+     let mut executor = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 64).unwrap();
+     let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
+     executor.presentation = Some(PresentationBanks::new(
+diff --git a/crates/arcweft-core/src/awbc/vm.rs b/crates/arcweft-core/src/awbc/vm.rs
+index c1504eed5f654719b973f0c8f08f3643382b4ba1..1ff023d92642f624b330d5142a59bb197a8a1b85 100644
+--- a/crates/arcweft-core/src/awbc/vm.rs
++++ b/crates/arcweft-core/src/awbc/vm.rs
+@@ -510,6 +510,35 @@ pub fn cancel_fiber(
+     })
+ }
+ 
++/// Applies a resource-free trap. Scoped resources require the real execution
++/// owner to retire grants first; the ordinary unwind guard remains enforced.
++pub(crate) fn trap_fiber(
++    program: &AwbcProgram,
++    fiber: &mut FiberState,
++    trap: FiberTrap,
++) -> Result<VmStepOutput, VmError> {
++    let mut observations = Vec::new();
++    if matches!(fiber.status, FiberStatus::Running | FiberStatus::Suspended) {
++        terminate_with_trap(
++            program,
++            fiber,
++            &mut VmExecutionResources {
++                context: None,
++                presentation: None,
++            },
++            trap.code,
++            trap.message,
++            trap.source_map,
++            &mut observations,
++        )?;
++    }
++    Ok(VmStepOutput {
++        executed: 0,
++        observations,
++        exit: terminal_exit(fiber),
++    })
++}
++
+ #[allow(clippy::too_many_lines)]
+ pub fn step_with_host(
+     program: &AwbcProgram,

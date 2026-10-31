@@ -1,0 +1,21 @@
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs b/crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs
+index 4b51826f8304ee0ff75d25d1a67428e21e1208df..4d23b73792050bc29357d679f4130ec6cdb40e10 100644
+--- a/crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs
++++ b/crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs
+@@ -239,12 +239,12 @@ fn genuine_program_await_many_fault_keeps_the_event_and_complete_checkpoint_unti
+                 .expect("actual HostMetadata retirement emitted its authenticated completion");
+             let task = executor
+                 .need_producers
+-                .launch_for_correlation(&producer)
+-                .unwrap()
+-                .task();
++                .task_admissions()
++                .find(|task| task.handle().correlation == producer)
++                .expect("the issuing journal retains the actual accepted Program receipt");
+             let acknowledgement = report
+                 .bind_publication(
+-                    task,
++                    &task,
+                     crate::task::TaskDispatchIdentity::new(
+                         producer,
+                         LogicalEpoch(7),

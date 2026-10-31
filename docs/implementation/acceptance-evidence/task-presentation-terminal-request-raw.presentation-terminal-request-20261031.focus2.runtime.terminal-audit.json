@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "dda753a48d306f69fe9e6f8dbf79a2da8e201607",
+  "run": "presentation-terminal-request-20261031.focus2.runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.130s] 5 tests run: 4 passed, 1 failed, 2136 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 5,
+  "passed": 4,
+  "failed": 1,
+  "skipped": 2136,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4026,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::presentation::terminal_requests::genuine_program_await_many_fault_keeps_the_event_and_complete_checkpoint_until_unwind_is_admitted"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-31T13:27:50.9737239Z"
+}

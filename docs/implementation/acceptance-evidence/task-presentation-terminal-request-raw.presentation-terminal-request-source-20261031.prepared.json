@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "base": "dda753a48d306f69fe9e6f8dbf79a2da8e201607",
+  "tree": "4e7dda32c4ac6259a8648a3395bcaa3a91a18a09",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step.rs",
+      "blob": "8f39bd71799fe139567bf79deb527d8873847d33"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/control.rs",
+      "blob": "30fbcdd8d3e577516bd92727261410d03eceb901"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+      "blob": "ff0708a9b0802edd3695870cf8108e20d2d9919a"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+      "blob": "a379a04278a26a7bf2f0c4f22801730e9e145b8c"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "blob": "88414c088cd373dc2d1b5e0e8652eb78b94c8be3"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs",
+      "blob": "6f969940084f76ede0bb38479c7acaee08aaa165"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs",
+      "blob": "4b51826f8304ee0ff75d25d1a67428e21e1208df"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+      "blob": "7722e825659b0fa28bfdec64548cd1e500fa211e"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+      "blob": "dcda00dd87e244d587fde929e7371a276b7ba862"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/vm.rs",
+      "blob": "1ff023d92642f624b330d5142a59bb197a8a1b85"
+    }
+  ],
+  "other": [],
+  "held": [
+    "crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs",
+    "crates/arcweft-cli/tests/check/agent_script_debug.rs",
+    "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+    "crates/arcweft-cli/tests/check/profile_entry_selection.rs",
+    "crates/arcweft-runtime-host/src/native_task.rs",
+    "samples/agent-script/cli-read-resource-metadata-smoke.awfagent",
+    "samples/agent-script/cli-read-resource-smoke.awfagent",
+    "samples/agent-script/cli-read-resource-value-smoke.awfagent",
+    "samples/agent-script/native-choice-dispatch.arcw",
+    "samples/agent-script/native-project-graph-relations.arcw",
+    "samples/agent-script/native-visual-regression.arcw",
+    "samples/image-animation.arcw",
+    "samples/rich-text-full-grammar.arcw",
+    "samples/rich-text-windows-fonts.arcw"
+  ],
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "patchSha256": "f5694ffd2be0c694c681ffc40f1e68acaae888de032d5d430ab21696bd4eefb0",
+  "preparedAt": "2026-10-31T13:30:38.4005668Z"
+}

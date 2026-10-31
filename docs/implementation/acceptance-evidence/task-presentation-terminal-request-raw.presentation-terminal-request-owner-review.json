@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "base": "dda753a48d306f69fe9e6f8dbf79a2da8e201607",
+  "inspectedMain": "083aad7f7963a8e470c9b64a99909c20c74e5443",
+  "heldTracked": 14,
+  "heldUntracked": 6,
+  "rows": [
+    {
+      "path": "crates/arcweft-core/src/awbc/vm.rs",
+      "owner": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 223353,
+      "basePhysicalLoc": 5551,
+      "bytes": 224195,
+      "physicalLoc": 5580
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step.rs",
+      "owner": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 245501,
+      "basePhysicalLoc": 6077,
+      "bytes": 248280,
+      "physicalLoc": 6145
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/control.rs",
+      "owner": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 3005,
+      "basePhysicalLoc": 86,
+      "bytes": 4070,
+      "physicalLoc": 114
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+      "owner": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 13569,
+      "basePhysicalLoc": 356,
+      "bytes": 14023,
+      "physicalLoc": 368
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+      "owner": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 122454,
+      "basePhysicalLoc": 2970,
+      "bytes": 120739,
+      "physicalLoc": 2915
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "owner": "arcweft-core",
+      "classification": "test",
+      "baseBytes": 37164,
+      "basePhysicalLoc": 962,
+      "bytes": 37187,
+      "physicalLoc": 963
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+      "owner": "arcweft-core",
+      "classification": "test",
+      "baseBytes": 15073,
+      "basePhysicalLoc": 416,
+      "bytes": 15255,
+      "physicalLoc": 422
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+      "owner": "arcweft-core",
+      "classification": "test",
+      "baseBytes": 15927,
+      "basePhysicalLoc": 458,
+      "bytes": 15938,
+      "physicalLoc": 458
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs",
+      "owner": "arcweft-core",
+      "classification": "test",
+      "baseBytes": 23894,
+      "basePhysicalLoc": 683,
+      "bytes": 23960,
+      "physicalLoc": 683
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs",
+      "owner": "arcweft-core",
+      "classification": "test",
+      "baseBytes": 0,
+      "basePhysicalLoc": 0,
+      "bytes": 14192,
+      "physicalLoc": 393
+    }
+  ],
+  "disposition": [
+    "The selected child transaction already owns its fiber checkpoint, original PresentationBanks and deferred resume journal. Pending terminal intent is non-Serde journal state; no persisted parallel terminal authority is introduced. Suspension producers stage intent for the admitted program and original bank owner to retire before terminalization.",
+    "The admitted trap_fiber entry validates whole-contour retirement, then delegates final status and cleanup to the existing VM terminal implementation. No fresh bank, host I/O, public production API, dependency, or wire/version shape is added.",
+    "Control failure admission borrows VM observations within the producing-instruction checkpoint. Valid Return/Goto retain their separate ownership-transfer boundary. Accepted failures use the existing main lifecycle helper.",
+    "The scheduler stops a refused candidate after its diagnostic instead of retrying it among other retained candidates in the same poll. Existing blocked-owner rotation and later runnable work remain covered by the full owner run.",
+    "The new terminal_requests module owns real control/Need/AwaitMany/Host regressions. Its growth above 300 LOC is cohesive with this transaction boundary. It shares explicit private fixtures and the existing complete public-save assertion; no public visibility is introduced for splitting.",
+    "product_step.rs retains the selected transaction coordinator: staging, rollback, line reconciliation and commit share its original checkpoint/journal/output. Splitting only by LOC would hide this coupling. suspension.rs prepares protocol-specific resumes without publishing terminal status. vm.rs owns canonical terminal dispatch. No unrelated state cluster or cross-layer traversal was added."
+  ]
+}

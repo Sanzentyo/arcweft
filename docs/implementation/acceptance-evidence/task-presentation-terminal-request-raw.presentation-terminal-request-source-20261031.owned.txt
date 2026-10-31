@@ -1,0 +1,10 @@
+crates/arcweft-core/src/awbc/vm.rs
+crates/arcweft-core/src/awbc/product_step.rs
+crates/arcweft-core/src/awbc/product_step/control.rs
+crates/arcweft-core/src/awbc/product_step/presentation.rs
+crates/arcweft-core/src/awbc/product_step/suspension.rs
+crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
+crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs
+crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs
+crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs
+crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs

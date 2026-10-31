@@ -1,0 +1,1066 @@
+{
+  "version": 1,
+  "recordedAt": "2026-10-31T13:39:19.9622968Z",
+  "inspectedMain": "083aad7f7963a8e470c9b64a99909c20c74e5443",
+  "scope": "Main control failures and staged deferred-child Need/AwaitMany/Host terminal requests under original selected-transaction custody.",
+  "sourcePublication": {
+    "version": 1,
+    "commit": "083aad7f7963a8e470c9b64a99909c20c74e5443",
+    "parent": "1e399105b1cc67bf8f9cc0d9fbd75f306b96482b",
+    "tree": "66508266da0fe4b4bc0f26da94fdffb004f1f821",
+    "remote": "083aad7f7963a8e470c9b64a99909c20c74e5443",
+    "paths": [
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs",
+        "blob": "4d23b73792050bc29357d679f4130ec6cdb40e10"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "7ba2125d0b528f062495521d2d3a40c3a35afc63ffd2cdc44e6dcb6d2e7a19d7",
+    "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-10-31T13:37:17.7537025Z"
+  },
+  "initialCheckpointPublication": {
+    "version": 1,
+    "commit": "1e399105b1cc67bf8f9cc0d9fbd75f306b96482b",
+    "parent": "dda753a48d306f69fe9e6f8dbf79a2da8e201607",
+    "tree": "4e7dda32c4ac6259a8648a3395bcaa3a91a18a09",
+    "remote": "1e399105b1cc67bf8f9cc0d9fbd75f306b96482b",
+    "paths": [
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step.rs",
+        "blob": "8f39bd71799fe139567bf79deb527d8873847d33"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/control.rs",
+        "blob": "30fbcdd8d3e577516bd92727261410d03eceb901"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+        "blob": "ff0708a9b0802edd3695870cf8108e20d2d9919a"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+        "blob": "a379a04278a26a7bf2f0c4f22801730e9e145b8c"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+        "blob": "88414c088cd373dc2d1b5e0e8652eb78b94c8be3"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs",
+        "blob": "6f969940084f76ede0bb38479c7acaee08aaa165"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs",
+        "blob": "4b51826f8304ee0ff75d25d1a67428e21e1208df"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+        "blob": "7722e825659b0fa28bfdec64548cd1e500fa211e"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+        "blob": "dcda00dd87e244d587fde929e7371a276b7ba862"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/vm.rs",
+        "blob": "1ff023d92642f624b330d5142a59bb197a8a1b85"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "f5694ffd2be0c694c681ffc40f1e68acaae888de032d5d430ab21696bd4eefb0",
+    "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-10-31T13:31:42.729759Z"
+  },
+  "workingTree": {
+    "heldTracked": 14,
+    "heldUntracked": 6,
+    "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+    "coreDirty": false
+  },
+  "owner": {
+    "version": 1,
+    "base": "1e399105b1cc67bf8f9cc0d9fbd75f306b96482b",
+    "run": "presentation-terminal-request-20261031.owner4.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  77.737s] 2194 tests run: 2194 passed (1 slow), 0 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2194,
+    "passed": 2194,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4026,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-31T13:36:31.7677349Z"
+  },
+  "ownerBinaryDrift": 0,
+  "ownerQualitySourceDrift": 0,
+  "quality": [
+    {
+      "kind": "clippy",
+      "receipt": {
+        "version": 1,
+        "base": "083aad7f7963a8e470c9b64a99909c20c74e5443",
+        "command": [
+          "clippy",
+          "-p",
+          "arcweft-core",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4026,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T13:37:20.1806427Z",
+        "finishedAt": "2026-10-31T13:37:45.7609851Z"
+      }
+    },
+    {
+      "kind": "default-check",
+      "receipt": {
+        "version": 1,
+        "base": "083aad7f7963a8e470c9b64a99909c20c74e5443",
+        "command": [
+          "check",
+          "-p",
+          "arcweft-core",
+          "--all-targets",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4026,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T13:37:46.2205224Z",
+        "finishedAt": "2026-10-31T13:38:02.529767Z"
+      }
+    },
+    {
+      "kind": "doctest",
+      "receipt": {
+        "version": 1,
+        "base": "083aad7f7963a8e470c9b64a99909c20c74e5443",
+        "command": [
+          "test",
+          "-p",
+          "arcweft-core",
+          "--doc",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4026,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T13:38:02.999366Z",
+        "finishedAt": "2026-10-31T13:38:12.2603311Z"
+      }
+    },
+    {
+      "kind": "structure",
+      "receipt": {
+        "version": 1,
+        "base": "083aad7f7963a8e470c9b64a99909c20c74e5443",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/product-execution-quality-20261031T133718228.structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4026,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T13:38:12.6789949Z",
+        "finishedAt": "2026-10-31T13:38:16.5362892Z"
+      }
+    },
+    {
+      "kind": "fmt",
+      "receipt": {
+        "version": 1,
+        "paths": [
+          "crates/arcweft-core/src/awbc/fiber.rs",
+          "crates/arcweft-core/src/awbc/fiber/program_task.rs",
+          "crates/arcweft-core/src/awbc/fiber/scope.rs",
+          "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+          "crates/arcweft-core/src/awbc/product_step.rs",
+          "crates/arcweft-core/src/awbc/product_step/checkpoint.rs",
+          "crates/arcweft-core/src/awbc/product_step/control.rs",
+          "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+          "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+          "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+          "crates/arcweft-core/src/awbc/product_step/program_fanout.rs",
+          "crates/arcweft-core/src/awbc/product_step/program_task/tests.rs",
+          "crates/arcweft-core/src/awbc/product_step/program.rs",
+          "crates/arcweft-core/src/awbc/product_step/root.rs",
+          "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+          "crates/arcweft-core/src/awbc/product_step/step_budget.rs",
+          "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+          "crates/arcweft-core/src/awbc/tests/dialogue_callback_projection.rs",
+          "crates/arcweft-core/src/awbc/vm.rs",
+          "crates/arcweft-core/src/awbc/vm/resources.rs",
+          "crates/arcweft-core/src/engine.rs",
+          "crates/arcweft-core/src/line_task.rs",
+          "crates/arcweft-core/src/line_task/activation.rs",
+          "crates/arcweft-core/src/line_task/activation/contour.rs",
+          "crates/arcweft-core/src/line_task/activation/contour/tests.rs",
+          "crates/arcweft-core/src/line_task/handle.rs",
+          "crates/arcweft-core/src/presentation/resources.rs",
+          "crates/arcweft-core/src/presentation/resources/banks.rs",
+          "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+          "crates/arcweft-core/src/presentation/resources/execution.rs",
+          "crates/arcweft-core/src/presentation/resources/execution/tests.rs"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4026,
+        "sourceDrift": 0
+      }
+    }
+  ],
+  "attempts": [
+    {
+      "version": 1,
+      "base": "dda753a48d306f69fe9e6f8dbf79a2da8e201607",
+      "run": "presentation-terminal-request-20261031.focus1.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [   0.133s] 5 tests run: 3 passed, 2 failed, 2136 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 5,
+      "passed": 3,
+      "failed": 2,
+      "skipped": 2136,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4026,
+      "sourceDrift": 0,
+      "held": 14,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::terminal_requests::genuine_program_await_many_fault_keeps_the_event_and_complete_checkpoint_until_unwind_is_admitted"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::terminal_requests::genuine_nested_need_rejects_a_foreign_publication_without_losing_its_resource_owner"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-10-31T13:25:01.7899587Z"
+    },
+    {
+      "version": 1,
+      "base": "dda753a48d306f69fe9e6f8dbf79a2da8e201607",
+      "run": "presentation-terminal-request-20261031.focus2.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [   0.130s] 5 tests run: 4 passed, 1 failed, 2136 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 5,
+      "passed": 4,
+      "failed": 1,
+      "skipped": 2136,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4026,
+      "sourceDrift": 0,
+      "held": 14,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::terminal_requests::genuine_program_await_many_fault_keeps_the_event_and_complete_checkpoint_until_unwind_is_admitted"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-10-31T13:27:50.9737239Z"
+    },
+    {
+      "attempt": "focus3",
+      "catalog": {
+        "version": 1,
+        "base": "dda753a48d306f69fe9e6f8dbf79a2da8e201607",
+        "command": [
+          "nextest",
+          "list",
+          "-p",
+          "arcweft-core",
+          "--all-features",
+          "--locked",
+          "--lib",
+          "-E",
+          "test(awbc::product_step::tests::presentation::terminal_requests::)",
+          "--message-format",
+          "json"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-terminal-request-20261031.focus3.catalog.log",
+        "exitCode": 101,
+        "startedAt": "2026-10-31T13:30:41.1597145Z",
+        "finishedAt": "2026-10-31T13:30:55.4796909Z"
+      },
+      "runtime": "Not run: compile E0308; bind_publication requires TaskSubmission, not TaskId."
+    },
+    {
+      "version": 1,
+      "base": "1e399105b1cc67bf8f9cc0d9fbd75f306b96482b",
+      "run": "presentation-terminal-request-20261031.owner4.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [  77.737s] 2194 tests run: 2194 passed (1 slow), 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2194,
+      "passed": 2194,
+      "failed": 0,
+      "skipped": 0,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4026,
+      "sourceDrift": 0,
+      "held": 14,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-10-31T13:36:31.7677349Z"
+    }
+  ],
+  "attemptNotes": [
+    "focus1: 3 PASS / 2 FAIL / 2136 excluded. The Program child was correctly retired during the same successful step; the test incorrectly expected a retained terminal child. It now asserts actual child removal and the authenticated producer fault. The other failure showed four identical capacity diagnostics: the scheduler retried a refused child while polling retained candidates. It now stops after the refusal diagnostic and preserves normal blocked-child rotation.",
+    "focus2: 4 PASS / 1 FAIL / 2136 excluded. Public cold restore correctly changes unacknowledged Program retirement to ReplayPending. The fixture now binds the actual emitted completion to the issuing journal receipt and latches its authenticated acknowledgement before the complete save/restore assertion. No replay contract or snapshot assertion was weakened.",
+    "focus3: catalog compile failed E0308, exit 101; no runtime cases executed. The added acknowledgement used TaskId where TaskSubmission is required. The repair obtains the actual accepted journal submission. Initial checkpoint was already published; both full SHAs and raw patches are retained.",
+    "owner4: complete Core owner, 2194 PASS / 0 FAIL / 0 skipped. This replaces no previous accepted feature and is not combined with the focused counts."
+  ],
+  "sourceProvenance": [
+    {
+      "attempt": "focus1",
+      "ownedSources": [
+        {
+          "path": "crates/arcweft-core/src/awbc/vm.rs",
+          "bytes": 224195,
+          "sha256": "54f567388f24de8decc1ddf0bff2a96a0be3e0721f18cc85566c5ddbed094e8f",
+          "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/vm.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step.rs",
+          "bytes": 248142,
+          "sha256": "9b140b76af3f7af917752cff1b824d977f2fb6708e4d9871f280b358984711db",
+          "source": "terminal-request-focus1.product-source.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/control.rs",
+          "bytes": 4070,
+          "sha256": "80807e7a6c25dcb30a2d314cd4743529502e88d679333ef99f91d8d3869d7e88",
+          "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/control.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+          "bytes": 14023,
+          "sha256": "5a0f9a6a0c88a2b0ae5e7b1bfe8395d1c41a68717a6f41d3695f1be353b84934",
+          "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/presentation.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+          "bytes": 120739,
+          "sha256": "e3abb4545b2215552806009c4eeccc9929b8be06522f3064a9f5ee3040711d02",
+          "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/suspension.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+          "bytes": 37187,
+          "sha256": "71b5229478fc3a3eae035821d48bb104ebab64fae4ee1a50ee91eaa0590da887",
+          "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+          "bytes": 15255,
+          "sha256": "6d83ecf3d0bb387138d0c664a15b5fbc335ea23d41fefbdc1847e3d9202f0be0",
+          "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+          "bytes": 15938,
+          "sha256": "0e058dd1f149134256e319801996ed0c3695c4456b5f62859ca14dc0dc7bd5d6",
+          "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs",
+          "bytes": 23960,
+          "sha256": "3d7d8f6c4b0287225543143d96d8c5529eaad097a82a2366762fd4ff72b6ee3c",
+          "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs",
+          "bytes": 12460,
+          "sha256": "4097b8a38b7d947676f9718bb535f0bee60580d958ae00a4378cea186f2f4382",
+          "source": null,
+          "status": "Original source-freeze hash and runtime log retained; exact unpublished fixture bytes were not captured."
+        }
+      ]
+    },
+    {
+      "attempt": "focus2",
+      "ownedSources": [
+        {
+          "path": "crates/arcweft-core/src/awbc/vm.rs",
+          "bytes": 224195,
+          "sha256": "54f567388f24de8decc1ddf0bff2a96a0be3e0721f18cc85566c5ddbed094e8f",
+          "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/vm.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step.rs",
+          "bytes": 248280,
+          "sha256": "c432e8b6905c82c53056375bab181420e117d0d4ce133b1f0529d8a877076eb4",
+          "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/control.rs",
+          "bytes": 4070,
+          "sha256": "80807e7a6c25dcb30a2d314cd4743529502e88d679333ef99f91d8d3869d7e88",
+          "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/control.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+          "bytes": 14023,
+          "sha256": "5a0f9a6a0c88a2b0ae5e7b1bfe8395d1c41a68717a6f41d3695f1be353b84934",
+          "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/presentation.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+          "bytes": 120739,
+          "sha256": "e3abb4545b2215552806009c4eeccc9929b8be06522f3064a9f5ee3040711d02",
+          "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/suspension.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+          "bytes": 37187,
+          "sha256": "71b5229478fc3a3eae035821d48bb104ebab64fae4ee1a50ee91eaa0590da887",
+          "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+          "bytes": 15255,
+          "sha256": "6d83ecf3d0bb387138d0c664a15b5fbc335ea23d41fefbdc1847e3d9202f0be0",
+          "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+          "bytes": 15938,
+          "sha256": "0e058dd1f149134256e319801996ed0c3695c4456b5f62859ca14dc0dc7bd5d6",
+          "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs",
+          "bytes": 23960,
+          "sha256": "3d7d8f6c4b0287225543143d96d8c5529eaad097a82a2366762fd4ff72b6ee3c",
+          "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs",
+          "bytes": 12869,
+          "sha256": "b22aa590fcace964b453b2ce77fcfe15b57db4f6dbeda565e1b10d313a3f2b0b",
+          "source": "terminal-request-focus2.fixture-source.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        }
+      ]
+    },
+    {
+      "attempt": "focus3",
+      "ownedSources": [
+        {
+          "path": "crates/arcweft-core/src/awbc/vm.rs",
+          "bytes": 224195,
+          "sha256": "54f567388f24de8decc1ddf0bff2a96a0be3e0721f18cc85566c5ddbed094e8f",
+          "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/vm.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step.rs",
+          "bytes": 248280,
+          "sha256": "c432e8b6905c82c53056375bab181420e117d0d4ce133b1f0529d8a877076eb4",
+          "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/control.rs",
+          "bytes": 4070,
+          "sha256": "80807e7a6c25dcb30a2d314cd4743529502e88d679333ef99f91d8d3869d7e88",
+          "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/control.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+          "bytes": 14023,
+          "sha256": "5a0f9a6a0c88a2b0ae5e7b1bfe8395d1c41a68717a6f41d3695f1be353b84934",
+          "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/presentation.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+          "bytes": 120739,
+          "sha256": "e3abb4545b2215552806009c4eeccc9929b8be06522f3064a9f5ee3040711d02",
+          "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/suspension.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+          "bytes": 37187,
+          "sha256": "71b5229478fc3a3eae035821d48bb104ebab64fae4ee1a50ee91eaa0590da887",
+          "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+          "bytes": 15255,
+          "sha256": "6d83ecf3d0bb387138d0c664a15b5fbc335ea23d41fefbdc1847e3d9202f0be0",
+          "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+          "bytes": 15938,
+          "sha256": "0e058dd1f149134256e319801996ed0c3695c4456b5f62859ca14dc0dc7bd5d6",
+          "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs",
+          "bytes": 23960,
+          "sha256": "3d7d8f6c4b0287225543143d96d8c5529eaad097a82a2366762fd4ff72b6ee3c",
+          "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs",
+          "bytes": 14098,
+          "sha256": "52e8f3c1bb88bb4b8a1f66ad7ac12fecc4e7a0512e13e2c9fa7876b340c70ec5",
+          "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs",
+          "status": "Exact byte/hash match to original source freeze"
+        }
+      ]
+    }
+  ],
+  "doctest": {
+    "passed": 78,
+    "failed": 0,
+    "ignored": 0,
+    "filtered": 0
+  },
+  "structure": {
+    "packages": 97,
+    "files": 3262,
+    "rustFiles": 3132,
+    "rustPhysicalLoc": 1773294,
+    "reviewTriggers": 382,
+    "blocking": 0,
+    "ownerReview": "presentation-terminal-request-owner-review.json"
+  },
+  "accepted": [
+    "Main Panic/Fail/Bail/unresolved Goto preflight the original complete contour before effect publication, retire three genuine nested scopes once, and round-trip the public default-policy owner. Two handles=3/scopes=8 refusal attempts preserve the whole producing-instruction snapshot, budget/cursor, original grants and old queue entry; unchanged-policy retry succeeds.",
+    "All deferred suspension manual terminal requests now stage typed intent in the existing resume journal. The selected transaction commits trap through the admitted program and original banks before terminal metadata or input receipts are consumed; refusal restores its checkpoint/journal/queue.",
+    "Genuine Program AwaitMany failure and nested Program Need foreign-publication rejection preserve complete selected-step snapshots and the exact queued packet on two bounded refusals. Successful retry retires the original token once. The AwaitMany producer retains its actual fault, and its real accepted HostMetadata completion acknowledgement permits complete public save/restore equality.",
+    "Actual LIFO deferred HostCall failures for UnsupportedCapability, Rejected and Failed retain the original receipt through two bounded refusals, then consume it once after admitted resource unwind. Default-policy public save/restore retains custody.",
+    "Existing VM/lifecycle/cancellation/checkpoint and unrelated full Core regressions remain passing. Source, binary and catalog drift are zero for this run."
+  ],
+  "notClaimedByThisRun": [
+    "A complete external Product outer step for every failure-packet family; focused negative cases exercise the selected child transaction",
+    "All unexpected VM/protocol-error and activation Host failure terminal paths",
+    "Frame Return/select/valid Goto and escaping-handle ownership transfer",
+    "Native retained contour including actual borrowed parent",
+    "Source ViewValue, eleven callables/mount/six methods/lowering/driver",
+    "Active-bank replacement, Native/Web image parity and final dependency/feature/target/workspace acceptance"
+  ],
+  "currentStatusAuthority": "../current-status.md",
+  "acceptedFeaturesRetained": "Generic Match and all prior accepted boundaries remain accepted. Whole-goal incompleteness does not reopen them. String/Bool resource fixtures and modeled retirement queue release do not prove Source ViewValue or real driver ABI.",
+  "warnings": "Existing compiler/Clippy warnings are preserved in raw logs; exit zero is not a zero-warning claim.",
+  "priorAcceptance": [
+    "task-presentation-lifecycle-trap-owner-validation.json",
+    "task-presentation-vm-trap-owner-validation.json",
+    "task-presentation-await-cancellation-owner-validation.json"
+  ],
+  "artifacts": [
+    {
+      "path": "task-presentation-terminal-request-raw.record-presentation-terminal-request-evidence.ps1",
+      "source": "record-presentation-terminal-request-evidence.ps1",
+      "bytes": 15002,
+      "sha256": "4152e46a7328b84e79ed99979f5c7c7beba994901957211db9ad064f45bcc2ee"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.run-presentation-trap-quality.ps1",
+      "source": "run-presentation-trap-quality.ps1",
+      "bytes": 3067,
+      "sha256": "27a7e7072d28788c2b00022dde3e8c31538b7788c4aac39941a6137430e8fef0"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-owner-review.json",
+      "source": "presentation-terminal-request-owner-review.json",
+      "bytes": 4707,
+      "sha256": "e92be0de6f699c829c57e3d25619b3cfb6b4a6c8f986779a97b737cb47d36f79"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-source-proofs.json",
+      "source": "presentation-terminal-request-source-proofs.json",
+      "bytes": 11997,
+      "sha256": "6a22fb8b7638df0ad1437046dade7e2f74d3a1eff4f0b04aee33e272c443ef4c"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.terminal-request-focus1.product-source.rs",
+      "source": "terminal-request-focus1.product-source.rs",
+      "bytes": 248142,
+      "sha256": "9b140b76af3f7af917752cff1b824d977f2fb6708e4d9871f280b358984711db"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.terminal-request-focus2.fixture-source.rs",
+      "source": "terminal-request-focus2.fixture-source.rs",
+      "bytes": 12869,
+      "sha256": "b22aa590fcace964b453b2ce77fcfe15b57db4f6dbeda565e1b10d313a3f2b0b"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.terminal-request-focus3-source.crates.arcweft-core.src.awbc.vm.rs",
+      "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/vm.rs",
+      "bytes": 224195,
+      "sha256": "54f567388f24de8decc1ddf0bff2a96a0be3e0721f18cc85566c5ddbed094e8f"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.terminal-request-focus3-source.crates.arcweft-core.src.awbc.product_step.rs",
+      "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step.rs",
+      "bytes": 248280,
+      "sha256": "c432e8b6905c82c53056375bab181420e117d0d4ce133b1f0529d8a877076eb4"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.terminal-request-focus3-source.crates.arcweft-core.src.awbc.product_step.control.rs",
+      "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/control.rs",
+      "bytes": 4070,
+      "sha256": "80807e7a6c25dcb30a2d314cd4743529502e88d679333ef99f91d8d3869d7e88"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.terminal-request-focus3-source.crates.arcweft-core.src.awbc.product_step.presentation.rs",
+      "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/presentation.rs",
+      "bytes": 14023,
+      "sha256": "5a0f9a6a0c88a2b0ae5e7b1bfe8395d1c41a68717a6f41d3695f1be353b84934"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.terminal-request-focus3-source.crates.arcweft-core.src.awbc.product_step.suspension.rs",
+      "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/suspension.rs",
+      "bytes": 120739,
+      "sha256": "e3abb4545b2215552806009c4eeccc9929b8be06522f3064a9f5ee3040711d02"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.terminal-request-focus3-source.crates.arcweft-core.src.awbc.product_step.tests.presentation.rs",
+      "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "bytes": 37187,
+      "sha256": "71b5229478fc3a3eae035821d48bb104ebab64fae4ee1a50ee91eaa0590da887"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.terminal-request-focus3-source.crates.arcweft-core.src.awbc.product_step.tests.presentation.traps.rs",
+      "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+      "bytes": 15255,
+      "sha256": "6d83ecf3d0bb387138d0c664a15b5fbc335ea23d41fefbdc1847e3d9202f0be0"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.terminal-request-focus3-source.crates.arcweft-core.src.awbc.product_step.tests.presentation.trap_lifecycle.rs",
+      "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+      "bytes": 15938,
+      "sha256": "0e058dd1f149134256e319801996ed0c3695c4456b5f62859ca14dc0dc7bd5d6"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.terminal-request-focus3-source.crates.arcweft-core.src.awbc.product_step.tests.presentation.cancellation_resume.rs",
+      "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs",
+      "bytes": 23960,
+      "sha256": "3d7d8f6c4b0287225543143d96d8c5529eaad097a82a2366762fd4ff72b6ee3c"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.terminal-request-focus3-source.crates.arcweft-core.src.awbc.product_step.tests.presentation.terminal_requests.rs",
+      "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs",
+      "bytes": 14098,
+      "sha256": "52e8f3c1bb88bb4b8a1f66ad7ac12fecc4e7a0512e13e2c9fa7876b340c70ec5"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-source-20261031.owned.txt",
+      "source": "presentation-terminal-request-source-20261031.owned.txt",
+      "bytes": 636,
+      "sha256": "3817aff15e6b0c6547583f2f2e15d10a9405f2b75f85e29d1ed63ba187b04aa3"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-source-20261031.prepared.json",
+      "source": "presentation-terminal-request-source-20261031.prepared.json",
+      "bytes": 2782,
+      "sha256": "bd1599ace6edb5ed7ba4d1d9aa810241c681c30adc346ec5cc1ad8e8b18dae88"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-source-20261031.verified.json",
+      "source": "presentation-terminal-request-source-20261031.verified.json",
+      "bytes": 2087,
+      "sha256": "1dc59451f55ce16911f3ec49b6604a5d6f33e250758aa4928862f148de967105"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-source-20261031.reviewed.patch",
+      "source": "presentation-terminal-request-source-20261031.reviewed.patch",
+      "bytes": 58856,
+      "sha256": "f5694ffd2be0c694c681ffc40f1e68acaae888de032d5d430ab21696bd4eefb0"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-source-20261031.publish.log",
+      "source": "presentation-terminal-request-source-20261031.publish.log",
+      "bytes": 743,
+      "sha256": "c19da32f05140fcbde7f8f4747842bb43bfdce7e6194bd247d1e6c891afdbd74"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-repair-source-20261031.owned.txt",
+      "source": "presentation-terminal-request-repair-source-20261031.owned.txt",
+      "bytes": 82,
+      "sha256": "e723d2d111ee4504da18e0d280148af006755104eb8a843a20117b9c386f8913"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-repair-source-20261031.prepared.json",
+      "source": "presentation-terminal-request-repair-source-20261031.prepared.json",
+      "bytes": 1419,
+      "sha256": "6c6f2de4d5fb35273736d761d20e4a593b989404b25323af6db62dd1c6916af5"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-repair-source-20261031.verified.json",
+      "source": "presentation-terminal-request-repair-source-20261031.verified.json",
+      "bytes": 724,
+      "sha256": "b94ca9153591c64a15ed70e32af41d837d79d6c432419889cdda79efb804e319"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-repair-source-20261031.reviewed.patch",
+      "source": "presentation-terminal-request-repair-source-20261031.reviewed.patch",
+      "bytes": 1291,
+      "sha256": "7ba2125d0b528f062495521d2d3a40c3a35afc63ffd2cdc44e6dcb6d2e7a19d7"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-repair-source-20261031.publish.log",
+      "source": "presentation-terminal-request-repair-source-20261031.publish.log",
+      "bytes": 629,
+      "sha256": "f03ac53bf0ded3c187c22e0ec8b8fc08b82552585e6d20fcf8b9badcb1d5ce1e"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.run-presentation-terminal-request-20261031.focus1.ps1",
+      "source": "run-presentation-terminal-request-20261031.focus1.ps1",
+      "bytes": 5929,
+      "sha256": "00646ae79bfc33cf774d3d680e6fb2fa52cfe673caeb795b64005b842e8e66ee"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-20261031.focus1.source-freeze.json",
+      "source": "presentation-terminal-request-20261031.focus1.source-freeze.json",
+      "bytes": 786968,
+      "sha256": "48613f553957e62a57b2a6ecf429617baf5435009312e921ffb3031499f2a64f"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-20261031.focus1.binaries-before.json",
+      "source": "presentation-terminal-request-20261031.focus1.binaries-before.json",
+      "bytes": 202,
+      "sha256": "a7c1b19e374b1dca8d3f94b2492ee2b2f16ece7031d6ec95df1eab29283ba41d"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-20261031.focus1.catalog.inventory.json",
+      "source": "presentation-terminal-request-20261031.focus1.catalog.inventory.json",
+      "bytes": 545987,
+      "sha256": "8c9bb42cb16f91fb0d03a3c675279b1c566460d134e3cdcaf6a45a1beb4bfc79"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-20261031.focus1.catalog.json",
+      "source": "presentation-terminal-request-20261031.focus1.catalog.json",
+      "bytes": 598,
+      "sha256": "087e34f9563250ef066a2f665f3265ea28d2d73f79d86c65b36e36250e99ea19"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-20261031.focus1.catalog.log",
+      "source": "presentation-terminal-request-20261031.focus1.catalog.log",
+      "bytes": 450128,
+      "sha256": "4f9c4be177cd53d7f199bc52593c54c238bbdf7e1252a20e285d34ac2fe2727a"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-20261031.focus1.runtime.json",
+      "source": "presentation-terminal-request-20261031.focus1.runtime.json",
+      "bytes": 692,
+      "sha256": "1f85a15f5d8efd9e11bd72fd4a14ab72f58cefb4d790a54fe8311e0bfcde5337"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-20261031.focus1.runtime.log",
+      "source": "presentation-terminal-request-20261031.focus1.runtime.log",
+      "bytes": 689541,
+      "sha256": "b38d8ff5b8a2aaf1182ffe3e1e08925fa6a7e0d465aa25b148c730394a98ffa2"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-20261031.focus1.runtime.terminal-audit.json",
+      "source": "presentation-terminal-request-20261031.focus1.runtime.terminal-audit.json",
+      "bytes": 1126,
+      "sha256": "f8699e79bfdcfcb6ea2084d51ef855a655b56d4e9a949d74fc199169704f8b8e"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.run-presentation-terminal-request-20261031.focus2.ps1",
+      "source": "run-presentation-terminal-request-20261031.focus2.ps1",
+      "bytes": 5929,
+      "sha256": "99bbb37ac32d12959bb1b921a3ed98dde39c9ba31a1d5ec266b431ea7a7236b2"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-20261031.focus2.source-freeze.json",
+      "source": "presentation-terminal-request-20261031.focus2.source-freeze.json",
+      "bytes": 786968,
+      "sha256": "f8ed176ed736b7c52a9556a6e2a268e38ad567698d8314a6c5e962d508195153"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-20261031.focus2.binaries-before.json",
+      "source": "presentation-terminal-request-20261031.focus2.binaries-before.json",
+      "bytes": 202,
+      "sha256": "864dd114fc685f9754df93b12393ce1ce68d2bfcdb509e5e2753606a3c25f110"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-20261031.focus2.catalog.inventory.json",
+      "source": "presentation-terminal-request-20261031.focus2.catalog.inventory.json",
+      "bytes": 545987,
+      "sha256": "8c9bb42cb16f91fb0d03a3c675279b1c566460d134e3cdcaf6a45a1beb4bfc79"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-20261031.focus2.catalog.json",
+      "source": "presentation-terminal-request-20261031.focus2.catalog.json",
+      "bytes": 598,
+      "sha256": "9da4ba0df7c8dac950c7428d346c2a89a2957fd257e9dedc4d5ee4d13b347e63"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-20261031.focus2.catalog.log",
+      "source": "presentation-terminal-request-20261031.focus2.catalog.log",
+      "bytes": 450128,
+      "sha256": "ae99ac224abba72dcc268636b2439d2a03a24a5335ad82775ed26904857b911d"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-20261031.focus2.runtime.json",
+      "source": "presentation-terminal-request-20261031.focus2.runtime.json",
+      "bytes": 692,
+      "sha256": "316d9508371d3d0676092deb8a2b1ecd0f2e5806478903ec934406cd39ba0a23"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-20261031.focus2.runtime.log",
+      "source": "presentation-terminal-request-20261031.focus2.runtime.log",
+      "bytes": 762210,
+      "sha256": "b7e9212c92f6d4e821e41e13fea7a75a87c7dd0e79232bc5530e83132759d88e"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-20261031.focus2.runtime.terminal-audit.json",
+      "source": "presentation-terminal-request-20261031.focus2.runtime.terminal-audit.json",
+      "bytes": 892,
+      "sha256": "27534449a44c97a4055ffb81d7af5787ebd436309d97272313124c727b82bcd6"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.run-presentation-terminal-request-20261031.focus3.ps1",
+      "source": "run-presentation-terminal-request-20261031.focus3.ps1",
+      "bytes": 5929,
+      "sha256": "c7be963f0c05a50c7914b1d63a0503e30a49a01ffbf7bb20ca2d27606a01194b"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-20261031.focus3.source-freeze.json",
+      "source": "presentation-terminal-request-20261031.focus3.source-freeze.json",
+      "bytes": 786968,
+      "sha256": "893a07fdcf67d3b01c634732cea6f86d427b0bcc3512b3c0233fc43d73c947d2"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-20261031.focus3.catalog.json",
+      "source": "presentation-terminal-request-20261031.focus3.catalog.json",
+      "bytes": 600,
+      "sha256": "480879f9d6bde0a19e6bc3ee4f8c7e59cfd63d6293a94e7314221e06525c07ba"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-20261031.focus3.catalog.log",
+      "source": "presentation-terminal-request-20261031.focus3.catalog.log",
+      "bytes": 11045,
+      "sha256": "4beff1c72842147b3a2a2ac48df2641d1d5c02c38e5c237020784ad81f5dae33"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.run-presentation-terminal-request-20261031.owner4.ps1",
+      "source": "run-presentation-terminal-request-20261031.owner4.ps1",
+      "bytes": 5850,
+      "sha256": "86207d47cff8e9882477cc2a6b47a1f74473bd2dc2a424c76794f509347f954d"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-20261031.owner4.source-freeze.json",
+      "source": "presentation-terminal-request-20261031.owner4.source-freeze.json",
+      "bytes": 786968,
+      "sha256": "b809b134b2b8abf803b601abddf051695f0cb023bc8805cced7f4fcb00a8c999"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-20261031.owner4.binaries-before.json",
+      "source": "presentation-terminal-request-20261031.owner4.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "cce47dfca9ddd402037be84426e438e1e30084ae1ee5796a293c09cb01a5efdc"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-20261031.owner4.catalog.inventory.json",
+      "source": "presentation-terminal-request-20261031.owner4.catalog.inventory.json",
+      "bytes": 556250,
+      "sha256": "a0cb93300d64b3f2f124fdf47a1c3713ada38d50e61c1a7ad2a7e8961b1413d6"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-20261031.owner4.catalog.json",
+      "source": "presentation-terminal-request-20261031.owner4.catalog.json",
+      "bytes": 498,
+      "sha256": "83c3422a2a345243555a320b44d4e6db43e4c3faed83a537e6f29eabeceb84c8"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-20261031.owner4.catalog.log",
+      "source": "presentation-terminal-request-20261031.owner4.catalog.log",
+      "bytes": 463999,
+      "sha256": "0476fd3ce90f1bfa805e021d19361cb6049c74e6ce54d952a092d1ee0f658da5"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-20261031.owner4.runtime.json",
+      "source": "presentation-terminal-request-20261031.owner4.runtime.json",
+      "bytes": 590,
+      "sha256": "a48e4d7cdac85894aa22ad0859430d163a175785cbd05817978154f91970067a"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-20261031.owner4.runtime.log",
+      "source": "presentation-terminal-request-20261031.owner4.runtime.log",
+      "bytes": 752066,
+      "sha256": "83b26e2516b86d5e1300f3898e2c1249dd8c73def535d704e6f42e886ad1dc8c"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.presentation-terminal-request-20261031.owner4.runtime.terminal-audit.json",
+      "source": "presentation-terminal-request-20261031.owner4.runtime.terminal-audit.json",
+      "bytes": 643,
+      "sha256": "5ecc3b3068d01b86e36b2fea5e9302dadb35e3dbbfc65678cacb62485d941f58"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.product-execution-quality-20261031T133718228.source-freeze.json",
+      "source": "product-execution-quality-20261031T133718228.source-freeze.json",
+      "bytes": 787016,
+      "sha256": "0078e7d99081c83c7718e6d9a7375a0321fc7df362e75f1cf55fff2e9cb297f0"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.product-execution-quality-20261031T133718228.clippy.json",
+      "source": "product-execution-quality-20261031T133718228.clippy.json",
+      "bytes": 368,
+      "sha256": "b53e9ec6b2db2ff8872da3c34b4775cfb33e46385d6445cbf0b4b9f33da94b53"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.product-execution-quality-20261031T133718228.clippy.log",
+      "source": "product-execution-quality-20261031T133718228.clippy.log",
+      "bytes": 4481606,
+      "sha256": "10388b6e20fc0ec9ccc0db3dddffa6225ecd78ca892625b9ed45f86fe253e4a9"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.product-execution-quality-20261031T133718228.default-check.json",
+      "source": "product-execution-quality-20261031T133718228.default-check.json",
+      "bytes": 344,
+      "sha256": "7e92147a9d92193a00bcfbb31b334469ff86a83a099243fa3413ad1c63c01a95"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.product-execution-quality-20261031T133718228.default-check.log",
+      "source": "product-execution-quality-20261031T133718228.default-check.log",
+      "bytes": 82490,
+      "sha256": "25ec60d13fd36b125870d932322939db8b339e834e9467ab534a00746cfcb5a4"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.product-execution-quality-20261031T133718228.doctest.json",
+      "source": "product-execution-quality-20261031T133718228.doctest.json",
+      "bytes": 358,
+      "sha256": "b0e74cb72a1b43a955f07ce712a1de4895830f1fc9c352ffd4d5f2a8d769b413"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.product-execution-quality-20261031T133718228.doctest.log",
+      "source": "product-execution-quality-20261031T133718228.doctest.log",
+      "bytes": 81640,
+      "sha256": "28e3fdc77134479be3aa8ef221b23fb042a0424755d27bc80c15882147a523fe"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.product-execution-quality-20261031T133718228.structure.json",
+      "source": "product-execution-quality-20261031T133718228.structure.json",
+      "bytes": 539,
+      "sha256": "836720639383e27f897b9aea5981c56b86f787864aaf73de348fee19b9d76d4f"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.product-execution-quality-20261031T133718228.structure.log",
+      "source": "product-execution-quality-20261031T133718228.structure.log",
+      "bytes": 65048,
+      "sha256": "7f1e933098d112179b74504e343c821dc1bd24d06a9c0f977bf4fcb29a9060f8"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.product-execution-quality-20261031T133718228.fmt.json",
+      "source": "product-execution-quality-20261031T133718228.fmt.json",
+      "bytes": 2516,
+      "sha256": "89ba3c36e28c970f17dc9cfa7ed970ccca9ce3baf4a89a26cd07e9d0eda887b0"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.product-execution-quality-20261031T133718228.fmt.log",
+      "source": "product-execution-quality-20261031T133718228.fmt.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.product-execution-quality-20261031T133718228.structure-report.dependency_edges.csv",
+      "source": "product-execution-quality-20261031T133718228.structure-report/dependency_edges.csv",
+      "bytes": 77544,
+      "sha256": "529e738d348314f7a4c0d909b165620d03ec57478b68ad42b06aa349b30e13f4"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.product-execution-quality-20261031T133718228.structure-report.file_metrics.csv",
+      "source": "product-execution-quality-20261031T133718228.structure-report/file_metrics.csv",
+      "bytes": 330414,
+      "sha256": "bd8ba85aeeeb634806c9654d742c0143f71002e897c137ee88e680c962eb66da"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.product-execution-quality-20261031T133718228.structure-report.findings.md",
+      "source": "product-execution-quality-20261031T133718228.structure-report/findings.md",
+      "bytes": 122295,
+      "sha256": "9d5a5d0789163f67c47a5d8a7fae32b228234b1b0c913f4c6129a57dc8457c4a"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.product-execution-quality-20261031T133718228.structure-report.package_metrics.csv",
+      "source": "product-execution-quality-20261031T133718228.structure-report/package_metrics.csv",
+      "bytes": 6444,
+      "sha256": "c2df26363c079ef3c17be71810df334c6e4825ab5987b4951b3f1432368b85f2"
+    },
+    {
+      "path": "task-presentation-terminal-request-raw.product-execution-quality-20261031T133718228.structure-report.public_type_duplicates.csv",
+      "source": "product-execution-quality-20261031T133718228.structure-report/public_type_duplicates.csv",
+      "bytes": 17238,
+      "sha256": "6cbaa427fef9360e8adb6245ea1eec66f5fdaf2624a24979e82d4877a28e31ac"
+    }
+  ],
+  "artifactCount": 73,
+  "artifactBytes": 15547929,
+  "rawByteDrift": 0
+}

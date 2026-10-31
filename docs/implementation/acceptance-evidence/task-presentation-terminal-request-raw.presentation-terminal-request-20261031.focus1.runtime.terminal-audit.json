@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "base": "dda753a48d306f69fe9e6f8dbf79a2da8e201607",
+  "run": "presentation-terminal-request-20261031.focus1.runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.133s] 5 tests run: 3 passed, 2 failed, 2136 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 5,
+  "passed": 3,
+  "failed": 2,
+  "skipped": 2136,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4026,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::presentation::terminal_requests::genuine_program_await_many_fault_keeps_the_event_and_complete_checkpoint_until_unwind_is_admitted"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::presentation::terminal_requests::genuine_nested_need_rejects_a_foreign_publication_without_losing_its_resource_owner"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-31T13:25:01.7899587Z"
+}

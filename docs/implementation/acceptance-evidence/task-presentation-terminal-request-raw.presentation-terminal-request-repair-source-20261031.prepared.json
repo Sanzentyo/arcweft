@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "base": "1e399105b1cc67bf8f9cc0d9fbd75f306b96482b",
+  "tree": "66508266da0fe4b4bc0f26da94fdffb004f1f821",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs",
+      "blob": "4d23b73792050bc29357d679f4130ec6cdb40e10"
+    }
+  ],
+  "other": [],
+  "held": [
+    "crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs",
+    "crates/arcweft-cli/tests/check/agent_script_debug.rs",
+    "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+    "crates/arcweft-cli/tests/check/profile_entry_selection.rs",
+    "crates/arcweft-runtime-host/src/native_task.rs",
+    "samples/agent-script/cli-read-resource-metadata-smoke.awfagent",
+    "samples/agent-script/cli-read-resource-smoke.awfagent",
+    "samples/agent-script/cli-read-resource-value-smoke.awfagent",
+    "samples/agent-script/native-choice-dispatch.arcw",
+    "samples/agent-script/native-project-graph-relations.arcw",
+    "samples/agent-script/native-visual-regression.arcw",
+    "samples/image-animation.arcw",
+    "samples/rich-text-full-grammar.arcw",
+    "samples/rich-text-windows-fonts.arcw"
+  ],
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "patchSha256": "7ba2125d0b528f062495521d2d3a40c3a35afc63ffd2cdc44e6dcb6d2e7a19d7",
+  "preparedAt": "2026-10-31T13:37:14.2970016Z"
+}

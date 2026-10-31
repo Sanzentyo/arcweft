@@ -1,0 +1,227 @@
+[
+  {
+    "attempt": "focus1",
+    "ownedSources": [
+      {
+        "path": "crates/arcweft-core/src/awbc/vm.rs",
+        "bytes": 224195,
+        "sha256": "54f567388f24de8decc1ddf0bff2a96a0be3e0721f18cc85566c5ddbed094e8f",
+        "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/vm.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step.rs",
+        "bytes": 248142,
+        "sha256": "9b140b76af3f7af917752cff1b824d977f2fb6708e4d9871f280b358984711db",
+        "source": "terminal-request-focus1.product-source.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/control.rs",
+        "bytes": 4070,
+        "sha256": "80807e7a6c25dcb30a2d314cd4743529502e88d679333ef99f91d8d3869d7e88",
+        "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/control.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+        "bytes": 14023,
+        "sha256": "5a0f9a6a0c88a2b0ae5e7b1bfe8395d1c41a68717a6f41d3695f1be353b84934",
+        "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/presentation.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+        "bytes": 120739,
+        "sha256": "e3abb4545b2215552806009c4eeccc9929b8be06522f3064a9f5ee3040711d02",
+        "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/suspension.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+        "bytes": 37187,
+        "sha256": "71b5229478fc3a3eae035821d48bb104ebab64fae4ee1a50ee91eaa0590da887",
+        "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+        "bytes": 15255,
+        "sha256": "6d83ecf3d0bb387138d0c664a15b5fbc335ea23d41fefbdc1847e3d9202f0be0",
+        "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+        "bytes": 15938,
+        "sha256": "0e058dd1f149134256e319801996ed0c3695c4456b5f62859ca14dc0dc7bd5d6",
+        "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs",
+        "bytes": 23960,
+        "sha256": "3d7d8f6c4b0287225543143d96d8c5529eaad097a82a2366762fd4ff72b6ee3c",
+        "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs",
+        "bytes": 12460,
+        "sha256": "4097b8a38b7d947676f9718bb535f0bee60580d958ae00a4378cea186f2f4382",
+        "source": null,
+        "status": "Original source-freeze hash and runtime log retained; exact unpublished fixture bytes were not captured."
+      }
+    ]
+  },
+  {
+    "attempt": "focus2",
+    "ownedSources": [
+      {
+        "path": "crates/arcweft-core/src/awbc/vm.rs",
+        "bytes": 224195,
+        "sha256": "54f567388f24de8decc1ddf0bff2a96a0be3e0721f18cc85566c5ddbed094e8f",
+        "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/vm.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step.rs",
+        "bytes": 248280,
+        "sha256": "c432e8b6905c82c53056375bab181420e117d0d4ce133b1f0529d8a877076eb4",
+        "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/control.rs",
+        "bytes": 4070,
+        "sha256": "80807e7a6c25dcb30a2d314cd4743529502e88d679333ef99f91d8d3869d7e88",
+        "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/control.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+        "bytes": 14023,
+        "sha256": "5a0f9a6a0c88a2b0ae5e7b1bfe8395d1c41a68717a6f41d3695f1be353b84934",
+        "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/presentation.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+        "bytes": 120739,
+        "sha256": "e3abb4545b2215552806009c4eeccc9929b8be06522f3064a9f5ee3040711d02",
+        "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/suspension.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+        "bytes": 37187,
+        "sha256": "71b5229478fc3a3eae035821d48bb104ebab64fae4ee1a50ee91eaa0590da887",
+        "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+        "bytes": 15255,
+        "sha256": "6d83ecf3d0bb387138d0c664a15b5fbc335ea23d41fefbdc1847e3d9202f0be0",
+        "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+        "bytes": 15938,
+        "sha256": "0e058dd1f149134256e319801996ed0c3695c4456b5f62859ca14dc0dc7bd5d6",
+        "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs",
+        "bytes": 23960,
+        "sha256": "3d7d8f6c4b0287225543143d96d8c5529eaad097a82a2366762fd4ff72b6ee3c",
+        "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs",
+        "bytes": 12869,
+        "sha256": "b22aa590fcace964b453b2ce77fcfe15b57db4f6dbeda565e1b10d313a3f2b0b",
+        "source": "terminal-request-focus2.fixture-source.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      }
+    ]
+  },
+  {
+    "attempt": "focus3",
+    "ownedSources": [
+      {
+        "path": "crates/arcweft-core/src/awbc/vm.rs",
+        "bytes": 224195,
+        "sha256": "54f567388f24de8decc1ddf0bff2a96a0be3e0721f18cc85566c5ddbed094e8f",
+        "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/vm.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step.rs",
+        "bytes": 248280,
+        "sha256": "c432e8b6905c82c53056375bab181420e117d0d4ce133b1f0529d8a877076eb4",
+        "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/control.rs",
+        "bytes": 4070,
+        "sha256": "80807e7a6c25dcb30a2d314cd4743529502e88d679333ef99f91d8d3869d7e88",
+        "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/control.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+        "bytes": 14023,
+        "sha256": "5a0f9a6a0c88a2b0ae5e7b1bfe8395d1c41a68717a6f41d3695f1be353b84934",
+        "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/presentation.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+        "bytes": 120739,
+        "sha256": "e3abb4545b2215552806009c4eeccc9929b8be06522f3064a9f5ee3040711d02",
+        "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/suspension.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+        "bytes": 37187,
+        "sha256": "71b5229478fc3a3eae035821d48bb104ebab64fae4ee1a50ee91eaa0590da887",
+        "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+        "bytes": 15255,
+        "sha256": "6d83ecf3d0bb387138d0c664a15b5fbc335ea23d41fefbdc1847e3d9202f0be0",
+        "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+        "bytes": 15938,
+        "sha256": "0e058dd1f149134256e319801996ed0c3695c4456b5f62859ca14dc0dc7bd5d6",
+        "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs",
+        "bytes": 23960,
+        "sha256": "3d7d8f6c4b0287225543143d96d8c5529eaad097a82a2366762fd4ff72b6ee3c",
+        "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs",
+        "bytes": 14098,
+        "sha256": "52e8f3c1bb88bb4b8a1f66ad7ac12fecc4e7a0512e13e2c9fa7876b340c70ec5",
+        "source": "terminal-request-focus3-source/crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs",
+        "status": "Exact byte/hash match to original source freeze"
+      }
+    ]
+  }
+]

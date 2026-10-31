@@ -1,0 +1,8 @@
+From https://github.com/Sanzentyo/arcweft
+ * branch                main       -> FETCH_HEAD
+[main 1e399105b] checkpoint(core): stage child terminal requests under original custody
+ 10 files changed, 654 insertions(+), 172 deletions(-)
+ create mode 100644 crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs
+To https://github.com/Sanzentyo/arcweft.git
+   dda753a48..1e399105b  HEAD -> main
+{"commit":"1e399105b1cc67bf8f9cc0d9fbd75f306b96482b","parent":"dda753a48d306f69fe9e6f8dbf79a2da8e201607","tree":"4e7dda32c4ac6259a8648a3395bcaa3a91a18a09","paths":10,"blobDrift":0,"originalWip":14,"separatelyHeld":0,"patchSha256":"f5694ffd2be0c694c681ffc40f1e68acaae888de032d5d430ab21696bd4eefb0","indexEmpty":true}
