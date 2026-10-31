@@ -1,0 +1,154 @@
+{
+  "version": 1,
+  "date": "2026-10-31",
+  "inspectedHead": "d4fbb2a785afccd5634c6fbddcba64e91493b265",
+  "sourceCommit": "c3b6ea79a7b16674ed0cbcd644b9e7bdd6c95030",
+  "frozenBase": "c35fc69a52db5709b98c0b135d6df559acd24af9",
+  "workingTree": "Original tracked WIP14 and untracked actual files6 retained; the CLI executable was cataloged and hashed by the full CLI package run in this frozen checkout.",
+  "binary": "D:/git/arcweft/target/debug/arcw.exe",
+  "binarySha256": "5485b91109a0dabf7529fc0ba1e55adadff205995befab633f024248e6c9953d",
+  "binaryDrift": 0,
+  "sourceInputs": 4005,
+  "sourceDrift": 0,
+  "contract": "docs/01-language/converged-language-surface.md:347 requires separate View construction and ordinary intrinsic mount(value). docs/03-presentation/view-reactive.md requires ordinary View declaration calls to produce ViewValue.",
+  "cases": [
+    {
+      "case": "scalar-control",
+      "command": [
+        "D:/git/arcweft/target/debug/arcw.exe",
+        "check",
+        "--manifest-path",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\presentation-mount-source-probe\\scalar-control\\arcw.toml",
+        "--profile",
+        "main",
+        "--json"
+      ],
+      "actualExitCode": 0,
+      "sourceSha256": "404f5b07f167bc54bb1a0cfdc2ecaf252c6e332a55a980b0d3f9dc750ad4e49c",
+      "source": "task-presentation-mount-source-probe.scalar-control.source.arcw.txt",
+      "manifest": "task-presentation-mount-source-probe.scalar-control.manifest.toml",
+      "log": "task-presentation-mount-source-probe.scalar-control.check.log"
+    },
+    {
+      "case": "view-construction-control",
+      "command": [
+        "D:/git/arcweft/target/debug/arcw.exe",
+        "check",
+        "--manifest-path",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\presentation-mount-source-probe\\view-construction-control\\arcw.toml",
+        "--profile",
+        "main",
+        "--json"
+      ],
+      "actualExitCode": 1,
+      "sourceSha256": "6c3fbe91e76e5e74e99ad3b80f35e4cf84701e4f975f97c4aae42ebd4f1b3c65",
+      "source": "task-presentation-mount-source-probe.view-construction-control.source.arcw.txt",
+      "manifest": "task-presentation-mount-source-probe.view-construction-control.manifest.toml",
+      "log": "task-presentation-mount-source-probe.view-construction-control.check.log"
+    },
+    {
+      "case": "mount-scalar",
+      "command": [
+        "D:/git/arcweft/target/debug/arcw.exe",
+        "check",
+        "--manifest-path",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\presentation-mount-source-probe\\mount-scalar\\arcw.toml",
+        "--profile",
+        "main",
+        "--json"
+      ],
+      "actualExitCode": 1,
+      "sourceSha256": "27e422e8989a7df6cfe25224a67ab1378342039c618d1169a67c6ac9faf98abf",
+      "source": "task-presentation-mount-source-probe.mount-scalar.source.arcw.txt",
+      "manifest": "task-presentation-mount-source-probe.mount-scalar.manifest.toml",
+      "log": "task-presentation-mount-source-probe.mount-scalar.check.log"
+    },
+    {
+      "case": "mount-view",
+      "command": [
+        "D:/git/arcweft/target/debug/arcw.exe",
+        "check",
+        "--manifest-path",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\presentation-mount-source-probe\\mount-view\\arcw.toml",
+        "--profile",
+        "main",
+        "--json"
+      ],
+      "actualExitCode": 1,
+      "sourceSha256": "c8f318f6ab23ed4123da15c179da752c2caf95a3d2480c9d51f64b025688a007",
+      "source": "task-presentation-mount-source-probe.mount-view.source.arcw.txt",
+      "manifest": "task-presentation-mount-source-probe.mount-view.manifest.toml",
+      "log": "task-presentation-mount-source-probe.mount-view.check.log"
+    }
+  ],
+  "result": "Scalar control exits0. View construction exits1 with compiler.runtime_semantic_projection: ViewValue has no closed runtime representation. Both mount(42) and mount(ProbePanel()) exit1 with sema.call.unknown_target for mount.",
+  "scope": "Four independent CLI check probes, not nextest tests or runtime/save/image-parity acceptance. The invalid scalar mount is an additional lookup probe, not a proposed valid mount argument.",
+  "disposition": "Extend the already-unaccepted Presentation Source/command ABI inventory to include ordinary mount resolution and owned ViewValue runtime projection. Do not reopen accepted Generic Match, schema-role, retained View library/source-admission, token/custody or AWBC scope-header boundaries.",
+  "artifacts": [
+    {
+      "path": "task-presentation-mount-source-probe.results.json",
+      "bytes": 3312,
+      "sha256": "d2785aabb86591b0069036a8f4aecfb53b5e6c2ca96fbb3e9323998096f46aea"
+    },
+    {
+      "path": "task-presentation-mount-source-probe.scalar-control.manifest.toml",
+      "bytes": 165,
+      "sha256": "1d532f6146f112b6ebb7352fe74d35c4c08cd2c1d30d9214d86e02bf9de5ca2c"
+    },
+    {
+      "path": "task-presentation-mount-source-probe.scalar-control.source.arcw.txt",
+      "bytes": 102,
+      "sha256": "404f5b07f167bc54bb1a0cfdc2ecaf252c6e332a55a980b0d3f9dc750ad4e49c"
+    },
+    {
+      "path": "task-presentation-mount-source-probe.scalar-control.check.log",
+      "bytes": 1140,
+      "sha256": "596d1217f8a79bb68f1b9710718334ef16fa62c3df5dec287c234d0489e54b29"
+    },
+    {
+      "path": "task-presentation-mount-source-probe.view-construction-control.manifest.toml",
+      "bytes": 165,
+      "sha256": "1d532f6146f112b6ebb7352fe74d35c4c08cd2c1d30d9214d86e02bf9de5ca2c"
+    },
+    {
+      "path": "task-presentation-mount-source-probe.view-construction-control.source.arcw.txt",
+      "bytes": 151,
+      "sha256": "6c3fbe91e76e5e74e99ad3b80f35e4cf84701e4f975f97c4aae42ebd4f1b3c65"
+    },
+    {
+      "path": "task-presentation-mount-source-probe.view-construction-control.check.log",
+      "bytes": 153,
+      "sha256": "52a05a2a355f4bc325cfa233d655f0dc7593498aebf9b0121abf19297656ec3b"
+    },
+    {
+      "path": "task-presentation-mount-source-probe.mount-scalar.manifest.toml",
+      "bytes": 165,
+      "sha256": "1d532f6146f112b6ebb7352fe74d35c4c08cd2c1d30d9214d86e02bf9de5ca2c"
+    },
+    {
+      "path": "task-presentation-mount-source-probe.mount-scalar.source.arcw.txt",
+      "bytes": 110,
+      "sha256": "27e422e8989a7df6cfe25224a67ab1378342039c618d1169a67c6ac9faf98abf"
+    },
+    {
+      "path": "task-presentation-mount-source-probe.mount-scalar.check.log",
+      "bytes": 128,
+      "sha256": "4cd09fffd2e450728b952c1c26a8d44d018c19b47cfe44eb121d36ff3afa5a55"
+    },
+    {
+      "path": "task-presentation-mount-source-probe.mount-view.manifest.toml",
+      "bytes": 165,
+      "sha256": "1d532f6146f112b6ebb7352fe74d35c4c08cd2c1d30d9214d86e02bf9de5ca2c"
+    },
+    {
+      "path": "task-presentation-mount-source-probe.mount-view.source.arcw.txt",
+      "bytes": 159,
+      "sha256": "c8f318f6ab23ed4123da15c179da752c2caf95a3d2480c9d51f64b025688a007"
+    },
+    {
+      "path": "task-presentation-mount-source-probe.mount-view.check.log",
+      "bytes": 128,
+      "sha256": "4cd09fffd2e450728b952c1c26a8d44d018c19b47cfe44eb121d36ff3afa5a55"
+    }
+  ]
+}

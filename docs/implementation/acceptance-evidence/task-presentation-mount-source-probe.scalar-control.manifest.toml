@@ -1,0 +1,8 @@
+schema = 1
+[package]
+id = "org.arcweft.test.presentation-mount-probe"
+version = "0.1.0"
+[profiles.main]
+kind = "cli"
+source = "src/main.arcw"
+entry = "@entry.smoke"

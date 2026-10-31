@@ -1,0 +1,6 @@
+pub view ProbePanel() { Text("probe") }
+entry cli @entry.smoke { goto @flow.smoke }
+flow smoke() -> i64 {
+    let handle = mount(ProbePanel())
+    return 42
+}

@@ -1,0 +1,6 @@
+
+entry cli @entry.smoke { goto @flow.smoke }
+flow smoke() -> i64 {
+    let value = 42
+    return 42
+}

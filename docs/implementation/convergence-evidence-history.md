@@ -13337,3 +13337,9 @@ Coreの新規5件と既存2,128件を互いに除外した二つのrunで全PASS
 最終入力のworkspace all-targets／all-features locked checkとClippy、Core doctest78件、Core／Web Playerのdefault-feature Wasm compile、構造gateは終了0。97 package、review trigger382、blocking0。Wasm compileは画像parityの受入ではない。変更しない100 manifest／lock hashから再利用した解決済みgraphのCore逆依存は53 packageで、Core以外52 packageのruntimeは別runで開始した。このowner checkpointを全逆依存runtimeやPresentation ABI全体の受入へ拡張しない。
 
 Supersedes: 現状一覧のPresentation行にあった重複した旧検証説明を原本へのリンクへ整理し、広すぎた「AWBC ledger」の残作業表記を「AWBC Productのbank所有とactive grantを含む保存／rollback」へ限定した。共通scope protocolと実AWBC headerのCore検証が成立したためであり、既存Native custody・Image owner・Generic Matchの完了判定は戻していない。Source11 callable／6 method、Dialogue独立bank、command lowering／driver接続は別境界として引き続き未受入。
+
+## Presentation Sourceのmount／ViewValue条件の具体化 — 2026-10-31
+
+確認したmainはd4fbb2a785afccd5634c6fbddcba64e91493b265、実装Sourceはc3b6ea79a7b16674ed0cbcd644b9e7bdd6c95030。同じ4,005凍結入力・差分0、CLI executable SHA256 5485b91109a0dabf7529fc0ba1e55adadff205995befab633f024248e6c9953dで、別々の一時package4件を実際のarcw checkへ渡した。scalar controlは終了0、View構築は終了1でViewValueのclosed runtime representation不足、mount(42)／mount(ProbePanel())は各終了1で未解決関数mountとなった。前者のscalar mountはlookup用の不正型入力であり、正しいmount引数として受入したものではない。[入力・manifest・command・原診断](acceptance-evidence/task-presentation-mount-source-probe.json)。
+
+Supersedes: Source ABIの残範囲を既存11 callable／6 methodだけで表していた列挙を補正した。共有surfaceの現行仕様が構築とmountを分離し、普通のintrinsic mount(value)を要求していることと、上記の実再現が根拠である。既存のrole schema移行やretained Viewのlibrary／Source admission、Core custody、AWBC scope、Generic Matchを未完了へ戻す判定ではない。現状一覧のscope検証の詳細は既存原本へのリンクへ整理した。CLI check4件をnextestやruntime・保存復元・画像parityの受入に合算しない。

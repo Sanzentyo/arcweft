@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "sourceCommit": "c3b6ea79a7b16674ed0cbcd644b9e7bdd6c95030",
+  "binary": "D:/git/arcweft/target/debug/arcw.exe",
+  "binarySha256": "5485b91109a0dabf7529fc0ba1e55adadff205995befab633f024248e6c9953d",
+  "binaryDrift": 0,
+  "cases": [
+    {
+      "case": "scalar-control",
+      "command": [
+        "D:/git/arcweft/target/debug/arcw.exe",
+        "check",
+        "--manifest-path",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\presentation-mount-source-probe\\scalar-control\\arcw.toml",
+        "--profile",
+        "main",
+        "--json"
+      ],
+      "exitCode": 0,
+      "sourceSha256": "404f5b07f167bc54bb1a0cfdc2ecaf252c6e332a55a980b0d3f9dc750ad4e49c",
+      "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\presentation-mount-source-probe\\scalar-control\\check.log",
+      "startedAt": "2026-10-31T02:17:24.9273288Z",
+      "finishedAt": "2026-10-31T02:17:25.1021335Z"
+    },
+    {
+      "case": "view-construction-control",
+      "command": [
+        "D:/git/arcweft/target/debug/arcw.exe",
+        "check",
+        "--manifest-path",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\presentation-mount-source-probe\\view-construction-control\\arcw.toml",
+        "--profile",
+        "main",
+        "--json"
+      ],
+      "exitCode": 1,
+      "sourceSha256": "6c3fbe91e76e5e74e99ad3b80f35e4cf84701e4f975f97c4aae42ebd4f1b3c65",
+      "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\presentation-mount-source-probe\\view-construction-control\\check.log",
+      "startedAt": "2026-10-31T02:17:25.1047146Z",
+      "finishedAt": "2026-10-31T02:17:25.2705839Z"
+    },
+    {
+      "case": "mount-scalar",
+      "command": [
+        "D:/git/arcweft/target/debug/arcw.exe",
+        "check",
+        "--manifest-path",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\presentation-mount-source-probe\\mount-scalar\\arcw.toml",
+        "--profile",
+        "main",
+        "--json"
+      ],
+      "exitCode": 1,
+      "sourceSha256": "27e422e8989a7df6cfe25224a67ab1378342039c618d1169a67c6ac9faf98abf",
+      "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\presentation-mount-source-probe\\mount-scalar\\check.log",
+      "startedAt": "2026-10-31T02:17:25.2730672Z",
+      "finishedAt": "2026-10-31T02:17:25.4212605Z"
+    },
+    {
+      "case": "mount-view",
+      "command": [
+        "D:/git/arcweft/target/debug/arcw.exe",
+        "check",
+        "--manifest-path",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\presentation-mount-source-probe\\mount-view\\arcw.toml",
+        "--profile",
+        "main",
+        "--json"
+      ],
+      "exitCode": 1,
+      "sourceSha256": "c8f318f6ab23ed4123da15c179da752c2caf95a3d2480c9d51f64b025688a007",
+      "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\presentation-mount-source-probe\\mount-view\\check.log",
+      "startedAt": "2026-10-31T02:17:25.4233011Z",
+      "finishedAt": "2026-10-31T02:17:25.5457387Z"
+    }
+  ]
+}

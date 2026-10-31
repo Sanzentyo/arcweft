@@ -1,0 +1,1 @@
+error[compiler.runtime_semantic_projection]: semantic type cannot enter runtime lowering: checked type `ViewValue` has no closed runtime representation

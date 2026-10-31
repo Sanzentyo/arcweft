@@ -1,0 +1,30 @@
+{
+  "status": "ok",
+  "package": "org.arcweft.test.presentation-mount-probe",
+  "manifest": "\\\\?\\C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\presentation-mount-source-probe\\scalar-control\\arcw.toml",
+  "selected_profile": "main",
+  "selected_source": "\\\\?\\C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\presentation-mount-source-probe\\scalar-control\\src\\main.arcw",
+  "modules": [
+    {
+      "module": "crate",
+      "source": "\\\\?\\C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\presentation-mount-source-probe\\scalar-control\\src\\main.arcw",
+      "source_hash": "4e46ff8c74e9e822ca3e69956b35acaa04f75ed2e9fd135a4203eaba039b28ea"
+    }
+  ],
+  "compile_units": [
+    {
+      "id": 0,
+      "modules": [
+        "crate"
+      ],
+      "fingerprint": "68be9c9694da1675b263cd62e3e80d4795036d2775d69dca409a2b2c95ef5ed7",
+      "cache": "miss"
+    }
+  ],
+  "syntax_warnings": 0,
+  "flows": 1,
+  "line_task_groups": 0,
+  "verifier_diagnostics": 0,
+  "obligations": 0,
+  "unsafe_audits": 0
+}
