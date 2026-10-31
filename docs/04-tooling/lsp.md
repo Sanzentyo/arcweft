@@ -245,6 +245,10 @@ Signature caches and in-flight responses remain bound to that accepted
 generation; an edit invalidates old responses even when both generations have
 completed analysis. Verifier diagnostics require the compiled phase.
 
+Type-argument hover and Rust nominal navigation use accepted type-resolution
+nodes, including nested and explicit type arguments. Their type and alias
+information remains available when the node has no runtime value projection.
+
 Workspace edits are negotiated in the transport. If the client advertises
 `workspace.workspaceEdit.documentChanges`, edit-bearing code actions and
 rename results are returned as versioned `documentChanges`; otherwise they fall

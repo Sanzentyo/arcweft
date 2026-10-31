@@ -702,7 +702,10 @@ fn language_symbol_at(
                         cursors.push(LanguageNominalCursor {
                             owner: LanguageNominalOwner::Builtin(constructor),
                             source,
-                            normalized: analysis.ty(owner).cloned(),
+                            normalized: analysis
+                                .type_resolution_node(owner)
+                                .and_then(|node| node.recovered())
+                                .cloned(),
                         });
                     }
                 }
@@ -745,10 +748,17 @@ fn accepted_nominal_at(
         .document()
         .identity();
     let mut cursors = Vec::new();
-    for (owner, ty) in analysis.types() {
-        let TypeKind::AcceptedNominal(nominal) = ty else {
+    for node in analysis
+        .type_resolutions()
+        .flat_map(|(_, report)| report.outcome().product().nodes())
+    {
+        if node.is_contextual_alias_target() {
+            continue;
+        }
+        let Some(TypeKind::AcceptedNominal(nominal)) = node.recovered() else {
             continue;
         };
+        let owner = node.node();
         let Some((_, module)) = project
             .hir_project()
             .view()
@@ -1200,6 +1210,7 @@ entry agent @entry.agent.main {
 pub struct RouteInfo {
     route: Ref<Flow>,
     speaker: Ref<Character>,
+    nested: Vec<Ref<Flow>>,
 }
 
 fn smoke() -> Result<Unit, AgentError>
@@ -1241,6 +1252,17 @@ entry agent @entry.agent.main {
         };
         assert!(ref_hover.contains("language-owned type constructor `Ref<EntityFamily>`"));
         assert!(ref_hover.contains("normalized type: `Ref<Flow>`"));
+
+        let nested_offset =
+            SOURCE.find("Vec<Ref<Flow>>").expect("nested Ref use") + "Vec<".len() + 1;
+        let HoverContents::Scalar(MarkedString::String(nested_hover)) =
+            hover(&profile, &document, nested_offset)
+                .expect("nested type argument hover")
+                .contents
+        else {
+            panic!("expected nested Ref hover")
+        };
+        assert!(nested_hover.contains("normalized type: `Ref<Flow>`"));
 
         let HoverContents::Scalar(MarkedString::String(family_hover)) =
             hover(&profile, &document, family_offset)
@@ -1411,6 +1433,28 @@ adapter = "rust-nominal-tooling"
             argument.declaration().canonical_path().canonical_string(),
             "Rank"
         );
+
+        let argument_offset =
+            ACCEPTED_RUST_NOMINAL_SOURCE.find("Envelope<Rank>").unwrap() + "Envelope<".len() + 1;
+        let argument_cursor =
+            accepted_nominal_at(accepted.project(), analysis, &document, argument_offset)
+                .expect("accepted Rust nominal inside a generic type argument");
+        assert_eq!(
+            argument_cursor
+                .nominal
+                .declaration()
+                .canonical_path()
+                .canonical_string(),
+            "Rank"
+        );
+        let HoverContents::Scalar(MarkedString::String(argument_hover)) =
+            hover(&profile, &document, argument_offset)
+                .expect("accepted Rust argument hover")
+                .contents
+        else {
+            panic!("expected accepted Rust argument hover")
+        };
+        assert!(argument_hover.contains("accepted Rust nominal `rust:tooling-types::Rank`"));
 
         let HoverContents::Scalar(MarkedString::String(text)) = hover(&profile, &document, offset)
             .expect("accepted Rust nominal hover")
