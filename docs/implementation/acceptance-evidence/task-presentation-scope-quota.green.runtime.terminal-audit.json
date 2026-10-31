@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "6bcdd4d4e972e866031e00372fb08ec9c5ca91d6",
+  "run": "presentation-scope-quota.green.runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [ 100.314s] 2134 tests run: 2134 passed (1 slow), 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 2134,
+  "passed": 2134,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4005,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-31T03:36:53.5907451Z"
+}

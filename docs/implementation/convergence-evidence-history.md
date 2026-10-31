@@ -13366,3 +13366,12 @@ Supersedes: 現状一覧の曖昧な「最終C6監査未確認」を、受入済
 確認main e0070f36985628969ce2fa2bbde56c09eb31ef56、Source c3b6ea79a7b16674ed0cbcd644b9e7bdd6c95030。容量不足前の終端済み25 consumer packageを保持し、全体cargo clean後の残27 packageも終端した。Coreの先行2,133件と52 consumerを重複なく合わせ、7446件中7403 PASS／43 FAIL。consumerは5313件中5270 PASS／43 FAIL、39件除外。43件は以前の全CLI失敗IDと新規0・解消0の完全一致であり、成功扱いにしない。全catalogは成功し、4,005入力・実行前後binary・catalog／終端case集合の差分は0。同じpackage単位all-feature／locked条件を維持し、Coreや終端済みCLIを再実行していない。[統合終端・全原本・比較対象](acceptance-evidence/task-presentation-awbc-scopes-reverse-acceptance.json)。
 
 Supersedes: 現状一覧の「容量不足後の残27を検証中」を、実際の全終端へ更新した。中断時の容量エラー10 catalog、終了code未観測のresource-model、中断sessionの終了-1、全体cleanの終了0は変更せず履歴として保持する。Source／command ABI、AWBC Product bankとactive grantの保存／rollback、Dialogue bank、mount(ViewValue)とdriver接続はこの結果で受入済みにはしない。Generic Matchおよび既存の受入cutも維持する。
+
+
+## Scope metadata 受理境界の具体的不整合を修復 — 2026-10-31
+
+Source bc798c0f3d99eb4c6cd1a401a7e2fd00721275ff、parent 6bcdd4d4e972e866031e00372fb08ec9c5ca91d6、source patch SHA256 6f298ed0f849534f0ed11f9a0d233c2edaa68317b1efe76506714493da90e377。同じ元program・bank・scopeとmetadata上限111 bytesで、live headerはOk、inert snapshotはmetadata_bytes BudgetExceededとなる新しい不整合を、追加した1件で再現した。修正前nextestは1件中0 PASS／1 FAIL・実終了100、修正後はCore全2,134／2,134 PASS・終了0。両runの4,005入力を照合した差は本体resources.rsだけで、test／fixture／assertionは同じ。bytes 0..511・work 0..511・depth 0..製品既定値の各受理境界と、各軸の成功ケースを確認した。[red／green・原本・入力差分](acceptance-evidence/task-presentation-scope-quota-acceptance.json)。
+
+元の累積admissionを保持したまま、scope ownerがowner＋anchorのmetadata grammarを検査し、liveとinertが同じ経路を使う。public codec形状・version 1・program lease／custody検査は維持する。Core all-target/all-feature check・Clippy、default check、fmtは終了0、doctestは78／78 PASS。公開sourceの2 blobとremoteを照合し、保持WIP14 trackedと6 untrackedを混入させていない。
+
+Supersedes: 現状一覧のCore scope検証を今回の修復と全2,134件へ更新した。具体的な新規不具合の根拠は111 bytesのredであり、全体goal未完了を理由とする再開ではない。c3b6ea79a7b16674ed0cbcd644b9e7bdd6c95030の全53逆依存7,446件中7,403 PASS／43保持FAILは、その入力epochの結果として保持する。今回のprivate grant-header修正ではconsumer runtimeを重複実行せず、依存graph・public API・codecが不変で外部のactive grant生成が未接続という範囲を記録した。Generic Matchと各受入cut、およびSource／command ABI等の具体的な未接続範囲は維持する。

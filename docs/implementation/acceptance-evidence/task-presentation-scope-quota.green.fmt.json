@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "command": [
+    "rustfmt",
+    "--check",
+    "--edition",
+    "2024",
+    "--config",
+    "skip_children=true",
+    "crates/arcweft-core/src/presentation/resources.rs",
+    "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs"
+  ],
+  "exitCode": 0,
+  "recordedAt": "2026-10-31T03:39:33.7893560Z"
+}

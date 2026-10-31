@@ -1,0 +1,42 @@
+diff --git a/crates/arcweft-core/src/presentation/resources.rs b/crates/arcweft-core/src/presentation/resources.rs
+index d41b61a12..be8e72c1f 100644
+--- a/crates/arcweft-core/src/presentation/resources.rs
++++ b/crates/arcweft-core/src/presentation/resources.rs
+@@ -52,6 +52,14 @@ pub(crate) trait PresentationScopeStorage {
+ }
+ 
+ impl PresentationScopeOwner {
++    fn admit_metadata(
++        &self,
++        anchor: &PresentationScopeAnchor,
++        admission: &mut crate::value::RuntimeRetainedValueAdmission,
++    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
++        admission.validate_metadata(&(self, anchor))
++    }
++
+     fn validate_awbc_anchor(
+         self,
+         anchor: PresentationScopeAnchor,
+@@ -139,7 +147,7 @@ impl RuntimePresentationScopeSnapshot {
+         &self,
+         admission: &mut crate::value::RuntimeRetainedValueAdmission,
+     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+-        admission.validate_metadata(&(self.scope_key(), self.anchor))?;
++        self.owner.admit_metadata(&self.anchor, admission)?;
+         admission.validate_presentation_scope_snapshot(self)
+     }
+ }
+@@ -223,12 +231,7 @@ impl RuntimePresentationScopeBinding {
+                 message: "presentation scope requires its original executable lease".into(),
+             });
+         }
+-        admission.validate_metadata(&(
+-            self.owner.execution,
+-            self.owner.fiber,
+-            self.owner.scope,
+-            self.anchor,
+-        ))?;
++        self.owner.admit_metadata(&self.anchor, admission)?;
+         admission.validate_presentation_scope(self)
+     }
+ }

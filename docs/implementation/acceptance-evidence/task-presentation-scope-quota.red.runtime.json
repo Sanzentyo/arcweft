@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "6bcdd4d4e972e866031e00372fb08ec9c5ca91d6",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked",
+    "--lib",
+    "-E",
+    "test(live_and_inert_scope_headers_observe_identical_metadata_quota_boundaries)",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-scope-quota.red.runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-31T03:33:13.8123992Z",
+  "finishedAt": "2026-10-31T03:33:15.8973429Z"
+}

@@ -1,0 +1,308 @@
+{
+  "version": 1,
+  "date": "2026-10-31",
+  "sourceCommit": "bc798c0f3d99eb4c6cd1a401a7e2fd00721275ff",
+  "sourceBase": "6bcdd4d4e972e866031e00372fb08ec9c5ca91d6",
+  "sourcePatchSha256": "6f298ed0f849534f0ed11f9a0d233c2edaa68317b1efe76506714493da90e377",
+  "sourceBlobs": [
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+      "blob": "752a2eede45740309a5a0f3b7fefef3176887c06"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources.rs",
+      "blob": "be8e72c1f7119df043e4032611b63b17fca1722b"
+    }
+  ],
+  "scope": "Core private presentation-scope header metadata admission. Live bindings and inert snapshots now use one owning owner/anchor grammar under the original cumulative admission.",
+  "regression": "awbc::fiber::tests::presentation::live_and_inert_scope_headers_observe_identical_metadata_quota_boundaries",
+  "actualBefore": "At metadata_bytes = 111, the live header was accepted while its inert snapshot failed with metadata_bytes BudgetExceeded under the same original program, bank, scope, and limits.",
+  "comparisonAxes": [
+    "metadata bytes 0..511",
+    "validation work 0..511",
+    "metadata depth 0..engine_default.max_depth inclusive"
+  ],
+  "positiveAdmissionRequiredPerAxis": true,
+  "red": {
+    "version": 1,
+    "base": "6bcdd4d4e972e866031e00372fb08ec9c5ca91d6",
+    "run": "presentation-scope-quota.red.runtime",
+    "actualExitCode": 100,
+    "summary": "Summary [   0.049s] 1 test run: 0 passed, 1 failed, 2080 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 1,
+    "passed": 0,
+    "failed": 1,
+    "skipped": 2080,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4005,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "awbc::fiber::tests::presentation::live_and_inert_scope_headers_observe_identical_metadata_quota_boundaries"
+      }
+    ],
+    "isPassingRun": false,
+    "recordedAt": "2026-10-31T03:33:16.6786299Z"
+  },
+  "green": {
+    "version": 1,
+    "base": "6bcdd4d4e972e866031e00372fb08ec9c5ca91d6",
+    "run": "presentation-scope-quota.green.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [ 100.314s] 2134 tests run: 2134 passed (1 slow), 0 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2134,
+    "passed": 2134,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4005,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-31T03:36:53.5907451Z"
+  },
+  "doctestsPassed": 78,
+  "checks": [
+    {
+      "check": "check",
+      "exitCode": 0,
+      "receipt": "task-presentation-scope-quota.green.check.json",
+      "command": [
+        "check",
+        "-p",
+        "arcweft-core",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ]
+    },
+    {
+      "check": "clippy",
+      "exitCode": 0,
+      "receipt": "task-presentation-scope-quota.green.clippy.json",
+      "command": [
+        "clippy",
+        "-p",
+        "arcweft-core",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ]
+    },
+    {
+      "check": "doctest",
+      "exitCode": 0,
+      "receipt": "task-presentation-scope-quota.green.doctest.json",
+      "command": [
+        "test",
+        "-p",
+        "arcweft-core",
+        "--doc",
+        "--all-features",
+        "--locked"
+      ]
+    },
+    {
+      "check": "default-check",
+      "exitCode": 0,
+      "receipt": "task-presentation-scope-quota.green.default-check.json",
+      "command": [
+        "check",
+        "-p",
+        "arcweft-core",
+        "--all-targets",
+        "--locked"
+      ]
+    }
+  ],
+  "inputCount": 4005,
+  "greenInputDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "changedInputsBetweenRedAndGreen": [
+    "crates/arcweft-core/src/presentation/resources.rs"
+  ],
+  "testAndFixtureUnchanged": true,
+  "publishedSourceMatchesGreen": true,
+  "originalTrackedWip": 14,
+  "originalUntrackedActualFiles": 6,
+  "impact": {
+    "owner": "arcweft-core",
+    "graph": "task-presentation-awbc-scopes.reverse-closure.json",
+    "resolvedGraph": "task-presentation-awbc-scopes.metadata-all-features.json",
+    "closurePackages": 53,
+    "previousReverseSource": "c3b6ea79a7b16674ed0cbcd644b9e7bdd6c95030",
+    "previousReverse": "task-presentation-awbc-scopes-reverse-acceptance.json",
+    "consumerRuntime": "not-repeated",
+    "reason": "Only private grant-header quota calculation changed. Cargo, features, dependencies, public API, serialized shape, and contract version are unchanged. Active grant creation and ledger admission remain Core-private, and Product/Source consumers are not yet connected. Re-executed complete Core tests cover both scope carriers; prior 53-package runtime evidence retains its original source epoch."
+  },
+  "boundary": "This repairs a reproduced resource-budget discrepancy in an accepted foundation; it neither reopens Generic Match nor accepts the unconnected Presentation Source/command ABI, Product bank, Dialogue bank, mount(ViewValue), or typed driver.",
+  "artifacts": [
+    {
+      "path": "task-presentation-scope-quota.red.source-freeze.json",
+      "bytes": 782657,
+      "sha256": "f8a98497d457a5fd9f406302ab1605149b298a813477bfca7d52729ec4b83869"
+    },
+    {
+      "path": "task-presentation-scope-quota.red.catalog.json",
+      "bytes": 593,
+      "sha256": "ca320eed1a2a88caedf254401b173387136bb9d038f3846a5796b2a34ca39d97"
+    },
+    {
+      "path": "task-presentation-scope-quota.red.catalog.log",
+      "bytes": 439321,
+      "sha256": "c82c1088b290a9c289b6076091d5da09d3c8d823d2bf2020463ebdc807f230e5"
+    },
+    {
+      "path": "task-presentation-scope-quota.red.catalog.inventory.json",
+      "bytes": 529378,
+      "sha256": "b5b2ca86177811d0b0cfe9320445ee8115737b9f31872e92112f68f94fd9adb6"
+    },
+    {
+      "path": "task-presentation-scope-quota.red.runtime.json",
+      "bytes": 687,
+      "sha256": "989e521e4b36e49286da7bfb564b7539c46cf2609f8c7158308e3aba3f7d7b89"
+    },
+    {
+      "path": "task-presentation-scope-quota.red.runtime.log",
+      "bytes": 666986,
+      "sha256": "fcbf019ada14f265964f04c41d175ed61874e84e3f8917c4b9c7c0938d2f8b07"
+    },
+    {
+      "path": "task-presentation-scope-quota.red.runtime.terminal-audit.json",
+      "bytes": 823,
+      "sha256": "212a8131857bb80e0e34e368962ed05217834e2603e4ca7a5a97ceb55ce3c37b"
+    },
+    {
+      "path": "task-presentation-scope-quota.red.binaries-before.json",
+      "bytes": 202,
+      "sha256": "651f8bd812a2a3d0aeb2d8013eba1593087c5289c10be59ae2b0efb353c3fa06"
+    },
+    {
+      "path": "task-presentation-scope-quota.green.source-freeze.json",
+      "bytes": 782659,
+      "sha256": "b18fc83a26260ee34fbccd985a8dfce0e672ff0734b5b8ad438ae793fe3b8b9d"
+    },
+    {
+      "path": "task-presentation-scope-quota.green.catalog.json",
+      "bytes": 483,
+      "sha256": "0511aec1bc3579138da579e6a00f2a2f5dab5ecae02e57ba8c68068d8db95bd4"
+    },
+    {
+      "path": "task-presentation-scope-quota.green.catalog.log",
+      "bytes": 452961,
+      "sha256": "6fbb9d980c26264c1d1c6ebaacc256f3dc1b6c8a8b7fad3ec758325a5b74ff60"
+    },
+    {
+      "path": "task-presentation-scope-quota.green.catalog.inventory.json",
+      "bytes": 539697,
+      "sha256": "badb2fb7775c7175bf5649d0a212628e7a021e2ed18e61cfcfb899f4a1a2891b"
+    },
+    {
+      "path": "task-presentation-scope-quota.green.runtime.json",
+      "bytes": 575,
+      "sha256": "0350419ec5e4137946dc6dcf28f1a8d5dcd1b9304436e18b751722ea60345a83"
+    },
+    {
+      "path": "task-presentation-scope-quota.green.runtime.log",
+      "bytes": 731659,
+      "sha256": "61575d1f34819410aadc7e3cd204cdba5cb3be89eeb52410c6dec00a28175828"
+    },
+    {
+      "path": "task-presentation-scope-quota.green.runtime.terminal-audit.json",
+      "bytes": 628,
+      "sha256": "c20be4a33aa227c1ca28cf604cc51d5fb3a99ad28b5b8f0598bd0442fe70771f"
+    },
+    {
+      "path": "task-presentation-scope-quota.green.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "32a2f44f712998ba1bc9805404c6a07f3ce7955c08455f52ac7076a07ad03af9"
+    },
+    {
+      "path": "task-presentation-scope-quota.green.check.json",
+      "bytes": 496,
+      "sha256": "fc0465478d335c9e3398491274d8b7dafbcb12321ec971306291c6824cf468a1"
+    },
+    {
+      "path": "task-presentation-scope-quota.green.check.log",
+      "bytes": 87030,
+      "sha256": "596a2c0ca87e4e567e37b6e3626dfedba64af7bd11b1b47ce31ad047994a4d28"
+    },
+    {
+      "path": "task-presentation-scope-quota.green.clippy.json",
+      "bytes": 498,
+      "sha256": "6402b9ad622c5e44b03675f154c331374e0c6c7ff0e8f9b04bf4edcb1094ce70"
+    },
+    {
+      "path": "task-presentation-scope-quota.green.clippy.log",
+      "bytes": 2867998,
+      "sha256": "7ebaee059ee28d2d1637973db6e3d7dd861600a68aa844366ef88de43fab8deb"
+    },
+    {
+      "path": "task-presentation-scope-quota.green.doctest.json",
+      "bytes": 489,
+      "sha256": "05c201168e31ef883e5b394b5e1fbb6812b54617ada7d0098bfd530e3b5d42dd"
+    },
+    {
+      "path": "task-presentation-scope-quota.green.doctest.log",
+      "bytes": 82219,
+      "sha256": "fec665d94762e34d400ddb0028d0b94394c196ce972101d1a6ad1024b974a335"
+    },
+    {
+      "path": "task-presentation-scope-quota.green.default-check.json",
+      "bytes": 481,
+      "sha256": "be98fb820ca010163a2d7824a59a0ce7356fa0751793c971cb2731d2ed5ff694"
+    },
+    {
+      "path": "task-presentation-scope-quota.green.default-check.log",
+      "bytes": 82997,
+      "sha256": "d31d2da519251208e8925e768c433cc385d530d02c58b4c17af88b0458f31af8"
+    },
+    {
+      "path": "task-presentation-scope-quota.green.fmt.json",
+      "bytes": 340,
+      "sha256": "b3c12f26461feae12bab220ecdb17d1cc0eb3c7d809344bc61b1dce6a08a310f"
+    },
+    {
+      "path": "task-presentation-scope-quota.regression.patch",
+      "bytes": 3148,
+      "sha256": "47eac5baf70c3f9542259780b8726bd824be3fb3984d5d7b2e3518a6c787b095"
+    },
+    {
+      "path": "task-presentation-scope-quota.fix.patch",
+      "bytes": 1636,
+      "sha256": "96774656b65d249b30ccbb7a62109d45b537c14731e41be65b00b55f6da7ab19"
+    },
+    {
+      "path": "task-run-presentation-scope-quota-tests.ps1",
+      "bytes": 4400,
+      "sha256": "a2fc5a2d0aea579c15ce8469d0de583a36f602bf981da2779e7df70cf90fecda"
+    },
+    {
+      "path": "task-check-presentation-scope-quota.ps1",
+      "bytes": 1922,
+      "sha256": "50ce72125ff5dd6c607fd616956e5444c3e22e64d29ab6cc022de4c5259e4243"
+    },
+    {
+      "path": "task-audit-nextest-final-result.ps1",
+      "bytes": 5266,
+      "sha256": "9d136f5ff9dbe80e524a8c9adb2f11fc96cce75046e3e1fe3e93ba73888cc0ab"
+    }
+  ],
+  "publicationWhitespace": {
+    "rawPatchContext": "The unchanged one-space context lines in the two retained Git patch artifacts are excluded from prose/source whitespace checking, as are raw logs. Production source fmt and whitespace checks passed.",
+    "rawPatchBytesPreserved": true
+  }
+}

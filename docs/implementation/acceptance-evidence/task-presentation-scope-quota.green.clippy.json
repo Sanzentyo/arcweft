@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "6bcdd4d4e972e866031e00372fb08ec9c5ca91d6",
+  "command": [
+    "clippy",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-scope-quota.green.clippy.log",
+  "exitCode": 0,
+  "sourceInputs": 4005,
+  "sourceDrift": 0,
+  "startedAt": "2026-10-31T03:38:00.9405362Z",
+  "finishedAt": "2026-10-31T03:39:09.4176293Z"
+}
