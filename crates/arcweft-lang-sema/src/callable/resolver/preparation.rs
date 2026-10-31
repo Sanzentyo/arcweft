@@ -365,7 +365,9 @@ pub(crate) fn prepare_presentation_callee_id(
         return Ok(None);
     }
     let path = callable_path_from_hir(*value, path, limits)?;
-    Ok(PresentationCallableId::resolve(&path))
+    Ok(PresentationCallableId::resolve_surface_name(
+        &path.dotted_name(),
+    ))
 }
 
 fn character_dialogue_callee(
@@ -564,7 +566,7 @@ pub(crate) fn prepare_language_free_dot_path(
     let is_language_free = resolve_fx_source_constructor(&path).is_some()
         || BuiltinCallableId::resolve(&path).is_some()
         || AgentIntrinsicSignatureId::resolve(&path).is_some()
-        || PresentationCallableId::resolve(&path).is_some()
+        || PresentationCallableId::resolve_surface_name(&path.dotted_name()).is_some()
         || PromotionCallableId::resolve(&path).is_some()
         || accepted.free(&path).is_some();
     Ok(is_language_free.then_some(path))

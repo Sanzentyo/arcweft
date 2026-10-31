@@ -1138,12 +1138,12 @@ impl StandardMapFamily {
     }
 }
 
-impl PresentationHandleMethodId {
-    pub(crate) fn signature_schema(self) -> CallableSignatureSchema {
+impl CallableSignatureSchema {
+    pub(crate) fn presentation_handle(id: PresentationHandleMethodId) -> Self {
         empty(
             TypeKind::Unit,
             &[],
-            CallableValidator::PresentationHandle(self),
+            CallableValidator::PresentationHandle(id),
         )
     }
 }
@@ -1912,28 +1912,17 @@ pub(in crate::callable) fn presentation_schema(
 }
 
 fn presentation_result(id: PresentationCallableId) -> TypeKind {
-    use arcweft_interaction_model::presentation::PresentationResourceKind as Resource;
-    let handle = |resource| TypeKind::presentation_handle(TypeKind::PresentationResource(resource));
-    match id {
-        PresentationCallableId::View => handle(Resource::View),
-        PresentationCallableId::Menu => handle(Resource::Menu),
-        PresentationCallableId::Overlay => handle(Resource::Overlay),
-        PresentationCallableId::Background => handle(Resource::Background),
-        PresentationCallableId::Image => handle(Resource::Image),
-        PresentationCallableId::PlayerViewport => handle(Resource::Viewport),
-        PresentationCallableId::Show => handle(Resource::Character),
-        PresentationCallableId::RefBackground => TypeKind::SlotRef(Box::new(
-            TypeKind::PresentationResource(Resource::Background),
-        )),
-        PresentationCallableId::RefShow => TypeKind::SlotRef(Box::new(
-            TypeKind::PresentationResource(Resource::Character),
-        )),
-        PresentationCallableId::ClearBackground => TypeKind::Option(Box::new(
-            TypeKind::PresentationResource(Resource::Background),
-        )),
-        PresentationCallableId::Hide => TypeKind::Option(Box::new(TypeKind::PresentationResource(
-            Resource::Character,
-        ))),
+    use arcweft_interaction_model::presentation::PresentationCallableResult;
+    match id.result() {
+        PresentationCallableResult::Handle(resource) => {
+            TypeKind::presentation_handle(TypeKind::PresentationResource(resource))
+        }
+        PresentationCallableResult::SlotRef(resource) => {
+            TypeKind::SlotRef(Box::new(TypeKind::PresentationResource(resource)))
+        }
+        PresentationCallableResult::Removed(resource) => {
+            TypeKind::Option(Box::new(TypeKind::PresentationResource(resource)))
+        }
     }
 }
 
@@ -2292,7 +2281,7 @@ fn presentation_parameter_type(
     let argument = id
         .argument_role(name)
         .expect("presentation schema parameter belongs to the callable argument catalog");
-    match argument.value_policy() {
+    match PresentationArgumentValuePolicy::for_role(argument) {
         PresentationArgumentValuePolicy::PublicIdReference(family, ty) => {
             CallableParameterAdmission::checked_with_rule(
                 ty,

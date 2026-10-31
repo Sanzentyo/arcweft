@@ -4111,7 +4111,7 @@ impl CheckedCallCanonicalEncoder {
             }
             CheckedLanguageCallableIdentity::Presentation(id) => {
                 self.tag(6);
-                self.tag(presentation_tag(*id));
+                self.tag(id.semantic_tag());
             }
             CheckedLanguageCallableIdentity::Dialogue(identity) => {
                 self.tag(7);
@@ -4163,7 +4163,7 @@ impl CheckedCallCanonicalEncoder {
             }
             CheckedLanguageCallableIdentity::PresentationHandle(id) => {
                 self.tag(9);
-                self.tag(presentation_handle_tag(*id));
+                self.tag(id.semantic_tag());
             }
             CheckedLanguageCallableIdentity::Integer(id) => {
                 self.tag(10);
@@ -4705,37 +4705,12 @@ const fn agent_tag(id: AgentIntrinsicSignatureId) -> u8 {
     }
 }
 
-const fn presentation_tag(id: PresentationCallableId) -> u8 {
-    match id {
-        PresentationCallableId::View => 0,
-        PresentationCallableId::Menu => 1,
-        PresentationCallableId::Overlay => 2,
-        PresentationCallableId::Background => 3,
-        PresentationCallableId::Image => 4,
-        PresentationCallableId::PlayerViewport => 5,
-        PresentationCallableId::Show => 6,
-        PresentationCallableId::RefBackground => 7,
-        PresentationCallableId::RefShow => 8,
-        PresentationCallableId::ClearBackground => 9,
-        PresentationCallableId::Hide => 10,
-    }
-}
 const fn dialogue_tag(id: DialogueCallableId) -> u8 {
     match id {
         DialogueCallableId::CharacterFactory => 0,
         DialogueCallableId::CharacterReconfigure => 1,
         DialogueCallableId::ContentApplication => 2,
         DialogueCallableId::ContentCall => 3,
-    }
-}
-const fn presentation_handle_tag(id: PresentationHandleMethodId) -> u8 {
-    match id {
-        PresentationHandleMethodId::Show => 0,
-        PresentationHandleMethodId::Hide => 1,
-        PresentationHandleMethodId::Unmount => 2,
-        PresentationHandleMethodId::Release => 3,
-        PresentationHandleMethodId::Destroy => 4,
-        PresentationHandleMethodId::OverlayPop => 5,
     }
 }
 const fn integer_tag(id: IntegerMethodId) -> u8 {

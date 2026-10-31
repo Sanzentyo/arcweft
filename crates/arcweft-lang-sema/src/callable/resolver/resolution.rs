@@ -441,12 +441,15 @@ fn resolve_selected_call(
     }
 
     check_query_step(request)?;
-    if let Some(id) = PresentationHandleMethodId::resolve(receiver_type, method) {
+    if let TypeKind::Handle { item, .. } = receiver_type
+        && let TypeKind::PresentationResource(resource) = item.as_ref()
+        && let Some(id) = PresentationHandleMethodId::resolve(*resource, method.as_str())
+    {
         candidates.push(prepare_language_method(
             request,
             CallableCandidateId::PresentationHandleMethod(id),
             LanguageCallableFamily::PresentationHandleMethod,
-            id.signature_schema(),
+            CallableSignatureSchema::presentation_handle(id),
             receiver.value_instantiation(),
         )?);
     }
@@ -829,14 +832,14 @@ fn resolve_free_call(
     }
 
     check_query_step(request)?;
-    if let Some(id) = PresentationCallableId::resolve(path) {
+    if let Some(id) = PresentationCallableId::resolve_surface_name(&path.dotted_name()) {
         let (_, _, world) = request.authority.parts();
-        let schema = id
-            .signature_schema(super::PresentationSchemaContext {
-                owner: request.presentation_character_owner,
-                environment: world.environment(),
-            })
-            .map_err(|_| ResolveCallError::InvalidResolvedCallable)?;
+        let schema = super::PresentationSchemaContext {
+            owner: request.presentation_character_owner,
+            environment: world.environment(),
+        }
+        .signature_schema(id)
+        .map_err(|_| ResolveCallError::InvalidResolvedCallable)?;
         let instantiation = request
             .presentation_character_owner
             .cloned()

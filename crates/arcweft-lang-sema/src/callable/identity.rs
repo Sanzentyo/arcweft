@@ -945,41 +945,7 @@ impl StandardMapFamily {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum PresentationHandleMethodId {
-    Show,
-    Hide,
-    Unmount,
-    Release,
-    Destroy,
-    OverlayPop,
-}
-
-impl PresentationHandleMethodId {
-    pub fn resolve(receiver: &TypeKind, method: &CallableName) -> Option<Self> {
-        let TypeKind::Handle { item, .. } = receiver else {
-            return None;
-        };
-        match method.as_str() {
-            "show" => Some(Self::Show),
-            "hide" => Some(Self::Hide),
-            "unmount" => Some(Self::Unmount),
-            "release" => Some(Self::Release),
-            "destroy" => Some(Self::Destroy),
-            "pop"
-                if matches!(
-                    item.as_ref(),
-                    TypeKind::PresentationResource(
-                        arcweft_interaction_model::presentation::PresentationResourceKind::Overlay
-                    )
-                ) =>
-            {
-                Some(Self::OverlayPop)
-            }
-            _ => None,
-        }
-    }
-}
+pub use arcweft_interaction_model::presentation::PresentationHandleMethodId;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum IntegerMethodId {

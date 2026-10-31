@@ -14,6 +14,9 @@ The current workspace member list is `[workspace].members` in [Cargo.toml](../..
 - `arcweft-core` は runtime/data core に限定し、dialogue / presentation / syntax / verifier / CLI / LSP / wgpu / audio / Servo / DOM / filesystem / network / Cranelift / Wasmtime に依存しない。
 - `arcweft-interaction-model::presentation` は image の登録データ、fit、検証済み alignment、
   playback、fixed-point transformと `PresentationResourceKind` の共有domainを所有する。
+  Presentation callable・handle method・引数roleの識別子、version 1のsemantic tag、
+  callableの戻り値の所有形態とresource familyも同じ共有層が所有する。
+  semaはこの語彙から型付きsignatureと値の検査方針を構築する。
   登録データは `arcweft-layout` の Sans I/O placement 値を直接保持する。
   resource familyはSemaの型constructorとdriverの保持recordが直接共有する。
   Core の実行契約と

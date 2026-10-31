@@ -4,7 +4,14 @@
 //! Defaults are authoring conveniences; deserialization requires the encoded
 //! fields and never substitutes a default for an invalid value.
 
+mod arguments;
+mod callables;
 mod image;
+
+pub use arguments::PresentationArgumentRole;
+pub use callables::{
+    PresentationCallableId, PresentationCallableResult, PresentationHandleMethodId,
+};
 
 pub use image::{
     PresentationImage, PresentationImageBounds, PresentationImageBoundsComponent,
