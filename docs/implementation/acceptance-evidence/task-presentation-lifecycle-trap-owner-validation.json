@@ -1,0 +1,1273 @@
+{
+  "version": 1,
+  "recordedAt": "2026-10-31T13:03:13.8843863Z",
+  "inspectedMain": "e49b4f03dd1529fae2ae748cd2ca9098a73f7e17",
+  "scope": "Product main lifecycle trap custody, actual independent-child VM custody refusal rollback and actual Dialogue activation VM refusal without failure close.",
+  "sourcePublication": {
+    "version": 1,
+    "commit": "e49b4f03dd1529fae2ae748cd2ca9098a73f7e17",
+    "parent": "cdcf744f3e8d30f7c2d5fff5a2878650a0b177c6",
+    "tree": "a867467dec6a1a15afa9695db395360bcb744ee4",
+    "remote": "e49b4f03dd1529fae2ae748cd2ca9098a73f7e17",
+    "paths": [
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step.rs",
+        "blob": "ff2e1ee00f02bb56cd20dc80b3848f5342192444"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+        "blob": "bdfb24845b09446f77f586a1b0c527bff6b7c334"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+        "blob": "07d9651f71b5cb19d0f6af309b2030f818a8f2b9"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/step_budget.rs",
+        "blob": "0e0b4a9ba0f6da04617ed00dc798af3e2012f5a2"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+        "blob": "eef0b7ad8d72b2a86175b84719b228e2cfe53665"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+        "blob": "44b2da57eb2e66bdf4e6e9435dc51737046ac0cf"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "a438c919038b19c85fdcbff3d9ffe560defc79bbf0ce4199b0fb0d63fa39fcfb",
+    "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-10-31T12:56:45.2758309Z"
+  },
+  "initialCheckpointPublication": {
+    "version": 1,
+    "commit": "cdcf744f3e8d30f7c2d5fff5a2878650a0b177c6",
+    "parent": "b5ca98fc068e68926b2302a6db94ff716e8f9077",
+    "tree": "849e971808d89cd6fa8e6403b5e6c9116eeb69b3",
+    "remote": "cdcf744f3e8d30f7c2d5fff5a2878650a0b177c6",
+    "paths": [
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step.rs",
+        "blob": "13ed5678d92f38c38ae4c97f68cab640dae6e8af"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+        "blob": "c0c4def6f2b7a1c3b6ad45ddeb25c99d9287f4b6"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+        "blob": "79a6c6ec79c08a49195c4d69ca85395cc14254f6"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+        "blob": "9badb2c29ac75b525c8be59f9e8ad86cb220f6af"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/program_fanout.rs",
+        "blob": "641788b41aadad9105102cb2e7918a667e35c0f2"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+        "blob": "7cd65b21447f67f110b126150897590c9e09030c"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+        "blob": "29fc1c731af2bdb684365f740a0d3344a1807350"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+        "blob": "65d0bb324a23fd7857db4c6cda2c0f884617a13f"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+        "blob": "e9b016d682696eff1f4afe6eae7f5d1ee1e390f2"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "a8d26874658f2dc0b011bd4490a09d25b0477873d6b26f908990533a70c845a3",
+    "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-10-31T12:32:08.7193196Z"
+  },
+  "workingTree": {
+    "heldTracked": 14,
+    "heldUntracked": 6,
+    "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+    "coreDirty": false
+  },
+  "owner": {
+    "version": 1,
+    "base": "e49b4f03dd1529fae2ae748cd2ca9098a73f7e17",
+    "run": "presentation-lifecycle-trap-20261031.owner9.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [ 151.424s] 2189 tests run: 2189 passed (1 slow), 0 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2189,
+    "passed": 2189,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4025,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-31T13:00:38.5192664Z"
+  },
+  "ownerBinaryDrift": 0,
+  "ownerQualitySourceDrift": 0,
+  "quality": [
+    {
+      "kind": "clippy",
+      "receipt": {
+        "version": 1,
+        "base": "e49b4f03dd1529fae2ae748cd2ca9098a73f7e17",
+        "command": [
+          "clippy",
+          "-p",
+          "arcweft-core",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4025,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T13:01:04.6791814Z",
+        "finishedAt": "2026-10-31T13:01:33.6345712Z"
+      }
+    },
+    {
+      "kind": "default-check",
+      "receipt": {
+        "version": 1,
+        "base": "e49b4f03dd1529fae2ae748cd2ca9098a73f7e17",
+        "command": [
+          "check",
+          "-p",
+          "arcweft-core",
+          "--all-targets",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4025,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T13:01:34.1092072Z",
+        "finishedAt": "2026-10-31T13:01:51.5401307Z"
+      }
+    },
+    {
+      "kind": "doctest",
+      "receipt": {
+        "version": 1,
+        "base": "e49b4f03dd1529fae2ae748cd2ca9098a73f7e17",
+        "command": [
+          "test",
+          "-p",
+          "arcweft-core",
+          "--doc",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4025,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T13:01:51.9978995Z",
+        "finishedAt": "2026-10-31T13:02:02.0295159Z"
+      }
+    },
+    {
+      "kind": "structure",
+      "receipt": {
+        "version": 1,
+        "base": "e49b4f03dd1529fae2ae748cd2ca9098a73f7e17",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/product-execution-quality-20261031T130102278.structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4025,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T13:02:02.5643819Z",
+        "finishedAt": "2026-10-31T13:02:06.746836Z"
+      }
+    },
+    {
+      "kind": "fmt",
+      "receipt": {
+        "version": 1,
+        "paths": [
+          "crates/arcweft-core/src/awbc/fiber.rs",
+          "crates/arcweft-core/src/awbc/fiber/program_task.rs",
+          "crates/arcweft-core/src/awbc/fiber/scope.rs",
+          "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+          "crates/arcweft-core/src/awbc/product_step.rs",
+          "crates/arcweft-core/src/awbc/product_step/checkpoint.rs",
+          "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+          "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+          "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+          "crates/arcweft-core/src/awbc/product_step/program_fanout.rs",
+          "crates/arcweft-core/src/awbc/product_step/program_task/tests.rs",
+          "crates/arcweft-core/src/awbc/product_step/program.rs",
+          "crates/arcweft-core/src/awbc/product_step/root.rs",
+          "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+          "crates/arcweft-core/src/awbc/product_step/step_budget.rs",
+          "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+          "crates/arcweft-core/src/awbc/tests/dialogue_callback_projection.rs",
+          "crates/arcweft-core/src/awbc/vm.rs",
+          "crates/arcweft-core/src/awbc/vm/resources.rs",
+          "crates/arcweft-core/src/engine.rs",
+          "crates/arcweft-core/src/line_task.rs",
+          "crates/arcweft-core/src/line_task/activation.rs",
+          "crates/arcweft-core/src/line_task/activation/contour.rs",
+          "crates/arcweft-core/src/line_task/activation/contour/tests.rs",
+          "crates/arcweft-core/src/line_task/handle.rs",
+          "crates/arcweft-core/src/presentation/resources.rs",
+          "crates/arcweft-core/src/presentation/resources/banks.rs",
+          "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+          "crates/arcweft-core/src/presentation/resources/execution.rs",
+          "crates/arcweft-core/src/presentation/resources/execution/tests.rs"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4025,
+        "sourceDrift": 0
+      }
+    }
+  ],
+  "attempts": [
+    {
+      "version": 1,
+      "base": "b5ca98fc068e68926b2302a6db94ff716e8f9077",
+      "run": "presentation-lifecycle-trap-20261031.owner1.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [ 148.000s] 2188 tests run: 2187 passed (1 slow), 1 failed, 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2188,
+      "passed": 2187,
+      "failed": 1,
+      "skipped": 0,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4024,
+      "sourceDrift": 0,
+      "held": 14,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::trap_lifecycle::actual_dialogue_vm_refusal_retains_the_activation_instead_of_starting_failure_close"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-10-31T12:34:55.0968995Z"
+    },
+    {
+      "version": 1,
+      "base": "cdcf744f3e8d30f7c2d5fff5a2878650a0b177c6",
+      "run": "presentation-lifecycle-trap-20261031.owner2.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [  35.409s] 2188 tests run: 2187 passed, 1 failed, 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2188,
+      "passed": 2187,
+      "failed": 1,
+      "skipped": 0,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4024,
+      "sourceDrift": 0,
+      "held": 14,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::trap_lifecycle::actual_dialogue_vm_refusal_retains_the_activation_instead_of_starting_failure_close"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-10-31T12:37:28.6639474Z"
+    },
+    {
+      "version": 1,
+      "base": "cdcf744f3e8d30f7c2d5fff5a2878650a0b177c6",
+      "run": "presentation-lifecycle-trap-20261031.owner3.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [  28.712s] 2188 tests run: 2187 passed, 1 failed, 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2188,
+      "passed": 2187,
+      "failed": 1,
+      "skipped": 0,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4024,
+      "sourceDrift": 0,
+      "held": 14,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::trap_lifecycle::actual_dialogue_vm_refusal_retains_the_activation_instead_of_starting_failure_close"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-10-31T12:40:36.2800613Z"
+    },
+    {
+      "version": 1,
+      "base": "e49b4f03dd1529fae2ae748cd2ca9098a73f7e17",
+      "run": "presentation-lifecycle-trap-20261031.owner9.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [ 151.424s] 2189 tests run: 2189 passed (1 slow), 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2189,
+      "passed": 2189,
+      "failed": 0,
+      "skipped": 0,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4025,
+      "sourceDrift": 0,
+      "held": 14,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-10-31T13:00:38.5192664Z"
+    }
+  ],
+  "focusAttempts": [
+    {
+      "version": 1,
+      "base": "cdcf744f3e8d30f7c2d5fff5a2878650a0b177c6",
+      "run": "presentation-lifecycle-trap-20261031.focus4.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [   0.115s] 1 test run: 0 passed, 1 failed, 2134 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 2134,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4024,
+      "sourceDrift": 0,
+      "held": 14,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::trap_lifecycle::actual_dialogue_vm_refusal_retains_the_activation_instead_of_starting_failure_close"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-10-31T12:42:58.3740264Z"
+    },
+    {
+      "version": 1,
+      "base": "cdcf744f3e8d30f7c2d5fff5a2878650a0b177c6",
+      "run": "presentation-lifecycle-trap-20261031.focus5.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [   0.066s] 1 test run: 0 passed, 1 failed, 2134 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 2134,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4024,
+      "sourceDrift": 0,
+      "held": 14,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::trap_lifecycle::actual_dialogue_vm_refusal_retains_the_activation_instead_of_starting_failure_close"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-10-31T12:45:06.801113Z"
+    },
+    {
+      "version": 1,
+      "base": "cdcf744f3e8d30f7c2d5fff5a2878650a0b177c6",
+      "run": "presentation-lifecycle-trap-20261031.focus6.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [   0.049s] 1 test run: 0 passed, 1 failed, 2134 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 2134,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4024,
+      "sourceDrift": 0,
+      "held": 14,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::trap_lifecycle::actual_dialogue_vm_refusal_retains_the_activation_instead_of_starting_failure_close"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-10-31T12:46:57.7613691Z"
+    },
+    {
+      "version": 1,
+      "base": "cdcf744f3e8d30f7c2d5fff5a2878650a0b177c6",
+      "run": "presentation-lifecycle-trap-20261031.focus7.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [   0.045s] 1 test run: 0 passed, 1 failed, 2134 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 2134,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4025,
+      "sourceDrift": 0,
+      "held": 14,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::trap_lifecycle::actual_dialogue_vm_refusal_retains_the_activation_instead_of_starting_failure_close"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-10-31T12:52:06.8621462Z"
+    },
+    {
+      "version": 1,
+      "base": "cdcf744f3e8d30f7c2d5fff5a2878650a0b177c6",
+      "run": "presentation-lifecycle-trap-20261031.focus8.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   0.091s] 6 tests run: 6 passed, 2130 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 2130,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4025,
+      "sourceDrift": 0,
+      "held": 14,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-10-31T12:56:07.80986Z"
+    }
+  ],
+  "attemptNotes": [
+    "owner1: 2187 PASS / 1 new fixture FAIL. The root dialogue target was set only after admission; verifier correctly rejected uninitialized register 0. Replaced runtime seeding with the actual typed opaque LoadConst instruction.",
+    "owner2: 2187 PASS / 1 new fixture FAIL. The self-resume edge was a loop without a loop safe point. Added a genuine separate Root resume/Return block and migrated actual function block ranges. Loop checks and complete snapshot assertions were retained.",
+    "owner3: 2187 PASS / 1 new fixture FAIL. The old private-helper content label entry.main was not a valid production line ID. Migrated the fixture to a canonical line.* content ID.",
+    "focus4: 0 PASS / 1 FAIL / 2134 excluded. Appending that ID broke strict canonical string-table ordering. Reused the fixture String row in sorted order without relaxing the verifier. Source bytes for these unpublished fixture epochs match their original source-freeze SHA256 receipts."
+  ],
+  "additionalAttemptNotes": [
+    "focus5: 0 PASS / 1 FAIL / 2134 excluded. Registration made the activation visible at cursor 0 before Nop ran. The fixture now waits for the exact cursor 1 after actual Nop execution; its assertion, 8-step construction bound and one-op runtime budget remain unchanged."
+  ],
+  "productionFailureNotes": [
+    "focus6: 0 PASS / 1 FAIL / 2134 excluded. Valid refusal preserved banks/grants/cursors but spent two Dialogue revisions (4 to 6) and replenished budget (63 to 64). Removed the old ingress budget commit; one host-step budget context now replenishes inside the actual execution checkpoint. Zero elapsed time still authenticates Duration suspension but restores its unchanged transaction without spending a revision.",
+    "focus7: 0 PASS / 1 FAIL / 2134 excluded. Full refusal snapshot assertions passed, but successful retry had no retirement: the observation collector treated a valid VM Trap as a collection error and restored its checkpoint. Terminal Trap now returns typed progress with its admitted cleanup batch to failure-close preparation.",
+    "focus8: all six targeted lifecycle cases passed; 2130 library cases excluded. This focused result is not added to the final full Core run."
+  ],
+  "doctest": {
+    "passed": 78,
+    "failed": 0,
+    "ignored": 0,
+    "filtered": 0
+  },
+  "structure": {
+    "packages": 97,
+    "files": 3261,
+    "rustFiles": 3131,
+    "rustPhysicalLoc": 1772812,
+    "reviewTriggers": 382,
+    "blocking": 0,
+    "disposition": "The admitted program supplies the general unwind contour for cancellation and traps. The bank aggregate remains the only scope retirement authority. Product lifecycle checks its actual contour before committing AwaitMany dialogue reconciliation. Product VM transaction owners classify typed presentation refusal and restore existing checkpoints/journals/actual Dialogue transactions before returning diagnostics. No second owner, fallback ledger, wire shape, Cargo edge or public production API was added. The new focused lifecycle regression module and reused nested-program fixture are reviewed in the raw owner review."
+  },
+  "accepted": [
+    "The Product main lifecycle termination helper preflights legacy cleanup inputs and the whole original scope contour before reconciliation commands, then retires actual grants/bodies before cleanup dispatch and terminal marking. Three real nested scopes retire in unwind order exactly once, with public save/restore equality under default policy.",
+    "With handles=3/scopes=8, two refused lifecycle trap attempts preserve the complete snapshot, all three grants and the old queue item, and emit no line command or terminal flow event. The unchanged policy permits retry after modeling acknowledgement of the old queue item. Missing bank custody refuses with MissingLedger and retains all original grants.",
+    "An actual independent child uses the executor-allocated identity and real EnterScope instruction. A VM trap capacity refusal restores the selected child, queue and original pre-replenishment instruction budget twice; the child is not marked trapped or removed. Under the same handles=1/scopes=8 policy, retry retires the original token once after the old queue item is acknowledged.",
+    "An actual typed opaque LoadConst and Dialogue terminator start the activation; one real Nop instruction parks the initializer immediately before Trap. A genuine Root resume/Return block avoids a fabricated loop. The issued activation bank owns the real grant. VM capacity refusal preserves the complete executor snapshot twice and emits no close commands; the real withdrawn transaction is restored instead of entering Dialogue failure close. Same-policy retry retires the exact token.",
+    "The one-host-step budget context retains only replenishment requests and never enters persisted state. Main and activation quanta replenish at most once, inside their original execution checkpoints. A valid terminal activation Trap carries its cleanup execution batch into failure close instead of being rolled back as a failed observation.",
+    "Two zero-operation public Dialogue steps preserve the complete snapshot, budget, revision, actual grant and body. Under the default trusted policy the actual active Dialogue resource snapshot round-trips public save/restore without losing custody.",
+    "All original cancellation consumers now use the same general admitted-program unwind API. Existing accepted VM trap routes, checkpoint, lexical exit and cancellation regressions remain in the full Core owner run."
+  ],
+  "currentStatusAuthority": "../current-status.md",
+  "notClaimedByThisRun": [
+    "All externally supplied failure packets preserve a complete outer Product step; lifecycle helper admission alone is not that broader claim",
+    "Manual deferred-child Need/Host/AwaitMany trap marking outside the VM and all child-owner families",
+    "Frame return/select/goto and escaping-handle ownership transfer",
+    "Native retained contour including the actual borrowed parent",
+    "Source ViewValue and eleven callables/mount/six methods/lowering/driver",
+    "Active-bank replacement, Native/Web image parity and final reverse-dependency/feature/target/workspace matrix"
+  ],
+  "warnings": "Existing compiler and Clippy warnings remain in raw logs; exit zero is not a zero-warning claim.",
+  "priorAcceptance": [
+    "task-presentation-vm-trap-owner-validation.json",
+    "task-presentation-await-cancellation-owner-validation.json",
+    "task-product-execution-checkpoint-owner-validation.json"
+  ],
+  "acceptedFeaturesRetained": "Generic Match and all prior accepted cuts remain accepted. Whole-goal incompleteness does not reopen them. Bool bodies and modeled queue acknowledgement do not establish Source ViewValue or real driver ABI.",
+  "artifacts": [
+    {
+      "path": "task-presentation-lifecycle-trap-raw.record-presentation-lifecycle-trap-evidence.ps1",
+      "source": "record-presentation-lifecycle-trap-evidence.ps1",
+      "bytes": 13437,
+      "sha256": "c8ba1f25e402d5772a8b29164235e523e5a4cce991dd3fec56d2d5281ddaa7cc"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-owner-review.json",
+      "source": "presentation-lifecycle-trap-owner-review.json",
+      "bytes": 6158,
+      "sha256": "18eea08422b365926b6f6bb56d6e09e15fefdebf730c233bfb0bc49cb7b4d41d"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.run-presentation-trap-quality.ps1",
+      "source": "run-presentation-trap-quality.ps1",
+      "bytes": 3067,
+      "sha256": "27a7e7072d28788c2b00022dde3e8c31538b7788c4aac39941a6137430e8fef0"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-fixture-history.json",
+      "source": "presentation-lifecycle-trap-fixture-history.json",
+      "bytes": 2757,
+      "sha256": "202af60353b539150f3a90bf1730a09b6cb1fdd95390ec7ce28f7e872c86edb8"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-owner2.fixture-source.rs",
+      "source": "presentation-lifecycle-trap-owner2.fixture-source.rs",
+      "bytes": 14451,
+      "sha256": "04bc1b21aad65f012141347982cb4cd032a7155cb2f2b6177e38f888a8714e89"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-owner3.fixture-source.rs",
+      "source": "presentation-lifecycle-trap-owner3.fixture-source.rs",
+      "bytes": 14964,
+      "sha256": "4a405259390f6329f0d381aba987233fe5ab14a4181d69dec1d00e39489572d8"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-focus4.fixture-source.rs",
+      "source": "presentation-lifecycle-trap-focus4.fixture-source.rs",
+      "bytes": 15184,
+      "sha256": "c22060610f5efbbf1fee053b5664d5198cd199d6c198c1205a139ec98db45bc0"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-focus5.fixture-source.rs",
+      "source": "presentation-lifecycle-trap-focus5.fixture-source.rs",
+      "bytes": 15088,
+      "sha256": "2160b3c63c17413c5f8ce36ac6c2f043a865dd230bd2bbb659c77dcbacaf4edd"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-focus6.fixture-source.rs",
+      "source": "presentation-lifecycle-trap-focus6.fixture-source.rs",
+      "bytes": 15250,
+      "sha256": "71f0a78c9a054274d1cdbbbbe485745dc02e97ac32e78a22993a4d0944f4c2af"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-focus7.fixture-source.rs",
+      "source": "presentation-lifecycle-trap-focus7.fixture-source.rs",
+      "bytes": 15250,
+      "sha256": "71f0a78c9a054274d1cdbbbbe485745dc02e97ac32e78a22993a4d0944f4c2af"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-focus7.candidate.patch",
+      "source": "presentation-lifecycle-trap-focus7.candidate.patch",
+      "bytes": 17099,
+      "sha256": "3171f446b521d81bb045f8919f76666072cea7109b79ed041d548d9833145a61"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-focus8.fixture-source.rs",
+      "source": "presentation-lifecycle-trap-focus8.fixture-source.rs",
+      "bytes": 15927,
+      "sha256": "e1027d214490a0e71031fb9fbbd6866f20c6beb7269fd781545241e2cfac4012"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-source-20261031.owned.txt",
+      "source": "presentation-lifecycle-trap-source-20261031.owned.txt",
+      "bytes": 546,
+      "sha256": "58a9702e1af573cdc5f0f556b6c400dd2be4e0275e6c1411bd50b44a69073ba2"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-source-20261031.prepared.json",
+      "source": "presentation-lifecycle-trap-source-20261031.prepared.json",
+      "bytes": 2602,
+      "sha256": "3d2c3a61ed5cbfeef65c665aba6f1ed4ff942992b0a1daaaf93b4df2e4c43d72"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-source-20261031.verified.json",
+      "source": "presentation-lifecycle-trap-source-20261031.verified.json",
+      "bytes": 1907,
+      "sha256": "0aeb871bc5449a4c798c3d2e76e1fa2359246ca717b74f1bf5599e5dae7b8b27"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-source-20261031.reviewed.patch",
+      "source": "presentation-lifecycle-trap-source-20261031.reviewed.patch",
+      "bytes": 29146,
+      "sha256": "a8d26874658f2dc0b011bd4490a09d25b0477873d6b26f908990533a70c845a3"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-source-20261031.publish.log",
+      "source": "presentation-lifecycle-trap-source-20261031.publish.log",
+      "bytes": 736,
+      "sha256": "6052b2d65ac730f8fe9b3f6130bbf29acb2967c3c2ac63513a6808c456aeeace"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-repair-source-20261031.owned.txt",
+      "source": "presentation-lifecycle-trap-repair-source-20261031.owned.txt",
+      "bytes": 342,
+      "sha256": "48fcd8c665255d52d5835d17c645549e41d7b7711e77cc965abbb89bfe5a829d"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-repair-source-20261031.prepared.json",
+      "source": "presentation-lifecycle-trap-repair-source-20261031.prepared.json",
+      "bytes": 2128,
+      "sha256": "47bc1f44667d01cc37761ae4b993f4cd13ef540c9c10c7d3ee95bc097a8b2a63"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-repair-source-20261031.verified.json",
+      "source": "presentation-lifecycle-trap-repair-source-20261031.verified.json",
+      "bytes": 1433,
+      "sha256": "c32ce860c4e2d2b2f99dd74fa5da13d2ea7e58da2685cc21768892e6b9015e61"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-repair-source-20261031.reviewed.patch",
+      "source": "presentation-lifecycle-trap-repair-source-20261031.reviewed.patch",
+      "bytes": 27184,
+      "sha256": "a438c919038b19c85fdcbff3d9ffe560defc79bbf0ce4199b0fb0d63fa39fcfb"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-repair-source-20261031.publish.log",
+      "source": "presentation-lifecycle-trap-repair-source-20261031.publish.log",
+      "bytes": 715,
+      "sha256": "725a89f28ede416091ddd866f7e890c10e3c702cf3396d90657d64cc848d059e"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.run-presentation-lifecycle-trap-20261031.owner1.ps1",
+      "source": "run-presentation-lifecycle-trap-20261031.owner1.ps1",
+      "bytes": 5705,
+      "sha256": "3b6ef058f108d5ed3649f2264c1a37f358c4dbd9c003d6c3374bc954b0699ab0"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner1.source-freeze.json",
+      "source": "presentation-lifecycle-trap-20261031.owner1.source-freeze.json",
+      "bytes": 786550,
+      "sha256": "5ffac7fc40991df812b62d3920c038063c7729c34af03c7eb736dce47ce43ae0"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner1.binaries-before.json",
+      "source": "presentation-lifecycle-trap-20261031.owner1.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "769841f61ff33445fe2b7f7f9bf3807a2a312db398f6d6042eea38c0292a1f04"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner1.catalog.inventory.json",
+      "source": "presentation-lifecycle-trap-20261031.owner1.catalog.inventory.json",
+      "bytes": 554463,
+      "sha256": "3a46866e24af612fc4adeaadadf2c4f36724835b568bf0214ce4eaffd9a3e69b"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner1.catalog.json",
+      "source": "presentation-lifecycle-trap-20261031.owner1.catalog.json",
+      "bytes": 496,
+      "sha256": "60218410ad28d1f139686f864b23329483f711763c4a072cb84f977261fb8a21"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner1.catalog.log",
+      "source": "presentation-lifecycle-trap-20261031.owner1.catalog.log",
+      "bytes": 462704,
+      "sha256": "4a19ee1c33177a08b49a0be874b32df789d6d1501447614d7b976f0c50e86f33"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner1.runtime.json",
+      "source": "presentation-lifecycle-trap-20261031.owner1.runtime.json",
+      "bytes": 590,
+      "sha256": "4c42fa4bd47fc6cce4081f5bca5b2e3de8de418b30d01ffd9c147ae1b2cc7492"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner1.runtime.log",
+      "source": "presentation-lifecycle-trap-20261031.owner1.runtime.log",
+      "bytes": 750884,
+      "sha256": "a4d62c43ad478bcf88a6a124c4e147a575df68cd3e57ea8bf2330802fe3a445f"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner1.runtime.terminal-audit.json",
+      "source": "presentation-lifecycle-trap-20261031.owner1.runtime.terminal-audit.json",
+      "bytes": 888,
+      "sha256": "f9497fb2887d6a29c3f65902ca2d89aa3a557507eacb67066b819f0d174a6bef"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.run-presentation-lifecycle-trap-20261031.owner2.ps1",
+      "source": "run-presentation-lifecycle-trap-20261031.owner2.ps1",
+      "bytes": 5705,
+      "sha256": "a9aff09e63cc1fca63cd54e4fe0abc654c9169648e4ea8edcb4ffd822fb67efb"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner2.source-freeze.json",
+      "source": "presentation-lifecycle-trap-20261031.owner2.source-freeze.json",
+      "bytes": 786550,
+      "sha256": "c668a8cd68972dbb37a7bc0653d6274185468f679f5ba6e74255c51f92a49e49"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner2.binaries-before.json",
+      "source": "presentation-lifecycle-trap-20261031.owner2.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "36db07429ca0d939ee6faddea6485e25650fd6b93dcca56c0adaf22924633f6e"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner2.catalog.inventory.json",
+      "source": "presentation-lifecycle-trap-20261031.owner2.catalog.inventory.json",
+      "bytes": 554463,
+      "sha256": "3a46866e24af612fc4adeaadadf2c4f36724835b568bf0214ce4eaffd9a3e69b"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner2.catalog.json",
+      "source": "presentation-lifecycle-trap-20261031.owner2.catalog.json",
+      "bytes": 496,
+      "sha256": "8101913b404d77ac346850397e6716e7c1799848aefece31c4bd75bf047747ce"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner2.catalog.log",
+      "source": "presentation-lifecycle-trap-20261031.owner2.catalog.log",
+      "bytes": 462704,
+      "sha256": "f802dde7dbe19d94fb13805d4c4670a3266c6a4dd028b886e34bb6ed85e7961e"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner2.runtime.json",
+      "source": "presentation-lifecycle-trap-20261031.owner2.runtime.json",
+      "bytes": 590,
+      "sha256": "dece41b8d6878b66a218e89b9f188de61f9d7219f1d5aa86d34bb6a328b923df"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner2.runtime.log",
+      "source": "presentation-lifecycle-trap-20261031.owner2.runtime.log",
+      "bytes": 750590,
+      "sha256": "cb2179ffb1f7f29655690cea88fd131a4c7a1f5046619e67e6ebac1889b7df95"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner2.runtime.terminal-audit.json",
+      "source": "presentation-lifecycle-trap-20261031.owner2.runtime.terminal-audit.json",
+      "bytes": 879,
+      "sha256": "af7bf8e5ada67cf13493b21a49fb51cb9b76030d538dd7df7571b86654724908"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.run-presentation-lifecycle-trap-20261031.owner3.ps1",
+      "source": "run-presentation-lifecycle-trap-20261031.owner3.ps1",
+      "bytes": 5705,
+      "sha256": "e35aae6be66043b7d79ac9d42cc26dd5cf6f998a4ae129dc496f0a28afb3bc7d"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner3.source-freeze.json",
+      "source": "presentation-lifecycle-trap-20261031.owner3.source-freeze.json",
+      "bytes": 786550,
+      "sha256": "242869b0370629519324886a8e9d0b2b526c08fcb98722cea1bede363d55e63f"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner3.binaries-before.json",
+      "source": "presentation-lifecycle-trap-20261031.owner3.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "c5771adf00eef83c92636938effbd2db25eeb9cf15456b398cb9c347510798f8"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner3.catalog.inventory.json",
+      "source": "presentation-lifecycle-trap-20261031.owner3.catalog.inventory.json",
+      "bytes": 554463,
+      "sha256": "3a46866e24af612fc4adeaadadf2c4f36724835b568bf0214ce4eaffd9a3e69b"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner3.catalog.json",
+      "source": "presentation-lifecycle-trap-20261031.owner3.catalog.json",
+      "bytes": 496,
+      "sha256": "9c0f99c21bcd15c722b96b4080c6f9e6adde93e713afdce41263be2af170dcb9"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner3.catalog.log",
+      "source": "presentation-lifecycle-trap-20261031.owner3.catalog.log",
+      "bytes": 462704,
+      "sha256": "5a8e00e7ed5d315dba8704948f081dd1bf5aec60fe961580c2e0f907674f8b89"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner3.runtime.json",
+      "source": "presentation-lifecycle-trap-20261031.owner3.runtime.json",
+      "bytes": 590,
+      "sha256": "d32be614b795d8dc80c40d03af256ff72f8e3583f1d2cbf91fff7b300654b5cc"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner3.runtime.log",
+      "source": "presentation-lifecycle-trap-20261031.owner3.runtime.log",
+      "bytes": 750572,
+      "sha256": "41af8c9499eb0c9b0176d5a8ffe31fbdf7fa52898a83f8a32f83ef0333b24727"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner3.runtime.terminal-audit.json",
+      "source": "presentation-lifecycle-trap-20261031.owner3.runtime.terminal-audit.json",
+      "bytes": 879,
+      "sha256": "5b8809c283c72c2373d96f28e90aa186cd65a5fa1624a287a80e09e9de0928e8"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.run-presentation-lifecycle-trap-20261031.owner9.ps1",
+      "source": "run-presentation-lifecycle-trap-20261031.owner9.ps1",
+      "bytes": 5764,
+      "sha256": "0e73d7d189fef44c512bb060999bbe302d5795e28cb8cee29e778aa939272951"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner9.source-freeze.json",
+      "source": "presentation-lifecycle-trap-20261031.owner9.source-freeze.json",
+      "bytes": 786746,
+      "sha256": "aa3925c351ebd59eae3f374c0efa2cc2650dfcc19049885a00cdd44e5bc54d2d"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner9.binaries-before.json",
+      "source": "presentation-lifecycle-trap-20261031.owner9.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "cd4ec612eea7222924d38e17c838cf8b5af816ceb02af417b634ceda3a728c15"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner9.catalog.inventory.json",
+      "source": "presentation-lifecycle-trap-20261031.owner9.catalog.inventory.json",
+      "bytes": 554751,
+      "sha256": "2bd735693c4ffce365f9fcf6140097d60c568f748f50031fa8fd2c273bccd44f"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner9.catalog.json",
+      "source": "presentation-lifecycle-trap-20261031.owner9.catalog.json",
+      "bytes": 496,
+      "sha256": "b278eabb154afdfc5fbc06341d0e0594f4c2236ea5e00a443d74105da0ca486d"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner9.catalog.log",
+      "source": "presentation-lifecycle-trap-20261031.owner9.catalog.log",
+      "bytes": 462909,
+      "sha256": "8aec009a9c42e053ac4980d1e47c139559432ba929eb5f1e3b940566805a2560"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner9.runtime.json",
+      "source": "presentation-lifecycle-trap-20261031.owner9.runtime.json",
+      "bytes": 588,
+      "sha256": "117afa7ad5edbb2af2948df2236a77b83e78feba5e0ef771892a4f904f290cd7"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner9.runtime.log",
+      "source": "presentation-lifecycle-trap-20261031.owner9.runtime.log",
+      "bytes": 750217,
+      "sha256": "8f17df067d9081bf579dd916f7110e65c3391f789753d5709359020aaf7eb73b"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.owner9.runtime.terminal-audit.json",
+      "source": "presentation-lifecycle-trap-20261031.owner9.runtime.terminal-audit.json",
+      "bytes": 641,
+      "sha256": "13c56b31fb86040232017ec330a9b57a465c7c89ef6ae91708985c37b422f92d"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.run-presentation-lifecycle-trap-20261031.focus4.ps1",
+      "source": "run-presentation-lifecycle-trap-20261031.focus4.ps1",
+      "bytes": 5807,
+      "sha256": "ecf542c9ac4c259c5fa39ed50bc3776b37b2965a6ec8675d6c4f2488ea4a7335"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus4.source-freeze.json",
+      "source": "presentation-lifecycle-trap-20261031.focus4.source-freeze.json",
+      "bytes": 786550,
+      "sha256": "8bf081466c5f3640c183b54798cbf5e1b48d6144cfafb443388d7207476dd857"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus4.binaries-before.json",
+      "source": "presentation-lifecycle-trap-20261031.focus4.binaries-before.json",
+      "bytes": 202,
+      "sha256": "7af3c39179ac8d4055d7c1d86ba5292801539099dc1ece85e0ee013f8adaac60"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus4.catalog.inventory.json",
+      "source": "presentation-lifecycle-trap-20261031.focus4.catalog.inventory.json",
+      "bytes": 544198,
+      "sha256": "83bc9a2ae57e007bd6e8b1756cff379d22ba34f509a9e14d9bb4d99230a79691"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus4.catalog.json",
+      "source": "presentation-lifecycle-trap-20261031.focus4.catalog.json",
+      "bytes": 619,
+      "sha256": "26e87110b8076a8466d1f0cd51e874b39df1e05cbc62f9383ddd1f57751043c6"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus4.catalog.log",
+      "source": "presentation-lifecycle-trap-20261031.focus4.catalog.log",
+      "bytes": 448787,
+      "sha256": "94b559cb4a13529089621091bedf7e4083a16003805b491c2954cd65f5cac781"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus4.runtime.json",
+      "source": "presentation-lifecycle-trap-20261031.focus4.runtime.json",
+      "bytes": 713,
+      "sha256": "262dd21bb406962e6dac1ced99e3852d01e9dc5e8609107c2e6e411391e0dfce"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus4.runtime.log",
+      "source": "presentation-lifecycle-trap-20261031.focus4.runtime.log",
+      "bytes": 685686,
+      "sha256": "51f645ec10b66e83cb90f35fab786b285ef2412e41f6fa576668c377391088e6"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus4.runtime.terminal-audit.json",
+      "source": "presentation-lifecycle-trap-20261031.focus4.runtime.terminal-audit.json",
+      "bytes": 872,
+      "sha256": "4a978b499e9fb4108ca91171060e1eecc4a2b20b9217d1a0beaba652b4a27e8b"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.run-presentation-lifecycle-trap-20261031.focus5.ps1",
+      "source": "run-presentation-lifecycle-trap-20261031.focus5.ps1",
+      "bytes": 5807,
+      "sha256": "efcd0779bd8970deefbe11306b7b3e51f73865d3464d7362a53e607efdd83f21"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus5.source-freeze.json",
+      "source": "presentation-lifecycle-trap-20261031.focus5.source-freeze.json",
+      "bytes": 786550,
+      "sha256": "4cedc613bccdd21fa50b6fe645e8a1862dc3059d5bf12315f12e5e631e72a8aa"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus5.binaries-before.json",
+      "source": "presentation-lifecycle-trap-20261031.focus5.binaries-before.json",
+      "bytes": 202,
+      "sha256": "a4a405d012f8d29d0bb889196001388591a71cdeb2360cfac623d668f33e47f1"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus5.catalog.inventory.json",
+      "source": "presentation-lifecycle-trap-20261031.focus5.catalog.inventory.json",
+      "bytes": 544198,
+      "sha256": "83bc9a2ae57e007bd6e8b1756cff379d22ba34f509a9e14d9bb4d99230a79691"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus5.catalog.json",
+      "source": "presentation-lifecycle-trap-20261031.focus5.catalog.json",
+      "bytes": 619,
+      "sha256": "3f50a6fbd0867029ed9687ec77182c2bf0b7f354ecdc49488a97153f12780f11"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus5.catalog.log",
+      "source": "presentation-lifecycle-trap-20261031.focus5.catalog.log",
+      "bytes": 448787,
+      "sha256": "96e0e297c18ed4a5d9a48476bd52d441ca1fd24b5bf9ac6f7d55b37e2336296e"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus5.runtime.json",
+      "source": "presentation-lifecycle-trap-20261031.focus5.runtime.json",
+      "bytes": 713,
+      "sha256": "22b5ff08b3fd97d218afcc5c61c71158cb3dfe4391e6dfcc61121220b8023629"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus5.runtime.log",
+      "source": "presentation-lifecycle-trap-20261031.focus5.runtime.log",
+      "bytes": 685621,
+      "sha256": "aee0e474ef6b070df3567a54c46362799138b3536d757a74600574f2cd48cb8a"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus5.runtime.terminal-audit.json",
+      "source": "presentation-lifecycle-trap-20261031.focus5.runtime.terminal-audit.json",
+      "bytes": 872,
+      "sha256": "8b5885a1a5037b1c1f789f1f2d9b1e0a306a82eeb9742b82ec1d080ec4cb7f68"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.run-presentation-lifecycle-trap-20261031.focus6.ps1",
+      "source": "run-presentation-lifecycle-trap-20261031.focus6.ps1",
+      "bytes": 5807,
+      "sha256": "da06fc479a9c6f8fccdd86f3f1ea7aca7ea2a6fc995f8d332b2b1e465474d6ce"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus6.source-freeze.json",
+      "source": "presentation-lifecycle-trap-20261031.focus6.source-freeze.json",
+      "bytes": 786550,
+      "sha256": "1e6e0378cb0fade04afaee83cbf0f1a94dcb99e5ec4b9eb60a25909eece5d85a"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus6.binaries-before.json",
+      "source": "presentation-lifecycle-trap-20261031.focus6.binaries-before.json",
+      "bytes": 202,
+      "sha256": "6d9e55294be154583b6b52e4eccc546c82ec4cf93eb023d21c3d11dd71c2c9ef"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus6.catalog.inventory.json",
+      "source": "presentation-lifecycle-trap-20261031.focus6.catalog.inventory.json",
+      "bytes": 544198,
+      "sha256": "83bc9a2ae57e007bd6e8b1756cff379d22ba34f509a9e14d9bb4d99230a79691"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus6.catalog.json",
+      "source": "presentation-lifecycle-trap-20261031.focus6.catalog.json",
+      "bytes": 619,
+      "sha256": "39c6e4030a57f58839feab63d470cac602849742d6e7df69f1ad5c392625f5eb"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus6.catalog.log",
+      "source": "presentation-lifecycle-trap-20261031.focus6.catalog.log",
+      "bytes": 448787,
+      "sha256": "cc58c1040b2506c24adacbc4b73196d97df3d370aa8052fc116f6703adfaf826"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus6.runtime.json",
+      "source": "presentation-lifecycle-trap-20261031.focus6.runtime.json",
+      "bytes": 713,
+      "sha256": "a02981adb93214b6cb06b919fa12038c6b3f0e2cfae3eb8633562f3246f78d37"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus6.runtime.log",
+      "source": "presentation-lifecycle-trap-20261031.focus6.runtime.log",
+      "bytes": 743419,
+      "sha256": "7134770862143f14c78401321efa62d3d259bd8617e60d7697a41a61a8555ef2"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus6.runtime.terminal-audit.json",
+      "source": "presentation-lifecycle-trap-20261031.focus6.runtime.terminal-audit.json",
+      "bytes": 872,
+      "sha256": "6df7a60e182ec3a71dceecd07a186496639d9615e82678636718f11a7ca6f2d9"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.run-presentation-lifecycle-trap-20261031.focus7.ps1",
+      "source": "run-presentation-lifecycle-trap-20261031.focus7.ps1",
+      "bytes": 5866,
+      "sha256": "f2ad0b18efd71c94be1f7ff3b9d8137c73b58f1c13b78b913710a6670208bdf0"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus7.source-freeze.json",
+      "source": "presentation-lifecycle-trap-20261031.focus7.source-freeze.json",
+      "bytes": 786746,
+      "sha256": "dc18b95f44465046280bbe59f05989272c02f7b11979a3933431bdf94bf706ce"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus7.binaries-before.json",
+      "source": "presentation-lifecycle-trap-20261031.focus7.binaries-before.json",
+      "bytes": 202,
+      "sha256": "ef6d5c44a15d7b144a177a85e1c7a1d1490ec74f54af566b5e4c4d61ae21a8b5"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus7.catalog.inventory.json",
+      "source": "presentation-lifecycle-trap-20261031.focus7.catalog.inventory.json",
+      "bytes": 544198,
+      "sha256": "83bc9a2ae57e007bd6e8b1756cff379d22ba34f509a9e14d9bb4d99230a79691"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus7.catalog.json",
+      "source": "presentation-lifecycle-trap-20261031.focus7.catalog.json",
+      "bytes": 619,
+      "sha256": "66e2176abe6bdeb7f50c6735df37bf888cab504c693039d8c2aabfc8ded2912d"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus7.catalog.log",
+      "source": "presentation-lifecycle-trap-20261031.focus7.catalog.log",
+      "bytes": 448787,
+      "sha256": "68823307d1966b22300059d581f04ef93f7b10fd9ca4dbc0c7477c91f64f5a0b"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus7.runtime.json",
+      "source": "presentation-lifecycle-trap-20261031.focus7.runtime.json",
+      "bytes": 713,
+      "sha256": "69b7433437626f71430aa17e927445f187d34f7d6680e8e821a0477344ea270b"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus7.runtime.log",
+      "source": "presentation-lifecycle-trap-20261031.focus7.runtime.log",
+      "bytes": 685611,
+      "sha256": "2296cd82273ffe87dbbc261a086bb201c171679fb644786d74770817ce4e2105"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus7.runtime.terminal-audit.json",
+      "source": "presentation-lifecycle-trap-20261031.focus7.runtime.terminal-audit.json",
+      "bytes": 872,
+      "sha256": "166bcc461aed127e7e4ade265ffe6d13662fa1b7e13c5fa85aa5d98ec9909d7a"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.run-presentation-lifecycle-trap-20261031.focus8.ps1",
+      "source": "run-presentation-lifecycle-trap-20261031.focus8.ps1",
+      "bytes": 5840,
+      "sha256": "b1656a51de61a5d126aff1f9d6004aeafe8e4e229f96e93e84a72a6b09f18891"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus8.source-freeze.json",
+      "source": "presentation-lifecycle-trap-20261031.focus8.source-freeze.json",
+      "bytes": 786746,
+      "sha256": "7cc23dad986b11f6e98ce2072b1c92d1e17dfdded5e29c1eb52e6811159a80f0"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus8.binaries-before.json",
+      "source": "presentation-lifecycle-trap-20261031.focus8.binaries-before.json",
+      "bytes": 202,
+      "sha256": "086eed870b2e902e51a8bf2402e98b8aff242987d6dc7d6aafddac2c9f2330f5"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus8.catalog.inventory.json",
+      "source": "presentation-lifecycle-trap-20261031.focus8.catalog.inventory.json",
+      "bytes": 544482,
+      "sha256": "47f2c3c5d710921571e6be30270aa81bcee8dca191de842cffc72f3916c48aa4"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus8.catalog.json",
+      "source": "presentation-lifecycle-trap-20261031.focus8.catalog.json",
+      "bytes": 593,
+      "sha256": "a8cb77b45007ea33fc66e1798c81a5aee81b5d45e93a9152f54572573cb4f05d"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus8.catalog.log",
+      "source": "presentation-lifecycle-trap-20261031.focus8.catalog.log",
+      "bytes": 448901,
+      "sha256": "8192798c4562138b2f4f21979470007c066d8436e9521169f2c02da7cf8d0949"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus8.runtime.json",
+      "source": "presentation-lifecycle-trap-20261031.focus8.runtime.json",
+      "bytes": 685,
+      "sha256": "6a2d901b4fdf31815c03c2f93b0172370319b4846f9c5d6a61441be4141ccb73"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus8.runtime.log",
+      "source": "presentation-lifecycle-trap-20261031.focus8.runtime.log",
+      "bytes": 684969,
+      "sha256": "7dc137b5fae72dcf34c757447e5afcae550bb14f13cc332d6a24aa9bc7526b18"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.presentation-lifecycle-trap-20261031.focus8.runtime.terminal-audit.json",
+      "source": "presentation-lifecycle-trap-20261031.focus8.runtime.terminal-audit.json",
+      "bytes": 626,
+      "sha256": "527d91df0f94118327fde83da3f8f0cfe3240a989bf7a9fce838c332703323ef"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.product-execution-quality-20261031T130102278.source-freeze.json",
+      "source": "product-execution-quality-20261031T130102278.source-freeze.json",
+      "bytes": 786792,
+      "sha256": "8b5fc848ebbbfa6e1cdcea89a8d8a719a60765b42d8d7639c575cc6e62010164"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.product-execution-quality-20261031T130102278.clippy.json",
+      "source": "product-execution-quality-20261031T130102278.clippy.json",
+      "bytes": 368,
+      "sha256": "a81bcb07638c8fff203285babb5aa4e171870f861c53b6452c90fa616a50e923"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.product-execution-quality-20261031T130102278.clippy.log",
+      "source": "product-execution-quality-20261031T130102278.clippy.log",
+      "bytes": 4469000,
+      "sha256": "62cf3d5dd8a9b0082960a021eca883dd3cbd26686ebe311b59c9f5c4517a487a"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.product-execution-quality-20261031T130102278.default-check.json",
+      "source": "product-execution-quality-20261031T130102278.default-check.json",
+      "bytes": 344,
+      "sha256": "091d7046d8adfc4708c0bf8369e2fb5084999423f28e5558ead4f3b003911946"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.product-execution-quality-20261031T130102278.default-check.log",
+      "source": "product-execution-quality-20261031T130102278.default-check.log",
+      "bytes": 82490,
+      "sha256": "5dd98372dd124d5292a0aa74a87f2c7b3cd7388959eae5dd07d18319f22a473b"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.product-execution-quality-20261031T130102278.doctest.json",
+      "source": "product-execution-quality-20261031T130102278.doctest.json",
+      "bytes": 358,
+      "sha256": "85f1239739a50dffb3c2d9adc3c2a8815416eb1953b14433c0bd8830a954766b"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.product-execution-quality-20261031T130102278.doctest.log",
+      "source": "product-execution-quality-20261031T130102278.doctest.log",
+      "bytes": 81640,
+      "sha256": "83883ad1953b70a80c77a32e95808f5af42cd3738f2dfd9da966bd3985fe71e9"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.product-execution-quality-20261031T130102278.structure.json",
+      "source": "product-execution-quality-20261031T130102278.structure.json",
+      "bytes": 539,
+      "sha256": "8aea91c4bf2acb00bb6b4a60b86c557aa91185a35637a4f3fd2dd2e14a1e0960"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.product-execution-quality-20261031T130102278.structure.log",
+      "source": "product-execution-quality-20261031T130102278.structure.log",
+      "bytes": 65048,
+      "sha256": "25c35ada018b1012b32f8ecd4206e7d30fd79c9e4d6d3cdd5946b1629ee29f66"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.product-execution-quality-20261031T130102278.fmt.json",
+      "source": "product-execution-quality-20261031T130102278.fmt.json",
+      "bytes": 2365,
+      "sha256": "c2ae05b5f361e1197e51fb0fa7238adffcfa5e816a90031ba9e54fb1bf508c71"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.product-execution-quality-20261031T130102278.fmt.log",
+      "source": "product-execution-quality-20261031T130102278.fmt.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.product-execution-quality-20261031T130102278.structure-report.dependency_edges.csv",
+      "source": "product-execution-quality-20261031T130102278.structure-report/dependency_edges.csv",
+      "bytes": 77544,
+      "sha256": "529e738d348314f7a4c0d909b165620d03ec57478b68ad42b06aa349b30e13f4"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.product-execution-quality-20261031T130102278.structure-report.file_metrics.csv",
+      "source": "product-execution-quality-20261031T130102278.structure-report/file_metrics.csv",
+      "bytes": 330291,
+      "sha256": "79193e10d3cd408d45078be70b793b547b71adfd124d2bb1eee3a373a4527c37"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.product-execution-quality-20261031T130102278.structure-report.findings.md",
+      "source": "product-execution-quality-20261031T130102278.structure-report/findings.md",
+      "bytes": 122295,
+      "sha256": "93095abc8b81f961915dbcdf8a68f5795341f31b14924dfd32f8270159568595"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.product-execution-quality-20261031T130102278.structure-report.package_metrics.csv",
+      "source": "product-execution-quality-20261031T130102278.structure-report/package_metrics.csv",
+      "bytes": 6444,
+      "sha256": "c2df26363c079ef3c17be71810df334c6e4825ab5987b4951b3f1432368b85f2"
+    },
+    {
+      "path": "task-presentation-lifecycle-trap-raw.product-execution-quality-20261031T130102278.structure-report.public_type_duplicates.csv",
+      "source": "product-execution-quality-20261031T130102278.structure-report/public_type_duplicates.csv",
+      "bytes": 17238,
+      "sha256": "6cbaa427fef9360e8adb6245ea1eec66f5fdaf2624a24979e82d4877a28e31ac"
+    }
+  ],
+  "artifactCount": 119,
+  "artifactBytes": 28943515,
+  "rawByteDrift": 0
+}

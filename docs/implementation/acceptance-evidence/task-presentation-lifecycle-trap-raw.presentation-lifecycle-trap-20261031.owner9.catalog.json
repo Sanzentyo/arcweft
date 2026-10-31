@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "e49b4f03dd1529fae2ae748cd2ca9098a73f7e17",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-lifecycle-trap-20261031.owner9.catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-31T12:56:55.9387292Z",
+  "finishedAt": "2026-10-31T12:58:02.2959150Z"
+}

@@ -1,0 +1,8 @@
+From https://github.com/Sanzentyo/arcweft
+ * branch                main       -> FETCH_HEAD
+[main e49b4f03d] fix(core): keep Dialogue budget and revision atomic on custody refusal
+ 6 files changed, 193 insertions(+), 72 deletions(-)
+ create mode 100644 crates/arcweft-core/src/awbc/product_step/step_budget.rs
+To https://github.com/Sanzentyo/arcweft.git
+   cdcf744f3..e49b4f03d  HEAD -> main
+{"commit":"e49b4f03dd1529fae2ae748cd2ca9098a73f7e17","parent":"cdcf744f3e8d30f7c2d5fff5a2878650a0b177c6","tree":"a867467dec6a1a15afa9695db395360bcb744ee4","paths":6,"blobDrift":0,"originalWip":14,"separatelyHeld":0,"patchSha256":"a438c919038b19c85fdcbff3d9ffe560defc79bbf0ce4199b0fb0d63fa39fcfb","indexEmpty":true}

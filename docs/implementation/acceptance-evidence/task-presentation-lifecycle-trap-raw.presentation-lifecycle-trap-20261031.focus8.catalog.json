@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "cdcf744f3e8d30f7c2d5fff5a2878650a0b177c6",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked",
+    "--lib",
+    "-E",
+    "test(awbc::product_step::tests::presentation::trap_lifecycle::)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-lifecycle-trap-20261031.focus8.catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-31T12:55:04.9318966Z",
+  "finishedAt": "2026-10-31T12:56:03.7505149Z"
+}

@@ -1,0 +1,613 @@
+diff --git a/crates/arcweft-core/src/awbc/product_step.rs b/crates/arcweft-core/src/awbc/product_step.rs
+index 13ed5678d92f38c38ae4c97f68cab640dae6e8af..ff2e1ee00f02bb56cd20dc80b3848f5342192444 100644
+--- a/crates/arcweft-core/src/awbc/product_step.rs
++++ b/crates/arcweft-core/src/awbc/product_step.rs
+@@ -22,6 +22,8 @@ mod program_task;
+ mod root;
+ mod runtime_id;
+ mod snapshot;
++mod step_budget;
++use step_budget::ProductStepBudgets;
+ mod suspension;
+ 
+ use self::dialogue::ProductDialogueStore;
+@@ -2409,7 +2411,6 @@ impl AwbcProductStepExecutor {
+         for child in &mut self.child_fibers {
+             child.fiber.advance_duration_wait(&self.program, input.dt)?;
+         }
+-        self.dialogues.prepare_activation_budget(&self.program)?;
+         Ok(diagnostics)
+     }
+ 
+@@ -2472,6 +2473,7 @@ impl AwbcProductStepExecutor {
+         for diagnostic in ingress_diagnostics {
+             self.record_error(ProductStepError::Line(diagnostic), &mut output);
+         }
++        let mut budgets = ProductStepBudgets::for_step(&self.dialogues);
+ 
+         if !self.run_root_phase(
+             std::mem::take(&mut input.root_events),
+@@ -2554,7 +2556,7 @@ impl AwbcProductStepExecutor {
+         self.emit_pending_need_reensure(&mut output);
+         self.step_stream_plans(&mut output, pure_backend);
+ 
+-        let replenish_main_budget = if matches!(
++        budgets.main = if matches!(
+             self.fiber
+                 .suspension
+                 .as_ref()
+@@ -2577,7 +2579,7 @@ impl AwbcProductStepExecutor {
+             &mut output,
+             options,
+             pure_backend,
+-            replenish_main_budget,
++            &mut budgets,
+         );
+ 
+         for effect in &output.effects.line {
+@@ -2624,7 +2626,7 @@ impl AwbcProductStepExecutor {
+         output: &mut RuntimeStepOutput,
+         options: RuntimeStepOptions,
+         pure_backend: &mut impl RuntimeCallBackend,
+-        mut replenish_main_budget: bool,
++        budgets: &mut ProductStepBudgets,
+     ) -> usize {
+         let mut executed_ops = 0_usize;
+         while executed_ops < options.budget.max_ops {
+@@ -2648,7 +2650,7 @@ impl AwbcProductStepExecutor {
+             }
+             if self.fiber.status == FiberStatus::Suspended {
+                 let progress =
+-                    self.resume_main_suspension(input, need_states, output, pure_backend);
++                    self.resume_main_suspension(input, need_states, output, pure_backend, budgets);
+                 executed_ops = executed_ops.saturating_add(progress.executed_ops);
+                 if !progress.progressed && executed_ops < options.budget.max_ops {
+                     if !self.step_next_child(output, pure_backend, input, need_states) {
+@@ -2667,7 +2669,7 @@ impl AwbcProductStepExecutor {
+                     need_states,
+                     output,
+                     pure_backend,
+-                    std::mem::take(&mut replenish_main_budget),
++                    std::mem::take(&mut budgets.main),
+                 ));
+             } else if !self.step_next_child(output, pure_backend, input, need_states) {
+                 break;
+@@ -4270,6 +4272,7 @@ impl AwbcProductStepExecutor {
+         need_states: &mut Vec<RuntimeNeedState>,
+         output: &mut RuntimeStepOutput,
+         pure_backend: &mut impl RuntimeCallBackend,
++        budgets: &mut ProductStepBudgets,
+     ) -> ProductStepProgress {
+         if matches!(
+             self.fiber.suspension.as_ref().map(|s| &s.reason),
+@@ -4350,6 +4353,7 @@ impl AwbcProductStepExecutor {
+                 &mut input.host_call_results,
+                 output,
+                 pure_backend,
++                budgets,
+             );
+         }
+         let Some(suspension) = self.fiber.suspension.as_ref() else {
+@@ -4711,6 +4715,7 @@ impl AwbcProductStepExecutor {
+         host_call_results: &mut Vec<crate::step::RuntimeHostCallResult>,
+         output: &mut RuntimeStepOutput,
+         pure_backend: &mut impl RuntimeCallBackend,
++        budgets: &mut ProductStepBudgets,
+     ) -> ProductStepProgress {
+         if self.dialogues.active_frame().is_none() {
+             let Some(target) = target else {
+@@ -4750,6 +4755,7 @@ impl AwbcProductStepExecutor {
+                 &mut transaction,
+                 host_call_results,
+                 pure_backend,
++                budgets,
+             ) {
+                 Ok(progress) => progress,
+                 Err(error) if error.is_presentation_refusal() => {
+@@ -4766,6 +4772,19 @@ impl AwbcProductStepExecutor {
+                         .into();
+                 }
+             };
++            if let Some(trap) = progress.trap {
++                let error = ProductStepError::ActivationTrap(trap);
++                return match progress.execution {
++                    Some(batch) => self.begin_product_dialogue_failure_with_batch(
++                        transaction,
++                        error,
++                        batch,
++                        output,
++                    ),
++                    None => self.begin_product_dialogue_failure(transaction, error, output),
++                }
++                .into();
++            }
+             let candidate_pure_stats = progress.pure_stats;
+             let host_result_take = progress.host_result_take;
+             let command_batch_result = match progress.execution {
+diff --git a/crates/arcweft-core/src/awbc/product_step/dialogue.rs b/crates/arcweft-core/src/awbc/product_step/dialogue.rs
+index f88d4bfd96bb697891d775143f5afafd83a84eda..bdfb24845b09446f77f586a1b0c527bff6b7c334 100644
+--- a/crates/arcweft-core/src/awbc/product_step/dialogue.rs
++++ b/crates/arcweft-core/src/awbc/product_step/dialogue.rs
+@@ -125,54 +125,6 @@ impl ProductDialogueStore {
+         })
+     }
+ 
+-    /// Replenishes the existing activation quantum once at host-step ingress.
+-    /// Preemption retains its exact VM cursor across snapshot/restore; the
+-    /// caller's max_ops still bounds every subsequent internal operation.
+-    pub(super) fn prepare_activation_budget(
+-        &mut self,
+-        program: &crate::awbc::schema::AwbcProgram,
+-    ) -> Result<(), ProductStepError> {
+-        if !self.active_frame().is_some_and(|frame| {
+-            matches!(&frame.phase, super::ProductDialoguePhase::Activating { .. })
+-        }) {
+-            return Ok(());
+-        }
+-        let mut transaction = self.begin_active_transaction()?;
+-        // Reserve the registry commit before mutating the VM cursor or budget.
+-        // The budget resume performs all of its own checks before mutation.
+-        let proof = match self.inspect_commit(&transaction) {
+-            Ok(proof) => proof,
+-            Err(error) => {
+-                self.restore_transaction(transaction)
+-                    .expect("rejected budget preparation retains its original registry owner");
+-                return Err(error.into());
+-            }
+-        };
+-        let super::ProductDialoguePhase::Activating { fiber, .. } =
+-            &mut transaction.frame_mut().phase
+-        else {
+-            unreachable!("the sole borrowed activation phase was checked")
+-        };
+-        if matches!(
+-            fiber
+-                .suspension
+-                .as_ref()
+-                .map(|suspension| &suspension.reason),
+-            Some(crate::awbc::fiber::FiberSuspensionReason::BudgetYield)
+-        ) {
+-            if let Err(error) = fiber.resume_budget_yield(program) {
+-                self.restore_transaction(transaction)
+-                    .expect("rejected budget resume retains its sole registry transaction");
+-                return Err(error.into());
+-            }
+-        }
+-        if fiber.status == crate::awbc::fiber::FiberStatus::Running {
+-            fiber.replenish_budget();
+-        }
+-        self.commit_prepared(transaction, proof);
+-        Ok(())
+-    }
+-
+     pub(super) fn visit_runtime_values<E>(
+         &self,
+         mut visitor: impl FnMut(&RuntimeValue) -> Result<(), E>,
+@@ -367,7 +319,7 @@ impl ProductDialogueStore {
+             }
+         }
+         if let Some(activation) = active.as_ref() {
+-            let commits = 1_usize
++            let commits = usize::from(dt.as_nanos() != 0)
+                 .checked_add(content_events.len())
+                 .and_then(|count| count.checked_add(advances.len()))
+                 .and_then(|count| count.checked_add(seen_outcomes.len()))
+@@ -393,7 +345,13 @@ impl ProductDialogueStore {
+             if transaction.frame().is_ingress_ready() {
+                 transaction.frame_mut().elapsed_nanos += dt.as_nanos();
+             }
+-            self.registry.commit(transaction)?;
++            if dt.as_nanos() == 0 {
++                // Duration authentication still ran, but zero elapsed time
++                // changes no payload and must not spend a registry revision.
++                self.registry.restore_transaction(transaction)?;
++            } else {
++                self.registry.commit(transaction)?;
++            }
+         }
+         for event in content_events {
+             let mut transaction = self.ready_transaction(event.activation())?;
+diff --git a/crates/arcweft-core/src/awbc/product_step/line.rs b/crates/arcweft-core/src/awbc/product_step/line.rs
+index 79a6c6ec79c08a49195c4d69ca85395cc14254f6..07d9651f71b5cb19d0f6af309b2030f818a8f2b9 100644
+--- a/crates/arcweft-core/src/awbc/product_step/line.rs
++++ b/crates/arcweft-core/src/awbc/product_step/line.rs
+@@ -39,6 +39,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
+ use std::sync::Arc;
+ 
+ pub(super) struct ProductActivationProgress {
++    /// A committed VM terminal transition retains its cleanup execution batch.
++    pub(super) trap: Option<crate::awbc::fiber::FiberTrap>,
+     pub(super) progressed: bool,
+     /// Caller-budget charge for this committed activation operation.
+     pub(super) executed_ops: usize,
+@@ -1135,7 +1137,12 @@ impl super::AwbcProductStepExecutor {
+         transaction: &mut ProductDialogueTransaction,
+         pure_backend: &mut impl RuntimeCallBackend,
+     ) -> Result<ProductActivationProgress, ProductStepError> {
+-        self.step_dialogue_activation_with_host_results(transaction, &mut Vec::new(), pure_backend)
++        self.step_dialogue_activation_with_host_results(
++            transaction,
++            &mut Vec::new(),
++            pure_backend,
++            &mut super::ProductStepBudgets::default(),
++        )
+     }
+ 
+     pub(super) fn step_dialogue_activation_with_host_results(
+@@ -1143,6 +1150,7 @@ impl super::AwbcProductStepExecutor {
+         transaction: &mut ProductDialogueTransaction,
+         host_results: &mut Vec<crate::step::RuntimeHostCallResult>,
+         pure_backend: &mut impl RuntimeCallBackend,
++        budgets: &mut super::ProductStepBudgets,
+     ) -> Result<ProductActivationProgress, ProductStepError> {
+         let activation = transaction.activation().clone();
+         let outcomes = std::mem::take(&mut transaction.frame_mut().pending_line_outcomes);
+@@ -1155,6 +1163,7 @@ impl super::AwbcProductStepExecutor {
+         );
+         if has_pending_operation && self.resume_pending_line_operation(transaction, &outcomes)? {
+             return Ok(ProductActivationProgress {
++                trap: None,
+                 progressed: true,
+                 executed_ops: 1,
+                 presented: None,
+@@ -1168,6 +1177,7 @@ impl super::AwbcProductStepExecutor {
+         if !has_pending_operation && transaction.line().has_pending_commands() {
+             if outcomes.is_empty() {
+                 return Ok(ProductActivationProgress {
++                    trap: None,
+                     progressed: false,
+                     executed_ops: 0,
+                     presented: None,
+@@ -1184,6 +1194,7 @@ impl super::AwbcProductStepExecutor {
+             }
+             settle_scoped_defer_releases(transaction);
+             return Ok(ProductActivationProgress {
++                trap: None,
+                 progressed: true,
+                 executed_ops: 1,
+                 presented: None,
+@@ -1233,6 +1244,7 @@ impl super::AwbcProductStepExecutor {
+             | ProductDialoguePhase::Closing(_)
+             | ProductDialoguePhase::Transitioning => {
+                 return Ok(ProductActivationProgress {
++                    trap: None,
+                     progressed: false,
+                     executed_ops: 0,
+                     presented: None,
+@@ -1246,6 +1258,7 @@ impl super::AwbcProductStepExecutor {
+         };
+         if fiber_has_scoped_defer_inflight(before) {
+             return Ok(ProductActivationProgress {
++                trap: None,
+                 progressed: false,
+                 executed_ops: 0,
+                 presented: None,
+@@ -1277,6 +1290,11 @@ impl super::AwbcProductStepExecutor {
+         };
+         let mut candidate = Some(fiber);
+         let result: Result<ProductActivationProgress, ProductStepError> = (|| {
++            budgets.replenish_activation(
++                &activation,
++                candidate.as_mut().expect("activation fiber remains owned"),
++                &self.program,
++            )?;
+             let mut candidate_stats = self.compact_pure_stats;
+             let context = self.vm_execution_context();
+             let mut host = super::ProductVmHost {
+@@ -1354,9 +1372,9 @@ impl super::AwbcProductStepExecutor {
+                             }
+                         }
+                         VmObservation::Effect { .. } => activation_effects.push(observation),
+-                        VmObservation::Trap(trap) => {
+-                            return Err(ProductStepError::ActivationTrap(trap));
+-                        }
++                        // VmExit carries the terminal trap. Keep its admitted
++                        // unwind and cleanup batch through failure-close setup.
++                        VmObservation::Trap(_) => {}
+                         _ => return Err(LineRuntimeError::InvalidActivationOperation.into()),
+                     }
+                 }
+@@ -1604,6 +1622,7 @@ impl super::AwbcProductStepExecutor {
+                         pending: pending_operation,
+                     };
+                     Ok(ProductActivationProgress {
++                        trap: None,
+                         progressed,
+                         executed_ops,
+                         presented: None,
+@@ -1656,6 +1675,7 @@ impl super::AwbcProductStepExecutor {
+                             pending: None,
+                         };
+                         Ok(ProductActivationProgress {
++                            trap: None,
+                             progressed: true,
+                             executed_ops: usize::from(step.executed > 0),
+                             presented: None,
+@@ -1672,6 +1692,7 @@ impl super::AwbcProductStepExecutor {
+                             pending: None,
+                         };
+                         Ok(ProductActivationProgress {
++                            trap: None,
+                             progressed: true,
+                             executed_ops: 1,
+                             presented: None,
+@@ -1703,7 +1724,23 @@ impl super::AwbcProductStepExecutor {
+                             source_map: None,
+                         },
+                     )),
+-                    VmExit::Trapped(trap) => Err(ProductStepError::ActivationTrap(trap)),
++                    VmExit::Trapped(trap) => {
++                        frame.phase = ProductDialoguePhase::Activating {
++                            fiber: candidate.take().expect("activation fiber remains owned"),
++                            pending: None,
++                        };
++                        Ok(ProductActivationProgress {
++                            trap: Some(trap),
++                            progressed: true,
++                            executed_ops: usize::from(step.executed > 0),
++                            presented: None,
++                            reducer: LineTaskActivation::default(),
++                            pure_stats: Some(candidate_stats),
++                            execution,
++                            host_calls: Vec::new(),
++                            host_result_take: None,
++                        })
++                    }
+                     VmExit::Suspended(notice)
+                         if notice.kind == crate::awbc::fiber::FiberSuspensionKind::DurationWait =>
+                     {
+@@ -1712,6 +1749,7 @@ impl super::AwbcProductStepExecutor {
+                             pending: None,
+                         };
+                         Ok(ProductActivationProgress {
++                            trap: None,
+                             progressed: false,
+                             executed_ops: usize::from(step.executed > 0),
+                             presented: None,
+@@ -1749,6 +1787,7 @@ impl super::AwbcProductStepExecutor {
+                             pending: None,
+                         };
+                         Ok(ProductActivationProgress {
++                            trap: None,
+                             progressed: false,
+                             executed_ops: usize::from(step.executed > 0),
+                             presented: None,
+@@ -1823,6 +1862,7 @@ impl super::AwbcProductStepExecutor {
+             let (_, request) =
+                 self.activation_host_call_request(pending.call, &args, Some(pending.clone()))?;
+             return Ok(ProductActivationProgress {
++                trap: None,
+                 progressed: false,
+                 executed_ops: 0,
+                 presented: None,
+@@ -1877,6 +1917,7 @@ impl super::AwbcProductStepExecutor {
+             }
+         };
+         Ok(ProductActivationProgress {
++            trap: None,
+             progressed: true,
+             executed_ops: 1,
+             presented: None,
+@@ -3034,6 +3075,7 @@ impl super::AwbcProductStepExecutor {
+         .expect("result was preflighted as uncommitted");
+         fiber.commit_yielded_instruction_prepared(yielded);
+         Ok(ProductActivationProgress {
++            trap: None,
+             progressed: true,
+             executed_ops: 1,
+             presented: None,
+@@ -3061,6 +3103,7 @@ impl super::AwbcProductStepExecutor {
+         };
+         if fiber_has_scoped_defer_inflight(fiber) {
+             return Ok(ProductActivationProgress {
++                trap: None,
+                 progressed: false,
+                 executed_ops: 0,
+                 presented: None,
+@@ -3099,6 +3142,7 @@ impl super::AwbcProductStepExecutor {
+                     &handled,
+                 )?;
+                 return Ok(ProductActivationProgress {
++                    trap: None,
+                     progressed: true,
+                     executed_ops: 1,
+                     presented: None,
+@@ -3137,6 +3181,7 @@ impl super::AwbcProductStepExecutor {
+                 return Err(ProductStepError::ActivationTrap(trap));
+             }
+             return Ok(ProductActivationProgress {
++                trap: None,
+                 progressed: true,
+                 executed_ops: 1,
+                 presented: None,
+@@ -3313,6 +3358,7 @@ impl super::AwbcProductStepExecutor {
+         frame.task_inputs = task_inputs.into_boxed_slice();
+         frame.phase = ProductDialoguePhase::Reducing { line_task };
+         Ok(ProductActivationProgress {
++            trap: None,
+             progressed: true,
+             executed_ops: 1,
+             presented: Some(build_dialogue_line_event(
+diff --git a/crates/arcweft-core/src/awbc/product_step/step_budget.rs b/crates/arcweft-core/src/awbc/product_step/step_budget.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..0e0b4a9ba0f6da04617ed00dc798af3e2012f5a2
+--- /dev/null
++++ b/crates/arcweft-core/src/awbc/product_step/step_budget.rs
+@@ -0,0 +1,51 @@
++//! One host step's permission to replenish each existing VM quantum once.
++//! These requests borrow no runtime custody and never enter a save/checkpoint.
++
++use super::{ProductDialoguePhase, dialogue::ProductDialogueStore};
++use crate::awbc::fiber::{FiberState, FiberStateError, FiberStatus, FiberSuspensionReason};
++use crate::awbc::schema::AwbcProgram;
++use crate::runtime_id::DialogueActivationId;
++
++#[derive(Default)]
++pub(super) struct ProductStepBudgets {
++    pub(super) main: bool,
++    activation: Option<DialogueActivationId>,
++}
++
++impl ProductStepBudgets {
++    pub(super) fn for_step(dialogues: &ProductDialogueStore) -> Self {
++        Self {
++            main: false,
++            activation: dialogues.active_frame().and_then(|frame| {
++                matches!(&frame.phase, ProductDialoguePhase::Activating { .. })
++                    .then(|| frame.activation.clone())
++            }),
++        }
++    }
++
++    /// Called inside the activation's original complete execution checkpoint.
++    pub(super) fn replenish_activation(
++        &mut self,
++        activation: &DialogueActivationId,
++        fiber: &mut FiberState,
++        program: &AwbcProgram,
++    ) -> Result<(), FiberStateError> {
++        if self.activation.as_ref() != Some(activation) {
++            return Ok(());
++        }
++        if matches!(
++            fiber
++                .suspension
++                .as_ref()
++                .map(|suspension| &suspension.reason),
++            Some(FiberSuspensionReason::BudgetYield)
++        ) {
++            fiber.resume_budget_yield(program)?;
++        }
++        if fiber.status == FiberStatus::Running {
++            fiber.replenish_budget();
++        }
++        self.activation = None;
++        Ok(())
++    }
++}
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests.rs b/crates/arcweft-core/src/awbc/product_step/tests.rs
+index 2fbbdd52112a89bd5b5ece5b18411b9879e3f86b..eef0b7ad8d72b2a86175b84719b228e2cfe53665 100644
+--- a/crates/arcweft-core/src/awbc/product_step/tests.rs
++++ b/crates/arcweft-core/src/awbc/product_step/tests.rs
+@@ -1233,6 +1233,7 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
+                 &mut transaction,
+                 &mut host_results,
+                 backend,
++                &mut super::ProductStepBudgets::default(),
+             )
+             .unwrap_or_else(|error| panic!("activation step at {cursor:?} failed: {error:?}"));
+         if let Some(ticket) = progress.host_result_take.take() {
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs b/crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs
+index 65d0bb324a23fd7857db4c6cda2c0f884617a13f..44b2da57eb2e66bdf4e6e9435dc51737046ac0cf 100644
+--- a/crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs
++++ b/crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs
+@@ -262,6 +262,8 @@ fn dialogue_fixture(blocked: bool) -> (AwbcProductStepExecutor, RuntimePresentat
+     let mut program = mark_selector_program(
+         arcweft_interaction_model::input::InputActionId::new("trap.refusal").unwrap(),
+     );
++    program.strings[1] = "line.presentation.trap.refusal".into();
++    program.content_units[0].public_id = AwbcStringId(1);
+     program.runtime_types.push(AwbcRuntimeType::new(
+         crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest(),
+         AwbcRuntimeTypeShape::Bool,
+@@ -281,10 +283,25 @@ fn dialogue_fixture(blocked: bool) -> (AwbcProductStepExecutor, RuntimePresentat
+         max_scope_depth: 0,
+     });
+     program.functions[0].frame_layout = root_layout;
++    program.blocks.insert(
++        1,
++        AwbcBlock {
++            owner: AwbcFunctionId(0),
++            instructions: AwbcTableRange::new(0, 0),
++            terminator: AwbcTerminator::Return { value: None },
++            safe_point: AwbcSafePointKind::Dialogue,
++            source_map: None,
++        },
++    );
++    program.functions[0].blocks = AwbcTableRange::new(0, 2);
++    for function in program.functions.iter_mut().skip(1) {
++        function.blocks.start += 1;
++        function.entry_block.0 += 1;
++    }
+     let resume = AwbcResumePointId(program.resume_points.len().try_into().unwrap());
+     program.resume_points.push(AwbcResumePoint {
+         function: AwbcFunctionId(0),
+-        block: AwbcBlockId(0),
++        block: AwbcBlockId(1),
+         frame_layout: root_layout,
+         kind: AwbcSafePointKind::Dialogue,
+     });
+@@ -307,6 +324,19 @@ fn dialogue_fixture(blocked: bool) -> (AwbcProductStepExecutor, RuntimePresentat
+         },
+         resume,
+     };
++    let payload = AwbcConstantId(program.constants.len().try_into().unwrap());
++    program.constants.push(AwbcConstant::Unit);
++    let target = AwbcConstantId(program.constants.len().try_into().unwrap());
++    program.constants.push(AwbcConstant::Opaque {
++        ty: AwbcTypeId(2),
++        payload,
++    });
++    let load = program.instructions.len().try_into().unwrap();
++    program.instructions.push(AwbcInstruction::LoadConst {
++        dst: AwbcRegisterId(0),
++        constant: target,
++    });
++    program.blocks[0].instructions = AwbcTableRange::new(load, 1);
+     let nop = AwbcInstructionId(program.instructions.len().try_into().unwrap());
+     program.instructions.push(AwbcInstruction::Nop);
+     let activation_block = program.functions[1].entry_block.index();
+@@ -316,15 +346,6 @@ fn dialogue_fixture(blocked: bool) -> (AwbcProductStepExecutor, RuntimePresentat
+         message: None,
+     };
+     let mut executor = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 64).unwrap();
+-    executor
+-        .fiber
+-        .active_frame_mut()
+-        .unwrap()
+-        .set_register(
+-            AwbcRegisterId(0),
+-            RuntimeValue::Opaque(fixture_dialogue_target()),
+-        )
+-        .unwrap();
+     for _ in 0..8 {
+         let output = executor.step(
+             Default::default(),
+@@ -338,7 +359,10 @@ fn dialogue_fixture(blocked: bool) -> (AwbcProductStepExecutor, RuntimePresentat
+             "{:?}",
+             output.output.diagnostics
+         );
+-        if executor.dialogues.active_frame().is_some() {
++        if executor.dialogues.active_frame().is_some_and(|frame| {
++            matches!(&frame.phase, ProductDialoguePhase::Activating { fiber, .. }
++                if fiber.cursor.instruction_offset == 1)
++        }) {
+             break;
+         }
+     }
+@@ -410,3 +434,25 @@ fn actual_dialogue_vm_refusal_retains_the_activation_instead_of_starting_failure
+         token
+     );
+ }
++
++#[test]
++fn zero_operation_dialogue_steps_preserve_budget_revision_custody_and_public_save() {
++    let (mut executor, _) = dialogue_fixture(false);
++    let before = executor.snapshot().unwrap();
++    for _ in 0..2 {
++        let output = executor.step(
++            Default::default(),
++            RuntimeStepOptions {
++                budget: crate::step::RuntimeStepBudget { max_ops: 0 },
++                ..Default::default()
++            },
++        );
++        assert!(
++            output.output.diagnostics.is_empty(),
++            "{:?}",
++            output.output.diagnostics
++        );
++        assert_eq!(executor.snapshot().unwrap(), before);
++    }
++    roundtrip(executor);
++}

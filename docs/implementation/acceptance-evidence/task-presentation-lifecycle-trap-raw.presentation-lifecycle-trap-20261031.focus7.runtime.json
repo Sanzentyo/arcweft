@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "cdcf744f3e8d30f7c2d5fff5a2878650a0b177c6",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked",
+    "--lib",
+    "-E",
+    "test(actual_dialogue_vm_refusal_retains_the_activation_instead_of_starting_failure_close)",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-lifecycle-trap-20261031.focus7.runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-31T12:52:04.1075183Z",
+  "finishedAt": "2026-10-31T12:52:06.0947352Z"
+}

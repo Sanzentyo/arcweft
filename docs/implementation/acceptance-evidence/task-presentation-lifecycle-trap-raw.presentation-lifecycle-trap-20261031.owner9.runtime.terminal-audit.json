@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "e49b4f03dd1529fae2ae748cd2ca9098a73f7e17",
+  "run": "presentation-lifecycle-trap-20261031.owner9.runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [ 151.424s] 2189 tests run: 2189 passed (1 slow), 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 2189,
+  "passed": 2189,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4025,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-31T13:00:38.5192664Z"
+}

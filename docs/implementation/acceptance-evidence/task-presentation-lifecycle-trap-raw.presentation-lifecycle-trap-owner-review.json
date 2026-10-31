@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "base": "b5ca98fc068e68926b2302a6db94ff716e8f9077",
+  "inspectedMain": "e49b4f03dd1529fae2ae748cd2ca9098a73f7e17",
+  "workingTree": "Original 14 tracked and 6 untracked WIP retained; owned source is published",
+  "files": [
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step.rs",
+      "package": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 243388,
+      "basePhysicalLoc": 6027,
+      "bytes": 245501,
+      "physicalLoc": 6077,
+      "growth": 50
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+      "package": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 22451,
+      "basePhysicalLoc": 553,
+      "bytes": 20715,
+      "physicalLoc": 511,
+      "growth": -42
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+      "package": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 23909,
+      "basePhysicalLoc": 582,
+      "bytes": 24128,
+      "physicalLoc": 585,
+      "growth": 3
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+      "package": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 184258,
+      "basePhysicalLoc": 4327,
+      "bytes": 186077,
+      "physicalLoc": 4373,
+      "growth": 46
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+      "package": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 13595,
+      "basePhysicalLoc": 356,
+      "bytes": 13569,
+      "physicalLoc": 356,
+      "growth": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/program_fanout.rs",
+      "package": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 18216,
+      "basePhysicalLoc": 442,
+      "bytes": 18210,
+      "physicalLoc": 442,
+      "growth": 0
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/step_budget.rs",
+      "package": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 0,
+      "basePhysicalLoc": 0,
+      "bytes": 1708,
+      "physicalLoc": 51,
+      "growth": 51
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+      "package": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 122504,
+      "basePhysicalLoc": 2972,
+      "bytes": 122454,
+      "physicalLoc": 2970,
+      "growth": -2
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+      "package": "arcweft-core",
+      "classification": "test",
+      "baseBytes": 317158,
+      "basePhysicalLoc": 8020,
+      "bytes": 317217,
+      "physicalLoc": 8021,
+      "growth": 1
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "package": "arcweft-core",
+      "classification": "test",
+      "baseBytes": 37144,
+      "basePhysicalLoc": 961,
+      "bytes": 37164,
+      "physicalLoc": 962,
+      "growth": 1
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+      "package": "arcweft-core",
+      "classification": "test",
+      "baseBytes": 0,
+      "basePhysicalLoc": 0,
+      "bytes": 15927,
+      "physicalLoc": 458,
+      "growth": 458
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+      "package": "arcweft-core",
+      "classification": "test",
+      "baseBytes": 14956,
+      "basePhysicalLoc": 409,
+      "bytes": 15073,
+      "physicalLoc": 416,
+      "growth": 7
+    }
+  ],
+  "review": [
+    "The admitted program already owns cancellation contour admission; general unwind naming makes the same private authority available to lifecycle traps. Bank aggregate remains the sole actual grant/body retirement owner. All production consumers migrated directly; no alias, wire format, Cargo edge or public visibility changed.",
+    "Product lifecycle remains responsible for line reconciliation, cleanup effects and terminal flow publication. Actual bank contour preflight precedes reconciliation commit; actual retirement precedes cleanup dispatch. Typed refusal classification is owned by ProductStepError and reused by main, selected child and withdrawn Dialogue transaction owners, without a string decoder or fallback ledger.",
+    "New trap_lifecycle.rs grows from zero and crosses the 300-LOC review trigger. Its one responsibility is lifecycle/refusal behavior across real execution owners; its sole module importer is presentation.rs and its fan-out is existing Core fixture, VM, bank and public-save APIs. Actual child identity is allocated by the existing executor cursor; Dialogue is issued by a real terminator. Nested program construction is shared with the prior trap tests inside test-only visibility. No test widens production APIs or synthesizes a ledger identity.",
+    "The new 51-line ProductStepBudgets context owns one-step replenishment requests for actual main and activation VM quanta. It is ephemeral, non-Clone/non-Serde, and holds no runtime custody. Activation preparation now runs inside the existing complete checkpoint; the obsolete pre-ingress transaction/commit method was deleted. Zero elapsed time still authenticates Duration waits but restores the unchanged registry transaction.",
+    "ProductActivationProgress carries a typed terminal trap together with its already admitted cleanup execution batch. The actual fiber remains the terminal-state owner; the returned trap is its report to failure-close preparation. All internal constructors/callers migrate directly. Valid trap observations no longer trigger checkpoint rollback and discard successful retirement.",
+    "The final lifecycle module additionally verifies zero-operation public steps and public save/restore of a real active Dialogue resource. Actual physical LOC and byte sizes below supersede the initial checkpoint measurements; all earlier source epochs remain in raw evidence."
+  ]
+}

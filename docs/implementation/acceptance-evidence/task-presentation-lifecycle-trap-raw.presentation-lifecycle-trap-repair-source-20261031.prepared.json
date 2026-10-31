@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "base": "cdcf744f3e8d30f7c2d5fff5a2878650a0b177c6",
+  "tree": "a867467dec6a1a15afa9695db395360bcb744ee4",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step.rs",
+      "blob": "ff2e1ee00f02bb56cd20dc80b3848f5342192444"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+      "blob": "bdfb24845b09446f77f586a1b0c527bff6b7c334"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+      "blob": "07d9651f71b5cb19d0f6af309b2030f818a8f2b9"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/step_budget.rs",
+      "blob": "0e0b4a9ba0f6da04617ed00dc798af3e2012f5a2"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+      "blob": "eef0b7ad8d72b2a86175b84719b228e2cfe53665"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+      "blob": "44b2da57eb2e66bdf4e6e9435dc51737046ac0cf"
+    }
+  ],
+  "other": [],
+  "held": [
+    "crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs",
+    "crates/arcweft-cli/tests/check/agent_script_debug.rs",
+    "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+    "crates/arcweft-cli/tests/check/profile_entry_selection.rs",
+    "crates/arcweft-runtime-host/src/native_task.rs",
+    "samples/agent-script/cli-read-resource-metadata-smoke.awfagent",
+    "samples/agent-script/cli-read-resource-smoke.awfagent",
+    "samples/agent-script/cli-read-resource-value-smoke.awfagent",
+    "samples/agent-script/native-choice-dispatch.arcw",
+    "samples/agent-script/native-project-graph-relations.arcw",
+    "samples/agent-script/native-visual-regression.arcw",
+    "samples/image-animation.arcw",
+    "samples/rich-text-full-grammar.arcw",
+    "samples/rich-text-windows-fonts.arcw"
+  ],
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "patchSha256": "a438c919038b19c85fdcbff3d9ffe560defc79bbf0ce4199b0fb0d63fa39fcfb",
+  "preparedAt": "2026-10-31T12:55:02.0252515Z"
+}

@@ -1,0 +1,8 @@
+From https://github.com/Sanzentyo/arcweft
+ * branch                main       -> FETCH_HEAD
+[main cdcf744f3] checkpoint(core): admit lifecycle unwinds and retain custody refusals
+ 9 files changed, 485 insertions(+), 33 deletions(-)
+ create mode 100644 crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs
+To https://github.com/Sanzentyo/arcweft.git
+   b5ca98fc0..cdcf744f3  HEAD -> main
+{"commit":"cdcf744f3e8d30f7c2d5fff5a2878650a0b177c6","parent":"b5ca98fc068e68926b2302a6db94ff716e8f9077","tree":"849e971808d89cd6fa8e6403b5e6c9116eeb69b3","paths":9,"blobDrift":0,"originalWip":14,"separatelyHeld":0,"patchSha256":"a8d26874658f2dc0b011bd4490a09d25b0477873d6b26f908990533a70c845a3","indexEmpty":true}

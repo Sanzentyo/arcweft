@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "e49b4f03dd1529fae2ae748cd2ca9098a73f7e17",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-lifecycle-trap-20261031.owner9.runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-31T12:58:02.8078049Z",
+  "finishedAt": "2026-10-31T13:00:37.3961664Z"
+}

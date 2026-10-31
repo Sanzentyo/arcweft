@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "cdcf744f3e8d30f7c2d5fff5a2878650a0b177c6",
+  "run": "presentation-lifecycle-trap-20261031.owner3.runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [  28.712s] 2188 tests run: 2187 passed, 1 failed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 2188,
+  "passed": 2187,
+  "failed": 1,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4024,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::presentation::trap_lifecycle::actual_dialogue_vm_refusal_retains_the_activation_instead_of_starting_failure_close"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-31T12:40:36.2800613Z"
+}

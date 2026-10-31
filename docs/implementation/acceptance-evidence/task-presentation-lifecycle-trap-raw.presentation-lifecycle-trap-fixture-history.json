@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+  "method": "Reconstructed earlier unpublished fixture bytes by reversing only known later fixture edits; byte lengths and SHA256 match the original source-freeze receipts exactly. Repository source was not edited.",
+  "rows": [
+    {
+      "attempt": 2,
+      "source": "presentation-lifecycle-trap-owner2.fixture-source.rs",
+      "bytes": 14451,
+      "sha256": "04bc1b21aad65f012141347982cb4cd032a7155cb2f2b6177e38f888a8714e89",
+      "matchesActualFrozenInput": true
+    },
+    {
+      "attempt": 3,
+      "source": "presentation-lifecycle-trap-owner3.fixture-source.rs",
+      "bytes": 14964,
+      "sha256": "4a405259390f6329f0d381aba987233fe5ab14a4181d69dec1d00e39489572d8",
+      "matchesActualFrozenInput": true
+    }
+  ],
+  "capturedFocusRows": [
+    {
+      "attempt": "focus4",
+      "source": "presentation-lifecycle-trap-focus4.fixture-source.rs",
+      "bytes": 15184,
+      "sha256": "c22060610f5efbbf1fee053b5664d5198cd199d6c198c1205a139ec98db45bc0",
+      "method": "Captured unchanged working source while that exact source-frozen run was live",
+      "matchesActualFrozenInput": true
+    },
+    {
+      "attempt": "focus5",
+      "source": "presentation-lifecycle-trap-focus5.fixture-source.rs",
+      "bytes": 15088,
+      "sha256": "2160b3c63c17413c5f8ce36ac6c2f043a865dd230bd2bbb659c77dcbacaf4edd",
+      "method": "Captured unchanged working source while that exact source-frozen run was live",
+      "matchesActualFrozenInput": true
+    },
+    {
+      "attempt": "focus6",
+      "source": "presentation-lifecycle-trap-focus6.fixture-source.rs",
+      "bytes": 15250,
+      "sha256": "71f0a78c9a054274d1cdbbbbe485745dc02e97ac32e78a22993a4d0944f4c2af",
+      "method": "Captured unchanged working source while that exact source-frozen run was live",
+      "matchesActualFrozenInput": true
+    },
+    {
+      "attempt": "focus7",
+      "source": "presentation-lifecycle-trap-focus7.fixture-source.rs",
+      "bytes": 15250,
+      "sha256": "71f0a78c9a054274d1cdbbbbe485745dc02e97ac32e78a22993a4d0944f4c2af",
+      "method": "Captured unchanged source from its actual frozen run",
+      "matchesActualFrozenInput": true
+    },
+    {
+      "attempt": "focus8",
+      "source": "presentation-lifecycle-trap-focus8.fixture-source.rs",
+      "bytes": 15927,
+      "sha256": "e1027d214490a0e71031fb9fbbd6866f20c6beb7269fd781545241e2cfac4012",
+      "method": "Captured unchanged source from its actual frozen run",
+      "matchesActualFrozenInput": true
+    }
+  ],
+  "focus7CandidatePatchSha256": "3171f446b521d81bb045f8919f76666072cea7109b79ed041d548d9833145a61"
+}

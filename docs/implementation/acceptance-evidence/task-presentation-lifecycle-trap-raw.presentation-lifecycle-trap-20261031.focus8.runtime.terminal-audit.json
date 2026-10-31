@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "cdcf744f3e8d30f7c2d5fff5a2878650a0b177c6",
+  "run": "presentation-lifecycle-trap-20261031.focus8.runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [   0.091s] 6 tests run: 6 passed, 2130 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 6,
+  "passed": 6,
+  "failed": 0,
+  "skipped": 2130,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4025,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-31T12:56:07.8098600Z"
+}

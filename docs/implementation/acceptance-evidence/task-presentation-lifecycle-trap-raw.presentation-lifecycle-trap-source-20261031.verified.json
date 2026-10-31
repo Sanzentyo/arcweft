@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "commit": "cdcf744f3e8d30f7c2d5fff5a2878650a0b177c6",
+  "parent": "b5ca98fc068e68926b2302a6db94ff716e8f9077",
+  "tree": "849e971808d89cd6fa8e6403b5e6c9116eeb69b3",
+  "remote": "cdcf744f3e8d30f7c2d5fff5a2878650a0b177c6",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step.rs",
+      "blob": "13ed5678d92f38c38ae4c97f68cab640dae6e8af"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+      "blob": "c0c4def6f2b7a1c3b6ad45ddeb25c99d9287f4b6"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+      "blob": "79a6c6ec79c08a49195c4d69ca85395cc14254f6"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+      "blob": "9badb2c29ac75b525c8be59f9e8ad86cb220f6af"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/program_fanout.rs",
+      "blob": "641788b41aadad9105102cb2e7918a667e35c0f2"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+      "blob": "7cd65b21447f67f110b126150897590c9e09030c"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "blob": "29fc1c731af2bdb684365f740a0d3344a1807350"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+      "blob": "65d0bb324a23fd7857db4c6cda2c0f884617a13f"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+      "blob": "e9b016d682696eff1f4afe6eae7f5d1ee1e390f2"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "a8d26874658f2dc0b011bd4490a09d25b0477873d6b26f908990533a70c845a3",
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-31T12:32:08.7193196Z"
+}
