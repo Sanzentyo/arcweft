@@ -1233,6 +1233,7 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
                 &mut transaction,
                 &mut host_results,
                 backend,
+                &mut super::ProductStepBudgets::default(),
             )
             .unwrap_or_else(|error| panic!("activation step at {cursor:?} failed: {error:?}"));
         if let Some(ticket) = progress.host_result_take.take() {

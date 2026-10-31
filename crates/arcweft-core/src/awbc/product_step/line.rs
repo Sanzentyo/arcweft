@@ -39,6 +39,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 
 pub(super) struct ProductActivationProgress {
+    /// A committed VM terminal transition retains its cleanup execution batch.
+    pub(super) trap: Option<crate::awbc::fiber::FiberTrap>,
     pub(super) progressed: bool,
     /// Caller-budget charge for this committed activation operation.
     pub(super) executed_ops: usize,
@@ -1135,7 +1137,12 @@ impl super::AwbcProductStepExecutor {
         transaction: &mut ProductDialogueTransaction,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<ProductActivationProgress, ProductStepError> {
-        self.step_dialogue_activation_with_host_results(transaction, &mut Vec::new(), pure_backend)
+        self.step_dialogue_activation_with_host_results(
+            transaction,
+            &mut Vec::new(),
+            pure_backend,
+            &mut super::ProductStepBudgets::default(),
+        )
     }
 
     pub(super) fn step_dialogue_activation_with_host_results(
@@ -1143,6 +1150,7 @@ impl super::AwbcProductStepExecutor {
         transaction: &mut ProductDialogueTransaction,
         host_results: &mut Vec<crate::step::RuntimeHostCallResult>,
         pure_backend: &mut impl RuntimeCallBackend,
+        budgets: &mut super::ProductStepBudgets,
     ) -> Result<ProductActivationProgress, ProductStepError> {
         let activation = transaction.activation().clone();
         let outcomes = std::mem::take(&mut transaction.frame_mut().pending_line_outcomes);
@@ -1155,6 +1163,7 @@ impl super::AwbcProductStepExecutor {
         );
         if has_pending_operation && self.resume_pending_line_operation(transaction, &outcomes)? {
             return Ok(ProductActivationProgress {
+                trap: None,
                 progressed: true,
                 executed_ops: 1,
                 presented: None,
@@ -1168,6 +1177,7 @@ impl super::AwbcProductStepExecutor {
         if !has_pending_operation && transaction.line().has_pending_commands() {
             if outcomes.is_empty() {
                 return Ok(ProductActivationProgress {
+                    trap: None,
                     progressed: false,
                     executed_ops: 0,
                     presented: None,
@@ -1184,6 +1194,7 @@ impl super::AwbcProductStepExecutor {
             }
             settle_scoped_defer_releases(transaction);
             return Ok(ProductActivationProgress {
+                trap: None,
                 progressed: true,
                 executed_ops: 1,
                 presented: None,
@@ -1233,6 +1244,7 @@ impl super::AwbcProductStepExecutor {
             | ProductDialoguePhase::Closing(_)
             | ProductDialoguePhase::Transitioning => {
                 return Ok(ProductActivationProgress {
+                    trap: None,
                     progressed: false,
                     executed_ops: 0,
                     presented: None,
@@ -1246,6 +1258,7 @@ impl super::AwbcProductStepExecutor {
         };
         if fiber_has_scoped_defer_inflight(before) {
             return Ok(ProductActivationProgress {
+                trap: None,
                 progressed: false,
                 executed_ops: 0,
                 presented: None,
@@ -1277,6 +1290,11 @@ impl super::AwbcProductStepExecutor {
         };
         let mut candidate = Some(fiber);
         let result: Result<ProductActivationProgress, ProductStepError> = (|| {
+            budgets.replenish_activation(
+                &activation,
+                candidate.as_mut().expect("activation fiber remains owned"),
+                &self.program,
+            )?;
             let mut candidate_stats = self.compact_pure_stats;
             let context = self.vm_execution_context();
             let mut host = super::ProductVmHost {
@@ -1354,9 +1372,9 @@ impl super::AwbcProductStepExecutor {
                             }
                         }
                         VmObservation::Effect { .. } => activation_effects.push(observation),
-                        VmObservation::Trap(trap) => {
-                            return Err(ProductStepError::ActivationTrap(trap));
-                        }
+                        // VmExit carries the terminal trap. Keep its admitted
+                        // unwind and cleanup batch through failure-close setup.
+                        VmObservation::Trap(_) => {}
                         _ => return Err(LineRuntimeError::InvalidActivationOperation.into()),
                     }
                 }
@@ -1604,6 +1622,7 @@ impl super::AwbcProductStepExecutor {
                         pending: pending_operation,
                     };
                     Ok(ProductActivationProgress {
+                        trap: None,
                         progressed,
                         executed_ops,
                         presented: None,
@@ -1656,6 +1675,7 @@ impl super::AwbcProductStepExecutor {
                             pending: None,
                         };
                         Ok(ProductActivationProgress {
+                            trap: None,
                             progressed: true,
                             executed_ops: usize::from(step.executed > 0),
                             presented: None,
@@ -1672,6 +1692,7 @@ impl super::AwbcProductStepExecutor {
                             pending: None,
                         };
                         Ok(ProductActivationProgress {
+                            trap: None,
                             progressed: true,
                             executed_ops: 1,
                             presented: None,
@@ -1703,7 +1724,23 @@ impl super::AwbcProductStepExecutor {
                             source_map: None,
                         },
                     )),
-                    VmExit::Trapped(trap) => Err(ProductStepError::ActivationTrap(trap)),
+                    VmExit::Trapped(trap) => {
+                        frame.phase = ProductDialoguePhase::Activating {
+                            fiber: candidate.take().expect("activation fiber remains owned"),
+                            pending: None,
+                        };
+                        Ok(ProductActivationProgress {
+                            trap: Some(trap),
+                            progressed: true,
+                            executed_ops: usize::from(step.executed > 0),
+                            presented: None,
+                            reducer: LineTaskActivation::default(),
+                            pure_stats: Some(candidate_stats),
+                            execution,
+                            host_calls: Vec::new(),
+                            host_result_take: None,
+                        })
+                    }
                     VmExit::Suspended(notice)
                         if notice.kind == crate::awbc::fiber::FiberSuspensionKind::DurationWait =>
                     {
@@ -1712,6 +1749,7 @@ impl super::AwbcProductStepExecutor {
                             pending: None,
                         };
                         Ok(ProductActivationProgress {
+                            trap: None,
                             progressed: false,
                             executed_ops: usize::from(step.executed > 0),
                             presented: None,
@@ -1749,6 +1787,7 @@ impl super::AwbcProductStepExecutor {
                             pending: None,
                         };
                         Ok(ProductActivationProgress {
+                            trap: None,
                             progressed: false,
                             executed_ops: usize::from(step.executed > 0),
                             presented: None,
@@ -1823,6 +1862,7 @@ impl super::AwbcProductStepExecutor {
             let (_, request) =
                 self.activation_host_call_request(pending.call, &args, Some(pending.clone()))?;
             return Ok(ProductActivationProgress {
+                trap: None,
                 progressed: false,
                 executed_ops: 0,
                 presented: None,
@@ -1877,6 +1917,7 @@ impl super::AwbcProductStepExecutor {
             }
         };
         Ok(ProductActivationProgress {
+            trap: None,
             progressed: true,
             executed_ops: 1,
             presented: None,
@@ -3034,6 +3075,7 @@ impl super::AwbcProductStepExecutor {
         .expect("result was preflighted as uncommitted");
         fiber.commit_yielded_instruction_prepared(yielded);
         Ok(ProductActivationProgress {
+            trap: None,
             progressed: true,
             executed_ops: 1,
             presented: None,
@@ -3061,6 +3103,7 @@ impl super::AwbcProductStepExecutor {
         };
         if fiber_has_scoped_defer_inflight(fiber) {
             return Ok(ProductActivationProgress {
+                trap: None,
                 progressed: false,
                 executed_ops: 0,
                 presented: None,
@@ -3099,6 +3142,7 @@ impl super::AwbcProductStepExecutor {
                     &handled,
                 )?;
                 return Ok(ProductActivationProgress {
+                    trap: None,
                     progressed: true,
                     executed_ops: 1,
                     presented: None,
@@ -3137,6 +3181,7 @@ impl super::AwbcProductStepExecutor {
                 return Err(ProductStepError::ActivationTrap(trap));
             }
             return Ok(ProductActivationProgress {
+                trap: None,
                 progressed: true,
                 executed_ops: 1,
                 presented: None,
@@ -3313,6 +3358,7 @@ impl super::AwbcProductStepExecutor {
         frame.task_inputs = task_inputs.into_boxed_slice();
         frame.phase = ProductDialoguePhase::Reducing { line_task };
         Ok(ProductActivationProgress {
+            trap: None,
             progressed: true,
             executed_ops: 1,
             presented: Some(build_dialogue_line_event(

@@ -22,6 +22,8 @@ mod program_task;
 mod root;
 mod runtime_id;
 mod snapshot;
+mod step_budget;
+use step_budget::ProductStepBudgets;
 mod suspension;
 
 use self::dialogue::ProductDialogueStore;
@@ -2409,7 +2411,6 @@ impl AwbcProductStepExecutor {
         for child in &mut self.child_fibers {
             child.fiber.advance_duration_wait(&self.program, input.dt)?;
         }
-        self.dialogues.prepare_activation_budget(&self.program)?;
         Ok(diagnostics)
     }
 
@@ -2472,6 +2473,7 @@ impl AwbcProductStepExecutor {
         for diagnostic in ingress_diagnostics {
             self.record_error(ProductStepError::Line(diagnostic), &mut output);
         }
+        let mut budgets = ProductStepBudgets::for_step(&self.dialogues);
 
         if !self.run_root_phase(
             std::mem::take(&mut input.root_events),
@@ -2554,7 +2556,7 @@ impl AwbcProductStepExecutor {
         self.emit_pending_need_reensure(&mut output);
         self.step_stream_plans(&mut output, pure_backend);
 
-        let replenish_main_budget = if matches!(
+        budgets.main = if matches!(
             self.fiber
                 .suspension
                 .as_ref()
@@ -2577,7 +2579,7 @@ impl AwbcProductStepExecutor {
             &mut output,
             options,
             pure_backend,
-            replenish_main_budget,
+            &mut budgets,
         );
 
         for effect in &output.effects.line {
@@ -2624,7 +2626,7 @@ impl AwbcProductStepExecutor {
         output: &mut RuntimeStepOutput,
         options: RuntimeStepOptions,
         pure_backend: &mut impl RuntimeCallBackend,
-        mut replenish_main_budget: bool,
+        budgets: &mut ProductStepBudgets,
     ) -> usize {
         let mut executed_ops = 0_usize;
         while executed_ops < options.budget.max_ops {
@@ -2648,7 +2650,7 @@ impl AwbcProductStepExecutor {
             }
             if self.fiber.status == FiberStatus::Suspended {
                 let progress =
-                    self.resume_main_suspension(input, need_states, output, pure_backend);
+                    self.resume_main_suspension(input, need_states, output, pure_backend, budgets);
                 executed_ops = executed_ops.saturating_add(progress.executed_ops);
                 if !progress.progressed && executed_ops < options.budget.max_ops {
                     if !self.step_next_child(output, pure_backend, input, need_states) {
@@ -2667,7 +2669,7 @@ impl AwbcProductStepExecutor {
                     need_states,
                     output,
                     pure_backend,
-                    std::mem::take(&mut replenish_main_budget),
+                    std::mem::take(&mut budgets.main),
                 ));
             } else if !self.step_next_child(output, pure_backend, input, need_states) {
                 break;
@@ -4270,6 +4272,7 @@ impl AwbcProductStepExecutor {
         need_states: &mut Vec<RuntimeNeedState>,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
+        budgets: &mut ProductStepBudgets,
     ) -> ProductStepProgress {
         if matches!(
             self.fiber.suspension.as_ref().map(|s| &s.reason),
@@ -4350,6 +4353,7 @@ impl AwbcProductStepExecutor {
                 &mut input.host_call_results,
                 output,
                 pure_backend,
+                budgets,
             );
         }
         let Some(suspension) = self.fiber.suspension.as_ref() else {
@@ -4711,6 +4715,7 @@ impl AwbcProductStepExecutor {
         host_call_results: &mut Vec<crate::step::RuntimeHostCallResult>,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
+        budgets: &mut ProductStepBudgets,
     ) -> ProductStepProgress {
         if self.dialogues.active_frame().is_none() {
             let Some(target) = target else {
@@ -4750,6 +4755,7 @@ impl AwbcProductStepExecutor {
                 &mut transaction,
                 host_call_results,
                 pure_backend,
+                budgets,
             ) {
                 Ok(progress) => progress,
                 Err(error) if error.is_presentation_refusal() => {
@@ -4766,6 +4772,19 @@ impl AwbcProductStepExecutor {
                         .into();
                 }
             };
+            if let Some(trap) = progress.trap {
+                let error = ProductStepError::ActivationTrap(trap);
+                return match progress.execution {
+                    Some(batch) => self.begin_product_dialogue_failure_with_batch(
+                        transaction,
+                        error,
+                        batch,
+                        output,
+                    ),
+                    None => self.begin_product_dialogue_failure(transaction, error, output),
+                }
+                .into();
+            }
             let candidate_pure_stats = progress.pure_stats;
             let host_result_take = progress.host_result_take;
             let command_batch_result = match progress.execution {

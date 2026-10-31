@@ -262,6 +262,8 @@ fn dialogue_fixture(blocked: bool) -> (AwbcProductStepExecutor, RuntimePresentat
     let mut program = mark_selector_program(
         arcweft_interaction_model::input::InputActionId::new("trap.refusal").unwrap(),
     );
+    program.strings[1] = "line.presentation.trap.refusal".into();
+    program.content_units[0].public_id = AwbcStringId(1);
     program.runtime_types.push(AwbcRuntimeType::new(
         crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest(),
         AwbcRuntimeTypeShape::Bool,
@@ -281,10 +283,25 @@ fn dialogue_fixture(blocked: bool) -> (AwbcProductStepExecutor, RuntimePresentat
         max_scope_depth: 0,
     });
     program.functions[0].frame_layout = root_layout;
+    program.blocks.insert(
+        1,
+        AwbcBlock {
+            owner: AwbcFunctionId(0),
+            instructions: AwbcTableRange::new(0, 0),
+            terminator: AwbcTerminator::Return { value: None },
+            safe_point: AwbcSafePointKind::Dialogue,
+            source_map: None,
+        },
+    );
+    program.functions[0].blocks = AwbcTableRange::new(0, 2);
+    for function in program.functions.iter_mut().skip(1) {
+        function.blocks.start += 1;
+        function.entry_block.0 += 1;
+    }
     let resume = AwbcResumePointId(program.resume_points.len().try_into().unwrap());
     program.resume_points.push(AwbcResumePoint {
         function: AwbcFunctionId(0),
-        block: AwbcBlockId(0),
+        block: AwbcBlockId(1),
         frame_layout: root_layout,
         kind: AwbcSafePointKind::Dialogue,
     });
@@ -307,6 +324,19 @@ fn dialogue_fixture(blocked: bool) -> (AwbcProductStepExecutor, RuntimePresentat
         },
         resume,
     };
+    let payload = AwbcConstantId(program.constants.len().try_into().unwrap());
+    program.constants.push(AwbcConstant::Unit);
+    let target = AwbcConstantId(program.constants.len().try_into().unwrap());
+    program.constants.push(AwbcConstant::Opaque {
+        ty: AwbcTypeId(2),
+        payload,
+    });
+    let load = program.instructions.len().try_into().unwrap();
+    program.instructions.push(AwbcInstruction::LoadConst {
+        dst: AwbcRegisterId(0),
+        constant: target,
+    });
+    program.blocks[0].instructions = AwbcTableRange::new(load, 1);
     let nop = AwbcInstructionId(program.instructions.len().try_into().unwrap());
     program.instructions.push(AwbcInstruction::Nop);
     let activation_block = program.functions[1].entry_block.index();
@@ -316,15 +346,6 @@ fn dialogue_fixture(blocked: bool) -> (AwbcProductStepExecutor, RuntimePresentat
         message: None,
     };
     let mut executor = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 64).unwrap();
-    executor
-        .fiber
-        .active_frame_mut()
-        .unwrap()
-        .set_register(
-            AwbcRegisterId(0),
-            RuntimeValue::Opaque(fixture_dialogue_target()),
-        )
-        .unwrap();
     for _ in 0..8 {
         let output = executor.step(
             Default::default(),
@@ -338,7 +359,10 @@ fn dialogue_fixture(blocked: bool) -> (AwbcProductStepExecutor, RuntimePresentat
             "{:?}",
             output.output.diagnostics
         );
-        if executor.dialogues.active_frame().is_some() {
+        if executor.dialogues.active_frame().is_some_and(|frame| {
+            matches!(&frame.phase, ProductDialoguePhase::Activating { fiber, .. }
+                if fiber.cursor.instruction_offset == 1)
+        }) {
             break;
         }
     }
@@ -409,4 +433,26 @@ fn actual_dialogue_vm_refusal_retains_the_activation_instead_of_starting_failure
         executor.presentation.as_ref().unwrap().retirements()[0].token,
         token
     );
+}
+
+#[test]
+fn zero_operation_dialogue_steps_preserve_budget_revision_custody_and_public_save() {
+    let (mut executor, _) = dialogue_fixture(false);
+    let before = executor.snapshot().unwrap();
+    for _ in 0..2 {
+        let output = executor.step(
+            Default::default(),
+            RuntimeStepOptions {
+                budget: crate::step::RuntimeStepBudget { max_ops: 0 },
+                ..Default::default()
+            },
+        );
+        assert!(
+            output.output.diagnostics.is_empty(),
+            "{:?}",
+            output.output.diagnostics
+        );
+        assert_eq!(executor.snapshot().unwrap(), before);
+    }
+    roundtrip(executor);
 }

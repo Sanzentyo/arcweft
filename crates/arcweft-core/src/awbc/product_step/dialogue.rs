@@ -125,54 +125,6 @@ impl ProductDialogueStore {
         })
     }
 
-    /// Replenishes the existing activation quantum once at host-step ingress.
-    /// Preemption retains its exact VM cursor across snapshot/restore; the
-    /// caller's max_ops still bounds every subsequent internal operation.
-    pub(super) fn prepare_activation_budget(
-        &mut self,
-        program: &crate::awbc::schema::AwbcProgram,
-    ) -> Result<(), ProductStepError> {
-        if !self.active_frame().is_some_and(|frame| {
-            matches!(&frame.phase, super::ProductDialoguePhase::Activating { .. })
-        }) {
-            return Ok(());
-        }
-        let mut transaction = self.begin_active_transaction()?;
-        // Reserve the registry commit before mutating the VM cursor or budget.
-        // The budget resume performs all of its own checks before mutation.
-        let proof = match self.inspect_commit(&transaction) {
-            Ok(proof) => proof,
-            Err(error) => {
-                self.restore_transaction(transaction)
-                    .expect("rejected budget preparation retains its original registry owner");
-                return Err(error.into());
-            }
-        };
-        let super::ProductDialoguePhase::Activating { fiber, .. } =
-            &mut transaction.frame_mut().phase
-        else {
-            unreachable!("the sole borrowed activation phase was checked")
-        };
-        if matches!(
-            fiber
-                .suspension
-                .as_ref()
-                .map(|suspension| &suspension.reason),
-            Some(crate::awbc::fiber::FiberSuspensionReason::BudgetYield)
-        ) {
-            if let Err(error) = fiber.resume_budget_yield(program) {
-                self.restore_transaction(transaction)
-                    .expect("rejected budget resume retains its sole registry transaction");
-                return Err(error.into());
-            }
-        }
-        if fiber.status == crate::awbc::fiber::FiberStatus::Running {
-            fiber.replenish_budget();
-        }
-        self.commit_prepared(transaction, proof);
-        Ok(())
-    }
-
     pub(super) fn visit_runtime_values<E>(
         &self,
         mut visitor: impl FnMut(&RuntimeValue) -> Result<(), E>,
@@ -367,7 +319,7 @@ impl ProductDialogueStore {
             }
         }
         if let Some(activation) = active.as_ref() {
-            let commits = 1_usize
+            let commits = usize::from(dt.as_nanos() != 0)
                 .checked_add(content_events.len())
                 .and_then(|count| count.checked_add(advances.len()))
                 .and_then(|count| count.checked_add(seen_outcomes.len()))
@@ -393,7 +345,13 @@ impl ProductDialogueStore {
             if transaction.frame().is_ingress_ready() {
                 transaction.frame_mut().elapsed_nanos += dt.as_nanos();
             }
-            self.registry.commit(transaction)?;
+            if dt.as_nanos() == 0 {
+                // Duration authentication still ran, but zero elapsed time
+                // changes no payload and must not spend a registry revision.
+                self.registry.restore_transaction(transaction)?;
+            } else {
+                self.registry.commit(transaction)?;
+            }
         }
         for event in content_events {
             let mut transaction = self.ready_transaction(event.activation())?;
