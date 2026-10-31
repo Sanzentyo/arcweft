@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "command": [
+    "cargo",
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(awbc::fiber::tests::presentation::)",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "exitCode": 100,
+  "sourceInputs": 4005,
+  "sourceDrift": 0,
+  "binaryDrift": 0,
+  "startedAt": "2026-10-31T01:17:48.2958257Z",
+  "finishedAt": "2026-10-31T01:17:50.7954127Z"
+}

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "c35fc69a52db5709b98c0b135d6df559acd24af9",
+  "command": [
+    "cargo",
+    "check",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "exitCode": 101,
+  "startedAt": "2026-10-31T01:00:09.9858442Z",
+  "finishedAt": "2026-10-31T01:02:16.8090792Z"
+}

@@ -13325,3 +13325,15 @@ Workspace/all-targets/all-features/locked check and Clippy exited0; Clippy retai
 Supersedes only the pending Clippy/runtime status at the source checkpoint; its actual workspace check result, serialized-shape contract and raw bytes remain retained. The already accepted Generic Match and Presentation token/custody boundaries are unchanged. Typed Source operations, independent Dialogue bank, AWBC ledger and driver command connection remain separate unaccepted boundaries. [Terminal record and artifact hashes](acceptance-evidence/task-presentation-image-owner-validation.json).
 
 Crate-map correction: its old paragraph assigned execution handles/scope cleanup to presentation. The accepted Core ledger/custody now owns those runtime grants; presentation retains display-side addresses and layer/hit/focus models. This corrects the maintained owner contract without claiming that the still-unconnected Source/command ABI is complete.
+
+## Presentationの実scope束縛とAWBC header admission — 2026-10-31
+
+Source c3b6ea79a7b16674ed0cbcd644b9e7bdd6c95030、parent c35fc69a52db5709b98c0b135d6df559acd24af9、tree cdb869726e98b362be87f632bd60221156574682。mainへ通常pushし、公開20 pathのblob差分0、review済みpatch SHA256 c4364ce8eeb67dd7d0e8482d5cb7e518002ecaab4e13e11ae7e59feee66a68b1を照合した。元のtracked WIP14件／untracked実ファイル6件を保持し、tracked patch SHA256 5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920aは不変。
+
+Native専用のscope installation wrapperを削除し、ledger更新前に実storage slotを一意に借用する共通ScopeTargetへ移行した。AWBCは同じFiberState／Frame／Scopeのlive／inert grammarにgrant headerを保持し、動的fiber・frameと検証済みlexical宣言を元ledgerの同じcustody contourで照合する。wire読取りは発行権限を持たず、bankなし取消はgrantとbodyを捨てず拒否する。[境界・所有判断・全原本51件](acceptance-evidence/task-presentation-awbc-scopes-validation.json)。
+
+Coreの新規5件と既存2,128件を互いに除外した二つのrunで全PASS、4,005凍結入力差分0・合成catalog／重複差分0。既存側の実行ファイル前後差分0。新規5件には実行前のbinary hashがなく、同一入力の後続catalogで取得したhashとowner終端前の更新時刻を記録する。新規5件の初回3 runは各0 PASS／5 FAILで、通常の全program verifierによりfixtureのsafe pointとexact Flow metadataを修正して4回目に5 PASSとなった。assertion・budgetは緩和していない。最初のCore check2回のcompile失敗と後続の修復も原本へ保持した。
+
+最終入力のworkspace all-targets／all-features locked checkとClippy、Core doctest78件、Core／Web Playerのdefault-feature Wasm compile、構造gateは終了0。97 package、review trigger382、blocking0。Wasm compileは画像parityの受入ではない。変更しない100 manifest／lock hashから再利用した解決済みgraphのCore逆依存は53 packageで、Core以外52 packageのruntimeは別runで開始した。このowner checkpointを全逆依存runtimeやPresentation ABI全体の受入へ拡張しない。
+
+Supersedes: 現状一覧のPresentation行にあった重複した旧検証説明を原本へのリンクへ整理し、広すぎた「AWBC ledger」の残作業表記を「AWBC Productのbank所有とactive grantを含む保存／rollback」へ限定した。共通scope protocolと実AWBC headerのCore検証が成立したためであり、既存Native custody・Image owner・Generic Matchの完了判定は戻していない。Source11 callable／6 method、Dialogue独立bank、command lowering／driver接続は別境界として引き続き未受入。

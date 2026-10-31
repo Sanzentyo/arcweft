@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "c35fc69a52db5709b98c0b135d6df559acd24af9",
+  "command": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--fail-on-blocking",
+    "--write",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-awbc-scopes.structure"
+  ],
+  "exitCode": 0,
+  "sourceInputs": 4005,
+  "sourceDrift": 0,
+  "startedAt": "2026-10-31T01:34:07.1905913Z",
+  "finishedAt": "2026-10-31T01:34:12.4222895Z"
+}

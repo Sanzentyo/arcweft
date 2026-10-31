@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "base": "c35fc69a52db5709b98c0b135d6df559acd24af9",
+  "command": [
+    "cargo",
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "exitCode": 0,
+  "startedAt": "2026-10-31T01:11:44.1914043Z",
+  "finishedAt": "2026-10-31T01:14:02.1983674Z"
+}

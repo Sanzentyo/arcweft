@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "exitCode": 0,
+  "executed": 2128,
+  "passed": 2128,
+  "failed": 0,
+  "failureSet": [],
+  "sourceInputs": 4005,
+  "sourceDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "finishedAt": "2026-10-31T01:28:28.3954554Z"
+}

@@ -1,0 +1,389 @@
+files scanned: 3243
+Rust files: 3113
+Rust physical LOC: 1765597
+workspace packages: 97
+review triggers: 382
+blocking violations: 0
+review-trigger SIZE001: crates/arcweft-adapter-context/src/codec.rs — 1373 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-adapter-context/src/codec.rs — large maintained owner contains 388 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-adapter-sema/src/registration/input.rs — 1363 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-adapter-sema/src/registration/input/source.rs — 1220 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-adt/src/lib.rs — 1370 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE002: crates/arcweft-adt/src/lib.rs — facade file has 1370 physical LOC; target is below 250 LOC
+review-trigger TEST001: crates/arcweft-adt/src/lib.rs — large maintained owner contains 111 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-agent-protocol/src/text_context.rs — 1341 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-agent-runner/src/tests.rs — 4020 physical LOC exceeds the 2500 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-bundle/src/container.rs — 2406 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-bundle/src/container.rs — large maintained owner contains 662 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-bundle/src/lib.rs — 2547 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE002: crates/arcweft-bundle/src/lib.rs — facade file has 2547 physical LOC; target is below 250 LOC
+review-trigger TEST001: crates/arcweft-bundle/src/lib.rs — large maintained owner contains 973 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-bundle/src/patch.rs — 1836 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-bundle/src/patch.rs — large maintained owner contains 197 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-bundle/src/product.rs — 1563 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-bundle/src/product.rs — large maintained owner contains 669 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-bundle/src/release.rs — 2190 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-bundle/src/release.rs — large maintained owner contains 994 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-bundle/src/resource_codec/runtime.rs — 3199 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-bundle/src/resource_codec/runtime.rs — large maintained owner contains 448 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-bundle/src/resource_codec/view/codec.rs — 2459 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-bundle/src/resource_codec/view/model.rs — 1952 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-bundle/src/resource_codec/view/model.rs — large maintained owner contains 55 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-cli/src/app/agent/native/mcp_protocol.rs — 1635 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-cli/src/app/agent/native/mcp_protocol.rs — large maintained owner contains 65 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-cli/src/app/agent/native/mcp_rag.rs — 1378 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-cli/src/app/agent/native/observe.rs — 1417 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-cli/src/app/agent/native/player_observation.rs — 1218 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-cli/src/app/agent/native/repl.rs — 1572 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-cli/src/app/agent/native/tests.rs — 3530 physical LOC exceeds the 2500 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-cli/src/app/agent/rag.rs — 1352 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-cli/src/app/agent/rag/source_index.rs — 1504 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-cli/src/app/agent/script.rs — 2473 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-cli/src/app/agent/script.rs — large maintained owner contains 77 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-cli/src/app/bundle.rs — 1284 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-cli/src/app/debug.rs — 2371 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-cli/src/app/debug.rs — large maintained owner contains 70 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-cli/src/app/jit.rs — 1938 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-cli/src/app/project.rs — 1526 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-cli/src/app/project.rs — large maintained owner contains 55 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-cli/src/app/project_commands.rs — 2511 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-cli/src/app/runtime/run.rs — 1462 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-cli/src/app/runtime/run.rs — large maintained owner contains 312 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-cli/src/output.rs — 1504 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-cli/src/output.rs — large maintained owner contains 76 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-cli/src/toolchain_profile.rs — 2463 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-cli/src/toolchain_profile.rs — large maintained owner contains 296 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs — 6349 physical LOC exceeds the 2500 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-cli/tests/check/agent_observe_native/native_vertical.rs — 7183 physical LOC exceeds the 2500 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-cli/tests/check/agent_observe_native/published_jlreq_class_mix.rs — 6270 physical LOC exceeds the 2500 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-cli/tests/check/agent_observe_native/published_jlreq_units.rs — 4343 physical LOC exceeds the 2500 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-cli/tests/check/agent_script_debug.rs — 4704 physical LOC exceeds the 2500 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-cli/tests/check/cli_runtime_bench.rs — 9181 physical LOC exceeds the 8000 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-cli/tests/check/toolchain_jit.rs — 2928 physical LOC exceeds the 2500 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-codec-json/src/lib.rs — 1241 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE002: crates/arcweft-codec-json/src/lib.rs — facade file has 1241 physical LOC; target is below 250 LOC
+review-trigger SIZE001: crates/arcweft-codec-toml/src/lib.rs — 1267 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE002: crates/arcweft-codec-toml/src/lib.rs — facade file has 1267 physical LOC; target is below 250 LOC
+review-trigger SIZE001: crates/arcweft-codec-yaml/src/lib.rs — 1249 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE002: crates/arcweft-codec-yaml/src/lib.rs — facade file has 1249 physical LOC; target is below 250 LOC
+review-trigger SIZE001: crates/arcweft-compiler/src/lower.rs — 10235 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-compiler/src/lower/programs.rs — 2230 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-compiler/src/lower/programs.rs — large maintained owner contains 1889 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-compiler/src/persistent.rs — 1946 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-compiler/src/persistent.rs — large maintained owner contains 525 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-compiler/src/project.rs — 1712 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-compiler/src/project/tests.rs — 4315 physical LOC exceeds the 2500 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-compiler/src/view.rs — 2951 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-compiler/tests/evaluated_effects.rs — 3296 physical LOC exceeds the 2500 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-compiler/tests/view_product.rs — 6160 physical LOC exceeds the 2500 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-core/src/awbc/codec/code.rs — 2962 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-core/src/awbc/codec/code.rs — large maintained owner contains 668 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/awbc/codec/metadata.rs — 1653 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-core/src/awbc/codec/metadata.rs — large maintained owner contains 104 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/awbc/codec/runtime.rs — 1678 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-core/src/awbc/codec/types.rs — 1859 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-core/src/awbc/codec/types.rs — large maintained owner contains 454 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/awbc/fiber.rs — 7563 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-core/src/awbc/fiber.rs — large maintained owner contains 1881 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/awbc/product_step.rs — 5976 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-core/src/awbc/product_step/line.rs — 4269 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-core/src/awbc/product_step/line.rs — large maintained owner contains 74 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/awbc/product_step/snapshot.rs — 4278 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-core/src/awbc/product_step/snapshot.rs — large maintained owner contains 180 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/awbc/product_step/suspension.rs — 2933 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-core/src/awbc/product_step/tests.rs — 8193 physical LOC exceeds the 8000 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-core/src/awbc/schema.rs — 3787 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-core/src/awbc/tests.rs — 9081 physical LOC exceeds the 8000 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-core/src/awbc/verify/code.rs — 6769 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-core/src/awbc/verify/structure.rs — 3953 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-core/src/awbc/vm.rs — 5495 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-core/src/engine.rs — 5858 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-core/src/engine.rs — large maintained owner contains 886 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/engine/dialogue.rs — 3630 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-core/src/engine/dialogue.rs — large maintained owner contains 754 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/engine/dialogue/store.rs — 2208 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-core/src/engine/dialogue/store.rs — large maintained owner contains 817 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/engine/eval.rs — 1663 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-core/src/engine/eval.rs — large maintained owner contains 124 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/engine/flow.rs — 2127 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-core/src/engine/flow.rs — large maintained owner contains 111 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/engine/suspend.rs — 2216 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-core/src/engine/suspend.rs — large maintained owner contains 46 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/entry/schema.rs — 1427 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-core/src/entry/schema.rs — large maintained owner contains 269 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/entry/schema/value_encoding.rs — 1978 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-core/src/line_task.rs — 2455 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-core/src/line_task.rs — large maintained owner contains 143 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/line_task/activation.rs — 1244 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-core/src/line_task/activation.rs — large maintained owner contains 82 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/line_task/handle.rs — 6156 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-core/src/line_task/handle.rs — large maintained owner contains 836 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/pattern.rs — 3928 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-core/src/pattern.rs — large maintained owner contains 948 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/plan.rs — 1678 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-core/src/plan/construction.rs — 4393 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-core/src/plan/construction.rs — large maintained owner contains 840 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/plan/construction/lower.rs — 6111 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-core/src/plan/construction/lower.rs — large maintained owner contains 281 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/plan/construction/seed.rs — 3075 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-core/src/plan/construction/seed.rs — large maintained owner contains 91 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/plan/entry_inventory.rs — 1703 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-core/src/plan/type_table.rs — 1289 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-core/src/plan/type_table.rs — large maintained owner contains 277 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/program_types/function_contract.rs — 1527 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-core/src/pure.rs — 3414 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-core/src/pure.rs — large maintained owner contains 134 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/pure/aot.rs — 1240 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-core/src/pure/aot.rs — large maintained owner contains 71 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/root.rs — 1882 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-core/src/runtime_id.rs — 1536 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-core/src/runtime_id.rs — large maintained owner contains 144 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/task.rs — 2228 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-core/src/task.rs — large maintained owner contains 154 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/task/producer.rs — 4631 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-core/src/task/producer.rs — large maintained owner contains 995 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/value.rs — 4698 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-core/src/value/agent.rs — 2302 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-core/src/value/agent.rs — large maintained owner contains 205 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/value/arc_error.rs — 1630 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-core/src/value/arc_error.rs — large maintained owner contains 246 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/value/awbc_save.rs — 1547 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-core/src/value/callable/application.rs — 1336 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-core/src/value/env.rs — 2155 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-core/src/value/env.rs — large maintained owner contains 1064 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/value/opaque.rs — 4099 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-core/src/value/opaque.rs — large maintained owner contains 1083 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/value/ownership/slot.rs — 1595 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-core/src/value/ownership/slot.rs — large maintained owner contains 146 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/value/place_storage.rs — 1289 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-core/src/value/place_storage.rs — large maintained owner contains 610 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-core/src/value/sequence_impls.rs — 2211 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-core/src/value/sequence_impls.rs — large maintained owner contains 281 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-dialogue/src/character_dialogue/schema.rs — 1977 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-host-adapter/src/lib.rs — 1301 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE002: crates/arcweft-host-adapter/src/lib.rs — facade file has 1301 physical LOC; target is below 250 LOC
+review-trigger TEST001: crates/arcweft-host-adapter/src/lib.rs — large maintained owner contains 398 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE002: crates/arcweft-id/src/lib.rs — facade file has 1072 physical LOC; target is below 250 LOC
+review-trigger SIZE001: crates/arcweft-lang-hir/src/final_lowering.rs — 1491 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-hir/src/final_lowering/expression_lowering.rs — 2581 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-lang-hir/src/final_lowering/expression_lowering/tests.rs — 3209 physical LOC exceeds the 2500 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-hir/src/final_lowering/expression_lowering/tests/control.rs — 2939 physical LOC exceeds the 2500 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-hir/src/final_lowering/item_lowering/callable.rs — 1345 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-hir/src/final_lowering/item_lowering/tests.rs — 2583 physical LOC exceeds the 2500 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-hir/src/final_lowering/item_lowering/tests/flow.rs — 2609 physical LOC exceeds the 2500 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-hir/src/final_lowering/pattern_lowering.rs — 1306 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-hir/src/final_lowering/statement_lowering.rs — 2209 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-hir/src/final_project/runtime_semantic_owners.rs — 1932 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-hir/src/final_project/selected_expressions.rs — 2075 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-hir/src/final_project/semantic_paths.rs — 6779 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-lang-hir/src/final_project/tests.rs — 5804 physical LOC exceeds the 2500 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-hir/src/item.rs — 1212 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-hir/src/item/retained.rs — 1593 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-hir/src/leaf.rs — 1543 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-hir/src/module.rs — 2123 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-hir/src/slot.rs — 1291 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-hir/src/source_index.rs — 1767 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-hir/src/source_index/block_projection.rs — 2818 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-lang-hir/src/source_index/block_projection/thread_control.rs — 1597 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-hir/src/source_index/expression_manifest.rs — 1433 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-hir/src/source_index/expression_manifest/candidate_projection.rs — 1571 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-hir/src/source_index/expression_manifest/projection.rs — 1357 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-hir/src/source_index/item_projection.rs — 1442 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-hir/src/source_index/item_projection/flow.rs — 1661 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-hir/src/source_index/pattern_projection.rs — 1353 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-hir/src/source_index/tests.rs — 3031 physical LOC exceeds the 2500 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-hir/src/source_index/thread_body_projection.rs — 1260 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-hir/src/stmt.rs — 2075 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-hir/src/symbol/identity.rs — 1301 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-lang-hir/src/symbol/identity.rs — large maintained owner contains 73 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-hir/src/symbol/table.rs — 2083 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-jit-cranelift/src/batch.rs — 1641 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-jit-cranelift/src/lib.rs — 2347 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE002: crates/arcweft-lang-jit-cranelift/src/lib.rs — facade file has 2347 physical LOC; target is below 250 LOC
+review-trigger SIZE001: crates/arcweft-lang-jit-cranelift/src/lower.rs — 1541 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-sema/src/callable/builder.rs — 1714 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-sema/src/callable/checked_application.rs — 4832 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-lang-sema/src/callable/checked_catalog.rs — 2992 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-lang-sema/src/callable/constraints.rs — 2728 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-lang-sema/src/callable/constraints.rs — large maintained owner contains 1585 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-sema/src/callable/continuation.rs — 2743 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-lang-sema/src/callable/continuation.rs — large maintained owner contains 27 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-sema/src/callable/digest.rs — 1203 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-lang-sema/src/callable/digest.rs — large maintained owner contains 351 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-sema/src/callable/facts.rs — 1267 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-sema/src/callable/identity.rs — 1979 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-sema/src/callable/join.rs — 2146 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-sema/src/callable/limits.rs — 1460 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-lang-sema/src/callable/limits.rs — large maintained owner contains 159 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-sema/src/callable/resolver.rs — 1720 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-sema/src/callable/resolver/outcome.rs — 1424 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-sema/src/callable/schema.rs — 4785 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-lang-sema/src/callable/schema.rs — large maintained owner contains 1201 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-sema/src/callable/schema/families.rs — 3083 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-lang-sema/src/callable/schema/families.rs — large maintained owner contains 695 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-sema/src/checked_text_proxy.rs — 1847 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-sema/src/checked_text_proxy/prepared.rs — 1682 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-sema/src/effect_row.rs — 1549 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-lang-sema/src/effect_row.rs — large maintained owner contains 423 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-sema/src/entry/checker.rs — 2037 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-sema/src/env/base.rs — 2837 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-lang-sema/src/env/base.rs — large maintained owner contains 98 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-sema/src/env/nominal.rs — 1905 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-sema/src/env/rust_metadata.rs — 1225 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-lang-sema/src/env/rust_metadata.rs — large maintained owner contains 375 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-sema/src/final_analysis/analyzer/call_seal.rs — 2176 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-sema/src/final_analysis/analyzer/calls.rs — 5917 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-lang-sema/src/final_analysis/analyzer/calls.rs — large maintained owner contains 156 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-sema/src/final_analysis/analyzer/calls/constraints.rs — 7075 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-lang-sema/src/final_analysis/analyzer/calls/constraints.rs — large maintained owner contains 546 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-sema/src/final_analysis/analyzer/dialogue_line_plan.rs — 1777 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-lang-sema/src/final_analysis/analyzer/dialogue_line_plan.rs — large maintained owner contains 66 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-sema/src/final_analysis/analyzer/evaluated_effects.rs — 2209 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs — 5695 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs — large maintained owner contains 88 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-sema/src/final_analysis/analyzer/fx_definition.rs — 2510 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-lang-sema/src/final_analysis/analyzer/items.rs — 1635 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-sema/src/final_analysis/analyzer/patterns.rs — 1256 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-sema/src/final_analysis/analyzer/preparation.rs — 1239 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-sema/src/final_analysis/analyzer/state.rs — 3281 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-lang-sema/src/final_analysis/analyzer/state.rs — large maintained owner contains 600 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-sema/src/final_analysis/error.rs — 1220 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-lang-sema/src/final_analysis/error.rs — large maintained owner contains 64 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-sema/src/final_analysis/fx_application.rs — 2581 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-lang-sema/src/final_analysis/local_use.rs — 3599 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-lang-sema/src/final_analysis/match_edges.rs — 1848 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-sema/src/final_analysis/model.rs — 3414 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-lang-sema/src/final_analysis/model/capture.rs — 1273 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-lang-sema/src/final_analysis/model/capture.rs — large maintained owner contains 381 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-sema/src/final_analysis/nominal_schema.rs — 2397 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-sema/src/final_analysis/prepared.rs — 1736 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-sema/src/final_analysis/report.rs — 2946 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs — 4775 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs — large maintained owner contains 333 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-sema/src/final_analysis/statement_effects.rs — 1888 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-sema/src/final_analysis/tests.rs — 11038 physical LOC exceeds the 8000 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-lang-sema/src/final_analysis/validation.rs — 3377 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-lang-sema/src/ownership.rs — 2433 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-lang-sema/src/ownership.rs — large maintained owner contains 386 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-sema/src/registration/model.rs — 2320 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-lang-sema/src/registration/model.rs — large maintained owner contains 254 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-sema/src/registration/registrar.rs — 2004 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-sema/src/semantic_coordinate.rs — 2964 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-lang-sema/src/semantic_coordinate.rs — large maintained owner contains 213 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-sema/src/semantic_coordinate/catalog.rs — 1466 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-lang-sema/src/semantic_coordinate/catalog.rs — large maintained owner contains 341 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-sema/src/types.rs — 1862 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-lang-sema/src/types.rs — large maintained owner contains 108 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-sema/src/types/compatibility.rs — 1976 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-lang-sema/src/types/compatibility.rs — large maintained owner contains 711 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-sema/src/types/constraints/context.rs — 1975 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-sema/src/types/constraints/tests.rs — 4838 physical LOC exceeds the 2500 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-sema/src/types/constraints/transaction.rs — 2414 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-sema/src/types/digest.rs — 1487 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-sema/src/types/mismatch.rs — 1368 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-syntax/src/attachment.rs — 1967 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-lang-syntax/src/attachment.rs — large maintained owner contains 1115 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-syntax/src/attachment/callable.rs — 2039 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-syntax/src/attachment/choice.rs — 1308 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-syntax/src/attachment/expression.rs — 2235 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-syntax/src/attachment/expression/structure.rs — 1260 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-syntax/src/attachment/flow/tests.rs — 2624 physical LOC exceeds the 2500 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-syntax/src/expressions.rs — 1318 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-syntax/src/grammar/build.rs — 1313 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-lang-syntax/src/grammar/build.rs — large maintained owner contains 297 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-syntax/src/grammar/kinds.rs — 1416 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-lang-syntax/src/grammar/kinds.rs — large maintained owner contains 61 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-syntax/src/incremental/database_tests.rs — 3886 physical LOC exceeds the 2500 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-syntax/src/lint.rs — 1323 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-lang-syntax/src/lint.rs — large maintained owner contains 589 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-syntax/src/parser/cursor.rs — 1229 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-lang-syntax/src/parser/cursor.rs — large maintained owner contains 153 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lang-syntax/src/parser/declaration.rs — 2127 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-syntax/src/parser/expression.rs — 2605 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-lang-syntax/src/parser/pattern.rs — 1290 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-syntax/src/parser/rich_text_grammar.rs — 2118 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lang-syntax/src/parser/statement.rs — 2620 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-lang-syntax/src/types/token/grammar.rs — 1621 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-lsp/src/diagnostics.rs — 1353 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-lsp/src/diagnostics.rs — large maintained owner contains 933 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lsp/src/features/nominal_types.rs — 1698 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-lsp/src/features/nominal_types.rs — large maintained owner contains 798 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-lsp/src/profiles/accepted_project.rs — 1237 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-player-native/src/windowed_runtime.rs — 1282 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-player-native/src/windowed_runtime.rs — large maintained owner contains 488 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-presentation/src/fx/builtin.rs — 1220 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-presentation/src/fx/builtin.rs — large maintained owner contains 381 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-presentation/src/fx/builtin/schema.rs — 1399 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-presentation/src/fx/builtin/schema.rs — large maintained owner contains 99 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-presentation/src/fx/graph.rs — 2125 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-presentation/src/fx/graph/canonical.rs — 1249 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-presentation/src/fx/program.rs — 1790 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-presentation/src/fx/program.rs — large maintained owner contains 205 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-presentation/src/rich_text/content_catalog.rs — 1416 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-presentation/src/rich_text/content_catalog.rs — large maintained owner contains 39 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-presentation/src/text_editor.rs — 1965 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-presentation/src/text_editor.rs — large maintained owner contains 73 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-presentation/src/text_input.rs — 1699 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-presentation/src/text_input.rs — large maintained owner contains 32 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-project-loader/src/cache/inspect.rs — 1345 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-project-loader/src/cache/inspect.rs — large maintained owner contains 453 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-project-loader/src/cache/persistent_query.rs — 1828 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-project-loader/src/cache/release.rs — 1594 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-project-loader/src/cache/release.rs — large maintained owner contains 807 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-project-loader/src/project.rs — 1378 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-project-loader/src/project.rs — large maintained owner contains 412 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-project-loader/src/topology/loader.rs — 1521 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-project/src/persistent_object/codec.rs — 1553 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-project/src/persistent_object/codec.rs — large maintained owner contains 441 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-render-text/src/resolved_document.rs — 1346 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-render-wgpu/src/geometry.rs — 2186 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-render-wgpu/src/renderer.rs — 1657 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-render-wgpu/src/view_compositor.rs — 1563 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-runtime-accelerator/src/call_backend.rs — 2032 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-runtime-accelerator/src/compile.rs — 1732 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-runtime-accelerator/src/external_data.rs — 1463 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-runtime-accelerator/src/inference.rs — 2010 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-runtime-accelerator/src/inference.rs — large maintained owner contains 525 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-runtime-accelerator/src/lib.rs — 1317 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE002: crates/arcweft-runtime-accelerator/src/lib.rs — facade file has 1317 physical LOC; target is below 250 LOC
+review-trigger SIZE001: crates/arcweft-runtime-accelerator/src/math.rs — 2340 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-runtime-accelerator/src/math/browser_webgpu/context.rs — 1862 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-runtime-accelerator/src/math/wgpu_backend.rs — 1398 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-runtime-accelerator/src/tests.rs — 3354 physical LOC exceeds the 2500 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-runtime-driver/src/display.rs — 1514 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-runtime-driver/src/session.rs — 1898 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-runtime-driver/src/session.rs — large maintained owner contains 328 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-runtime-driver/src/view_runtime.rs — 2033 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-runtime-driver/src/view_runtime/evaluator.rs — 2767 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-runtime-driver/tests/awbc_product_session.rs — 2894 physical LOC exceeds the 2500 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-runtime-driver/tests/view_runtime.rs — 3436 physical LOC exceeds the 2500 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-runtime-host/src/bundle_runner.rs — 1674 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-runtime-host/src/bundle_runner.rs — large maintained owner contains 790 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-runtime-host/src/native_task.rs — 3962 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-runtime-host/src/native_task.rs — large maintained owner contains 1843 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-runtime-plan/src/awbc_lower/expr.rs — 1871 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-runtime-plan/src/awbc_lower/flow.rs — 3962 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-runtime-plan/src/awbc_lower/inventory.rs — 2558 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-runtime-plan/src/awbc_lower/tests.rs — 2629 physical LOC exceeds the 2500 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-runtime-plan/src/final_expr.rs — 3676 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-runtime-plan/src/final_flow.rs — 10448 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger TEST001: crates/arcweft-runtime-plan/src/final_flow.rs — large maintained owner contains 664 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-runtime-plan/src/final_flow/line_plan.rs — 1401 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-runtime-plan/src/semantic_facts.rs — 15297 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-runtime-plan/src/semantic_facts/project_function.rs — 3176 physical LOC exceeds the 2500 LOC upper ownership-review trigger; LOC alone is not a structural error
+review-trigger SIZE001: crates/arcweft-runtime-plan/src/semantic_facts/tests.rs — 4535 physical LOC exceeds the 2500 LOC ownership-review trigger
+review-trigger SIZE001: crates/arcweft-text-model/src/content.rs — 2135 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-text-model/src/content.rs — large maintained owner contains 553 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-text-model/src/playback.rs — 1739 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-text-model/src/playback.rs — large maintained owner contains 389 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-verify-lsp/src/lib.rs — 1694 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE002: crates/arcweft-verify-lsp/src/lib.rs — facade file has 1694 physical LOC; target is below 250 LOC
+review-trigger TEST001: crates/arcweft-verify-lsp/src/lib.rs — large maintained owner contains 754 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: crates/arcweft-verify/src/lib.rs — 1238 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger SIZE002: crates/arcweft-verify/src/lib.rs — facade file has 1238 physical LOC; target is below 250 LOC
+review-trigger SIZE001: crates/arcweft-view/src/program.rs — 1257 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: crates/arcweft-view/src/program.rs — large maintained owner contains 253 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: tools/structure-audit.rs — 1628 physical LOC exceeds the 1200 LOC ownership-review trigger
+review-trigger TEST001: tools/structure-audit.rs — large maintained owner contains 278 physical LOC of embedded test module source; source layout alone is not a blocking test-coupling finding
+review-trigger SIZE001: tools/verify-text-raster-parity.rs — 1795 physical LOC exceeds the 1200 LOC ownership-review trigger
+reports written to C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-awbc-scopes.structure

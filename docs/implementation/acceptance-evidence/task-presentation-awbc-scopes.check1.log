@@ -1,0 +1,981 @@
+    Checking either v1.15.0
+   Compiling blake3 v1.8.5
+    Checking regex-automata v0.4.14
+    Checking num-integer v0.1.46
+    Checking serde v1.0.228
+    Checking thiserror v2.0.18
+    Checking zerocopy v0.8.48
+    Checking zerofrom v0.1.8
+    Checking writeable v0.6.4
+    Checking yoke v0.8.3
+    Checking num-bigint v0.4.6
+    Checking fixed_decimal v0.7.2
+    Checking zerovec v0.11.8
+    Checking zerotrie v0.2.5
+    Checking arcweft-layout v0.1.0 (D:\git\arcweft\crates\arcweft-layout)
+    Checking arcweft-codec-json v0.1.0 (D:\git\arcweft\crates\arcweft-codec-json)
+    Checking arcweft-need v0.1.0 (D:\git\arcweft\crates\arcweft-need)
+    Checking trybuild v1.0.116
+    Checking arcweft-serde-bridge v0.1.0 (D:\git\arcweft\crates\arcweft-serde-bridge)
+    Checking arcweft-id v0.1.0 (D:\git\arcweft\crates\arcweft-id)
+    Checking num-rational v0.4.2
+    Checking tinystr v0.8.4
+    Checking potential_utf v0.1.5
+    Checking icu_pattern v0.5.0
+    Checking arcweft-source v0.1.0 (D:\git\arcweft\crates\arcweft-source)
+    Checking arcweft-interaction-model v0.1.0 (D:\git\arcweft\crates\arcweft-interaction-model)
+    Checking arcweft-manifest-model v0.1.0 (D:\git\arcweft\crates\arcweft-manifest-model)
+    Checking icu_locale_core v2.3.0
+    Checking icu_collections v2.3.0
+    Checking arcweft-character v0.1.0 (D:\git\arcweft\crates\arcweft-character)
+    Checking icu_provider v2.3.1
+    Checking icu_locale_fallback v2.3.0
+    Checking icu_properties v2.3.0
+    Checking icu_normalizer v2.3.0
+    Checking icu_plurals v2.3.0
+    Checking icu_list v2.3.0
+    Checking icu_locale v2.3.1
+    Checking icu_decimal v2.3.0
+    Checking icu_casemap v2.3.0
+    Checking half v2.7.1
+    Checking icu_experimental v0.6.0
+    Checking ciborium-ll v0.2.2
+    Checking ciborium v0.2.2
+    Checking arcweft-codec-cbor v0.1.0 (D:\git\arcweft\crates\arcweft-codec-cbor)
+    Checking arcweft-core v0.1.0 (D:\git\arcweft\crates\arcweft-core)
+warning: unused import: `std::sync::Arc`
+  --> crates\arcweft-core\src\awbc\product_step\line.rs:39:5
+   |
+39 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `HostRestartPolicy`
+  --> crates\arcweft-core\src\awbc\product_step\snapshot.rs:23:5
+   |
+23 |     HostRestartPolicy, NeedProducerInvocationFrontier, NeedProducerInvocationToken,
+   |     ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `NeedId`
+ --> crates\arcweft-core\src\awbc\product_step\suspension.rs:5:53
+  |
+5 |     FiberSuspensionReason, FlowEvent, MappedEffect, NeedId, PendingHostCall, ProductStepError,
+  |                                                     ^^^^^^
+
+warning: unused import: `runtime_sequence_values`
+  --> crates\arcweft-core\src\awbc\product_step.rs:87:5
+   |
+87 |     runtime_sequence_values, runtime_value_label,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeIterator`
+  --> crates\arcweft-core\src\awbc\value_admission.rs:20:5
+   |
+20 |     RuntimeIterator, RuntimeRange, RuntimeRangeIterator, RuntimeReductionProducer,
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeCallableInputSource`
+  --> crates\arcweft-core\src\awbc\verify\code.rs:30:5
+   |
+30 |     RuntimeCallableInputSource, RuntimeCallableParameterKind, RuntimeCallablePosition,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeRegistryUpdateJournalError` and `RuntimeRegistryUpdateJournal`
+  --> crates\arcweft-core\src\effect.rs:15:27
+   |
+15 | pub(crate) use registry::{RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJournalError};
+   |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::plan::code::RuntimeCodeOwner`
+ --> crates\arcweft-core\src\engine.rs:7:5
+  |
+7 | use crate::plan::code::RuntimeCodeOwner;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `NeedId`
+  --> crates\arcweft-core\src\engine.rs:28:51
+   |
+28 |     AwaitManyTarget, CancelScopeId, GenerationId, NeedId, NeedProducerOwnedTaskEventDisposition,
+   |                                                   ^^^^^^
+
+warning: unused import: `RuntimeExpr`
+  --> crates\arcweft-core\src\engine\flow.rs:14:23
+   |
+14 |     RuntimeEvalError, RuntimeExpr, RuntimeIterator, RuntimePattern, RuntimeStepOutput,
+   |                       ^^^^^^^^^^^
+
+warning: unused import: `pattern_binding_capacity`
+  --> crates\arcweft-core\src\engine\flow.rs:18:57
+   |
+18 | use crate::pattern::{RuntimeBuiltinVariantCaseIdentity, pattern_binding_capacity};
+   |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `HostTaskRequest`
+  --> crates\arcweft-core\src\engine\flow.rs:26:19
+   |
+26 | use crate::task::{HostTaskRequest, NamedHostArg, RuntimeHostArgumentTemplate};
+   |                   ^^^^^^^^^^^^^^^
+
+warning: unused imports: `CancelScopeId`, `TaskKey`, `TaskPolicy`, and `TaskPriority`
+ --> crates\arcweft-core\src\engine\suspend.rs:4:67
+  |
+4 |     AwaitItemType, AwaitManyInFlight, AwaitManyState, AwaitState, CancelScopeId, ChoiceState,
+  |                                                                   ^^^^^^^^^^^^^
+...
+7 |     RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
+  |                                                                ^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `TaskId`
+  --> crates\arcweft-core\src\engine\suspend.rs:21:43
+   |
+21 |     HttpFetchRequest, HttpRespondRequest, NeedId, NeedProducerRuntimeArgument,
+   |                                           ^^^^^^
+...
+24 |     SystemInfoKind, SystemInfoRequest, TaskId, TtsRequest, WasmCallRequest,
+   |                                        ^^^^^^
+
+warning: unused import: `RuntimeFunctionSiteBodyKind`
+  --> crates\arcweft-core\src\plan\construction\lower.rs:68:33
+   |
+68 |     RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind, RuntimeHostCallTarget,
+   |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `TaskId`
+  --> crates\arcweft-core\src\plan\construction\seed.rs:25:37
+   |
+25 | use crate::task::{HostCapabilityId, NeedId, NeedProducerTaskPlan, TaskId};
+   |                                     ^^^^^^                        ^^^^^^
+
+warning: unused import: `RuntimeDialogueEffectSite`
+   --> crates\arcweft-core\src\plan\construction.rs:109:73
+    |
+109 |     RuntimeDialogueContentSlot, RuntimeDialogueContentTemplateManifest, RuntimeDialogueEffectSite,
+    |                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimePureHelperId`
+  --> crates\arcweft-core\src\plan\entry_inventory.rs:29:49
+   |
+29 | use super::{FlowOp, FlowRuntimeId, RuntimePlan, RuntimePureHelperId};
+   |                                                 ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeAwbcProgramSourceField`
+  --> crates\arcweft-core\src\plan\task_source\program.rs:27:62
+   |
+27 | pub(crate) use program_task::{RuntimeAwbcProgramSourceError, RuntimeAwbcProgramSourceField};
+   |                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeAwbcHostSourceError`, `RuntimeAwbcHostSourceField`, `RuntimeAwbcSelectedSourceError`, `RuntimeAwbcSelectedSourceField`, `RuntimeAwbcTemplateSourceError`, `RuntimeAwbcTemplateSourceField`, and `RuntimeTaskSourceProgramError`
+  --> crates\arcweft-core\src\plan\task_source.rs:17:5
+   |
+17 |     RuntimeAwbcHostSourceError, RuntimeAwbcHostSourceField, RuntimeAwbcProgramSourceError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+18 |     RuntimeAwbcSelectedSourceError, RuntimeAwbcSelectedSourceField, RuntimeAwbcTemplateSourceError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+19 |     RuntimeAwbcTemplateSourceField, RuntimeTaskSourceProgram, RuntimeTaskSourceProgramError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeIterator`
+  --> crates\arcweft-core\src\plan\value_admission.rs:22:5
+   |
+22 |     RuntimeIterator, RuntimeRange, RuntimeRangeIterator, RuntimeReductionProducer,
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeIdExhausted`
+  --> crates\arcweft-core\src\presentation\resources.rs:10:43
+   |
+10 |     ExecutionInstanceId, RuntimeIdCursor, RuntimeIdExhausted, RuntimeIdNamespace,
+   |                                           ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeBuiltinVariantCaseIdentity`
+  --> crates\arcweft-core\src\pure.rs:20:5
+   |
+20 |     RuntimeBuiltinVariantCaseIdentity, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::BTreeMap`
+ --> crates\arcweft-core\src\pure\function.rs:3:5
+  |
+3 | use std::collections::BTreeMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NeedProducerAssertionError` and `NeedProducerAssertionField`
+  --> crates\arcweft-core\src\task.rs:58:32
+   |
+58 | pub(crate) use specification::{NeedProducerAssertionError, NeedProducerAssertionField};
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeCallableGroupInspection`
+  --> crates\arcweft-core\src\value\callable.rs:23:63
+   |
+23 |     RuntimeCallableApplication, RuntimeCallableBodyReference, RuntimeCallableGroupInspection,
+   |                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeCommand` and `RuntimeSeq`
+  --> crates\arcweft-core\src\value\literal_semantic.rs:9:5
+   |
+ 9 |     RuntimeCommand, RuntimeInt, RuntimeOpaquePersistence, RuntimeOpaqueValueClass, RuntimeRange,
+   |     ^^^^^^^^^^^^^^
+10 |     RuntimeRangeIterator, RuntimeRecordView, RuntimeScalarView, RuntimeSeq, RuntimeSignedIntWidth,
+   |                                                                 ^^^^^^^^^^
+
+warning: unused imports: `TaskId` and `TaskPublicationRevision`
+  --> crates\arcweft-core\src\awbc\product_step\tests.rs:31:85
+   |
+31 |     GenerationId, LogicalEpoch, NeedId, RuntimeNeedState, TaskEvent, TaskEventKind, TaskId,
+   |                                                                                     ^^^^^^
+32 |     TaskPublicationRevision, TaskSequence,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::task::NeedId`
+  --> crates\arcweft-core\src\engine\flow\iterator_tests.rs:10:5
+   |
+10 | use crate::task::NeedId;
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::task::NeedId`
+    --> crates\arcweft-core\src\engine\flow.rs:2027:9
+     |
+2027 |     use crate::task::NeedId;
+     |         ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::num::NonZeroU32`
+    --> crates\arcweft-core\src\engine.rs:4961:9
+     |
+4961 |     use std::num::NonZeroU32;
+     |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `AwbcRuntimeValueSnapshotError`
+  --> crates\arcweft-core\src\plan\task_source\program\tests.rs:12:5
+   |
+12 |     AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission, RuntimeStoredValue, RuntimeValue,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeAwbcSelectedSourceError`, `RuntimeAwbcSelectedSourceField`, and `RuntimeTaskSourceProgramError`
+  --> crates\arcweft-core\src\plan\task_source.rs:18:5
+   |
+18 |     RuntimeAwbcSelectedSourceError, RuntimeAwbcSelectedSourceField, RuntimeAwbcTemplateSourceError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+19 |     RuntimeAwbcTemplateSourceField, RuntimeTaskSourceProgram, RuntimeTaskSourceProgramError,
+   |                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::task::NeedId`
+   --> crates\arcweft-core\src\pure\program\tests.rs:161:9
+    |
+161 |     use crate::task::NeedId;
+    |         ^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `CancelScopeId`, `TaskClass`, `TaskId`, `TaskKey`, `TaskPolicy`, `TaskPriority`, and `TaskSpec`
+  --> crates\arcweft-core\src\task\outcome\tests.rs:16:9
+   |
+16 |         CancelScopeId, FileReadTextRequest, HostTaskRequest, TaskClass, TaskId, TaskKey,
+   |         ^^^^^^^^^^^^^                                        ^^^^^^^^^  ^^^^^^  ^^^^^^^
+17 |         TaskOutcomeContract, TaskPolicy, TaskPriority, TaskSpec,
+   |                              ^^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^
+
+warning: unused import: `task::NeedId`
+ --> crates\arcweft-core\src\tests\affine_intrinsics.rs:4:5
+  |
+4 |     task::NeedId,
+  |     ^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `RuntimeNeedState`
+  --> crates\arcweft-core\src\tests\flow.rs:31:26
+   |
+31 |     task::{LogicalEpoch, NeedId, RuntimeNeedState, TaskSequence},
+   |                          ^^^^^^  ^^^^^^^^^^^^^^^^
+
+error[E0271]: expected `{closure@input.rs:106:26}` to return `(FiberCursor, &[FiberScope<_>])`, but it returns `(FiberCursor, &[FiberScope<V, G>])`
+   --> crates\arcweft-core\src\awbc\fiber\input.rs:106:36
+    |
+ 73 |     pub(super) fn validate_scopes<G>(
+    |                                   - found this type parameter
+...
+103 |             .verify_scope_stacks(
+    |              ------------------- required by a bound introduced by this call
+...
+106 |                     .map(|cleanup| (cleanup.source, &scopes[..0]))
+    |                          --------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `(FiberCursor, &[FiberScope<V>])`, found `(FiberCursor, &[FiberScope<V, G>])`
+    |                          |
+    |                          this closure
+    |
+    = note: expected tuple `(FiberCursor, &[FiberScope<V>])`
+               found tuple `(FiberCursor, &[FiberScope<V, G>])`
+    = note: required for `Map<Iter<'_, FiberScopeCleanup<V>>, {closure@input.rs:106:26}>` to implement `Iterator`
+    = note: 1 redundant requirement hidden
+    = note: required for `Chain<Map<Iter<'_, FiberScopeCleanup<V>>, {closure@...}>, _>` to implement `Iterator`
+note: required by a bound in `verify::<impl awbc::schema::AwbcProgram>::verify_scope_stacks`
+   --> crates\arcweft-core\src\awbc\verify.rs:258:35
+    |
+256 |     pub(crate) fn verify_scope_stacks<'a, V: 'a>(
+    |                   ------------------- required by a bound in this associated function
+257 |         &self,
+258 |         stacks: impl IntoIterator<Item = (super::fiber::FiberCursor, &'a [super::fiber::FiberScope<V>])>,
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `verify::<impl AwbcProgram>::verify_scope_stacks`
+    = note: the full name for the type has been written to 'D:\git\arcweft\target\debug\deps\arcweft_core-991d2cb5fc69f8f7.long-type-6103016956763117396.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0271]: expected `FlatMap<Enumerate<Iter<'_, FiberScope<V, G>>>, _, {closure@...}>` to be an iterator that yields `(FiberCursor, &[FiberScope<_>])`, but it yields `(FiberCursor, &[FiberScope<V, G>])`
+   --> crates\arcweft-core\src\awbc\fiber\input.rs:104:17
+    |
+ 73 |       pub(super) fn validate_scopes<G>(
+    |                                     - found this type parameter
+...
+103 |               .verify_scope_stacks(
+    |                ------------------- required by a bound introduced by this call
+104 | /                 root_cleanups
+105 | |                     .iter()
+106 | |                     .map(|cleanup| (cleanup.source, &scopes[..0]))
+107 | |                     .chain(scopes.iter().enumerate().flat_map(|(ordinal, scope)| {
+...   |
+118 | |                     })),
+    | |_______________________^ expected `(FiberCursor, &[FiberScope<V>])`, found `(FiberCursor, &[FiberScope<V, G>])`
+    |
+    = note: expected tuple `(FiberCursor, &[FiberScope<V>])`
+               found tuple `(FiberCursor, &[FiberScope<V, G>])`
+    = note: required for `Chain<Map<Iter<'_, FiberScopeCleanup<V>>, {closure@...}>, _>` to implement `Iterator`
+note: required by a bound in `verify::<impl awbc::schema::AwbcProgram>::verify_scope_stacks`
+   --> crates\arcweft-core\src\awbc\verify.rs:258:35
+    |
+256 |     pub(crate) fn verify_scope_stacks<'a, V: 'a>(
+    |                   ------------------- required by a bound in this associated function
+257 |         &self,
+258 |         stacks: impl IntoIterator<Item = (super::fiber::FiberCursor, &'a [super::fiber::FiberScope<V>])>,
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `verify::<impl AwbcProgram>::verify_scope_stacks`
+    = note: the full name for the type has been written to 'D:\git\arcweft\target\debug\deps\arcweft_core-991d2cb5fc69f8f7.long-type-4326972330560362214.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0271]: type mismatch resolving `<Vec<(FiberCursor, _)> as IntoIterator>::Item == (FiberCursor, &[_])`
+   --> crates\arcweft-core\src\awbc\fiber\validation.rs:185:34
+    |
+ 14 | impl<V, O, N, B, P, G> FiberState<V, O, N, B, FiberReturnPoint<FiberReturnContinuation<P, V>>, G> {
+    |                     - found this type parameter
+...
+185 |             .verify_scope_stacks(stacks)
+    |              ------------------- ^^^^^^ expected `(FiberCursor, &[FiberScope<V>])`, found `(FiberCursor, &[FiberScope<V, G>])`
+    |              |
+    |              required by a bound introduced by this call
+    |
+    = note: expected tuple `(FiberCursor, &[FiberScope<V>])`
+               found tuple `(FiberCursor, &[FiberScope<V, G>])`
+note: required by a bound in `verify::<impl awbc::schema::AwbcProgram>::verify_scope_stacks`
+   --> crates\arcweft-core\src\awbc\verify.rs:258:35
+    |
+256 |     pub(crate) fn verify_scope_stacks<'a, V: 'a>(
+    |                   ------------------- required by a bound in this associated function
+257 |         &self,
+258 |         stacks: impl IntoIterator<Item = (super::fiber::FiberCursor, &'a [super::fiber::FiberScope<V>])>,
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `verify::<impl AwbcProgram>::verify_scope_stacks`
+    = note: the full name for the type has been written to 'D:\git\arcweft\target\debug\deps\arcweft_core-991d2cb5fc69f8f7.long-type-8396983551310326077.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0599]: no method named `admit_retained_values` found for reference `&AwbcProductActiveDialogue<AwbcRuntimeValueSnapshot, _, _, _, _>` in the current scope
+    --> crates\arcweft-core\src\awbc\product_step\snapshot.rs:1203:14
+     |
+1203 |         self.admit_retained_values(
+     |         -----^^^^^^^^^^^^^^^^^^^^^
+     |
+help: there is a method `admit_retained` with a similar name, but with different arguments
+    --> crates\arcweft-core\src\awbc\product_step\snapshot.rs:1190:5
+     |
+1190 | /     pub(super) fn admit_retained(
+1191 | |         &self,
+1192 | |         program: &crate::awbc::schema::AwbcProgram,
+1193 | |         admission: &mut crate::value::RuntimeRetainedValueAdmission,
+1194 | |     ) -> Result<(), crate::line_task::RuntimeDialogueRegistrySnapshotError> {
+     | |___________________________________________________________________________^
+     = note: the full name for the type has been written to 'D:\git\arcweft\target\debug\deps\arcweft_core-991d2cb5fc69f8f7.long-type-5329188924143946355.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+error[E0560]: struct `NativeFlowExecutionFrame<_, _, _, _, _, _>` has no field named `root_presentation_scope`
+    --> crates\arcweft-core\src\awbc\product_step.rs:2190:17
+     |
+2190 |                 root_presentation_scope: None,
+     |                 ^^^^^^^^^^^^^^^^^^^^^^^ `NativeFlowExecutionFrame<_, _, _, _, _, _>` does not have this field
+     |
+     = note: all struct fields are already assigned
+
+error[E0271]: expected `{closure@input.rs:106:26}` to return `(FiberCursor, &[FiberScope<_>])`, but it returns `(FiberCursor, &[FiberScope<V, G>])`
+   --> crates\arcweft-core\src\awbc\fiber\input.rs:106:36
+    |
+ 73 |     pub(super) fn validate_scopes<G>(
+    |                                   - found this type parameter
+...
+103 |             .verify_scope_stacks(
+    |              ------------------- required by a bound introduced by this call
+...
+106 |                     .map(|cleanup| (cleanup.source, &scopes[..0]))
+    |                          --------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `(FiberCursor, &[FiberScope<V>])`, found `(FiberCursor, &[FiberScope<V, G>])`
+    |                          |
+    |                          this closure
+    |
+    = note: expected tuple `(FiberCursor, &[fiber::scope::FiberScope<V>])`
+               found tuple `(FiberCursor, &[fiber::scope::FiberScope<V, G>])`
+    = note: required for `Map<Iter<'_, FiberScopeCleanup<V>>, {closure@input.rs:106:26}>` to implement `Iterator`
+    = note: 1 redundant requirement hidden
+    = note: required for `Chain<Map<Iter<'_, FiberScopeCleanup<V>>, {closure@...}>, _>` to implement `Iterator`
+note: required by a bound in `verify::<impl awbc::schema::AwbcProgram>::verify_scope_stacks`
+   --> crates\arcweft-core\src\awbc\verify.rs:258:35
+    |
+256 |     pub(crate) fn verify_scope_stacks<'a, V: 'a>(
+    |                   ------------------- required by a bound in this associated function
+257 |         &self,
+258 |         stacks: impl IntoIterator<Item = (super::fiber::FiberCursor, &'a [super::fiber::FiberScope<V>])>,
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `verify::<impl AwbcProgram>::verify_scope_stacks`
+    = note: the full name for the type has been written to 'D:\git\arcweft\target\debug\deps\arcweft_core-b35529864bf8a106.long-type-4794844931261897135.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0271]: expected `FlatMap<Enumerate<Iter<'_, FiberScope<V, G>>>, _, {closure@...}>` to be an iterator that yields `(FiberCursor, &[FiberScope<_>])`, but it yields `(FiberCursor, &[FiberScope<V, G>])`
+   --> crates\arcweft-core\src\awbc\fiber\input.rs:104:17
+    |
+ 73 |       pub(super) fn validate_scopes<G>(
+    |                                     - found this type parameter
+...
+103 |               .verify_scope_stacks(
+    |                ------------------- required by a bound introduced by this call
+104 | /                 root_cleanups
+105 | |                     .iter()
+106 | |                     .map(|cleanup| (cleanup.source, &scopes[..0]))
+107 | |                     .chain(scopes.iter().enumerate().flat_map(|(ordinal, scope)| {
+...   |
+118 | |                     })),
+    | |_______________________^ expected `(FiberCursor, &[FiberScope<V>])`, found `(FiberCursor, &[FiberScope<V, G>])`
+    |
+    = note: expected tuple `(FiberCursor, &[fiber::scope::FiberScope<V>])`
+               found tuple `(FiberCursor, &[fiber::scope::FiberScope<V, G>])`
+    = note: required for `Chain<Map<Iter<'_, FiberScopeCleanup<V>>, {closure@...}>, _>` to implement `Iterator`
+note: required by a bound in `verify::<impl awbc::schema::AwbcProgram>::verify_scope_stacks`
+   --> crates\arcweft-core\src\awbc\verify.rs:258:35
+    |
+256 |     pub(crate) fn verify_scope_stacks<'a, V: 'a>(
+    |                   ------------------- required by a bound in this associated function
+257 |         &self,
+258 |         stacks: impl IntoIterator<Item = (super::fiber::FiberCursor, &'a [super::fiber::FiberScope<V>])>,
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `verify::<impl AwbcProgram>::verify_scope_stacks`
+    = note: the full name for the type has been written to 'D:\git\arcweft\target\debug\deps\arcweft_core-b35529864bf8a106.long-type-9110053458396228993.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0277]: the trait bound `presentation::resources::RuntimePresentationScopeBinding: serde::Serialize` is not satisfied
+    --> crates\arcweft-core\src\awbc\fiber\scope\tests.rs:410:36
+     |
+ 410 |     let bytes = serde_json::to_vec(&packet).unwrap();
+     |                 ------------------ ^^^^^^^ unsatisfied trait bound
+     |                 |
+     |                 required by a bound introduced by this call
+     |
+help: the trait `effect::_::_serde::Serialize` is not implemented for `presentation::resources::RuntimePresentationScopeBinding`
+    --> crates\arcweft-core\src\presentation\resources.rs:75:1
+     |
+  75 | pub struct RuntimePresentationScopeBinding {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     = note: for local types consider adding `#[derive(serde::Serialize)]` to your `presentation::resources::RuntimePresentationScopeBinding` type
+     = note: for types from other crates check whether the crate offers a `serde` feature flag
+     = help: the following other types implement trait `effect::_::_serde::Serialize`:
+               &'a T
+               &'a mut T
+               ()
+               (T,)
+               (T0, T1)
+               (T0, T1, T2)
+               (T0, T1, T2, T3)
+               (T0, T1, T2, T3, T4)
+             and 1002 others
+note: required for `fiber::scope::FiberScope<awbc_save::AwbcRuntimeValueSnapshot>` to implement `effect::_::_serde::Serialize`
+    --> crates\arcweft-core\src\awbc\fiber\scope.rs:144:12
+     |
+ 140 |         serialize = "V: super::InertRuntimeValueStorage, G: Serialize",
+     |                     -------------------------------------------------- unsatisfied trait bound
+...
+ 144 | pub struct FiberScope<V = RuntimeValue, G = crate::presentation::RuntimePresentationScopeBinding> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     = help: consider manually implementing `effect::_::_serde::Serialize` to avoid undesired bounds caused by "imperfect derives"
+     = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
+note: required by a bound in `to_vec`
+    --> C:\Users\sanze\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_json-1.0.150\src\ser.rs:2215:17
+     |
+2213 | pub fn to_vec<T>(value: &T) -> Result<Vec<u8>>
+     |        ------ required by a bound in this function
+2214 | where
+2215 |     T: ?Sized + Serialize,
+     |                 ^^^^^^^^^ required by this bound in `to_vec`
+
+error[E0277]: the trait bound `presentation::resources::RuntimePresentationScopeBinding: serde::Deserialize<'de>` is not satisfied
+    --> crates\arcweft-core\src\awbc\fiber\scope\tests.rs:412:34
+     |
+ 412 |         serde_json::from_slice::<FiberScope<AwbcRuntimeValueSnapshot>>(&bytes).unwrap(),
+     |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+     |
+help: the trait `effect::_::_serde::Deserialize<'_>` is not implemented for `presentation::resources::RuntimePresentationScopeBinding`
+    --> crates\arcweft-core\src\presentation\resources.rs:75:1
+     |
+  75 | pub struct RuntimePresentationScopeBinding {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `presentation::resources::RuntimePresentationScopeBinding` type
+     = note: for types from other crates check whether the crate offers a `serde` feature flag
+     = help: the following other types implement trait `effect::_::_serde::Deserialize<'de>`:
+               &'a [u8]
+               &'a std::path::Path
+               &'a str
+               ()
+               (T,)
+               (T0, T1)
+               (T0, T1, T2)
+               (T0, T1, T2, T3)
+             and 1039 others
+note: required for `fiber::scope::FiberScope<awbc_save::AwbcRuntimeValueSnapshot>` to implement `effect::_::_serde::Deserialize<'_>`
+    --> crates\arcweft-core\src\awbc\fiber\scope.rs:144:12
+     |
+ 141 |         deserialize = "V: super::InertRuntimeValueStorage, G: Deserialize<'de>"
+     |                       --------------------------------------------------------- unsatisfied trait bound
+...
+ 144 | pub struct FiberScope<V = RuntimeValue, G = crate::presentation::RuntimePresentationScopeBinding> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     = help: consider manually implementing `effect::_::_serde::Deserialize<'_>` to avoid undesired bounds caused by "imperfect derives"
+     = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
+note: required by a bound in `from_slice`
+    --> C:\Users\sanze\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_json-1.0.150\src\de.rs:2669:8
+     |
+2667 | pub fn from_slice<'a, T>(v: &'a [u8]) -> Result<T>
+     |        ---------- required by a bound in this function
+2668 | where
+2669 |     T: de::Deserialize<'a>,
+     |        ^^^^^^^^^^^^^^^^^^^ required by this bound in `from_slice`
+     = note: the full name for the type has been written to 'D:\git\arcweft\target\debug\deps\arcweft_core-b35529864bf8a106.long-type-11165412650106349731.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+error[E0277]: the trait bound `presentation::resources::RuntimePresentationScopeBinding: serde::Serialize` is not satisfied
+   --> crates\arcweft-core\src\awbc\fiber\scope\tests.rs:415:42
+    |
+415 |     let mut json = serde_json::to_value(&packet).unwrap();
+    |                    --------------------  ^^^^^^ unsatisfied trait bound
+    |                    |
+    |                    required by a bound introduced by this call
+    |
+help: the trait `effect::_::_serde::Serialize` is not implemented for `presentation::resources::RuntimePresentationScopeBinding`
+   --> crates\arcweft-core\src\presentation\resources.rs:75:1
+    |
+ 75 | pub struct RuntimePresentationScopeBinding {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: for local types consider adding `#[derive(serde::Serialize)]` to your `presentation::resources::RuntimePresentationScopeBinding` type
+    = note: for types from other crates check whether the crate offers a `serde` feature flag
+    = help: the following other types implement trait `effect::_::_serde::Serialize`:
+              &'a T
+              &'a mut T
+              ()
+              (T,)
+              (T0, T1)
+              (T0, T1, T2)
+              (T0, T1, T2, T3)
+              (T0, T1, T2, T3, T4)
+            and 1002 others
+note: required for `fiber::scope::FiberScope<awbc_save::AwbcRuntimeValueSnapshot>` to implement `effect::_::_serde::Serialize`
+   --> crates\arcweft-core\src\awbc\fiber\scope.rs:144:12
+    |
+140 |         serialize = "V: super::InertRuntimeValueStorage, G: Serialize",
+    |                     -------------------------------------------------- unsatisfied trait bound
+...
+144 | pub struct FiberScope<V = RuntimeValue, G = crate::presentation::RuntimePresentationScopeBinding> {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider manually implementing `effect::_::_serde::Serialize` to avoid undesired bounds caused by "imperfect derives"
+    = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
+    = note: 1 redundant requirement hidden
+    = note: required for `&fiber::scope::FiberScope<awbc_save::AwbcRuntimeValueSnapshot>` to implement `effect::_::_serde::Serialize`
+note: required by a bound in `to_value`
+   --> C:\Users\sanze\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_json-1.0.150\src\value\mod.rs:997:8
+    |
+995 | pub fn to_value<T>(value: T) -> Result<Value, Error>
+    |        -------- required by a bound in this function
+996 | where
+997 |     T: Serialize,
+    |        ^^^^^^^^^ required by this bound in `to_value`
+
+error[E0277]: the trait bound `presentation::resources::RuntimePresentationScopeBinding: serde::Deserialize<'de>` is not satisfied
+    --> crates\arcweft-core\src\awbc\fiber\scope\tests.rs:417:38
+     |
+ 417 |     assert!(serde_json::from_value::<FiberScope<AwbcRuntimeValueSnapshot>>(json).is_err());
+     |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+     |
+help: the trait `effect::_::_serde::Deserialize<'_>` is not implemented for `presentation::resources::RuntimePresentationScopeBinding`
+    --> crates\arcweft-core\src\presentation\resources.rs:75:1
+     |
+  75 | pub struct RuntimePresentationScopeBinding {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `presentation::resources::RuntimePresentationScopeBinding` type
+     = note: for types from other crates check whether the crate offers a `serde` feature flag
+     = help: the following other types implement trait `effect::_::_serde::Deserialize<'de>`:
+               &'a [u8]
+               &'a std::path::Path
+               &'a str
+               ()
+               (T,)
+               (T0, T1)
+               (T0, T1, T2)
+               (T0, T1, T2, T3)
+             and 1039 others
+note: required for `fiber::scope::FiberScope<awbc_save::AwbcRuntimeValueSnapshot>` to implement `for<'de> effect::_::_serde::Deserialize<'de>`
+    --> crates\arcweft-core\src\awbc\fiber\scope.rs:144:12
+     |
+ 141 |         deserialize = "V: super::InertRuntimeValueStorage, G: Deserialize<'de>"
+     |                       --------------------------------------------------------- unsatisfied trait bound
+...
+ 144 | pub struct FiberScope<V = RuntimeValue, G = crate::presentation::RuntimePresentationScopeBinding> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     = help: consider manually implementing `for<'de> effect::_::_serde::Deserialize<'de>` to avoid undesired bounds caused by "imperfect derives"
+     = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
+     = note: required for `fiber::scope::FiberScope<awbc_save::AwbcRuntimeValueSnapshot>` to implement `DeserializeOwned`
+note: required by a bound in `from_value`
+    --> C:\Users\sanze\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_json-1.0.150\src\value\mod.rs:1039:8
+     |
+1037 | pub fn from_value<T>(value: Value) -> Result<T, Error>
+     |        ---------- required by a bound in this function
+1038 | where
+1039 |     T: DeserializeOwned,
+     |        ^^^^^^^^^^^^^^^^ required by this bound in `from_value`
+     = note: the full name for the type has been written to 'D:\git\arcweft\target\debug\deps\arcweft_core-b35529864bf8a106.long-type-11165412650106349731.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+error[E0277]: the trait bound `presentation::resources::RuntimePresentationScopeBinding: serde::Serialize` is not satisfied
+   --> crates\arcweft-core\src\awbc\fiber\scope\tests.rs:419:46
+    |
+419 |         let mut json = serde_json::to_value(&packet).unwrap();
+    |                        --------------------  ^^^^^^ unsatisfied trait bound
+    |                        |
+    |                        required by a bound introduced by this call
+    |
+help: the trait `effect::_::_serde::Serialize` is not implemented for `presentation::resources::RuntimePresentationScopeBinding`
+   --> crates\arcweft-core\src\presentation\resources.rs:75:1
+    |
+ 75 | pub struct RuntimePresentationScopeBinding {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: for local types consider adding `#[derive(serde::Serialize)]` to your `presentation::resources::RuntimePresentationScopeBinding` type
+    = note: for types from other crates check whether the crate offers a `serde` feature flag
+    = help: the following other types implement trait `effect::_::_serde::Serialize`:
+              &'a T
+              &'a mut T
+              ()
+              (T,)
+              (T0, T1)
+              (T0, T1, T2)
+              (T0, T1, T2, T3)
+              (T0, T1, T2, T3, T4)
+            and 1002 others
+note: required for `fiber::scope::FiberScope<awbc_save::AwbcRuntimeValueSnapshot>` to implement `effect::_::_serde::Serialize`
+   --> crates\arcweft-core\src\awbc\fiber\scope.rs:144:12
+    |
+140 |         serialize = "V: super::InertRuntimeValueStorage, G: Serialize",
+    |                     -------------------------------------------------- unsatisfied trait bound
+...
+144 | pub struct FiberScope<V = RuntimeValue, G = crate::presentation::RuntimePresentationScopeBinding> {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider manually implementing `effect::_::_serde::Serialize` to avoid undesired bounds caused by "imperfect derives"
+    = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
+    = note: 1 redundant requirement hidden
+    = note: required for `&fiber::scope::FiberScope<awbc_save::AwbcRuntimeValueSnapshot>` to implement `effect::_::_serde::Serialize`
+note: required by a bound in `to_value`
+   --> C:\Users\sanze\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_json-1.0.150\src\value\mod.rs:997:8
+    |
+995 | pub fn to_value<T>(value: T) -> Result<Value, Error>
+    |        -------- required by a bound in this function
+996 | where
+997 |     T: Serialize,
+    |        ^^^^^^^^^ required by this bound in `to_value`
+
+error[E0277]: the trait bound `presentation::resources::RuntimePresentationScopeBinding: serde::Deserialize<'de>` is not satisfied
+    --> crates\arcweft-core\src\awbc\fiber\scope\tests.rs:421:42
+     |
+ 421 |         assert!(serde_json::from_value::<FiberScope<AwbcRuntimeValueSnapshot>>(json).is_err());
+     |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+     |
+help: the trait `effect::_::_serde::Deserialize<'_>` is not implemented for `presentation::resources::RuntimePresentationScopeBinding`
+    --> crates\arcweft-core\src\presentation\resources.rs:75:1
+     |
+  75 | pub struct RuntimePresentationScopeBinding {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `presentation::resources::RuntimePresentationScopeBinding` type
+     = note: for types from other crates check whether the crate offers a `serde` feature flag
+     = help: the following other types implement trait `effect::_::_serde::Deserialize<'de>`:
+               &'a [u8]
+               &'a std::path::Path
+               &'a str
+               ()
+               (T,)
+               (T0, T1)
+               (T0, T1, T2)
+               (T0, T1, T2, T3)
+             and 1039 others
+note: required for `fiber::scope::FiberScope<awbc_save::AwbcRuntimeValueSnapshot>` to implement `for<'de> effect::_::_serde::Deserialize<'de>`
+    --> crates\arcweft-core\src\awbc\fiber\scope.rs:144:12
+     |
+ 141 |         deserialize = "V: super::InertRuntimeValueStorage, G: Deserialize<'de>"
+     |                       --------------------------------------------------------- unsatisfied trait bound
+...
+ 144 | pub struct FiberScope<V = RuntimeValue, G = crate::presentation::RuntimePresentationScopeBinding> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     = help: consider manually implementing `for<'de> effect::_::_serde::Deserialize<'de>` to avoid undesired bounds caused by "imperfect derives"
+     = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
+     = note: required for `fiber::scope::FiberScope<awbc_save::AwbcRuntimeValueSnapshot>` to implement `DeserializeOwned`
+note: required by a bound in `from_value`
+    --> C:\Users\sanze\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_json-1.0.150\src\value\mod.rs:1039:8
+     |
+1037 | pub fn from_value<T>(value: Value) -> Result<T, Error>
+     |        ---------- required by a bound in this function
+1038 | where
+1039 |     T: DeserializeOwned,
+     |        ^^^^^^^^^^^^^^^^ required by this bound in `from_value`
+     = note: the full name for the type has been written to 'D:\git\arcweft\target\debug\deps\arcweft_core-b35529864bf8a106.long-type-11165412650106349731.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+error[E0277]: the trait bound `presentation::resources::RuntimePresentationScopeBinding: serde::Serialize` is not satisfied
+   --> crates\arcweft-core\src\awbc\fiber\scope\tests.rs:423:42
+    |
+423 |     let mut json = serde_json::to_value(&packet).unwrap();
+    |                    --------------------  ^^^^^^ unsatisfied trait bound
+    |                    |
+    |                    required by a bound introduced by this call
+    |
+help: the trait `effect::_::_serde::Serialize` is not implemented for `presentation::resources::RuntimePresentationScopeBinding`
+   --> crates\arcweft-core\src\presentation\resources.rs:75:1
+    |
+ 75 | pub struct RuntimePresentationScopeBinding {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: for local types consider adding `#[derive(serde::Serialize)]` to your `presentation::resources::RuntimePresentationScopeBinding` type
+    = note: for types from other crates check whether the crate offers a `serde` feature flag
+    = help: the following other types implement trait `effect::_::_serde::Serialize`:
+              &'a T
+              &'a mut T
+              ()
+              (T,)
+              (T0, T1)
+              (T0, T1, T2)
+              (T0, T1, T2, T3)
+              (T0, T1, T2, T3, T4)
+            and 1002 others
+note: required for `fiber::scope::FiberScope<awbc_save::AwbcRuntimeValueSnapshot>` to implement `effect::_::_serde::Serialize`
+   --> crates\arcweft-core\src\awbc\fiber\scope.rs:144:12
+    |
+140 |         serialize = "V: super::InertRuntimeValueStorage, G: Serialize",
+    |                     -------------------------------------------------- unsatisfied trait bound
+...
+144 | pub struct FiberScope<V = RuntimeValue, G = crate::presentation::RuntimePresentationScopeBinding> {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider manually implementing `effect::_::_serde::Serialize` to avoid undesired bounds caused by "imperfect derives"
+    = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
+    = note: 1 redundant requirement hidden
+    = note: required for `&fiber::scope::FiberScope<awbc_save::AwbcRuntimeValueSnapshot>` to implement `effect::_::_serde::Serialize`
+note: required by a bound in `to_value`
+   --> C:\Users\sanze\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_json-1.0.150\src\value\mod.rs:997:8
+    |
+995 | pub fn to_value<T>(value: T) -> Result<Value, Error>
+    |        -------- required by a bound in this function
+996 | where
+997 |     T: Serialize,
+    |        ^^^^^^^^^ required by this bound in `to_value`
+
+error[E0277]: the trait bound `presentation::resources::RuntimePresentationScopeBinding: serde::Deserialize<'de>` is not satisfied
+    --> crates\arcweft-core\src\awbc\fiber\scope\tests.rs:428:38
+     |
+ 428 |     assert!(serde_json::from_value::<FiberScope<AwbcRuntimeValueSnapshot>>(json).is_err());
+     |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+     |
+help: the trait `effect::_::_serde::Deserialize<'_>` is not implemented for `presentation::resources::RuntimePresentationScopeBinding`
+    --> crates\arcweft-core\src\presentation\resources.rs:75:1
+     |
+  75 | pub struct RuntimePresentationScopeBinding {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `presentation::resources::RuntimePresentationScopeBinding` type
+     = note: for types from other crates check whether the crate offers a `serde` feature flag
+     = help: the following other types implement trait `effect::_::_serde::Deserialize<'de>`:
+               &'a [u8]
+               &'a std::path::Path
+               &'a str
+               ()
+               (T,)
+               (T0, T1)
+               (T0, T1, T2)
+               (T0, T1, T2, T3)
+             and 1039 others
+note: required for `fiber::scope::FiberScope<awbc_save::AwbcRuntimeValueSnapshot>` to implement `for<'de> effect::_::_serde::Deserialize<'de>`
+    --> crates\arcweft-core\src\awbc\fiber\scope.rs:144:12
+     |
+ 141 |         deserialize = "V: super::InertRuntimeValueStorage, G: Deserialize<'de>"
+     |                       --------------------------------------------------------- unsatisfied trait bound
+...
+ 144 | pub struct FiberScope<V = RuntimeValue, G = crate::presentation::RuntimePresentationScopeBinding> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     = help: consider manually implementing `for<'de> effect::_::_serde::Deserialize<'de>` to avoid undesired bounds caused by "imperfect derives"
+     = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
+     = note: required for `fiber::scope::FiberScope<awbc_save::AwbcRuntimeValueSnapshot>` to implement `DeserializeOwned`
+note: required by a bound in `from_value`
+    --> C:\Users\sanze\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_json-1.0.150\src\value\mod.rs:1039:8
+     |
+1037 | pub fn from_value<T>(value: Value) -> Result<T, Error>
+     |        ---------- required by a bound in this function
+1038 | where
+1039 |     T: DeserializeOwned,
+     |        ^^^^^^^^^^^^^^^^ required by this bound in `from_value`
+     = note: the full name for the type has been written to 'D:\git\arcweft\target\debug\deps\arcweft_core-b35529864bf8a106.long-type-11165412650106349731.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+error[E0277]: the trait bound `presentation::resources::RuntimePresentationScopeBinding: serde::Serialize` is not satisfied
+   --> crates\arcweft-core\src\awbc\fiber\scope\tests.rs:429:42
+    |
+429 |     let mut json = serde_json::to_value(&packet).unwrap();
+    |                    --------------------  ^^^^^^ unsatisfied trait bound
+    |                    |
+    |                    required by a bound introduced by this call
+    |
+help: the trait `effect::_::_serde::Serialize` is not implemented for `presentation::resources::RuntimePresentationScopeBinding`
+   --> crates\arcweft-core\src\presentation\resources.rs:75:1
+    |
+ 75 | pub struct RuntimePresentationScopeBinding {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: for local types consider adding `#[derive(serde::Serialize)]` to your `presentation::resources::RuntimePresentationScopeBinding` type
+    = note: for types from other crates check whether the crate offers a `serde` feature flag
+    = help: the following other types implement trait `effect::_::_serde::Serialize`:
+              &'a T
+              &'a mut T
+              ()
+              (T,)
+              (T0, T1)
+              (T0, T1, T2)
+              (T0, T1, T2, T3)
+              (T0, T1, T2, T3, T4)
+            and 1002 others
+note: required for `fiber::scope::FiberScope<awbc_save::AwbcRuntimeValueSnapshot>` to implement `effect::_::_serde::Serialize`
+   --> crates\arcweft-core\src\awbc\fiber\scope.rs:144:12
+    |
+140 |         serialize = "V: super::InertRuntimeValueStorage, G: Serialize",
+    |                     -------------------------------------------------- unsatisfied trait bound
+...
+144 | pub struct FiberScope<V = RuntimeValue, G = crate::presentation::RuntimePresentationScopeBinding> {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = help: consider manually implementing `effect::_::_serde::Serialize` to avoid undesired bounds caused by "imperfect derives"
+    = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
+    = note: 1 redundant requirement hidden
+    = note: required for `&fiber::scope::FiberScope<awbc_save::AwbcRuntimeValueSnapshot>` to implement `effect::_::_serde::Serialize`
+note: required by a bound in `to_value`
+   --> C:\Users\sanze\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_json-1.0.150\src\value\mod.rs:997:8
+    |
+995 | pub fn to_value<T>(value: T) -> Result<Value, Error>
+    |        -------- required by a bound in this function
+996 | where
+997 |     T: Serialize,
+    |        ^^^^^^^^^ required by this bound in `to_value`
+
+error[E0277]: the trait bound `presentation::resources::RuntimePresentationScopeBinding: serde::Deserialize<'de>` is not satisfied
+    --> crates\arcweft-core\src\awbc\fiber\scope\tests.rs:431:38
+     |
+ 431 |     assert!(serde_json::from_value::<FiberScope<AwbcRuntimeValueSnapshot>>(json).is_err());
+     |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+     |
+help: the trait `effect::_::_serde::Deserialize<'_>` is not implemented for `presentation::resources::RuntimePresentationScopeBinding`
+    --> crates\arcweft-core\src\presentation\resources.rs:75:1
+     |
+  75 | pub struct RuntimePresentationScopeBinding {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `presentation::resources::RuntimePresentationScopeBinding` type
+     = note: for types from other crates check whether the crate offers a `serde` feature flag
+     = help: the following other types implement trait `effect::_::_serde::Deserialize<'de>`:
+               &'a [u8]
+               &'a std::path::Path
+               &'a str
+               ()
+               (T,)
+               (T0, T1)
+               (T0, T1, T2)
+               (T0, T1, T2, T3)
+             and 1039 others
+note: required for `fiber::scope::FiberScope<awbc_save::AwbcRuntimeValueSnapshot>` to implement `for<'de> effect::_::_serde::Deserialize<'de>`
+    --> crates\arcweft-core\src\awbc\fiber\scope.rs:144:12
+     |
+ 141 |         deserialize = "V: super::InertRuntimeValueStorage, G: Deserialize<'de>"
+     |                       --------------------------------------------------------- unsatisfied trait bound
+...
+ 144 | pub struct FiberScope<V = RuntimeValue, G = crate::presentation::RuntimePresentationScopeBinding> {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     = help: consider manually implementing `for<'de> effect::_::_serde::Deserialize<'de>` to avoid undesired bounds caused by "imperfect derives"
+     = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
+     = note: required for `fiber::scope::FiberScope<awbc_save::AwbcRuntimeValueSnapshot>` to implement `DeserializeOwned`
+note: required by a bound in `from_value`
+    --> C:\Users\sanze\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_json-1.0.150\src\value\mod.rs:1039:8
+     |
+1037 | pub fn from_value<T>(value: Value) -> Result<T, Error>
+     |        ---------- required by a bound in this function
+1038 | where
+1039 |     T: DeserializeOwned,
+     |        ^^^^^^^^^^^^^^^^ required by this bound in `from_value`
+     = note: the full name for the type has been written to 'D:\git\arcweft\target\debug\deps\arcweft_core-b35529864bf8a106.long-type-11165412650106349731.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+error[E0271]: type mismatch resolving `<Vec<(FiberCursor, _)> as IntoIterator>::Item == (FiberCursor, &[_])`
+   --> crates\arcweft-core\src\awbc\fiber\validation.rs:185:34
+    |
+ 14 | impl<V, O, N, B, P, G> FiberState<V, O, N, B, FiberReturnPoint<FiberReturnContinuation<P, V>>, G> {
+    |                     - found this type parameter
+...
+185 |             .verify_scope_stacks(stacks)
+    |              ------------------- ^^^^^^ expected `(FiberCursor, &[FiberScope<V>])`, found `(FiberCursor, &[FiberScope<V, G>])`
+    |              |
+    |              required by a bound introduced by this call
+    |
+    = note: expected tuple `(FiberCursor, &[fiber::scope::FiberScope<V>])`
+               found tuple `(FiberCursor, &[fiber::scope::FiberScope<V, G>])`
+note: required by a bound in `verify::<impl awbc::schema::AwbcProgram>::verify_scope_stacks`
+   --> crates\arcweft-core\src\awbc\verify.rs:258:35
+    |
+256 |     pub(crate) fn verify_scope_stacks<'a, V: 'a>(
+    |                   ------------------- required by a bound in this associated function
+257 |         &self,
+258 |         stacks: impl IntoIterator<Item = (super::fiber::FiberCursor, &'a [super::fiber::FiberScope<V>])>,
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `verify::<impl AwbcProgram>::verify_scope_stacks`
+    = note: the full name for the type has been written to 'D:\git\arcweft\target\debug\deps\arcweft_core-b35529864bf8a106.long-type-370535959888640275.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0599]: no method named `admit_retained_values` found for reference `&AwbcProductActiveDialogue<AwbcRuntimeValueSnapshot, _, _, _, _>` in the current scope
+    --> crates\arcweft-core\src\awbc\product_step\snapshot.rs:1203:14
+     |
+1203 |         self.admit_retained_values(
+     |         -----^^^^^^^^^^^^^^^^^^^^^
+     |
+help: there is a method `admit_retained` with a similar name, but with different arguments
+    --> crates\arcweft-core\src\awbc\product_step\snapshot.rs:1190:5
+     |
+1190 | /     pub(super) fn admit_retained(
+1191 | |         &self,
+1192 | |         program: &crate::awbc::schema::AwbcProgram,
+1193 | |         admission: &mut crate::value::RuntimeRetainedValueAdmission,
+1194 | |     ) -> Result<(), crate::line_task::RuntimeDialogueRegistrySnapshotError> {
+     | |___________________________________________________________________________^
+     = note: the full name for the type has been written to 'D:\git\arcweft\target\debug\deps\arcweft_core-b35529864bf8a106.long-type-4412668762776269682.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+
+error[E0560]: struct `engine::NativeFlowExecutionFrame<_, _, _, _, _, _>` has no field named `root_presentation_scope`
+    --> crates\arcweft-core\src\awbc\product_step.rs:2190:17
+     |
+2190 |                 root_presentation_scope: None,
+     |                 ^^^^^^^^^^^^^^^^^^^^^^^ `engine::NativeFlowExecutionFrame<_, _, _, _, _, _>` does not have this field
+     |
+     = note: all struct fields are already assigned
+
+warning: unused variable: `type_instantiation`
+   --> crates\arcweft-core\src\awbc\value_admission\tests.rs:849:13
+    |
+849 |             type_instantiation,
+    |             ^^^^^^^^^^^^^^^^^^ help: try ignoring the field: `type_instantiation: _`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `group`
+    --> crates\arcweft-core\src\engine\dialogue.rs:2974:13
+     |
+2974 |         let group = LineTaskGroup::new(
+     |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_group`
+
+Some errors have detailed explanations: E0271, E0560, E0599.
+For more information about an error, try `rustc --explain E0271`.
+warning: `arcweft-core` (lib) generated 27 warnings
+error: could not compile `arcweft-core` (lib) due to 5 previous errors; 27 warnings emitted
+warning: build failed, waiting for other jobs to finish...
+Some errors have detailed explanations: E0271, E0277, E0560, E0599.
+warning: `arcweft-core` (lib test) generated 34 warnings (22 duplicates)
+error: could not compile `arcweft-core` (lib test) due to 15 previous errors; 34 warnings emitted

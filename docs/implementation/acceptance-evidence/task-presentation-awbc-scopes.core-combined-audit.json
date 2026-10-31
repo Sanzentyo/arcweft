@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "c35fc69a52db5709b98c0b135d6df559acd24af9",
+  "executed": 2133,
+  "passed": 2133,
+  "failed": 0,
+  "ownerCases": 5,
+  "remainingCases": 2128,
+  "duplicateCases": 0,
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4005,
+  "sourceDrift": 0,
+  "ownerBinaryProvenance": "Post-run SHA256 captured by subsequent unchanged-source Core catalog; executable lastWriteUtc precedes owner4 terminal. No pre-owner4 binary hash was captured.",
+  "ownerBinary": {
+    "binary": "arcweft-core",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_core-0c9015e7d341051b.exe",
+    "sha256": "af919d111aa4d8881284b0dd71f63bfd31841ddef4d5f751d900f7989b229e01",
+    "lastWriteUtc": "2026-10-31T01:23:25.9777763Z"
+  },
+  "remainingBinaryBeforeAfterDrift": 0,
+  "recordedAt": "2026-10-31T01:34:36.8102482Z"
+}

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "c35fc69a52db5709b98c0b135d6df559acd24af9",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-player-web",
+    "--target",
+    "wasm32-unknown-unknown",
+    "--locked"
+  ],
+  "exitCode": 0,
+  "sourceInputs": 4005,
+  "sourceDrift": 0,
+  "startedAt": "2026-10-31T01:34:12.8638322Z",
+  "finishedAt": "2026-10-31T01:35:14.7172630Z"
+}

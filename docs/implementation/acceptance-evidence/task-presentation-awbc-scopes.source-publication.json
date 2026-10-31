@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "commit": "c3b6ea79a7b16674ed0cbcd644b9e7bdd6c95030",
+  "parent": "c35fc69a52db5709b98c0b135d6df559acd24af9",
+  "tree": "cdb869726e98b362be87f632bd60221156574682",
+  "remote": "c3b6ea79a7b16674ed0cbcd644b9e7bdd6c95030",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber.rs",
+      "blob": "f6ac03e3165e9fd00f3f145efba809059dbf5bb7"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber/input.rs",
+      "blob": "5d1018ecba4a36741cd1e409c78d7d76394d406a"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber/scope.rs",
+      "blob": "b977feca6e8a03899b8700c581bfe6f72d5e78ec"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber/scope/tests.rs",
+      "blob": "53d2b44a47042ba799147cf5593570ab66f3ed65"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+      "blob": "7a9c247ad8b159e89d744561969ce81933ae2e83"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber/validation.rs",
+      "blob": "94deb2afa9f4fdf2555ea7957cc8a54fa36316e3"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+      "blob": "698ffe82aa82dc4503c23bac40ddf1e7acece3a6"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/verify.rs",
+      "blob": "41989e3424d3a20bbd43733cdb473ee3b33729ad"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/vm.rs",
+      "blob": "3eb694b542b8bcc8e6f6ea54ba9a6174a3286a6a"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine.rs",
+      "blob": "26b1f38bb56c5c59633e1033af80659bb8c94666"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/presentation.rs",
+      "blob": "a4cb93d2f44df7ad358287ce51f595a77d9a2878"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation.rs",
+      "blob": "53cc934933e4f4de2b5d10cc1e13f7857b438b0b"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources.rs",
+      "blob": "d41b61a128e62d9aaadaa5fbecffed7e7a4ba7e0"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/storage.rs",
+      "blob": "85ccb4352b3a9487309ede8aa46611f7aed277f9"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/tests.rs",
+      "blob": "4ccbb3a1a403e16cf7988f54ec13162b4f59f813"
+    },
+    {
+      "path": "crates/arcweft-core/src/value.rs",
+      "blob": "2e503e4b215999832c87c51c09e99a4595cdac8b"
+    },
+    {
+      "path": "crates/arcweft-core/src/value/awbc_save/retained_admission.rs",
+      "blob": "fc1156b21a6f4b90e3368cb49e29e9dc23a3e0a7"
+    },
+    {
+      "path": "crates/arcweft-core/src/value/env.rs",
+      "blob": "3cc751eee2a8ee6ac4ffd4a25f60974745d58653"
+    },
+    {
+      "path": "crates/arcweft-core/tests/direct_suspension.rs",
+      "blob": "da38ef565e1937ab64280d7204d99c497ce850cb"
+    },
+    {
+      "path": "docs/02-runtime/save-replay.md",
+      "blob": "ab52bf3dfe30c2c56a4bd71929f5c8f5edaf4be6"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "c4364ce8eeb67dd7d0e8482d5cb7e518002ecaab4e13e11ae7e59feee66a68b1",
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-31T01:35:38.9575809Z"
+}

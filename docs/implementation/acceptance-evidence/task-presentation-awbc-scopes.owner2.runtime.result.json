@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "command": [
+    "cargo",
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(awbc::fiber::tests::presentation::)",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "exitCode": 100,
+  "scope": "Same five owner tests after adding executable verifier admission to fixture",
+  "startedAt": "2026-10-31T01:19:29.2864380Z",
+  "finishedAt": "2026-10-31T01:19:57.8177525Z"
+}

@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "base": "c35fc69a52db5709b98c0b135d6df559acd24af9",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked",
+    "-E",
+    "not(test(awbc::fiber::tests::presentation::))",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "exitCode": 0,
+  "startedAt": "2026-10-31T01:26:55.1308105Z",
+  "finishedAt": "2026-10-31T01:28:27.5033837Z"
+}

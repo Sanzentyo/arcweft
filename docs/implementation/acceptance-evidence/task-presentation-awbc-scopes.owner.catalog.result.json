@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "command": [
+    "cargo",
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(awbc::fiber::tests::presentation::)",
+    "--message-format",
+    "json"
+  ],
+  "exitCode": 0,
+  "startedAt": "2026-10-31T01:15:19.9067870Z",
+  "finishedAt": "2026-10-31T01:17:48.0294757Z"
+}

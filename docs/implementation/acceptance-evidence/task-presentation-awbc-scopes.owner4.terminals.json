@@ -1,0 +1,27 @@
+[
+  {
+    "status": "PASS",
+    "binary": "arcweft-core",
+    "test": "awbc::fiber::tests::presentation::live_and_inert_scope_headers_share_one_sticky_custody_contour"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-core",
+    "test": "awbc::fiber::tests::presentation::awbc_scope_grants_follow_actual_enter_exit_and_reentry_without_aliasing"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-core",
+    "test": "awbc::fiber::tests::presentation::awbc_scope_capacity_and_missing_frame_rejection_preserve_issuance_and_values"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-core",
+    "test": "awbc::fiber::tests::presentation::awbc_cancel_without_the_original_presentation_bank_is_atomic"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-core",
+    "test": "awbc::fiber::tests::presentation::awbc_scope_wire_requires_custody_and_rejects_exchanged_or_forged_headers"
+  }
+]
