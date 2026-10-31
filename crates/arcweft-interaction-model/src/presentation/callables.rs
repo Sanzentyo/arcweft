@@ -252,14 +252,16 @@ pub enum PresentationHandleMethodId {
 }
 
 impl PresentationHandleMethodId {
-    pub fn resolve(resource: PresentationResourceKind, method: &str) -> Option<Self> {
+    /// Universal handle methods also apply before a generic item is closed.
+    /// `pop` requires the exact Overlay resource rather than an unknown family.
+    pub fn resolve(resource: Option<PresentationResourceKind>, method: &str) -> Option<Self> {
         match method {
             "show" => Some(Self::Show),
             "hide" => Some(Self::Hide),
             "unmount" => Some(Self::Unmount),
             "release" => Some(Self::Release),
             "destroy" => Some(Self::Destroy),
-            "pop" if resource == PresentationResourceKind::Overlay => Some(Self::OverlayPop),
+            "pop" if resource == Some(PresentationResourceKind::Overlay) => Some(Self::OverlayPop),
             _ => None,
         }
     }

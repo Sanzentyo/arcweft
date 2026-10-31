@@ -111,6 +111,9 @@ mod higher_order_effects;
 mod local_use;
 #[path = "tests/match_coverage.rs"]
 mod match_coverage;
+
+#[path = "tests/presentation.rs"]
+mod presentation;
 #[path = "tests/project_callable_source.rs"]
 mod project_callable_source;
 #[path = "tests/project_specialization.rs"]

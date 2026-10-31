@@ -442,8 +442,13 @@ fn resolve_selected_call(
 
     check_query_step(request)?;
     if let TypeKind::Handle { item, .. } = receiver_type
-        && let TypeKind::PresentationResource(resource) = item.as_ref()
-        && let Some(id) = PresentationHandleMethodId::resolve(*resource, method.as_str())
+        && let Some(id) = PresentationHandleMethodId::resolve(
+            match item.as_ref() {
+                TypeKind::PresentationResource(resource) => Some(*resource),
+                _ => None,
+            },
+            method.as_str(),
+        )
     {
         candidates.push(prepare_language_method(
             request,
