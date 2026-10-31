@@ -1,0 +1,730 @@
+diff --git a/crates/arcweft-core/src/awbc/fiber/scope.rs b/crates/arcweft-core/src/awbc/fiber/scope.rs
+index f46f2c4af3421bdc2bee6b23e86598c9639e1fb4..fd8d593eaba2303f3c815903c4f6d9d4cfe12bce 100644
+--- a/crates/arcweft-core/src/awbc/fiber/scope.rs
++++ b/crates/arcweft-core/src/awbc/fiber/scope.rs
+@@ -7,6 +7,9 @@ use super::{
+     FiberDeferredRelease, FiberStateError, FiberTrap, RuntimeProgramOwner,
+ };
+ use crate::entry::schema::value_encoding::ValueResourceAdmission;
++use crate::presentation::resources::{
++    PresentationScopeExit, PresentationScopeRef, PresentationScopeTarget,
++};
+ use crate::program_types::RuntimeProgramValueType;
+ use crate::runtime_id::{RuntimeDeferRegistrationId, RuntimeDeferSiteId};
+ use crate::value::{AwbcRuntimeValueSnapshot, RuntimeValue, RuntimeValueView};
+@@ -81,6 +84,75 @@ impl super::FiberFrame {
+ }
+ 
+ impl super::FiberState {
++    pub(crate) fn presentation_unwind_scopes(
++        &self,
++    ) -> Result<
++        Vec<PresentationScopeExit<PresentationScopeRef<'_>>>,
++        crate::presentation::RuntimePresentationError,
++    > {
++        let execution = crate::runtime_id::ExecutionInstanceId::from_allocated(self.instance.get());
++        let fiber =
++            crate::runtime_id::RuntimePersistentFiberId::from_allocated(self.instance.get().get());
++        let mut targets = Vec::new();
++        for frame in self.frames.iter().rev() {
++            for (scope, binding) in frame
++                .scopes
++                .iter()
++                .rev()
++                .map(|scope| (Some(scope.id), scope.presentation_scope.as_ref()))
++                .chain(std::iter::once((
++                    None,
++                    frame.root_presentation_scope.as_ref(),
++                )))
++            {
++                if let Some(binding) = binding {
++                    if binding.bank() != self.presentation_bank {
++                        return Err(crate::presentation::RuntimePresentationError::Owner);
++                    }
++                    targets.push(PresentationScopeExit {
++                        execution,
++                        fiber,
++                        scope: PresentationScopeRef::awbc(Some(binding), frame.instance, scope),
++                    });
++                }
++            }
++        }
++        Ok(targets)
++    }
++
++    pub(crate) fn presentation_unwind_scopes_mut(
++        &mut self,
++    ) -> Result<
++        Vec<PresentationScopeExit<PresentationScopeTarget<'_>>>,
++        crate::presentation::RuntimePresentationError,
++    > {
++        let execution = crate::runtime_id::ExecutionInstanceId::from_allocated(self.instance.get());
++        let fiber =
++            crate::runtime_id::RuntimePersistentFiberId::from_allocated(self.instance.get().get());
++        let mut targets = Vec::new();
++        for frame in self.frames.iter_mut().rev() {
++            for (scope, binding) in frame
++                .scopes
++                .iter_mut()
++                .rev()
++                .map(|scope| (Some(scope.id), &mut scope.presentation_scope))
++                .chain(std::iter::once((None, &mut frame.root_presentation_scope)))
++            {
++                if let Some(grant) = binding.as_ref() {
++                    if grant.bank() != self.presentation_bank {
++                        return Err(crate::presentation::RuntimePresentationError::Owner);
++                    }
++                    targets.push(PresentationScopeExit {
++                        execution,
++                        fiber,
++                        scope: PresentationScopeTarget::awbc(binding, frame.instance, scope),
++                    });
++                }
++            }
++        }
++        Ok(targets)
++    }
++
+     /// Moves the current real scope's bodies into its execution owner's queue.
+     /// A VM may borrow the owner, but cannot create a replacement ledger.
+     pub(crate) fn retire_presentation_scope<V>(
+diff --git a/crates/arcweft-core/src/awbc/product_step/line.rs b/crates/arcweft-core/src/awbc/product_step/line.rs
+index ca9b8ac565e47031833bdf8120b1f04242f34104..c391b5cdd040f669340f8cb9758fa75c80ffc3ef 100644
+--- a/crates/arcweft-core/src/awbc/product_step/line.rs
++++ b/crates/arcweft-core/src/awbc/product_step/line.rs
+@@ -819,6 +819,27 @@ impl super::AwbcProductStepExecutor {
+         for child in &batch.child_fibers {
+             child.fiber.validate_cleanup_inputs(&self.program)?;
+         }
++        let order = cancellations
++            .iter()
++            .enumerate()
++            .map(|(index, cancel)| (cancel.instance, index))
++            .collect::<BTreeMap<_, _>>();
++        let mut cancelled = self
++            .child_fibers
++            .iter()
++            .filter(|child| {
++                executor_actions.get(&child.fiber.instance)
++                    == Some(&ProductExistingChildAction::CancelAndJoin)
++            })
++            .chain(batch.child_fibers.iter().filter(|child| {
++                batch_actions.get(&child.fiber.instance)
++                    == Some(&ProductExistingChildAction::CancelAndJoin)
++            }))
++            .map(|child| &child.fiber)
++            .collect::<Vec<_>>();
++        cancelled.sort_by_key(|fiber| order.get(&fiber.instance).copied().unwrap_or(order.len()));
++        self.program
++            .preflight_fiber_cancellations(self.presentation.as_ref(), cancelled)?;
+         Ok(PreparedLineTaskCommands {
+             line_task,
+             scheduled,
+@@ -836,6 +857,33 @@ impl super::AwbcProductStepExecutor {
+         batch: &mut super::ProductLineTaskExecutionBatch,
+         mut prepared: PreparedLineTaskCommands,
+     ) {
++        // The same real contour is checked again under exclusive borrows, before
++        // a command is recorded, a child is removed, or any grant is cleared.
++        let order = prepared
++            .cancellations
++            .iter()
++            .enumerate()
++            .map(|(index, cancel)| (cancel.instance, index))
++            .collect::<BTreeMap<_, _>>();
++        let mut cancelled = self
++            .child_fibers
++            .iter_mut()
++            .filter(|child| {
++                prepared.executor_actions.get(&child.fiber.instance)
++                    == Some(&ProductExistingChildAction::CancelAndJoin)
++            })
++            .chain(batch.child_fibers.iter_mut().filter(|child| {
++                prepared.batch_actions.get(&child.fiber.instance)
++                    == Some(&ProductExistingChildAction::CancelAndJoin)
++            }))
++            .map(|child| &mut child.fiber)
++            .collect::<Vec<_>>();
++        // Stable ordering also preserves the later commit queue's order for
++        // actions already staged before this command sequence.
++        cancelled.sort_by_key(|fiber| order.get(&fiber.instance).copied().unwrap_or(order.len()));
++        self.program
++            .retire_cancelled_fiber_scopes(&mut self.presentation, cancelled)
++            .expect("final command preflight retains the complete cancellation contour");
+         batch.line_task_activations.clear();
+         transaction
+             .line_mut()
+@@ -873,7 +921,8 @@ impl super::AwbcProductStepExecutor {
+                     .admit_scheduled_child_bindings_prepared(proof, bindings);
+             }
+             batch.observations.extend(
+-                crate::awbc::vm::cancel_fiber(&self.program, &mut child.fiber)
++                self.program
++                    .cancel_fiber(&mut child.fiber, &mut self.presentation)
+                     .expect("prepared line cancellation retains its admitted cleanup inventory")
+                     .observations,
+             );
+@@ -1042,7 +1091,8 @@ impl super::AwbcProductStepExecutor {
+                         .remove(index)
+                         .expect("preflighted child action retains its exact instance");
+                     batch.observations.extend(
+-                        crate::awbc::vm::cancel_fiber(&self.program, &mut child.fiber)
++                        self.program
++                            .cancel_fiber(&mut child.fiber, &mut self.presentation)
+                             .expect(
+                                 "prepared line cancellation retains its admitted cleanup inventory",
+                             )
+diff --git a/crates/arcweft-core/src/awbc/product_step/presentation.rs b/crates/arcweft-core/src/awbc/product_step/presentation.rs
+index a0b0f9aef00602d843e65900c6bf3b5502bd9862..573538e38a84ed51949061eceff67cf8a4971594 100644
+--- a/crates/arcweft-core/src/awbc/product_step/presentation.rs
++++ b/crates/arcweft-core/src/awbc/product_step/presentation.rs
+@@ -5,9 +5,84 @@ use super::snapshot::{
+     AwbcProductExecutorSnapshot, AwbcProductLineTaskWorkInstanceSnapshot,
+ };
+ use super::*;
+-use crate::presentation::resources::{PresentationExecutionAdmission, PresentationExecutionRole};
++use crate::presentation::resources::{
++    PresentationBanks, PresentationBody, PresentationExecutionAdmission, PresentationExecutionRole,
++};
+ use crate::value::{AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission};
+ 
++impl AwbcProductProgram {
++    pub(super) fn preflight_fiber_cancellations<'fiber>(
++        &self,
++        presentation: Option<&PresentationBanks<PresentationBody<RuntimePayload>>>,
++        fibers: impl IntoIterator<Item = &'fiber FiberState>,
++    ) -> Result<(), crate::awbc::fiber::FiberStateError> {
++        let mut targets = Vec::new();
++        for fiber in fibers {
++            if matches!(fiber.status, FiberStatus::Running | FiberStatus::Suspended) {
++                fiber.validate_cleanup_inputs(self)?;
++                targets.extend(fiber.presentation_unwind_scopes().map_err(|error| {
++                    crate::awbc::fiber::FiberStateError::Snapshot(error.into())
++                })?);
++            }
++        }
++        let Some(banks) = presentation else {
++            return if targets.is_empty() {
++                Ok(())
++            } else {
++                Err(crate::awbc::fiber::FiberStateError::Snapshot(
++                    crate::presentation::RuntimePresentationError::MissingLedger.into(),
++                ))
++            };
++        };
++        banks
++            .preflight_scope_contour(
++                &crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
++                targets,
++            )
++            .map_err(|error| crate::awbc::fiber::FiberStateError::Snapshot(error.into()))
++    }
++
++    pub(super) fn retire_cancelled_fiber_scopes<'fiber>(
++        &self,
++        presentation: &mut Option<PresentationBanks<PresentationBody<RuntimePayload>>>,
++        fibers: impl IntoIterator<Item = &'fiber mut FiberState>,
++    ) -> Result<(), crate::awbc::fiber::FiberStateError> {
++        let mut targets = Vec::new();
++        for fiber in fibers {
++            if matches!(fiber.status, FiberStatus::Running | FiberStatus::Suspended) {
++                fiber.validate_cleanup_inputs(self)?;
++                targets.extend(fiber.presentation_unwind_scopes_mut().map_err(|error| {
++                    crate::awbc::fiber::FiberStateError::Snapshot(error.into())
++                })?);
++            }
++        }
++        let Some(banks) = presentation else {
++            return if targets.is_empty() {
++                Ok(())
++            } else {
++                Err(crate::awbc::fiber::FiberStateError::Snapshot(
++                    crate::presentation::RuntimePresentationError::MissingLedger.into(),
++                ))
++            };
++        };
++        banks
++            .retire_scope_contour(
++                &crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
++                targets,
++            )
++            .map_err(|error| crate::awbc::fiber::FiberStateError::Snapshot(error.into()))
++    }
++
++    pub(super) fn cancel_fiber(
++        &self,
++        fiber: &mut FiberState,
++        presentation: &mut Option<PresentationBanks<PresentationBody<RuntimePayload>>>,
++    ) -> Result<crate::awbc::vm::VmStepOutput, crate::awbc::vm::VmError> {
++        self.retire_cancelled_fiber_scopes(presentation, std::iter::once(&mut *fiber))?;
++        crate::awbc::vm::cancel_fiber(self, fiber)
++    }
++}
++
+ impl ProductChildFiberOwner {
+     fn presentation_role(&self) -> PresentationExecutionRole {
+         match self {
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs b/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
+index 6dfdb40eb1253defc3a91baef3e5dfd8cb2bec2f..4a71ab3b6588e823f7f906a27909a2143dd95064 100644
+--- a/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
++++ b/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
+@@ -5,6 +5,311 @@ use crate::presentation::resources::{
+ use crate::runtime_id::{RuntimePresentationBankId, RuntimePresentationHandleToken};
+ use arcweft_interaction_model::presentation::PresentationResourceKind;
+ 
++mod cancellation {
++    use super::*;
++    use crate::awbc::schema::*;
++    use crate::line_task::{
++        LineTaskActivation, LineTaskCommand, LineTaskLiveState, LineTaskWorkTag,
++    };
++    use crate::presentation::RuntimePresentationError;
++    use crate::runtime_id::DialogueActivationId;
++    use crate::step::RuntimeStepOutput;
++    use std::collections::BTreeSet;
++
++    fn fixture(
++        queued: bool,
++    ) -> (
++        AwbcProductStepExecutor,
++        DialogueActivationId,
++        Vec<LineTaskWorkTag>,
++        Vec<RuntimePresentationHandleToken>,
++    ) {
++        let mut program = mark_selector_program(
++            arcweft_interaction_model::input::InputActionId::new("presentation.cancel").unwrap(),
++        );
++        program.runtime_types.push(AwbcRuntimeType::new(
++            crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest(),
++            AwbcRuntimeTypeShape::Bool,
++        ));
++        program.line_task_nodes = vec![
++            AwbcLineTaskNode::Parallel {
++                policy: AwbcParallelPolicy::JoinAll,
++                children: vec![AwbcLineTaskNodeId(1), AwbcLineTaskNodeId(3)],
++            },
++            AwbcLineTaskNode::Child {
++                trigger: AwbcLineTaskTrigger::Immediate,
++                join: AwbcChildJoinPolicy::Join,
++                cancel: AwbcChildCancelPolicy::CancelAndJoin,
++                scope: AwbcLineTaskNodeId(2),
++            },
++            AwbcLineTaskNode::Action(AwbcFunctionId(2)),
++            AwbcLineTaskNode::Child {
++                trigger: AwbcLineTaskTrigger::Immediate,
++                join: AwbcChildJoinPolicy::Join,
++                cancel: AwbcChildCancelPolicy::CancelAndJoin,
++                scope: AwbcLineTaskNodeId(4),
++            },
++            AwbcLineTaskNode::Action(AwbcFunctionId(2)),
++        ];
++        program.line_task_groups[0].nodes = AwbcTableRange::new(0, 5);
++        let mut executor = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 64).unwrap();
++        let activation = issue_test_dialogue(&mut executor, AwbcContentUnitId(0));
++        let view = executor.line_task_view(AwbcContentUnitId(0)).unwrap();
++        let mut live = LineTaskLiveState::new(&view, activation);
++        let run = crate::line_task::progress_live_line_task_group(
++            &view,
++            Default::default(),
++            crate::line_task::LineTaskReadyEvents::new(&BTreeSet::new()),
++            &mut live,
++        )
++        .unwrap();
++        assert_eq!(run.commands.len(), 2);
++        executor
++            .dialogues
++            .begin(ActiveDialogue {
++                activation,
++                content: AwbcContentUnitId(0),
++                target: fixture_dialogue_target(),
++                target_type: AwbcTypeId(2),
++                line: crate::plan::RuntimeLineId::from_runtime_line_value(
++                    "line.presentation.cancel",
++                )
++                .unwrap(),
++                captures: Box::new([]),
++                task_inputs: Box::new([]),
++                values: Box::new([]),
++                effect_callbacks: BTreeMap::new(),
++                voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
++                result: AwbcDialogueResultTarget {
++                    ty: AwbcTypeId(1),
++                    pattern: AwbcPatternId(0),
++                    destination: AwbcRegisterId(0),
++                },
++                phase: ProductDialoguePhase::Reducing { line_task: live },
++                elapsed_nanos: 0,
++                pending_content_events: vec![],
++                pending_advance: false,
++                pending_line_outcomes: vec![],
++                pending_activation_host_call: None,
++            })
++            .unwrap();
++        let mut transaction = executor.dialogues.begin_transaction(&activation).unwrap();
++        transaction
++            .line_mut()
++            .commit_result(AwbcTypeId(1), RuntimeValue::String("base-result".into()))
++            .unwrap();
++        commit_test_dialogue_transaction(&mut executor, transaction);
++        let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
++        let mut banks = PresentationBanks::new(
++            owner.clone(),
++            executor.artifact_fingerprint,
++            PresentationLedgerLimits {
++                handles: 3,
++                scopes: 8,
++            },
++        );
++        let body = |value| PresentationBody {
++            expected: crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest(),
++            binding: None,
++            value: RuntimePayload(RuntimeValue::Bool(value)),
++        };
++        let site = || PresentationRegistrationSite::Independent(PresentationResourceKind::Image);
++        if queued {
++            let ledger = banks.ledger_mut(RuntimePresentationBankId::Root).unwrap();
++            let scope = executor
++                .fiber
++                .bind_presentation_scope(&owner, ledger)
++                .unwrap();
++            for value in [false, true] {
++                ledger.register(&owner, scope, site(), body(value)).unwrap();
++            }
++            executor
++                .fiber
++                .retire_presentation_scope(&owner, &mut banks)
++                .unwrap();
++        }
++        let ledger = banks.ledger_mut(RuntimePresentationBankId::Root).unwrap();
++        let root = executor
++            .fiber
++            .bind_presentation_scope(&owner, ledger)
++            .unwrap();
++        ledger.register(&owner, root, site(), body(true)).unwrap();
++        let mut tags = Vec::new();
++        let mut tokens = Vec::new();
++        for command in run.commands {
++            let LineTaskCommand::Run { tag, policy } = command else {
++                unreachable!()
++            };
++            let mut fiber =
++                create_test_dialogue_fiber(&mut executor, activation, AwbcFunctionId(2));
++            let ledger = banks
++                .ledger_mut(RuntimePresentationBankId::Dialogue { activation })
++                .unwrap();
++            let scope = fiber.bind_presentation_scope(&owner, ledger).unwrap();
++            tokens.push(
++                ledger
++                    .register(&owner, scope, site(), body(false))
++                    .unwrap()
++                    .0,
++            );
++            tags.push(tag.clone());
++            executor.child_fibers.push_back(ProductChildFiber {
++                owner: ProductChildFiberOwner::LineTask {
++                    content: AwbcContentUnitId(0),
++                    tag,
++                    policy,
++                    phase: ProductLineTaskFiberPhase::Active,
++                },
++                fiber,
++                runtime_generation: executor.runtime_generation,
++                pending_host_call: None,
++            });
++        }
++        executor.presentation = Some(banks);
++        executor.snapshot().unwrap();
++        (executor, activation, tags, tokens)
++    }
++
++    fn commands(tags: &[LineTaskWorkTag]) -> LineTaskActivation {
++        LineTaskActivation {
++            commands: tags
++                .iter()
++                .cloned()
++                .map(|tag| LineTaskCommand::Cancel { tag })
++                .collect(),
++            scheduled_completions: Vec::new(),
++        }
++    }
++
++    fn cancel(
++        executor: &mut AwbcProductStepExecutor,
++        activation: DialogueActivationId,
++        tags: &[LineTaskWorkTag],
++    ) {
++        let mut transaction = executor.dialogues.begin_transaction(&activation).unwrap();
++        let mut batch = executor
++            .prepare_line_task_commands(&mut transaction, commands(tags))
++            .unwrap();
++        let prepared = executor
++            .preflight_line_task_commands(&mut transaction, &batch)
++            .unwrap();
++        let proof = executor.dialogues.inspect_commit(&transaction).unwrap();
++        executor.realize_line_task_commands(&mut transaction, &mut batch, prepared);
++        executor.dialogues.commit_prepared(transaction, proof);
++        let mut output = RuntimeStepOutput::default();
++        executor.commit_line_task_commands(batch, &mut output);
++        assert!(output.diagnostics.is_empty());
++    }
++
++    #[test]
++    fn line_cancellation_retires_all_actual_child_scopes_before_removal_and_public_save_roundtrips()
++    {
++        let (mut executor, activation, mut tags, mut tokens) = fixture(false);
++        tags.reverse();
++        tokens.reverse();
++        cancel(&mut executor, activation, &tags);
++        assert!(executor.child_fibers.is_empty());
++        assert!(
++            executor
++                .fiber
++                .active_frame()
++                .unwrap()
++                .presentation_scope_binding()
++                .is_some()
++        );
++        let retired = executor.presentation.as_ref().unwrap().retirements();
++        assert_eq!(
++            retired
++                .iter()
++                .map(|entry| entry.token.clone())
++                .collect::<Vec<_>>(),
++            tokens
++        );
++        let after = executor.snapshot().unwrap();
++        let save = AwbcProductExecutorSaveSnapshot::from_live(&after, &executor.program).unwrap();
++        let wire = serde_json::to_vec(&save).unwrap();
++        executor = executor
++            .restore_inert_snapshot_owned(serde_json::from_slice(&wire).unwrap())
++            .unwrap();
++        assert_eq!(executor.snapshot().unwrap(), after);
++    }
++
++    #[test]
++    fn later_child_bank_forgery_rejects_before_any_cancellation_or_grant_move() {
++        let (mut executor, activation, tags, _) = fixture(false);
++        let before = executor.snapshot().unwrap();
++        executor.child_fibers[1].fiber.presentation_bank = RuntimePresentationBankId::Root;
++        let mut transaction = executor.dialogues.begin_transaction(&activation).unwrap();
++        let error = executor
++            .prepare_line_task_commands(&mut transaction, commands(&tags))
++            .err()
++            .unwrap();
++        assert!(
++            matches!(
++                error,
++                ProductStepError::Fiber(crate::awbc::fiber::FiberStateError::Snapshot(
++                    crate::value::AwbcRuntimeValueSnapshotError::Presentation(
++                        RuntimePresentationError::Owner
++                    )
++                ))
++            ),
++            "{error:?}"
++        );
++        executor.dialogues.restore_transaction(transaction).unwrap();
++        executor.child_fibers[1].fiber.presentation_bank =
++            RuntimePresentationBankId::Dialogue { activation };
++        assert_eq!(executor.snapshot().unwrap(), before);
++        cancel(&mut executor, activation, &tags);
++        assert!(executor.child_fibers.is_empty());
++    }
++
++    #[test]
++    fn combined_child_retirement_capacity_rejects_without_partial_cancel_and_retry_preserves_order()
++    {
++        let (mut executor, activation, tags, tokens) = fixture(true);
++        let before = executor.snapshot().unwrap();
++        let mut transaction = executor.dialogues.begin_transaction(&activation).unwrap();
++        let error = executor
++            .prepare_line_task_commands(&mut transaction, commands(&tags))
++            .err()
++            .unwrap();
++        assert!(
++            matches!(
++                error,
++                ProductStepError::Fiber(crate::awbc::fiber::FiberStateError::Snapshot(
++                    crate::value::AwbcRuntimeValueSnapshotError::Presentation(
++                        RuntimePresentationError::RetirementCapacity
++                    )
++                ))
++            ),
++            "{error:?}"
++        );
++        executor.dialogues.restore_transaction(transaction).unwrap();
++        assert_eq!(executor.snapshot().unwrap(), before);
++        assert_eq!(executor.child_fibers.len(), 2);
++        executor
++            .presentation
++            .as_mut()
++            .unwrap()
++            .retirements_mut()
++            .clear();
++        cancel(&mut executor, activation, &tags);
++        assert!(executor.child_fibers.is_empty());
++        assert_eq!(
++            executor
++                .presentation
++                .as_ref()
++                .unwrap()
++                .retirements()
++                .iter()
++                .map(|entry| entry.token.clone())
++                .collect::<Vec<_>>(),
++            tokens
++        );
++        executor.snapshot().unwrap();
++    }
++}
++
+ #[test]
+ fn vm_terminal_return_preserves_the_affine_result_until_scope_custody_is_available() {
+     use crate::program_invocation::RuntimeProgramInput;
+diff --git a/crates/arcweft-core/src/presentation/resources.rs b/crates/arcweft-core/src/presentation/resources.rs
+index d2652351fee09f34d86645c7eb921643fff6fa79..638c9a1aa9e3c62ac662c2ef467f033f5921355d 100644
+--- a/crates/arcweft-core/src/presentation/resources.rs
++++ b/crates/arcweft-core/src/presentation/resources.rs
+@@ -204,7 +204,39 @@ pub(crate) struct PresentationScopeTarget<'scope> {
+     anchor: PresentationScopeAnchor,
+ }
+ 
++/// Borrowed grant at its actual storage anchor; it cannot issue a live grant.
++pub(crate) struct PresentationScopeRef<'scope> {
++    binding: Option<&'scope RuntimePresentationScopeBinding>,
++    anchor: PresentationScopeAnchor,
++}
++
++impl<'scope> PresentationScopeRef<'scope> {
++    pub(crate) fn awbc(
++        binding: Option<&'scope RuntimePresentationScopeBinding>,
++        frame: crate::runtime_id::RuntimeFrameInstanceId,
++        scope: Option<crate::awbc::schema::AwbcScopeId>,
++    ) -> Self {
++        Self {
++            binding,
++            anchor: PresentationScopeAnchor::Awbc { frame, scope },
++        }
++    }
++}
++
++/// One real execution's scope in a possibly multi-fiber retirement contour.
++pub(crate) struct PresentationScopeExit<S> {
++    pub(crate) execution: ExecutionInstanceId,
++    pub(crate) fiber: RuntimePersistentFiberId,
++    pub(crate) scope: S,
++}
++
+ impl<'scope> PresentationScopeTarget<'scope> {
++    pub(crate) fn as_ref(&self) -> PresentationScopeRef<'_> {
++        PresentationScopeRef {
++            binding: self.binding(),
++            anchor: self.anchor,
++        }
++    }
+     pub(crate) const fn native(
+         binding: &'scope mut Option<RuntimePresentationScopeBinding>,
+     ) -> Self {
+@@ -530,7 +562,7 @@ impl<V> PresentationLedger<V> {
+         fiber: RuntimePersistentFiberId,
+         mut target: PresentationScopeTarget<'_>,
+     ) -> Result<Vec<PresentationRetirement<V>>, RuntimePresentationError> {
+-        self.validate_bound_scope(program, execution, fiber, &target)?;
++        self.validate_bound_scope(program, execution, fiber, target.as_ref())?;
+         let Some(binding) = target.binding() else {
+             return Ok(Vec::new());
+         };
+@@ -547,10 +579,10 @@ impl<V> PresentationLedger<V> {
+         program: &RuntimeProgramOwner,
+         execution: ExecutionInstanceId,
+         fiber: RuntimePersistentFiberId,
+-        target: &PresentationScopeTarget<'_>,
++        target: PresentationScopeRef<'_>,
+     ) -> Result<(), RuntimePresentationError> {
+         self.validate_program(program)?;
+-        let Some(binding) = target.binding() else {
++        let Some(binding) = target.binding else {
+             return Ok(());
+         };
+         if !binding.program.same_program(program)
+diff --git a/crates/arcweft-core/src/presentation/resources/banks.rs b/crates/arcweft-core/src/presentation/resources/banks.rs
+index ac2015ed511258777fdc08ffc25c8a1f0810b551..c8c4c9fa795a3cde11ea8bb65445b78b5cfca4f3 100644
+--- a/crates/arcweft-core/src/presentation/resources/banks.rs
++++ b/crates/arcweft-core/src/presentation/resources/banks.rs
+@@ -113,6 +113,24 @@ impl<V> PresentationBanks<V> {
+         execution: ExecutionInstanceId,
+         fiber: RuntimePersistentFiberId,
+         targets: Vec<PresentationScopeTarget<'_>>,
++    ) -> Result<(), RuntimePresentationError> {
++        self.retire_scope_contour(
++            program,
++            targets
++                .into_iter()
++                .map(|scope| PresentationScopeExit {
++                    execution,
++                    fiber,
++                    scope,
++                })
++                .collect(),
++        )
++    }
++
++    pub(crate) fn preflight_scope_contour<'scope>(
++        &self,
++        program: &RuntimeProgramOwner,
++        targets: impl IntoIterator<Item = PresentationScopeExit<PresentationScopeRef<'scope>>>,
+     ) -> Result<(), RuntimePresentationError> {
+         let root = self
+             .ledgers
+@@ -121,15 +139,15 @@ impl<V> PresentationBanks<V> {
+         root.validate_program(program)?;
+         let mut count = self.retirements.len();
+         let mut seen = std::collections::BTreeSet::new();
+-        for target in &targets {
+-            let Some(binding) = target.binding() else {
++        for target in targets {
++            let Some(binding) = target.scope.binding else {
+                 continue;
+             };
+             let ledger = self
+                 .ledgers
+                 .get(&binding.owner.bank)
+                 .ok_or(RuntimePresentationError::Owner)?;
+-            ledger.validate_bound_scope(program, execution, fiber, target)?;
++            ledger.validate_bound_scope(program, target.execution, target.fiber, target.scope)?;
+             if ledger.limits != root.limits || !seen.insert(binding.owner) {
+                 return Err(RuntimePresentationError::InvalidState);
+             }
+@@ -140,15 +158,31 @@ impl<V> PresentationBanks<V> {
+                 return Err(RuntimePresentationError::RetirementCapacity);
+             }
+         }
++        Ok(())
++    }
++
++    pub(crate) fn retire_scope_contour(
++        &mut self,
++        program: &RuntimeProgramOwner,
++        targets: Vec<PresentationScopeExit<PresentationScopeTarget<'_>>>,
++    ) -> Result<(), RuntimePresentationError> {
++        self.preflight_scope_contour(
++            program,
++            targets.iter().map(|target| PresentationScopeExit {
++                execution: target.execution,
++                fiber: target.fiber,
++                scope: target.scope.as_ref(),
++            }),
++        )?;
+         for target in targets {
+-            let Some(binding) = target.binding() else {
++            let Some(binding) = target.scope.binding() else {
+                 continue;
+             };
+             self.retirements.extend(
+                 self.ledgers
+                     .get_mut(&binding.owner.bank)
+                     .expect("every issuing ledger was preflighted")
+-                    .exit_bound_scope(program, execution, fiber, target)
++                    .exit_bound_scope(program, target.execution, target.fiber, target.scope)
+                     .expect("exclusive contour and ledger borrows retain the preflight"),
+             );
+         }

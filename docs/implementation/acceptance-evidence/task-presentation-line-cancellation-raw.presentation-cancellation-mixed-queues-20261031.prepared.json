@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "base": "0af2c2734344be23d2b7b2e184fa4c8adeb838a6",
+  "tree": "f6c7db005eeeded1778ab085d21744d1905b8c06",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "blob": "5c935d64f6716b92e41f7ed70833b4b049598141"
+    }
+  ],
+  "other": [
+    {
+      "path": "docs/02-runtime/save-replay.md",
+      "sha256": "52677387e7d4d618927b20401f6ee48721c9de92173f39929378bd2abc252c75"
+    }
+  ],
+  "held": [
+    "crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs",
+    "crates/arcweft-cli/tests/check/agent_script_debug.rs",
+    "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+    "crates/arcweft-cli/tests/check/profile_entry_selection.rs",
+    "crates/arcweft-runtime-host/src/native_task.rs",
+    "samples/agent-script/cli-read-resource-metadata-smoke.awfagent",
+    "samples/agent-script/cli-read-resource-smoke.awfagent",
+    "samples/agent-script/cli-read-resource-value-smoke.awfagent",
+    "samples/agent-script/native-choice-dispatch.arcw",
+    "samples/agent-script/native-project-graph-relations.arcw",
+    "samples/agent-script/native-visual-regression.arcw",
+    "samples/image-animation.arcw",
+    "samples/rich-text-full-grammar.arcw",
+    "samples/rich-text-windows-fonts.arcw"
+  ],
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "patchSha256": "03e3f50ad7ebe06ed3ebb464ec3b07df2b761261b8aaba4aff307045cc6867b9",
+  "preparedAt": "2026-10-31T11:10:19.2961593Z"
+}

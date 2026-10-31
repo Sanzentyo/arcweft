@@ -1,0 +1,6 @@
+crates/arcweft-core/src/presentation/resources.rs
+crates/arcweft-core/src/presentation/resources/banks.rs
+crates/arcweft-core/src/awbc/fiber/scope.rs
+crates/arcweft-core/src/awbc/product_step/presentation.rs
+crates/arcweft-core/src/awbc/product_step/line.rs
+crates/arcweft-core/src/awbc/product_step/tests/presentation.rs

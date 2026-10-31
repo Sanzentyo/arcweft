@@ -303,6 +303,13 @@ body を同じ bank 集合の回収待ちへ移し、grant を解除する。AWB
 `ExitScope` は、実行 owner から借用した bank を使い、scope を pop する前にこの回収を行う。
 回収待ちへの移動も、元の実行 checkpoint と公開 save の保持 graph に含める。
 
+line-task の `CancelAndJoin` は、command batch の準備で全対象子の実際の frame／scope と
+累積回収容量を検査する。commit では同じ contour を排他的に借用し、command の記録や
+最初の子の取り出しより前に、一括して回収する。子の格納順が異なっても取消 command の
+順序を保ち、各子の中では callee／内側 scope から回収する。先行 batch から保持した
+既存 action は、その commit queue の順序を保つ。body は元の bank 集合に残り、回収待ちの
+保持値と token を公開 save／restore へ含める。
+
 AWBC fiberのversion 1保存grammarは実行bankを必須fieldとして持つ。Root入口はRoot、
 Dialogue入口・line・callbackは完全なactivationのbankを選び、Program子fiberと継続は
 生成元のbankを継承する。Productのmetadata admissionは、Root・子fiber・Dialogue内の

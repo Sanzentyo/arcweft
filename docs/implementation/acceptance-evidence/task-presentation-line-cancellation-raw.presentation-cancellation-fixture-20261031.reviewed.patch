@@ -1,0 +1,25 @@
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs b/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
+index 4a71ab3b6588e823f7f906a27909a2143dd95064..407bf8dbac7e47092eb4155f780d82458b9fb0cc 100644
+--- a/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
++++ b/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
+@@ -103,9 +103,17 @@ mod cancellation {
+         let mut banks = PresentationBanks::new(
+             owner.clone(),
+             executor.artifact_fingerprint,
+-            PresentationLedgerLimits {
+-                handles: 3,
+-                scopes: 8,
++            if queued {
++                PresentationLedgerLimits {
++                    handles: 3,
++                    scopes: 8,
++                }
++            } else {
++                // Public restore selects the Product context's trusted policy;
++                // wire input does not retain a private fixture's smaller policy.
++                PresentationLedgerLimits::for_schema(
++                    crate::entry::RuntimeSchemaLimits::engine_default(),
++                )
+             },
+         );
+         let body = |value| PresentationBody {

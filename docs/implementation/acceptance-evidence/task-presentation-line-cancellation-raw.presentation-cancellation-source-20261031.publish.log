@@ -1,0 +1,7 @@
+From https://github.com/Sanzentyo/arcweft
+ * branch                main       -> FETCH_HEAD
+[main 3e6bad2e2] feat(core): retire complete line cancellation contours before child removal
+ 6 files changed, 579 insertions(+), 11 deletions(-)
+To https://github.com/Sanzentyo/arcweft.git
+   f778b5597..3e6bad2e2  HEAD -> main
+{"commit":"3e6bad2e21e8fd7702b38cdbed4b3eb337f28aeb","parent":"f778b55972848fbd7661a49b89737d280a4bbc30","tree":"938422fa5390c1a00c4a4bd014da0ad5e180287f","paths":6,"blobDrift":0,"originalWip":14,"separatelyHeld":0,"patchSha256":"2fb8a00dc3482eb9bde5d425147f7c4a96681363c759d87b7c6374656b3703d6","indexEmpty":true}

@@ -1,0 +1,5 @@
+{
+  "command": "cargo nextest run -p arcweft-core --all-features --locked --lib -E test(presentation::cancellation) --no-tests fail --no-fail-fast --status-level all --final-status-level all",
+  "exitCode": 100,
+  "at": "2026-10-31T10:58:41.6247110Z"
+}

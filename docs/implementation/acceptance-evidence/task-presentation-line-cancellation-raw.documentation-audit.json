@@ -1,0 +1,21 @@
+{
+  "date": "2026-10-31",
+  "base": "914ffee30f9d965d8489bd2129b5821d32eac942",
+  "changed": [
+    "docs/02-runtime/save-replay.md",
+    "docs/implementation/convergence-evidence-history.md",
+    "docs/implementation/current-status.md"
+  ],
+  "checkedDocuments": 129,
+  "relativeLinks": 647,
+  "brokenLinks": [],
+  "unclosedFences": [],
+  "statusCommitIds": 48,
+  "unretainedIds": [],
+  "historicalRawChanges": [],
+  "historicalPrefixPreserved": true,
+  "heldFiles": 20,
+  "heldDrift": 0,
+  "partialCliOriginalWipProof": true,
+  "rustCargoRun": false
+}

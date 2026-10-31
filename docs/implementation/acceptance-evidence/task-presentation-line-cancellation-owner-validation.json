@@ -1,0 +1,1032 @@
+{
+  "version": 1,
+  "recordedAt": "2026-10-31T11:12:09.2091521Z",
+  "scope": "Actual multi-fiber presentation scope retirement for Product prepared line-task CancelAndJoin commands, before recording commands or removing any child.",
+  "inspectedMain": "914ffee30f9d965d8489bd2129b5821d32eac942",
+  "sourcePublications": [
+    {
+      "version": 1,
+      "commit": "3e6bad2e21e8fd7702b38cdbed4b3eb337f28aeb",
+      "parent": "f778b55972848fbd7661a49b89737d280a4bbc30",
+      "tree": "938422fa5390c1a00c4a4bd014da0ad5e180287f",
+      "remote": "3e6bad2e21e8fd7702b38cdbed4b3eb337f28aeb",
+      "paths": [
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber/scope.rs",
+          "blob": "fd8d593eaba2303f3c815903c4f6d9d4cfe12bce"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "blob": "c391b5cdd040f669340f8cb9758fa75c80ffc3ef"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+          "blob": "573538e38a84ed51949061eceff67cf8a4971594"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+          "blob": "4a71ab3b6588e823f7f906a27909a2143dd95064"
+        },
+        {
+          "path": "crates/arcweft-core/src/presentation/resources.rs",
+          "blob": "638c9a1aa9e3c62ac662c2ef467f033f5921355d"
+        },
+        {
+          "path": "crates/arcweft-core/src/presentation/resources/banks.rs",
+          "blob": "c8c4c9fa795a3cde11ea8bb65445b78b5cfca4f3"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "2fb8a00dc3482eb9bde5d425147f7c4a96681363c759d87b7c6374656b3703d6",
+      "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-10-31T11:00:26.9140198Z"
+    },
+    {
+      "version": 1,
+      "commit": "0af2c2734344be23d2b7b2e184fa4c8adeb838a6",
+      "parent": "3e6bad2e21e8fd7702b38cdbed4b3eb337f28aeb",
+      "tree": "10237084733bf4141461200e6751ea761487b8d2",
+      "remote": "0af2c2734344be23d2b7b2e184fa4c8adeb838a6",
+      "paths": [
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+          "blob": "407bf8dbac7e47092eb4155f780d82458b9fb0cc"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "5930f1ac50ac5a6eee3504e68cd39fa2f740fcf956cc4c593750bf481f594f47",
+      "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-10-31T11:04:02.0906474Z"
+    },
+    {
+      "version": 1,
+      "commit": "914ffee30f9d965d8489bd2129b5821d32eac942",
+      "parent": "0af2c2734344be23d2b7b2e184fa4c8adeb838a6",
+      "tree": "f6c7db005eeeded1778ab085d21744d1905b8c06",
+      "remote": "914ffee30f9d965d8489bd2129b5821d32eac942",
+      "paths": [
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+          "blob": "5c935d64f6716b92e41f7ed70833b4b049598141"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "03e3f50ad7ebe06ed3ebb464ec3b07df2b761261b8aaba4aff307045cc6867b9",
+      "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+      "separatelyHeld": [
+        {
+          "path": "docs/02-runtime/save-replay.md",
+          "sha256": "52677387e7d4d618927b20401f6ee48721c9de92173f39929378bd2abc252c75"
+        }
+      ],
+      "indexEmpty": true,
+      "at": "2026-10-31T11:10:30.478901Z"
+    }
+  ],
+  "workingTree": {
+    "heldTracked": 14,
+    "heldUntracked": 6,
+    "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+    "coreDirty": false
+  },
+  "owner": {
+    "version": 1,
+    "base": "0af2c2734344be23d2b7b2e184fa4c8adeb838a6",
+    "run": "presentation-cancellation-20261031.owner7.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  16.321s] 2173 tests run: 2173 passed, 0 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2173,
+    "passed": 2173,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4018,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-31T11:09:38.8940465Z"
+  },
+  "ownerBinaryDrift": 0,
+  "ownerQualitySourceDrift": 0,
+  "quality": [
+    {
+      "kind": "clippy",
+      "receipt": {
+        "version": 1,
+        "base": "914ffee30f9d965d8489bd2129b5821d32eac942",
+        "command": [
+          "clippy",
+          "-p",
+          "arcweft-core",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4018,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T11:10:38.0605541Z",
+        "finishedAt": "2026-10-31T11:10:58.959338Z"
+      }
+    },
+    {
+      "kind": "default-check",
+      "receipt": {
+        "version": 1,
+        "base": "914ffee30f9d965d8489bd2129b5821d32eac942",
+        "command": [
+          "check",
+          "-p",
+          "arcweft-core",
+          "--all-targets",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4018,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T11:10:59.4782026Z",
+        "finishedAt": "2026-10-31T11:11:12.4526288Z"
+      }
+    },
+    {
+      "kind": "doctest",
+      "receipt": {
+        "version": 1,
+        "base": "914ffee30f9d965d8489bd2129b5821d32eac942",
+        "command": [
+          "test",
+          "-p",
+          "arcweft-core",
+          "--doc",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4018,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T11:11:13.0866675Z",
+        "finishedAt": "2026-10-31T11:11:23.7871698Z"
+      }
+    },
+    {
+      "kind": "structure",
+      "receipt": {
+        "version": 1,
+        "base": "914ffee30f9d965d8489bd2129b5821d32eac942",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/product-execution-quality-20261031T111035666.structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4018,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T11:11:24.2794423Z",
+        "finishedAt": "2026-10-31T11:11:27.8617202Z"
+      }
+    },
+    {
+      "kind": "fmt",
+      "receipt": {
+        "version": 1,
+        "paths": [
+          "crates/arcweft-core/src/awbc/fiber.rs",
+          "crates/arcweft-core/src/awbc/fiber/program_task.rs",
+          "crates/arcweft-core/src/awbc/fiber/scope.rs",
+          "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+          "crates/arcweft-core/src/awbc/product_step.rs",
+          "crates/arcweft-core/src/awbc/product_step/checkpoint.rs",
+          "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+          "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+          "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+          "crates/arcweft-core/src/awbc/product_step/program_fanout.rs",
+          "crates/arcweft-core/src/awbc/product_step/program_task/tests.rs",
+          "crates/arcweft-core/src/awbc/product_step/program.rs",
+          "crates/arcweft-core/src/awbc/product_step/root.rs",
+          "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+          "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+          "crates/arcweft-core/src/awbc/tests/dialogue_callback_projection.rs",
+          "crates/arcweft-core/src/awbc/vm.rs",
+          "crates/arcweft-core/src/engine.rs",
+          "crates/arcweft-core/src/line_task.rs",
+          "crates/arcweft-core/src/line_task/activation.rs",
+          "crates/arcweft-core/src/line_task/activation/contour.rs",
+          "crates/arcweft-core/src/line_task/activation/contour/tests.rs",
+          "crates/arcweft-core/src/line_task/handle.rs",
+          "crates/arcweft-core/src/presentation/resources.rs",
+          "crates/arcweft-core/src/presentation/resources/banks.rs",
+          "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+          "crates/arcweft-core/src/presentation/resources/execution.rs",
+          "crates/arcweft-core/src/presentation/resources/execution/tests.rs"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4018,
+        "sourceDrift": 0
+      }
+    }
+  ],
+  "doctest": {
+    "passed": 78,
+    "failed": 0,
+    "ignored": 0,
+    "filtered": 0
+  },
+  "structure": {
+    "packages": 97,
+    "files": 3256,
+    "rustFiles": 3126,
+    "rustPhysicalLoc": 1770990,
+    "reviewTriggers": 382,
+    "blocking": 0,
+    "disposition": "The bank aggregate remains the only resource owner. Shared and exclusive scope views borrow actual grant storage and anchors; neither issues a grant or adds a wire grammar. The prepared command sequence supplies cancellation order, followed by existing commit-queue order, and the same complete contour is revalidated exclusively before the first mutation."
+  },
+  "accepted": [
+    "Actual Root and Dialogue banks, two independently issued child fiber identities, and original scope grants are admitted in the complete Product snapshot before cancellation.",
+    "All actual cancelled children across executor and staged queues are preflighted together for original program/execution/fiber/anchor and aggregate retirement capacity before command recording or child removal.",
+    "Cancellation command order is preserved even when opposite to the physical child queue; each child retires frames and lexical scopes in unwind order.",
+    "A later forged child bank and aggregate capacity overflow preserve the entire valid snapshot after restoring the forged metadata/withdrawn transaction. The capacity fixture retains handles=3/scopes=8 and retries without changing those limits.",
+    "Successful cancellation preserves the outer root grant and the exact ordered retired token sequence; the complete public save/restore snapshot is equal under the actual Product policy.",
+    "Successful regressions keep one genuine issued child in the executor queue and the other in the staged batch, then invoke incremental command preparation; no child identity, frame grant or resource body is cloned or reissued."
+  ],
+  "attempts": [
+    {
+      "attempt": "owner1",
+      "kind": "fixture compile",
+      "exitCode": 101,
+      "reason": "Five missing imports confined to the new nested test module; imports corrected."
+    },
+    {
+      "attempt": "owner2",
+      "kind": "focused fixture execution",
+      "passed": 0,
+      "failed": 3,
+      "excluded": 2117,
+      "exitCode": 100,
+      "reason": "Fixture removed the cancellation handler owning row while retaining its function. Restored the original row without relaxing verification."
+    },
+    {
+      "attempt": "focus3",
+      "kind": "focused fixture execution",
+      "passed": 0,
+      "failed": 3,
+      "excluded": 2117,
+      "exitCode": 100,
+      "reason": "Reducing fixture had not committed its typed dialogue result authority. Commit the typed base result before snapshot admission."
+    },
+    {
+      "attempt": "focus4",
+      "kind": "focused behavioral red",
+      "passed": 2,
+      "failed": 1,
+      "excluded": 2117,
+      "exitCode": 100,
+      "reason": "Reverse cancellation commands exposed physical-queue retirement ordering. Sort borrowed actual fibers by the prepared command sequence, with stable existing-action order."
+    },
+    {
+      "attempt": "owner5",
+      "kind": "complete owner before public fixture policy correction",
+      "passed": 2172,
+      "failed": 1,
+      "excluded": 0,
+      "runtimeExitCode": 100,
+      "outerObservedExitCode": 1,
+      "sourceInputs": 4018,
+      "sourceDrift": 0,
+      "reason": "Command-order regression passed. Public round trip selected the actual trusted Product policy (65536) while the fixture had injected private limits (3/8), so full snapshot equality correctly failed on policy. Build normal round-trip fixtures with the real Product policy; retain the separate capacity fixture at 3/8 and retain all full snapshot equality assertions."
+    },
+    {
+      "attempt": "owner6",
+      "kind": "complete owner before mixed physical queues",
+      "passed": 2173,
+      "failed": 0,
+      "excluded": 0,
+      "exitCode": 0,
+      "sourceInputs": 4018,
+      "sourceDrift": 0
+    },
+    {
+      "attempt": "owner7",
+      "kind": "complete owner with genuine existing and staged children",
+      "passed": 2173,
+      "failed": 0,
+      "excluded": 0,
+      "exitCode": 0,
+      "sourceInputs": 4018,
+      "sourceDrift": 0
+    }
+  ],
+  "warnings": "Existing compiler and Clippy warnings remain in the raw logs; exit 0 is not a zero-warning claim.",
+  "priorAcceptance": [
+    "task-product-execution-checkpoint-owner-validation.json",
+    "task-presentation-lexical-vm-owner-validation.json"
+  ],
+  "limits": [
+    "The resource body fixture is typed Bool, not actual Source ViewValue construction, mount, eleven callable/six method execution, or driver dispatch.",
+    "This cancellation acceptance covers prepared line-task CancelAndJoin commands. Await/Need and Program Fanout cancellation still use their prior ledger-free paths; they are not claimed connected by this cut.",
+    "Frame return/select/goto/trap cleanup, escaping-handle transfer, Native actual borrowed-parent admission, active-bank replacement, image parity and the final reverse-dependency/target matrix remain outstanding.",
+    "Accepted Generic Match, complete Product checkpoints, save/custody foundations and lexical exits are retained, not reopened because the whole goal is incomplete."
+  ],
+  "artifacts": [
+    {
+      "path": "task-presentation-line-cancellation-raw.run-product-execution-quality.ps1",
+      "source": "run-product-execution-quality.ps1",
+      "bytes": 3062,
+      "sha256": "d1ca633b5d3bf8ecd4ba2fdeeafd1cfbfd689376fa4aa6aa1918834f2a0b05ca"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-source-20261031.owned.txt",
+      "source": "presentation-cancellation-source-20261031.owned.txt",
+      "bytes": 328,
+      "sha256": "5ba052676ae2158897845d5497d696d1b69d5f20e61e4d0c294775b1b3038b55"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-source-20261031.prepared.json",
+      "source": "presentation-cancellation-source-20261031.prepared.json",
+      "bytes": 2114,
+      "sha256": "c51df1b610f4bf0e58dc803e4989cdefb0daae1f6622a6fa1155988010c90cd4"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-source-20261031.verified.json",
+      "source": "presentation-cancellation-source-20261031.verified.json",
+      "bytes": 1419,
+      "sha256": "1e683f368888c69583fba7de0da97a91d5161f4002f83f10d8bf5df1089f4672"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-source-20261031.reviewed.patch",
+      "source": "presentation-cancellation-source-20261031.reviewed.patch",
+      "bytes": 31685,
+      "sha256": "2fb8a00dc3482eb9bde5d425147f7c4a96681363c759d87b7c6374656b3703d6"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-source-20261031.publish.log",
+      "source": "presentation-cancellation-source-20261031.publish.log",
+      "bytes": 642,
+      "sha256": "861d1da424c4bd30f59847a12a033146dfe190d8d7399a93425da318f2e68be6"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-fixture-20261031.owned.txt",
+      "source": "presentation-cancellation-fixture-20261031.owned.txt",
+      "bytes": 65,
+      "sha256": "fb9e3d5623d66cf6fcc13e4e1d3832bee496ed3bcfa85c37f48596d02e468106"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-fixture-20261031.prepared.json",
+      "source": "presentation-cancellation-fixture-20261031.prepared.json",
+      "bytes": 1401,
+      "sha256": "0e01a62f16848400ee27e76732dd1e64ac92a24d657d233fc91452fb149905ec"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-fixture-20261031.verified.json",
+      "source": "presentation-cancellation-fixture-20261031.verified.json",
+      "bytes": 706,
+      "sha256": "fbddfa7d8181604a88ff34b1cdf49f46022e6dc9f409a67c0a9a1253f3b96615"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-fixture-20261031.reviewed.patch",
+      "source": "presentation-cancellation-fixture-20261031.reviewed.patch",
+      "bytes": 1199,
+      "sha256": "5930f1ac50ac5a6eee3504e68cd39fa2f740fcf956cc4c593750bf481f594f47"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-fixture-20261031.publish.log",
+      "source": "presentation-cancellation-fixture-20261031.publish.log",
+      "bytes": 638,
+      "sha256": "d7d378b145942ae09b0b8a5ba51935cb3f62006855f9c4ebcf1574195cde8836"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner1.json",
+      "source": "presentation-cancellation-20261031.owner1.json",
+      "bytes": 258,
+      "sha256": "eb199136777b93595d4cfd251e81bdc70d997032ddba79b5990e278f48a55337"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner1.log",
+      "source": "presentation-cancellation-20261031.owner1.log",
+      "bytes": 12582,
+      "sha256": "b86b3e163376fb72220b5ce2af202a8c362624c3a18b8ab5ff8ecd8b450c2044"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner2.json",
+      "source": "presentation-cancellation-20261031.owner2.json",
+      "bytes": 258,
+      "sha256": "2f44eec109540e123dfd2fdbda5e25e021c3dbe717f7dc4e2f9b55765002a57d"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner2.log",
+      "source": "presentation-cancellation-20261031.owner2.log",
+      "bytes": 682210,
+      "sha256": "f7392d7b6921b43fd0ed448555531bdfb6c222e46f137bb2073b0c05181bf739"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.focus3.json",
+      "source": "presentation-cancellation-20261031.focus3.json",
+      "bytes": 258,
+      "sha256": "1afb1832a1a3711c48b63e7581bd709fbc1042269d808e2f09bd0fd67fdfe746"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.focus3.log",
+      "source": "presentation-cancellation-20261031.focus3.log",
+      "bytes": 682168,
+      "sha256": "9a34e90df7ab9b3d5bd6f7a949171e8938e67221f052f151416a6d34a3addbc9"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.focus4.json",
+      "source": "presentation-cancellation-20261031.focus4.json",
+      "bytes": 258,
+      "sha256": "15c19045dee41f43a68ec3328785cfeef9b4b2562ec303c303a179eb0d0d2309"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.focus4.log",
+      "source": "presentation-cancellation-20261031.focus4.log",
+      "bytes": 682670,
+      "sha256": "e5eca52990f8c4791ac81300fb0f212e5aa8d978175e47c343f35f9442d85a68"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.run-presentation-cancellation-20261031.owner5.ps1",
+      "source": "run-presentation-cancellation-20261031.owner5.ps1",
+      "bytes": 4832,
+      "sha256": "9fc9469d84af7c6227c8dc5ff77ce0cf61d96ed63887e9869653fa13d404e954"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner5.source-freeze.json",
+      "source": "presentation-cancellation-20261031.owner5.source-freeze.json",
+      "bytes": 785258,
+      "sha256": "8584c3740a52776fc6c60ce25caef4360db8c85ef4003c38bce7e3239eaaac24"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner5.binaries-before.json",
+      "source": "presentation-cancellation-20261031.owner5.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "7dea2c0f30066f5c5964aed47022646da1c8ce6f2abfbb3656de7e25908c591b"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner5.catalog.inventory.json",
+      "source": "presentation-cancellation-20261031.owner5.catalog.inventory.json",
+      "bytes": 550117,
+      "sha256": "3cbe7e5c893a5b446b7fb2fd36d4e2f988edbf74a005180a61d5420c1d96be57"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner5.catalog.json",
+      "source": "presentation-cancellation-20261031.owner5.catalog.json",
+      "bytes": 494,
+      "sha256": "f48e2bc46899f01b732461e332a79ab11bbe2cc5168b41c0de4ae35abea27000"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner5.catalog.log",
+      "source": "presentation-cancellation-20261031.owner5.catalog.log",
+      "bytes": 459604,
+      "sha256": "ec9b01787422aef837b9e7ecf397b03e4e43e7fe79e32e3c4c973f35fbb0f686"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner5.runtime.json",
+      "source": "presentation-cancellation-20261031.owner5.runtime.json",
+      "bytes": 588,
+      "sha256": "47ac815fa0c3c763aad2bbbc98024d92998430f6569ae3aae2d75d79ae739ea5"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner5.runtime.log",
+      "source": "presentation-cancellation-20261031.owner5.runtime.log",
+      "bytes": 797879,
+      "sha256": "177af7335a8abbba8f14b9a8c177f28116d4e63a8a8f29c1a6275b782d717a5e"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner5.runtime.terminal-audit.json",
+      "source": "presentation-cancellation-20261031.owner5.runtime.terminal-audit.json",
+      "bytes": 883,
+      "sha256": "8774684074a228f6d3e72d633d7141a2af8ab549e4e6be66f836a18a53bc510d"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.run-presentation-cancellation-20261031.owner6.ps1",
+      "source": "run-presentation-cancellation-20261031.owner6.ps1",
+      "bytes": 4832,
+      "sha256": "87c47a3a710486b4cf25fd286c4835169d795e457ba9e7f9aae32eb8624ecc15"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner6.source-freeze.json",
+      "source": "presentation-cancellation-20261031.owner6.source-freeze.json",
+      "bytes": 785258,
+      "sha256": "7bd4e6e69d8f989e9244a175b1c223d279889323cbe7a92763e908519e770cce"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner6.binaries-before.json",
+      "source": "presentation-cancellation-20261031.owner6.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "c28c04fc6de6a4e0683567858ffe18fa2703fc6b350d41d6fc8ffa00b583d58b"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner6.catalog.inventory.json",
+      "source": "presentation-cancellation-20261031.owner6.catalog.inventory.json",
+      "bytes": 550117,
+      "sha256": "3cbe7e5c893a5b446b7fb2fd36d4e2f988edbf74a005180a61d5420c1d96be57"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner6.catalog.json",
+      "source": "presentation-cancellation-20261031.owner6.catalog.json",
+      "bytes": 494,
+      "sha256": "ff3f32b61d9e1adac51b0340b4678614b0b661b46d64e39f688fbe96d532cc70"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner6.catalog.log",
+      "source": "presentation-cancellation-20261031.owner6.catalog.log",
+      "bytes": 459588,
+      "sha256": "4817b11abf9703c88fb28ac49f3a1e88904d08325c28bb7f733a76f75af557dc"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner6.runtime.json",
+      "source": "presentation-cancellation-20261031.owner6.runtime.json",
+      "bytes": 586,
+      "sha256": "4c5eaccd4499208e6119871209af60d5015d811a571a1d3e8e38a8e976cd59c3"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner6.runtime.log",
+      "source": "presentation-cancellation-20261031.owner6.runtime.log",
+      "bytes": 743894,
+      "sha256": "b4ecdf88a74b309c97fd77710aecff4c7cb506b6eaa018f298e49bbfb2b46b80"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner6.runtime.terminal-audit.json",
+      "source": "presentation-cancellation-20261031.owner6.runtime.terminal-audit.json",
+      "bytes": 630,
+      "sha256": "28631969ddc4a36c7fffb21bcd4a517c2d3d11d438dd36887be7b68a34aeae03"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T110432894.source-freeze.json",
+      "source": "product-execution-quality-20261031T110432894.source-freeze.json",
+      "bytes": 785302,
+      "sha256": "8f84c546af9e8eddcaeb4af6e067e8762104d54626dfad3f8a2e5efc0f27199f"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T110432894.clippy.json",
+      "source": "product-execution-quality-20261031T110432894.clippy.json",
+      "bytes": 368,
+      "sha256": "9906638ee0ed5eff0a83f373f4620e15fbc94f0a9fca6ef0e9a1f32fb8ae7466"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T110432894.clippy.log",
+      "source": "product-execution-quality-20261031T110432894.clippy.log",
+      "bytes": 4455032,
+      "sha256": "daa7cd2f8bb40e4055fb3d9cd75d86ca6c5e9f6056db4634822e38c1ba3526f3"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T110432894.default-check.json",
+      "source": "product-execution-quality-20261031T110432894.default-check.json",
+      "bytes": 344,
+      "sha256": "a32338b9e0bcfdb98f49e359e5a922887980aa60a18d7793658316461305cbb5"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T110432894.default-check.log",
+      "source": "product-execution-quality-20261031T110432894.default-check.log",
+      "bytes": 82490,
+      "sha256": "2af1f689c09f82ebfb3186f922091476ad20b87627f2e5ef463dc899248d3d2a"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T110432894.doctest.json",
+      "source": "product-execution-quality-20261031T110432894.doctest.json",
+      "bytes": 358,
+      "sha256": "a9b18419afaa94b55800561f4574e57ac1c46906301225bb33b4b8f88d982426"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T110432894.doctest.log",
+      "source": "product-execution-quality-20261031T110432894.doctest.log",
+      "bytes": 81640,
+      "sha256": "4aea8e5af82a0497d7fe2c3f645a9fe6acf4e00eac2ad15f404bacbb12fa4d53"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T110432894.structure.json",
+      "source": "product-execution-quality-20261031T110432894.structure.json",
+      "bytes": 539,
+      "sha256": "646c593071358dd8a449e3a8c49f308cfda692b3c39ef9bc507a71d2eec1c8ec"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T110432894.structure.log",
+      "source": "product-execution-quality-20261031T110432894.structure.log",
+      "bytes": 65048,
+      "sha256": "ae63044a36a84d81f60f63e6cfd5d47d26bafe46449e1305a06bd03d6123892e"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T110432894.fmt.json",
+      "source": "product-execution-quality-20261031T110432894.fmt.json",
+      "bytes": 1990,
+      "sha256": "eaf5318c35817f7ca48ae6bbf17aef4e79b4f5cac6ada983e26f9ae804f3a83b"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T110432894.fmt.log",
+      "source": "product-execution-quality-20261031T110432894.fmt.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T110432894.structure-report.dependency_edges.csv",
+      "source": "product-execution-quality-20261031T110432894.structure-report/dependency_edges.csv",
+      "bytes": 77544,
+      "sha256": "529e738d348314f7a4c0d909b165620d03ec57478b68ad42b06aa349b30e13f4"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T110432894.structure-report.file_metrics.csv",
+      "source": "product-execution-quality-20261031T110432894.structure-report/file_metrics.csv",
+      "bytes": 329755,
+      "sha256": "795b2d0708b7dab40f847e0e359ed9e55d935ba09e40c02827fe00f869de9ae4"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T110432894.structure-report.findings.md",
+      "source": "product-execution-quality-20261031T110432894.structure-report/findings.md",
+      "bytes": 122295,
+      "sha256": "f4b8da0c740338f1cc8d4334f83ae363f0ea8f85a9c597acc9ee28e56f6e62d4"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T110432894.structure-report.package_metrics.csv",
+      "source": "product-execution-quality-20261031T110432894.structure-report/package_metrics.csv",
+      "bytes": 6444,
+      "sha256": "c2df26363c079ef3c17be71810df334c6e4825ab5987b4951b3f1432368b85f2"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T110432894.structure-report.public_type_duplicates.csv",
+      "source": "product-execution-quality-20261031T110432894.structure-report/public_type_duplicates.csv",
+      "bytes": 17238,
+      "sha256": "6cbaa427fef9360e8adb6245ea1eec66f5fdaf2624a24979e82d4877a28e31ac"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-mixed-queues-20261031.owned.txt",
+      "source": "presentation-cancellation-mixed-queues-20261031.owned.txt",
+      "bytes": 65,
+      "sha256": "fb9e3d5623d66cf6fcc13e4e1d3832bee496ed3bcfa85c37f48596d02e468106"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-mixed-queues-20261031.prepared.json",
+      "source": "presentation-cancellation-mixed-queues-20261031.prepared.json",
+      "bytes": 1552,
+      "sha256": "13e68fdd5f77c769b55522e122d648490ce51cfea017ea7fbb340b5bc4d0f644"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-mixed-queues-20261031.verified.json",
+      "source": "presentation-cancellation-mixed-queues-20261031.verified.json",
+      "bytes": 857,
+      "sha256": "a7faff1163b5e032e683fab5847889f2e09b6d6a9d62331a4b4063a1a9f760c9"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-mixed-queues-20261031.reviewed.patch",
+      "source": "presentation-cancellation-mixed-queues-20261031.reviewed.patch",
+      "bytes": 1238,
+      "sha256": "03e3f50ad7ebe06ed3ebb464ec3b07df2b761261b8aaba4aff307045cc6867b9"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-mixed-queues-20261031.publish.log",
+      "source": "presentation-cancellation-mixed-queues-20261031.publish.log",
+      "bytes": 635,
+      "sha256": "d720a12d29b3ac3a6f15db622009ac0da7ad96ede0c2184fb52193002da514f6"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.run-presentation-cancellation-20261031.owner7.ps1",
+      "source": "run-presentation-cancellation-20261031.owner7.ps1",
+      "bytes": 4832,
+      "sha256": "f055a93b19c217d66958f954642f14f19923e6c5230d7e0c1a5306907350e5c5"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner7.source-freeze.json",
+      "source": "presentation-cancellation-20261031.owner7.source-freeze.json",
+      "bytes": 785258,
+      "sha256": "0d15b1099a6b54b69014ec78e7b3e51f766ed64b70ba0c4b5c0c3953b2c78671"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner7.binaries-before.json",
+      "source": "presentation-cancellation-20261031.owner7.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "346be0fc0c76c6f7bc7edb22d489fff43820a48c0b8ef25ed3a1e4a8565b08f0"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner7.catalog.inventory.json",
+      "source": "presentation-cancellation-20261031.owner7.catalog.inventory.json",
+      "bytes": 550117,
+      "sha256": "3cbe7e5c893a5b446b7fb2fd36d4e2f988edbf74a005180a61d5420c1d96be57"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner7.catalog.json",
+      "source": "presentation-cancellation-20261031.owner7.catalog.json",
+      "bytes": 494,
+      "sha256": "a4c2ead21ff52c1e88f413f43a89f0da38222613b7e8db4bd99183dce8977281"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner7.catalog.log",
+      "source": "presentation-cancellation-20261031.owner7.catalog.log",
+      "bytes": 459588,
+      "sha256": "f519e55d05e184e413cb645fddeabbf77cc97fd2e57b1b03f6a461ee40e1cf27"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner7.runtime.json",
+      "source": "presentation-cancellation-20261031.owner7.runtime.json",
+      "bytes": 586,
+      "sha256": "7cb20270d01ea0a5bd0e0cef0aa8e04baaf31992b1dba49c7af09fe7f3c9cced"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner7.runtime.log",
+      "source": "presentation-cancellation-20261031.owner7.runtime.log",
+      "bytes": 743894,
+      "sha256": "71a92207eeb87913e326ff7b96cd61874ad5efa7a9a638fb330d6d0cd7255eaf"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.presentation-cancellation-20261031.owner7.runtime.terminal-audit.json",
+      "source": "presentation-cancellation-20261031.owner7.runtime.terminal-audit.json",
+      "bytes": 630,
+      "sha256": "ef845ec93dba64676cee23970b2a3579bb00470bcc48345b28a82e5810307525"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T111035666.source-freeze.json",
+      "source": "product-execution-quality-20261031T111035666.source-freeze.json",
+      "bytes": 785302,
+      "sha256": "c0a50921564e4b53a93500fca3e3bb5e911ef182a3993048aa22a4c8962f25b8"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T111035666.clippy.json",
+      "source": "product-execution-quality-20261031T111035666.clippy.json",
+      "bytes": 368,
+      "sha256": "7c3212d29ad3207e5970320c0cc69c99d030f36f8797f7cea6eb05ce66e9c035"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T111035666.clippy.log",
+      "source": "product-execution-quality-20261031T111035666.clippy.log",
+      "bytes": 4455032,
+      "sha256": "58eb4960b19418a310eb1c2b7f0b6b40a9e5117f8b77aec86f45e7467a9daa92"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T111035666.default-check.json",
+      "source": "product-execution-quality-20261031T111035666.default-check.json",
+      "bytes": 344,
+      "sha256": "43e7577045e989ba51956044554ed66aee237cb8397ccfbf0777f9431f7569cd"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T111035666.default-check.log",
+      "source": "product-execution-quality-20261031T111035666.default-check.log",
+      "bytes": 82490,
+      "sha256": "f03ae300ace90abf4e804d570a96259b7073722ca5c4c755fa5abc05583d8bbd"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T111035666.doctest.json",
+      "source": "product-execution-quality-20261031T111035666.doctest.json",
+      "bytes": 358,
+      "sha256": "9348ac5ca01a3a1778cf011926d82f38df8b5d64a5f0bbf1d949efede1269cd5"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T111035666.doctest.log",
+      "source": "product-execution-quality-20261031T111035666.doctest.log",
+      "bytes": 81640,
+      "sha256": "8c42b647090a01da4d4fdf1ef00fe8b2bb7b116ade88099fc1d8d59f80708e57"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T111035666.structure.json",
+      "source": "product-execution-quality-20261031T111035666.structure.json",
+      "bytes": 539,
+      "sha256": "8a9a36014abb6b004acdb629739fa3bdea8cebd3985b65f28cbe1f3ad74d12ae"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T111035666.structure.log",
+      "source": "product-execution-quality-20261031T111035666.structure.log",
+      "bytes": 65048,
+      "sha256": "df580c7d34477541ca8dba915c4e7534b4810caa4ee95ab58e7d4746a7ee6b4e"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T111035666.fmt.json",
+      "source": "product-execution-quality-20261031T111035666.fmt.json",
+      "bytes": 1990,
+      "sha256": "eaf5318c35817f7ca48ae6bbf17aef4e79b4f5cac6ada983e26f9ae804f3a83b"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T111035666.fmt.log",
+      "source": "product-execution-quality-20261031T111035666.fmt.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T111035666.structure-report.dependency_edges.csv",
+      "source": "product-execution-quality-20261031T111035666.structure-report/dependency_edges.csv",
+      "bytes": 77544,
+      "sha256": "529e738d348314f7a4c0d909b165620d03ec57478b68ad42b06aa349b30e13f4"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T111035666.structure-report.file_metrics.csv",
+      "source": "product-execution-quality-20261031T111035666.structure-report/file_metrics.csv",
+      "bytes": 329755,
+      "sha256": "ea319f1c49e22180c050f04d18cac5d83116b600c8bcf43192649cffe4fb81db"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T111035666.structure-report.findings.md",
+      "source": "product-execution-quality-20261031T111035666.structure-report/findings.md",
+      "bytes": 122295,
+      "sha256": "f4b8da0c740338f1cc8d4334f83ae363f0ea8f85a9c597acc9ee28e56f6e62d4"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T111035666.structure-report.package_metrics.csv",
+      "source": "product-execution-quality-20261031T111035666.structure-report/package_metrics.csv",
+      "bytes": 6444,
+      "sha256": "c2df26363c079ef3c17be71810df334c6e4825ab5987b4951b3f1432368b85f2"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.product-execution-quality-20261031T111035666.structure-report.public_type_duplicates.csv",
+      "source": "product-execution-quality-20261031T111035666.structure-report/public_type_duplicates.csv",
+      "bytes": 17238,
+      "sha256": "6cbaa427fef9360e8adb6245ea1eec66f5fdaf2624a24979e82d4877a28e31ac"
+    },
+    {
+      "path": "task-presentation-line-cancellation-raw.documentation-audit.json",
+      "source": "arcweft-docs-reconcile-20261027/task-wait-reverse-doc-audit.json",
+      "bytes": 574,
+      "sha256": "df5ceba237446f11b019341d8cf408e78db25ce40da672b2e0ffdf0342efabf3"
+    }
+  ],
+  "artifactCount": 84,
+  "artifactBytes": 21861393.0,
+  "rawByteDrift": 0,
+  "ownerBeforeMixedQueues": {
+    "version": 1,
+    "base": "3e6bad2e21e8fd7702b38cdbed4b3eb337f28aeb",
+    "run": "presentation-cancellation-20261031.owner6.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  16.454s] 2173 tests run: 2173 passed, 0 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2173,
+    "passed": 2173,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4018,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-31T11:04:15.4897884Z"
+  },
+  "qualityBeforeMixedQueues": [
+    {
+      "kind": "clippy",
+      "receipt": {
+        "version": 1,
+        "base": "0af2c2734344be23d2b7b2e184fa4c8adeb838a6",
+        "command": [
+          "clippy",
+          "-p",
+          "arcweft-core",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4018,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T11:04:35.2540104Z",
+        "finishedAt": "2026-10-31T11:05:22.0105922Z"
+      }
+    },
+    {
+      "kind": "default-check",
+      "receipt": {
+        "version": 1,
+        "base": "0af2c2734344be23d2b7b2e184fa4c8adeb838a6",
+        "command": [
+          "check",
+          "-p",
+          "arcweft-core",
+          "--all-targets",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4018,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T11:05:22.4007111Z",
+        "finishedAt": "2026-10-31T11:06:04.4463209Z"
+      }
+    },
+    {
+      "kind": "doctest",
+      "receipt": {
+        "version": 1,
+        "base": "0af2c2734344be23d2b7b2e184fa4c8adeb838a6",
+        "command": [
+          "test",
+          "-p",
+          "arcweft-core",
+          "--doc",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4018,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T11:06:04.9104158Z",
+        "finishedAt": "2026-10-31T11:06:13.5702366Z"
+      }
+    },
+    {
+      "kind": "structure",
+      "receipt": {
+        "version": 1,
+        "base": "0af2c2734344be23d2b7b2e184fa4c8adeb838a6",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/product-execution-quality-20261031T110432894.structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4018,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T11:06:13.9748364Z",
+        "finishedAt": "2026-10-31T11:06:17.5228982Z"
+      }
+    },
+    {
+      "kind": "fmt",
+      "receipt": {
+        "version": 1,
+        "paths": [
+          "crates/arcweft-core/src/awbc/fiber.rs",
+          "crates/arcweft-core/src/awbc/fiber/program_task.rs",
+          "crates/arcweft-core/src/awbc/fiber/scope.rs",
+          "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+          "crates/arcweft-core/src/awbc/product_step.rs",
+          "crates/arcweft-core/src/awbc/product_step/checkpoint.rs",
+          "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+          "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+          "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+          "crates/arcweft-core/src/awbc/product_step/program_fanout.rs",
+          "crates/arcweft-core/src/awbc/product_step/program_task/tests.rs",
+          "crates/arcweft-core/src/awbc/product_step/program.rs",
+          "crates/arcweft-core/src/awbc/product_step/root.rs",
+          "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+          "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+          "crates/arcweft-core/src/awbc/tests/dialogue_callback_projection.rs",
+          "crates/arcweft-core/src/awbc/vm.rs",
+          "crates/arcweft-core/src/engine.rs",
+          "crates/arcweft-core/src/line_task.rs",
+          "crates/arcweft-core/src/line_task/activation.rs",
+          "crates/arcweft-core/src/line_task/activation/contour.rs",
+          "crates/arcweft-core/src/line_task/activation/contour/tests.rs",
+          "crates/arcweft-core/src/line_task/handle.rs",
+          "crates/arcweft-core/src/presentation/resources.rs",
+          "crates/arcweft-core/src/presentation/resources/banks.rs",
+          "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+          "crates/arcweft-core/src/presentation/resources/execution.rs",
+          "crates/arcweft-core/src/presentation/resources/execution/tests.rs"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4018,
+        "sourceDrift": 0
+      }
+    }
+  ],
+  "structureBeforeMixedQueues": {
+    "packages": 97,
+    "files": 3256,
+    "rustFiles": 3126,
+    "rustPhysicalLoc": 1770982,
+    "reviewTriggers": 382,
+    "blocking": 0,
+    "disposition": "The bank aggregate remains the only resource owner. Shared and exclusive scope views borrow actual grant storage and anchors; neither issues a grant or adds a wire grammar. The prepared command sequence supplies cancellation order, followed by existing commit-queue order, and the same complete contour is revalidated exclusively before the first mutation."
+  },
+  "documentationAudit": {
+    "date": "2026-10-31",
+    "base": "914ffee30f9d965d8489bd2129b5821d32eac942",
+    "changed": [
+      "docs/02-runtime/save-replay.md",
+      "docs/implementation/convergence-evidence-history.md",
+      "docs/implementation/current-status.md"
+    ],
+    "checkedDocuments": 129,
+    "relativeLinks": 647,
+    "brokenLinks": [],
+    "unclosedFences": [],
+    "statusCommitIds": 48,
+    "unretainedIds": [],
+    "historicalRawChanges": [],
+    "historicalPrefixPreserved": true,
+    "heldFiles": 20,
+    "heldDrift": 0,
+    "partialCliOriginalWipProof": true,
+    "rustCargoRun": false
+  }
+}

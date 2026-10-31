@@ -1,0 +1,7 @@
+From https://github.com/Sanzentyo/arcweft
+ * branch                main       -> FETCH_HEAD
+[main 914ffee30] test(core): exercise cancellation across existing and staged owner queues
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+To https://github.com/Sanzentyo/arcweft.git
+   0af2c2734..914ffee30  HEAD -> main
+{"commit":"914ffee30f9d965d8489bd2129b5821d32eac942","parent":"0af2c2734344be23d2b7b2e184fa4c8adeb838a6","tree":"f6c7db005eeeded1778ab085d21744d1905b8c06","paths":1,"blobDrift":0,"originalWip":14,"separatelyHeld":1,"patchSha256":"03e3f50ad7ebe06ed3ebb464ec3b07df2b761261b8aaba4aff307045cc6867b9","indexEmpty":true}

@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "f778b55972848fbd7661a49b89737d280a4bbc30",
+  "run": "presentation-cancellation-20261031.owner5.runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [  71.018s] 2173 tests run: 2172 passed, 1 failed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 2173,
+  "passed": 2172,
+  "failed": 1,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4018,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::presentation::cancellation::line_cancellation_retires_all_actual_child_scopes_before_removal_and_public_save_roundtrips"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-31T11:02:02.9596914Z"
+}

@@ -1,0 +1,7 @@
+From https://github.com/Sanzentyo/arcweft
+ * branch                main       -> FETCH_HEAD
+[main 0af2c2734] test(core): match cancellation save fixtures to the trusted Product policy
+ 1 file changed, 11 insertions(+), 3 deletions(-)
+To https://github.com/Sanzentyo/arcweft.git
+   3e6bad2e2..0af2c2734  HEAD -> main
+{"commit":"0af2c2734344be23d2b7b2e184fa4c8adeb838a6","parent":"3e6bad2e21e8fd7702b38cdbed4b3eb337f28aeb","tree":"10237084733bf4141461200e6751ea761487b8d2","paths":1,"blobDrift":0,"originalWip":14,"separatelyHeld":0,"patchSha256":"5930f1ac50ac5a6eee3504e68cd39fa2f740fcf956cc4c593750bf481f594f47","indexEmpty":true}

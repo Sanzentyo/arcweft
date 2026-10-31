@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "commit": "914ffee30f9d965d8489bd2129b5821d32eac942",
+  "parent": "0af2c2734344be23d2b7b2e184fa4c8adeb838a6",
+  "tree": "f6c7db005eeeded1778ab085d21744d1905b8c06",
+  "remote": "914ffee30f9d965d8489bd2129b5821d32eac942",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "blob": "5c935d64f6716b92e41f7ed70833b4b049598141"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "03e3f50ad7ebe06ed3ebb464ec3b07df2b761261b8aaba4aff307045cc6867b9",
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "separatelyHeld": [
+    {
+      "path": "docs/02-runtime/save-replay.md",
+      "sha256": "52677387e7d4d618927b20401f6ee48721c9de92173f39929378bd2abc252c75"
+    }
+  ],
+  "indexEmpty": true,
+  "at": "2026-10-31T11:10:30.4789010Z"
+}
