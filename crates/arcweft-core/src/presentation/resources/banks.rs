@@ -102,24 +102,56 @@ impl<V> PresentationBanks<V> {
         fiber: RuntimePersistentFiberId,
         target: PresentationScopeTarget<'_>,
     ) -> Result<(), RuntimePresentationError> {
-        let Some(binding) = target.binding() else {
-            return Ok(());
-        };
-        let ledger = self
+        self.retire_bound_scopes(program, execution, fiber, vec![target])
+    }
+
+    /// Retires an actual lexical/frame contour in caller-supplied unwind order.
+    /// Every grant and the aggregate queue capacity precedes the first mutation.
+    pub(crate) fn retire_bound_scopes(
+        &mut self,
+        program: &RuntimeProgramOwner,
+        execution: ExecutionInstanceId,
+        fiber: RuntimePersistentFiberId,
+        targets: Vec<PresentationScopeTarget<'_>>,
+    ) -> Result<(), RuntimePresentationError> {
+        let root = self
             .ledgers
-            .get_mut(&binding.owner.bank)
-            .ok_or(RuntimePresentationError::Owner)?;
-        let count = ledger.bound_scope_body_count(Some(binding));
-        if self
-            .retirements
-            .len()
-            .checked_add(count)
-            .is_none_or(|count| count > ledger.limits.handles)
-        {
-            return Err(RuntimePresentationError::RetirementCapacity);
+            .get(&RuntimePresentationBankId::Root)
+            .ok_or(RuntimePresentationError::InvalidState)?;
+        root.validate_program(program)?;
+        let mut count = self.retirements.len();
+        let mut seen = std::collections::BTreeSet::new();
+        for target in &targets {
+            let Some(binding) = target.binding() else {
+                continue;
+            };
+            let ledger = self
+                .ledgers
+                .get(&binding.owner.bank)
+                .ok_or(RuntimePresentationError::Owner)?;
+            ledger.validate_bound_scope(program, execution, fiber, target)?;
+            if ledger.limits != root.limits || !seen.insert(binding.owner) {
+                return Err(RuntimePresentationError::InvalidState);
+            }
+            count = count
+                .checked_add(ledger.bound_scope_body_count(Some(binding)))
+                .ok_or(RuntimePresentationError::RetirementCapacity)?;
+            if count > root.limits.handles {
+                return Err(RuntimePresentationError::RetirementCapacity);
+            }
         }
-        self.retirements
-            .extend(ledger.exit_bound_scope(program, execution, fiber, target)?);
+        for target in targets {
+            let Some(binding) = target.binding() else {
+                continue;
+            };
+            self.retirements.extend(
+                self.ledgers
+                    .get_mut(&binding.owner.bank)
+                    .expect("every issuing ledger was preflighted")
+                    .exit_bound_scope(program, execution, fiber, target)
+                    .expect("exclusive contour and ledger borrows retain the preflight"),
+            );
+        }
         Ok(())
     }
 

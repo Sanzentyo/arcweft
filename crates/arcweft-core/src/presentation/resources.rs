@@ -530,21 +530,39 @@ impl<V> PresentationLedger<V> {
         fiber: RuntimePersistentFiberId,
         mut target: PresentationScopeTarget<'_>,
     ) -> Result<Vec<PresentationRetirement<V>>, RuntimePresentationError> {
-        self.validate_program(program)?;
+        self.validate_bound_scope(program, execution, fiber, &target)?;
         let Some(binding) = target.binding() else {
             return Ok(Vec::new());
+        };
+        let owner = binding.owner;
+        let retired = self.exit_scope(program, owner)?;
+        target.install(None);
+        Ok(retired)
+    }
+
+    /// Checks the actual storage anchor as well as the issuing ledger record.
+    /// Batch exits use this before taking any body or clearing any grant.
+    fn validate_bound_scope(
+        &self,
+        program: &RuntimeProgramOwner,
+        execution: ExecutionInstanceId,
+        fiber: RuntimePersistentFiberId,
+        target: &PresentationScopeTarget<'_>,
+    ) -> Result<(), RuntimePresentationError> {
+        self.validate_program(program)?;
+        let Some(binding) = target.binding() else {
+            return Ok(());
         };
         if !binding.program.same_program(program)
             || binding.owner.execution != execution
             || binding.owner.fiber != fiber
             || binding.anchor != target.anchor
+            || self.state.scopes.get(&binding.owner.scope)
+                != Some(&(execution, fiber, target.anchor))
         {
             return Err(RuntimePresentationError::Owner);
         }
-        let owner = binding.owner;
-        let retired = self.exit_scope(program, owner)?;
-        target.install(None);
-        Ok(retired)
+        self.validate_scope(binding.owner)
     }
 
     fn validate_program(

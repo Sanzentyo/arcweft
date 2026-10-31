@@ -84,6 +84,210 @@ fn bind<V>(
 }
 
 #[test]
+fn scope_batch_rejects_a_later_wrong_anchor_without_retiring_the_first_scope() {
+    let (program, artifact, expected, dialogue) = fixture();
+    let mut banks = PresentationBanks::new(
+        program.clone(),
+        artifact,
+        PresentationLedgerLimits {
+            handles: 4,
+            scopes: 4,
+        },
+    );
+    let mut root = RuntimeEnv::default();
+    let mut child = RuntimeEnv::default();
+    for (bank, env, value) in [
+        (RuntimePresentationBankId::Root, &mut root, true),
+        (dialogue, &mut child, false),
+    ] {
+        let owner = bind(&mut banks, bank, &program, env);
+        banks
+            .ledger_mut(bank)
+            .unwrap()
+            .register(&program, owner, site(), body(expected, value))
+            .unwrap();
+    }
+    let before = banks.snapshot_admitted().unwrap();
+    let root_binding = root.presentation_scope_target().unwrap().binding().cloned();
+    let child_binding = child
+        .presentation_scope_target()
+        .unwrap()
+        .binding()
+        .cloned();
+    let mut wrong = child.presentation_scope_target().unwrap();
+    wrong.anchor = PresentationScopeAnchor::Awbc {
+        frame: crate::runtime_id::RuntimeFrameInstanceId::from_allocated(NonZeroU64::MIN),
+        scope: None,
+    };
+    assert_eq!(
+        banks.retire_bound_scopes(
+            &program,
+            execution(),
+            fiber(),
+            vec![root.presentation_scope_target().unwrap(), wrong],
+        ),
+        Err(RuntimePresentationError::Owner)
+    );
+    assert_eq!(banks.snapshot_admitted().unwrap(), before);
+    assert_eq!(
+        root.presentation_scope_target().unwrap().binding(),
+        root_binding.as_ref()
+    );
+    assert_eq!(
+        child.presentation_scope_target().unwrap().binding(),
+        child_binding.as_ref()
+    );
+    banks
+        .retire_bound_scopes(
+            &program,
+            execution(),
+            fiber(),
+            vec![
+                child.presentation_scope_target().unwrap(),
+                root.presentation_scope_target().unwrap(),
+            ],
+        )
+        .unwrap();
+    assert_eq!(
+        banks
+            .retirements
+            .iter()
+            .map(|entry| entry.token.bank())
+            .collect::<Vec<_>>(),
+        [dialogue, RuntimePresentationBankId::Root]
+    );
+    assert!(
+        root.presentation_scope_target()
+            .unwrap()
+            .binding()
+            .is_none()
+    );
+    assert!(
+        child
+            .presentation_scope_target()
+            .unwrap()
+            .binding()
+            .is_none()
+    );
+}
+
+#[test]
+fn whole_scope_batch_capacity_precedes_any_body_move_and_retry_keeps_unwind_order() {
+    let (program, artifact, expected, _) = fixture();
+    let bank = RuntimePresentationBankId::Root;
+    let mut banks = PresentationBanks::new(
+        program.clone(),
+        artifact,
+        PresentationLedgerLimits {
+            handles: 2,
+            scopes: 4,
+        },
+    );
+    let mut prior = RuntimeEnv::default();
+    let prior_owner = bind(&mut banks, bank, &program, &mut prior);
+    banks
+        .ledger_mut(bank)
+        .unwrap()
+        .register(&program, prior_owner, site(), body(expected, false))
+        .unwrap();
+    banks
+        .retire_bound_scope(
+            &program,
+            execution(),
+            fiber(),
+            prior.presentation_scope_target().unwrap(),
+        )
+        .unwrap();
+    let mut outer = RuntimeEnv::default();
+    let mut inner = RuntimeEnv::default();
+    let mut tokens = Vec::new();
+    for env in [&mut outer, &mut inner] {
+        let owner = bind(&mut banks, bank, &program, env);
+        tokens.push(
+            banks
+                .ledger_mut(bank)
+                .unwrap()
+                .register(
+                    &program,
+                    owner,
+                    PresentationRegistrationSite::Independent(PresentationResourceKind::Image),
+                    body(expected, true),
+                )
+                .unwrap()
+                .0,
+        );
+    }
+    let before = banks.snapshot_admitted().unwrap();
+    let grants = [
+        outer
+            .presentation_scope_target()
+            .unwrap()
+            .binding()
+            .cloned(),
+        inner
+            .presentation_scope_target()
+            .unwrap()
+            .binding()
+            .cloned(),
+    ];
+    assert_eq!(
+        banks.retire_bound_scopes(
+            &program,
+            execution(),
+            fiber(),
+            vec![
+                inner.presentation_scope_target().unwrap(),
+                outer.presentation_scope_target().unwrap(),
+            ]
+        ),
+        Err(RuntimePresentationError::RetirementCapacity)
+    );
+    assert_eq!(banks.snapshot_admitted().unwrap(), before);
+    assert_eq!(
+        outer.presentation_scope_target().unwrap().binding(),
+        grants[0].as_ref()
+    );
+    assert_eq!(
+        inner.presentation_scope_target().unwrap().binding(),
+        grants[1].as_ref()
+    );
+    banks.retirements.clear();
+    banks
+        .retire_bound_scopes(
+            &program,
+            execution(),
+            fiber(),
+            vec![
+                inner.presentation_scope_target().unwrap(),
+                outer.presentation_scope_target().unwrap(),
+            ],
+        )
+        .unwrap();
+    assert_eq!(
+        banks
+            .retirements
+            .iter()
+            .map(|entry| entry.token.clone())
+            .collect::<Vec<_>>(),
+        [tokens[1].clone(), tokens[0].clone()]
+    );
+    assert!(
+        outer
+            .presentation_scope_target()
+            .unwrap()
+            .binding()
+            .is_none()
+    );
+    assert!(
+        inner
+            .presentation_scope_target()
+            .unwrap()
+            .binding()
+            .is_none()
+    );
+}
+
+#[test]
 fn bank_headers_merge_before_bodies_and_same_fiber_grants_round_trip_without_collision() {
     let (program, artifact, expected, dialogue) = fixture();
     let mut banks = PresentationBanks::new(
