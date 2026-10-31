@@ -154,6 +154,23 @@ fn thread_publication_rejects_structural_and_foreign_body_semantics() {
         .collect::<Vec<_>>();
     assert_eq!(threads.len(), 2);
     let (owner, original) = threads[0];
+    let cancellation = std::sync::atomic::AtomicBool::new(false);
+    let rebuild = |input| {
+        FinalSemanticAnalysis::try_new_with_control_and_type_resolutions(
+            world.project.analysis_view().unwrap(),
+            &world.symbols,
+            std::sync::Arc::clone(accepted.hir_topology()),
+            accepted.checked_callables().clone(),
+            input,
+            accepted
+                .type_resolutions()
+                .map(|(owner, report)| (owner, report.clone()))
+                .collect(),
+            crate::final_analysis::FinalSemanticAnalysisControl::new(&cancellation),
+        )
+    };
+    rebuild(super::input_from_report(&accepted))
+        .expect("complete Thread publication preserves accepted type-resolution evidence");
     for (ty, resolution) in [
         (
             original.value_type().unwrap().clone(),
@@ -178,14 +195,8 @@ fn thread_publication_rejects_structural_and_foreign_body_semantics() {
             resolution,
         )
         .into();
-        let error = FinalSemanticAnalysis::try_new(
-            world.project.analysis_view().unwrap(),
-            &world.symbols,
-            std::sync::Arc::clone(accepted.hir_topology()),
-            accepted.checked_callables().clone(),
-            input,
-        )
-        .expect_err("a Thread requires its own checked body, mode and result type");
+        let error = rebuild(input)
+            .expect_err("a Thread requires its own checked body, mode and result type");
         assert_eq!(error, FinalSemanticAnalysisError::WrongPayloadFamily);
     }
 }

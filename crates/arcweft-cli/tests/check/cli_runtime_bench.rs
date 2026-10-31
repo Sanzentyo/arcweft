@@ -5836,7 +5836,7 @@ fn bench_json_measures_checked_in_dense_textual_scalar_len_fixture() {
     );
     assert_semantic_metrics(&json["compiler"]["semantic"]);
     assert_eq!(json["compiler"]["semantic"]["locals"], 5);
-    assert_eq!(json["compiler"]["semantic"]["types"], 7);
+    assert_eq!(json["compiler"]["semantic"]["types"], 5);
     assert_eq!(json["compiler"]["semantic"]["expressions"], 27);
     let measurement = &json["benches"][0]["sections"][0]["measurement"];
     assert_eq!(measurement["deterministic"]["executed_ops_median"], 7);
@@ -5897,7 +5897,7 @@ fn bench_json_measures_checked_in_dense_wide_numeric_len_fixture() {
     );
     assert_semantic_metrics(&json["compiler"]["semantic"]);
     assert_eq!(json["compiler"]["semantic"]["locals"], 5);
-    assert_eq!(json["compiler"]["semantic"]["types"], 10);
+    assert_eq!(json["compiler"]["semantic"]["types"], 6);
     assert_eq!(json["compiler"]["semantic"]["expressions"], 18);
     let measurement = &json["benches"][0]["sections"][0]["measurement"];
     assert_eq!(measurement["deterministic"]["executed_ops_median"], 7);

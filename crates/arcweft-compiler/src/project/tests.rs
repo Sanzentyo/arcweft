@@ -1456,15 +1456,34 @@ flow main(number: Route<i32>, word: Route<String>) {
                 )
             )
         );
+        let mut semantic_type_arguments = 0;
+        for row in semantics.type_projection() {
+            use arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionTypeProjection;
+            match row {
+                RuntimeProjectFunctionTypeProjection::SemanticOnlyType { owner, purpose } => {
+                    let expected = semantics
+                        .partition()
+                        .types()
+                        .iter()
+                        .find(|node| node.owner() == *owner)
+                        .expect("every semantic type marker retains its exact source owner");
+                    assert!(!expected.has_runtime_type());
+                    assert_eq!(purpose, expected.purpose());
+                    if purpose == &arcweft_lang_sema::nominal::ResolvedTypeNodePurpose::TypeArgument
+                    {
+                        semantic_type_arguments += 1;
+                    }
+                }
+                RuntimeProjectFunctionTypeProjection::SemanticOnlyExpression { .. } => {}
+                RuntimeProjectFunctionTypeProjection::Local { .. }
+                | RuntimeProjectFunctionTypeProjection::Value { .. } => {
+                    assert!(row.ty().is_some());
+                }
+            }
+        }
         assert!(
-            semantics
-                .type_projection()
-                .iter()
-                .all(|row| row.ty().is_some()
-                    || matches!(
-            row.owner(),
-            arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionTypeOwner::Expression(_)
-        ))
+            semantic_type_arguments > 0,
+            "the closed generic method retains its semantic type arguments"
         );
     }
 }
