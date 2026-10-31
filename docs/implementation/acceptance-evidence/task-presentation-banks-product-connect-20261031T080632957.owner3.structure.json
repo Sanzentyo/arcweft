@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "11efc2f8d7534640aee7e902f1e5cc207d789805",
+  "command": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--fail-on-blocking",
+    "--write",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-banks-product-connect-20261031T080632957.owner3.structure-report"
+  ],
+  "exitCode": 0,
+  "sourceInputs": 4012,
+  "sourceDrift": 0,
+  "startedAt": "2026-10-31T08:30:04.2192001Z",
+  "finishedAt": "2026-10-31T08:30:08.3311168Z"
+}

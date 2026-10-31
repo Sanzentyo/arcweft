@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "paths": [
+    "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+    "crates/arcweft-core/src/awbc/product_step.rs",
+    "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+    "crates/arcweft-core/src/awbc/product_step/tests.rs",
+    "crates/arcweft-core/src/engine/presentation.rs",
+    "crates/arcweft-core/src/presentation/resources.rs",
+    "crates/arcweft-core/src/presentation/resources/banks.rs",
+    "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+    "crates/arcweft-core/src/presentation/resources/storage.rs",
+    "crates/arcweft-core/src/presentation/resources/tests.rs",
+    "crates/arcweft-core/src/root/snapshot.rs",
+    "crates/arcweft-core/src/presentation/resources/banks/bank_rows.rs",
+    "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs"
+  ],
+  "exitCode": 0,
+  "sourceInputs": 4012,
+  "sourceDrift": 0
+}

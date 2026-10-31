@@ -1,0 +1,9 @@
+From https://github.com/Sanzentyo/arcweft
+ * branch                main       -> FETCH_HEAD
+[main 9987b86e6] Connect presentation bank ownership to Product save and restore
+ 15 files changed, 516 insertions(+), 47 deletions(-)
+ create mode 100644 crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
+ create mode 100644 crates/arcweft-core/src/presentation/resources/banks/bank_rows.rs
+To https://github.com/Sanzentyo/arcweft.git
+   11efc2f8d..9987b86e6  HEAD -> main
+{"commit":"9987b86e6399afe6f2803944665e1df6cb53cf56","parent":"11efc2f8d7534640aee7e902f1e5cc207d789805","tree":"a9662985211e9a3edd3af9908aa03a87efdf615d","paths":15,"blobDrift":0,"originalWip":14,"separatelyHeld":0,"patchSha256":"658349177f4ad5b9cda83f2c49f08cb3685b7873ac571192fa7933eb7993a842","indexEmpty":true}

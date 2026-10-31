@@ -1,0 +1,17 @@
+{"base":"11efc2f8d7534640aee7e902f1e5cc207d789805","paths":15,"other":0,"held":14,"tree":"a9662985211e9a3edd3af9908aa03a87efdf615d","patchSha256":"658349177f4ad5b9cda83f2c49f08cb3685b7873ac571192fa7933eb7993a842","heldPatchSha256":"5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a"}
+ .../src/awbc/fiber/tests/presentation.rs           |   8 ++
+ crates/arcweft-core/src/awbc/product_step.rs       |   6 ++
+ .../arcweft-core/src/awbc/product_step/snapshot.rs |  87 ++++++++++++++--
+ crates/arcweft-core/src/awbc/product_step/tests.rs |   1 +
+ .../src/awbc/product_step/tests/presentation.rs    | 114 +++++++++++++++++++++
+ crates/arcweft-core/src/engine/presentation.rs     |   5 +-
+ crates/arcweft-core/src/presentation/resources.rs  |  39 +++++--
+ .../src/presentation/resources/banks.rs            |  95 ++++++++++++++---
+ .../src/presentation/resources/banks/bank_rows.rs  |  70 +++++++++++++
+ .../src/presentation/resources/banks/tests.rs      |  87 ++++++++++++++++
+ .../src/presentation/resources/storage.rs          |  16 +--
+ .../src/presentation/resources/tests.rs            |   2 +-
+ crates/arcweft-core/src/root/snapshot.rs           |  13 +--
+ docs/02-runtime/save-replay.md                     |   8 +-
+ .../implementation/convergence-evidence-history.md |  12 +++
+ 15 files changed, 516 insertions(+), 47 deletions(-)

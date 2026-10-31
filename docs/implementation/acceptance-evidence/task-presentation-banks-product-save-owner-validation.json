@@ -1,0 +1,617 @@
+{
+  "version": 1,
+  "scope": "AWBC Product presentation bank storage, public save/restore and complete retained-value visitors; command ABI remains unconnected",
+  "sourcePublication": {
+    "version": 1,
+    "commit": "9987b86e6399afe6f2803944665e1df6cb53cf56",
+    "parent": "11efc2f8d7534640aee7e902f1e5cc207d789805",
+    "tree": "a9662985211e9a3edd3af9908aa03a87efdf615d",
+    "remote": "9987b86e6399afe6f2803944665e1df6cb53cf56",
+    "paths": [
+      {
+        "path": "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+        "blob": "9c25de6709cdb4cc4a55de8d2c64c3440a04b79f"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step.rs",
+        "blob": "1d7ed46c24c2969a1df75082022bc959abeb0676"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+        "blob": "42bed9aea1e8e07897ecec420953be366beebc06"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+        "blob": "31573cfa20dd781c5204354feb777e6b5376f070"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+        "blob": "e8b11f6988ddaaccd64387654e6d5eb6341d67b2"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/presentation.rs",
+        "blob": "040694b0b0565a89eee2757321d998de02e31d9a"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources.rs",
+        "blob": "bb00be01864672f67b9b26d183b961dfb2c5a124"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/banks.rs",
+        "blob": "9612066938e647443c59eb6b0c8c885c3457d150"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/banks/bank_rows.rs",
+        "blob": "4eeb60d1940e663a4dc7f74e593b2b44e1b19064"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+        "blob": "0fbac5000aed480a2267357c928901e73c3fd3f4"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/storage.rs",
+        "blob": "58bcfe4ed2195f5b8db7fd9d10a5b677254522e6"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/tests.rs",
+        "blob": "fee3102d045845056851c45c6cf021999a269265"
+      },
+      {
+        "path": "crates/arcweft-core/src/root/snapshot.rs",
+        "blob": "cef087cb394c2ca3f6080d8c98ebe8b54a77f672"
+      },
+      {
+        "path": "docs/02-runtime/save-replay.md",
+        "blob": "d53f4a6824450e59bc39c88fa883b9574a6aebf6"
+      },
+      {
+        "path": "docs/implementation/convergence-evidence-history.md",
+        "blob": "6318b9090785c117999c517461020186d61db311"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "658349177f4ad5b9cda83f2c49f08cb3685b7873ac571192fa7933eb7993a842",
+    "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-10-31T08:33:25.8198663Z"
+  },
+  "owner": {
+    "version": 1,
+    "base": "11efc2f8d7534640aee7e902f1e5cc207d789805",
+    "run": "presentation-banks-product-connect-20261031T080632957.owner3.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  79.807s] 2148 tests run: 2148 passed (1 slow), 0 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2148,
+    "passed": 2148,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4012,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-31T08:27:02.6537717Z"
+  },
+  "targetedPredecessor": {
+    "stem": "presentation-banks-product-connect-20261031T080632957.owner2",
+    "executed": 4,
+    "passed": 4,
+    "filtered": 2144,
+    "laterDelta": "Root inert image now receives the enclosing Product admission; final owner3 executes all 2148 cases after this delta"
+  },
+  "initialCatalog": {
+    "stem": "presentation-banks-product-connect-20261031T080632957.owner1",
+    "exitCode": 101,
+    "executed": 0,
+    "cause": "Two test closures inferred owned RuntimeValue instead of borrowed &RuntimeValue; explicit argument annotations repaired the fixture without changing assertions."
+  },
+  "quality": [
+    {
+      "record": "task-presentation-banks-product-connect-20261031T080632957.owner3.clippy.json",
+      "result": {
+        "version": 1,
+        "base": "11efc2f8d7534640aee7e902f1e5cc207d789805",
+        "command": [
+          "clippy",
+          "-p",
+          "arcweft-core",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4012,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T08:28:15.3204015Z",
+        "finishedAt": "2026-10-31T08:29:10.5441133Z"
+      }
+    },
+    {
+      "record": "task-presentation-banks-product-connect-20261031T080632957.owner3.default-check.json",
+      "result": {
+        "version": 1,
+        "base": "11efc2f8d7534640aee7e902f1e5cc207d789805",
+        "command": [
+          "check",
+          "-p",
+          "arcweft-core",
+          "--all-targets",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4012,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T08:29:11.0835942Z",
+        "finishedAt": "2026-10-31T08:29:54.0447489Z"
+      }
+    },
+    {
+      "record": "task-presentation-banks-product-connect-20261031T080632957.owner3.doctest.json",
+      "result": {
+        "version": 1,
+        "base": "11efc2f8d7534640aee7e902f1e5cc207d789805",
+        "command": [
+          "test",
+          "-p",
+          "arcweft-core",
+          "--doc",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4012,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T08:29:54.5773841Z",
+        "finishedAt": "2026-10-31T08:30:03.6984332Z"
+      }
+    },
+    {
+      "record": "task-presentation-banks-product-connect-20261031T080632957.owner3.structure.json",
+      "result": {
+        "version": 1,
+        "base": "11efc2f8d7534640aee7e902f1e5cc207d789805",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-banks-product-connect-20261031T080632957.owner3.structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4012,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T08:30:04.2192001Z",
+        "finishedAt": "2026-10-31T08:30:08.3311168Z"
+      }
+    },
+    {
+      "record": "task-presentation-banks-product-connect-20261031T080632957.owner3.fmt.json",
+      "result": {
+        "version": 1,
+        "paths": [
+          "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+          "crates/arcweft-core/src/awbc/product_step.rs",
+          "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests.rs",
+          "crates/arcweft-core/src/engine/presentation.rs",
+          "crates/arcweft-core/src/presentation/resources.rs",
+          "crates/arcweft-core/src/presentation/resources/banks.rs",
+          "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+          "crates/arcweft-core/src/presentation/resources/storage.rs",
+          "crates/arcweft-core/src/presentation/resources/tests.rs",
+          "crates/arcweft-core/src/root/snapshot.rs",
+          "crates/arcweft-core/src/presentation/resources/banks/bank_rows.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4012,
+        "sourceDrift": 0
+      }
+    }
+  ],
+  "doctests": {
+    "passed": 78,
+    "failed": 0,
+    "ignored": 0
+  },
+  "structure": {
+    "packages": 97,
+    "files": 3250,
+    "rustFiles": 3120,
+    "physicalLOC": 1775586.0,
+    "reviewTriggers": 382,
+    "blocking": 0,
+    "core": {
+      "package": "arcweft-core",
+      "manifest": "crates/arcweft-core/Cargo.toml",
+      "workspace_fan_in": "31",
+      "workspace_fan_out": "7",
+      "development_workspace_fan_in": "4",
+      "development_workspace_fan_out": "5"
+    },
+    "touched": [
+      {
+        "path": "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+        "owner": "arcweft-core",
+        "bytes": "25339",
+        "physical_lines": "703",
+        "code_lines": "674",
+        "classification": "test",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+        "owner": "arcweft-core",
+        "bytes": "184555",
+        "physical_lines": "4353",
+        "code_lines": "4203",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "180"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+        "owner": "arcweft-core",
+        "bytes": "4868",
+        "physical_lines": "114",
+        "code_lines": "110",
+        "classification": "test",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+        "owner": "arcweft-core",
+        "bytes": "323454",
+        "physical_lines": "8194",
+        "code_lines": "7944",
+        "classification": "test",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step.rs",
+        "owner": "arcweft-core",
+        "bytes": "241128",
+        "physical_lines": "5983",
+        "code_lines": "5699",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/presentation.rs",
+        "owner": "arcweft-core",
+        "bytes": "5935",
+        "physical_lines": "154",
+        "code_lines": "145",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/banks/bank_rows.rs",
+        "owner": "arcweft-core",
+        "bytes": "2908",
+        "physical_lines": "70",
+        "code_lines": "65",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+        "owner": "arcweft-core",
+        "bytes": "11940",
+        "physical_lines": "366",
+        "code_lines": "360",
+        "classification": "test",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/banks.rs",
+        "owner": "arcweft-core",
+        "bytes": "11782",
+        "physical_lines": "325",
+        "code_lines": "298",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/storage.rs",
+        "owner": "arcweft-core",
+        "bytes": "16845",
+        "physical_lines": "467",
+        "code_lines": "430",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/tests.rs",
+        "owner": "arcweft-core",
+        "bytes": "20272",
+        "physical_lines": "666",
+        "code_lines": "647",
+        "classification": "test",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources.rs",
+        "owner": "arcweft-core",
+        "bytes": "24898",
+        "physical_lines": "733",
+        "code_lines": "642",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/root/snapshot.rs",
+        "owner": "arcweft-core",
+        "bytes": "12947",
+        "physical_lines": "333",
+        "code_lines": "298",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      }
+    ]
+  },
+  "ownershipReview": [
+    "The same PresentationBanks<V,L> owning grammar selects program-retaining or inert ledger storage; no parallel wire bank model. Only inert storage serializes.",
+    "Program lease and trusted limits are outside wire state. Restore supplies its selected schema policy; old wire limits are rejected as unknown fields, in-place version 1.",
+    "The complete Product owns banks, bodies, retirements, fibers, Root, tasks and dialogues. All bank headers precede retained bodies, and whole-image custody closes before projection.",
+    "Root wire-to-image conversion receives the enclosing admission rather than issuing another global allowance. Live body materialization retains the full original program/Source restore context.",
+    "The large Product snapshot module still owns the single whole-executor persistence contour; bank-row codec and Presentation tests stay under their actual resource/test owners. No Cargo edge, I/O or unsafe added."
+  ],
+  "acceptance": {
+    "storageBasis": "owner verified",
+    "fixture": "real Root bank physical scope, typed Bool resource body, real public Product save and owning restore",
+    "notEstablished": [
+      "Source ViewValue construction or mount",
+      "AWBC runtime bank selection and all execution checkpoint/VM cleanup paths",
+      "Native borrowed Dialogue transaction complete retained contour",
+      "11 callables, mount and 6 Handle methods in instruction/lowering/driver",
+      "code replacement with active banks, native/web image parity or final full consumer acceptance"
+    ],
+    "reverse": "Deferred until the continuing same-Core implementation cohort; do not reuse interrupted old Source091 consumer results as this source validation."
+  },
+  "preservedAccepted": [
+    "Generic Match remains accepted/published",
+    "prior Native custody/cleanup and Image owner",
+    "prior physical AWBC scope and per-bank codec laws"
+  ],
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner1.catalog.json",
+      "sha256": "929ed57489544c29e9cfce5314c15b7974a6dea936ff5772bc0dac53e1b02488",
+      "bytes": 647
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner1.catalog.log",
+      "sha256": "0dfbf2977840d4e37ae3cdf6659e90904a45503947206c663c66f80552672ef1",
+      "bytes": 79132
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner1.inputs.json",
+      "sha256": "f83b1b01589065ad2246d406bec12ad98bcedf9a83c33641829b003a820255a5",
+      "bytes": 783994
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner1.source-freeze.json",
+      "sha256": "e10f8d6e7bc7c9606caa0170aae89857d49932f0a9c1801773ba0c92f5cab3bc",
+      "bytes": 784064
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner2.binaries-before.json",
+      "sha256": "0dcdf25ed1f3ed519871847c9adfbef0db3feb1e0dc9ee5e8f60241ae1bee827",
+      "bytes": 3108
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner2.catalog.inventory.json",
+      "sha256": "d5a9fa8eff6681d796b83799d02b79602050a4df798398a1675e5285dafb4191",
+      "bytes": 545531
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner2.catalog.json",
+      "sha256": "bc28ddfaf7b0079e9df1d58f05f202e148ede7ab586c2b14e4960d1b44c10eaf",
+      "bytes": 645
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner2.catalog.log",
+      "sha256": "ef631aedc9a4628630e6d44415a02758fb566521c523bf4a06d4a6d3793408dc",
+      "bytes": 504882
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner2.runtime.json",
+      "sha256": "02119667a40d34752af49ee9c23ffb536148e69a043337be6c6afe9766536d0f",
+      "bytes": 737
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner2.runtime.log",
+      "sha256": "a99299a382d0c7e5a79e0d884917b3fb1c0edb65d402c1e43967654b8f19ae42",
+      "bytes": 736110
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner2.runtime.terminal-audit.json",
+      "sha256": "3a56f3a1e9bcaf4e7ae8954dd0ba6bdb4aa4a93c7f9f8572310ee65710c5009a",
+      "bytes": 643
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner2.source-freeze.json",
+      "sha256": "268d6ce89d235ccac6f609fe41a14a74d8f4c05a5d8900c95405d37f3c5c2a95",
+      "bytes": 784064
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner3.binaries-before.json",
+      "sha256": "97a2f478f2613c42d759f569e9c878535e02f5c46276ebe348736424336b1f86",
+      "bytes": 3108
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner3.catalog.inventory.json",
+      "sha256": "49097f222688b031bbba2cf9ad47c24a2d939c91cea8f2fe271523477441bc37",
+      "bytes": 543384
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner3.catalog.json",
+      "sha256": "02be1d0fdef292b5ed5f1bb68f0f9e962baa94d5e4ff2c8dad5f491fac83ad4e",
+      "bytes": 513
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner3.catalog.log",
+      "sha256": "2d14b9909424c0a7bf3e14f5638be69f97523834c6ae107bbab55cdd2f75ac19",
+      "bytes": 455570
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner3.clippy.json",
+      "sha256": "4b359423c5d87a3d8f14eb06a4679f1150098677f06872abd060a146f85679f8",
+      "bytes": 368
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner3.clippy.log",
+      "sha256": "a9e406f74623958fab32fcaa3b6a33c2dc82cea68aafa3ada6eb8d5dbf032f9a",
+      "bytes": 4362389
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner3.default-check.json",
+      "sha256": "f2d6e9e3799721dd090238762b1ab858d791942b6434901277e2b103c9622e5b",
+      "bytes": 344
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner3.default-check.log",
+      "sha256": "16e1f61299594334fd6c0d6ff1c4948ffcfa4a3d61f77f9ef8e67d70c37c3fd1",
+      "bytes": 83155
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner3.doctest.json",
+      "sha256": "9a7316b496e25292598e6b666f3edbec601ba13b30ca5d8ba4463e6b1bff69bb",
+      "bytes": 358
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner3.doctest.log",
+      "sha256": "0b7a7c1480efa9aaa9bee54be083910c6af4269be22b06f095b5237af38fc991",
+      "bytes": 82305
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner3.fmt.json",
+      "sha256": "50a9cb09430d6d2f6a3d8f6e11a428078a320b1175e80b3fa0ad0c0ee0c04e6f",
+      "bytes": 916
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner3.fmt.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner3.runtime.json",
+      "sha256": "b01b8f303b65380cfd41755ee7428fd2fb7ee7d77c47793d6cce5a78684f3d93",
+      "bytes": 605
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner3.runtime.log",
+      "sha256": "094dca117a6783d6c8a44b1b3aeac945ab8699ee611f472ab688b7bcba00ca5b",
+      "bytes": 736291
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner3.runtime.terminal-audit.json",
+      "sha256": "50809af19087a7853f6ef72f3afa26704f03e79995eab9ac71480801a2a47a57",
+      "bytes": 658
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner3.source-freeze.json",
+      "sha256": "0facd5a3656738e900df052c6b1149edcfabf8f2f9cd9c40606ead7e001d091e",
+      "bytes": 784064
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner3.structure.json",
+      "sha256": "0e64643670d7f4c01119406bbf898918f3231eba0e70291a1c3ad4e0daef56d2",
+      "bytes": 555
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner3.structure.log",
+      "sha256": "36f65a86371f3f436bc217feb6e427364f071647fbb5223173dabe6588e866eb",
+      "bytes": 65064
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.source-checkpoint.prepare.log",
+      "sha256": "9a8654c2f0a8aa033f1a76825a33670295277581237c6a587757448cebc60f33",
+      "bytes": 1365
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.source-checkpoint.prepared.json",
+      "sha256": "c6b8555fd16cb047f801afbfcbebd8fee137ee2e7e23b1e0ab18b0df568880e1",
+      "bytes": 3401
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.source-checkpoint.publish.log",
+      "sha256": "f78b2de983dd80b947c3c3e980081a9af59c073ab35d1628808e382fe46bd256",
+      "bytes": 804
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.source-checkpoint.reviewed.patch",
+      "sha256": "658349177f4ad5b9cda83f2c49f08cb3685b7873ac571192fa7933eb7993a842",
+      "bytes": 48562
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.source-checkpoint.verified.json",
+      "sha256": "20bc20771911925d50a640f208245db5788bce566123e57be6a6e26d2a064463",
+      "bytes": 2706
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner3.structure-dependency_edges.csv",
+      "sha256": "529e738d348314f7a4c0d909b165620d03ec57478b68ad42b06aa349b30e13f4",
+      "bytes": 77544
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner3.structure-file_metrics.csv",
+      "sha256": "0c10fbc6f3d4eedf8fb63e5f130f128ca1ae79c46de2a4ce76ad8ffc9c2b5719",
+      "bytes": 329143
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner3.structure-findings.md",
+      "sha256": "87ecfa08ca17ca5ec747ad73f3b264e628e85c1e28d4c81fa1245aaf53bf0468",
+      "bytes": 122295
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner3.structure-package_metrics.csv",
+      "sha256": "c2df26363c079ef3c17be71810df334c6e4825ab5987b4951b3f1432368b85f2",
+      "bytes": 6444
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-connect-20261031T080632957.owner3.structure-public_type_duplicates.csv",
+      "sha256": "6cbaa427fef9360e8adb6245ea1eec66f5fdaf2624a24979e82d4877a28e31ac",
+      "bytes": 17238
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks-product-save.docs-audit.log",
+      "sha256": "b104e0e3abf1e310041403b0ec03ea2eea26eecc651b8a7e6e4bd3221ab3b5ac",
+      "bytes": 442
+    }
+  ],
+  "recordedAt": "2026-10-31T08:35:17.3541592Z",
+  "documentationAudit": {
+    "record": "task-presentation-banks-product-save.docs-audit.log",
+    "documents": 129,
+    "links": 650,
+    "brokenLinks": 0,
+    "unretainedCommitIds": 0,
+    "historicalRawChanges": 0,
+    "historicalPrefixPreserved": true,
+    "heldFiles": 20,
+    "heldDrift": 0
+  }
+}

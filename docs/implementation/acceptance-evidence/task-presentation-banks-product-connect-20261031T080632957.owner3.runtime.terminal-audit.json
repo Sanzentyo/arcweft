@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "11efc2f8d7534640aee7e902f1e5cc207d789805",
+  "run": "presentation-banks-product-connect-20261031T080632957.owner3.runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  79.807s] 2148 tests run: 2148 passed (1 slow), 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 2148,
+  "passed": 2148,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4012,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-31T08:27:02.6537717Z"
+}

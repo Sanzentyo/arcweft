@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "11efc2f8d7534640aee7e902f1e5cc207d789805",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-banks-product-connect-20261031T080632957.owner3.catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-31T08:24:54.3216640Z",
+  "finishedAt": "2026-10-31T08:25:39.4471513Z"
+}

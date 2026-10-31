@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "commit": "9987b86e6399afe6f2803944665e1df6cb53cf56",
+  "parent": "11efc2f8d7534640aee7e902f1e5cc207d789805",
+  "tree": "a9662985211e9a3edd3af9908aa03a87efdf615d",
+  "remote": "9987b86e6399afe6f2803944665e1df6cb53cf56",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+      "blob": "9c25de6709cdb4cc4a55de8d2c64c3440a04b79f"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step.rs",
+      "blob": "1d7ed46c24c2969a1df75082022bc959abeb0676"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+      "blob": "42bed9aea1e8e07897ecec420953be366beebc06"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+      "blob": "31573cfa20dd781c5204354feb777e6b5376f070"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "blob": "e8b11f6988ddaaccd64387654e6d5eb6341d67b2"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/presentation.rs",
+      "blob": "040694b0b0565a89eee2757321d998de02e31d9a"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources.rs",
+      "blob": "bb00be01864672f67b9b26d183b961dfb2c5a124"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/banks.rs",
+      "blob": "9612066938e647443c59eb6b0c8c885c3457d150"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/banks/bank_rows.rs",
+      "blob": "4eeb60d1940e663a4dc7f74e593b2b44e1b19064"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+      "blob": "0fbac5000aed480a2267357c928901e73c3fd3f4"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/storage.rs",
+      "blob": "58bcfe4ed2195f5b8db7fd9d10a5b677254522e6"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/tests.rs",
+      "blob": "fee3102d045845056851c45c6cf021999a269265"
+    },
+    {
+      "path": "crates/arcweft-core/src/root/snapshot.rs",
+      "blob": "cef087cb394c2ca3f6080d8c98ebe8b54a77f672"
+    },
+    {
+      "path": "docs/02-runtime/save-replay.md",
+      "blob": "d53f4a6824450e59bc39c88fa883b9574a6aebf6"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "6318b9090785c117999c517461020186d61db311"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "658349177f4ad5b9cda83f2c49f08cb3685b7873ac571192fa7933eb7993a842",
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-31T08:33:25.8198663Z"
+}
