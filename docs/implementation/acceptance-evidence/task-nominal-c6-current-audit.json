@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "date": "2026-10-31",
+  "inspectedHead": "10134674da0453be4d99eba7a92be275e38b2855",
+  "sourceCommit": "c3b6ea79a7b16674ed0cbcd644b9e7bdd6c95030",
+  "workingTree": "Original tracked WIP14/untracked actual files6 retained; no Rust source changes during the frozen consumer run.",
+  "evidenceKind": "Current source review plus reuse of an already executed exact Sema test; not a new Cargo run or Source-spelling acceptance gate.",
+  "source": [
+    {
+      "path": "crates/arcweft-lang-sema/src/ownership.rs",
+      "blob": "e67df3adc2b105803e9bdf1b6eba4d28ee740246",
+      "sha256": "78583503ba20bc02a118bdd594d5464a7a7785ccc38a35f172339d2895d76f80"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/accepted_rust_nominal.rs",
+      "blob": "02b8a400dec5021127cfef4f03e36266065e0069",
+      "sha256": "78ef48f1589d1282d3bd28d6de7f15820322e9c558d74eaa80cef9588dbc0d48"
+    }
+  ],
+  "finding": "RuntimeProducerArgumentClassifier::classify_accepted_nominal projects AcceptedNominalSemantics::RustAdt through the accepted source graph, then unconditionally returns MissingRuntimeSnapshotOwner. RegisteredSemanticWorld::checked_ownership delegates to that classifier. This path does not yet publish successful structural retained-value ownership for joined Rust ADTs.",
+  "sourceLocations": [
+    {
+      "path": "crates/arcweft-lang-sema/src/ownership.rs",
+      "line": 1594,
+      "owner": "classify_accepted_nominal RustAdt branch"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/ownership.rs",
+      "line": 1969,
+      "owner": "checked_ownership public boundary"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/accepted_rust_nominal.rs",
+      "line": 773,
+      "owner": "existing assertion requires MissingRuntimeSnapshotOwner"
+    }
+  ],
+  "reusedTest": {
+    "binary": "arcweft-lang-sema",
+    "test": "final_analysis::tests::accepted_rust_nominal::mutual_recursion_is_finite_and_limits_reject_without_publication",
+    "status": "PASS",
+    "caseTerminal": "PASS [   0.162s] ( 312/1363) arcweft-lang-sema final_analysis::tests::accepted_rust_nominal::mutual_recursion_is_finite_and_limits_reject_without_publication",
+    "inventory": "task-presentation-awbc-scopes.reverse-arcweft-lang-sema-catalog.inventory.json",
+    "runtime": "task-presentation-awbc-scopes.reverse-arcweft-lang-sema-runtime.log",
+    "audit": "task-presentation-awbc-scopes.reverse-arcweft-lang-sema-runtime.terminal-audit.json",
+    "packageExecuted": 1363,
+    "packagePassed": 1363,
+    "sourceInputs": 4005,
+    "sourceDrift": 0,
+    "meaning": "The passed case proves graph limits/rejection, and explicitly expects ownership rejection; it does not prove C6 ownership success."
+  },
+  "disposition": "Replace the vague final-C6-audit-unconfirmed label with this specific missing success path. Preserve accepted record/schema/program authority, private Variant carrier, bounded task-image source and existing nominal codec/restore evidence.",
+  "remaining": "Implement the complete structural retention law under original defining authority and shared limits, validate success and rejection at owning producer/consumer boundaries, and remove the obsolete refusal/assertion together. Do not simply delete the guard.",
+  "exclusions": "No claim about public Need certificates: their deliberately private publication boundary is distinct. No claim that all C1-C6 work is unimplemented, or that Generic Match has reopened.",
+  "retainedEarlierEpoch": {
+    "source": "4c8844d70baf81ae7bb031766360738050875b35",
+    "corePassed": 1497,
+    "reversePassed": 6633,
+    "retainedReverseFailed": 57,
+    "reusedAsCurrentRun": false
+  }
+}

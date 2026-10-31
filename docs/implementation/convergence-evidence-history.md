@@ -13353,3 +13353,9 @@ LSP catalogはquery-cache書込みのOS error112で失敗した。LSPを含む10
 Cargo／nextest／rustc／linkが存在しないこと、現在のCargo metadataがworkspace D:/git/arcweft、target D:/git/arcweft/targetを指し両者がreparse pointでないことを確認した。ユーザー指定の全体cargo cleanを再実行し終了0、268,867 files／362.4GiBを削除、D:空き0から372,696,805,376 bytesへ回復、4,005入力差分0。build生成物の移動・コピー・退避は行っていない。
 
 Toolchainの同一性を確認し、同じpackage単位all-features／locked／native targetで、未実行・catalog失敗・中断分の27 packageだけを再開した。Coreや終端済みCLIを再実行せず、成功したcatalog／runtimeと実行前後のbinary照合を再利用する。jobs・profile・assertion・timeout・budgetは変更しない。現状一覧の「検証中」をこの回復状態へ同期し、CLI行の最新全件原本を更新した。受入済みGeneric MatchやCoreの各機能を未完了へ戻していない。[中断・clean・再開の範囲と全原本](acceptance-evidence/task-presentation-scope-capacity-recovery.json)。
+
+## 構造的nominalのC6条件を現コードで特定 — 2026-10-31
+
+確認main 10134674da0453be4d99eba7a92be275e38b2855、Source c3b6ea79a7b16674ed0cbcd644b9e7bdd6c95030。維持されるrecord／schema／program authorityの4公開cutに変更はない。以前の最終cutのCore 1,497 PASS、逆依存6,633 PASS／57保持FAILも、そのSource epochの検証結果として保持する。現Semaのclassify_accepted_nominalは、受入済みRustAdtのSource graphを投影した後、無条件でMissingRuntimeSnapshotOwnerを返す。公開checked_ownershipも同classifierを通る。既に全1,363件PASSとして終端照合したSema runのmutual_recursion_is_finite_and_limits_reject_without_publicationも、有限graph・上限拒否を検査した後にこの拒否を要求する。PASSを構造的retention-successへ読み替えない。[Source blob／case終端／確認範囲](acceptance-evidence/task-nominal-c6-current-audit.json)。
+
+Supersedes: 現状一覧の曖昧な「最終C6監査未確認」を、受入済みRust ADTの構造的retention成功経路が未接続という具体的な残条件へ置き換えた。既存C1–C5の実装やcodec／restore受入を戻すものではない。古い待機コメントだけを根拠にせず、実際に残る無条件拒否と実行済みassertionを根拠とする。Needの公開certificateを意図的に出さない別境界を未実装一覧へ加えない。
