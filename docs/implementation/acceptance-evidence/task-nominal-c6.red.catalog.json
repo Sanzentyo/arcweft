@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "base": "79ae2b569343f63fd4fdd62c99b1f84e44b892e4",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-features",
+    "--locked",
+    "--lib",
+    "-E",
+    "test(structural_rust_retention_uses_the_accepted_nominal_schema_owner)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/nominal-c6.red.catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-31T04:27:33.5343326Z",
+  "finishedAt": "2026-10-31T04:29:36.0748983Z"
+}

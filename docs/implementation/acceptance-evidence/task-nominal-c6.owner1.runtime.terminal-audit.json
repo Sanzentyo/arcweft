@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "79ae2b569343f63fd4fdd62c99b1f84e44b892e4",
+  "run": "nominal-c6.owner1.runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [ 132.528s] 1367 tests run: 1366 passed (1 slow), 1 failed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 1367,
+  "passed": 1366,
+  "failed": 1,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4006,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-lang-sema",
+      "test": "final_analysis::tests::accepted_rust_nominal::rust_retention_keeps_function_and_need_value_certificates_closed"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-31T04:42:50.9856624Z"
+}

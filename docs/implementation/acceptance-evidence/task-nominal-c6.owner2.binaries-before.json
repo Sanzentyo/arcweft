@@ -1,0 +1,27 @@
+[
+  {
+    "binary": "arcweft-lang-sema",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-72e0d64071dad0cf.exe",
+    "sha256": "31a1dc98e9a912d02f67b7b236831445bcfc09c7ff097042060df6153292ae67"
+  },
+  {
+    "binary": "arcweft-lang-sema::api_compile",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\api_compile-09b8229f5d839298.exe",
+    "sha256": "7db20b12a093343af875e602b8e6eafbfcc42265a6839a0080a7bad513ff33b8"
+  },
+  {
+    "binary": "arcweft-lang-sema::character_nominal_mismatch",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\character_nominal_mismatch-01eb3061a5744d7f.exe",
+    "sha256": "ed221abf1892635476e6611bc31b30394e376f524413c89e4b3530bf54addf67"
+  },
+  {
+    "binary": "arcweft-lang-sema::checked_match_query",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\checked_match_query-fb954b7d8018bac6.exe",
+    "sha256": "6753b6897052f480ce0b140c51459d6900420f990dfd94c7cf7b55f262bba21d"
+  },
+  {
+    "binary": "arcweft-lang-sema::checked_statement_read_only_views",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\checked_statement_read_only_views-c9b3f3a969f9c8f1.exe",
+    "sha256": "0a522a3439b867d7509ffbf666b6010543f70b96bf15045c205463519891b323"
+  }
+]

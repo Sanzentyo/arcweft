@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "79ae2b569343f63fd4fdd62c99b1f84e44b892e4",
+  "run": "nominal-c6.owner2.runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  61.903s] 1369 tests run: 1369 passed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 1369,
+  "passed": 1369,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4006,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-31T04:51:04.4034390Z"
+}

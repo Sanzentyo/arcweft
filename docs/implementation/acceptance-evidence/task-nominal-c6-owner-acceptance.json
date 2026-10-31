@@ -1,0 +1,339 @@
+{
+  "version": 1,
+  "recordedAt": "2026-10-31T05:08:53.7135774Z",
+  "sourceCommit": "27edc4ab450fe1d583d2099071c2206308090b24",
+  "parent": "79ae2b569343f63fd4fdd62c99b1f84e44b892e4",
+  "sourcePatchSha256": "348259b198d3120f92ce61126259af46b4c6e92ac7c8d46094994dfb33009afd",
+  "sourcePublished": true,
+  "remote": "27edc4ab450fe1d583d2099071c2206308090b24",
+  "publishedBlobDrift": 0,
+  "scope": "Joined Rust ADT type-directed structural retention, original accepted graph/generation, cumulative projection/retention work and default binding validation; C1-C5 accepted cuts retained.",
+  "red": {
+    "executed": 1,
+    "passed": 0,
+    "failed": 1,
+    "actualNextestExitCode": 100,
+    "receipt": "task-nominal-c6.red.runtime.terminal-audit.json",
+    "reason": "The accepted Rust data schema admitted a real value, but public checked_ownership returned Rejected through the old unconditional MissingRuntimeSnapshotOwner guard."
+  },
+  "intermediate": {
+    "executed": 1367,
+    "passed": 1366,
+    "failed": 1,
+    "actualNextestExitCode": 100,
+    "receipt": "task-nominal-c6.owner1.runtime.terminal-audit.json",
+    "reason": "Function-member type projection was prematurely rejected by mandatory standalone data codec construction, before the ownership value-certificate boundary. Executable schema admission now retains absent data capability; all later default bindings are still visited."
+  },
+  "finalOwner": {
+    "executed": 1369,
+    "passed": 1369,
+    "failed": 0,
+    "skipped": 0,
+    "actualNextestExitCode": 0,
+    "sourceInputs": 4006,
+    "sourceDrift": 0,
+    "catalogCaseDrift": 0,
+    "binaryDrift": 0,
+    "doctestsPassed": 2,
+    "checks": [
+      {
+        "receipt": "task-nominal-c6.owner2.check.json",
+        "exitCode": 0,
+        "command": [
+          "check",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "sourceInputs": 4006,
+        "sourceDrift": 0
+      },
+      {
+        "receipt": "task-nominal-c6.owner2.clippy.json",
+        "exitCode": 0,
+        "command": [
+          "clippy",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "sourceInputs": 4006,
+        "sourceDrift": 0
+      },
+      {
+        "receipt": "task-nominal-c6.owner2.doctest.json",
+        "exitCode": 0,
+        "command": [
+          "test",
+          "-p",
+          "arcweft-lang-sema",
+          "--doc",
+          "--all-features",
+          "--locked"
+        ],
+        "sourceInputs": 4006,
+        "sourceDrift": 0
+      },
+      {
+        "receipt": "task-nominal-c6.owner2.default-check.json",
+        "exitCode": 0,
+        "command": [
+          "check",
+          "-p",
+          "arcweft-lang-sema",
+          "--all-targets",
+          "--locked"
+        ],
+        "sourceInputs": 4006,
+        "sourceDrift": 0
+      }
+    ]
+  },
+  "cases": [
+    "structural_rust_retention_uses_the_accepted_nominal_schema_owner",
+    "recursive_rust_retention_closes_the_graph_and_checks_the_complete_value",
+    "rust_retention_spends_one_shared_type_edge_and_evidence_allowance",
+    "rust_retention_keeps_function_and_need_value_certificates_closed",
+    "executable_rust_members_keep_type_projection_without_a_data_codec",
+    "non_data_rust_members_do_not_skip_later_default_binding"
+  ],
+  "impact": {
+    "owner": "arcweft-lang-sema",
+    "selectedPackages": 22,
+    "metadata": "task-presentation-awbc-scopes.metadata-all-features.json",
+    "metadataSha256": "e294255dea6b532540701c491bc9030bc221fba2ead79b785dbe7b7a0c4c7b62",
+    "manifestDrift": 0,
+    "consumerRuntime": "pending; not claimed passed",
+    "sourceChangeSinceOwner": [
+      "crates/arcweft-compiler/tests/project_cache_transaction/rust_nominals.rs"
+    ],
+    "reuse": "Owner Sema sources/tests, manifests, fixtures and toolchain are unchanged; the sole later Rust input change is a compiler integration test."
+  },
+  "ownershipReview": {
+    "measurements": "task-nominal-c6.owner-measurements.json",
+    "owner": "RuntimeProducerArgumentClassifier and its private original-graph retention context",
+    "responsibility": "One structural ownership proof over the original immutable accepted graph. The private nominal module owns graph traversal/back-edge closure, not another source schema or runtime admission authority.",
+    "state": "A borrowed shared traversal budget and a local visited-identity set; no copied catalog or I/O.",
+    "dependencies": "No Cargo edge changes; sema consumes the existing lower Core schema graph; compiler remains a downstream certificate consumer.",
+    "testGrowth": "accepted_rust_nominal grows 485 LOC to 1527, all exercising the same original Rust metadata/schema/ownership boundary; no unrelated state or public API widening for file splitting.",
+    "size": "ownership.rs 2400 LOC is reduced by 33; the new private nominal.rs is 299 LOC. The exhaustive schema walk is cohesive; Clippy size and existing large error advisories are reviewed, not suppressed."
+  },
+  "limits": [
+    "Type-only function or affine retention is still rejected.",
+    "The existing Project nominal recursive classifier is unchanged.",
+    "Standalone codecs do not admit ExecutableRef.",
+    "Compiler capture and all 21 downstream packages are not yet accepted by this owner-only record.",
+    "No Native/Web image or CLI acceptance is claimed by this change."
+  ],
+  "preservation": {
+    "genericMatch": "accepted and published; unchanged",
+    "originalTrackedWip": 14,
+    "originalUntrackedWip": 6,
+    "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+    "history": "Historical runs remain immutable and are not summed with the final run."
+  },
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.check1.json",
+      "bytes": 372,
+      "sha256": "74dc5a173678664b6aa6ec52cc391803a15a506aca592e13d7fd24a94b7a376b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.check1.log",
+      "bytes": 87991,
+      "sha256": "ff3519fae0197a9ab7bb53f779f079dbfd34bf4323d461e8efaa5a30e561d991"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.check1.source-freeze.json",
+      "bytes": 782828,
+      "sha256": "997618a672f9cfa583174379489593509f322529086411a0c9f63d50ff2b06bf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner1.binaries-before.json",
+      "bytes": 1238,
+      "sha256": "066d8623b3df8ca3738823e34474e9e3ca58a3a615f5b216bd0a1aeb45a16063"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner1.catalog.inventory.json",
+      "bytes": 358931,
+      "sha256": "d1251a88c121a06cc07bfda5bb6411f504bbe91e6e9bc5a1bd77130527fe9815"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner1.catalog.json",
+      "bytes": 475,
+      "sha256": "a850fbdf04079a1e15d9176ab801bedb04ab003e8d70d29ea3095482e73d38e1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner1.catalog.log",
+      "bytes": 320531,
+      "sha256": "0a152418bc9ae7762470bee4ce68c00d6a84d96ac4a7437ca8f7304f411fe144"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner1.runtime.json",
+      "bytes": 569,
+      "sha256": "c138c410d87d489d6ac7ec2ae38fc681abcd6dee548d43be4a253119d82b9349"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner1.runtime.log",
+      "bytes": 514063,
+      "sha256": "e32b5fdd1f5d53bfc073bc9639701de92b32accf5aef016f489b85d7e0760fab"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner1.runtime.terminal-audit.json",
+      "bytes": 837,
+      "sha256": "da8d68892493cedc250e932dccbf43aae0937cbbc128e21a51e50d0c0eb68bdb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner1.source-freeze.json",
+      "bytes": 782849,
+      "sha256": "c1f795b9bbcb533f1646a19b3b66971356ffb7ccb1e83d8cbc54558b0ff3a14d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner2.binaries-before.json",
+      "bytes": 1238,
+      "sha256": "3b862e21527e610d3756d5c0d51662447aa6864ddbcd06eb9f053c06583fb5e7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner2.catalog.inventory.json",
+      "bytes": 359469,
+      "sha256": "18c7aadd666900dbd3582e3ef0256d57d5d9e4e93e7c159790c028f322433685"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner2.catalog.json",
+      "bytes": 475,
+      "sha256": "ae17f55698cc2b8449f8ec1b681bb68446375c8da226f9214325e61fb19c8549"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner2.catalog.log",
+      "bytes": 320885,
+      "sha256": "68aff80c714a23a689d66273939ea13adf8656e0d209fb74890bee52fd708a03"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner2.check.json",
+      "bytes": 471,
+      "sha256": "c6e6d80e101c513687378fa71e84ef08f8d53d083e1ecf7d15d9ecc5821087a0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner2.check.log",
+      "bytes": 129306,
+      "sha256": "e7fc209af8185d3cd05affdccd30cf1c2ee5fa87ce7f739182dd341b327c7d45"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner2.clippy.json",
+      "bytes": 473,
+      "sha256": "86f11635b91a1e21254335b65b496def66e71a1df7aa5ab0484d6507d4621ebf"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner2.clippy.log",
+      "bytes": 6771472,
+      "sha256": "cf6cdcc4201ffba742412837ad43c1631374a32604b2d7b530d710e2ce2f4841"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner2.default-check.json",
+      "bytes": 473,
+      "sha256": "fa5ba62df2ef2705f2da3d3fb4c8e50856045935c9a4dc88efbf4ded1d18cc16"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner2.default-check.log",
+      "bytes": 84839,
+      "sha256": "3b4d3856060f22b9dab34ddb918e52120d9f6cf128c82d3d6cd855e34a62608d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner2.doctest.json",
+      "bytes": 481,
+      "sha256": "6710bf071d4d6419e88aa62f4ffaac02f693fda8a4c288d7d565e43dc63b7ad1"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner2.doctest.log",
+      "bytes": 84159,
+      "sha256": "593d691a14f1e46e4c6da9c6698081eebb5b1ccb1f0190936265d1f926d9246a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner2.runtime.json",
+      "bytes": 567,
+      "sha256": "f6b86d864f6c104edc9ce331f846486dfc5436153ad13946166877dfca3fad4f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner2.runtime.log",
+      "bytes": 513655,
+      "sha256": "5c39161bf17a06c6dbe3b6441876de000f567873a65940e8ba6e8f2f574c9fb9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner2.runtime.terminal-audit.json",
+      "bytes": 606,
+      "sha256": "1941145b8b009d8325837d3aa39fd33d3a21be36ae7fa13dd653db630101b230"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner2.source-freeze.json",
+      "bytes": 782849,
+      "sha256": "6400bcc1e6d49c517db986ef61a223a7f538428e3f0c8063f661c4346fa6a392"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.red.binaries-before.json",
+      "bytes": 212,
+      "sha256": "5bd9549fce5e7ec67295f78f8d82ba0714d42212923525f160947001eea6eaef"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.red.catalog.inventory.json",
+      "bytes": 353732,
+      "sha256": "0c66dc90665ee0d69e9f8f31a0d65ffb08622e91a7e5df7cadff233350b00869"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.red.catalog.json",
+      "bytes": 576,
+      "sha256": "f23259751e9d422de071045df7f3a6ad5ba3a2247486d721824e7781641c090b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.red.catalog.log",
+      "bytes": 339706,
+      "sha256": "5c7de8c5eff66e33ab1142e29072fb0764a192632a322b3fcdb338cfd5156d25"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.red.runtime.json",
+      "bytes": 670,
+      "sha256": "f206af6a21236df108c6525bde5abf24fab8bb1aceac1c20e271341bbee77881"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.red.runtime.log",
+      "bytes": 500108,
+      "sha256": "b8058c3756fab4a15c8a46451356e1fefeb4aa2e1e936e4fed2a843068bec689"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.red.runtime.terminal-audit.json",
+      "bytes": 818,
+      "sha256": "b348cb59eb17a3260dca5ff8baa2d0715a169379708f8dd5a743a7742dc02e0b"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.red.source-freeze.json",
+      "bytes": 782657,
+      "sha256": "783fb1fe9aec1eecbf44d29fc204f62042ddc992f81c326a67616f9238bb37fe"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.reverse-closure.json",
+      "bytes": 18749,
+      "sha256": "6ac6aa8c5631234322e094ebb16460ca1186650458f953f72a31db3916848611"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner-measurements.json",
+      "bytes": 1853,
+      "sha256": "6b123c9ad41fcf0de37158859b94b55ac8005cc3fd201c2585fdd51816670dcc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6-source.verified.json",
+      "bytes": 1978,
+      "sha256": "41bd515410af74fcec02cae6d50f3bb229edf5f92ebab59dde4df983dc881283"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6-source.prepared.json",
+      "bytes": 2673,
+      "sha256": "75f86a05a06b3d80bf1fea655e05ec515083395c6cfcd4345d4a2b469b89ffd5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6-source.reviewed.patch",
+      "bytes": 55935,
+      "sha256": "348259b198d3120f92ce61126259af46b4c6e92ac7c8d46094994dfb33009afd"
+    }
+  ]
+}

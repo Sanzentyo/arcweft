@@ -13384,3 +13384,12 @@ Source 17c908018e5d157f4774c8a55ec3e347b0a28110、parent be18be8dbd044c5644af865
 最初のall-target/all-feature checkはPublicIdの直接serde deriveによる6エラー・終了101で、そのlogと4,005入力を保持した。共有codecへの修正後check2は終了0。owner1は2,138／2,138 PASS。空slotのmetadata回帰を追加し、test専用getter／再結合helperをcfg(test)へ限定した最終owner2は2,139／2,139 PASS・0 skipped・終了0。scope／lease重複IDを二つ目のbody読取り前に拒否し、wire round-trip後に元の実scopeを退役できること、別leaseと不正addressの拒否、失敗後の同bank再検査拒否を確認した。最終check・Clippy・default check・fmtは終了0、doctestは78／78 PASS、入力／binary／catalog集合差分0。旧owner1と最終owner2を合算しない。
 
 Supersedes: 現状一覧のCore検証を今回の2,139件と実際のbank基盤へ更新した。既存のscope metadata 111 bytesのred／greenと全53逆依存の元入力epochは原本で保持し、Generic Matchと既存受入を未完了へ戻さない。Bool bodyの検証済みAWBC fixtureによるbank codecとNative移行の受入であり、Surface／ViewValueの構築、AWBC Sourceを持つbodyの復元、Productのbank所有・active grant保存／rollback・VM cleanup、Dialogue独立bank、Source／command ABIの受入には拡張しない。後続統合で扱う未接続境界を現状一覧の一行に維持する。
+
+
+## Rust ADTの構造的retention成功と共有work — 2026-10-31
+
+Source 27edc4ab450fe1d583d2099071c2206308090b24、parent 79ae2b569343f63fd4fdd62c99b1f84e44b892e4、source patch SHA256 348259b198d3120f92ce61126259af46b4c6e92ac7c8d46094994dfb33009afd。元accepted schemaで実値が受理されてもchecked_ownershipが無条件MissingRuntimeSnapshotOwnerで拒否する1件を再現し、nextest 0 PASS／1 FAIL・終了100を保持した。元graphとgenerationを使う型付きretentionへ置き換え、有限nominal body back-edgeを閉じる。projectionの実消費を同じtype-node／nominal-edge枠へ計上し、evidenceの確保前に上限を確認する。[全原本・公開blob・適用範囲](acceptance-evidence/task-nominal-c6-owner-acceptance.json)。
+
+中間owner1は1,367件中1,366 PASS／1 FAIL。関数memberを持つ型投影にdata codecを必須としたため、本来のvalue-certificate拒否境界へ達しなかった。ExecutableRefの型投影とstandalone data capabilityを分け、codec不在でも後続field／caseのdefault bindingを必ず検査する。最終owner2は全1,369／1,369 PASS・除外0・終了0、doctest 2／2 PASS、workspace all-target/all-feature check／ClippyとSema default checkは終了0。4,006入力・binary・catalog集合の差分0。各runを合算しない。Clippyの警告は残り、警告なしとはしない。
+
+Supersedes: 現状一覧のRust ADT retention「未接続」を、公開済みSema ownerの成功と利用側検証中へ訂正した。以前の監査は当時の無条件拒否の正しい記録として保持する。既存C1–C5とGeneric Matchの受入を戻さない。Project nominalの再帰classifier、関数値certificate、Native/Web画像parityまで成立したとはしない。compiler追加ケースだけがowner2後に変わった入力であり、元Sema検証を再実行結果として扱わず再利用する。既存14 tracked／6 untracked WIPは保持し、8 pathの通常main pushはblob差分0・remote一致を確認した。

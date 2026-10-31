@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "base": "79ae2b569343f63fd4fdd62c99b1f84e44b892e4",
+  "dirty": true,
+  "rows": [
+    {
+      "path": "crates/arcweft-lang-sema/src/ownership.rs",
+      "classification": "production",
+      "bytes": 94692,
+      "physicalLoc": 2400,
+      "basePhysicalLoc": 2433
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/ownership/nominal.rs",
+      "classification": "production",
+      "bytes": 11693,
+      "physicalLoc": 299,
+      "basePhysicalLoc": 0
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/nominal_schema/accepted_rust.rs",
+      "classification": "production",
+      "bytes": 10262,
+      "physicalLoc": 262,
+      "basePhysicalLoc": 256
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/nominal_schema/graph.rs",
+      "classification": "production",
+      "bytes": 30966,
+      "physicalLoc": 758,
+      "basePhysicalLoc": 755
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/nominal_schema/graph/defaults.rs",
+      "classification": "production",
+      "bytes": 9082,
+      "physicalLoc": 222,
+      "basePhysicalLoc": 206
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/nominal_schema/graph/limits.rs",
+      "classification": "production",
+      "bytes": 5854,
+      "physicalLoc": 192,
+      "basePhysicalLoc": 176
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/accepted_rust_nominal.rs",
+      "classification": "test",
+      "bytes": 53472,
+      "physicalLoc": 1527,
+      "basePhysicalLoc": 1042
+    },
+    {
+      "path": "crates/arcweft-compiler/tests/project_cache_transaction/rust_nominals.rs",
+      "classification": "test",
+      "bytes": 16581,
+      "physicalLoc": 446,
+      "basePhysicalLoc": 342
+    }
+  ]
+}

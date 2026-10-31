@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "commit": "27edc4ab450fe1d583d2099071c2206308090b24",
+  "parent": "79ae2b569343f63fd4fdd62c99b1f84e44b892e4",
+  "tree": "cb3aa72f073b8a31e67c614f93ea4519d3dd8827",
+  "remote": "27edc4ab450fe1d583d2099071c2206308090b24",
+  "paths": [
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/nominal_schema/accepted_rust.rs",
+      "blob": "905b6a0b0b50618245597028d53c0f46cd0c15c5"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/nominal_schema/graph.rs",
+      "blob": "37081eb5666a3ca092907b40c4fb368b834415bc"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/nominal_schema/graph/defaults.rs",
+      "blob": "abaf277c2dfd636fce84461659f5645afdb7b70a"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/nominal_schema/graph/limits.rs",
+      "blob": "d04d4bdf8af2833167a1d988f347a31f206afe35"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/accepted_rust_nominal.rs",
+      "blob": "e43d1dde34b159cd3d009f79a49853828d1a48e8"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/ownership.rs",
+      "blob": "4ae58247b36f5a075466a739e153f1224e879b90"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/ownership/nominal.rs",
+      "blob": "21d5fa9bc974effc11f2157ff1c776f7d6e9b6c5"
+    },
+    {
+      "path": "docs/02-runtime/executable-runtime-core.md",
+      "blob": "497f5f916a522acff91ae53e7fd6cfcacbba4922"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "348259b198d3120f92ce61126259af46b4c6e92ac7c8d46094994dfb33009afd",
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "separatelyHeld": [
+    {
+      "path": "crates/arcweft-compiler/tests/project_cache_transaction/rust_nominals.rs",
+      "sha256": "15621829b77234096cad714605461540df5e9e98805eaffa8709f6a80a01eae1"
+    }
+  ],
+  "indexEmpty": true,
+  "at": "2026-10-31T05:07:42.1951755Z"
+}

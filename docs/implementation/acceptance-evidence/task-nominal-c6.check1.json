@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "79ae2b569343f63fd4fdd62c99b1f84e44b892e4",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "exitCode": 0,
+  "sourceInputs": 4006,
+  "sourceDrift": 0,
+  "startedAt": "2026-10-31T04:37:14.7753880Z",
+  "finishedAt": "2026-10-31T04:38:30.6313136Z"
+}
