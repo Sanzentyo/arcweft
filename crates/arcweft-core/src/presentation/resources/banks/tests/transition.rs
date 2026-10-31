@@ -379,3 +379,123 @@ fn terminal_escape_keeps_exact_lease_and_requires_an_actual_retained_value_owner
         RuntimeValue::Bool(true)
     );
 }
+
+#[test]
+fn receipt_from_an_independent_scope_moves_to_the_actual_receiver_before_issuer_exit() {
+    let (program, artifact, expected, dialogue) = fixture();
+    let mut banks = PresentationBanks::new(
+        program.clone(),
+        artifact,
+        PresentationLedgerLimits {
+            handles: 4,
+            scopes: 4,
+        },
+    );
+    let mut issuer = RuntimeEnv::default();
+    let mut source = RuntimeEnv::default();
+    let mut receiver = RuntimeEnv::default();
+    let escaped = register(&mut banks, &program, dialogue, &mut issuer, expected, true);
+    let discarded = register(&mut banks, &program, dialogue, &mut issuer, expected, false);
+    bind(
+        &mut banks,
+        RuntimePresentationBankId::Root,
+        &program,
+        &mut source,
+    );
+    exit(
+        &mut banks,
+        &program,
+        &mut source,
+        Some(&mut receiver),
+        std::slice::from_ref(&escaped),
+    )
+    .unwrap();
+    let receiving_owner = receiver.presentation_scope_binding().unwrap().grants[&dialogue].owner;
+    assert_eq!(
+        banks.ledgers[&dialogue].state.leases[&escaped.issuance()].owner,
+        Some(receiving_owner)
+    );
+    banks
+        .retire_bound_scope(
+            &program,
+            execution(),
+            fiber(),
+            issuer.presentation_scope_target().unwrap(),
+        )
+        .unwrap();
+    assert_eq!(
+        banks
+            .retirements()
+            .iter()
+            .map(|item| item.token.clone())
+            .collect::<Vec<_>>(),
+        [discarded]
+    );
+    assert!(
+        banks.ledgers[&dialogue]
+            .validate_handle(&program, &escaped, Some(receiving_owner))
+            .is_ok()
+    );
+    banks
+        .retire_bound_scope(
+            &program,
+            execution(),
+            fiber(),
+            receiver.presentation_scope_target().unwrap(),
+        )
+        .unwrap();
+    assert_eq!(banks.retirements()[1].token, escaped);
+}
+
+#[test]
+fn terminal_receipt_detaches_from_an_independent_issuer_before_that_scope_ends() {
+    let (program, artifact, expected, dialogue) = fixture();
+    let mut banks = PresentationBanks::new(
+        program.clone(),
+        artifact,
+        PresentationLedgerLimits {
+            handles: 4,
+            scopes: 4,
+        },
+    );
+    let mut issuer = RuntimeEnv::default();
+    let mut source = RuntimeEnv::default();
+    let escaped = register(&mut banks, &program, dialogue, &mut issuer, expected, true);
+    bind(
+        &mut banks,
+        RuntimePresentationBankId::Root,
+        &program,
+        &mut source,
+    );
+    exit(
+        &mut banks,
+        &program,
+        &mut source,
+        None,
+        std::slice::from_ref(&escaped),
+    )
+    .unwrap();
+    banks
+        .retire_bound_scope(
+            &program,
+            execution(),
+            fiber(),
+            issuer.presentation_scope_target().unwrap(),
+        )
+        .unwrap();
+    assert!(banks.retirements().is_empty());
+    assert!(
+        banks.ledgers[&dialogue]
+            .validate_handle(&program, &escaped, None)
+            .is_ok()
+    );
+    assert!(
+        banks
+            .ledgers
+            .get_mut(&dialogue)
+            .unwrap()
+            .release(&program, &escaped, None)
+            .unwrap()
+            .is_some()
+    );
+}

@@ -8,6 +8,32 @@ use crate::entry::schema::value_encoding::ValueResourceAdmission;
 use crate::program_types::RuntimeFunctionEffectInstantiation;
 use crate::value::{RuntimePlaceStorage, RuntimeValue, RuntimeValueView};
 
+enum PreparedOperand {
+    Copy(RuntimeValue),
+    Move(super::AwbcRegisterId),
+}
+
+/// Complete operand admission while the original frame still owns every input.
+pub(in crate::awbc) struct PreparedRegisterTransfer {
+    frame: crate::runtime_id::RuntimeFrameInstanceId,
+    operands: Vec<PreparedOperand>,
+}
+
+impl PreparedRegisterTransfer {
+    pub(in crate::awbc) fn commit(self, frame: &mut super::FiberFrame) -> Vec<RuntimeValue> {
+        assert_eq!(frame.instance, self.frame);
+        self.operands
+            .into_iter()
+            .map(|operand| match operand {
+                PreparedOperand::Copy(value) => value,
+                PreparedOperand::Move(register) => frame
+                    .take_register(register)
+                    .expect("admitted source is present at its unique transfer commit"),
+            })
+            .collect()
+    }
+}
+
 pub(super) struct FrameValueContext<'a, V> {
     pub(super) program: &'a AwbcProgram,
     pub(super) function: AwbcFunctionId,
@@ -442,10 +468,16 @@ impl super::FiberFrame {
         program: &AwbcProgram,
         registers: &[super::AwbcRegisterId],
     ) -> Result<Vec<RuntimeValue>, FiberStateError> {
-        enum Operand {
-            Copy(RuntimeValue),
-            Move(super::AwbcRegisterId),
-        }
+        Ok(self
+            .prepare_register_values(program, registers)?
+            .commit(self))
+    }
+
+    pub(in crate::awbc) fn prepare_register_values(
+        &self,
+        program: &AwbcProgram,
+        registers: &[super::AwbcRegisterId],
+    ) -> Result<PreparedRegisterTransfer, FiberStateError> {
         let mut resources =
             ValueResourceAdmission::live(crate::entry::RuntimeSchemaLimits::engine_default());
         resources
@@ -498,9 +530,9 @@ impl super::FiberFrame {
                 .expect("admitted input has an occurrence");
             *remaining -= 1;
             prepared.push(if *remaining == 0 {
-                Operand::Move(*register)
+                PreparedOperand::Move(*register)
             } else {
-                Operand::Copy(
+                PreparedOperand::Copy(
                     self.register(*register)?
                         .live_view()
                         .copy_unrestricted()
@@ -512,15 +544,10 @@ impl super::FiberFrame {
         }
         // Each admitted source has exactly one Move. The exclusive frame
         // borrow prevents changes between admission, preparation and commit.
-        Ok(prepared
-            .into_iter()
-            .map(|operand| match operand {
-                Operand::Copy(value) => value,
-                Operand::Move(register) => self
-                    .take_register(register)
-                    .expect("admitted source is present at its unique transfer commit"),
-            })
-            .collect())
+        Ok(PreparedRegisterTransfer {
+            frame: self.instance,
+            operands: prepared,
+        })
     }
 }
 

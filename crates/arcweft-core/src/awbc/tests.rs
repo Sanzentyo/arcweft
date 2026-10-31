@@ -1496,14 +1496,15 @@ fn nominal_field_sequence_pop_front_roundtrips_verifies_mutates_and_survives_res
     restored
         .validate_for_program(&decoded)
         .expect("restored nominal record register validates");
-    super::vm::step(
+    let remaining = super::vm::step(
         &decoded,
         &mut restored,
         super::vm::VmStepOptions {
-            max_instructions: 16,
+            max_instructions: 2,
         },
     )
     .expect("remaining nominal field pops execute");
+    assert_eq!(remaining.exit, super::vm::VmExit::Running);
     let Some(RuntimeValue::NominalRecord(record)) = restored.frames[0].registers[3].as_ref() else {
         panic!("restored nominal receiver remains in its local register");
     };
@@ -1511,6 +1512,24 @@ fn nominal_field_sequence_pop_front_roundtrips_verifies_mutates_and_survives_res
         panic!("nominal Vec field remains in its record after repeated pops");
     };
     assert_eq!(sequence.len(), 0);
+    let terminal = super::vm::step(
+        &decoded,
+        &mut restored,
+        super::vm::VmStepOptions {
+            max_instructions: 14,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        terminal.exit,
+        super::vm::VmExit::Returned(Some(RuntimeValue::option_none()))
+    );
+    assert!(
+        restored.frames[0]
+            .registers
+            .iter()
+            .all(|slot| slot.is_vacant())
+    );
 }
 
 #[test]

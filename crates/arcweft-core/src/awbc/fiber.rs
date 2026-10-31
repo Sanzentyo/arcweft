@@ -449,6 +449,23 @@ pub(crate) struct PreparedInitialFlow {
     state_register: AwbcRegisterId,
 }
 
+/// The actual next root frame, allocated and typed before old custody exits.
+pub(crate) struct PreparedFiberRootReplacement {
+    owner: RuntimeFiberInstanceId,
+    frame: FiberFrame,
+    cursor: FiberCursor,
+    next_frame_instance: RuntimeIdCursor,
+    parameters: Box<[AwbcRegisterId]>,
+}
+
+impl PreparedFiberRootReplacement {
+    pub(crate) fn presentation_scope_target(
+        &mut self,
+    ) -> crate::presentation::resources::PresentationScopeTarget<'_> {
+        self.frame.presentation_scope_target()
+    }
+}
+
 /// Borrowed return admission, before result or receiver state leaves the callee.
 pub(crate) struct PreparedFiberReturn {
     frame: RuntimeFrameInstanceId,
@@ -1660,6 +1677,41 @@ impl FiberCallablePendingStorage for RuntimeCallablePendingSnapshot {
     }
 }
 
+impl FiberReturnContinuation {
+    /// Values that move with the continuation when its callee exits.
+    pub(in crate::awbc) fn visit_runtime_values<E>(
+        &self,
+        mut visitor: impl FnMut(&RuntimeValue) -> Result<(), E>,
+    ) -> Result<(), E> {
+        match self {
+            Self::Ordinary
+            | Self::ProjectCallTarget { .. }
+            | Self::FormatOperand { .. }
+            | Self::FormatDisplay { .. }
+            | Self::InstructionCall { .. } => {}
+            Self::ProjectCallDefault { pending, .. } | Self::ApplyGroupDefault { pending, .. } => {
+                visit_callable_pending_values(pending, &mut visitor)?;
+            }
+            Self::ContextCallbackDefault {
+                pending,
+                callable_pending,
+                ..
+            } => {
+                if let RuntimeArcErrorContextPending::ResultErr(cause) = pending {
+                    visit_value_graph(cause, &mut visitor)?;
+                }
+                visit_callable_pending_values(callable_pending, &mut visitor)?;
+            }
+            Self::ContextCallbackInvoke { pending, .. } => {
+                if let RuntimeArcErrorContextPending::ResultErr(cause) = pending {
+                    visit_value_graph(cause, &mut visitor)?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 impl<P, V> FiberReturnContinuation<P, V> {
     fn pending_packet(&self) -> Option<&P> {
         match self {
@@ -1968,32 +2020,7 @@ impl FiberState {
                 }
             }
             if let Some(return_to) = &frame.return_to {
-                match &return_to.continuation {
-                    FiberReturnContinuation::Ordinary
-                    | FiberReturnContinuation::ProjectCallTarget { .. }
-                    | FiberReturnContinuation::FormatOperand { .. }
-                    | FiberReturnContinuation::FormatDisplay { .. }
-                    | FiberReturnContinuation::InstructionCall { .. } => {}
-                    FiberReturnContinuation::ProjectCallDefault { pending, .. }
-                    | FiberReturnContinuation::ApplyGroupDefault { pending, .. } => {
-                        visit_callable_pending_values(pending, &mut visitor)?;
-                    }
-                    FiberReturnContinuation::ContextCallbackDefault {
-                        pending,
-                        callable_pending,
-                        ..
-                    } => {
-                        if let RuntimeArcErrorContextPending::ResultErr(cause) = pending {
-                            visit_value_graph(cause, &mut visitor)?;
-                        }
-                        visit_callable_pending_values(callable_pending, &mut visitor)?;
-                    }
-                    FiberReturnContinuation::ContextCallbackInvoke { pending, .. } => {
-                        if let RuntimeArcErrorContextPending::ResultErr(cause) = pending {
-                            visit_value_graph(cause, &mut visitor)?;
-                        }
-                    }
-                }
+                return_to.continuation.visit_runtime_values(&mut visitor)?;
             }
             visit_scope_cleanup_values(&frame.root_cleanups, &mut visitor)?;
             for scope in &frame.scopes {
@@ -3691,14 +3718,15 @@ impl FiberState {
     }
 
     /// Replaces the call stack while transferring already evaluated Flow
-    /// arguments into the new root frame.
-    pub(crate) fn replace_root_function_owned(
-        &mut self,
+    /// arguments into the actual next root frame, after complete admission.
+    pub(crate) fn prepare_root_replacement(
+        &self,
         program: &AwbcProgram,
         function: AwbcFunctionId,
-        args: Vec<RuntimeValue>,
-    ) -> Result<(), FiberStateError> {
+        args: &[&RuntimeValue],
+    ) -> Result<PreparedFiberRootReplacement, FiberStateError> {
         self.require_status(FiberStatus::Running)?;
+        let input = validate_function_argument_value_refs(program, function, args)?;
         let function_record = program
             .functions
             .get(function.index())
@@ -3708,16 +3736,33 @@ impl FiberState {
             next_frame_instance.take_next(RuntimeIdNamespace::FrameInstance)?,
         );
         let mut frame = FiberFrame::new(frame_instance, program, function, None)?;
-        frame.bind_positional_arguments_owned(program, args)?;
-        self.next_frame_instance = next_frame_instance;
-        self.frames.clear();
-        self.frames.push(frame);
-        self.cursor = FiberCursor {
-            function,
-            block: function_record.entry_block,
-            instruction_offset: 0,
-        };
-        Ok(())
+        frame.type_instantiation = input.type_instantiation.map(std::sync::Arc::new);
+        Ok(PreparedFiberRootReplacement {
+            owner: self.instance,
+            frame,
+            next_frame_instance,
+            parameters: input.parameter_registers,
+            cursor: FiberCursor {
+                function,
+                block: function_record.entry_block,
+                instruction_offset: 0,
+            },
+        })
+    }
+
+    pub(crate) fn commit_root_replacement(
+        &mut self,
+        mut prepared: PreparedFiberRootReplacement,
+        args: Vec<RuntimeValue>,
+    ) {
+        assert_eq!(self.instance, prepared.owner);
+        assert_eq!(args.len(), prepared.parameters.len());
+        for (register, value) in prepared.parameters.iter().zip(args) {
+            prepared.frame.registers[register.index()] = value.into();
+        }
+        self.next_frame_instance = prepared.next_frame_instance;
+        self.frames = vec![prepared.frame];
+        self.cursor = prepared.cursor;
     }
 
     pub fn pop_call_frame(

@@ -2891,14 +2891,6 @@ fn execute_terminator(
     observations: &mut Vec<VmObservation>,
 ) -> Result<VmExit, VmError> {
     let context = execution.context;
-    // These exits transfer registers before dropping frame custody. Reject an
-    // invalid later cleanup before the first return value or argument moves.
-    match terminator {
-        AwbcTerminator::GotoStatic { .. } | AwbcTerminator::GotoDynamic { .. } => {
-            fiber.validate_unwind_cleanup_inputs(program)?;
-        }
-        _ => {}
-    }
     match terminator {
         AwbcTerminator::Jump { target } => {
             jump(fiber, *target);
@@ -2996,17 +2988,20 @@ fn execute_terminator(
         }
         AwbcTerminator::ProjectCall { call } => execute_project_call(program, fiber, context, call),
         AwbcTerminator::GotoStatic { function, args } => {
-            let args = fiber
-                .active_frame_mut()?
-                .take_register_values(program, args)?;
-            emit_unwind_cleanup_observations(program, fiber, observations)?;
-            fiber.replace_root_function_owned(program, *function, args)?;
-            observations.push(VmObservation::Goto(*function));
+            execute_goto(
+                program,
+                fiber,
+                execution,
+                *function,
+                None,
+                args,
+                observations,
+            )?;
             Ok(VmExit::Running)
         }
         AwbcTerminator::GotoDynamic { target, args } => {
-            let target_value = fiber.active_frame_mut()?.take_register(*target)?;
-            let target = match &target_value {
+            let target_value = fiber.active_frame()?.register(*target)?;
+            let function = match target_value {
                 RuntimeValue::String(target) => program
                     .resolve_flow_target_value(target)
                     .map(|(_, function)| function)
@@ -3029,12 +3024,15 @@ fn execute_terminator(
                     )));
                 }
             };
-            let args = fiber
-                .active_frame_mut()?
-                .take_register_values(program, args)?;
-            emit_unwind_cleanup_observations(program, fiber, observations)?;
-            fiber.replace_root_function_owned(program, target, args)?;
-            observations.push(VmObservation::Goto(target));
+            execute_goto(
+                program,
+                fiber,
+                execution,
+                function,
+                Some(*target),
+                args,
+                observations,
+            )?;
             Ok(VmExit::Running)
         }
         AwbcTerminator::Dialogue {
@@ -3367,6 +3365,38 @@ fn execute_terminator(
             Ok(VmExit::Trapped(trap))
         }
     }
+}
+
+fn execute_goto(
+    program: &AwbcProgram,
+    fiber: &mut FiberState,
+    execution: &mut VmExecutionResources<'_>,
+    function: AwbcFunctionId,
+    target: Option<AwbcRegisterId>,
+    args: &[AwbcRegisterId],
+    observations: &mut Vec<VmObservation>,
+) -> Result<(), VmError> {
+    let references = args
+        .iter()
+        .map(|register| fiber.active_frame()?.register(*register))
+        .collect::<Result<Vec<_>, FiberStateError>>()?;
+    let mut replacement = fiber.prepare_root_replacement(program, function, &references)?;
+    let operands = target
+        .into_iter()
+        .chain(args.iter().copied())
+        .collect::<Vec<_>>();
+    let transfer = fiber
+        .active_frame()?
+        .prepare_register_values(program, &operands)?;
+    execution.exit_goto_scope(program, fiber, &mut replacement, args)?;
+    let mut values = transfer.commit(fiber.active_frame_mut()?);
+    if target.is_some() {
+        values.remove(0);
+    }
+    emit_unwind_cleanup_observations(program, fiber, observations)?;
+    fiber.commit_root_replacement(replacement, values);
+    observations.push(VmObservation::Goto(function));
+    Ok(())
 }
 
 fn suspend(

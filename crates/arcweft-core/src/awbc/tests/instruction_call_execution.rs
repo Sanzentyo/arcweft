@@ -291,7 +291,10 @@ fn mut_trait_return_updates_receiver_on_the_same_saved_fiber() {
                 .exit,
             super::super::vm::VmExit::Cancelled
         ));
-        let output = loop {
+        for _ in 0..8 {
+            if restored.frames.len() == 1 {
+                break;
+            }
             let output = super::super::vm::step(
                 &program,
                 &mut restored,
@@ -300,16 +303,9 @@ fn mut_trait_return_updates_receiver_on_the_same_saved_fiber() {
                 },
             )
             .unwrap();
-            if !matches!(output.exit, super::super::vm::VmExit::Running) {
-                break output;
-            }
-        };
-        assert_eq!(
-            output.exit,
-            super::super::vm::VmExit::Returned(Some(RuntimeValue::Int(
-                crate::value::RuntimeInt::I64(99)
-            )))
-        );
+            assert_eq!(output.exit, super::super::vm::VmExit::Running);
+        }
+        assert_eq!(restored.frames.len(), 1);
         if receiver_out == AwbcRegisterId(0) {
             assert_eq!(
                 restored.frames[0]
@@ -328,6 +324,26 @@ fn mut_trait_return_updates_receiver_on_the_same_saved_fiber() {
                 Some(17)
             );
         }
+        let output = super::super::vm::step(
+            &program,
+            &mut restored,
+            super::super::vm::VmStepOptions {
+                max_instructions: 1,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            output.exit,
+            super::super::vm::VmExit::Returned(Some(RuntimeValue::Int(
+                crate::value::RuntimeInt::I64(99)
+            )))
+        );
+        assert!(
+            restored.frames[0]
+                .registers
+                .iter()
+                .all(|slot| slot.is_vacant())
+        );
         assert!(
             restored.frames[0].register(AwbcRegisterId(1)).is_err(),
             "the returned value was transferred to the VM exit"

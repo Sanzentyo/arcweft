@@ -4386,7 +4386,7 @@ fn ready_direct_need_returns_its_payload_unchanged_in_the_same_step() {
 
     assert_eq!(
         executor.fiber.terminal,
-        Some(FiberTerminalValue::ReturnedTransferred)
+        Some(FiberTerminalValue::Returned(Some(expected.clone())))
     );
     assert_eq!(
         executor.fiber.return_summary.as_deref(),
@@ -4445,7 +4445,7 @@ fn ready_result_error_payload_is_resumed_without_trapping() {
 
     assert_eq!(
         executor.fiber.terminal,
-        Some(FiberTerminalValue::ReturnedTransferred)
+        Some(FiberTerminalValue::Returned(Some(expected.clone())))
     );
     assert_eq!(
         executor.fiber.return_summary.as_deref(),
@@ -4598,7 +4598,7 @@ fn direct_need_uses_the_first_terminal_sequence() {
 
     assert_eq!(
         executor.fiber.terminal,
-        Some(FiberTerminalValue::ReturnedTransferred)
+        Some(FiberTerminalValue::Returned(Some(expected.clone())))
     );
     assert_eq!(
         executor.fiber.return_summary.as_deref(),

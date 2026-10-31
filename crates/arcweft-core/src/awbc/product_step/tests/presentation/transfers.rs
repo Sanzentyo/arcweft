@@ -93,6 +93,14 @@ fn fixture(
     queued: bool,
 ) -> (AwbcProductStepExecutor, Vec<RuntimePresentationHandleToken>) {
     let (program, handle) = handle_program(nested);
+    fixture_with_program(program, handle, queued)
+}
+
+fn fixture_with_program(
+    program: AwbcProgram,
+    handle: AwbcTypeId,
+    queued: bool,
+) -> (AwbcProductStepExecutor, Vec<RuntimePresentationHandleToken>) {
     let program = crate::awbc::product_step::AwbcProductProgram::admit(
         std::sync::Arc::new(program),
         Default::default(),
@@ -387,4 +395,173 @@ fn callee_owned_handle_joins_the_actual_caller_scope_without_changing_its_token(
     assert!(matches!(&value.view().affine_handles().unwrap()[..],
         [crate::value::ownership::RuntimeAffineHandle::Presentation { token, .. }] if token == &tokens[0]));
     executor.snapshot().unwrap();
+}
+
+fn goto_fixture(
+    dynamic: bool,
+    queued: bool,
+) -> (AwbcProductStepExecutor, Vec<RuntimePresentationHandleToken>) {
+    let (mut program, handle) = handle_program(false);
+    program.signatures.push(AwbcSignature {
+        params: vec![handle],
+        result: Some(handle),
+        effects: AwbcEffectSetId(0),
+    });
+    program.frame_layouts.push(AwbcFrameLayout {
+        scopes: vec![],
+        max_scope_depth: 0,
+        slots: vec![AwbcFrameSlot {
+            name: None,
+            ty: handle,
+            role: AwbcFrameSlotRole::Parameter,
+            scope_depth: 0,
+        }],
+    });
+    let mut target = program.functions[0].clone();
+    target.definition = crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+        *blake3::hash(b"presentation.transfer.goto-target.v1\0").as_bytes(),
+    );
+    target.public_id = None;
+    target.signature = AwbcSignatureId(1);
+    target.frame_layout = AwbcFrameLayoutId(1);
+    target.input_ownership.truncate(1);
+    target.blocks = AwbcTableRange::new(1, 1);
+    target.entry_block = AwbcBlockId(1);
+    program.functions.push(target);
+    program.blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(1),
+        instructions: AwbcTableRange::new(0, 0),
+        terminator: AwbcTerminator::Return {
+            value: Some(AwbcRegisterId(0)),
+        },
+        safe_point: AwbcSafePointKind::FlowEntry,
+        source_map: None,
+    });
+    let flow =
+        crate::plan::FlowRuntimeId::from_checked_declaration_digest([0x9b; 32], "flow.after")
+            .unwrap();
+    program.flow_bindings.push(AwbcFlowBinding {
+        flow: flow.clone(),
+        function: AwbcFunctionId(1),
+    });
+    program.flow_executables.push(AwbcFlowExecutable {
+        metadata: RuntimeFlowExecutable {
+            flow: flow.clone(),
+            contract: FlowContractHash::from_bytes([0x9c; 32]),
+            controller: None,
+        },
+        function: AwbcFunctionId(1),
+    });
+    let entry_label = AwbcStringId(program.strings.len().try_into().unwrap());
+    program.strings.push("entry.after".into());
+    let mut entry = program.entries[0].clone();
+    entry.runtime_id = crate::plan::EntryRuntimeId::canonical("after").unwrap();
+    entry.binding = crate::entry::EntryBindingIdentity::from_bytes([2; 32]);
+    entry.public_id = entry_label;
+    entry.target = AwbcEntryTarget::Function {
+        function: AwbcFunctionId(1),
+    };
+    program.entries.push(entry);
+    program.blocks[0].terminator = if dynamic {
+        program.functions[0].flags = program.functions[0]
+            .flags
+            .with(AwbcFunctionFlag::HasDynamicTarget);
+        let target_type = AwbcTypeId(program.runtime_types.len().try_into().unwrap());
+        program.runtime_types.push(AwbcRuntimeType::new(
+            RuntimeCheckedType::EntityReference.semantic_identity_digest(),
+            AwbcRuntimeTypeShape::EntityRef,
+        ));
+        program.frame_layouts[0].slots.push(AwbcFrameSlot {
+            name: None,
+            ty: target_type,
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        });
+        program.constants.push(AwbcConstant::EntityRef(
+            crate::value::RuntimeEntityReference::StructuralFlow(flow),
+        ));
+        program.instructions.push(AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(2),
+            constant: AwbcConstantId(0),
+        });
+        program.blocks[0].instructions = AwbcTableRange::new(0, 1);
+        AwbcTerminator::GotoDynamic {
+            target: AwbcRegisterId(2),
+            args: vec![AwbcRegisterId(0)],
+        }
+    } else {
+        AwbcTerminator::GotoStatic {
+            function: AwbcFunctionId(1),
+            args: vec![AwbcRegisterId(0)],
+        }
+    };
+    program.canonicalize_string_table();
+    let (mut executor, tokens) = fixture_with_program(program, handle, queued);
+    if dynamic {
+        step(&mut executor);
+    }
+    (executor, tokens)
+}
+
+#[test]
+fn static_and_dynamic_goto_move_the_original_handle_into_the_actual_new_root() {
+    for dynamic in [false, true] {
+        let (mut executor, tokens) = goto_fixture(dynamic, false);
+        let before = executor.snapshot().unwrap();
+        let old_frame = executor.fiber.frames[0].instance;
+        let checkpoint = executor
+            .execution_checkpoint(ProductCheckpointTarget::Main)
+            .unwrap();
+        step(&mut executor);
+        assert_eq!(executor.fiber.cursor.function, AwbcFunctionId(1));
+        assert!(executor.fiber.frames[0].instance > old_frame);
+        assert!(executor.fiber.frames[0].root_presentation_scope.is_some());
+        assert_eq!(
+            executor.presentation.as_ref().unwrap().retirements()[0].token,
+            tokens[1]
+        );
+        executor.snapshot().unwrap();
+        step(&mut executor);
+        assert_eq!(executor.fiber.status, FiberStatus::Returned);
+        assert!(
+            matches!(&executor.fiber.terminal, Some(FiberTerminalValue::Returned(Some(value)))
+            if matches!(&value.view().affine_handles().unwrap()[..],
+                [crate::value::ownership::RuntimeAffineHandle::Presentation { token, .. }] if token == &tokens[0]))
+        );
+        executor.snapshot().unwrap();
+        checkpoint
+            .restore(
+                &mut executor.fiber,
+                &mut executor.presentation,
+                &executor.program,
+            )
+            .unwrap();
+        assert_eq!(executor.snapshot().unwrap(), before);
+    }
+}
+
+#[test]
+fn goto_capacity_refusal_keeps_arguments_target_frame_cursor_and_budget_for_retry() {
+    for dynamic in [false, true] {
+        let (mut executor, tokens) = goto_fixture(dynamic, true);
+        let before = executor.snapshot().unwrap();
+        for _ in 0..2 {
+            let output = executor.step(Default::default(), one_op());
+            assert!(!output.output.diagnostics.is_empty());
+            assert_eq!(executor.snapshot().unwrap(), before);
+        }
+        executor
+            .presentation
+            .as_mut()
+            .unwrap()
+            .retirements_mut()
+            .clear();
+        step(&mut executor);
+        assert_eq!(executor.fiber.cursor.function, AwbcFunctionId(1));
+        assert_eq!(
+            executor.presentation.as_ref().unwrap().retirements()[0].token,
+            tokens[1]
+        );
+        executor.snapshot().unwrap();
+    }
 }

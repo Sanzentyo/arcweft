@@ -37,7 +37,7 @@ impl<V> PresentationBanks<V> {
             }),
         )?;
         self.preflight_scope_retirements(&owners, &selected)?;
-        if let Some(receiver) = &destination {
+        let receiving_owners = if let Some(receiver) = &destination {
             let receiving = self.inspect_scope_contour(
                 program,
                 std::iter::once(PresentationScopeExit {
@@ -49,7 +49,10 @@ impl<V> PresentationBanks<V> {
             if !owners.is_disjoint(&receiving) {
                 return Err(RuntimePresentationError::InvalidState);
             }
-        }
+            receiving
+        } else {
+            BTreeSet::new()
+        };
         let mut moves = Vec::new();
         let mut receiving = BTreeMap::new();
         for token in escaping {
@@ -63,9 +66,12 @@ impl<V> PresentationBanks<V> {
                 .get(&token.issuance())
                 .ok_or(RuntimePresentationError::UnknownHandle)?;
             ledger.validate_handle(program, token, lease.owner)?;
-            // A caller/ancestor's grant already outlives this exit. Leaving it
-            // in its owning scope does not manufacture a new release duty.
-            if lease.owner.is_some_and(|owner| !owners.contains(&owner)) {
+            // Only the actual receiver's existing grant already owns this
+            // receipt. A grant in another execution can end independently.
+            if lease
+                .owner
+                .is_some_and(|owner| receiving_owners.contains(&owner))
+            {
                 continue;
             }
             if let Some(receiver) = &destination {

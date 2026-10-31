@@ -284,6 +284,14 @@ scopeのversion 1 snapshotはbank順のgrant行を持ち、重複bankは後続gr
 全grant・bodyを保持する。許可後はscopeのunwind順、同一scope内ではbank順で一度だけ
 回収し、空になったscopeのbindingを除く。
 
+scopeの外へ渡す値は、元のbankとtokenを保持したまま受け取り先の実grantへ移す。
+同じ受け取り先grantがすでに所有するleaseは維持するが、独立に終了できる別scopeの
+grantを受け取り先の代わりにはしない。terminal結果は元leaseをdetachし、保持値の
+グラフに一意なHandleを残す。移管前に全token、実際の終了contour、受け取り先anchorと
+発行cursorを検査し、回収待ち容量には外へ渡すbodyを含めない。終了grantの解放分は
+受け取り先grantの容量に充当できる。拒否時は値・grant・cursorを移動せず、許可後は
+終了したframeの残りの値を破棄してから、その結果を保持・保存する。
+
 Presentation bodyへの所有権移動も既存のlive保持状態と同じbankで検査し、元の型・
 function binding・候補body・Handle custodyがすべて成立してからscope束縛と発行へ進む。
 失敗時は候補bodyを呼出側へ返し、既存のbody・slot・発行cursorを変更しない。

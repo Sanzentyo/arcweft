@@ -188,11 +188,24 @@ fn partial_record_move_survives_codec_snapshot_and_restore_then_reinitializes() 
         )
         .unwrap();
     for _ in 0..2 {
+        let staged = super::super::vm::step(
+            &program,
+            &mut restored,
+            super::super::vm::VmStepOptions {
+                max_instructions: 2,
+            },
+        )
+        .unwrap();
+        assert_eq!(staged.exit, super::super::vm::VmExit::Running);
+        assert_eq!(
+            restored.frames[0].registers[4].as_ref(),
+            Some(&RuntimeValue::Bool(false))
+        );
         let result = super::super::vm::step(
             &program,
             &mut restored,
             super::super::vm::VmStepOptions {
-                max_instructions: 8,
+                max_instructions: 6,
             },
         )
         .unwrap();
@@ -205,9 +218,11 @@ fn partial_record_move_survives_codec_snapshot_and_restore_then_reinitializes() 
             record.fields(),
             &[RuntimeValue::Bool(true), RuntimeValue::Bool(false)]
         );
-        assert_eq!(
-            restored.frames[0].registers[4].as_ref(),
-            Some(&RuntimeValue::Bool(false))
+        assert!(
+            restored.frames[0]
+                .registers
+                .iter()
+                .all(|slot| slot.is_vacant())
         );
         restored
             .restore(checkpoint.clone(), &checkpoint_program(&owner))
@@ -613,11 +628,25 @@ fn assignment_after_move_reinitializes_after_codec_restore_and_checkpoint() {
         )
         .unwrap();
     for _ in 0..2 {
+        let staged = super::super::vm::step(
+            &program,
+            &mut restored,
+            super::super::vm::VmStepOptions {
+                max_instructions: 2,
+            },
+        )
+        .unwrap();
+        assert_eq!(staged.exit, super::super::vm::VmExit::Running);
+        assert!(restored.frames[0].registers[2].is_vacant());
+        assert_eq!(
+            restored.frames[0].registers[1].as_ref(),
+            Some(&RuntimeValue::Bool(true))
+        );
         let result = super::super::vm::step(
             &program,
             &mut restored,
             super::super::vm::VmStepOptions {
-                max_instructions: 4,
+                max_instructions: 2,
             },
         )
         .unwrap();
@@ -627,9 +656,11 @@ fn assignment_after_move_reinitializes_after_codec_restore_and_checkpoint() {
         );
         assert!(restored.frames[0].registers[0].is_vacant());
         assert_eq!(restored.frames[0].registers[2].as_ref().cloned(), None);
-        assert_eq!(
-            restored.frames[0].registers[1].as_ref().cloned(),
-            Some(RuntimeValue::Bool(true))
+        assert!(
+            restored.frames[0]
+                .registers
+                .iter()
+                .all(|slot| slot.is_vacant())
         );
         restored
             .restore(checkpoint.clone(), &checkpoint_program(&owner))
