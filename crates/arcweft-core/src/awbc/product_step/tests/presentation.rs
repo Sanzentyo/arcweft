@@ -196,7 +196,15 @@ mod cancellation {
     ) {
         let mut transaction = executor.dialogues.begin_transaction(&activation).unwrap();
         let mut batch = executor
-            .prepare_line_task_commands(&mut transaction, commands(tags))
+            .prepare_line_task_commands(&mut transaction, LineTaskActivation::default())
+            .unwrap();
+        // Keep one genuine child in the executor queue and lend the other to
+        // the staged batch, as a callback's prepared execution does.
+        batch
+            .child_fibers
+            .push_back(executor.child_fibers.pop_back().unwrap());
+        executor
+            .prepare_line_task_commands_from(&mut transaction, commands(tags), &mut batch)
             .unwrap();
         let prepared = executor
             .preflight_line_task_commands(&mut transaction, &batch)
