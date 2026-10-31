@@ -1,0 +1,404 @@
+diff --git a/crates/arcweft-core/src/awbc/product_step.rs b/crates/arcweft-core/src/awbc/product_step.rs
+index 8f39bd71799fe139567bf79deb527d8873847d33..20be6255b330e1865863ae0af1b3896b186bd23a 100644
+--- a/crates/arcweft-core/src/awbc/product_step.rs
++++ b/crates/arcweft-core/src/awbc/product_step.rs
+@@ -1155,6 +1155,25 @@ pub(super) enum PreparedHostResultOutcome {
+     },
+ }
+ 
++impl PreparedHostResultOutcome {
++    fn failure_trap(&self) -> Option<FiberTrap> {
++        let Self::Failed { kind, message } = self else {
++            return None;
++        };
++        Some(FiberTrap {
++            code: match kind {
++                crate::step::RuntimeHostCallErrorKind::UnsupportedCapability => {
++                    AwbcTrapCode::CapabilityDenied
++                }
++                crate::step::RuntimeHostCallErrorKind::Rejected
++                | crate::step::RuntimeHostCallErrorKind::Failed => AwbcTrapCode::HostAbiMismatch,
++            },
++            message: Some(message.clone()),
++            source_map: None,
++        })
++    }
++}
++
+ impl DeferredChildResumeJournal {
+     pub(super) fn stage_trap(&mut self, code: AwbcTrapCode, message: String) {
+         if self.staged_trap.is_none() {
+@@ -1236,19 +1255,10 @@ impl DeferredChildResumeJournal {
+                 "deferred child already has a staged host or Need result".to_owned(),
+             ));
+         }
+-        if let PreparedHostResultTarget::Deferred {
+-            outcome: PreparedHostResultOutcome::Failed { kind, message },
+-            ..
+-        } = &stage.target
++        if let PreparedHostResultTarget::Deferred { outcome, .. } = &stage.target
++            && let Some(trap) = outcome.failure_trap()
+         {
+-            let code = match kind {
+-                crate::step::RuntimeHostCallErrorKind::UnsupportedCapability => {
+-                    AwbcTrapCode::CapabilityDenied
+-                }
+-                crate::step::RuntimeHostCallErrorKind::Rejected
+-                | crate::step::RuntimeHostCallErrorKind::Failed => AwbcTrapCode::HostAbiMismatch,
+-            };
+-            self.stage_trap(code, message.clone());
++            self.staged_trap.get_or_insert(trap);
+         }
+         self.staged_host_call = Some(stage);
+         Ok(())
+diff --git a/crates/arcweft-core/src/awbc/product_step/line.rs b/crates/arcweft-core/src/awbc/product_step/line.rs
+index 07d9651f71b5cb19d0f6af309b2030f818a8f2b9..8dc783e7243214c2bfc5b56bb78bb4ec45f76e75 100644
+--- a/crates/arcweft-core/src/awbc/product_step/line.rs
++++ b/crates/arcweft-core/src/awbc/product_step/line.rs
+@@ -1209,9 +1209,26 @@ impl super::AwbcProductStepExecutor {
+             return Err(LineRuntimeError::StaleCommandOutcome.into());
+         }
+         settle_scoped_defer_releases(transaction);
+-        if let Some(pending) = transaction.frame().pending_activation_host_call.clone() {
+-            return self.resume_activation_host_call(transaction, pending, host_results);
+-        }
++        let mut host_result_take = None;
++        let host_trap = if let Some(pending) =
++            transaction.frame().pending_activation_host_call.clone()
++        {
++            let mut progress =
++                self.resume_activation_host_call(transaction, pending, host_results)?;
++            let Some(ticket) = progress.host_result_take.as_ref() else {
++                return Ok(progress);
++            };
++            let super::PreparedHostResultTarget::Activation { outcome, .. } = &ticket.target else {
++                unreachable!("activation resume issues only its own Host result ticket")
++            };
++            let Some(trap) = outcome.failure_trap() else {
++                return Ok(progress);
++            };
++            host_result_take = progress.host_result_take.take();
++            Some(trap)
++        } else {
++            None
++        };
+         let activation_returned_unit = matches!(
+             &transaction.frame().phase,
+             ProductDialoguePhase::Activating {
+@@ -1290,11 +1307,13 @@ impl super::AwbcProductStepExecutor {
+         };
+         let mut candidate = Some(fiber);
+         let result: Result<ProductActivationProgress, ProductStepError> = (|| {
+-            budgets.replenish_activation(
+-                &activation,
+-                candidate.as_mut().expect("activation fiber remains owned"),
+-                &self.program,
+-            )?;
++            if host_trap.is_none() {
++                budgets.replenish_activation(
++                    &activation,
++                    candidate.as_mut().expect("activation fiber remains owned"),
++                    &self.program,
++                )?;
++            }
+             let mut candidate_stats = self.compact_pure_stats;
+             let context = self.vm_execution_context();
+             let mut host = super::ProductVmHost {
+@@ -1302,16 +1321,24 @@ impl super::AwbcProductStepExecutor {
+                 fallback_stats: &mut candidate_stats,
+                 context: &context,
+             };
+-            let step = crate::awbc::vm::step_with_presentation(
+-                &self.program,
+-                candidate.as_mut().expect("activation fiber remains owned"),
+-                VmStepOptions {
+-                    max_instructions: 1,
+-                },
+-                &context,
+-                &mut self.presentation,
+-                &mut host,
+-            );
++            let step = if let Some(trap) = host_trap {
++                self.program.trap_fiber(
++                    candidate.as_mut().expect("activation fiber remains owned"),
++                    &mut self.presentation,
++                    trap,
++                )
++            } else {
++                crate::awbc::vm::step_with_presentation(
++                    &self.program,
++                    candidate.as_mut().expect("activation fiber remains owned"),
++                    VmStepOptions {
++                        max_instructions: 1,
++                    },
++                    &context,
++                    &mut self.presentation,
++                    &mut host,
++                )
++            };
+             let step = match step {
+                 Ok(step) => step,
+                 Err(error) => {
+@@ -1730,15 +1757,20 @@ impl super::AwbcProductStepExecutor {
+                             pending: None,
+                         };
+                         Ok(ProductActivationProgress {
+-                            trap: Some(trap),
++                            // Host receipt publication remains its own charged
++                            // operation. The next activation turn enters the
++                            // existing failure-close path, as before.
++                            trap: host_result_take.is_none().then_some(trap),
+                             progressed: true,
+-                            executed_ops: usize::from(step.executed > 0),
++                            executed_ops: usize::from(
++                                step.executed > 0 || host_result_take.is_some(),
++                            ),
+                             presented: None,
+                             reducer: LineTaskActivation::default(),
+                             pure_stats: Some(candidate_stats),
+                             execution,
+                             host_calls: Vec::new(),
+-                            host_result_take: None,
++                            host_result_take,
+                         })
+                     }
+                     VmExit::Suspended(notice)
+@@ -1975,6 +2007,12 @@ impl super::AwbcProductStepExecutor {
+         else {
+             unreachable!("prepared activation retains its suspended fiber")
+         };
++        if let Some(expected) = outcome.failure_trap() {
++            assert!(
++                matches!(fiber.terminal.as_ref(), Some(crate::awbc::fiber::FiberTerminalValue::Trapped(actual)) if actual == &expected),
++                "Host failure was admitted and unwound before consuming its receipt"
++            );
++        }
+         let result = host_results.remove(result_index);
+         match (outcome, result.outcome) {
+             (
+@@ -1993,20 +2031,7 @@ impl super::AwbcProductStepExecutor {
+                 }
+                 fiber.resume_at_prepared(resume);
+             }
+-            (super::PreparedHostResultOutcome::Failed { kind, message }, Err(_)) => fiber
+-                .mark_trapped(crate::awbc::fiber::FiberTrap {
+-                    code: match kind {
+-                        crate::step::RuntimeHostCallErrorKind::UnsupportedCapability => {
+-                            crate::awbc::schema::AwbcTrapCode::CapabilityDenied
+-                        }
+-                        crate::step::RuntimeHostCallErrorKind::Rejected
+-                        | crate::step::RuntimeHostCallErrorKind::Failed => {
+-                            crate::awbc::schema::AwbcTrapCode::HostAbiMismatch
+-                        }
+-                    },
+-                    message: Some(message),
+-                    source_map: None,
+-                }),
++            (super::PreparedHostResultOutcome::Failed { .. }, Err(_)) => {}
+             _ => unreachable!("prepared activation result retains its checked outcome"),
+         }
+         frame.pending_activation_host_call = None;
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs b/crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs
+index 4d23b73792050bc29357d679f4130ec6cdb40e10..323954e228820b9dce65c88dbeedc7fe5ff13c42 100644
+--- a/crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs
++++ b/crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs
+@@ -391,3 +391,173 @@ fn real_deferred_host_failure_consumes_its_receipt_only_after_resource_unwind_is
+         }
+     }
+ }
++
++fn activation_host_fixture(
++    blocked: bool,
++) -> (AwbcProductStepExecutor, RuntimePresentationHandleToken) {
++    super::trap_lifecycle::dialogue_fixture_with_program(blocked, |program, entry| {
++        let signature = AwbcSignatureId(program.signatures.len().try_into().unwrap());
++        program.signatures.push(AwbcSignature {
++            params: Vec::new(),
++            result: None,
++            effects: AwbcEffectSetId(0),
++        });
++        program.host_calls.push(AwbcHostCall {
++            producer: crate::tests::host_producer(),
++            public_id: AwbcStringId(0),
++            capability: AwbcStringId(0),
++            operation: AwbcStringId(0),
++            contract: None,
++            signature,
++            mode: AwbcHostCallMode::Suspend,
++            deterministic: true,
++            arguments: Vec::new(),
++        });
++        let resume_block = AwbcBlockId((entry + 1).try_into().unwrap());
++        program.blocks.insert(
++            entry + 1,
++            AwbcBlock {
++                owner: AwbcFunctionId(1),
++                instructions: AwbcTableRange::new(0, 0),
++                terminator: AwbcTerminator::Return { value: None },
++                safe_point: AwbcSafePointKind::HostCall,
++                source_map: None,
++            },
++        );
++        program.functions[1].blocks.len += 1;
++        for function in program.functions.iter_mut().skip(2) {
++            function.blocks.start += 1;
++            function.entry_block.0 += 1;
++        }
++        let resume = AwbcResumePointId(program.resume_points.len().try_into().unwrap());
++        program.resume_points.push(AwbcResumePoint {
++            function: AwbcFunctionId(1),
++            block: resume_block,
++            frame_layout: program.functions[1].frame_layout,
++            kind: AwbcSafePointKind::HostCall,
++        });
++        program.blocks[entry].terminator = AwbcTerminator::HostCall {
++            call: AwbcHostCallId(0),
++            args: Vec::new(),
++            dst: None,
++            resume,
++        };
++    })
++}
++
++#[test]
++fn actual_activation_host_failure_retains_receipt_and_custody_until_unwind_is_admitted() {
++    for kind in [
++        RuntimeHostCallErrorKind::UnsupportedCapability,
++        RuntimeHostCallErrorKind::Rejected,
++        RuntimeHostCallErrorKind::Failed,
++    ] {
++        for blocked in [true, false] {
++            let (mut executor, token) = activation_host_fixture(blocked);
++            let issued = executor.step(Default::default(), one_op());
++            assert!(
++                issued.output.diagnostics.is_empty(),
++                "{:?}",
++                issued.output.diagnostics
++            );
++            let [request] = issued.output.requests.host_calls.as_slice() else {
++                panic!("actual Dialogue initializer issues its suspended Host call")
++            };
++            let mut host_results = vec![RuntimeHostCallResult {
++                id: request.id.clone(),
++                outcome: Err(RuntimeHostCallError {
++                    kind,
++                    message: "activation host fault".into(),
++                }),
++            }];
++            let before = executor.snapshot().unwrap();
++            if blocked {
++                for _ in 0..2 {
++                    let mut transaction = executor.dialogues.begin_active_transaction().unwrap();
++                    let result = executor.step_dialogue_activation_with_host_results(
++                        &mut transaction,
++                        &mut host_results,
++                        &mut crate::pure::VmRuntimePureCallBackend::default(),
++                        &mut crate::awbc::product_step::ProductStepBudgets::default(),
++                    );
++                    assert!(matches!(result, Err(ref error) if error.is_presentation_refusal()));
++                    executor.dialogues.restore_transaction(transaction).unwrap();
++                    assert_eq!(executor.snapshot().unwrap(), before);
++                    assert_eq!(host_results.len(), 1);
++                    assert!(
++                        matches!(&host_results[0].outcome, Err(error) if error.kind == kind && error.message == "activation host fault")
++                    );
++                }
++                executor
++                    .presentation
++                    .as_mut()
++                    .unwrap()
++                    .retirements_mut()
++                    .clear();
++            }
++            let mut transaction = executor.dialogues.begin_active_transaction().unwrap();
++            let mut progress = executor
++                .step_dialogue_activation_with_host_results(
++                    &mut transaction,
++                    &mut host_results,
++                    &mut crate::pure::VmRuntimePureCallBackend::default(),
++                    &mut crate::awbc::product_step::ProductStepBudgets::default(),
++                )
++                .unwrap();
++            assert_eq!(progress.executed_ops, 1);
++            assert!(
++                progress.trap.is_none(),
++                "receipt commit retains the existing one-operation timing"
++            );
++            let ticket = progress
++                .host_result_take
++                .take()
++                .expect("actual failed Host receipt is staged");
++            let mut batch = match progress.execution.take() {
++                Some(batch) => batch,
++                None => executor
++                    .prepare_line_task_commands(&mut transaction, progress.reducer)
++                    .unwrap(),
++            };
++            let prepared = executor
++                .preflight_line_task_commands(&mut transaction, &batch)
++                .unwrap();
++            let proof = executor.dialogues.inspect_commit(&transaction).unwrap();
++            executor.commit_activation_host_result(&mut transaction, &mut host_results, ticket);
++            executor.realize_line_task_commands(&mut transaction, &mut batch, prepared);
++            executor.dialogues.commit_prepared(transaction, proof);
++            executor.commit_line_task_commands(batch, &mut RuntimeStepOutput::default());
++            assert!(host_results.is_empty());
++            let retired = executor.presentation.as_ref().unwrap().retirements();
++            assert_eq!(retired.len(), 1);
++            assert_eq!(retired[0].token, token);
++            let frame = executor.dialogues.active_frame().unwrap();
++            assert!(frame.pending_activation_host_call.is_none());
++            let ProductDialoguePhase::Activating { fiber, .. } = &frame.phase else {
++                unreachable!()
++            };
++            let Some(FiberTerminalValue::Trapped(trap)) = fiber.terminal.as_ref() else {
++                unreachable!()
++            };
++            assert_eq!(trap.message.as_deref(), Some("activation host fault"));
++            assert_eq!(
++                trap.code,
++                if kind == RuntimeHostCallErrorKind::UnsupportedCapability {
++                    AwbcTrapCode::CapabilityDenied
++                } else {
++                    AwbcTrapCode::HostAbiMismatch
++                }
++            );
++            executor.snapshot().unwrap();
++            if !blocked {
++                executor = roundtrip(executor);
++            }
++            let closed = executor.step(Default::default(), one_op());
++            assert!(closed.output.requests.host_calls.is_empty());
++            assert_eq!(
++                executor.presentation.as_ref().unwrap().retirements().len(),
++                1
++            );
++        }
++    }
++}
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs b/crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs
+index 7722e825659b0fa28bfdec64548cd1e500fa211e..8a8f65cceba144819819743c1e61740e312d11a8 100644
+--- a/crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs
++++ b/crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs
+@@ -259,6 +259,13 @@ fn actual_independent_child_vm_refusal_keeps_its_checkpoint_queue_and_original_b
+ }
+ 
+ fn dialogue_fixture(blocked: bool) -> (AwbcProductStepExecutor, RuntimePresentationHandleToken) {
++    dialogue_fixture_with_program(blocked, |_, _| {})
++}
++
++pub(super) fn dialogue_fixture_with_program(
++    blocked: bool,
++    configure: impl FnOnce(&mut AwbcProgram, usize),
++) -> (AwbcProductStepExecutor, RuntimePresentationHandleToken) {
+     let mut program = mark_selector_program(
+         arcweft_interaction_model::input::InputActionId::new("trap.refusal").unwrap(),
+     );
+@@ -345,6 +352,7 @@ fn dialogue_fixture(blocked: bool) -> (AwbcProductStepExecutor, RuntimePresentat
+         code: AwbcTrapCode::ExplicitPanic,
+         message: None,
+     };
++    configure(&mut program, activation_block);
+     let mut executor = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 64).unwrap();
+     for _ in 0..8 {
+         let output = executor.step(

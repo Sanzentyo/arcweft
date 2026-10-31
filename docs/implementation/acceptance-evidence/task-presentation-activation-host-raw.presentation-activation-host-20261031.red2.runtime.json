@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "7b0d5fc4facc7d0dfd94c2898e6778fe5fc575ac",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked",
+    "--lib",
+    "-E",
+    "test(actual_activation_host_failure_retains_receipt_and_custody_until_unwind_is_admitted)",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-activation-host-20261031.red2.runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-31T13:45:47.0594690Z",
+  "finishedAt": "2026-10-31T13:45:49.1000602Z"
+}

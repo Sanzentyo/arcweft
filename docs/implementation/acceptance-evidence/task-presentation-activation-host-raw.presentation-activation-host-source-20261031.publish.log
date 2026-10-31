@@ -1,0 +1,7 @@
+From https://github.com/Sanzentyo/arcweft
+ * branch                main       -> FETCH_HEAD
+[main a0f193d0c] fix(core): admit activation host failure before consuming its receipt
+ 4 files changed, 260 insertions(+), 47 deletions(-)
+To https://github.com/Sanzentyo/arcweft.git
+   7b0d5fc4f..a0f193d0c  HEAD -> main
+{"commit":"a0f193d0c8989eeb72294313f87d282016ef949c","parent":"7b0d5fc4facc7d0dfd94c2898e6778fe5fc575ac","tree":"99cea6933a966b33244a1878d26b379ee9b9528f","paths":4,"blobDrift":0,"originalWip":14,"separatelyHeld":0,"patchSha256":"9d9ac3a39f8ede235d2897c5720861c5031209653dcac1d1f8508020bcbf0ec3","indexEmpty":true}

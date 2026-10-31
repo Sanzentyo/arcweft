@@ -1,0 +1,34 @@
+[
+  {
+    "attempt": "red1",
+    "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs",
+    "source": "activation-host-red1-source/crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs",
+    "bytes": 21588,
+    "sha256": "a62547938c1bc0eef89591fe2d8df453d71340478a5ef2715149e9c8ca43d6a4",
+    "drift": 0
+  },
+  {
+    "attempt": "red1",
+    "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+    "source": "activation-host-red1-source/crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+    "bytes": 16224,
+    "sha256": "79d2bd55cf6f33e5fb9fb95fe4136d30509de3889743a03f8d6c58dec305a5ef",
+    "drift": 0
+  },
+  {
+    "attempt": "red2",
+    "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs",
+    "source": "activation-host-red2.fixture-source.rs",
+    "bytes": 21614,
+    "sha256": "530e17821ad4f8b0d163f7dd3c13a4c845fdf9fffc02624ad06416c40dedcd64",
+    "drift": 0
+  },
+  {
+    "attempt": "red2",
+    "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+    "source": "activation-host-red1-source/crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+    "bytes": 16224,
+    "sha256": "79d2bd55cf6f33e5fb9fb95fe4136d30509de3889743a03f8d6c58dec305a5ef",
+    "drift": 0
+  }
+]

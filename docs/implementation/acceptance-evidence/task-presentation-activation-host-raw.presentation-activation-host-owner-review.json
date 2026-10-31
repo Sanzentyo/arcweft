@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "base": "7b0d5fc4facc7d0dfd94c2898e6778fe5fc575ac",
+  "inspectedMain": "a0f193d0c8989eeb72294313f87d282016ef949c",
+  "heldTracked": 14,
+  "heldUntracked": 6,
+  "rows": [
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step.rs",
+      "owner": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 248280,
+      "basePhysicalLoc": 6145,
+      "bytes": 248538,
+      "physicalLoc": 6155
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+      "owner": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 186077,
+      "basePhysicalLoc": 4373,
+      "bytes": 187129,
+      "physicalLoc": 4398
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs",
+      "owner": "arcweft-core",
+      "classification": "test",
+      "baseBytes": 14192,
+      "basePhysicalLoc": 393,
+      "bytes": 21614,
+      "physicalLoc": 563
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/trap_lifecycle.rs",
+      "owner": "arcweft-core",
+      "classification": "test",
+      "baseBytes": 15938,
+      "basePhysicalLoc": 458,
+      "bytes": 16224,
+      "physicalLoc": 466
+    }
+  ],
+  "disposition": [
+    "The existing Product activation checkpoint and original PresentationBanks own Host-failure retirement. The same candidate/VM terminal observation collector and line reconciliation are used as VM traps; no parallel unwind owner or persisted intent is introduced.",
+    "PreparedHostResultOutcome owns its context-free failure classification. Deferred and activation consumers use that single rule. Activation commit only verifies the admitted terminal metadata and consumes the exact receipt after command/registry preflight; direct mark_trapped is deleted.",
+    "Receipt publication remains the existing one-operation boundary. Host failure neither executes another instruction nor replenishes VM budget. Failure close occurs on the next activation turn, retaining the prior protocol timing and public terminal snapshot.",
+    "line.rs remains the existing activation/line reconciliation owner. product_step.rs retains only the shared prepared Host outcome classification and its existing journal consumer. The test module shares actual Dialogue/LoadConst/Nop construction and adds a real HostCall/resume block under the admitted activation function. No public visibility, wire/Cargo edge, host I/O or unrelated owner state was added."
+  ]
+}

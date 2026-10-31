@@ -13619,3 +13619,17 @@ owner4は4,026凍結入力のCore全2,194／2,194 PASS・除外0。新規5件は
 [全結果・公開SHA・73 raw artifact／15,547,929 bytes](acceptance-evidence/task-presentation-terminal-request-owner-validation.json)に各失敗、final owner／quality、両公開patch、source-freezeを保持する。focus2 fixtureとfocus1 coordinatorの未公開状態は後続変更を逆に戻し、元bytes長とSHA256の完全一致で確認した。focus3の10 sourceは凍結入力との完全一致を確認して保存した。focus1のtest fixtureの正確な未公開bytesは未保存であり、原source-freeze hashと失敗logを保持する。この制限を後続sourceのbytesで埋めたとは扱わない。Cargo生成物の移動・コピー・退避と追加cleanは行っていない。
 
 Supersedes: control failureとdeferred子suspensionを一括でVM外terminal未接続としていた現状説明を、今回の実装・実行範囲で削除する。有効Return／Gotoのescaping handle移動、他の予期しないprotocol／activation Host失敗、outer step全体、Native実借用parent、Source ViewValue／driver、置換・画像parity・最終matrixは別の条件である。現在の判定は[current-status](current-status.md)一か所へまとめ、既受入のVM／lifecycle／取消／Generic Matchを未完了へ戻さない。公開済み履歴prefixと旧raw原本は変更しない。
+
+## Dialogue activationのHost失敗と受領確定前の資源回収 — 2026-10-31
+
+Source a0f193d0c8989eeb72294313f87d282016ef949c（parent 7b0d5fc4facc7d0dfd94c2898e6778fe5fc575ac、tree 99cea6933a966b33244a1878d26b379ee9b9528f、4 path、patch SHA256 9d9ac3a39f8ede235d2897c5720861c5031209653dcac1d1f8508020bcbf0ec3）を通常commit／pushし、remote／全blob差分0・index emptyを照合した。activationのHost失敗は以前、結果を消費した後の直接mark_trappedでterminal化し、元bankの解放検査を通っていなかった。既存の完全activation checkpoint内でadmitted programのtrap_fiberへ通し、元scope回収・VM cleanup観測・line reconciliationを同じ経路で準備する。command／registry検査後の最終確定では、正当なterminal metadataを照合して実際のreceiptだけを消費する。Host結果処理は一操作という既存の境界を保ち、VM予算の補充や追加命令実行を行わない。DeferredとactivationのHost失敗分類はPreparedHostResultOutcome自身へまとめた。
+
+red1は追加testのProductStepBudgets参照先が誤ったprivate moduleだったためE0433、catalog compile終了101・runtime未実行。参照先だけを修正したred2は0 PASS／1 FAIL／2,141選択外。正規のLoadConst／Dialogue／Nop／HostCallで得た実activationとreceiptについて、容量不足でも成功progressが返ることを再現した。この拒否を元checkpoint内の型付きpresentation refusalへ変え、直接terminal化を削除した。両fixture epochの正確なbytesと元source-freeze hashの一致証明を原本へ保持する。
+
+最終owner3は4,026凍結入力のCore全2,195／2,195 PASS・除外0、source／catalog／実行ファイル差分0。UnsupportedCapability／Rejected／Failedの3種をdefaultとhandles=1／scopes=8で実行した。2回の容量拒否後も完全snapshot、元bank・body／grant・予算・activation revisionと同じ受信結果を保持する。旧回収項目のACKを模した解放後に同policyで再試行し、元tokenを一度だけ退役させ、最終preflight後にreceiptを一度だけ消費した。default policyの公開save／restoreはterminal activationを含めて完全一致。次のactivation turnでHost再発行と二重退役がないことも確認した。この追加のnegative caseは実activation transactionと入力vectorの検証であり、全外部packet familyのpublic outer step全体を受入済みとはしない。
+
+同じ入力でCore全target／全feature Clippy・default全target check・doctest78／78・fmt38 path・構造gateは各終了0。構造は97 package・3262 files・3132 Rust files・1773507 physical LOC・382 review trigger・blocking 0。4変更fileの責任・依存・実LOCをレビューした。既存checkpoint／candidate／bank／reconciliationの所有者を維持し、新しい永続owner・wire形・Cargo edge・公開production APIを加えていない。warningと元14 tracked／6 untracked WIPを保持する。
+
+[全結果・公開SHA・54 raw artifact／12490623 bytes](acceptance-evidence/task-presentation-activation-host-owner-validation.json)に修復前の不成功と最終全件・品質検査・公開patchを保持する。先行の2,194件runと今回の2,195件runを加算しない。Cargo生成物の移動・コピー・退避と追加cleanは行っていない。
+
+Supersedes: 現状一覧の「activation Host失敗」を残作業から削除する根拠は、上記の再現・元bankへの接続・同policy拒否／再試行・receipt確定の検証である。全体goalの未完了を理由に、完了したcontrol failure・deferred子・VM／lifecycle／取消やGeneric Matchを未完了へ戻さない。outer step全体・Return／select／有効Goto・他のprotocolエラー・Native実借用parent・Source ViewValue／driver・置換／画像parity・最終matrixは別の境界として[current-status](current-status.md)一か所へまとめ、公開済み履歴prefixと旧raw原本を維持する。
