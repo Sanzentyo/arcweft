@@ -279,7 +279,7 @@ impl FlowFiber {
             &self.frame.program,
             self.execution,
             self.persistent_id,
-            &mut self.frame.env,
+            self.frame.env.presentation_scope_target()?,
         )
     }
 
@@ -294,7 +294,7 @@ impl FlowFiber {
             &self.frame.program,
             self.execution,
             self.persistent_id,
-            &mut self.frame.env,
+            self.frame.env.presentation_scope_target()?,
         )
     }
 }

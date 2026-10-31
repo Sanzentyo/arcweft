@@ -35,7 +35,9 @@ fn new_scope<V>(
             program,
             execution(),
             RuntimePersistentFiberId::from_allocated(fiber),
-            &mut crate::value::RuntimeEnv::default(),
+            crate::value::RuntimeEnv::default()
+                .presentation_scope_target()
+                .unwrap(),
         )
         .unwrap()
 }
@@ -383,18 +385,33 @@ fn reached_scope_binding_is_stable_and_exhaustion_never_changes_the_frame_or_gra
     let fiber = RuntimePersistentFiberId::from_allocated(3);
     let mut env = crate::value::RuntimeEnv::default();
     let owner = ledger
-        .bind_scope(&program, execution(), fiber, &mut env)
+        .bind_scope(
+            &program,
+            execution(),
+            fiber,
+            env.presentation_scope_target().unwrap(),
+        )
         .unwrap();
     ledger.next_scope = RuntimeIdCursor::Exhausted;
     assert_eq!(
         ledger
-            .bind_scope(&program, execution(), fiber, &mut env)
+            .bind_scope(
+                &program,
+                execution(),
+                fiber,
+                env.presentation_scope_target().unwrap()
+            )
             .unwrap(),
         owner
     );
     env.push_scope();
     assert!(matches!(
-        ledger.bind_scope(&program, execution(), fiber, &mut env),
+        ledger.bind_scope(
+            &program,
+            execution(),
+            fiber,
+            env.presentation_scope_target().unwrap()
+        ),
         Err(RuntimePresentationError::Identity(_))
     ));
     assert!(env.presentation_scope_binding().is_none());
@@ -403,16 +420,31 @@ fn reached_scope_binding_is_stable_and_exhaustion_never_changes_the_frame_or_gra
     env.pop_scope();
     assert_eq!(
         ledger
-            .bind_scope(&program, execution(), fiber, &mut env)
+            .bind_scope(
+                &program,
+                execution(),
+                fiber,
+                env.presentation_scope_target().unwrap()
+            )
             .unwrap(),
         owner
     );
     ledger
-        .exit_bound_scope(&program, execution(), fiber, &mut env)
+        .exit_bound_scope(
+            &program,
+            execution(),
+            fiber,
+            env.presentation_scope_target().unwrap(),
+        )
         .unwrap();
     assert!(env.presentation_scope_binding().is_none());
     assert!(matches!(
-        ledger.bind_scope(&program, execution(), fiber, &mut env),
+        ledger.bind_scope(
+            &program,
+            execution(),
+            fiber,
+            env.presentation_scope_target().unwrap()
+        ),
         Err(RuntimePresentationError::Identity(_))
     ));
 }
@@ -424,10 +456,20 @@ fn foreign_context_cannot_adopt_a_reached_scope_grant() {
     let fiber = RuntimePersistentFiberId::from_allocated(3);
     let mut env = crate::value::RuntimeEnv::default();
     let owner = ledger
-        .bind_scope(&program, execution(), fiber, &mut env)
+        .bind_scope(
+            &program,
+            execution(),
+            fiber,
+            env.presentation_scope_target().unwrap(),
+        )
         .unwrap();
     assert_eq!(
-        ledger.bind_scope(&new_program(), execution(), fiber, &mut env),
+        ledger.bind_scope(
+            &new_program(),
+            execution(),
+            fiber,
+            env.presentation_scope_target().unwrap()
+        ),
         Err(RuntimePresentationError::Program)
     );
     assert_eq!(
@@ -435,13 +477,18 @@ fn foreign_context_cannot_adopt_a_reached_scope_grant() {
             &program,
             execution(),
             RuntimePersistentFiberId::from_allocated(4),
-            &mut env
+            env.presentation_scope_target().unwrap()
         ),
         Err(RuntimePresentationError::Owner)
     );
     let execution = ExecutionInstanceId::from_allocated(NonZeroU64::new(2).unwrap());
     assert_eq!(
-        ledger.bind_scope(&program, execution, fiber, &mut env),
+        ledger.bind_scope(
+            &program,
+            execution,
+            fiber,
+            env.presentation_scope_target().unwrap()
+        ),
         Err(RuntimePresentationError::Owner)
     );
     assert_eq!(env.presentation_scope_binding().unwrap().owner, owner);
@@ -456,12 +503,22 @@ fn scope_grant_limit_is_checked_before_issuing_or_binding_the_reached_frame() {
     let fiber = RuntimePersistentFiberId::from_allocated(3);
     let mut env = crate::value::RuntimeEnv::default();
     let owner = ledger
-        .bind_scope(&program, execution(), fiber, &mut env)
+        .bind_scope(
+            &program,
+            execution(),
+            fiber,
+            env.presentation_scope_target().unwrap(),
+        )
         .unwrap();
     let before = ledger.next_scope;
     env.push_scope();
     assert_eq!(
-        ledger.bind_scope(&program, execution(), fiber, &mut env),
+        ledger.bind_scope(
+            &program,
+            execution(),
+            fiber,
+            env.presentation_scope_target().unwrap()
+        ),
         Err(RuntimePresentationError::ScopeCapacity)
     );
     assert!(env.presentation_scope_binding().is_none());
@@ -470,7 +527,12 @@ fn scope_grant_limit_is_checked_before_issuing_or_binding_the_reached_frame() {
     env.pop_scope();
     assert_eq!(
         ledger
-            .bind_scope(&program, execution(), fiber, &mut env)
+            .bind_scope(
+                &program,
+                execution(),
+                fiber,
+                env.presentation_scope_target().unwrap()
+            )
             .unwrap(),
         owner
     );
@@ -487,7 +549,7 @@ fn one_program_slot_replaces_across_real_execution_owners() {
             &program,
             execution(),
             RuntimePersistentFiberId::from_allocated(1),
-            &mut first_env,
+            first_env.presentation_scope_target().unwrap(),
         )
         .unwrap();
     let second_execution = ExecutionInstanceId::from_allocated(NonZeroU64::new(2).unwrap());
@@ -496,7 +558,7 @@ fn one_program_slot_replaces_across_real_execution_owners() {
             &program,
             second_execution,
             RuntimePersistentFiberId::from_allocated(2),
-            &mut second_env,
+            second_env.presentation_scope_target().unwrap(),
         )
         .unwrap();
     let (old, _) = ledger

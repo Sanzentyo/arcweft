@@ -13,6 +13,107 @@ use crate::value::{AwbcRuntimeValueSnapshot, RuntimeValue, RuntimeValueView};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
+impl<V, O, N, B, R, G: crate::presentation::resources::PresentationScopeStorage>
+    super::FiberState<V, O, N, B, R, G>
+{
+    pub(super) fn admit_presentation_scopes(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> AwbcSaveResult<()> {
+        let result = (|| {
+            for frame in &self.frames {
+                if let Some(binding) = &frame.root_presentation_scope {
+                    binding.admit_awbc_scope(admission, self.instance, frame.instance, None)?;
+                }
+                for scope in &frame.scopes {
+                    if let Some(binding) = &scope.presentation_scope {
+                        binding.admit_awbc_scope(
+                            admission,
+                            self.instance,
+                            frame.instance,
+                            Some(scope.id),
+                        )?;
+                    }
+                }
+            }
+            Ok(())
+        })();
+        result.inspect_err(|error: &crate::value::AwbcRuntimeValueSnapshotError| {
+            admission.retain_failure(error.clone())
+        })
+    }
+}
+
+impl super::FiberFrame {
+    pub(crate) fn presentation_scope_binding(
+        &self,
+    ) -> Option<&crate::presentation::RuntimePresentationScopeBinding> {
+        match self.scopes.last() {
+            Some(scope) => scope.presentation_scope.as_ref(),
+            None => self.root_presentation_scope.as_ref(),
+        }
+    }
+
+    fn presentation_scope_target(
+        &mut self,
+    ) -> crate::presentation::resources::PresentationScopeTarget<'_> {
+        match self.scopes.last_mut() {
+            Some(scope) => crate::presentation::resources::PresentationScopeTarget::awbc(
+                &mut scope.presentation_scope,
+                self.instance,
+                Some(scope.id),
+            ),
+            None => crate::presentation::resources::PresentationScopeTarget::awbc(
+                &mut self.root_presentation_scope,
+                self.instance,
+                None,
+            ),
+        }
+    }
+}
+
+impl super::FiberState {
+    pub(crate) fn bind_presentation_scope<V>(
+        &mut self,
+        program: &RuntimeProgramOwner,
+        ledger: &mut crate::presentation::resources::PresentationLedger<V>,
+    ) -> Result<
+        crate::presentation::resources::PresentationScopeOwner,
+        crate::presentation::RuntimePresentationError,
+    > {
+        if !matches!(program, RuntimeProgramOwner::Awbc(_)) {
+            return Err(crate::presentation::RuntimePresentationError::Program);
+        }
+        let execution = crate::runtime_id::ExecutionInstanceId::from_allocated(self.instance.get());
+        let fiber =
+            crate::runtime_id::RuntimePersistentFiberId::from_allocated(self.instance.get().get());
+        let frame = self
+            .active_frame_mut()
+            .map_err(|_| crate::presentation::RuntimePresentationError::MissingScope)?;
+        ledger.bind_scope(program, execution, fiber, frame.presentation_scope_target())
+    }
+
+    pub(crate) fn release_presentation_scope<V>(
+        &mut self,
+        program: &RuntimeProgramOwner,
+        ledger: &mut crate::presentation::resources::PresentationLedger<V>,
+    ) -> Result<
+        Vec<crate::presentation::resources::PresentationRetirement<V>>,
+        crate::presentation::RuntimePresentationError,
+    > {
+        if !matches!(program, RuntimeProgramOwner::Awbc(_)) {
+            return Err(crate::presentation::RuntimePresentationError::Program);
+        }
+        let execution = crate::runtime_id::ExecutionInstanceId::from_allocated(self.instance.get());
+        let fiber =
+            crate::runtime_id::RuntimePersistentFiberId::from_allocated(self.instance.get().get());
+        let frame = self
+            .active_frame_mut()
+            .map_err(|_| crate::presentation::RuntimePresentationError::MissingScope)?;
+        ledger.exit_bound_scope(program, execution, fiber, frame.presentation_scope_target())
+    }
+}
+
 #[cfg(test)]
 mod tests;
 
@@ -36,13 +137,15 @@ mod tests;
 #[serde(
     deny_unknown_fields,
     bound(
-        serialize = "V: super::InertRuntimeValueStorage",
-        deserialize = "V: super::InertRuntimeValueStorage"
+        serialize = "V: super::InertRuntimeValueStorage, G: Serialize",
+        deserialize = "V: super::InertRuntimeValueStorage, G: Deserialize<'de>"
     )
 )]
-pub struct FiberScope<V = RuntimeValue> {
+pub struct FiberScope<V = RuntimeValue, G = crate::presentation::RuntimePresentationScopeBinding> {
     pub id: AwbcScopeId,
     pub depth: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presentation_scope: Option<G>,
     pub cleanups: Vec<FiberScopeCleanup<V>>,
     pub defers: Vec<FiberDeferredRegistration<V>>,
     /// Only token identities remain after an outcome-filtered packet drops.
@@ -391,7 +494,7 @@ impl<V> FiberDeferredRegistration<V> {
     }
 }
 
-impl<V> FiberScope<V> {
+impl<V, G> FiberScope<V, G> {
     pub(super) fn validate_inputs(
         &self,
         frame: &FrameValueContext<'_, V>,
@@ -635,10 +738,15 @@ impl FiberScope {
     pub(super) fn snapshot_admitted(
         &self,
         owner: &RuntimeProgramOwner,
-    ) -> AwbcSaveResult<FiberScope<AwbcRuntimeValueSnapshot>> {
+    ) -> AwbcSaveResult<super::AwbcFiberScopeSnapshot> {
         Ok(FiberScope {
             id: self.id,
             depth: self.depth,
+            presentation_scope: self
+                .presentation_scope
+                .as_ref()
+                .map(|binding| binding.snapshot_admitted(owner))
+                .transpose()?,
             cleanups: self
                 .cleanups
                 .iter()
@@ -656,7 +764,7 @@ impl FiberScope {
         })
     }
 }
-impl FiberScope<AwbcRuntimeValueSnapshot> {
+impl super::AwbcFiberScopeSnapshot {
     pub(super) fn into_live_admitted<'a>(
         self,
         owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
@@ -665,6 +773,9 @@ impl FiberScope<AwbcRuntimeValueSnapshot> {
         Ok(FiberScope {
             id: self.id,
             depth: self.depth,
+            presentation_scope: self
+                .presentation_scope
+                .map(|snapshot| snapshot.into_admitted_live(owner.owner())),
             cleanups: self
                 .cleanups
                 .into_iter()

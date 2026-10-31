@@ -266,7 +266,8 @@ impl<V> RuntimeEnv<V> {
     }
     pub(crate) fn presentation_scope_bindings(
         &self,
-    ) -> impl Iterator<Item = &crate::presentation::resources::PresentationScopeBinding> {
+    ) -> impl Iterator<Item = &crate::presentation::resources::RuntimePresentationScopeBinding>
+    {
         self.scopes
             .iter()
             .filter_map(|scope| scope.presentation_scope.as_ref())
@@ -274,22 +275,27 @@ impl<V> RuntimeEnv<V> {
 
     pub(crate) fn presentation_scope_binding(
         &self,
-    ) -> Option<&crate::presentation::resources::PresentationScopeBinding> {
+    ) -> Option<&crate::presentation::resources::RuntimePresentationScopeBinding> {
         self.scopes
             .last()
             .and_then(|scope| scope.presentation_scope.as_ref())
     }
 
-    pub(crate) fn bind_presentation_scope(
+    pub(crate) fn presentation_scope_target(
         &mut self,
-        install: crate::presentation::resources::PresentationScopeMutation,
-    ) -> Result<(), crate::presentation::RuntimePresentationError> {
+    ) -> Result<
+        crate::presentation::resources::PresentationScopeTarget<'_>,
+        crate::presentation::RuntimePresentationError,
+    > {
         let scope = self
             .scopes
             .last_mut()
             .ok_or(crate::presentation::RuntimePresentationError::MissingScope)?;
-        scope.presentation_scope = install.into_binding();
-        Ok(())
+        Ok(
+            crate::presentation::resources::PresentationScopeTarget::native(
+                &mut scope.presentation_scope,
+            ),
+        )
     }
 
     pub(crate) fn source_function_context(&self) -> super::RuntimeScopeTypeContext {

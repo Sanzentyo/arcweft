@@ -571,6 +571,7 @@ fn install_frame_cleanups(
     frame.scopes.push(FiberScope {
         id: scope,
         depth: 0,
+        presentation_scope: None,
         cleanups: vec![
             cleanup(program, frame.function, &format!("{owner}.scope.1")),
             cleanup(program, frame.function, &format!("{owner}.scope.2")),

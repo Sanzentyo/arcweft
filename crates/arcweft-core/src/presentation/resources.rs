@@ -13,38 +13,204 @@ use crate::runtime_id::{
 use crate::task::RuntimeProgramOwner;
 use arcweft_id::PublicId;
 use arcweft_interaction_model::presentation::PresentationResourceKind;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::num::NonZeroU64;
 mod storage;
 pub(crate) use storage::{PresentationAdmission, PresentationBody};
 
 /// Dynamic owner, never a scope name or a reusable static instruction coordinate.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct PresentationScopeOwner {
     execution: ExecutionInstanceId,
     fiber: RuntimePersistentFiberId,
     scope: RuntimeScopeInstanceId,
 }
 
-/// An inert reference to the resource grant of one reached lexical frame.
-/// The ledger, rather than this retained reference, owns its active lifetime.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct PresentationScopeBinding {
-    program: RuntimeProgramOwner,
-    owner: PresentationScopeOwner,
+/// A native grant remains private with its original lexical storage. Public
+/// AWBC scope images additionally bind the original dynamic frame and its
+/// verified lexical declaration, so exchanging two headers cannot move custody.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", deny_unknown_fields, rename_all = "snake_case")]
+pub(crate) enum PresentationScopeAnchor {
+    Native,
+    Awbc {
+        frame: crate::runtime_id::RuntimeFrameInstanceId,
+        scope: Option<crate::awbc::schema::AwbcScopeId>,
+    },
 }
 
-/// One installation authorized by the issuing ledger. Inert scope references
-/// can be copied, but cannot construct or duplicate this installation proof.
-pub(crate) struct PresentationScopeMutation(Option<PresentationScopeBinding>);
+pub(crate) trait PresentationScopeStorage {
+    fn admit_awbc_scope(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        fiber: crate::runtime_id::RuntimeFiberInstanceId,
+        frame: crate::runtime_id::RuntimeFrameInstanceId,
+        scope: Option<crate::awbc::schema::AwbcScopeId>,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>;
+}
 
-impl PresentationScopeMutation {
-    pub(crate) fn into_binding(self) -> Option<PresentationScopeBinding> {
-        self.0
+impl PresentationScopeOwner {
+    fn validate_awbc_anchor(
+        self,
+        anchor: PresentationScopeAnchor,
+        fiber: crate::runtime_id::RuntimeFiberInstanceId,
+        frame: crate::runtime_id::RuntimeFrameInstanceId,
+        scope: Option<crate::awbc::schema::AwbcScopeId>,
+    ) -> Result<(), RuntimePresentationError> {
+        if self.execution.get() != fiber.get()
+            || self.fiber.get() != fiber.get().get()
+            || anchor != (PresentationScopeAnchor::Awbc { frame, scope })
+        {
+            return Err(RuntimePresentationError::Owner);
+        }
+        Ok(())
     }
 }
 
-impl PresentationScopeBinding {
+/// An inert reference to the resource grant of one reached lexical frame.
+/// The ledger, rather than this retained reference, owns its active lifetime.
+/// Its program lease is retained only in memory; wire input cannot issue it.
+///
+/// ```compile_fail
+/// use arcweft_core::presentation::RuntimePresentationScopeBinding;
+/// let _: RuntimePresentationScopeBinding = serde_json::from_str("{}").unwrap();
+/// ```
+///
+/// ```compile_fail
+/// use arcweft_core::presentation::RuntimePresentationScopeBinding;
+/// fn encode(binding: &RuntimePresentationScopeBinding) { let _ = serde_json::to_vec(binding); }
+/// ```
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimePresentationScopeBinding {
+    program: RuntimeProgramOwner,
+    owner: PresentationScopeOwner,
+    anchor: PresentationScopeAnchor,
+}
+
+/// Inert coordinates of one reached scope. Decode does not issue a grant;
+/// restoration requires its original program and the enclosing custody bank.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimePresentationScopeSnapshot {
+    owner: PresentationScopeOwner,
+    anchor: PresentationScopeAnchor,
+}
+
+impl RuntimePresentationScopeBinding {
+    pub(crate) fn snapshot_admitted(
+        &self,
+        program: &RuntimeProgramOwner,
+    ) -> Result<RuntimePresentationScopeSnapshot, RuntimePresentationError> {
+        if !self.program.same_program(program) {
+            return Err(RuntimePresentationError::Program);
+        }
+        Ok(RuntimePresentationScopeSnapshot {
+            owner: self.owner,
+            anchor: self.anchor,
+        })
+    }
+}
+
+impl RuntimePresentationScopeSnapshot {
+    pub(crate) fn into_admitted_live(
+        self,
+        program: &RuntimeProgramOwner,
+    ) -> RuntimePresentationScopeBinding {
+        RuntimePresentationScopeBinding {
+            program: program.clone(),
+            owner: self.owner,
+            anchor: self.anchor,
+        }
+    }
+
+    pub(crate) fn scope_key(
+        &self,
+    ) -> (
+        ExecutionInstanceId,
+        RuntimePersistentFiberId,
+        RuntimeScopeInstanceId,
+    ) {
+        (self.owner.execution, self.owner.fiber, self.owner.scope)
+    }
+
+    pub(crate) fn admit_retained(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+        admission.validate_metadata(&(self.scope_key(), self.anchor))?;
+        admission.validate_presentation_scope_snapshot(self)
+    }
+}
+
+impl PresentationScopeStorage for RuntimePresentationScopeBinding {
+    fn admit_awbc_scope(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        fiber: crate::runtime_id::RuntimeFiberInstanceId,
+        frame: crate::runtime_id::RuntimeFrameInstanceId,
+        scope: Option<crate::awbc::schema::AwbcScopeId>,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+        self.owner
+            .validate_awbc_anchor(self.anchor, fiber, frame, scope)?;
+        self.admit_retained(admission)
+    }
+}
+
+impl PresentationScopeStorage for RuntimePresentationScopeSnapshot {
+    fn admit_awbc_scope(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        fiber: crate::runtime_id::RuntimeFiberInstanceId,
+        frame: crate::runtime_id::RuntimeFrameInstanceId,
+        scope: Option<crate::awbc::schema::AwbcScopeId>,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+        self.owner
+            .validate_awbc_anchor(self.anchor, fiber, frame, scope)?;
+        self.admit_retained(admission)
+    }
+}
+
+/// Exclusive access to the grant slot of one reached execution scope. Resolving
+/// the real frame may fail before this capability exists; installation after
+/// ledger admission is infallible and cannot expose an unregistered grant.
+pub(crate) struct PresentationScopeTarget<'scope> {
+    binding: &'scope mut Option<RuntimePresentationScopeBinding>,
+    anchor: PresentationScopeAnchor,
+}
+
+impl<'scope> PresentationScopeTarget<'scope> {
+    pub(crate) const fn native(
+        binding: &'scope mut Option<RuntimePresentationScopeBinding>,
+    ) -> Self {
+        Self {
+            binding,
+            anchor: PresentationScopeAnchor::Native,
+        }
+    }
+
+    pub(crate) const fn awbc(
+        binding: &'scope mut Option<RuntimePresentationScopeBinding>,
+        frame: crate::runtime_id::RuntimeFrameInstanceId,
+        scope: Option<crate::awbc::schema::AwbcScopeId>,
+    ) -> Self {
+        Self {
+            binding,
+            anchor: PresentationScopeAnchor::Awbc { frame, scope },
+        }
+    }
+
+    fn binding(&self) -> Option<&RuntimePresentationScopeBinding> {
+        self.binding.as_ref()
+    }
+
+    fn install(&mut self, binding: Option<RuntimePresentationScopeBinding>) {
+        *self.binding = binding;
+    }
+}
+
+impl RuntimePresentationScopeBinding {
     pub(crate) fn admit_retained(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
@@ -57,7 +223,12 @@ impl PresentationScopeBinding {
                 message: "presentation scope requires its original executable lease".into(),
             });
         }
-        admission.validate_metadata(&(self.owner.execution, self.owner.fiber, self.owner.scope))?;
+        admission.validate_metadata(&(
+            self.owner.execution,
+            self.owner.fiber,
+            self.owner.scope,
+            self.anchor,
+        ))?;
         admission.validate_presentation_scope(self)
     }
 }
@@ -138,7 +309,14 @@ pub(crate) struct PresentationLedger<V> {
     artifact: RuntimeArtifactFingerprint,
     next: RuntimeIdCursor,
     next_scope: RuntimeIdCursor,
-    scopes: BTreeMap<RuntimeScopeInstanceId, (ExecutionInstanceId, RuntimePersistentFiberId)>,
+    scopes: BTreeMap<
+        RuntimeScopeInstanceId,
+        (
+            ExecutionInstanceId,
+            RuntimePersistentFiberId,
+            PresentationScopeAnchor,
+        ),
+    >,
     limits: PresentationLedgerLimits,
     leases: BTreeMap<NonZeroU64, PresentationLease<V>>,
 }
@@ -178,8 +356,11 @@ impl<V> PresentationLedger<V> {
         next.take_next(RuntimeIdNamespace::AffineOwner)?;
         Ok(())
     }
-    pub(crate) fn bound_scope_body_count<VS>(&self, env: &crate::value::RuntimeEnv<VS>) -> usize {
-        env.presentation_scope_binding().map_or(0, |binding| {
+    pub(crate) fn bound_scope_body_count(
+        &self,
+        binding: Option<&RuntimePresentationScopeBinding>,
+    ) -> usize {
+        binding.map_or(0, |binding| {
             self.leases
                 .values()
                 .filter(|lease| lease.owner == Some(binding.owner) && lease.body.is_some())
@@ -204,18 +385,19 @@ impl<V> PresentationLedger<V> {
 
     /// Issues a resource grant only when a real lexical frame first needs it.
     /// Entering a resource-free pure scope requires no resource identity.
-    pub(crate) fn bind_scope<VS>(
+    pub(crate) fn bind_scope(
         &mut self,
         program: &RuntimeProgramOwner,
         execution: ExecutionInstanceId,
         fiber: RuntimePersistentFiberId,
-        env: &mut crate::value::RuntimeEnv<VS>,
+        mut target: PresentationScopeTarget<'_>,
     ) -> Result<PresentationScopeOwner, RuntimePresentationError> {
         self.validate_program(program)?;
-        if let Some(binding) = env.presentation_scope_binding() {
+        if let Some(binding) = target.binding() {
             if !binding.program.same_program(program)
                 || binding.owner.execution != execution
                 || binding.owner.fiber != fiber
+                || binding.anchor != target.anchor
             {
                 return Err(RuntimePresentationError::Owner);
             }
@@ -234,11 +416,12 @@ impl<V> PresentationLedger<V> {
             fiber,
             scope,
         };
-        env.bind_presentation_scope(PresentationScopeMutation(Some(PresentationScopeBinding {
+        target.install(Some(RuntimePresentationScopeBinding {
             program: self.program.clone(),
             owner,
-        })))?;
-        self.scopes.insert(scope, (execution, fiber));
+            anchor: target.anchor,
+        }));
+        self.scopes.insert(scope, (execution, fiber, target.anchor));
         self.next_scope = next;
         Ok(owner)
     }
@@ -247,32 +430,37 @@ impl<V> PresentationLedger<V> {
         &self,
         owner: PresentationScopeOwner,
     ) -> Result<(), RuntimePresentationError> {
-        if self.scopes.get(&owner.scope) != Some(&(owner.execution, owner.fiber)) {
+        if self
+            .scopes
+            .get(&owner.scope)
+            .is_none_or(|record| record.0 != owner.execution || record.1 != owner.fiber)
+        {
             return Err(RuntimePresentationError::Owner);
         }
         Ok(())
     }
 
-    pub(crate) fn exit_bound_scope<VS>(
+    pub(crate) fn exit_bound_scope(
         &mut self,
         program: &RuntimeProgramOwner,
         execution: ExecutionInstanceId,
         fiber: RuntimePersistentFiberId,
-        env: &mut crate::value::RuntimeEnv<VS>,
+        mut target: PresentationScopeTarget<'_>,
     ) -> Result<Vec<PresentationRetirement<V>>, RuntimePresentationError> {
         self.validate_program(program)?;
-        let Some(binding) = env.presentation_scope_binding() else {
+        let Some(binding) = target.binding() else {
             return Ok(Vec::new());
         };
         if !binding.program.same_program(program)
             || binding.owner.execution != execution
             || binding.owner.fiber != fiber
+            || binding.anchor != target.anchor
         {
             return Err(RuntimePresentationError::Owner);
         }
         let owner = binding.owner;
         let retired = self.exit_scope(program, owner)?;
-        env.bind_presentation_scope(PresentationScopeMutation(None))?;
+        target.install(None);
         Ok(retired)
     }
 
@@ -439,7 +627,7 @@ impl<V> PresentationLedger<V> {
     }
 }
 
-impl PresentationScopeBinding {
+impl RuntimePresentationScopeBinding {
     pub(crate) fn matches_context(
         &self,
         program: &RuntimeProgramOwner,
@@ -449,6 +637,7 @@ impl PresentationScopeBinding {
         self.program.same_program(program)
             && self.owner.execution == execution
             && self.owner.fiber == fiber
+            && self.anchor == PresentationScopeAnchor::Native
     }
     pub(crate) fn scope_key(
         &self,

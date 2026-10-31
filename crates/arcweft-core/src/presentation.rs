@@ -2,6 +2,8 @@
 
 pub(crate) mod resources;
 
+pub use resources::{RuntimePresentationScopeBinding, RuntimePresentationScopeSnapshot};
+
 use crate::effect::RuntimeDropPolicy;
 use crate::line_task::RuntimeLineHandleScope;
 use crate::runtime_id::{DialogueActivationId, RuntimeLineHandleToken};
@@ -442,6 +444,8 @@ pub enum RuntimePresentationError {
     Identity(#[from] crate::runtime_id::RuntimeIdExhausted),
     #[error("presentation execution requires the original artifact binding")]
     MissingArtifact,
+    #[error("presentation scope retirement requires its original execution ledger")]
+    MissingLedger,
     #[error("pending presentation retirements exceed the selected limit")]
     RetirementCapacity,
     #[error("presentation resource state violates its issuing ledger")]

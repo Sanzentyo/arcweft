@@ -2639,7 +2639,7 @@ pub struct RuntimeEnv<V = RuntimeValue> {
 #[derive(Clone, Debug, PartialEq)]
 struct RuntimeScope<T = RuntimeValue> {
     identity: RuntimeScopeIdentity,
-    presentation_scope: Option<crate::presentation::resources::PresentationScopeBinding>,
+    presentation_scope: Option<crate::presentation::resources::RuntimePresentationScopeBinding>,
     function_context: RuntimeScopeTypeContext,
     slots: Vec<RuntimeLocalSlot<T>>,
 }

@@ -166,7 +166,8 @@ impl Engine {
                 .ok_or(RuntimePresentationError::Owner)?;
             let maximum =
                 crate::entry::RuntimeSchemaLimits::engine_default().max_sequence_items as usize;
-            let count = ledger.bound_scope_body_count(&self.fiber.frame.env);
+            let count =
+                ledger.bound_scope_body_count(self.fiber.frame.env.presentation_scope_binding());
             if self
                 .presentation_retirements
                 .len()

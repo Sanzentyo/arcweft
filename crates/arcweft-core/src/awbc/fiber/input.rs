@@ -70,10 +70,10 @@ impl<'value, V> FrameValueContext<'value, V> {
 }
 
 impl<V> FrameValueContext<'_, V> {
-    pub(super) fn validate_scopes(
+    pub(super) fn validate_scopes<G>(
         &self,
         root_cleanups: &[FiberScopeCleanup<V>],
-        scopes: &[FiberScope<V>],
+        scopes: &[FiberScope<V, G>],
         resources: &mut ValueResourceAdmission,
         view: impl Fn(&V) -> RuntimeValueView<'_> + Copy,
     ) -> Result<(), FiberStateError> {

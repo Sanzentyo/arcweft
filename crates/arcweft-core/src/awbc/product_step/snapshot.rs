@@ -802,12 +802,12 @@ pub struct AwbcProductDialogueEffectSaveSnapshot {
     pub callback: crate::value::AwbcRuntimeValueSnapshot,
 }
 
-impl<V, O, E, N, B, R, L, P, H>
+impl<V, O, E, N, B, R, G, L, P, H>
     super::AwbcProductActiveDialogue<
         V,
         O,
         E,
-        super::AwbcProductDialoguePhase<crate::awbc::fiber::FiberState<V, O, N, B, R>, L, P>,
+        super::AwbcProductDialoguePhase<crate::awbc::fiber::FiberState<V, O, N, B, R, G>, L, P>,
         H,
     >
 {

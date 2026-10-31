@@ -314,8 +314,8 @@ impl AwbcFiberRoot {
 #[serde(
     deny_unknown_fields,
     bound(
-        serialize = "V: InertRuntimeValueStorage, O: InertRuntimeValueStorage, N: InertFiberNeed, FiberFrame<V, B, R>: Serialize",
-        deserialize = "V: InertRuntimeValueStorage, O: InertRuntimeValueStorage, N: InertFiberNeed, FiberFrame<V, B, R>: Deserialize<'de>"
+        serialize = "V: InertRuntimeValueStorage, O: InertRuntimeValueStorage, N: InertFiberNeed, FiberFrame<V, B, R, G>: Serialize",
+        deserialize = "V: InertRuntimeValueStorage, O: InertRuntimeValueStorage, N: InertFiberNeed, FiberFrame<V, B, R, G>: Deserialize<'de>"
     )
 )]
 pub struct FiberState<
@@ -324,6 +324,7 @@ pub struct FiberState<
     N = crate::task::RuntimeNeedHandle,
     B = std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>,
     R = FiberReturnPoint,
+    G = crate::presentation::RuntimePresentationScopeBinding,
 > {
     pub instance: RuntimeFiberInstanceId,
     pub next_frame_instance: RuntimeIdCursor,
@@ -331,7 +332,7 @@ pub struct FiberState<
     pub generation: u64,
     pub root: AwbcFiberRoot,
     pub cursor: FiberCursor,
-    pub frames: Vec<FiberFrame<V, B, R>>,
+    pub frames: Vec<FiberFrame<V, B, R, G>>,
     pub status: FiberStatus,
     pub suspension: Option<FiberSuspension<V, O, N>>,
     pub terminal: Option<FiberTerminalValue<V>>,
@@ -348,7 +349,8 @@ impl<
     N: InertFiberNeed + Clone,
     B: Clone,
     R: Clone,
-> Clone for FiberState<V, O, N, B, R>
+    G: Clone,
+> Clone for FiberState<V, O, N, B, R, G>
 {
     fn clone(&self) -> Self {
         Self {
@@ -487,14 +489,15 @@ pub struct FiberCursor {
 #[serde(
     deny_unknown_fields,
     bound(
-        serialize = "V: InertRuntimeValueStorage, B: Serialize, R: Serialize, RuntimePlaceStorage<V>: Serialize, FiberFormatState<V>: Serialize, FiberFormatAttemptState<V>: Serialize",
-        deserialize = "V: InertRuntimeValueStorage, B: Deserialize<'de>, R: Deserialize<'de>, RuntimePlaceStorage<V>: Deserialize<'de>, FiberFormatState<V>: Deserialize<'de>, FiberFormatAttemptState<V>: Deserialize<'de>"
+        serialize = "V: InertRuntimeValueStorage, B: Serialize, R: Serialize, G: Serialize, RuntimePlaceStorage<V>: Serialize, FiberFormatState<V>: Serialize, FiberFormatAttemptState<V>: Serialize",
+        deserialize = "V: InertRuntimeValueStorage, B: Deserialize<'de>, R: Deserialize<'de>, G: Deserialize<'de>, RuntimePlaceStorage<V>: Deserialize<'de>, FiberFormatState<V>: Deserialize<'de>, FiberFormatAttemptState<V>: Deserialize<'de>"
     )
 )]
 pub struct FiberFrame<
     V = RuntimeValue,
     B = std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>,
     R = FiberReturnPoint,
+    G = crate::presentation::RuntimePresentationScopeBinding,
 > {
     pub instance: RuntimeFrameInstanceId,
     pub function: AwbcFunctionId,
@@ -507,10 +510,14 @@ pub struct FiberFrame<
     /// Nested source-ordered Flow formatter transactions owned by this frame.
     pub format_attempts: Vec<FiberFormatAttemptState<V>>,
     pub root_cleanups: Vec<FiberScopeCleanup<V>>,
-    pub scopes: Vec<FiberScope<V>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub root_presentation_scope: Option<G>,
+    pub scopes: Vec<FiberScope<V, G>>,
 }
 
-impl<V: InertRuntimeValueStorage + Clone, B: Clone, R: Clone> Clone for FiberFrame<V, B, R> {
+impl<V: InertRuntimeValueStorage + Clone, B: Clone, R: Clone, G: Clone> Clone
+    for FiberFrame<V, B, R, G>
+{
     fn clone(&self) -> Self {
         Self {
             instance: self.instance,
@@ -522,15 +529,24 @@ impl<V: InertRuntimeValueStorage + Clone, B: Clone, R: Clone> Clone for FiberFra
             format: self.format.clone(),
             format_attempts: self.format_attempts.clone(),
             root_cleanups: self.root_cleanups.clone(),
+            root_presentation_scope: self.root_presentation_scope.clone(),
             scopes: self.scopes.clone(),
         }
     }
 }
 
-impl<V, B, R> FiberFrame<V, B, R>
+impl<V, B, R, G> FiberFrame<V, B, R, G>
 where
     B: std::borrow::Borrow<crate::program_types::RuntimeFunctionEffectInstantiation>,
 {
+    fn has_presentation_scopes(&self) -> bool {
+        self.root_presentation_scope.is_some()
+            || self
+                .scopes
+                .iter()
+                .any(|scope| scope.presentation_scope.is_some())
+    }
+
     /// Borrows the frame's original storage and binding after header admission.
     fn value_context<'a>(
         &'a self,
@@ -923,6 +939,7 @@ pub type AwbcFiberStateSnapshot = FiberState<
     crate::task::RuntimeNeedHandleSaveSnapshot,
     crate::program_types::RuntimeFunctionEffectInstantiation,
     AwbcFiberReturnPointSnapshot,
+    crate::presentation::RuntimePresentationScopeSnapshot,
 >;
 
 /// Inert storage of the same frame, without a live binding or value owner.
@@ -930,7 +947,12 @@ pub type AwbcFiberFrameSnapshot = FiberFrame<
     AwbcRuntimeValueSnapshot,
     crate::program_types::RuntimeFunctionEffectInstantiation,
     AwbcFiberReturnPointSnapshot,
+    crate::presentation::RuntimePresentationScopeSnapshot,
 >;
+
+/// Inert lexical scope coordinates; no live program grant can be decoded here.
+pub type AwbcFiberScopeSnapshot =
+    FiberScope<AwbcRuntimeValueSnapshot, crate::presentation::RuntimePresentationScopeSnapshot>;
 
 pub type AwbcFiberReturnPointSnapshot = FiberReturnPoint<AwbcFiberReturnContinuationSnapshot>;
 
@@ -1242,6 +1264,7 @@ impl AwbcFiberStateSnapshot {
                 )
             },
         )?;
+        self.admit_presentation_scopes(admission)?;
         self.admit_task_source_templates(
             admission,
             crate::task::RuntimeNeedHandleSaveSnapshot::view,
@@ -1359,6 +1382,11 @@ impl AwbcFiberFrameSnapshot {
                 .iter()
                 .map(|value| value.snapshot_admitted(owner))
                 .collect::<Result<_, _>>()?,
+            root_presentation_scope: frame
+                .root_presentation_scope
+                .as_ref()
+                .map(|binding| binding.snapshot_admitted(owner))
+                .transpose()?,
             scopes: frame
                 .scopes
                 .iter()
@@ -1400,6 +1428,9 @@ impl AwbcFiberFrameSnapshot {
                 .into_iter()
                 .map(|value| value.into_live_admitted(owner))
                 .collect::<Result<_, _>>()?,
+            root_presentation_scope: self
+                .root_presentation_scope
+                .map(|snapshot| snapshot.into_admitted_live(owner.owner())),
             scopes: self
                 .scopes
                 .into_iter()
@@ -1823,6 +1854,7 @@ impl FiberState {
                 )
             },
         )?;
+        self.admit_presentation_scopes(admission)?;
         self.admit_task_source_templates(admission, crate::task::RuntimeNeedHandle::view)
             .inspect_err(|error| admission.retain_failure(error.clone()))
     }
@@ -1844,10 +1876,12 @@ impl FiberState {
                     && frame.format.is_none()
                     && frame.format_attempts.is_empty()
                     && frame.root_cleanups.is_empty()
-                    && frame
-                        .scopes
-                        .iter()
-                        .all(|scope| scope.cleanups.is_empty() && scope.defers.is_empty())
+                    && frame.root_presentation_scope.is_none()
+                    && frame.scopes.iter().all(|scope| {
+                        scope.cleanups.is_empty()
+                            && scope.defers.is_empty()
+                            && scope.presentation_scope.is_none()
+                    })
                     && frame
                         .registers
                         .iter()
@@ -3896,6 +3930,11 @@ impl FiberState {
         &mut self,
         program: &AwbcProgram,
     ) -> Result<Vec<FiberCleanupDispatch>, FiberStateError> {
+        if self.frames.iter().any(FiberFrame::has_presentation_scopes) {
+            return Err(FiberStateError::Snapshot(
+                crate::presentation::RuntimePresentationError::MissingLedger.into(),
+            ));
+        }
         self.validate_cleanup_inputs(program)?;
         let mut cleanups = Vec::new();
         for frame in self.frames.iter_mut().rev() {
@@ -3915,6 +3954,11 @@ impl FiberState {
         &mut self,
         program: &AwbcProgram,
     ) -> Result<Vec<FiberCleanupDispatch>, FiberStateError> {
+        if self.active_frame()?.has_presentation_scopes() {
+            return Err(FiberStateError::Snapshot(
+                crate::presentation::RuntimePresentationError::MissingLedger.into(),
+            ));
+        }
         self.validate_cleanup_inputs(program)?;
         let frame = self.active_frame_mut()?;
         let mut cleanups = Vec::new();
@@ -4056,9 +4100,9 @@ fn format_project_method_at_site(
     }
 }
 
-fn validate_format_state<V: RuntimeStoredValue, B, R>(
+fn validate_format_state<V: RuntimeStoredValue, B, R, G>(
     program: &AwbcProgram,
-    frame: &FiberFrame<V, B, R>,
+    frame: &FiberFrame<V, B, R, G>,
     state: &FiberFormatState<V>,
 ) -> Result<(), FiberStateError>
 where
@@ -4071,7 +4115,8 @@ where
 }
 
 fn scope_has_pending_cleanup(scope: &FiberScope) -> bool {
-    !scope.cleanups.is_empty()
+    scope.presentation_scope.is_some()
+        || !scope.cleanups.is_empty()
         || !scope.defers.is_empty()
         || !scope.defer_releasing.is_empty()
         || scope.defer_inflight.is_some()
@@ -4629,9 +4674,9 @@ fn validate_return_point(
         RuntimeValue::view,
     )
 }
-fn validate_return_point_metadata<V: RuntimeStoredValue, B, P: FiberCallablePendingStorage>(
+fn validate_return_point_metadata<V: RuntimeStoredValue, B, P: FiberCallablePendingStorage, G>(
     program: &AwbcProgram,
-    caller: &FiberFrame<V, B, FiberReturnPoint<FiberReturnContinuation<P, V>>>,
+    caller: &FiberFrame<V, B, FiberReturnPoint<FiberReturnContinuation<P, V>>, G>,
     returning_function: AwbcFunctionId,
     return_to: &FiberReturnPoint<FiberReturnContinuation<P, V>>,
     work: &mut crate::entry::schema::value_budget::ValidationWork,
@@ -4657,9 +4702,9 @@ where
     Ok(())
 }
 
-fn validate_return_continuation<V: RuntimeStoredValue, B, P: FiberCallablePendingStorage>(
+fn validate_return_continuation<V: RuntimeStoredValue, B, P: FiberCallablePendingStorage, G>(
     program: &AwbcProgram,
-    caller: &FiberFrame<V, B, FiberReturnPoint<FiberReturnContinuation<P, V>>>,
+    caller: &FiberFrame<V, B, FiberReturnPoint<FiberReturnContinuation<P, V>>, G>,
     returning_function: AwbcFunctionId,
     return_to: &FiberReturnPoint<FiberReturnContinuation<P, V>>,
     work: &mut crate::entry::schema::value_budget::ValidationWork,
@@ -4809,9 +4854,9 @@ where
     Ok(())
 }
 
-fn validate_format_operand_return<V: RuntimeStoredValue, B, R, C>(
+fn validate_format_operand_return<V: RuntimeStoredValue, B, R, C, G>(
     program: &AwbcProgram,
-    caller: &FiberFrame<V, B, R>,
+    caller: &FiberFrame<V, B, R, G>,
     returning_function: AwbcFunctionId,
     return_to: &FiberReturnPoint<C>,
     site: FiberCursor,
@@ -4865,9 +4910,9 @@ where
     Ok(())
 }
 
-fn validate_format_display_return<V: RuntimeStoredValue, B, R, C>(
+fn validate_format_display_return<V: RuntimeStoredValue, B, R, C, G>(
     program: &AwbcProgram,
-    caller: &FiberFrame<V, B, R>,
+    caller: &FiberFrame<V, B, R, G>,
     returning_function: AwbcFunctionId,
     return_to: &FiberReturnPoint<C>,
     site: FiberCursor,
@@ -4927,9 +4972,9 @@ where
     Ok(())
 }
 
-fn validate_instruction_call_return<V, B, R, C>(
+fn validate_instruction_call_return<V, B, R, C, G>(
     program: &AwbcProgram,
-    caller: &FiberFrame<V, B, R>,
+    caller: &FiberFrame<V, B, R, G>,
     returning_function: AwbcFunctionId,
     return_to: &FiberReturnPoint<C>,
     site: FiberCursor,
@@ -5019,9 +5064,9 @@ fn instruction_call_receiver_update(
     Ok(Some((*destination, value)))
 }
 
-fn validate_project_call_stage_values<V, B, R, P: FiberCallablePendingStorage>(
+fn validate_project_call_stage_values<V, B, R, P: FiberCallablePendingStorage, G>(
     context: &FiberReturnContext<'_>,
-    caller: &FiberFrame<V, B, R>,
+    caller: &FiberFrame<V, B, R, G>,
     site: AwbcProjectCallSite,
     pending: Option<&P>,
     default_stage: bool,
@@ -5212,14 +5257,17 @@ impl FiberFrame {
             format: None,
             format_attempts: Vec::new(),
             root_cleanups: Vec::new(),
+            root_presentation_scope: None,
             scopes: Vec::with_capacity(layout.max_scope_depth as usize),
         })
     }
 
     fn has_pending_cleanup(&self) -> bool {
-        !self.root_cleanups.is_empty()
+        self.root_presentation_scope.is_some()
+            || !self.root_cleanups.is_empty()
             || self.scopes.iter().any(|scope| {
-                !scope.cleanups.is_empty()
+                scope.presentation_scope.is_some()
+                    || !scope.cleanups.is_empty()
                     || !scope.defers.is_empty()
                     || !scope.defer_releasing.is_empty()
                     || scope.defer_inflight.is_some()
@@ -5618,6 +5666,7 @@ fn runtime_value_type_label(value: &RuntimeValue) -> String {
 #[allow(clippy::default_trait_access, clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
+    mod presentation;
     use crate::awbc::schema::{
         AwbcBlock, AwbcEntry, AwbcEntryKind, AwbcFlowBinding, AwbcFlowExecutable,
         AwbcFormatOperand, AwbcFrameLayout, AwbcFrameSlot, AwbcFrameSlotRole, AwbcFunction,

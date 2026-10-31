@@ -804,6 +804,7 @@ fn execute_instruction(
                 .push(super::fiber::FiberScope {
                     id: *scope,
                     depth,
+                    presentation_scope: None,
                     cleanups: Vec::new(),
                     defers: Vec::new(),
                     defer_releasing: Vec::new(),
@@ -834,6 +835,12 @@ fn execute_instruction(
                     scope: *scope,
                 });
                 return Ok(InstructionControl::Yield);
+            }
+            if active.presentation_scope.is_some() {
+                return Err(FiberStateError::Snapshot(
+                    crate::presentation::RuntimePresentationError::MissingLedger.into(),
+                )
+                .into());
             }
             let layout_id = fiber.active_frame()?.layout;
             let layout = program

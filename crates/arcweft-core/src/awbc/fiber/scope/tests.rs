@@ -120,10 +120,11 @@ fn deferred<V>(value: V) -> FiberDeferredRegistration<V> {
     }
 }
 
-fn scope<V>() -> FiberScope<V> {
+fn scope<V, G>() -> FiberScope<V, G> {
     FiberScope {
         id: AwbcScopeId(0),
         depth: 0,
+        presentation_scope: None,
         cleanups: vec![],
         defers: vec![],
         defer_releasing: vec![],
@@ -339,7 +340,8 @@ fn defer_correlates_reached_instruction_capture_rows_and_cumulative_resources() 
 #[test]
 fn empty_scope_consumes_metadata_work_without_synthetic_values() {
     let program = program();
-    let packet = scope::<AwbcRuntimeValueSnapshot>();
+    let packet =
+        scope::<AwbcRuntimeValueSnapshot, crate::presentation::RuntimePresentationScopeBinding>();
     let exact = RuntimeSchemaLimits {
         max_nodes: 0,
         max_encoded_bytes: 0,
@@ -399,7 +401,7 @@ fn empty_scope_consumes_metadata_work_without_synthetic_values() {
 
 #[test]
 fn inert_scope_codec_has_one_grammar_and_requires_defer_source() {
-    let mut packet = scope();
+    let mut packet = scope::<_, crate::presentation::RuntimePresentationScopeSnapshot>();
     packet
         .cleanups
         .push(cleanup(AwbcRuntimeValueSnapshot::String("cleanup".into())));
@@ -408,26 +410,28 @@ fn inert_scope_codec_has_one_grammar_and_requires_defer_source() {
         .push(deferred(AwbcRuntimeValueSnapshot::String("capture".into())));
     let bytes = serde_json::to_vec(&packet).unwrap();
     assert_eq!(
-        serde_json::from_slice::<FiberScope<AwbcRuntimeValueSnapshot>>(&bytes).unwrap(),
+        serde_json::from_slice::<crate::awbc::fiber::AwbcFiberScopeSnapshot>(&bytes).unwrap(),
         packet
     );
     let mut json = serde_json::to_value(&packet).unwrap();
     json["defers"][0].as_object_mut().unwrap().remove("source");
-    assert!(serde_json::from_value::<FiberScope<AwbcRuntimeValueSnapshot>>(json).is_err());
+    assert!(serde_json::from_value::<crate::awbc::fiber::AwbcFiberScopeSnapshot>(json).is_err());
     for field in ["key", "effect"] {
         let mut json = serde_json::to_value(&packet).unwrap();
         json["cleanups"][0][field] = serde_json::json!(0);
-        assert!(serde_json::from_value::<FiberScope<AwbcRuntimeValueSnapshot>>(json).is_err());
+        assert!(
+            serde_json::from_value::<crate::awbc::fiber::AwbcFiberScopeSnapshot>(json).is_err()
+        );
     }
     let mut json = serde_json::to_value(&packet).unwrap();
     json["cleanups"][0]
         .as_object_mut()
         .unwrap()
         .remove("source");
-    assert!(serde_json::from_value::<FiberScope<AwbcRuntimeValueSnapshot>>(json).is_err());
+    assert!(serde_json::from_value::<crate::awbc::fiber::AwbcFiberScopeSnapshot>(json).is_err());
     let mut json = serde_json::to_value(&packet).unwrap();
     json["old_live_values"] = serde_json::json!([]);
-    assert!(serde_json::from_value::<FiberScope<AwbcRuntimeValueSnapshot>>(json).is_err());
+    assert!(serde_json::from_value::<crate::awbc::fiber::AwbcFiberScopeSnapshot>(json).is_err());
 }
 
 #[test]

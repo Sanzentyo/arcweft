@@ -11,7 +11,7 @@ use crate::entry::schema::value_encoding::ValueResourceAdmission;
 use crate::program_types::RuntimeFunctionEffectInstantiation;
 use std::{borrow::Borrow, collections::BTreeSet};
 
-impl<V, O, N, B, P> FiberState<V, O, N, B, FiberReturnPoint<FiberReturnContinuation<P, V>>> {
+impl<V, O, N, B, P, G> FiberState<V, O, N, B, FiberReturnPoint<FiberReturnContinuation<P, V>>, G> {
     /// Source admission follows the complete value grammar on its same bank;
     /// no copied aggregate or independent resource allowance is introduced.
     pub(super) fn admit_task_source_templates(
@@ -337,7 +337,7 @@ impl<V, O, N, B, P> FiberState<V, O, N, B, FiberReturnPoint<FiberReturnContinuat
     }
 }
 
-impl<V, B, P> super::FiberFrame<V, B, FiberReturnPoint<FiberReturnContinuation<P, V>>> {
+impl<V, B, P, G> super::FiberFrame<V, B, FiberReturnPoint<FiberReturnContinuation<P, V>>, G> {
     /// The frame owns its parked formatter and its return to the caller.
     fn validate_continuations(
         &self,

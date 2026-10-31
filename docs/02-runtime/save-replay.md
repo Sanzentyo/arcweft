@@ -270,6 +270,14 @@ function binding・候補body・Handle custodyがすべて成立してからscop
 失敗時は候補bodyを呼出側へ返し、既存のbody・slot・発行cursorを変更しない。
 inert tokenのcodec読取りは、このledgerへの取付けやlive Handleの発行権限にはならない。
 
+AWBC の Presentation scope header は、実際の動的 fiber・frame と、その frame の
+root または検証済み lexical scope 宣言に束縛する。同じ宣言へ再入しても動的 grant を
+再利用しない。live binding は元 program lease を保持し、serde reader／writer を持たない。
+wire snapshot は inert な座標だけを保持し、元 ledger の grant と全 header を一つの
+累積 admission で照合してから live binding へ変換する。header の入替・重複・偽造や
+回収済み grant は復元権限にならない。ledger を伴わない scope exit／取消は、未回収の
+grant を捨てずに型付きエラーを返す。
+
 対話 frame と phase／closing／pending operation は live／inert 共通の owning grammar
 を使い、inert specialization だけが Clone と serde reader を持つ。registry の元の
 activation key、phase と結果、元 activation signature の capture、reveal 後の input、

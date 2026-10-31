@@ -88,7 +88,7 @@ impl RuntimeRetainedValueAdmission {
 
     pub(crate) fn validate_presentation_scope(
         &mut self,
-        binding: &crate::presentation::resources::PresentationScopeBinding,
+        binding: &crate::presentation::resources::RuntimePresentationScopeBinding,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         self.status()?;
         if self
@@ -99,6 +99,29 @@ impl RuntimeRetainedValueAdmission {
             return Ok(());
         }
         let (execution, fiber, scope) = binding.scope_key();
+        let error = AwbcRuntimeValueSnapshotError::PresentationScopeCustodyRequired {
+            execution,
+            fiber,
+            scope,
+        };
+        self.retain_failure(error.clone());
+        Err(error)
+    }
+
+    pub(crate) fn validate_presentation_scope_snapshot(
+        &mut self,
+        snapshot: &crate::presentation::RuntimePresentationScopeSnapshot,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.status()?;
+        if let Some(program) = &self.owner
+            && self
+                .resources
+                .presentation_mut()
+                .is_some_and(|proof| proof.accepts_snapshot(program, snapshot))
+        {
+            return Ok(());
+        }
+        let (execution, fiber, scope) = snapshot.scope_key();
         let error = AwbcRuntimeValueSnapshotError::PresentationScopeCustodyRequired {
             execution,
             fiber,

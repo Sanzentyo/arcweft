@@ -81,7 +81,14 @@ impl Clone for PresentationRetirement<PresentationBody<AwbcRuntimeValueSnapshot>
 /// its occurrence here; the contour cannot issue grants or live handles.
 pub(crate) struct PresentationAdmission {
     program: RuntimeProgramOwner,
-    scopes: BTreeMap<RuntimeScopeInstanceId, (ExecutionInstanceId, RuntimePersistentFiberId)>,
+    scopes: BTreeMap<
+        RuntimeScopeInstanceId,
+        (
+            ExecutionInstanceId,
+            RuntimePersistentFiberId,
+            PresentationScopeAnchor,
+        ),
+    >,
     unseen: std::collections::BTreeSet<RuntimeScopeInstanceId>,
     handles: std::collections::BTreeSet<RuntimePresentationHandleToken>,
     seen_handles: std::collections::BTreeSet<RuntimePresentationHandleToken>,
@@ -115,11 +122,27 @@ impl PresentationAdmission {
         self.handles.insert(token.clone());
     }
 
-    pub(crate) fn accepts(&mut self, binding: &PresentationScopeBinding) -> bool {
-        self.program.same_program(&binding.program)
-            && self.scopes.get(&binding.owner.scope)
-                == Some(&(binding.owner.execution, binding.owner.fiber))
-            && self.unseen.remove(&binding.owner.scope)
+    pub(crate) fn accepts(&mut self, binding: &RuntimePresentationScopeBinding) -> bool {
+        self.accepts_scope(&binding.program, binding.owner, binding.anchor)
+    }
+
+    pub(crate) fn accepts_snapshot(
+        &mut self,
+        program: &RuntimeProgramOwner,
+        snapshot: &super::RuntimePresentationScopeSnapshot,
+    ) -> bool {
+        self.accepts_scope(program, snapshot.owner, snapshot.anchor)
+    }
+
+    fn accepts_scope(
+        &mut self,
+        program: &RuntimeProgramOwner,
+        owner: PresentationScopeOwner,
+        anchor: PresentationScopeAnchor,
+    ) -> bool {
+        self.program.same_program(program)
+            && self.scopes.get(&owner.scope) == Some(&(owner.execution, owner.fiber, anchor))
+            && self.unseen.remove(&owner.scope)
     }
 
     pub(crate) fn complete(&self) -> bool {
@@ -152,8 +175,8 @@ impl<V: RuntimeStoredValue> PresentationLedger<PresentationBody<V>> {
         ))?;
         admission.validate_metadata_collection(self.scopes.len())?;
         let issued_scope = self.next_scope.last_issued();
-        for (scope, (execution, fiber)) in &self.scopes {
-            admission.validate_metadata(&(scope, execution, fiber))?;
+        for (scope, (execution, fiber, anchor)) in &self.scopes {
+            admission.validate_metadata(&(scope, execution, fiber, anchor))?;
             if issued_scope.is_none_or(|last| scope.get() > last) {
                 return Err(invalid());
             }
