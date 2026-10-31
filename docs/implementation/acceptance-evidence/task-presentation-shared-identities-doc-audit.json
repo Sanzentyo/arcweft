@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "source": "c4365e40c7e1b6050b4ba3162b367c954b7f07ff",
+  "documentation": {
+    "date": "2026-11-01",
+    "base": "c4365e40c7e1b6050b4ba3162b367c954b7f07ff",
+    "changed": [
+      "docs/implementation/convergence-evidence-history.md",
+      "docs/implementation/current-status.md"
+    ],
+    "checkedDocuments": 129,
+    "relativeLinks": 644,
+    "brokenLinks": [],
+    "unclosedFences": [],
+    "statusCommitIds": 47,
+    "unretainedIds": [],
+    "historicalRawChanges": [],
+    "historicalPrefixPreserved": true,
+    "heldFiles": 20,
+    "heldDrift": 0,
+    "partialCliOriginalWipProof": true,
+    "rustCargoRun": false
+  },
+  "historyPrefix": {
+    "version": 1,
+    "base": "c4365e40c7e1b6050b4ba3162b367c954b7f07ff",
+    "beforeBytes": 1640136,
+    "beforeSha256": "a67559ffd7af0e3d0ea27f1aab3bb48cb0b2826c5287e9c5b063fc3db98053b8",
+    "retainedPrefixSha256": "a67559ffd7af0e3d0ea27f1aab3bb48cb0b2826c5287e9c5b063fc3db98053b8",
+    "prefixPreserved": true,
+    "afterBytes": 1643671,
+    "changedStatusRows": 6
+  },
+  "originalUserWipPreserved": true,
+  "sourceCargoRerunForDocs": false
+}
