@@ -11,7 +11,10 @@ use arcweft_lang_hir::{
 
 use crate::{
     callable::{CallableName, CallablePath, associated_scope_for},
-    nominal::{AssociatedTypeScope, NominalTypeDiagnosticKind, TypeResolutionReport},
+    nominal::{
+        AssociatedTypeScope, NominalTypeDiagnosticKind, ResolvedTypeNodePurpose,
+        TypeResolutionReport,
+    },
     types::EntityKind,
 };
 
@@ -149,6 +152,20 @@ impl Analyzer<'_, '_, '_> {
                     .flat_map(|(_, ty)| ty.kind().direct_type_children())
             })
             .collect::<BTreeSet<_>>();
+        let call_type_arguments = self
+            .modules
+            .values()
+            .flat_map(|module| module.expressions())
+            .filter_map(|(_, expression)| match expression.kind() {
+                HirExprKind::Call(call) => Some(call.explicit_type_application().arguments()),
+                _ => None,
+            })
+            .flatten()
+            .filter_map(|argument| match argument {
+                arcweft_lang_hir::expr::HirCallTypeArgument::Resolved { ty } => Some(*ty),
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>();
         let owners = self
             .modules
             .values()
@@ -174,7 +191,16 @@ impl Analyzer<'_, '_, '_> {
             if !self.is_language_semantic_owner(SyntheticOwner::Type(owner))? {
                 continue;
             }
-            self.resolve_type(owner, false)?;
+            if call_type_arguments.contains(&owner) {
+                self.resolve_type_with_associated_recovery(
+                    owner,
+                    false,
+                    false,
+                    ResolvedTypeNodePurpose::TypeArgument,
+                )?;
+            } else {
+                self.resolve_type(owner, false)?;
+            }
         }
         Ok(())
     }
@@ -184,21 +210,31 @@ impl Analyzer<'_, '_, '_> {
         owner: TypeId,
         resolving_impl_self: bool,
     ) -> Result<TypeKind, FinalSemanticAnalysisError> {
-        self.resolve_type_with_associated_recovery(owner, resolving_impl_self, false)
-            .and_then(|resolved| match resolved {
-                AssociatedReceiverTypeResolution::Complete(ty) => Ok(ty),
-                AssociatedReceiverTypeResolution::WrongArity(_)
-                | AssociatedReceiverTypeResolution::UnresolvedNominal => {
-                    Err(FinalSemanticAnalysisError::TypeResolutionFailed { owner })
-                }
-            })
+        self.resolve_type_with_associated_recovery(
+            owner,
+            resolving_impl_self,
+            false,
+            ResolvedTypeNodePurpose::ValueType,
+        )
+        .and_then(|resolved| match resolved {
+            AssociatedReceiverTypeResolution::Complete(ty) => Ok(ty),
+            AssociatedReceiverTypeResolution::WrongArity(_)
+            | AssociatedReceiverTypeResolution::UnresolvedNominal => {
+                Err(FinalSemanticAnalysisError::TypeResolutionFailed { owner })
+            }
+        })
     }
 
     pub(super) fn resolve_associated_receiver_type(
         &mut self,
         owner: TypeId,
     ) -> Result<AssociatedReceiverTypeResolution, FinalSemanticAnalysisError> {
-        self.resolve_type_with_associated_recovery(owner, false, true)
+        self.resolve_type_with_associated_recovery(
+            owner,
+            false,
+            true,
+            ResolvedTypeNodePurpose::ValueType,
+        )
     }
 
     fn resolve_type_with_associated_recovery(
@@ -206,7 +242,16 @@ impl Analyzer<'_, '_, '_> {
         owner: TypeId,
         resolving_impl_self: bool,
         retain_receiver_candidate_outcomes: bool,
+        root_purpose: ResolvedTypeNodePurpose,
     ) -> Result<AssociatedReceiverTypeResolution, FinalSemanticAnalysisError> {
+        if root_purpose == ResolvedTypeNodePurpose::TypeArgument
+            && let Some(report) = self.type_reports.get(&owner)
+            && matches!(report.outcome(), ResolvedTypeRefOutcome::Complete(_))
+        {
+            return Ok(AssociatedReceiverTypeResolution::Complete(
+                report.outcome().product().recovered().clone(),
+            ));
+        }
         if let Some(ty) = self.types.get(&owner) {
             if retain_receiver_candidate_outcomes
                 && let Some(report) = self.type_reports.get(&owner)
@@ -267,8 +312,11 @@ impl Analyzer<'_, '_, '_> {
             )
         }
         .map_err(|_| FinalSemanticAnalysisError::TypeResolutionInput { owner })?;
-        let report = resolve_type_ref(&input)
+        let mut report = resolve_type_ref(&input)
             .map_err(|_| FinalSemanticAnalysisError::TypeResolutionFailed { owner })?;
+        if root_purpose == ResolvedTypeNodePurpose::TypeArgument {
+            report.mark_root_type_argument();
+        }
         if retain_receiver_candidate_outcomes && is_unknown_nominal_receiver(module, owner, &report)
         {
             return Ok(AssociatedReceiverTypeResolution::UnresolvedNominal);

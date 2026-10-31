@@ -987,6 +987,20 @@ impl ResolvedTypeRefOutcome {
 }
 
 impl TypeResolutionReport {
+    pub(crate) fn mark_root_type_argument(&mut self) {
+        let product = match &mut self.outcome {
+            ResolvedTypeRefOutcome::Complete(product) => product,
+            ResolvedTypeRefOutcome::Poisoned(poisoned) => &mut poisoned.product,
+            ResolvedTypeRefOutcome::Detached(detached) => &mut detached.product,
+        };
+        product
+            .nodes
+            .iter_mut()
+            .rfind(|node| node.node() == product.root)
+            .expect("the accepted resolution product owns its root node")
+            .mark_type_argument();
+    }
+
     pub(crate) fn new(
         outcome: ResolvedTypeRefOutcome,
         diagnostics: impl Into<Box<[NominalTypeDiagnostic]>>,

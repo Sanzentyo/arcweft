@@ -34,24 +34,50 @@ fn presentation_handle_projection_retains_exact_resource_and_affine_snapshot_own
 fn presentation_handle_source_function_keeps_the_owned_parameter_and_return_type() {
     for resource in PresentationResourceKind::ALL {
         for (prefix, constructor, item, body) in [
-            (String::new(), "Handle", resource.type_name(), "handle"),
+            (
+                String::new(),
+                "Handle",
+                resource.type_name(),
+                "handle".to_owned(),
+            ),
             (
                 "fn generic<T>(value: Handle<T>) -> Handle<T> { value }\n".to_owned(),
                 "Handle",
                 resource.type_name(),
-                "generic(handle)",
+                "generic(handle)".to_owned(),
+            ),
+            (
+                "fn generic<T>(value: Handle<T>) -> Handle<T> { value }\n".to_owned(),
+                "Handle",
+                resource.type_name(),
+                format!("generic::<{}>(handle)", resource.type_name()),
             ),
             (
                 format!("pub type SurfaceType = {}\n", resource.type_name()),
                 "Handle",
                 "SurfaceType",
-                "handle",
+                "handle".to_owned(),
             ),
             (
                 "pub type Lease<T> = Handle<T>\n".to_owned(),
                 "Lease",
                 resource.type_name(),
-                "handle",
+                "handle".to_owned(),
+            ),
+            (
+                format!(
+                    "pub type SurfaceType = {}\nfn generic<T>(value: Handle<T>) -> Handle<T> {{ value }}\n",
+                    resource.type_name()
+                ),
+                "Handle",
+                resource.type_name(),
+                "generic::<SurfaceType>(handle)".to_owned(),
+            ),
+            (
+                "fn generic<T>(value: T) -> T { value }\n".to_owned(),
+                "Handle",
+                resource.type_name(),
+                format!("generic::<Handle<{}>>(handle)", resource.type_name()),
             ),
         ] {
             let compiled = crate::source::compile_source(&format!(

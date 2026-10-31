@@ -5045,9 +5045,10 @@ impl Analyzer<'_, '_, '_> {
                     .arguments()
                     .iter()
                     .map(|argument| match argument {
-                        arcweft_lang_hir::expr::HirCallTypeArgument::Resolved { ty } => {
-                            self.types.get(ty).cloned()
-                        }
+                        arcweft_lang_hir::expr::HirCallTypeArgument::Resolved { ty } => self
+                            .type_reports
+                            .get(ty)
+                            .map(|report| report.outcome().product().recovered().clone()),
                         arcweft_lang_hir::expr::HirCallTypeArgument::InvalidPresent { .. }
                         | arcweft_lang_hir::expr::HirCallTypeArgument::Missing => None,
                     })

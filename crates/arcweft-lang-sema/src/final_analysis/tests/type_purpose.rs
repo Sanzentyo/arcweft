@@ -4,6 +4,67 @@ use crate::nominal::{ResolvedTypeNodePurpose, TypeNameResolution};
 use arcweft_interaction_model::presentation::PresentationResourceKind;
 
 #[test]
+fn explicit_call_type_arguments_keep_checked_types_without_runtime_value_rows() {
+    for (name, expected) in [
+        ("i64", TypeKind::I64),
+        (
+            "ImageSurface",
+            TypeKind::PresentationResource(PresentationResourceKind::Image),
+        ),
+        (
+            "Handle<ImageSurface>",
+            TypeKind::presentation_handle(TypeKind::PresentationResource(
+                PresentationResourceKind::Image,
+            )),
+        ),
+    ] {
+        let world = fixture(
+            &format!(
+                "fn identity<T>(value: T) -> T {{ value }}\nfn apply(value: {name}) -> {name} {{ identity::<{name}>(value) }}\n"
+            ),
+            None,
+        );
+        let analysis =
+            analyze(&world).expect("explicit type arguments retain their semantic binding");
+        let module = world
+            .project
+            .analysis_view()
+            .unwrap()
+            .module(&CanonicalModulePath::crate_root())
+            .unwrap();
+        let calls = module
+            .expressions()
+            .filter_map(|(owner, expression)| match expression.kind() {
+                HirExprKind::Call(call) => Some((owner, call)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let [(owner, call)] = calls.as_slice() else {
+            panic!("one explicit generic call")
+        };
+        let [arcweft_lang_hir::expr::HirCallTypeArgument::Resolved { ty }] =
+            call.explicit_type_application().arguments()
+        else {
+            panic!("one checked explicit type argument")
+        };
+        let node = analysis.type_resolution_node(*ty).unwrap();
+        assert_eq!(node.purpose(), ResolvedTypeNodePurpose::TypeArgument);
+        assert_eq!(node.recovered(), Some(&expected));
+        assert_eq!(analysis.ty(*ty), None);
+        assert_eq!(
+            analysis
+                .call(*owner)
+                .unwrap()
+                .selected_application()
+                .unwrap()
+                .result()
+                .value_type(),
+            Some(&expected)
+        );
+    }
+}
+
+#[test]
 fn generic_constructor_arguments_retain_semantic_types_and_specific_nonvalue_roles() {
     for ty in [
         "Vec<i64>",

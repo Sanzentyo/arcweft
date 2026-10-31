@@ -152,6 +152,10 @@ Lease<T>
 `Ref<T>` is a symbolic entity reference. It is not a Rust-style memory borrow.
 `Borrow<'a, T>` and `Slice<'a, T>` are lifetime-bound views.
 
+Generic type arguments, including explicit call arguments, retain their resolved
+type and alias identity. They select a type instantiation and are not evaluated
+as runtime values. Value-bearing type positions require a closed runtime carrier.
+
 ## Collections
 
 Arcweft uses Rust-like collection names for the default surface vocabulary:

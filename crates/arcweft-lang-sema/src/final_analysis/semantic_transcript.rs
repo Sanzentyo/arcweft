@@ -2482,7 +2482,8 @@ fn write_call_type_application(
                     return Err(SemanticTranscriptError::RecoveredOwner);
                 };
                 let checked = analysis
-                    .ty(*ty)
+                    .type_resolution_node(*ty)
+                    .and_then(|node| node.recovered())
                     .ok_or(SemanticTranscriptError::MissingIdentity)?;
                 transcript_update!(hasher, checked.semantic_identity_digest()?.as_bytes());
             }
