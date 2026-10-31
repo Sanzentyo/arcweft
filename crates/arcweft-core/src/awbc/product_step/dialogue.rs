@@ -492,19 +492,22 @@ impl ProductDialogueStore {
             crate::line_task::RuntimeDialogueRegistrySnapshotError,
         >,
     ) -> Result<(), crate::line_task::RuntimeDialogueRegistrySnapshotError> {
-        self.registry.admit_retained(admission)?;
-        for activation in self.registry.active_ids() {
-            let frame = self
-                .registry
-                .active_frame(&activation)
-                .expect("active entry owns its frame");
-            let line = self
-                .registry
-                .active_line(&activation)
-                .expect("active entry owns its line");
-            admit_frame(&activation, frame, line, admission)?;
-        }
-        Ok(())
+        let contour = self.retained_contour(std::iter::empty(), admission)?;
+        contour.admit_retained(admission)?;
+        contour.try_visit_active(|activation, frame, line| {
+            admit_frame(activation, frame, line, admission)
+        })
+    }
+
+    pub(super) fn retained_contour<'a>(
+        &'a self,
+        transactions: impl ExactSizeIterator<Item = &'a ProductDialogueTransaction>,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<
+        crate::line_task::RuntimeDialogueRetainedContour<'a, ActiveDialogue, AwbcTypeId>,
+        crate::line_task::RuntimeDialogueRegistrySnapshotError,
+    > {
+        self.registry.retained_contour(transactions, admission)
     }
 
     pub(super) fn snapshot_admitted<S>(

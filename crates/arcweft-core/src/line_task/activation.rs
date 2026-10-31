@@ -12,6 +12,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, btree_map::Entry};
 use thiserror::Error;
 
+mod contour;
+pub(crate) use contour::RuntimeDialogueRetainedContour;
+
 /// Executor-neutral sole owner of active dialogue transactions and surviving
 /// post-publication handle ledgers.
 ///
@@ -115,7 +118,10 @@ enum RuntimeDialogueRegistryEntry<F, T> {
     },
     /// The frame and line have moved into one transaction. No second live
     /// transaction can be opened until that owner commits or is restored.
-    InFlight { revision: u64 },
+    InFlight {
+        revision: u64,
+        reservation: RuntimeDialogueReservation,
+    },
     PublishedHandles {
         revision: u64,
         handles: RuntimePublishedDialogueHandles,
@@ -126,8 +132,21 @@ enum RuntimeDialogueRegistryEntry<F, T> {
 pub(crate) struct RuntimeDialogueActivationTransaction<F, T> {
     activation: DialogueActivationId,
     revision: u64,
+    reservation: RuntimeDialogueReservation,
     frame: F,
     line: RuntimeDialogueActivationState<T>,
+}
+
+/// Live provenance of one withdrawal. It is absent from snapshots and never
+/// contributes an address to deterministic data. Equality means the exact
+/// slot/transaction reservation, including reopen after a rejected operation.
+#[derive(Clone, Debug)]
+struct RuntimeDialogueReservation(std::sync::Arc<()>);
+
+impl PartialEq for RuntimeDialogueReservation {
+    fn eq(&self, other: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.0, &other.0)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -138,6 +157,7 @@ pub(crate) struct RuntimeDialogueRegistryCommitReceipt {
 pub(crate) struct RuntimeDialogueCommitProof {
     activation: DialogueActivationId,
     revision: u64,
+    reservation: RuntimeDialogueReservation,
     next_revision: u64,
 }
 
@@ -146,6 +166,7 @@ pub(crate) struct RuntimeDialogueCommitProof {
 pub(crate) struct RuntimeDialoguePublishedCommitProof {
     activation: DialogueActivationId,
     revision: u64,
+    reservation: RuntimeDialogueReservation,
     next_revision: u64,
 }
 
@@ -153,6 +174,7 @@ pub(crate) struct RuntimeDialoguePublishedCommitProof {
 pub(crate) struct RuntimeDialogueAbandonedCommitProof {
     activation: DialogueActivationId,
     revision: u64,
+    reservation: RuntimeDialogueReservation,
 }
 
 pub(crate) struct RuntimeDialoguePublishedOutcomeStage {
@@ -297,6 +319,7 @@ impl<F, T> RuntimeDialogueActivationTransaction<F, T> {
         RuntimeDialogueActivationTransaction {
             activation: self.activation,
             revision: self.revision,
+            reservation: self.reservation,
             frame: map(self.frame),
             line: self.line,
         }
@@ -356,27 +379,9 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
     where
         T: super::handle::RuntimeDialogueTypeCoordinate,
     {
-        admission.validate_metadata_collection(self.entries.len())?;
-        for (activation, entry) in &self.entries {
-            match entry {
-                RuntimeDialogueRegistryEntry::Active { revision, line, .. } => {
-                    admission.validate_metadata(&(activation, revision))?;
-                    line.admit_retained_resources(admission)?;
-                }
-                RuntimeDialogueRegistryEntry::PublishedHandles { revision, handles } => {
-                    admission.validate_metadata(&(activation, revision, handles))?;
-                    handles.restore_admit(activation)?;
-                }
-                RuntimeDialogueRegistryEntry::InFlight { .. } => {
-                    return Err(RuntimeDialogueRegistrySnapshotError::Frame {
-                        message: "dialogue transaction is in flight".to_owned(),
-                    });
-                }
-            }
-        }
-        Ok(())
+        self.retained_contour(std::iter::empty(), admission)?
+            .admit_retained(admission)
     }
-
     pub(crate) fn snapshot_admitted<S>(
         &self,
         owner: Option<&RuntimeProgramOwner>,
@@ -709,14 +714,20 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
                     RuntimeDialogueRegistryEntry::Active { revision, .. } => *revision,
                     _ => unreachable!(),
                 };
-                let RuntimeDialogueRegistryEntry::Active { frame, line, .. } =
-                    std::mem::replace(entry, RuntimeDialogueRegistryEntry::InFlight { revision })
-                else {
+                let reservation = RuntimeDialogueReservation(std::sync::Arc::new(()));
+                let RuntimeDialogueRegistryEntry::Active { frame, line, .. } = std::mem::replace(
+                    entry,
+                    RuntimeDialogueRegistryEntry::InFlight {
+                        revision,
+                        reservation: reservation.clone(),
+                    },
+                ) else {
                     unreachable!("only an active payload can be taken")
                 };
                 Ok(RuntimeDialogueActivationTransaction {
                     activation: activation.clone(),
                     revision,
+                    reservation,
                     frame,
                     line,
                 })
@@ -742,7 +753,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         else {
             return Err(LineRuntimeError::StaleActivationTransaction);
         };
-        if !matches!(entry, RuntimeDialogueRegistryEntry::InFlight { revision } if *revision == transaction.revision)
+        if !matches!(entry, RuntimeDialogueRegistryEntry::InFlight { revision, reservation } if *revision == transaction.revision && reservation == &transaction.reservation)
         {
             return Err(LineRuntimeError::StaleActivationTransaction);
         }
@@ -776,9 +787,10 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
             return Err(LineRuntimeError::UnexpectedTerminalDisposition);
         }
         let next_revision = match self.entries.get(&transaction.activation) {
-            Some(RuntimeDialogueRegistryEntry::InFlight { revision })
-                if *revision == transaction.revision =>
-            {
+            Some(RuntimeDialogueRegistryEntry::InFlight {
+                revision,
+                reservation,
+            }) if *revision == transaction.revision && reservation == &transaction.reservation => {
                 revision
                     .checked_add(1)
                     .ok_or(LineRuntimeError::ActivationTransactionRevisionOverflow)
@@ -795,6 +807,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         Ok(RuntimeDialogueCommitProof {
             activation: transaction.activation.clone(),
             revision: transaction.revision,
+            reservation: transaction.reservation.clone(),
             next_revision,
         })
     }
@@ -806,11 +819,12 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
     ) -> RuntimeDialogueRegistryCommitReceipt {
         assert_eq!(transaction.activation, proof.activation);
         assert_eq!(transaction.revision, proof.revision);
+        assert_eq!(transaction.reservation, proof.reservation);
         assert!(transaction.line.terminal_kind().is_none());
         assert!(matches!(
             self.entries.get(&proof.activation),
-            Some(RuntimeDialogueRegistryEntry::InFlight { revision })
-                if *revision == proof.revision
+            Some(RuntimeDialogueRegistryEntry::InFlight { revision, reservation })
+                if *revision == proof.revision && reservation == &proof.reservation
         ));
         let receipt = RuntimeDialogueRegistryCommitReceipt {
             line: transaction.line.take_commit_receipt(),
@@ -835,9 +849,10 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
     ) -> Result<RuntimeDialoguePublishedCommitProof, LineRuntimeError> {
         transaction.line.inspect_publish_completion()?;
         let next_revision = match self.entries.get(&transaction.activation) {
-            Some(RuntimeDialogueRegistryEntry::InFlight { revision })
-                if *revision == transaction.revision =>
-            {
+            Some(RuntimeDialogueRegistryEntry::InFlight {
+                revision,
+                reservation,
+            }) if *revision == transaction.revision && reservation == &transaction.reservation => {
                 revision
                     .checked_add(1)
                     .ok_or(LineRuntimeError::ActivationTransactionRevisionOverflow)?
@@ -854,6 +869,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         Ok(RuntimeDialoguePublishedCommitProof {
             activation: transaction.activation.clone(),
             revision: transaction.revision,
+            reservation: transaction.reservation.clone(),
             next_revision,
         })
     }
@@ -865,10 +881,11 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
     ) -> RuntimeDialogueRegistryCommitReceipt {
         assert_eq!(transaction.activation, proof.activation);
         assert_eq!(transaction.revision, proof.revision);
+        assert_eq!(transaction.reservation, proof.reservation);
         assert!(matches!(
             self.entries.get(&proof.activation),
-            Some(RuntimeDialogueRegistryEntry::InFlight { revision })
-                if *revision == proof.revision
+            Some(RuntimeDialogueRegistryEntry::InFlight { revision, reservation })
+                if *revision == proof.revision && reservation == &proof.reservation
         ));
         assert!(transaction.line.can_into_published_handles().is_ok());
         let receipt = RuntimeDialogueRegistryCommitReceipt {
@@ -900,12 +917,14 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
     ) -> Result<RuntimeDialogueAbandonedCommitProof, LineRuntimeError> {
         transaction.line.inspect_abandon_completion()?;
         match self.entries.get(&transaction.activation) {
-            Some(RuntimeDialogueRegistryEntry::InFlight { revision })
-                if *revision == transaction.revision =>
-            {
+            Some(RuntimeDialogueRegistryEntry::InFlight {
+                revision,
+                reservation,
+            }) if *revision == transaction.revision && reservation == &transaction.reservation => {
                 Ok(RuntimeDialogueAbandonedCommitProof {
                     activation: transaction.activation.clone(),
                     revision: transaction.revision,
+                    reservation: transaction.reservation.clone(),
                 })
             }
             Some(
@@ -926,10 +945,11 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
     ) -> RuntimeDialogueRegistryCommitReceipt {
         assert_eq!(transaction.activation, proof.activation);
         assert_eq!(transaction.revision, proof.revision);
+        assert_eq!(transaction.reservation, proof.reservation);
         assert!(matches!(
             self.entries.get(&proof.activation),
-            Some(RuntimeDialogueRegistryEntry::InFlight { revision })
-                if *revision == proof.revision
+            Some(RuntimeDialogueRegistryEntry::InFlight { revision, reservation })
+                if *revision == proof.revision && reservation == &proof.reservation
         ));
         assert_eq!(
             transaction.line.terminal_kind(),
@@ -952,9 +972,10 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
             return Err(LineRuntimeError::TerminalDispositionMismatch);
         }
         let next_revision = match self.entries.get(&transaction.activation) {
-            Some(RuntimeDialogueRegistryEntry::InFlight { revision })
-                if *revision == transaction.revision =>
-            {
+            Some(RuntimeDialogueRegistryEntry::InFlight {
+                revision,
+                reservation,
+            }) if *revision == transaction.revision && reservation == &transaction.reservation => {
                 revision
                     .checked_add(1)
                     .ok_or(LineRuntimeError::ActivationTransactionRevisionOverflow)
@@ -1012,7 +1033,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
             return Err(LineRuntimeError::TerminalDispositionMismatch);
         }
         if !matches!(self.entries.get(&transaction.activation),
-            Some(RuntimeDialogueRegistryEntry::InFlight { revision }) if *revision == transaction.revision
+            Some(RuntimeDialogueRegistryEntry::InFlight { revision, reservation }) if *revision == transaction.revision && reservation == &transaction.reservation
         ) {
             self.restore_transaction(transaction)?;
             return Err(LineRuntimeError::StaleActivationTransaction);
