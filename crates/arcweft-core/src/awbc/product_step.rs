@@ -2538,7 +2538,7 @@ impl AwbcProductStepExecutor {
         self.emit_pending_need_reensure(&mut output);
         self.step_stream_plans(&mut output, pure_backend);
 
-        if matches!(
+        let replenish_main_budget = if matches!(
             self.fiber
                 .suspension
                 .as_ref()
@@ -2550,9 +2550,10 @@ impl AwbcProductStepExecutor {
             } else {
                 self.fiber.replenish_budget();
             }
-        } else if self.fiber.status == FiberStatus::Running {
-            self.fiber.replenish_budget();
-        }
+            false
+        } else {
+            self.fiber.status == FiberStatus::Running
+        };
 
         let executed_ops = self.run_main_work(
             &mut input,
@@ -2560,6 +2561,7 @@ impl AwbcProductStepExecutor {
             &mut output,
             options,
             pure_backend,
+            replenish_main_budget,
         );
 
         for effect in &output.effects.line {
@@ -2606,6 +2608,7 @@ impl AwbcProductStepExecutor {
         output: &mut RuntimeStepOutput,
         options: RuntimeStepOptions,
         pure_backend: &mut impl RuntimeCallBackend,
+        mut replenish_main_budget: bool,
     ) -> usize {
         let mut executed_ops = 0_usize;
         while executed_ops < options.budget.max_ops {
@@ -2648,6 +2651,7 @@ impl AwbcProductStepExecutor {
                     need_states,
                     output,
                     pure_backend,
+                    std::mem::take(&mut replenish_main_budget),
                 ));
             } else if !self.step_next_child(output, pure_backend, input, need_states) {
                 break;
@@ -2736,6 +2740,7 @@ impl AwbcProductStepExecutor {
         need_states: &mut Vec<RuntimeNeedState>,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
+        replenish_budget: bool,
     ) -> usize {
         let before_owners =
             match line::product_fiber_handle_owners(self.facade_fiber.execution, &self.fiber) {
@@ -2752,6 +2757,12 @@ impl AwbcProductStepExecutor {
                 return 1;
             }
         };
+        // Replenishment belongs to the first attempted VM transaction in this
+        // slice, so custody refusal also restores the pre-slice budget. Later
+        // instructions consume the same quantum without another replenishment.
+        if replenish_budget {
+            self.fiber.replenish_budget();
+        }
         let mut candidate_stats = self.compact_pure_stats;
         let context = self.vm_execution_context();
         let mut host = ProductVmHost {

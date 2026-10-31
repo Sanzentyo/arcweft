@@ -309,22 +309,28 @@ fn every_vm_trap_route_retires_its_original_bank_body() {
                 let unsigned = crate::pattern::RuntimeCheckedType::Unsigned(
                     crate::value::RuntimeUnsignedIntWidth::U64,
                 );
+                let scalar = AwbcTypeId(program.runtime_types.len().try_into().unwrap());
                 program.runtime_types.push(AwbcRuntimeType::new(
                     unsigned.semantic_identity_digest(),
                     AwbcRuntimeTypeShape::UInt(AwbcUnsignedIntKind::U64),
                 ));
+                let sequence = AwbcTypeId(program.runtime_types.len().try_into().unwrap());
                 program.runtime_types.push(AwbcRuntimeType::new(
                     crate::pattern::RuntimeCheckedType::Sequence(Box::new(unsigned))
                         .semantic_identity_digest(),
                     AwbcRuntimeTypeShape::Sequence {
                         kind: crate::plan::RuntimePlanSequenceKind::Seq,
-                        item: AwbcTypeId(0),
+                        item: scalar,
                     },
                 ));
                 program.frame_layouts[0].slots = (0..3)
                     .map(|index| AwbcFrameSlot {
                         name: None,
-                        ty: AwbcTypeId(u32::from(route == 2 && index == 0)),
+                        ty: if route == 2 && index == 0 {
+                            sequence
+                        } else {
+                            scalar
+                        },
                         role: AwbcFrameSlotRole::Temporary,
                         scope_depth: 0,
                     })
