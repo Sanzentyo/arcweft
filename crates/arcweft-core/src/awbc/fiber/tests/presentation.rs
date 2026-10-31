@@ -324,7 +324,7 @@ fn awbc_scope_wire_requires_custody_and_rejects_exchanged_or_forged_headers() {
     let original_json = serde_json::to_value(&original).unwrap();
     for field in ["frame", "execution", "fiber", "scope", "lexical_scope"] {
         let mut json = original_json.clone();
-        let header = &mut json["frames"][0]["root_presentation_scope"];
+        let header = &mut json["frames"][0]["root_presentation_scope"]["grants"][0][1];
         match field {
             "frame" => {
                 header["anchor"]["frame"] = serde_json::to_value(
@@ -395,7 +395,9 @@ fn awbc_scope_capacity_and_missing_frame_rejection_preserve_issuance_and_values(
             .unwrap()
             .presentation_scope_binding()
             .unwrap()
-            .scope_key()
+            .scope_keys()
+            .next()
+            .unwrap()
             .2
             .get(),
         NonZeroU64::MIN
@@ -430,7 +432,9 @@ fn awbc_scope_capacity_and_missing_frame_rejection_preserve_issuance_and_values(
             .unwrap()
             .presentation_scope_binding()
             .unwrap()
-            .scope_key()
+            .scope_keys()
+            .next()
+            .unwrap()
             .2
             .get()
             .get(),
@@ -479,7 +483,6 @@ fn live_and_inert_scope_headers_observe_identical_metadata_quota_boundaries() {
         if inert {
             snapshot.admit_awbc_scope(
                 &mut admission,
-                fixture.fiber.presentation_bank(),
                 fixture.fiber.instance,
                 frame.instance,
                 None,
@@ -487,7 +490,6 @@ fn live_and_inert_scope_headers_observe_identical_metadata_quota_boundaries() {
         } else {
             binding.admit_awbc_scope(
                 &mut admission,
-                fixture.fiber.presentation_bank(),
                 fixture.fiber.instance,
                 frame.instance,
                 None,

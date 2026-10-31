@@ -274,6 +274,16 @@ bankを保持する。全bankのheaderを検査して一つのcustody contourへ
 読む。bankと回収待ちbodyは同じ所有者のrollbackへ含め、空になったbankの発行cursorを
 再初期化しない。
 
+一つの実行scopeは、資源の発行元bankごとのgrantを保持する。別bankから移された資源も
+同じ実scopeが所有でき、tokenの発行元bank・execution・fiber・issuanceは変更しない。
+実行frameの登録先bankはscopeが保持するgrantとは別に、実際のRoot／Dialogue／親子の
+実行関係から認証する。他bankのgrantを保持しても、そのbankでの発行権限は得ない。
+scopeのversion 1 snapshotはbank順のgrant行を持ち、重複bankは後続grantのdecode前に
+拒否する。空のgrant集合、bank keyとowner bankの不一致、実frame・lexical anchorとの
+不一致は受理しない。scope終了では全bankのgrantと回収待ち容量を先に検査し、拒否時は
+全grant・bodyを保持する。許可後はscopeのunwind順、同一scope内ではbank順で一度だけ
+回収し、空になったscopeのbindingを除く。
+
 Presentation bodyへの所有権移動も既存のlive保持状態と同じbankで検査し、元の型・
 function binding・候補body・Handle custodyがすべて成立してからscope束縛と発行へ進む。
 失敗時は候補bodyを呼出側へ返し、既存のbody・slot・発行cursorを変更しない。

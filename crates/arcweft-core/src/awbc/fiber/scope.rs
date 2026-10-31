@@ -25,21 +25,16 @@ impl<V, O, N, B, R, G: crate::presentation::resources::PresentationScopeStorage>
     ) -> AwbcSaveResult<()> {
         let result = (|| {
             admission.validate_metadata(&self.presentation_bank)?;
+            self.root
+                .validate_presentation_bank(self.presentation_bank)?;
             for frame in &self.frames {
                 if let Some(binding) = &frame.root_presentation_scope {
-                    binding.admit_awbc_scope(
-                        admission,
-                        self.presentation_bank,
-                        self.instance,
-                        frame.instance,
-                        None,
-                    )?;
+                    binding.admit_awbc_scope(admission, self.instance, frame.instance, None)?;
                 }
                 for scope in &frame.scopes {
                     if let Some(binding) = &scope.presentation_scope {
                         binding.admit_awbc_scope(
                             admission,
-                            self.presentation_bank,
                             self.instance,
                             frame.instance,
                             Some(scope.id),
@@ -90,6 +85,8 @@ impl super::FiberState {
         Vec<PresentationScopeExit<PresentationScopeRef<'_>>>,
         crate::presentation::RuntimePresentationError,
     > {
+        self.root
+            .validate_presentation_bank(self.presentation_bank)?;
         let execution = crate::runtime_id::ExecutionInstanceId::from_allocated(self.instance.get());
         let fiber =
             crate::runtime_id::RuntimePersistentFiberId::from_allocated(self.instance.get().get());
@@ -106,9 +103,6 @@ impl super::FiberState {
                 )))
             {
                 if let Some(binding) = binding {
-                    if binding.bank() != self.presentation_bank {
-                        return Err(crate::presentation::RuntimePresentationError::Owner);
-                    }
                     targets.push(PresentationScopeExit {
                         execution,
                         fiber,
@@ -126,6 +120,8 @@ impl super::FiberState {
         Vec<PresentationScopeExit<PresentationScopeTarget<'_>>>,
         crate::presentation::RuntimePresentationError,
     > {
+        self.root
+            .validate_presentation_bank(self.presentation_bank)?;
         let execution = crate::runtime_id::ExecutionInstanceId::from_allocated(self.instance.get());
         let fiber =
             crate::runtime_id::RuntimePersistentFiberId::from_allocated(self.instance.get().get());
@@ -138,10 +134,7 @@ impl super::FiberState {
                 .map(|scope| (Some(scope.id), &mut scope.presentation_scope))
                 .chain(std::iter::once((None, &mut frame.root_presentation_scope)))
             {
-                if let Some(grant) = binding.as_ref() {
-                    if grant.bank() != self.presentation_bank {
-                        return Err(crate::presentation::RuntimePresentationError::Owner);
-                    }
+                if binding.is_some() {
                     targets.push(PresentationScopeExit {
                         execution,
                         fiber,
@@ -166,16 +159,9 @@ impl super::FiberState {
         let execution = crate::runtime_id::ExecutionInstanceId::from_allocated(self.instance.get());
         let fiber =
             crate::runtime_id::RuntimePersistentFiberId::from_allocated(self.instance.get().get());
-        let bank = self.presentation_bank;
         let frame = self
             .active_frame_mut()
             .map_err(|_| crate::presentation::RuntimePresentationError::MissingScope)?;
-        if frame
-            .presentation_scope_binding()
-            .is_some_and(|binding| binding.bank() != bank)
-        {
-            return Err(crate::presentation::RuntimePresentationError::Owner);
-        }
         banks.retire_bound_scope(program, execution, fiber, frame.presentation_scope_target())
     }
 

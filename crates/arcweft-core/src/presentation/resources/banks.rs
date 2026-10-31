@@ -17,7 +17,7 @@ use crate::value::{
     )
 )]
 pub(crate) struct PresentationBanks<V, L = PresentationLedger<V>> {
-    #[serde(with = "bank_rows")]
+    #[serde(with = "super::bank_rows")]
     ledgers: BTreeMap<RuntimePresentationBankId, L>,
     pub(super) retirements: Vec<PresentationRetirement<V>>,
 }
@@ -143,19 +143,32 @@ impl<V> PresentationBanks<V> {
             let Some(binding) = target.scope.binding else {
                 continue;
             };
-            let ledger = self
-                .ledgers
-                .get(&binding.owner.bank)
-                .ok_or(RuntimePresentationError::Owner)?;
-            ledger.validate_bound_scope(program, target.execution, target.fiber, target.scope)?;
-            if ledger.limits != root.limits || !seen.insert(binding.owner) {
-                return Err(RuntimePresentationError::InvalidState);
-            }
-            count = count
-                .checked_add(ledger.bound_scope_body_count(Some(binding)))
-                .ok_or(RuntimePresentationError::RetirementCapacity)?;
-            if count > root.limits.handles {
-                return Err(RuntimePresentationError::RetirementCapacity);
+            for (bank, grant) in &binding.grants {
+                if *bank != grant.owner.bank {
+                    return Err(RuntimePresentationError::Owner);
+                }
+                let ledger = self
+                    .ledgers
+                    .get(bank)
+                    .ok_or(RuntimePresentationError::Owner)?;
+                ledger.validate_bound_scope(
+                    program,
+                    target.execution,
+                    target.fiber,
+                    PresentationScopeRef {
+                        binding: Some(binding),
+                        anchor: target.scope.anchor,
+                    },
+                )?;
+                if ledger.limits != root.limits || !seen.insert(grant.owner) {
+                    return Err(RuntimePresentationError::InvalidState);
+                }
+                count = count
+                    .checked_add(ledger.bound_scope_body_count(Some(binding)))
+                    .ok_or(RuntimePresentationError::RetirementCapacity)?;
+                if count > root.limits.handles {
+                    return Err(RuntimePresentationError::RetirementCapacity);
+                }
             }
         }
         Ok(())
@@ -174,17 +187,25 @@ impl<V> PresentationBanks<V> {
                 scope: target.scope.as_ref(),
             }),
         )?;
-        for target in targets {
+        for mut target in targets {
             let Some(binding) = target.scope.binding() else {
                 continue;
             };
-            self.retirements.extend(
-                self.ledgers
-                    .get_mut(&binding.owner.bank)
-                    .expect("every issuing ledger was preflighted")
-                    .exit_bound_scope(program, target.execution, target.fiber, target.scope)
-                    .expect("exclusive contour and ledger borrows retain the preflight"),
-            );
+            let banks = binding.banks().collect::<Vec<_>>();
+            for bank in banks {
+                self.retirements.extend(
+                    self.ledgers
+                        .get_mut(&bank)
+                        .expect("every issuing ledger was preflighted")
+                        .exit_bound_scope(
+                            program,
+                            target.execution,
+                            target.fiber,
+                            target.scope.reborrow(),
+                        )
+                        .expect("exclusive contour and ledger borrows retain the preflight"),
+                );
+            }
         }
         Ok(())
     }
@@ -390,8 +411,6 @@ impl PresentationBanksSaveSnapshot {
         }
     }
 }
-
-mod bank_rows;
 
 #[cfg(test)]
 mod tests;

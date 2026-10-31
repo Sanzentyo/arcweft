@@ -98,7 +98,12 @@ impl RuntimeRetainedValueAdmission {
         {
             return Ok(());
         }
-        let (execution, fiber, scope) = binding.scope_key();
+        let Some((execution, fiber, scope)) = binding.scope_keys().next() else {
+            let error: AwbcRuntimeValueSnapshotError =
+                crate::presentation::RuntimePresentationError::InvalidState.into();
+            self.retain_failure(error.clone());
+            return Err(error);
+        };
         let error = AwbcRuntimeValueSnapshotError::PresentationScopeCustodyRequired {
             execution,
             fiber,
@@ -121,7 +126,12 @@ impl RuntimeRetainedValueAdmission {
         {
             return Ok(());
         }
-        let (execution, fiber, scope) = snapshot.scope_key();
+        let Some((execution, fiber, scope)) = snapshot.scope_keys().next() else {
+            let error: AwbcRuntimeValueSnapshotError =
+                crate::presentation::RuntimePresentationError::InvalidState.into();
+            self.retain_failure(error.clone());
+            return Err(error);
+        };
         let error = AwbcRuntimeValueSnapshotError::PresentationScopeCustodyRequired {
             execution,
             fiber,

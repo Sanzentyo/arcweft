@@ -569,7 +569,10 @@ fn foreign_context_cannot_adopt_a_reached_scope_grant() {
         ),
         Err(RuntimePresentationError::Owner)
     );
-    assert_eq!(env.presentation_scope_binding().unwrap().owner, owner);
+    assert_eq!(
+        env.presentation_scope_binding().unwrap().grants[&RuntimePresentationBankId::Root].owner,
+        owner
+    );
     assert_eq!(ledger.state.scopes.len(), 1);
 }
 

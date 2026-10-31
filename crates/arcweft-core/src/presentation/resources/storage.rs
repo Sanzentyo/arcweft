@@ -186,7 +186,11 @@ impl PresentationAdmission {
     }
 
     pub(crate) fn accepts(&mut self, binding: &RuntimePresentationScopeBinding) -> bool {
-        self.accepts_scope(&binding.program, binding.owner, binding.anchor)
+        !binding.grants.is_empty()
+            && binding.grants.iter().all(|(bank, grant)| {
+                *bank == grant.owner.bank
+                    && self.accepts_scope(&binding.program, grant.owner, grant.anchor)
+            })
     }
 
     pub(crate) fn accepts_snapshot(
@@ -194,7 +198,10 @@ impl PresentationAdmission {
         program: &RuntimeProgramOwner,
         snapshot: &super::RuntimePresentationScopeSnapshot,
     ) -> bool {
-        self.accepts_scope(program, snapshot.owner, snapshot.anchor)
+        !snapshot.grants.is_empty()
+            && snapshot.grants.iter().all(|(bank, grant)| {
+                *bank == grant.owner.bank && self.accepts_scope(program, grant.owner, grant.anchor)
+            })
     }
 
     fn accepts_scope(

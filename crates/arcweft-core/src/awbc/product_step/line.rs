@@ -816,9 +816,19 @@ impl super::AwbcProductStepExecutor {
         // Existing and newly prepared children are admitted while the command
         // transaction remains reversible, before cancellation detaches one.
         for child in &self.child_fibers {
+            child
+                .owner
+                .presentation_role()
+                .validate_registration_bank(child.fiber.presentation_bank())
+                .map_err(|error| crate::awbc::fiber::FiberStateError::Snapshot(error.into()))?;
             child.fiber.validate_cleanup_inputs(&self.program)?;
         }
         for child in &batch.child_fibers {
+            child
+                .owner
+                .presentation_role()
+                .validate_registration_bank(child.fiber.presentation_bank())
+                .map_err(|error| crate::awbc::fiber::FiberStateError::Snapshot(error.into()))?;
             child.fiber.validate_cleanup_inputs(&self.program)?;
         }
         let order = cancellations

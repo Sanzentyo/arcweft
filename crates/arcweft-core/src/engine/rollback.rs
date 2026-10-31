@@ -289,6 +289,9 @@ impl<N, P, Q, FV, FP, O, C, A, AS, MS, D>
         if !matches!(self.fiber.owner, FlowFiberOwner::Executor) {
             return Err("native main fiber does not have its executor owner".into());
         }
+        crate::presentation::resources::PresentationExecutionRole::Root
+            .validate_registration_bank(self.fiber.frame.presentation_bank)
+            .map_err(|error| error.to_string())?;
         self.fiber.frame.admit_root_phase(
             self.root.as_ref(),
             &self.fiber.owner,
@@ -421,17 +424,6 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
             return Err(error);
         }
         admission.validate_metadata(&(self.line_cursor, self.presentation_bank))?;
-        if self
-            .env
-            .presentation_scope_bindings()
-            .any(|binding| binding.bank() != self.presentation_bank)
-        {
-            let error = crate::value::AwbcRuntimeValueSnapshotError::from(
-                crate::presentation::RuntimePresentationError::Owner,
-            );
-            admission.retain_failure(error.clone());
-            return Err(error);
-        }
         admission.validate_metadata_collection(self.root_cleanups.len())?;
         for cleanup in &self.root_cleanups {
             admission.validate_metadata_string(&cleanup.key)?;

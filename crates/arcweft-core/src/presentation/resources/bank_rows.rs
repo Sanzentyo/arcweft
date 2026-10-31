@@ -1,4 +1,4 @@
-//! Complex bank identities use sorted rows, with duplicate rejection before
+//! Bank-keyed ownership uses sorted rows, with duplicate rejection before
 //! decoding the next owned body. The enclosing save decoder owns byte limits.
 
 use crate::runtime_id::RuntimePresentationBankId;

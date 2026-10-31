@@ -96,7 +96,7 @@ impl AwbcProductProgram {
 }
 
 impl ProductChildFiberOwner {
-    fn presentation_role(&self) -> PresentationExecutionRole {
+    pub(super) fn presentation_role(&self) -> PresentationExecutionRole {
         match self {
             Self::Independent => PresentationExecutionRole::Independent,
             Self::Program { parent, .. } => {

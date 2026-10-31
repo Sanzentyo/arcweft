@@ -19,6 +19,29 @@ pub(crate) enum PresentationExecutionRole {
     Independent,
 }
 
+impl PresentationExecutionRole {
+    /// The registration namespace belongs to the real execution role, apart
+    /// from the issuing banks of resources held by its lexical scopes.
+    pub(crate) fn validate_registration_bank(
+        self,
+        bank: RuntimePresentationBankId,
+    ) -> Result<(), RuntimePresentationError> {
+        match self {
+            Self::Root if bank != RuntimePresentationBankId::Root => {
+                Err(RuntimePresentationError::Owner)
+            }
+            Self::Dialogue(activation)
+                if bank != (RuntimePresentationBankId::Dialogue { activation }) =>
+            {
+                Err(RuntimePresentationError::Owner)
+            }
+            Self::Root | Self::Dialogue(_) | Self::ProgramChild { .. } | Self::Independent => {
+                Ok(())
+            }
+        }
+    }
+}
+
 pub(crate) struct PresentationExecutionAdmission<'a> {
     last_fiber: NonZeroU64,
     occurrences: BTreeMap<(RuntimePersistentFiberId, RuntimeDialogueContentPlanId), &'a u64>,
@@ -109,17 +132,7 @@ impl<'a> PresentationExecutionAdmission<'a> {
             if instance.get() > self.last_fiber || self.fibers.contains_key(&instance) {
                 return Err(RuntimePresentationError::InvalidState.into());
             }
-            match role {
-                PresentationExecutionRole::Root if bank != RuntimePresentationBankId::Root => {
-                    return Err(RuntimePresentationError::Owner.into());
-                }
-                PresentationExecutionRole::Dialogue(activation)
-                    if bank != (RuntimePresentationBankId::Dialogue { activation }) =>
-                {
-                    return Err(RuntimePresentationError::Owner.into());
-                }
-                _ => {}
-            }
+            role.validate_registration_bank(bank)?;
             self.fibers.insert(instance, (bank, role));
             Ok(())
         })();

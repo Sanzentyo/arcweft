@@ -78,6 +78,22 @@ pub enum AwbcFiberRoot {
 }
 
 impl AwbcFiberRoot {
+    pub(crate) fn validate_presentation_bank(
+        self,
+        bank: crate::runtime_id::RuntimePresentationBankId,
+    ) -> Result<(), crate::presentation::RuntimePresentationError> {
+        match self {
+            Self::Entry(_)
+            | Self::RootInitializer(_)
+            | Self::RootReducer(_)
+            | Self::Program(_)
+            | Self::Empty => crate::presentation::resources::PresentationExecutionRole::Root
+                .validate_registration_bank(bank),
+            // The actual enclosing task/Dialogue owner admits these roles.
+            Self::Task(_) | Self::Function(_) => Ok(()),
+        }
+    }
+
     pub(crate) fn active_entry_snapshot_identity(
         self,
         program: &AwbcProgram,

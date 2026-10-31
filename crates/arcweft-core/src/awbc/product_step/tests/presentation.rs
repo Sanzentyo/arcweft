@@ -754,7 +754,7 @@ fn product_one_op_lexical_exit_retires_only_its_actual_scope_and_checkpoint_rest
         .unwrap()
         .presentation_scope_binding()
         .expect("the outer root grant remains live");
-    assert_eq!(root_scope.bank(), root_token.bank());
+    assert_eq!(root_scope.banks().collect::<Vec<_>>(), [root_token.bank()]);
     checkpoint
         .restore(
             &mut executor.fiber,
