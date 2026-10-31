@@ -7,6 +7,7 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 
 mod scope_grants;
+mod transition;
 
 fn fixture() -> (
     RuntimeProgramOwner,

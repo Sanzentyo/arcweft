@@ -210,20 +210,6 @@ impl<V> PresentationLedger<V> {
         next.take_next(RuntimeIdNamespace::AffineOwner)?;
         Ok(())
     }
-    pub(crate) fn bound_scope_body_count(
-        &self,
-        binding: Option<&RuntimePresentationScopeBinding>,
-    ) -> usize {
-        binding
-            .and_then(|binding| binding.grants.get(&self.bank))
-            .map_or(0, |grant| {
-                self.state
-                    .leases
-                    .values()
-                    .filter(|lease| lease.owner == Some(grant.owner) && lease.body.is_some())
-                    .count()
-            })
-    }
     pub(crate) fn new(
         program: RuntimeProgramOwner,
         artifact: RuntimeArtifactFingerprint,
@@ -253,35 +239,18 @@ impl<V> PresentationLedger<V> {
         fiber: RuntimePersistentFiberId,
         mut target: PresentationScopeTarget<'_>,
     ) -> Result<PresentationScopeOwner, RuntimePresentationError> {
-        self.validate_program(program)?;
-        if let Some(binding) = target.binding() {
-            if !binding.program.same_program(program) {
-                return Err(RuntimePresentationError::Owner);
-            }
-            if let Some(grant) = binding.grants.get(&self.bank) {
-                if grant.owner.execution != execution
-                    || grant.owner.fiber != fiber
-                    || grant.anchor != target.anchor
-                {
-                    return Err(RuntimePresentationError::Owner);
-                }
-                self.validate_scope(grant.owner)?;
-                return Ok(grant.owner);
-            }
-        }
-        if self.state.scopes.len() >= self.limits.scopes {
-            return Err(RuntimePresentationError::ScopeCapacity);
+        let owner = self.preflight_bind_scope(program, execution, fiber, target.as_ref(), 0)?;
+        if target
+            .binding()
+            .is_some_and(|binding| binding.grants.contains_key(&self.bank))
+        {
+            return Ok(owner);
         }
         let mut next = self.state.next_scope;
         let scope = RuntimeScopeInstanceId::from_allocated(
             next.take_next(RuntimeIdNamespace::ScopeInstance)?,
         );
-        let owner = PresentationScopeOwner {
-            bank: self.bank,
-            execution,
-            fiber,
-            scope,
-        };
+        debug_assert_eq!(scope, owner.scope);
         target.insert(
             &self.program,
             PresentationScopeGrant {
@@ -294,6 +263,52 @@ impl<V> PresentationLedger<V> {
             .insert(scope, (execution, fiber, target.anchor));
         self.state.next_scope = next;
         Ok(owner)
+    }
+
+    /// Inspect a receiving scope before old grants leave custody. The caller's
+    /// actual exit contour supplies the number of grants released in this bank.
+    fn preflight_bind_scope(
+        &self,
+        program: &RuntimeProgramOwner,
+        execution: ExecutionInstanceId,
+        fiber: RuntimePersistentFiberId,
+        target: PresentationScopeRef<'_>,
+        released_scopes: usize,
+    ) -> Result<PresentationScopeOwner, RuntimePresentationError> {
+        self.validate_bound_scope(
+            program,
+            execution,
+            fiber,
+            PresentationScopeRef {
+                binding: target.binding,
+                anchor: target.anchor,
+            },
+        )?;
+        if let Some(grant) = target
+            .binding
+            .and_then(|binding| binding.grants.get(&self.bank))
+        {
+            return Ok(grant.owner);
+        }
+        let remaining = self
+            .state
+            .scopes
+            .len()
+            .checked_sub(released_scopes)
+            .ok_or(RuntimePresentationError::InvalidState)?;
+        if remaining >= self.limits.scopes {
+            return Err(RuntimePresentationError::ScopeCapacity);
+        }
+        let mut next = self.state.next_scope;
+        let scope = RuntimeScopeInstanceId::from_allocated(
+            next.take_next(RuntimeIdNamespace::ScopeInstance)?,
+        );
+        Ok(PresentationScopeOwner {
+            bank: self.bank,
+            execution,
+            fiber,
+            scope,
+        })
     }
 
     fn validate_scope(
@@ -345,11 +360,16 @@ impl<V> PresentationLedger<V> {
         let Some(binding) = target.binding else {
             return Ok(());
         };
+        if binding.grants.is_empty() {
+            return Err(RuntimePresentationError::InvalidState);
+        }
+        if !binding.program.same_program(program) {
+            return Err(RuntimePresentationError::Owner);
+        }
         let Some(grant) = binding.grants.get(&self.bank) else {
             return Ok(());
         };
-        if !binding.program.same_program(program)
-            || grant.owner.execution != execution
+        if grant.owner.execution != execution
             || grant.owner.fiber != fiber
             || grant.anchor != target.anchor
             || self.state.scopes.get(&grant.owner.scope) != Some(&(execution, fiber, target.anchor))
@@ -473,10 +493,10 @@ impl<V> PresentationLedger<V> {
         &mut self,
         program: &RuntimeProgramOwner,
         token: &RuntimePresentationHandleToken,
-        current: PresentationScopeOwner,
+        current: Option<PresentationScopeOwner>,
         destination: Option<PresentationScopeOwner>,
     ) -> Result<(), RuntimePresentationError> {
-        let issuance = self.validate_handle(program, token, Some(current))?;
+        let issuance = self.validate_handle(program, token, current)?;
         if let Some(destination) = destination {
             self.validate_scope(destination)?;
         }

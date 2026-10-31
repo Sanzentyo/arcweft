@@ -132,17 +132,31 @@ impl<V> PresentationBanks<V> {
         program: &RuntimeProgramOwner,
         targets: impl IntoIterator<Item = PresentationScopeExit<PresentationScopeRef<'scope>>>,
     ) -> Result<(), RuntimePresentationError> {
+        let owners = self.inspect_scope_contour(program, targets)?;
+        self.preflight_scope_retirements(&owners, &std::collections::BTreeSet::new())
+    }
+
+    fn inspect_scope_contour<'scope>(
+        &self,
+        program: &RuntimeProgramOwner,
+        targets: impl IntoIterator<Item = PresentationScopeExit<PresentationScopeRef<'scope>>>,
+    ) -> Result<std::collections::BTreeSet<PresentationScopeOwner>, RuntimePresentationError> {
         let root = self
             .ledgers
             .get(&RuntimePresentationBankId::Root)
             .ok_or(RuntimePresentationError::InvalidState)?;
         root.validate_program(program)?;
-        let mut count = self.retirements.len();
         let mut seen = std::collections::BTreeSet::new();
         for target in targets {
             let Some(binding) = target.scope.binding else {
                 continue;
             };
+            if binding.grants.is_empty() {
+                return Err(RuntimePresentationError::InvalidState);
+            }
+            if !binding.program.same_program(program) {
+                return Err(RuntimePresentationError::Owner);
+            }
             for (bank, grant) in &binding.grants {
                 if *bank != grant.owner.bank {
                     return Err(RuntimePresentationError::Owner);
@@ -163,13 +177,37 @@ impl<V> PresentationBanks<V> {
                 if ledger.limits != root.limits || !seen.insert(grant.owner) {
                     return Err(RuntimePresentationError::InvalidState);
                 }
-                count = count
-                    .checked_add(ledger.bound_scope_body_count(Some(binding)))
-                    .ok_or(RuntimePresentationError::RetirementCapacity)?;
-                if count > root.limits.handles {
-                    return Err(RuntimePresentationError::RetirementCapacity);
-                }
             }
+        }
+        Ok(seen)
+    }
+
+    fn preflight_scope_retirements(
+        &self,
+        owners: &std::collections::BTreeSet<PresentationScopeOwner>,
+        escaping: &std::collections::BTreeSet<RuntimePresentationHandleToken>,
+    ) -> Result<(), RuntimePresentationError> {
+        let root = self
+            .ledgers
+            .get(&RuntimePresentationBankId::Root)
+            .ok_or(RuntimePresentationError::InvalidState)?;
+        let retiring = self
+            .ledgers
+            .values()
+            .flat_map(|ledger| ledger.state.leases.values())
+            .filter(|lease| {
+                lease.owner.is_some_and(|owner| owners.contains(&owner))
+                    && lease.body.is_some()
+                    && !escaping.contains(&lease.token)
+            })
+            .count();
+        if self
+            .retirements
+            .len()
+            .checked_add(retiring)
+            .is_none_or(|count| count > root.limits.handles)
+        {
+            return Err(RuntimePresentationError::RetirementCapacity);
         }
         Ok(())
     }
@@ -414,3 +452,5 @@ impl PresentationBanksSaveSnapshot {
 
 #[cfg(test)]
 mod tests;
+
+mod transition;

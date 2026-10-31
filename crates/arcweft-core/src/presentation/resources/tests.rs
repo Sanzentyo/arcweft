@@ -285,13 +285,13 @@ fn moved_and_detached_leases_survive_only_their_former_scope_cleanup() {
         )
         .unwrap();
     ledger
-        .transfer(&program, &moved, original, Some(destination))
+        .transfer(&program, &moved, Some(original), Some(destination))
         .unwrap();
     ledger
-        .transfer(&program, &detached, original, None)
+        .transfer(&program, &detached, Some(original), None)
         .unwrap();
     assert_eq!(
-        ledger.transfer(&program, &moved, original, None),
+        ledger.transfer(&program, &moved, Some(original), None),
         Err(RuntimePresentationError::Owner)
     );
     assert_eq!(
