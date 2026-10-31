@@ -2897,11 +2897,6 @@ fn execute_terminator(
         AwbcTerminator::GotoStatic { .. } | AwbcTerminator::GotoDynamic { .. } => {
             fiber.validate_unwind_cleanup_inputs(program)?;
         }
-        AwbcTerminator::Return { .. }
-        | AwbcTerminator::Complete
-        | AwbcTerminator::SelectDialogueResult { .. } => {
-            fiber.validate_active_frame_cleanup_inputs(program)?;
-        }
         _ => {}
     }
     match terminator {
@@ -3267,13 +3262,24 @@ fn execute_terminator(
                 AwbcTerminator::Complete => None,
                 _ => unreachable!("return/completion dispatch"),
             };
+            let prepared = fiber.prepare_return(
+                program,
+                value
+                    .map(|register| fiber.active_frame()?.register(register))
+                    .transpose()?,
+            )?;
+            execution.exit_return_scope(
+                program,
+                fiber,
+                value.into_iter().chain(prepared.receiver_register()),
+            )?;
             let value = value
                 .map(|value| fiber.active_frame_mut()?.take_register(value))
                 .transpose()?;
             drain_active_frame_cleanups(program, fiber, observations)?;
             let returning_function = fiber.active_frame()?.function;
             let (return_to, returned_value) =
-                fiber.finish_return_with_continuation(program, value)?;
+                fiber.finish_return_prepared(program, value, prepared)?;
             if let Some(return_to) = return_to {
                 let FiberReturnPoint {
                     cursor,
@@ -3321,8 +3327,11 @@ fn execute_terminator(
                     "dialogue result selection cannot terminate a nested call frame".to_owned(),
                 ));
             }
+            fiber.active_frame()?.register(*value)?;
+            execution.exit_return_scope(program, fiber, [*value])?;
             let value = fiber.active_frame_mut()?.take_register(*value)?;
             drain_active_frame_cleanups(program, fiber, observations)?;
+            fiber.clear_exited_frame_storage()?;
             fiber.mark_dialogue_result_selected(value)?;
             Ok(terminal_exit(fiber))
         }

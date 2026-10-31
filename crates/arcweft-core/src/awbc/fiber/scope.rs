@@ -60,7 +60,7 @@ impl super::FiberFrame {
         }
     }
 
-    fn presentation_scope_target(
+    pub(crate) fn presentation_scope_target(
         &mut self,
     ) -> crate::presentation::resources::PresentationScopeTarget<'_> {
         match self.scopes.last_mut() {
@@ -79,6 +79,49 @@ impl super::FiberFrame {
 }
 
 impl super::FiberState {
+    /// The exiting callee and the caller's actual current lexical destination.
+    pub(crate) fn presentation_return_scopes_mut(
+        &mut self,
+    ) -> Result<
+        (
+            Vec<PresentationScopeExit<PresentationScopeTarget<'_>>>,
+            Option<PresentationScopeExit<PresentationScopeTarget<'_>>>,
+        ),
+        crate::presentation::RuntimePresentationError,
+    > {
+        self.root
+            .validate_presentation_bank(self.presentation_bank)?;
+        let execution = crate::runtime_id::ExecutionInstanceId::from_allocated(self.instance.get());
+        let fiber =
+            crate::runtime_id::RuntimePersistentFiberId::from_allocated(self.instance.get().get());
+        let (callee, callers) = self
+            .frames
+            .split_last_mut()
+            .ok_or(crate::presentation::RuntimePresentationError::MissingScope)?;
+        let mut targets = Vec::new();
+        for (scope, binding) in callee
+            .scopes
+            .iter_mut()
+            .rev()
+            .map(|scope| (Some(scope.id), &mut scope.presentation_scope))
+            .chain(std::iter::once((None, &mut callee.root_presentation_scope)))
+        {
+            if binding.is_some() {
+                targets.push(PresentationScopeExit {
+                    execution,
+                    fiber,
+                    scope: PresentationScopeTarget::awbc(binding, callee.instance, scope),
+                });
+            }
+        }
+        let destination = callers.last_mut().map(|caller| PresentationScopeExit {
+            execution,
+            fiber,
+            scope: caller.presentation_scope_target(),
+        });
+        Ok((targets, destination))
+    }
+
     pub(crate) fn presentation_unwind_scopes(
         &self,
     ) -> Result<

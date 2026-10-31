@@ -2831,13 +2831,14 @@ impl AwbcProductStepExecutor {
                 if let Err(error) = self.preflight_control_traps(&vm_output.observations) {
                     return self.fail_main_vm_step(checkpoint, error, output, vm_output.executed);
                 }
-                if matches!(
-                    self.fiber.root,
-                    crate::awbc::fiber::AwbcFiberRoot::Program(_)
-                        | crate::awbc::fiber::AwbcFiberRoot::RootInitializer(_)
-                ) && let VmExit::Returned(value) = &mut vm_output.exit
-                {
-                    let Some(value) = value.take() else {
+                if let VmExit::Returned(value) = &mut vm_output.exit {
+                    if value.is_none()
+                        && matches!(
+                            self.fiber.root,
+                            crate::awbc::fiber::AwbcFiberRoot::Program(_)
+                                | crate::awbc::fiber::AwbcFiberRoot::RootInitializer(_)
+                        )
+                    {
                         return self.fail_main_vm_step(
                             checkpoint,
                             ProductStepError::Internal(
@@ -2846,9 +2847,11 @@ impl AwbcProductStepExecutor {
                             output,
                             vm_output.executed,
                         );
-                    };
-                    self.fiber.return_summary = Some(crate::value::runtime_value_label(&value));
-                    self.fiber.terminal = Some(FiberTerminalValue::Returned(Some(value)));
+                    }
+                    if let Some(value) = value.take() {
+                        self.fiber.return_summary = Some(crate::value::runtime_value_label(&value));
+                        self.fiber.terminal = Some(FiberTerminalValue::Returned(Some(value)));
+                    }
                 }
                 let (drop_policy, observations) =
                     match partition_drop_observation(vm_output.observations) {

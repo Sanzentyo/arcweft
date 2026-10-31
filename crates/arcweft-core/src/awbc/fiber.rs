@@ -449,6 +449,19 @@ pub(crate) struct PreparedInitialFlow {
     state_register: AwbcRegisterId,
 }
 
+/// Borrowed return admission, before result or receiver state leaves the callee.
+pub(crate) struct PreparedFiberReturn {
+    frame: RuntimeFrameInstanceId,
+    implicit_unit: bool,
+    receiver_update: Option<(AwbcRegisterId, AwbcRegisterId)>,
+}
+
+impl PreparedFiberReturn {
+    pub(crate) fn receiver_register(&self) -> Option<AwbcRegisterId> {
+        self.receiver_update.map(|(_, source)| source)
+    }
+}
+
 impl PreparedInitialFlow {
     pub(crate) fn bind_state(mut self, value: RuntimeValue) -> Self {
         self.frame.registers[self.state_register.index()] = value.into();
@@ -3749,6 +3762,15 @@ impl FiberState {
         program: &AwbcProgram,
         value: Option<RuntimeValue>,
     ) -> Result<(Option<FiberReturnPoint>, Option<RuntimeValue>), FiberStateError> {
+        let prepared = self.prepare_return(program, value.as_ref())?;
+        self.finish_return_prepared(program, value, prepared)
+    }
+
+    pub(crate) fn prepare_return(
+        &self,
+        program: &AwbcProgram,
+        value: Option<&RuntimeValue>,
+    ) -> Result<PreparedFiberReturn, FiberStateError> {
         self.require_status(FiberStatus::Running)?;
         if self.frames.len() == 1 {
             let frame = self.active_frame()?;
@@ -3757,15 +3779,18 @@ impl FiberState {
                 .get(frame.function.index())
                 .and_then(|function| program.signatures.get(function.signature.index()))
                 .ok_or(FiberStateError::InvalidFrame)?;
-            if let Some(value) = &value
+            if let Some(value) = value
                 && !signature
                     .result
                     .is_some_and(|expected| frame.value_matches_type(program, value, expected))
             {
                 return Err(FiberStateError::ReturnValueMismatch);
             }
-            self.mark_returned(value)?;
-            return Ok((None, None));
+            return Ok(PreparedFiberReturn {
+                frame: frame.instance,
+                implicit_unit: false,
+                receiver_update: None,
+            });
         }
         let returning_frame = self.frames.last().ok_or(FiberStateError::MissingFrame)?;
         let return_to = returning_frame
@@ -3776,12 +3801,7 @@ impl FiberState {
             .frames
             .get(self.frames.len() - 2)
             .ok_or(FiberStateError::MissingFrame)?;
-        if matches!(
-            &return_to.continuation,
-            FiberReturnContinuation::InstructionCall { .. }
-        ) {
-            validate_return_point(program, caller_frame, returning_frame.function, &return_to)?;
-        }
+        validate_return_point(program, caller_frame, returning_frame.function, return_to)?;
         let returning_function = program
             .functions
             .get(returning_frame.function.index())
@@ -3792,7 +3812,7 @@ impl FiberState {
             .ok_or(FiberStateError::InvalidFrame)?;
         let return_value = match (signature.result, value) {
             (Some(expected), Some(value))
-                if returning_frame.value_matches_type(program, &value, expected) =>
+                if returning_frame.value_matches_type(program, value, expected) =>
             {
                 Some(value)
             }
@@ -3807,9 +3827,9 @@ impl FiberState {
                         expected,
                     ) =>
             {
-                Some(RuntimeValue::Unit)
+                Some(&RuntimeValue::Unit)
             }
-            (None, None) if return_to.destination.is_some() => Some(RuntimeValue::Unit),
+            (None, None) if return_to.destination.is_some() => Some(&RuntimeValue::Unit),
             (None, None) => None,
             _ => return Err(FiberStateError::ReturnValueMismatch),
         };
@@ -3821,7 +3841,7 @@ impl FiberState {
         {
             return Err(FiberStateError::ReturnValueMismatch);
         }
-        if let (Some(destination), Some(value)) = (return_to.destination, return_value.as_ref()) {
+        if let (Some(destination), Some(value)) = (return_to.destination, return_value) {
             if destination.index() >= caller_frame.registers.len() {
                 return Err(FiberStateError::RegisterOutOfBounds {
                     register: destination.0,
@@ -3844,6 +3864,34 @@ impl FiberState {
             returning_frame,
             &return_to.continuation,
         )?;
+        Ok(PreparedFiberReturn {
+            frame: returning_frame.instance,
+            implicit_unit: value.is_none() && return_value.is_some(),
+            receiver_update,
+        })
+    }
+
+    pub(crate) fn finish_return_prepared(
+        &mut self,
+        program: &AwbcProgram,
+        value: Option<RuntimeValue>,
+        prepared: PreparedFiberReturn,
+    ) -> Result<(Option<FiberReturnPoint>, Option<RuntimeValue>), FiberStateError> {
+        assert_eq!(self.active_frame()?.instance, prepared.frame);
+        if self.frames.len() == 1 {
+            self.clear_exited_frame_storage()?;
+            self.mark_returned(value)?;
+            return Ok((None, None));
+        }
+        let return_value = value.or_else(|| prepared.implicit_unit.then_some(RuntimeValue::Unit));
+        let receiver_update = prepared
+            .receiver_update
+            .map(|(destination, source)| {
+                self.active_frame_mut()?
+                    .take_register(source)
+                    .map(|value| (destination, value))
+            })
+            .transpose()?;
         let popped = self
             .pop_call_frame(program)?
             .ok_or(FiberStateError::InvalidFrame)?;
@@ -3879,6 +3927,18 @@ impl FiberState {
             self.active_frame_mut()?.set_register(destination, value)?;
         }
         Ok((Some(popped), None))
+    }
+
+    /// Terminal root metadata stays available to snapshots; exited value
+    /// storage must not retain tokens whose scopes have already retired.
+    pub(super) fn clear_exited_frame_storage(&mut self) -> Result<(), FiberStateError> {
+        let frame = self.active_frame_mut()?;
+        for register in &mut frame.registers {
+            *register = Default::default();
+        }
+        frame.format = None;
+        frame.format_attempts.clear();
+        Ok(())
     }
 
     pub fn mark_returned(&mut self, value: Option<RuntimeValue>) -> Result<(), FiberStateError> {
@@ -5084,7 +5144,7 @@ fn instruction_call_receiver_update(
     caller: &FiberFrame,
     callee: &FiberFrame,
     continuation: &FiberReturnContinuation,
-) -> Result<Option<(AwbcRegisterId, RuntimeValue)>, FiberStateError> {
+) -> Result<Option<(AwbcRegisterId, AwbcRegisterId)>, FiberStateError> {
     let FiberReturnContinuation::InstructionCall { site } = continuation else {
         return Ok(None);
     };
@@ -5103,17 +5163,17 @@ fn instruction_call_receiver_update(
     let slot = method
         .receiver_state_slot
         .ok_or(FiberStateError::InvalidFrame)?;
-    let value = callee.register(slot)?.clone();
+    let value = callee.register(slot)?;
     let expected = program
         .frame_layouts
         .get(caller.layout.index())
         .and_then(|layout| layout.slots.get(destination.index()))
         .map(|slot| slot.ty)
         .ok_or(FiberStateError::InvalidFrame)?;
-    if !caller.value_matches_type(program, &value, expected) {
+    if !caller.value_matches_type(program, value, expected) {
         return Err(FiberStateError::ReturnValueMismatch);
     }
-    Ok(Some((*destination, value)))
+    Ok(Some((*destination, slot)))
 }
 
 fn validate_project_call_stage_values<V, B, R, P: FiberCallablePendingStorage, G>(

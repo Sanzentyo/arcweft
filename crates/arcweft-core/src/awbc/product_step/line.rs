@@ -4279,8 +4279,16 @@ pub(super) fn unique_line_handles_view(
 ) -> Result<Vec<crate::value::ownership::RuntimeAffineLineHandle>, ProductStepError> {
     let handles = value
         .inspect()
-        .affine_line_handles()
-        .map_err(|_| LineRuntimeError::InvalidHandlePayload)?;
+        .affine_handles()
+        .map_err(|_| LineRuntimeError::InvalidHandlePayload)?
+        .into_iter()
+        .filter_map(|handle| match handle {
+            crate::value::ownership::RuntimeAffineHandle::Line(handle) => Some(handle),
+            // The complete Product contour admits these under its original
+            // presentation banks; a line lease never decodes their tokens.
+            crate::value::ownership::RuntimeAffineHandle::Presentation { .. } => None,
+        })
+        .collect::<Vec<_>>();
     let mut unique = BTreeSet::new();
     for handle in &handles {
         if !unique.insert(handle.token().clone()) {
