@@ -1155,6 +1155,25 @@ pub(super) enum PreparedHostResultOutcome {
     },
 }
 
+impl PreparedHostResultOutcome {
+    fn failure_trap(&self) -> Option<FiberTrap> {
+        let Self::Failed { kind, message } = self else {
+            return None;
+        };
+        Some(FiberTrap {
+            code: match kind {
+                crate::step::RuntimeHostCallErrorKind::UnsupportedCapability => {
+                    AwbcTrapCode::CapabilityDenied
+                }
+                crate::step::RuntimeHostCallErrorKind::Rejected
+                | crate::step::RuntimeHostCallErrorKind::Failed => AwbcTrapCode::HostAbiMismatch,
+            },
+            message: Some(message.clone()),
+            source_map: None,
+        })
+    }
+}
+
 impl DeferredChildResumeJournal {
     pub(super) fn stage_trap(&mut self, code: AwbcTrapCode, message: String) {
         if self.staged_trap.is_none() {
@@ -1236,19 +1255,10 @@ impl DeferredChildResumeJournal {
                 "deferred child already has a staged host or Need result".to_owned(),
             ));
         }
-        if let PreparedHostResultTarget::Deferred {
-            outcome: PreparedHostResultOutcome::Failed { kind, message },
-            ..
-        } = &stage.target
+        if let PreparedHostResultTarget::Deferred { outcome, .. } = &stage.target
+            && let Some(trap) = outcome.failure_trap()
         {
-            let code = match kind {
-                crate::step::RuntimeHostCallErrorKind::UnsupportedCapability => {
-                    AwbcTrapCode::CapabilityDenied
-                }
-                crate::step::RuntimeHostCallErrorKind::Rejected
-                | crate::step::RuntimeHostCallErrorKind::Failed => AwbcTrapCode::HostAbiMismatch,
-            };
-            self.stage_trap(code, message.clone());
+            self.staged_trap.get_or_insert(trap);
         }
         self.staged_host_call = Some(stage);
         Ok(())

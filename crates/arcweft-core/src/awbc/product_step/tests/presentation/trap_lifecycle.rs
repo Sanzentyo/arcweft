@@ -259,6 +259,13 @@ fn actual_independent_child_vm_refusal_keeps_its_checkpoint_queue_and_original_b
 }
 
 fn dialogue_fixture(blocked: bool) -> (AwbcProductStepExecutor, RuntimePresentationHandleToken) {
+    dialogue_fixture_with_program(blocked, |_, _| {})
+}
+
+pub(super) fn dialogue_fixture_with_program(
+    blocked: bool,
+    configure: impl FnOnce(&mut AwbcProgram, usize),
+) -> (AwbcProductStepExecutor, RuntimePresentationHandleToken) {
     let mut program = mark_selector_program(
         arcweft_interaction_model::input::InputActionId::new("trap.refusal").unwrap(),
     );
@@ -345,6 +352,7 @@ fn dialogue_fixture(blocked: bool) -> (AwbcProductStepExecutor, RuntimePresentat
         code: AwbcTrapCode::ExplicitPanic,
         message: None,
     };
+    configure(&mut program, activation_block);
     let mut executor = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 64).unwrap();
     for _ in 0..8 {
         let output = executor.step(

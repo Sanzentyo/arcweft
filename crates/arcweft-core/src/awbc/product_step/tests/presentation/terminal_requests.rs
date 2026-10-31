@@ -391,3 +391,173 @@ fn real_deferred_host_failure_consumes_its_receipt_only_after_resource_unwind_is
         }
     }
 }
+
+fn activation_host_fixture(
+    blocked: bool,
+) -> (AwbcProductStepExecutor, RuntimePresentationHandleToken) {
+    super::trap_lifecycle::dialogue_fixture_with_program(blocked, |program, entry| {
+        let signature = AwbcSignatureId(program.signatures.len().try_into().unwrap());
+        program.signatures.push(AwbcSignature {
+            params: Vec::new(),
+            result: None,
+            effects: AwbcEffectSetId(0),
+        });
+        program.host_calls.push(AwbcHostCall {
+            producer: crate::tests::host_producer(),
+            public_id: AwbcStringId(0),
+            capability: AwbcStringId(0),
+            operation: AwbcStringId(0),
+            contract: None,
+            signature,
+            mode: AwbcHostCallMode::Suspend,
+            deterministic: true,
+            arguments: Vec::new(),
+        });
+        let resume_block = AwbcBlockId((entry + 1).try_into().unwrap());
+        program.blocks.insert(
+            entry + 1,
+            AwbcBlock {
+                owner: AwbcFunctionId(1),
+                instructions: AwbcTableRange::new(0, 0),
+                terminator: AwbcTerminator::Return { value: None },
+                safe_point: AwbcSafePointKind::HostCall,
+                source_map: None,
+            },
+        );
+        program.functions[1].blocks.len += 1;
+        for function in program.functions.iter_mut().skip(2) {
+            function.blocks.start += 1;
+            function.entry_block.0 += 1;
+        }
+        let resume = AwbcResumePointId(program.resume_points.len().try_into().unwrap());
+        program.resume_points.push(AwbcResumePoint {
+            function: AwbcFunctionId(1),
+            block: resume_block,
+            frame_layout: program.functions[1].frame_layout,
+            kind: AwbcSafePointKind::HostCall,
+        });
+        program.blocks[entry].terminator = AwbcTerminator::HostCall {
+            call: AwbcHostCallId(0),
+            args: Vec::new(),
+            dst: None,
+            resume,
+        };
+    })
+}
+
+#[test]
+fn actual_activation_host_failure_retains_receipt_and_custody_until_unwind_is_admitted() {
+    for kind in [
+        RuntimeHostCallErrorKind::UnsupportedCapability,
+        RuntimeHostCallErrorKind::Rejected,
+        RuntimeHostCallErrorKind::Failed,
+    ] {
+        for blocked in [true, false] {
+            let (mut executor, token) = activation_host_fixture(blocked);
+            let issued = executor.step(Default::default(), one_op());
+            assert!(
+                issued.output.diagnostics.is_empty(),
+                "{:?}",
+                issued.output.diagnostics
+            );
+            let [request] = issued.output.requests.host_calls.as_slice() else {
+                panic!("actual Dialogue initializer issues its suspended Host call")
+            };
+            let mut host_results = vec![RuntimeHostCallResult {
+                id: request.id.clone(),
+                outcome: Err(RuntimeHostCallError {
+                    kind,
+                    message: "activation host fault".into(),
+                }),
+            }];
+            let before = executor.snapshot().unwrap();
+            if blocked {
+                for _ in 0..2 {
+                    let mut transaction = executor.dialogues.begin_active_transaction().unwrap();
+                    let result = executor.step_dialogue_activation_with_host_results(
+                        &mut transaction,
+                        &mut host_results,
+                        &mut crate::pure::VmRuntimePureCallBackend::default(),
+                        &mut crate::awbc::product_step::ProductStepBudgets::default(),
+                    );
+                    assert!(matches!(result, Err(ref error) if error.is_presentation_refusal()));
+                    executor.dialogues.restore_transaction(transaction).unwrap();
+                    assert_eq!(executor.snapshot().unwrap(), before);
+                    assert_eq!(host_results.len(), 1);
+                    assert!(
+                        matches!(&host_results[0].outcome, Err(error) if error.kind == kind && error.message == "activation host fault")
+                    );
+                }
+                executor
+                    .presentation
+                    .as_mut()
+                    .unwrap()
+                    .retirements_mut()
+                    .clear();
+            }
+            let mut transaction = executor.dialogues.begin_active_transaction().unwrap();
+            let mut progress = executor
+                .step_dialogue_activation_with_host_results(
+                    &mut transaction,
+                    &mut host_results,
+                    &mut crate::pure::VmRuntimePureCallBackend::default(),
+                    &mut crate::awbc::product_step::ProductStepBudgets::default(),
+                )
+                .unwrap();
+            assert_eq!(progress.executed_ops, 1);
+            assert!(
+                progress.trap.is_none(),
+                "receipt commit retains the existing one-operation timing"
+            );
+            let ticket = progress
+                .host_result_take
+                .take()
+                .expect("actual failed Host receipt is staged");
+            let mut batch = match progress.execution.take() {
+                Some(batch) => batch,
+                None => executor
+                    .prepare_line_task_commands(&mut transaction, progress.reducer)
+                    .unwrap(),
+            };
+            let prepared = executor
+                .preflight_line_task_commands(&mut transaction, &batch)
+                .unwrap();
+            let proof = executor.dialogues.inspect_commit(&transaction).unwrap();
+            executor.commit_activation_host_result(&mut transaction, &mut host_results, ticket);
+            executor.realize_line_task_commands(&mut transaction, &mut batch, prepared);
+            executor.dialogues.commit_prepared(transaction, proof);
+            executor.commit_line_task_commands(batch, &mut RuntimeStepOutput::default());
+            assert!(host_results.is_empty());
+            let retired = executor.presentation.as_ref().unwrap().retirements();
+            assert_eq!(retired.len(), 1);
+            assert_eq!(retired[0].token, token);
+            let frame = executor.dialogues.active_frame().unwrap();
+            assert!(frame.pending_activation_host_call.is_none());
+            let ProductDialoguePhase::Activating { fiber, .. } = &frame.phase else {
+                unreachable!()
+            };
+            let Some(FiberTerminalValue::Trapped(trap)) = fiber.terminal.as_ref() else {
+                unreachable!()
+            };
+            assert_eq!(trap.message.as_deref(), Some("activation host fault"));
+            assert_eq!(
+                trap.code,
+                if kind == RuntimeHostCallErrorKind::UnsupportedCapability {
+                    AwbcTrapCode::CapabilityDenied
+                } else {
+                    AwbcTrapCode::HostAbiMismatch
+                }
+            );
+            executor.snapshot().unwrap();
+            if !blocked {
+                executor = roundtrip(executor);
+            }
+            let closed = executor.step(Default::default(), one_op());
+            assert!(closed.output.requests.host_calls.is_empty());
+            assert_eq!(
+                executor.presentation.as_ref().unwrap().retirements().len(),
+                1
+            );
+        }
+    }
+}

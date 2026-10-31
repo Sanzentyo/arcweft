@@ -1209,9 +1209,26 @@ impl super::AwbcProductStepExecutor {
             return Err(LineRuntimeError::StaleCommandOutcome.into());
         }
         settle_scoped_defer_releases(transaction);
-        if let Some(pending) = transaction.frame().pending_activation_host_call.clone() {
-            return self.resume_activation_host_call(transaction, pending, host_results);
-        }
+        let mut host_result_take = None;
+        let host_trap = if let Some(pending) =
+            transaction.frame().pending_activation_host_call.clone()
+        {
+            let mut progress =
+                self.resume_activation_host_call(transaction, pending, host_results)?;
+            let Some(ticket) = progress.host_result_take.as_ref() else {
+                return Ok(progress);
+            };
+            let super::PreparedHostResultTarget::Activation { outcome, .. } = &ticket.target else {
+                unreachable!("activation resume issues only its own Host result ticket")
+            };
+            let Some(trap) = outcome.failure_trap() else {
+                return Ok(progress);
+            };
+            host_result_take = progress.host_result_take.take();
+            Some(trap)
+        } else {
+            None
+        };
         let activation_returned_unit = matches!(
             &transaction.frame().phase,
             ProductDialoguePhase::Activating {
@@ -1290,11 +1307,13 @@ impl super::AwbcProductStepExecutor {
         };
         let mut candidate = Some(fiber);
         let result: Result<ProductActivationProgress, ProductStepError> = (|| {
-            budgets.replenish_activation(
-                &activation,
-                candidate.as_mut().expect("activation fiber remains owned"),
-                &self.program,
-            )?;
+            if host_trap.is_none() {
+                budgets.replenish_activation(
+                    &activation,
+                    candidate.as_mut().expect("activation fiber remains owned"),
+                    &self.program,
+                )?;
+            }
             let mut candidate_stats = self.compact_pure_stats;
             let context = self.vm_execution_context();
             let mut host = super::ProductVmHost {
@@ -1302,16 +1321,24 @@ impl super::AwbcProductStepExecutor {
                 fallback_stats: &mut candidate_stats,
                 context: &context,
             };
-            let step = crate::awbc::vm::step_with_presentation(
-                &self.program,
-                candidate.as_mut().expect("activation fiber remains owned"),
-                VmStepOptions {
-                    max_instructions: 1,
-                },
-                &context,
-                &mut self.presentation,
-                &mut host,
-            );
+            let step = if let Some(trap) = host_trap {
+                self.program.trap_fiber(
+                    candidate.as_mut().expect("activation fiber remains owned"),
+                    &mut self.presentation,
+                    trap,
+                )
+            } else {
+                crate::awbc::vm::step_with_presentation(
+                    &self.program,
+                    candidate.as_mut().expect("activation fiber remains owned"),
+                    VmStepOptions {
+                        max_instructions: 1,
+                    },
+                    &context,
+                    &mut self.presentation,
+                    &mut host,
+                )
+            };
             let step = match step {
                 Ok(step) => step,
                 Err(error) => {
@@ -1730,15 +1757,20 @@ impl super::AwbcProductStepExecutor {
                             pending: None,
                         };
                         Ok(ProductActivationProgress {
-                            trap: Some(trap),
+                            // Host receipt publication remains its own charged
+                            // operation. The next activation turn enters the
+                            // existing failure-close path, as before.
+                            trap: host_result_take.is_none().then_some(trap),
                             progressed: true,
-                            executed_ops: usize::from(step.executed > 0),
+                            executed_ops: usize::from(
+                                step.executed > 0 || host_result_take.is_some(),
+                            ),
                             presented: None,
                             reducer: LineTaskActivation::default(),
                             pure_stats: Some(candidate_stats),
                             execution,
                             host_calls: Vec::new(),
-                            host_result_take: None,
+                            host_result_take,
                         })
                     }
                     VmExit::Suspended(notice)
@@ -1975,6 +2007,12 @@ impl super::AwbcProductStepExecutor {
         else {
             unreachable!("prepared activation retains its suspended fiber")
         };
+        if let Some(expected) = outcome.failure_trap() {
+            assert!(
+                matches!(fiber.terminal.as_ref(), Some(crate::awbc::fiber::FiberTerminalValue::Trapped(actual)) if actual == &expected),
+                "Host failure was admitted and unwound before consuming its receipt"
+            );
+        }
         let result = host_results.remove(result_index);
         match (outcome, result.outcome) {
             (
@@ -1993,20 +2031,7 @@ impl super::AwbcProductStepExecutor {
                 }
                 fiber.resume_at_prepared(resume);
             }
-            (super::PreparedHostResultOutcome::Failed { kind, message }, Err(_)) => fiber
-                .mark_trapped(crate::awbc::fiber::FiberTrap {
-                    code: match kind {
-                        crate::step::RuntimeHostCallErrorKind::UnsupportedCapability => {
-                            crate::awbc::schema::AwbcTrapCode::CapabilityDenied
-                        }
-                        crate::step::RuntimeHostCallErrorKind::Rejected
-                        | crate::step::RuntimeHostCallErrorKind::Failed => {
-                            crate::awbc::schema::AwbcTrapCode::HostAbiMismatch
-                        }
-                    },
-                    message: Some(message),
-                    source_map: None,
-                }),
+            (super::PreparedHostResultOutcome::Failed { .. }, Err(_)) => {}
             _ => unreachable!("prepared activation result retains its checked outcome"),
         }
         frame.pending_activation_host_call = None;
