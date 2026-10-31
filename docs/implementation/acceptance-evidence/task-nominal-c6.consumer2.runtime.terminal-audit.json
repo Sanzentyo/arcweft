@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "41db45e42c00ca3485329610e80f4a85f3e93013",
+  "run": "nominal-c6.consumer2.runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [   0.139s] 1 test run: 1 passed, 42 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 1,
+  "passed": 1,
+  "failed": 0,
+  "skipped": 42,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4007,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-31T05:19:01.0622988Z"
+}

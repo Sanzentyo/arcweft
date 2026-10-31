@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "79ae2b569343f63fd4fdd62c99b1f84e44b892e4",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-compiler",
+    "--test",
+    "project_cache_transaction",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(recursive_rust_nominal_handler_capture_executes_with_its_original_program)",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/nominal-c6.consumer1.catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-31T05:04:26.3694270Z",
+  "finishedAt": "2026-10-31T05:08:19.0547208Z"
+}

@@ -1,0 +1,872 @@
+diff --git a/crates/arcweft-compiler/tests/project_cache_transaction/rust_nominals.rs b/crates/arcweft-compiler/tests/project_cache_transaction/rust_nominals.rs
+index 8a5e0c50a9a41e68672def48fe1dfe7f099e5886..aecd6192901f7b338f8f550dfb5a43c772059dbe 100644
+--- a/crates/arcweft-compiler/tests/project_cache_transaction/rust_nominals.rs
++++ b/crates/arcweft-compiler/tests/project_cache_transaction/rust_nominals.rs
+@@ -340,3 +340,107 @@ fn source_rust_nominals_preserve_shapes_recursion_and_exact_arguments_in_native_
+         }
+     }
+ }
++
++#[test]
++fn recursive_rust_nominal_handler_capture_executes_with_its_original_program() {
++    use arcweft_bundle::resource_codec::{
++        ViewProductValidationLimits, view::ViewProgramInstruction,
++    };
++    use arcweft_core::{
++        awbc::{product_step::AwbcProductProgram, verify::AwbcVerifyBudget},
++        plan::RuntimeTaskSourceArtifactLimits,
++        program_types::RuntimeProgramTypes,
++        pure::{RuntimeProgramExecutionContext, VmRuntimePureCallBackend},
++        task::RuntimeProgramOwner,
++        value::AwbcRuntimeValueSnapshot,
++    };
++
++    let source = r#"
++entry cli @entry.main { goto @flow.main }
++flow main() -> String { return "done" }
++view Main(node: Node<bool>) {
++    Button().on_click { let observed = node; let again = node; () }
++}
++"#;
++    let (project, registration, env) =
++        fixture_with_manifest(source, "rust-nominal-handler-capture", &fixture_manifest());
++    let compiled = AttachedCompiler::new(&project)
++        .compile(
++            &project,
++            &context(env, registration),
++            &mut RecordingCache::default(),
++        )
++        .expect("a recursive Rust data capture is snapshot-retainable");
++    let view = compiled.view_product().product().program().unwrap();
++    let handler = view
++        .resource()
++        .instructions
++        .iter()
++        .find_map(|instruction| match instruction {
++            ViewProgramInstruction::BindHandler { handler, .. } => Some(*handler),
++            _ => None,
++        })
++        .unwrap();
++    let specification = view.resource().handler_ref(handler).unwrap();
++    assert_eq!(specification.captures.len(), 1);
++    assert_eq!(specification.captures[0].parameter().unwrap().value(), 0);
++    let lowered = compiled.runtime_plan();
++    let plan = Arc::new(lowered.plan.clone());
++    let binding = plan
++        .pure_programs()
++        .iter()
++        .find(|binding| binding.program() == handler)
++        .unwrap();
++    let [identity] = binding.input_types() else {
++        panic!("the retained handler has exactly its Rust capture input");
++    };
++    let limits = RuntimeSchemaLimits::engine_default();
++    let node = |next| {
++        RuntimeProgramTypes::Plan(&plan)
++            .try_record_value(*identity, vec![RuntimeValue::Bool(true), next], limits)
++            .unwrap()
++    };
++    let input = node(RuntimeValue::option_some(node(RuntimeValue::option_none())));
++    let native_owner = RuntimeProgramOwner::Plan(Arc::clone(&plan));
++    let image =
++        AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&input, &native_owner).unwrap();
++    let awbc = AwbcLowerer::new(&plan, &lowered.dialogue_content_catalog, "rust-capture")
++        .lower()
++        .unwrap()
++        .program;
++    let awbc = Arc::new(
++        AwbcProgram::decode_canonical(
++            &awbc.encode_canonical().unwrap(),
++            AwbcDecodeBudget::default(),
++        )
++        .unwrap(),
++    );
++    let authority = view
++        .task_source_authority(ViewProductValidationLimits::default())
++        .unwrap();
++    let admitted = AwbcProductProgram::admit(
++        Arc::clone(&awbc),
++        AwbcVerifyBudget::default(),
++        arcweft_core::awbc::verify::AwbcVerifyContext {
++            require_entrypoint: false,
++            ..Default::default()
++        },
++        RuntimeTaskSourceArtifactLimits::default(),
++        Some(&authority),
++    )
++    .unwrap();
++    let awbc_owner = RuntimeProgramOwner::Awbc(Arc::clone(&awbc));
++    let restored = image.into_runtime_value_for_program(&awbc_owner).unwrap();
++    let native = RuntimeProgramExecutionContext::native(plan, Default::default())
++        .evaluate_pure_program(handler, &[input], &mut VmRuntimePureCallBackend::default())
++        .unwrap();
++    let decoded = RuntimeProgramExecutionContext::awbc(admitted, Default::default())
++        .evaluate_pure_program(
++            handler,
++            &[restored],
++            &mut VmRuntimePureCallBackend::default(),
++        )
++        .unwrap();
++    assert_eq!(native, RuntimeValue::Tuple(vec![RuntimeValue::Unit]));
++    assert_eq!(decoded, native);
++}
+diff --git a/crates/arcweft-lang-sema/src/final_analysis/local_use.rs b/crates/arcweft-lang-sema/src/final_analysis/local_use.rs
+index 1566a61a9ae81d8889b7bf8ac31e29fe2cd329ee..80acf89509ad9f2b9b47d28b8123ea07f18daf7a 100644
+--- a/crates/arcweft-lang-sema/src/final_analysis/local_use.rs
++++ b/crates/arcweft-lang-sema/src/final_analysis/local_use.rs
+@@ -4,7 +4,8 @@
+ //! This seal adds path-sensitive availability and distinguishes a deep Copy
+ //! carrier from a value which must transfer its one owner.
+ 
+-mod authority;
++mod authority;
++mod type_capability;
+ pub use authority::CheckedLocalUseAuthority;
+ 
+ use std::{
+@@ -147,7 +148,7 @@ impl FinalSemanticAnalysis {
+         ty: &TypeKind,
+         scope: &crate::types::GenericScope,
+     ) -> Result<CheckedTypeCopyCapability, CheckedLocalUseError> {
+-        type_copy_capability(ty, self, None, scope, &mut BTreeSet::new())
++        type_capability::classify(ty, self, None, scope)
+     }
+ }
+ 
+@@ -251,6 +252,8 @@ impl CheckedLocalValueTransfer {
+ 
+ #[derive(Clone, Debug, Eq, Error, PartialEq)]
+ pub enum CheckedLocalUseError {
++    #[error("local-use type ownership exceeded its bounded traversal allowance")]
++    TypeOwnershipWorkLimit,
+     #[error("local-use closed instance is not bound to this declaration/generation")]
+     ForeignInstance,
+     #[error(transparent)]
+@@ -989,7 +992,13 @@ impl<'a> LocalUseChecker<'a> {
+     }
+ 
+     fn type_is_copy(&self, ty: &TypeKind) -> Result<bool, CheckedLocalUseError> {
+-        definitely_copy(ty, self.analysis, self.instance, &mut BTreeSet::new())
++        type_capability::classify(
++            ty,
++            self.analysis,
++            self.instance,
++            &crate::types::GenericScope::default(),
++        )
++        .map(|capability| capability == CheckedTypeCopyCapability::Unrestricted)
+     }
+ 
+     fn callable_body(
+@@ -3369,193 +3378,6 @@ fn declaration_has_open_local_types(
+         })
+ }
+ 
+-fn definitely_copy(
+-    ty: &TypeKind,
+-    analysis: &FinalSemanticAnalysis,
+-    instance: Option<CheckedLocalUseInstantiation<'_>>,
+-    visiting: &mut BTreeSet<SemanticTypeDigest>,
+-) -> Result<bool, CheckedLocalUseError> {
+-    type_copy_capability(
+-        ty,
+-        analysis,
+-        instance,
+-        &crate::types::GenericScope::default(),
+-        visiting,
+-    )
+-    .map(|capability| capability == CheckedTypeCopyCapability::Unrestricted)
+-}
+-
+-fn type_copy_capability(
+-    ty: &TypeKind,
+-    analysis: &FinalSemanticAnalysis,
+-    instance: Option<CheckedLocalUseInstantiation<'_>>,
+-    scope: &crate::types::GenericScope,
+-    visiting: &mut BTreeSet<SemanticTypeDigest>,
+-) -> Result<CheckedTypeCopyCapability, CheckedLocalUseError> {
+-    use CheckedTypeCopyCapability::{Unavailable, Unrestricted, ValueDependent};
+-    match ty {
+-        TypeKind::Bool
+-        | TypeKind::I8
+-        | TypeKind::I16
+-        | TypeKind::I32
+-        | TypeKind::I64
+-        | TypeKind::I128
+-        | TypeKind::ISize
+-        | TypeKind::U8
+-        | TypeKind::U16
+-        | TypeKind::U32
+-        | TypeKind::U64
+-        | TypeKind::U128
+-        | TypeKind::USize
+-        | TypeKind::F32
+-        | TypeKind::F64
+-        | TypeKind::String
+-        | TypeKind::Char
+-        | TypeKind::Bytes
+-        | TypeKind::Duration
+-        | TypeKind::Progress
+-        | TypeKind::DenseNumeric(_)
+-        | TypeKind::Unit
+-        | TypeKind::Never
+-        | TypeKind::Ref(_)
+-        | TypeKind::CompileTimeScalar(_) => Ok(Unrestricted),
+-        TypeKind::Function { .. } | TypeKind::CharacterDialogue(_) => Ok(ValueDependent),
+-        TypeKind::AcceptedNominal(nominal) => {
+-            use crate::env::nominal::AcceptedNominalSemantics;
+-            let plain = match analysis.accepted_nominal_semantics(nominal) {
+-                Some(AcceptedNominalSemantics::Opaque(carrier)) => {
+-                    carrier.value_class() == RuntimeOpaqueValueClass::Plain
+-                }
+-                Some(AcceptedNominalSemantics::Record(record)) => record
+-                    .runtime_carrier()
+-                    .is_some_and(|carrier| carrier.value_class() == RuntimeOpaqueValueClass::Plain),
+-                _ => false,
+-            };
+-            if !plain {
+-                return Ok(Unavailable);
+-            }
+-            nominal
+-                .arguments()
+-                .iter()
+-                .try_fold(ValueDependent, |all, argument| {
+-                    type_copy_capability(argument, analysis, instance, scope, visiting)
+-                        .map(|next| all.join(next))
+-                })
+-        }
+-        TypeKind::GenericParam(_) => {
+-            let Some(instance) = instance else {
+-                return Ok(Unavailable);
+-            };
+-            let closed = instance.instantiate_type(ty)?;
+-            if closed == *ty {
+-                return Err(CheckedLocalUseError::InvalidTopology);
+-            }
+-            type_copy_capability(&closed, analysis, None, scope, visiting)
+-        }
+-        TypeKind::Tuple(items) | TypeKind::Choice(items) => {
+-            items.iter().try_fold(Unrestricted, |all, item| {
+-                type_copy_capability(item, analysis, instance, scope, visiting)
+-                    .map(|next| all.join(next))
+-            })
+-        }
+-        TypeKind::Vec(item)
+-        | TypeKind::Array { item, .. }
+-        | TypeKind::Slice(item)
+-        | TypeKind::Seq(item)
+-        | TypeKind::Option(item)
+-        | TypeKind::Range(item) => type_copy_capability(item, analysis, instance, scope, visiting),
+-        TypeKind::Result { ok, error }
+-        | TypeKind::Map {
+-            key: ok,
+-            value: error,
+-            ..
+-        } => Ok(
+-            type_copy_capability(ok, analysis, instance, scope, visiting)?.join(
+-                type_copy_capability(error, analysis, instance, scope, visiting)?,
+-            ),
+-        ),
+-        TypeKind::ProjectNominal(_) => {
+-            let Ok(digest) = ty
+-                .semantic_identity_digest()
+-                .or_else(|_| ty.semantic_identity_digest_in_scope(scope))
+-            else {
+-                return Ok(Unavailable);
+-            };
+-            if !visiting.insert(digest) {
+-                return Ok(ValueDependent);
+-            }
+-            let result = (|| {
+-                let Some(definition) = analysis.project_nominal_semantic(digest) else {
+-                    return Ok(Unavailable);
+-                };
+-                let mut capability = Unrestricted;
+-                if let Some(fields) = definition.fields() {
+-                    for field in fields {
+-                        capability = capability.join(type_copy_capability(
+-                            field.ty(),
+-                            analysis,
+-                            instance,
+-                            definition.nominal().scope(),
+-                            visiting,
+-                        )?);
+-                    }
+-                    return Ok(capability);
+-                }
+-                let Some(cases) = definition.cases() else {
+-                    return Ok(Unavailable);
+-                };
+-                for case in cases {
+-                    match case.payload() {
+-                        VariantPayloadShape::Unit => {}
+-                        VariantPayloadShape::Tuple(fields) => {
+-                            for field in fields {
+-                                capability = capability.join(type_copy_capability(
+-                                    field.ty(),
+-                                    analysis,
+-                                    instance,
+-                                    definition.nominal().scope(),
+-                                    visiting,
+-                                )?);
+-                            }
+-                        }
+-                        VariantPayloadShape::Record(fields) => {
+-                            for field in fields {
+-                                capability = capability.join(type_copy_capability(
+-                                    field.ty(),
+-                                    analysis,
+-                                    instance,
+-                                    definition.nominal().scope(),
+-                                    visiting,
+-                                )?);
+-                            }
+-                        }
+-                    }
+-                }
+-                Ok(capability)
+-            })();
+-            visiting.remove(&digest);
+-            result
+-        }
+-        TypeKind::Named(name) => {
+-            let Some(graph) = analysis.character_dialogue_policy_types() else {
+-                return Ok(Unavailable);
+-            };
+-            let Some(owner) = CharacterDialoguePolicyTypeGraph::owner_for_language_type(name)
+-            else {
+-                return Ok(Unavailable);
+-            };
+-            Ok(
+-                if policy_owner_is_copy(graph, owner, &mut BTreeSet::new()) {
+-                    Unrestricted
+-                } else {
+-                    Unavailable
+-                },
+-            )
+-        }
+-        _ => Ok(Unavailable),
+-    }
+-}
+-
+ fn policy_owner_is_copy(
+     graph: &CharacterDialoguePolicyTypeGraph,
+     owner: CharacterDialoguePolicyVariantOwner,
+diff --git a/crates/arcweft-lang-sema/src/final_analysis/local_use/type_capability.rs b/crates/arcweft-lang-sema/src/final_analysis/local_use/type_capability.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..1f48ad58c6cddfe23231a358de03273a6297afca
+--- /dev/null
++++ b/crates/arcweft-lang-sema/src/final_analysis/local_use/type_capability.rs
+@@ -0,0 +1,364 @@
++//! Canonical Copy/Move type possibility, using the original accepted nominal
++//! definitions. This is not permission to clone a value-dependent carrier.
++
++use super::{
++    CheckedLocalUseError, CheckedLocalUseInstantiation, CheckedTypeCopyCapability,
++    FinalSemanticAnalysis, policy_owner_is_copy,
++};
++use crate::{
++    env::{
++        EnumVariantPayload,
++        nominal::AcceptedNominalSemantics,
++        rust_metadata::{AcceptedRustStructShape, AcceptedRustTypeMetadataKind},
++    },
++    ownership::CheckedOwnershipLimits,
++    types::{
++        GenericScope, SemanticTypeDigest, TypeKind, TypeProjectionControl, TypeProjectionNodeKind,
++        VariantPayloadShape,
++    },
++};
++use arcweft_core::value::RuntimeOpaqueValueClass;
++use arcweft_dialogue::CharacterDialoguePolicyTypeGraph;
++use std::collections::BTreeSet;
++
++#[derive(Default)]
++struct TypeCopyTraversal {
++    visiting: BTreeSet<SemanticTypeDigest>,
++    nodes: u64,
++    depth: u64,
++    nominal_edges: u64,
++}
++
++impl TypeCopyTraversal {
++    fn charge_node(&mut self, depth: u64) -> Result<(), CheckedLocalUseError> {
++        self.nodes = self
++            .nodes
++            .checked_add(1)
++            .ok_or(CheckedLocalUseError::TypeOwnershipWorkLimit)?;
++        let limits = CheckedOwnershipLimits::PRODUCTION;
++        if self.nodes > limits.max_type_nodes || depth > limits.max_recursion_depth {
++            return Err(CheckedLocalUseError::TypeOwnershipWorkLimit);
++        }
++        Ok(())
++    }
++
++    fn enter_type(&mut self) -> Result<(), CheckedLocalUseError> {
++        self.charge_node(self.depth)?;
++        self.depth = self
++            .depth
++            .checked_add(1)
++            .ok_or(CheckedLocalUseError::TypeOwnershipWorkLimit)?;
++        Ok(())
++    }
++
++    fn leave_type(&mut self) {
++        self.depth -= 1;
++    }
++
++    fn enter_nominal(
++        &mut self,
++        identity: SemanticTypeDigest,
++    ) -> Result<bool, CheckedLocalUseError> {
++        self.nominal_edges = self
++            .nominal_edges
++            .checked_add(1)
++            .ok_or(CheckedLocalUseError::TypeOwnershipWorkLimit)?;
++        let limits = CheckedOwnershipLimits::PRODUCTION;
++        if self.nominal_edges > limits.max_nominal_edges {
++            return Err(CheckedLocalUseError::TypeOwnershipWorkLimit);
++        }
++        if self.visiting.contains(&identity) {
++            return Ok(false);
++        }
++        if self.visiting.len() as u64 >= limits.max_active_nominal_depth {
++            return Err(CheckedLocalUseError::TypeOwnershipWorkLimit);
++        }
++        self.visiting.insert(identity);
++        Ok(true)
++    }
++
++    fn leave_nominal(&mut self, identity: SemanticTypeDigest) {
++        self.visiting.remove(&identity);
++    }
++}
++
++impl TypeProjectionControl for TypeCopyTraversal {
++    type Error = CheckedLocalUseError;
++
++    fn check(&mut self) -> Result<(), Self::Error> {
++        Ok(())
++    }
++
++    fn visit_node(&mut self, _: TypeProjectionNodeKind, depth: u64) -> Result<(), Self::Error> {
++        self.charge_node(self.depth.saturating_sub(1).saturating_add(depth))
++    }
++
++    fn visit_binding(&mut self) -> Result<(), Self::Error> {
++        self.charge_node(self.depth)
++    }
++}
++
++pub(super) fn classify(
++    ty: &TypeKind,
++    analysis: &FinalSemanticAnalysis,
++    instance: Option<CheckedLocalUseInstantiation<'_>>,
++    scope: &GenericScope,
++) -> Result<CheckedTypeCopyCapability, CheckedLocalUseError> {
++    classify_at(
++        ty,
++        analysis,
++        instance,
++        scope,
++        &mut TypeCopyTraversal::default(),
++    )
++}
++
++fn classify_at(
++    ty: &TypeKind,
++    analysis: &FinalSemanticAnalysis,
++    instance: Option<CheckedLocalUseInstantiation<'_>>,
++    scope: &crate::types::GenericScope,
++    traversal: &mut TypeCopyTraversal,
++) -> Result<CheckedTypeCopyCapability, CheckedLocalUseError> {
++    use CheckedTypeCopyCapability::{Unavailable, Unrestricted, ValueDependent};
++    traversal.enter_type()?;
++    let result = (|| match ty {
++        TypeKind::Bool
++        | TypeKind::I8
++        | TypeKind::I16
++        | TypeKind::I32
++        | TypeKind::I64
++        | TypeKind::I128
++        | TypeKind::ISize
++        | TypeKind::U8
++        | TypeKind::U16
++        | TypeKind::U32
++        | TypeKind::U64
++        | TypeKind::U128
++        | TypeKind::USize
++        | TypeKind::F32
++        | TypeKind::F64
++        | TypeKind::String
++        | TypeKind::Char
++        | TypeKind::Bytes
++        | TypeKind::Duration
++        | TypeKind::Progress
++        | TypeKind::DenseNumeric(_)
++        | TypeKind::Unit
++        | TypeKind::Never
++        | TypeKind::Ref(_)
++        | TypeKind::CompileTimeScalar(_) => Ok(Unrestricted),
++        TypeKind::Function { .. } | TypeKind::CharacterDialogue(_) => Ok(ValueDependent),
++        TypeKind::AcceptedNominal(nominal) => {
++            let plain = match analysis.accepted_nominal_semantics(nominal) {
++                Some(AcceptedNominalSemantics::RustAdt) => {
++                    return rust_nominal_capability(
++                        ty, nominal, analysis, instance, scope, traversal,
++                    );
++                }
++                Some(AcceptedNominalSemantics::Opaque(carrier)) => {
++                    carrier.value_class() == RuntimeOpaqueValueClass::Plain
++                }
++                Some(AcceptedNominalSemantics::Record(record)) => record
++                    .runtime_carrier()
++                    .is_some_and(|carrier| carrier.value_class() == RuntimeOpaqueValueClass::Plain),
++                _ => false,
++            };
++            if !plain {
++                return Ok(Unavailable);
++            }
++            nominal
++                .arguments()
++                .iter()
++                .try_fold(ValueDependent, |all, argument| {
++                    classify_at(argument, analysis, instance, scope, traversal)
++                        .map(|next| all.join(next))
++                })
++        }
++        TypeKind::GenericParam(_) => {
++            let Some(instance) = instance else {
++                return Ok(Unavailable);
++            };
++            let closed = instance.instantiate_type(ty)?;
++            if closed == *ty {
++                return Err(CheckedLocalUseError::InvalidTopology);
++            }
++            classify_at(&closed, analysis, None, scope, traversal)
++        }
++        TypeKind::Tuple(items) | TypeKind::Choice(items) => {
++            items.iter().try_fold(Unrestricted, |all, item| {
++                classify_at(item, analysis, instance, scope, traversal).map(|next| all.join(next))
++            })
++        }
++        TypeKind::Vec(item)
++        | TypeKind::Array { item, .. }
++        | TypeKind::Slice(item)
++        | TypeKind::Seq(item)
++        | TypeKind::Option(item)
++        | TypeKind::Range(item) => classify_at(item, analysis, instance, scope, traversal),
++        TypeKind::Result { ok, error }
++        | TypeKind::Map {
++            key: ok,
++            value: error,
++            ..
++        } => Ok(classify_at(ok, analysis, instance, scope, traversal)?
++            .join(classify_at(error, analysis, instance, scope, traversal)?)),
++        TypeKind::ProjectNominal(_) => {
++            let Ok(digest) = ty
++                .semantic_identity_digest()
++                .or_else(|_| ty.semantic_identity_digest_in_scope(scope))
++            else {
++                return Ok(Unavailable);
++            };
++            if !traversal.enter_nominal(digest)? {
++                return Ok(Unrestricted);
++            }
++            let result = (|| {
++                let Some(definition) = analysis.project_nominal_semantic(digest) else {
++                    return Ok(Unavailable);
++                };
++                let mut capability = Unrestricted;
++                if let Some(fields) = definition.fields() {
++                    for field in fields {
++                        capability = capability.join(classify_at(
++                            field.ty(),
++                            analysis,
++                            instance,
++                            definition.nominal().scope(),
++                            traversal,
++                        )?);
++                    }
++                    return Ok(capability);
++                }
++                let Some(cases) = definition.cases() else {
++                    return Ok(Unavailable);
++                };
++                for case in cases {
++                    match case.payload() {
++                        VariantPayloadShape::Unit => {}
++                        VariantPayloadShape::Tuple(fields) => {
++                            for field in fields {
++                                capability = capability.join(classify_at(
++                                    field.ty(),
++                                    analysis,
++                                    instance,
++                                    definition.nominal().scope(),
++                                    traversal,
++                                )?);
++                            }
++                        }
++                        VariantPayloadShape::Record(fields) => {
++                            for field in fields {
++                                capability = capability.join(classify_at(
++                                    field.ty(),
++                                    analysis,
++                                    instance,
++                                    definition.nominal().scope(),
++                                    traversal,
++                                )?);
++                            }
++                        }
++                    }
++                }
++                Ok(capability)
++            })();
++            traversal.leave_nominal(digest);
++            result
++        }
++        TypeKind::Named(name) => {
++            let Some(graph) = analysis.character_dialogue_policy_types() else {
++                return Ok(Unavailable);
++            };
++            let Some(owner) = CharacterDialoguePolicyTypeGraph::owner_for_language_type(name)
++            else {
++                return Ok(Unavailable);
++            };
++            Ok(
++                if policy_owner_is_copy(graph, owner, &mut BTreeSet::new()) {
++                    Unrestricted
++                } else {
++                    Unavailable
++                },
++            )
++        }
++        _ => Ok(Unavailable),
++    })();
++    traversal.leave_type();
++    result
++}
++
++fn rust_nominal_capability(
++    ty: &TypeKind,
++    nominal: &crate::types::AcceptedNominalType,
++    analysis: &FinalSemanticAnalysis,
++    instance: Option<CheckedLocalUseInstantiation<'_>>,
++    scope: &GenericScope,
++    traversal: &mut TypeCopyTraversal,
++) -> Result<CheckedTypeCopyCapability, CheckedLocalUseError> {
++    use crate::{env::rust_metadata::RustMetadataInstantiationError, types::TypeProjectionError};
++    let identity = ty
++        .semantic_identity_digest_in_scope_with_control(scope, traversal)
++        .map_err(|error| match error {
++            TypeProjectionError::Instantiation(error) => error.into(),
++            TypeProjectionError::Control(error) => error,
++        })?;
++    if !traversal.enter_nominal(identity)? {
++        // The same exact instantiated body is already being checked. Its
++        // back-edge adds no leaves; all other members still participate below.
++        return Ok(CheckedTypeCopyCapability::Unrestricted);
++    }
++    let result = (|| {
++        let metadata = analysis
++            .instantiate_accepted_rust_nominal(nominal, traversal)
++            .map_err(|error| match error {
++                RustMetadataInstantiationError::Control(error) => error,
++                RustMetadataInstantiationError::Type(error) => error.into(),
++                RustMetadataInstantiationError::UnknownNominal { .. }
++                | RustMetadataInstantiationError::WrongArity { .. } => {
++                    CheckedLocalUseError::InvalidTopology
++                }
++            })?
++            .ok_or(CheckedLocalUseError::InvalidTopology)?;
++        let mut capability = CheckedTypeCopyCapability::Unrestricted;
++        let mut visit = |member: &TypeKind| {
++            capability =
++                capability.join(classify_at(member, analysis, instance, scope, traversal)?);
++            Ok::<_, CheckedLocalUseError>(())
++        };
++        nominal.arguments().iter().try_for_each(&mut visit)?;
++        match metadata.kind() {
++            AcceptedRustTypeMetadataKind::Struct { shape } => match shape {
++                AcceptedRustStructShape::Unit => {}
++                AcceptedRustStructShape::Tuple(fields) => {
++                    fields.iter().try_for_each(&mut visit)?;
++                }
++                AcceptedRustStructShape::Record(fields) => {
++                    fields
++                        .iter()
++                        .map(crate::env::EnvironmentRecordField::ty)
++                        .try_for_each(&mut visit)?;
++                }
++            },
++            AcceptedRustTypeMetadataKind::Newtype { inner } => visit(inner)?,
++            AcceptedRustTypeMetadataKind::Enum { variants } => {
++                for variant in variants {
++                    match variant.payload() {
++                        EnumVariantPayload::Unit => {}
++                        EnumVariantPayload::Tuple(fields) => {
++                            fields.iter().try_for_each(&mut visit)?;
++                        }
++                        EnumVariantPayload::Record(fields) => {
++                            fields
++                                .iter()
++                                .map(crate::env::EnvironmentRecordField::ty)
++                                .try_for_each(&mut visit)?;
++                        }
++                    }
++                }
++            }
++        }
++        Ok(capability)
++    })();
++    traversal.leave_nominal(identity);
++    result
++}
+diff --git a/crates/arcweft-lang-sema/src/final_analysis/report.rs b/crates/arcweft-lang-sema/src/final_analysis/report.rs
+index 35d1c87a971d9b4f8814fe6ace8ef6d8f0e023ee..4f0767b8d3ce2fbb90135d5d682c66aeaf5b0ba6 100644
+--- a/crates/arcweft-lang-sema/src/final_analysis/report.rs
++++ b/crates/arcweft-lang-sema/src/final_analysis/report.rs
+@@ -2018,6 +2018,27 @@ impl FinalSemanticAnalysis {
+         }
+     }
+ 
++    /// Substitutes the original joined Rust declaration under the consumer's
++    /// shared allowance. No nominal metadata is reconstructed or copied aside.
++    pub(super) fn instantiate_accepted_rust_nominal<C: crate::types::TypeProjectionControl>(
++        &self,
++        nominal: &crate::types::AcceptedNominalType,
++        control: &mut C,
++    ) -> Result<
++        Option<crate::env::rust_metadata::InstantiatedRustTypeMetadata>,
++        crate::env::rust_metadata::RustMetadataInstantiationError<C::Error>,
++    > {
++        match &self.authority {
++            FinalSemanticAnalysisAuthority::Registered(world) => world
++                .environment
++                .rust_metadata()
++                .instantiate_with_control(nominal, control)
++                .map(Some),
++            #[cfg(test)]
++            FinalSemanticAnalysisAuthority::Fixture => Ok(None),
++        }
++    }
++
+     pub(super) fn character_dialogue_policy_types(
+         &self,
+     ) -> Option<&arcweft_dialogue::CharacterDialoguePolicyTypeGraph> {
+diff --git a/crates/arcweft-lang-sema/src/final_analysis/tests/accepted_rust_nominal.rs b/crates/arcweft-lang-sema/src/final_analysis/tests/accepted_rust_nominal.rs
+index e43d1dde34b159cd3d009f79a49853828d1a48e8..06720918fdbf3347d1bee376675d4bd5229469e2 100644
+--- a/crates/arcweft-lang-sema/src/final_analysis/tests/accepted_rust_nominal.rs
++++ b/crates/arcweft-lang-sema/src/final_analysis/tests/accepted_rust_nominal.rs
+@@ -139,6 +139,12 @@ fn structural_rust_retention_uses_the_accepted_nominal_schema_owner() {
+         )
+         .unwrap();
+     let ty = TypeKind::AcceptedNominal(nominal);
++    assert_eq!(
++        analysis
++            .type_copy_capability(&ty, &Default::default())
++            .unwrap(),
++        super::super::CheckedTypeCopyCapability::Unrestricted
++    );
+     let certificate = fixture
+         .registered
+         .checked_ownership(&analysis, &ty, CheckedOwnershipLimits::PRODUCTION)
+@@ -187,6 +193,12 @@ fn recursive_rust_retention_closes_the_graph_and_checks_the_complete_value() {
+         )
+         .unwrap();
+     let ty = TypeKind::AcceptedNominal(nominal);
++    assert_eq!(
++        analysis
++            .type_copy_capability(&ty, &Default::default())
++            .unwrap(),
++        super::super::CheckedTypeCopyCapability::Unrestricted
++    );
+     let certificate = fixture
+         .registered
+         .checked_ownership(&analysis, &ty, CheckedOwnershipLimits::PRODUCTION)
+@@ -345,6 +357,12 @@ fn rust_retention_keeps_function_and_need_value_certificates_closed() {
+         &fixture.registered,
+     )
+     .unwrap();
++    assert_eq!(
++        analysis
++            .type_copy_capability(&ty, &Default::default())
++            .unwrap(),
++        super::super::CheckedTypeCopyCapability::ValueDependent
++    );
+     assert_eq!(
+         classifier.classify(&ty).unwrap_err().rejection(),
+         Some(RuntimeOwnershipRejection::FunctionValueRequiresCertificate)
+@@ -358,6 +376,12 @@ fn rust_retention_keeps_function_and_need_value_certificates_closed() {
+     let need = TypeKind::AcceptedNominal(
+         input.nominal("Owned", vec![TypeKind::Need(Box::new(TypeKind::Bool))]),
+     );
++    assert_eq!(
++        analysis
++            .type_copy_capability(&need, &Default::default())
++            .unwrap(),
++        super::super::CheckedTypeCopyCapability::Unavailable
++    );
+     assert!(
+         fixture
+             .registered
+@@ -371,6 +395,41 @@ fn rust_retention_keeps_function_and_need_value_certificates_closed() {
+         .unwrap();
+ }
+ 
++#[test]
++fn copy_type_capability_bounds_the_complete_enclosing_traversal() {
++    use super::super::{CheckedLocalUseError, CheckedTypeCopyCapability};
++    let input = MetadataFixture::new();
++    let fixture = input.build(vec![("Node", 1, input.recursive_kind())], None);
++    let analysis = analyze(&fixture).unwrap();
++    let wrap =
++        |depth: u64| (0..depth).fold(TypeKind::Bool, |item, _| TypeKind::Option(Box::new(item)));
++    let depth = crate::ownership::CheckedOwnershipLimits::PRODUCTION.max_recursion_depth;
++    assert_eq!(
++        analysis
++            .type_copy_capability(&wrap(depth), &Default::default())
++            .unwrap(),
++        CheckedTypeCopyCapability::Unrestricted
++    );
++    assert_eq!(
++        analysis.type_copy_capability(&wrap(depth + 1), &Default::default()),
++        Err(CheckedLocalUseError::TypeOwnershipWorkLimit)
++    );
++    let nodes = crate::ownership::CheckedOwnershipLimits::PRODUCTION.max_type_nodes;
++    let repeated = vec![TypeKind::Bool; usize::try_from(nodes).unwrap()];
++    assert_eq!(
++        analysis.type_copy_capability(&TypeKind::Tuple(repeated), &Default::default()),
++        Err(CheckedLocalUseError::TypeOwnershipWorkLimit)
++    );
++    let valid = TypeKind::AcceptedNominal(input.nominal("Node", vec![TypeKind::Bool]));
++    assert_eq!(
++        analysis
++            .type_copy_capability(&valid, &Default::default())
++            .unwrap(),
++        CheckedTypeCopyCapability::Unrestricted,
++        "a failed traversal must not retain partial state in the analysis"
++    );
++}
++
+ #[test]
+ fn executable_rust_members_keep_type_projection_without_a_data_codec() {
+     use crate::ownership::CheckedOwnershipLimits;
+diff --git a/docs/02-runtime/executable-runtime-core.md b/docs/02-runtime/executable-runtime-core.md
+index 497f5f916a522acff91ae53e7fd6cfcacbba4922..04f7bd1ebf998edb821aff8df2724664a990246b 100644
+--- a/docs/02-runtime/executable-runtime-core.md
++++ b/docs/02-runtime/executable-runtime-core.md
+@@ -252,6 +252,14 @@ projection or skip validation of later field defaults. Default bindings remain
+ owned by the original accepted declaration; executable references do not acquire
+ a data codec through this distinction.
+ 
++The semantic Copy/Move capability check also uses the original joined Rust
++declaration, substituting all arguments and visiting every field and case under
++one bounded traversal. An exact nominal body back-edge adds no new leaves.
++Unrestricted data members permit Copy; executable members remain value-dependent,
++and an affine member makes the complete aggregate unavailable for Copy. This
++possibility check supplies no permission to duplicate a value-dependent carrier;
++its actual producer or exact ingress must provide the existing value proof.
++
+ Entry state/event roles contain nominal identity, semantic identity and layout;
+ their version-one encoding contains no copied schema. Initializer values,
+ incoming events, committed reducer state and restored root values are admitted

@@ -1,0 +1,393 @@
+{
+  "version": 1,
+  "recordedAt": "2026-10-31T05:23:54.7319145Z",
+  "sourceCommit": "1bf138d190c826841935b38bf01c3048fb43c3cb",
+  "parent": "41db45e42c00ca3485329610e80f4a85f3e93013",
+  "sourcePatchSha256": "8eb576d18ac18bcedd99458ddc493f1933b8f21fe80563da1ed6ccfa0b9f81e9",
+  "remote": "1bf138d190c826841935b38bf01c3048fb43c3cb",
+  "publishedBlobDrift": 0,
+  "previousOwnerSource": "27edc4ab450fe1d583d2099071c2206308090b24",
+  "previousOwnerEvidence": "task-nominal-c6-owner-acceptance.json",
+  "scope": "Original joined Rust ADT definitions now supply the canonical semantic Copy/Move capability used by retained View parameters and handler capture. This is distinct from permission to duplicate an actual value-dependent carrier.",
+  "consumerRed": {
+    "receipt": "task-nominal-c6.consumer1.runtime.terminal-audit.json",
+    "executed": 1,
+    "passed": 0,
+    "failed": 1,
+    "actualNextestExitCode": 100,
+    "cause": "ViewRetainedTypeAdmission consulted semantic type_copy_capability, which still treated every RustAdt as unavailable. The published structural retention owner pass was not a compiler capture pass.",
+    "fixtureChange": "The final fixture strengthens the original one read to two reads of the same recursive Rust capture. The failed and final source manifests remain separate; identical test bytes are not claimed."
+  },
+  "owner": {
+    "receipt": "task-nominal-c6.owner3.runtime.terminal-audit.json",
+    "executed": 1370,
+    "passed": 1370,
+    "failed": 0,
+    "skipped": 0,
+    "actualNextestExitCode": 0,
+    "sourceInputs": 4007,
+    "sourceDrift": 0,
+    "catalogCaseDrift": 0,
+    "binaryDrift": 0,
+    "doctestsPassed": 2,
+    "checks": [
+      {
+        "receipt": "task-nominal-c6.owner3.check.json",
+        "exitCode": 0,
+        "command": [
+          "check",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "sourceInputs": 4007,
+        "sourceDrift": 0
+      },
+      {
+        "receipt": "task-nominal-c6.owner3.clippy.json",
+        "exitCode": 0,
+        "command": [
+          "clippy",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "sourceInputs": 4007,
+        "sourceDrift": 0
+      },
+      {
+        "receipt": "task-nominal-c6.owner3.doctest.json",
+        "exitCode": 0,
+        "command": [
+          "test",
+          "-p",
+          "arcweft-lang-sema",
+          "--doc",
+          "--all-features",
+          "--locked"
+        ],
+        "sourceInputs": 4007,
+        "sourceDrift": 0
+      },
+      {
+        "receipt": "task-nominal-c6.owner3.default-check.json",
+        "exitCode": 0,
+        "command": [
+          "check",
+          "-p",
+          "arcweft-lang-sema",
+          "--all-targets",
+          "--locked"
+        ],
+        "sourceInputs": 4007,
+        "sourceDrift": 0
+      }
+    ]
+  },
+  "consumer": {
+    "receipt": "task-nominal-c6.consumer2.runtime.terminal-audit.json",
+    "executed": 1,
+    "passed": 1,
+    "failed": 0,
+    "skipped": 42,
+    "actualNextestExitCode": 0,
+    "sourceInputs": 4007,
+    "sourceDrift": 0,
+    "catalogCaseDrift": 0,
+    "binaryDrift": 0,
+    "test": "rust_nominals::recursive_rust_nominal_handler_capture_executes_with_its_original_program",
+    "proofs": [
+      "real adapter Rust metadata and Source Node<bool> declaration parameter",
+      "one canonical retained handler capture coordinate and exact pure-program input identity",
+      "two reads of the same recursive data binding through the semantic Copy authority",
+      "two-level original-program nominal construction",
+      "native-program snapshot admitted and restored against canonical decoded AWBC rows",
+      "Native and admitted decoded AWBC pure-program execution return exactly Tuple([Unit])"
+    ]
+  },
+  "rules": {
+    "data": "Unrestricted when all ordered arguments and all original members are unrestricted",
+    "executable": "ValueDependent; actual producer/ingress evidence remains required",
+    "affine": "Unavailable for Copy even inside an aggregate",
+    "backEdges": "An exact already-active nominal instance contributes no new leaves; all remaining members still participate. Project and Rust nominal Copy folds share this rule.",
+    "limits": "One traversal charges nodes, depth, nominal edges and active nominal depth from CheckedOwnershipLimits::PRODUCTION. Rust metadata substitution uses this same TypeProjectionControl before projection copies.",
+    "retention": "The separate type-only retention certificate still rejects executable members without a value certificate. The existing RuntimeProducerArgumentClassifier Project-nominal recursion behavior is unchanged."
+  },
+  "structure": {
+    "receipt": "task-nominal-c6.structure.json",
+    "exitCode": 0,
+    "workspacePackages": 97,
+    "filesScanned": 3245,
+    "rustFiles": 3115,
+    "rustPhysicalLoc": 1767140,
+    "reviewTriggers": 382,
+    "blockingViolations": 0,
+    "measurement": "task-nominal-c6.copy-owner-measurements.json",
+    "disposition": "Copy capability is a private cohesive owner containing its bounded traversal and exhaustive type fold, with no copied metadata/catalog or I/O. local_use.rs shrinks by 178 LOC to 3421; its remaining responsibility is path-sensitive local availability/use evidence. New type_capability.rs is 364 LOC. report.rs grows 21 LOC to 2967 only for original-world controlled instantiation, adding no state or alternate owner. Test modules follow the same original Rust metadata/retention/program boundary."
+  },
+  "impact": {
+    "resolvedPackages": 22,
+    "ownerReusedPassed": 1370,
+    "newConsumerPackages": 21,
+    "matrix": "nominal-c6.reverse-reverse-matrix.json",
+    "matrixStatus": "running",
+    "sourceBase": "1bf138d190c826841935b38bf01c3048fb43c3cb",
+    "sourceInputs": 4007,
+    "manifestFiles": 100,
+    "manifestDrift": 0,
+    "catalogCaseDrift": "checked at each terminal",
+    "acceptance": "The downstream matrix is pending. No all-consumer pass is claimed by this checkpoint."
+  },
+  "limits": [
+    "No new public save/restore of an active task or per-step rollback is claimed by the pure-program capture test.",
+    "No Native/Web image parity, CLI-wide pass, or type-only function-value certificate is claimed.",
+    "The prior owner runs and this final owner are not summed."
+  ],
+  "preservation": {
+    "genericMatch": "accepted and published; unchanged",
+    "previousC1C5": "accepted published cuts retained",
+    "originalTrackedWip": 14,
+    "originalUntrackedWip": 6,
+    "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+    "indexEmptyAfterSourcePublication": true
+  },
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.consumer1.binaries-before.json",
+      "bytes": 246,
+      "sha256": "3ed564cf13b7fc415da00e6ef3f1c7eec7c9c998b3ec55a9fb719abd618a66ab"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.consumer1.catalog.inventory.json",
+      "bytes": 11374,
+      "sha256": "a4ac9659536b2708895cb2561dca276211961d03900aba6f632457e240278994"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.consumer1.catalog.json",
+      "bytes": 625,
+      "sha256": "0d9699ebd483de01cccccd0e602d427cf66f42602b428c342c5e3ab400870536"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.consumer1.catalog.log",
+      "bytes": 95494,
+      "sha256": "306b499022046ca07efcb91745ff22094b1f7bdeb2fee95b6b2b6ce85ea5d4f5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.consumer1.runtime.json",
+      "bytes": 719,
+      "sha256": "37e1e7f59bed3e61e43091047b7694b6bb10ba8500dc8ff3b806edc770f7e262"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.consumer1.runtime.log",
+      "bytes": 102156,
+      "sha256": "de759179f8df2c17450282b679b58558d8c315f80746146e2ea5e2cd2342a94a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.consumer1.runtime.terminal-audit.json",
+      "bytes": 824,
+      "sha256": "e5bd574fc5ebc95119942647a21d8f4660ded2f8160ee3ea755c6bc822270abc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.consumer1.source-freeze.json",
+      "bytes": 782849,
+      "sha256": "991b98399c0aedd31faf1bbfff00ae731dcba73da22f134bf84fce4515edbb2e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.consumer2.binaries-before.json",
+      "bytes": 246,
+      "sha256": "3007205b9bf2ed3226f0d0f87582a6c83bf6f05b105f6fa5bf647fb2043c67e5"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.consumer2.catalog.inventory.json",
+      "bytes": 11374,
+      "sha256": "a4ac9659536b2708895cb2561dca276211961d03900aba6f632457e240278994"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.consumer2.catalog.json",
+      "bytes": 625,
+      "sha256": "8305d1b789ef693f9a371f124b534e682ebcfed466a928f5e348400a72075871"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.consumer2.catalog.log",
+      "bytes": 93972,
+      "sha256": "3c14326dce7119a706a36e4f9d54908ddc127cced75e29f5055d2ec8e4aca48a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.consumer2.runtime.json",
+      "bytes": 717,
+      "sha256": "bcf8f51d505f29a4a43ca9a848a263338577bea23048b5a34d66f7f89ced57f7"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.consumer2.runtime.log",
+      "bytes": 98940,
+      "sha256": "fc6d5d2c776ab6c85a397c600e45dda3b2c23b5b9d5c1ae0a1d7d7b6731609bb"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.consumer2.runtime.terminal-audit.json",
+      "bytes": 598,
+      "sha256": "b5288ab795db54e7016e45f01f5c35baa6ee3c5ca30a0bd3fe99c262a78b8fea"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.consumer2.source-freeze.json",
+      "bytes": 783062,
+      "sha256": "8389702509953fea5753d7d8227ba6846e2d021a1d0bf8572a4edad259ef1a6d"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.copy-owner-measurements.json",
+      "bytes": 1199,
+      "sha256": "ae561c98bef84fab04cb3b366118305fb5190d766bbd165e3885ad397904ef68"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.fmt.json",
+      "bytes": 1128,
+      "sha256": "2868484bd22f187719b03e38df321bacf8005cc0102899c119e1687ed56b3c88"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.fmt.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.integration-closure.json",
+      "bytes": 18913,
+      "sha256": "27eba3a2868844cc60d8f17d8f23c1f9a9e8d5e6bd66e1a521ad48672621fd92"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.integration1.source-freeze.json",
+      "bytes": 783238,
+      "sha256": "bef5492cfc0f0e43127909898e8eb43bd16967201a50429ebf782e12f3b5796e"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner3.binaries-before.json",
+      "bytes": 1238,
+      "sha256": "48ade276662e31cfb0a51e15e90e2480668ba5b2e0354f7a2a73d101e9e8b3cc"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner3.catalog.inventory.json",
+      "bytes": 359738,
+      "sha256": "256ccf744296d92c23d118b158202c7bfde0ab841878bf0194c66ebdb8b2d2f0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner3.catalog.json",
+      "bytes": 475,
+      "sha256": "3269ce88ad952fb46d1bf1a3d0aae248391f197f594abcc7c95a63947b7ea990"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner3.catalog.log",
+      "bytes": 321062,
+      "sha256": "fa1e2b9e3dcad48db6671ebb63ab4bc0305f4f8992a68d146e0a7291e0238ac6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner3.check.json",
+      "bytes": 471,
+      "sha256": "05f8bd419353998a22abd61ca44780c6c64569f3dce69e134762def001ce6b65"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner3.check.log",
+      "bytes": 107977,
+      "sha256": "b0cc15c654604d76ab3f1288ec69028878cfb044f9552e5a3694ba91a856d880"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner3.clippy.json",
+      "bytes": 473,
+      "sha256": "d902b3f73c5a86fb9a8bb2df06b28dee4f6572561d0492d3aba1d088e4025540"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner3.clippy.log",
+      "bytes": 6770035,
+      "sha256": "393714002128da0f6f496ac1e02de0a9e3063c5632da71ba40a5b5fc67f7448f"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner3.default-check.json",
+      "bytes": 473,
+      "sha256": "6d94a735fd68af9bb4a79c94ac1beee8927a3362aa319dae5f57210389caa163"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner3.default-check.log",
+      "bytes": 84840,
+      "sha256": "0b24e387c705c8402e76f67d6dc5f2201d5bc4585152f25d99dcecdea9d6dad6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner3.doctest.json",
+      "bytes": 481,
+      "sha256": "156a8d0ddd4eed77e76af7b3ab24b39b0322acc7ac64d4a81832fac4f959e9e0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner3.doctest.log",
+      "bytes": 84159,
+      "sha256": "b1dae5500e653c33f851d0853f1d8ca7cb65ceff95cd84e99e4e3f280dd52d57"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner3.runtime.json",
+      "bytes": 567,
+      "sha256": "07e1de72aa5c5cf5da03fdd3d28dd240ebe88f0f9de47341bfae83df54649e41"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner3.runtime.log",
+      "bytes": 513981,
+      "sha256": "2a236df707be5f0865ee3461313e597a5f3ccabde30927fc29fcb47019042e50"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner3.runtime.terminal-audit.json",
+      "bytes": 606,
+      "sha256": "7be3e0f4f8686003debc8096db4eafbf53e82aa88fc63839772bd16439a84065"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.owner3.source-freeze.json",
+      "bytes": 783062,
+      "sha256": "d4033b69fabfb7f101a1d2ad4e6fe9c241d19b24a7c25c92eb0e9a6565db58e9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.structure.json",
+      "bytes": 505,
+      "sha256": "ff6fd31e70d9d190c57222e873a6e8ff4295c8153c8c3f1a120e138492477561"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.structure.log",
+      "bytes": 65007,
+      "sha256": "b884883c693ba4a68058a8a4798ab814552b084305b471e2f6c5dcad8a1aaab6"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6-copy-source.verified.json",
+      "bytes": 1472,
+      "sha256": "bb4dd84d23c2ce74405e881b409bc3998b73d13121c2f8cbd339093daac05228"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6-copy-source.prepared.json",
+      "bytes": 2167,
+      "sha256": "d3725ac1522e4b9f5ff5b5a1778eb321b70157da7522d0e3bb3d2dcea4dac984"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6-copy-source.reviewed.patch",
+      "bytes": 35290,
+      "sha256": "8eb576d18ac18bcedd99458ddc493f1933b8f21fe80563da1ed6ccfa0b9f81e9"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.structure.dependency_edges.csv",
+      "bytes": 77544,
+      "sha256": "529e738d348314f7a4c0d909b165620d03ec57478b68ad42b06aa349b30e13f4"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.structure.file_metrics.csv",
+      "bytes": 328630,
+      "sha256": "517ba27babfd91f502869ea1a82247c22b4dc835f6a2292a79a728b242b0009a"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.structure.findings.md",
+      "bytes": 122295,
+      "sha256": "9be55ce8c7dca3ddebfb675c461eaba3b19af731270e1f3631737ba4b8bf2f34"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.structure.package_metrics.csv",
+      "bytes": 6444,
+      "sha256": "c2df26363c079ef3c17be71810df334c6e4825ab5987b4951b3f1432368b85f2"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-nominal-c6.structure.public_type_duplicates.csv",
+      "bytes": 17238,
+      "sha256": "6cbaa427fef9360e8adb6245ea1eec66f5fdaf2624a24979e82d4877a28e31ac"
+    }
+  ]
+}

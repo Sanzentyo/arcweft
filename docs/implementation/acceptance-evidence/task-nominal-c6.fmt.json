@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "41db45e42c00ca3485329610e80f4a85f3e93013",
+  "command": [
+    "rustfmt",
+    "--check",
+    "--edition",
+    "2024",
+    "--config",
+    "skip_children=true",
+    "crates/arcweft-compiler/tests/project_cache_transaction/rust_nominals.rs",
+    "crates/arcweft-lang-sema/src/final_analysis/local_use.rs",
+    "crates/arcweft-lang-sema/src/final_analysis/local_use/type_capability.rs",
+    "crates/arcweft-lang-sema/src/final_analysis/nominal_schema/accepted_rust.rs",
+    "crates/arcweft-lang-sema/src/final_analysis/nominal_schema/graph.rs",
+    "crates/arcweft-lang-sema/src/final_analysis/nominal_schema/graph/defaults.rs",
+    "crates/arcweft-lang-sema/src/final_analysis/nominal_schema/graph/limits.rs",
+    "crates/arcweft-lang-sema/src/final_analysis/report.rs",
+    "crates/arcweft-lang-sema/src/final_analysis/tests/accepted_rust_nominal.rs",
+    "crates/arcweft-lang-sema/src/ownership.rs",
+    "crates/arcweft-lang-sema/src/ownership/nominal.rs"
+  ],
+  "exitCode": 0,
+  "startedAt": "2026-10-31T05:21:52.5937864Z",
+  "finishedAt": "2026-10-31T05:21:52.8690016Z"
+}

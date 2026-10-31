@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "base": "41db45e42c00ca3485329610e80f4a85f3e93013",
+  "dirty": true,
+  "rows": [
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/local_use.rs",
+      "classification": "production",
+      "bytes": 131908,
+      "physicalLoc": 3421,
+      "basePhysicalLoc": 3599
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/local_use/type_capability.rs",
+      "classification": "production",
+      "bytes": 13605,
+      "physicalLoc": 364,
+      "basePhysicalLoc": 0
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/report.rs",
+      "classification": "production",
+      "bytes": 119334,
+      "physicalLoc": 2967,
+      "basePhysicalLoc": 2946
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/accepted_rust_nominal.rs",
+      "classification": "test",
+      "bytes": 55742,
+      "physicalLoc": 1586,
+      "basePhysicalLoc": 1527
+    },
+    {
+      "path": "crates/arcweft-compiler/tests/project_cache_transaction/rust_nominals.rs",
+      "classification": "test",
+      "bytes": 16599,
+      "physicalLoc": 446,
+      "basePhysicalLoc": 342
+    }
+  ]
+}

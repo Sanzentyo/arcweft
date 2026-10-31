@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "base": "41db45e42c00ca3485329610e80f4a85f3e93013",
+  "tree": "5700d63c34584328d9d1fc53798131c3b2a4230c",
+  "paths": [
+    {
+      "path": "crates/arcweft-compiler/tests/project_cache_transaction/rust_nominals.rs",
+      "blob": "aecd6192901f7b338f8f550dfb5a43c772059dbe"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/local_use.rs",
+      "blob": "80acf89509ad9f2b9b47d28b8123ea07f18daf7a"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/local_use/type_capability.rs",
+      "blob": "1f48ad58c6cddfe23231a358de03273a6297afca"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/report.rs",
+      "blob": "4f0767b8d3ce2fbb90135d5d682c66aeaf5b0ba6"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/accepted_rust_nominal.rs",
+      "blob": "06720918fdbf3347d1bee376675d4bd5229469e2"
+    },
+    {
+      "path": "docs/02-runtime/executable-runtime-core.md",
+      "blob": "04f7bd1ebf998edb821aff8df2724664a990246b"
+    }
+  ],
+  "other": [],
+  "held": [
+    "crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs",
+    "crates/arcweft-cli/tests/check/agent_script_debug.rs",
+    "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+    "crates/arcweft-cli/tests/check/profile_entry_selection.rs",
+    "crates/arcweft-runtime-host/src/native_task.rs",
+    "samples/agent-script/cli-read-resource-metadata-smoke.awfagent",
+    "samples/agent-script/cli-read-resource-smoke.awfagent",
+    "samples/agent-script/cli-read-resource-value-smoke.awfagent",
+    "samples/agent-script/native-choice-dispatch.arcw",
+    "samples/agent-script/native-project-graph-relations.arcw",
+    "samples/agent-script/native-visual-regression.arcw",
+    "samples/image-animation.arcw",
+    "samples/rich-text-full-grammar.arcw",
+    "samples/rich-text-windows-fonts.arcw"
+  ],
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "patchSha256": "8eb576d18ac18bcedd99458ddc493f1933b8f21fe80563da1ed6ccfa0b9f81e9",
+  "preparedAt": "2026-10-31T05:21:53.7819282Z"
+}

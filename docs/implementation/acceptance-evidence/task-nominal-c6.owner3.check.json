@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "41db45e42c00ca3485329610e80f4a85f3e93013",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/nominal-c6.owner3.check.log",
+  "exitCode": 0,
+  "sourceInputs": 4007,
+  "sourceDrift": 0,
+  "startedAt": "2026-10-31T05:19:25.6170097Z",
+  "finishedAt": "2026-10-31T05:20:00.7348638Z"
+}

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "41db45e42c00ca3485329610e80f4a85f3e93013",
+  "command": [
+    "check",
+    "-p",
+    "arcweft-lang-sema",
+    "--all-targets",
+    "--locked"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/nominal-c6.owner3.default-check.log",
+  "exitCode": 0,
+  "sourceInputs": 4007,
+  "sourceDrift": 0,
+  "startedAt": "2026-10-31T05:20:48.0157270Z",
+  "finishedAt": "2026-10-31T05:21:06.6765700Z"
+}

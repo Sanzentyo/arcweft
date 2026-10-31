@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "commit": "1bf138d190c826841935b38bf01c3048fb43c3cb",
+  "parent": "41db45e42c00ca3485329610e80f4a85f3e93013",
+  "tree": "5700d63c34584328d9d1fc53798131c3b2a4230c",
+  "remote": "1bf138d190c826841935b38bf01c3048fb43c3cb",
+  "paths": [
+    {
+      "path": "crates/arcweft-compiler/tests/project_cache_transaction/rust_nominals.rs",
+      "blob": "aecd6192901f7b338f8f550dfb5a43c772059dbe"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/local_use.rs",
+      "blob": "80acf89509ad9f2b9b47d28b8123ea07f18daf7a"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/local_use/type_capability.rs",
+      "blob": "1f48ad58c6cddfe23231a358de03273a6297afca"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/report.rs",
+      "blob": "4f0767b8d3ce2fbb90135d5d682c66aeaf5b0ba6"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/accepted_rust_nominal.rs",
+      "blob": "06720918fdbf3347d1bee376675d4bd5229469e2"
+    },
+    {
+      "path": "docs/02-runtime/executable-runtime-core.md",
+      "blob": "04f7bd1ebf998edb821aff8df2724664a990246b"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "8eb576d18ac18bcedd99458ddc493f1933b8f21fe80563da1ed6ccfa0b9f81e9",
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-31T05:22:18.7626141Z"
+}

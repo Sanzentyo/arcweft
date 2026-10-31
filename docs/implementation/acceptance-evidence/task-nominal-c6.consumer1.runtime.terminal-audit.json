@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "79ae2b569343f63fd4fdd62c99b1f84e44b892e4",
+  "run": "nominal-c6.consumer1.runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.083s] 1 test run: 0 passed, 1 failed, 42 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 1,
+  "passed": 0,
+  "failed": 1,
+  "skipped": 42,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4006,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-compiler::project_cache_transaction",
+      "test": "rust_nominals::recursive_rust_nominal_handler_capture_executes_with_its_original_program"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-31T05:08:22.4641214Z"
+}
