@@ -1,0 +1,10 @@
+{
+  "workspace": "D:\\git\\arcweft",
+  "target": "D:\\git\\arcweft\\target",
+  "command": "cargo clean",
+  "exit": 0,
+  "beforeFreeBytes": 115473866752,
+  "afterFreeBytes": 366249754624,
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\workspace-cargo-clean-20261031T210118273.log",
+  "utc": "2026-10-31T12:02:37.1623203Z"
+}

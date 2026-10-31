@@ -1,0 +1,9 @@
+From https://github.com/Sanzentyo/arcweft
+ * branch                main       -> FETCH_HEAD
+[main 8598c89dd] checkpoint(core): connect presentation retirement to VM traps
+ 5 files changed, 493 insertions(+), 18 deletions(-)
+ create mode 100644 crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs
+ create mode 100644 crates/arcweft-core/src/awbc/vm/resources.rs
+To https://github.com/Sanzentyo/arcweft.git
+   592ec4a9b..8598c89dd  HEAD -> main
+{"commit":"8598c89ddaa07b8298ee630d3eff9f56897fa845","parent":"592ec4a9b20bc5d4a29ee5c3e8b858ee40e1195e","tree":"2f76f3aa98270be1af19016c928c8ec0b691848b","paths":5,"blobDrift":0,"originalWip":14,"separatelyHeld":0,"patchSha256":"c1a62255966f6aa8b4663c64485b681515c3d93c8f985faf22f680361ee6e1bf","indexEmpty":true}

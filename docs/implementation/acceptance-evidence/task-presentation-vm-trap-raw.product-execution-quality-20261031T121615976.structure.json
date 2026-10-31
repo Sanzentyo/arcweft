@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "fc6a8477e32a1c07dc59fadf3ef05809f28de203",
+  "command": [
+    "+nightly",
+    "-Zscript",
+    "tools/structure-audit.rs",
+    "--root",
+    ".",
+    "--fail-on-blocking",
+    "--write",
+    "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/product-execution-quality-20261031T121615976.structure-report"
+  ],
+  "exitCode": 0,
+  "sourceInputs": 4023,
+  "sourceDrift": 0,
+  "startedAt": "2026-10-31T12:19:29.6005894Z",
+  "finishedAt": "2026-10-31T12:19:34.0615920Z"
+}

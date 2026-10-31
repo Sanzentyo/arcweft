@@ -1,0 +1,633 @@
+{
+  "version": 1,
+  "recordedAt": "2026-10-31T12:20:12.6870938Z",
+  "inspectedMain": "fc6a8477e32a1c07dc59fadf3ef05809f28de203",
+  "scope": "Actual AWBC VM trap unwind through borrowed execution resources; Product main custody refusal preserves its original complete continuation.",
+  "sourcePublication": {
+    "version": 1,
+    "commit": "fc6a8477e32a1c07dc59fadf3ef05809f28de203",
+    "parent": "8598c89ddaa07b8298ee630d3eff9f56897fa845",
+    "tree": "cd6b6f03db29628ac494db067bc66793e6181b5c",
+    "remote": "fc6a8477e32a1c07dc59fadf3ef05809f28de203",
+    "paths": [
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step.rs",
+        "blob": "1a6ee0ce91fe473d9051f848226978da82709249"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+        "blob": "c141c09707f781941e41d7a0fc3a7f1fe842d8ba"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "944c8f1b2579f482ddac506e9a0c7d7fa027dc50c98c94f369e4b3babcffe88b",
+    "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-10-31T12:16:15.3874622Z"
+  },
+  "initialCheckpointPublication": {
+    "version": 1,
+    "commit": "8598c89ddaa07b8298ee630d3eff9f56897fa845",
+    "parent": "592ec4a9b20bc5d4a29ee5c3e8b858ee40e1195e",
+    "tree": "2f76f3aa98270be1af19016c928c8ec0b691848b",
+    "remote": "8598c89ddaa07b8298ee630d3eff9f56897fa845",
+    "paths": [
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step.rs",
+        "blob": "836cd564f4c88abbd82c7166709f63b36286b338"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+        "blob": "cf0eb1e9064ca4eb1d518bcb02915ea78998003b"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+        "blob": "956f36fe838288d1deb8661cbd58dfe113d047c3"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/vm.rs",
+        "blob": "c1504eed5f654719b973f0c8f08f3643382b4ba1"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/vm/resources.rs",
+        "blob": "a4acaa5a6718ca6c86cdbd847af475f8bea9c308"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "c1a62255966f6aa8b4663c64485b681515c3d93c8f985faf22f680361ee6e1bf",
+    "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-10-31T12:09:40.1905392Z"
+  },
+  "workingTree": {
+    "heldTracked": 14,
+    "heldUntracked": 6,
+    "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+    "coreDirty": false
+  },
+  "clean": {
+    "workspace": "D:\\git\\arcweft",
+    "target": "D:\\git\\arcweft\\target",
+    "command": "cargo clean",
+    "exit": 0,
+    "beforeFreeBytes": 115473866752,
+    "afterFreeBytes": 366249754624,
+    "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\workspace-cargo-clean-20261031T210118273.log",
+    "utc": "2026-10-31T12:02:37.1623203Z"
+  },
+  "cleanOutput": "Removed 198113 files, 244.6GiB total; source and held WIP retained. This was the explicitly requested whole-workspace cargo clean, not an incremental-only deletion.",
+  "owner": {
+    "version": 1,
+    "base": "8598c89ddaa07b8298ee630d3eff9f56897fa845",
+    "run": "presentation-trap-20261031.owner2.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  80.452s] 2183 tests run: 2183 passed (1 slow), 0 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2183,
+    "passed": 2183,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4023,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-31T12:15:34.0050139Z"
+  },
+  "ownerBinaryDrift": 0,
+  "ownerQualitySourceDrift": 0,
+  "quality": [
+    {
+      "kind": "clippy",
+      "receipt": {
+        "version": 1,
+        "base": "fc6a8477e32a1c07dc59fadf3ef05809f28de203",
+        "command": [
+          "clippy",
+          "-p",
+          "arcweft-core",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4023,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T12:16:18.3242544Z",
+        "finishedAt": "2026-10-31T12:18:02.9898412Z"
+      }
+    },
+    {
+      "kind": "default-check",
+      "receipt": {
+        "version": 1,
+        "base": "fc6a8477e32a1c07dc59fadf3ef05809f28de203",
+        "command": [
+          "check",
+          "-p",
+          "arcweft-core",
+          "--all-targets",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4023,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T12:18:03.7858709Z",
+        "finishedAt": "2026-10-31T12:19:19.8011761Z"
+      }
+    },
+    {
+      "kind": "doctest",
+      "receipt": {
+        "version": 1,
+        "base": "fc6a8477e32a1c07dc59fadf3ef05809f28de203",
+        "command": [
+          "test",
+          "-p",
+          "arcweft-core",
+          "--doc",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4023,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T12:19:20.2647965Z",
+        "finishedAt": "2026-10-31T12:19:29.1285271Z"
+      }
+    },
+    {
+      "kind": "structure",
+      "receipt": {
+        "version": 1,
+        "base": "fc6a8477e32a1c07dc59fadf3ef05809f28de203",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/product-execution-quality-20261031T121615976.structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4023,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T12:19:29.6005894Z",
+        "finishedAt": "2026-10-31T12:19:34.061592Z"
+      }
+    },
+    {
+      "kind": "fmt",
+      "receipt": {
+        "version": 1,
+        "paths": [
+          "crates/arcweft-core/src/awbc/fiber.rs",
+          "crates/arcweft-core/src/awbc/fiber/program_task.rs",
+          "crates/arcweft-core/src/awbc/fiber/scope.rs",
+          "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+          "crates/arcweft-core/src/awbc/product_step.rs",
+          "crates/arcweft-core/src/awbc/product_step/checkpoint.rs",
+          "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+          "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+          "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+          "crates/arcweft-core/src/awbc/product_step/program_fanout.rs",
+          "crates/arcweft-core/src/awbc/product_step/program_task/tests.rs",
+          "crates/arcweft-core/src/awbc/product_step/program.rs",
+          "crates/arcweft-core/src/awbc/product_step/root.rs",
+          "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+          "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests/presentation/cancellation_resume.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+          "crates/arcweft-core/src/awbc/tests/dialogue_callback_projection.rs",
+          "crates/arcweft-core/src/awbc/vm.rs",
+          "crates/arcweft-core/src/awbc/vm/resources.rs",
+          "crates/arcweft-core/src/engine.rs",
+          "crates/arcweft-core/src/line_task.rs",
+          "crates/arcweft-core/src/line_task/activation.rs",
+          "crates/arcweft-core/src/line_task/activation/contour.rs",
+          "crates/arcweft-core/src/line_task/activation/contour/tests.rs",
+          "crates/arcweft-core/src/line_task/handle.rs",
+          "crates/arcweft-core/src/presentation/resources.rs",
+          "crates/arcweft-core/src/presentation/resources/banks.rs",
+          "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+          "crates/arcweft-core/src/presentation/resources/execution.rs",
+          "crates/arcweft-core/src/presentation/resources/execution/tests.rs"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4023,
+        "sourceDrift": 0
+      }
+    }
+  ],
+  "doctest": {
+    "passed": 78,
+    "failed": 0,
+    "ignored": 0,
+    "filtered": 0
+  },
+  "structure": {
+    "packages": 97,
+    "files": 3259,
+    "rustFiles": 3129,
+    "rustPhysicalLoc": 1772239,
+    "reviewTriggers": 382,
+    "blocking": 0,
+    "disposition": "The private VM execution resource context borrows the existing program context and original bank aggregate for one slice, without persisted ownership or a new ledger. Scope contour validation and retirement stay on the bank aggregate. Product main owns complete checkpoint restoration and typed custody refusal. First-in-slice budget replenishment now occurs inside that existing checkpoint and is not repeated by later instructions. The new focused test module covers trap routes, actual call/lexical identities, bounded refusal and checkpoint/save behavior; the accompanying file metrics retain actual physical LOC. No public API, Cargo edge, wire grammar or layer direction changed."
+  },
+  "accepted": [
+    "Explicit Trap, Unreachable, instruction-local SequenceGet bounds failure, and evaluation-error division by zero all use the same original-bank unwind before terminal mutation; the regression executes each through Product one-op steps and preserves its precise trap code.",
+    "A real CallFunction and EnterScope create two actual frame identities and one lexical scope. Retirement order is callee lexical, callee root, caller root, with original Bool bodies and exact tokens retained in that order.",
+    "The complete successful nested-frame snapshot survives public save/restore under the actual default policy. The original private execution checkpoint restores the complete pre-trap snapshot, including original program, body, grants, cursor, budget and queue.",
+    "With handles=3/scopes=8, three live bodies and one old retirement exceed aggregate capacity. Product main refuses twice with a diagnostic and full snapshot equality, including instruction budget, without a second terminal transition. After modeling driver acknowledgement of the old queue item, the identical instruction retries under the unchanged policy and retires all three bodies once.",
+    "A standalone VM without a borrowed bank rejects actual outstanding grants with typed MissingLedger; it leaves all three grants and live bodies intact. Its original Product checkpoint also restores consumed instruction budget; standalone stepping itself is not claimed to own that transaction."
+  ],
+  "warnings": "Compiler and Clippy warnings remain in raw logs. Successful exit is not a zero-warning claim.",
+  "attempts": [
+    {
+      "result": {
+        "version": 1,
+        "base": "592ec4a9b20bc5d4a29ee5c3e8b858ee40e1195e",
+        "run": "presentation-trap-20261031.owner1.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [ 130.088s] 2183 tests run: 2181 passed (1 slow), 2 failed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 2183,
+        "passed": 2181,
+        "failed": 2,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4023,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-core",
+            "test": "awbc::product_step::tests::presentation::traps::every_vm_trap_route_retires_its_original_bank_body"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-core",
+            "test": "awbc::product_step::tests::presentation::traps::product_trap_capacity_refusal_preserves_the_complete_continuation_and_retries"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-10-31T12:11:39.7801374Z"
+      },
+      "diagnosis": "The four-route test incorrectly indexed default Unit as UInt. The bounded public-step test exposed pre-checkpoint budget replenishment: refused state remaining=64 differed from original remaining=63. Corrected typed row references and moved first-in-slice replenishment inside the original checkpoint; kept the full snapshot assertions."
+    },
+    {
+      "result": {
+        "version": 1,
+        "base": "8598c89ddaa07b8298ee630d3eff9f56897fa845",
+        "run": "presentation-trap-20261031.owner2.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [  80.452s] 2183 tests run: 2183 passed (1 slow), 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 2183,
+        "passed": 2183,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4023,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-10-31T12:15:34.0050139Z"
+      }
+    }
+  ],
+  "priorAcceptance": [
+    "task-presentation-await-cancellation-owner-validation.json",
+    "task-presentation-line-cancellation-owner-validation.json",
+    "task-presentation-lexical-vm-owner-validation.json",
+    "task-product-execution-checkpoint-owner-validation.json"
+  ],
+  "currentStatusAuthority": "../current-status.md",
+  "notClaimedByThisRun": [
+    "Frame return/select/goto and escaping-handle ownership transfer",
+    "Product lifecycle traps outside the VM and complete child/Dialogue refusal integration",
+    "Native retained contour including the actual borrowed parent",
+    "Source ViewValue construction and eleven callables/mount/six methods/lowering/driver",
+    "Active-bank replacement and Native/Web image parity",
+    "Final reverse-dependency, feature/target and workspace acceptance matrix"
+  ],
+  "acceptedFeaturesRetained": "Generic Match and all prior accepted checkpoints, lexical exits and cancellation cuts remain accepted. Whole-goal incompleteness does not reopen them. Bool resource bodies are custody evidence, not Source ViewValue or driver ABI evidence.",
+  "artifacts": [
+    {
+      "path": "task-presentation-vm-trap-raw.record-presentation-trap-evidence.ps1",
+      "source": "record-presentation-trap-evidence.ps1",
+      "bytes": 10348,
+      "sha256": "5bf18c2d3caf0f89abce6b2b331c1678e41caf1767f188f09c7b8fb570c5f54d"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.presentation-trap-owner-review.json",
+      "source": "presentation-trap-owner-review.json",
+      "bytes": 2776,
+      "sha256": "9e0dce07ae35bedfef9fbc9288304293edaa921a53698b2d278c4747ea0433f2"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.run-presentation-trap-quality.ps1",
+      "source": "run-presentation-trap-quality.ps1",
+      "bytes": 3067,
+      "sha256": "27a7e7072d28788c2b00022dde3e8c31538b7788c4aac39941a6137430e8fef0"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.run-presentation-trap-20261031.owner2.ps1",
+      "source": "run-presentation-trap-20261031.owner2.ps1",
+      "bytes": 5614,
+      "sha256": "f3711b0bbf6c3930bef4091292aecc7f52a7619dcd9cfc4c1e74e4a056fc02ae"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.presentation-trap-budget-source-20261031.owned.txt",
+      "source": "presentation-trap-budget-source-20261031.owned.txt",
+      "bytes": 117,
+      "sha256": "be51bc04fef291f3799a6a803bd9ce2d1005803e09d55786b09228d07989d1f3"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.presentation-trap-budget-source-20261031.prepared.json",
+      "source": "presentation-trap-budget-source-20261031.prepared.json",
+      "bytes": 1543,
+      "sha256": "113642dab79f55794787f5c01026472c07c277db1eef58bd619e1bd97de1f362"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.presentation-trap-budget-source-20261031.verified.json",
+      "source": "presentation-trap-budget-source-20261031.verified.json",
+      "bytes": 848,
+      "sha256": "7c39ad0e97c3ff7485607a8ac25426e631a0861f42c2dcfe2e61f8190d09cae3"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.presentation-trap-budget-source-20261031.reviewed.patch",
+      "source": "presentation-trap-budget-source-20261031.reviewed.patch",
+      "bytes": 4994,
+      "sha256": "944c8f1b2579f482ddac506e9a0c7d7fa027dc50c98c94f369e4b3babcffe88b"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.presentation-trap-budget-source-20261031.publish.log",
+      "source": "presentation-trap-budget-source-20261031.publish.log",
+      "bytes": 632,
+      "sha256": "129adb5b37acb87d956956365cdace97a8fc7ddf2aa7a77cb0e901c3737be19d"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.presentation-trap-source-20261031.owned.txt",
+      "source": "presentation-trap-source-20261031.owned.txt",
+      "bytes": 264,
+      "sha256": "650e9434fe1c30291efe57fe9629735a9c782f92e7e1eb9d09031cf636695299"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.presentation-trap-source-20261031.prepared.json",
+      "source": "presentation-trap-source-20261031.prepared.json",
+      "bytes": 1960,
+      "sha256": "403abe754571eb9a47edf6ff07c0b0542bd390d96b254e91bc029a0b12694f11"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.presentation-trap-source-20261031.verified.json",
+      "source": "presentation-trap-source-20261031.verified.json",
+      "bytes": 1265,
+      "sha256": "aca59869c0ca09b53e63a77f33029d89b727752e06b4ccc6513338aa17d36d71"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.presentation-trap-source-20261031.reviewed.patch",
+      "source": "presentation-trap-source-20261031.reviewed.patch",
+      "bytes": 26568,
+      "sha256": "c1a62255966f6aa8b4663c64485b681515c3d93c8f985faf22f680361ee6e1bf"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.presentation-trap-source-20261031.publish.log",
+      "source": "presentation-trap-source-20261031.publish.log",
+      "bytes": 785,
+      "sha256": "a561bbfeddf46306fabaadf67a4593a40aefd2142f4121c9055d7962e1973aef"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.presentation-trap-20261031.owner1.source-freeze.json",
+      "source": "presentation-trap-20261031.owner1.source-freeze.json",
+      "bytes": 786331,
+      "sha256": "6d53103463eb4cb956355f34368533a102929b358a04e3ea8d4e8a533bbe7b87"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.presentation-trap-20261031.owner1.binaries-before.json",
+      "source": "presentation-trap-20261031.owner1.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "2c0ddcbf741e51d532a6351e78bcb709ed50f245a6c238a4554e20760e806537"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.presentation-trap-20261031.owner1.catalog.inventory.json",
+      "source": "presentation-trap-20261031.owner1.catalog.inventory.json",
+      "bytes": 553018,
+      "sha256": "f02c2e88299d54a0d28cb68e001fbc0ac32476f1e1277a08fbeb4e498fad6858"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.presentation-trap-20261031.owner1.catalog.json",
+      "source": "presentation-trap-20261031.owner1.catalog.json",
+      "bytes": 486,
+      "sha256": "fd9fd6350a0bfcab209b6bd6657a3de22ffbca49e4ccd3e2d38111c44c2e887f"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.presentation-trap-20261031.owner1.catalog.log",
+      "source": "presentation-trap-20261031.owner1.catalog.log",
+      "bytes": 466217,
+      "sha256": "d82c503f19d2a25a9293330cbda187a635059fc14b2ae0e7d4164000789e21a0"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.presentation-trap-20261031.owner1.runtime.json",
+      "source": "presentation-trap-20261031.owner1.runtime.json",
+      "bytes": 580,
+      "sha256": "90507d7378682b27bf99a8d2f4a07a9c95b0b2ff0f94822e783095071230d999"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.presentation-trap-20261031.owner1.runtime.log",
+      "source": "presentation-trap-20261031.owner1.runtime.log",
+      "bytes": 775711,
+      "sha256": "594ee78ccfc03bcf2b9090e98f20f1967268b4723bb178c91878f62a06739cd9"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.presentation-trap-20261031.owner1.runtime.terminal-audit.json",
+      "source": "presentation-trap-20261031.owner1.runtime.terminal-audit.json",
+      "bytes": 1052,
+      "sha256": "00613d2f54ba60a1123954bb6925a3270882d60fd0f8f40520c51d216c3c2726"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.run-presentation-trap-20261031.owner1.ps1",
+      "source": "run-presentation-trap-20261031.owner1.ps1",
+      "bytes": 5614,
+      "sha256": "6f40b9550540d6c4607e6fc4d0eeb2f25f992a5685b772a02da23573d07a886b"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.presentation-trap-20261031.owner2.source-freeze.json",
+      "source": "presentation-trap-20261031.owner2.source-freeze.json",
+      "bytes": 786331,
+      "sha256": "dd36d7d636abaa4d4344f49ea859d7bf788c0cb2c2ae16bbb6918b3bc723cd2b"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.presentation-trap-20261031.owner2.binaries-before.json",
+      "source": "presentation-trap-20261031.owner2.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "56653f164d2b6d3fa0e916e7482d2b4091b07bfd5b355b470ee54be40abd9762"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.presentation-trap-20261031.owner2.catalog.inventory.json",
+      "source": "presentation-trap-20261031.owner2.catalog.inventory.json",
+      "bytes": 553018,
+      "sha256": "f02c2e88299d54a0d28cb68e001fbc0ac32476f1e1277a08fbeb4e498fad6858"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.presentation-trap-20261031.owner2.catalog.json",
+      "source": "presentation-trap-20261031.owner2.catalog.json",
+      "bytes": 486,
+      "sha256": "145a27a72dfdd4d02293fb7e7f35df98be1e2b35624fcaf1649fd7c82bb27e50"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.presentation-trap-20261031.owner2.catalog.log",
+      "source": "presentation-trap-20261031.owner2.catalog.log",
+      "bytes": 461669,
+      "sha256": "42ac7247a9516e35e895bdfe6f391d96c2951790fa6c0471f8f7383326ff9336"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.presentation-trap-20261031.owner2.runtime.json",
+      "source": "presentation-trap-20261031.owner2.runtime.json",
+      "bytes": 578,
+      "sha256": "635fabc7ebf744ba0ae537736323eb50952c028c81e2f9fcd486939ffde9cc00"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.presentation-trap-20261031.owner2.runtime.log",
+      "source": "presentation-trap-20261031.owner2.runtime.log",
+      "bytes": 747824,
+      "sha256": "17a1ad9ff15fd468f2312681e99bb60b2f5890f1099b9484657284525b5d31a7"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.presentation-trap-20261031.owner2.runtime.terminal-audit.json",
+      "source": "presentation-trap-20261031.owner2.runtime.terminal-audit.json",
+      "bytes": 631,
+      "sha256": "e5bddefc34ded5c4bfbe57deb8ef302687c2bf34b2ee6bb84cc79705f84bf98c"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.product-execution-quality-20261031T121615976.source-freeze.json",
+      "source": "product-execution-quality-20261031T121615976.source-freeze.json",
+      "bytes": 786367,
+      "sha256": "871bb5fd3d70fca9456dc82b7ae22735b1b45b1af05946a0bc21082688e2a7bf"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.product-execution-quality-20261031T121615976.clippy.json",
+      "source": "product-execution-quality-20261031T121615976.clippy.json",
+      "bytes": 368,
+      "sha256": "8e6a9fe1fb59436e7b1313e8d9a47d77a1afae5945ef052dd97110734379fca7"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.product-execution-quality-20261031T121615976.clippy.log",
+      "source": "product-execution-quality-20261031T121615976.clippy.log",
+      "bytes": 4467600,
+      "sha256": "6490403b5ba7aeaefe266b3543921ca644e381a00c3ed5b12fceb96b60d64658"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.product-execution-quality-20261031T121615976.default-check.json",
+      "source": "product-execution-quality-20261031T121615976.default-check.json",
+      "bytes": 344,
+      "sha256": "400b14543d92d5cbd08607094735b8b897a3348a0819777d73024c2614e0ba89"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.product-execution-quality-20261031T121615976.default-check.log",
+      "source": "product-execution-quality-20261031T121615976.default-check.log",
+      "bytes": 83547,
+      "sha256": "b19bf274d445793468bbf7d801d2bd19ebfdc625af495873c37f5a58e0f7f59c"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.product-execution-quality-20261031T121615976.doctest.json",
+      "source": "product-execution-quality-20261031T121615976.doctest.json",
+      "bytes": 358,
+      "sha256": "91fbc5ce1729ad1c3e52e21016c5fb5509c58c2aae6c38f3840ac6fa9c760751"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.product-execution-quality-20261031T121615976.doctest.log",
+      "source": "product-execution-quality-20261031T121615976.doctest.log",
+      "bytes": 81640,
+      "sha256": "e4c777113e8c04e7547f977c5496c7af25ca3e88a3eb178493778465393f4c5d"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.product-execution-quality-20261031T121615976.structure.json",
+      "source": "product-execution-quality-20261031T121615976.structure.json",
+      "bytes": 539,
+      "sha256": "10e6f9792f8405c5a5660c2612b1d85bd19ba6f11edd13e444539ae1ebf20f35"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.product-execution-quality-20261031T121615976.structure.log",
+      "source": "product-execution-quality-20261031T121615976.structure.log",
+      "bytes": 65048,
+      "sha256": "18bf2f4b2be37030f49e01091db6cf292c934c374ee1b581ea4d11c411d70b37"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.product-execution-quality-20261031T121615976.fmt.json",
+      "source": "product-execution-quality-20261031T121615976.fmt.json",
+      "bytes": 2213,
+      "sha256": "1b81bbe99908336338d7de53afa2ab41bda27906823e4a726a9e65da77c631bb"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.product-execution-quality-20261031T121615976.fmt.log",
+      "source": "product-execution-quality-20261031T121615976.fmt.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.product-execution-quality-20261031T121615976.structure-report.dependency_edges.csv",
+      "source": "product-execution-quality-20261031T121615976.structure-report/dependency_edges.csv",
+      "bytes": 77544,
+      "sha256": "529e738d348314f7a4c0d909b165620d03ec57478b68ad42b06aa349b30e13f4"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.product-execution-quality-20261031T121615976.structure-report.file_metrics.csv",
+      "source": "product-execution-quality-20261031T121615976.structure-report/file_metrics.csv",
+      "bytes": 330074,
+      "sha256": "3279fd3c80c16ed208276ef5acc8709129b9904dc59007538f0281f47592bbfc"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.product-execution-quality-20261031T121615976.structure-report.findings.md",
+      "source": "product-execution-quality-20261031T121615976.structure-report/findings.md",
+      "bytes": 122295,
+      "sha256": "112b5b9efbadcbb53b505ac44130fbae2f0c7c919111787eb47670e74a794720"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.product-execution-quality-20261031T121615976.structure-report.package_metrics.csv",
+      "source": "product-execution-quality-20261031T121615976.structure-report/package_metrics.csv",
+      "bytes": 6444,
+      "sha256": "c2df26363c079ef3c17be71810df334c6e4825ab5987b4951b3f1432368b85f2"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.product-execution-quality-20261031T121615976.structure-report.public_type_duplicates.csv",
+      "source": "product-execution-quality-20261031T121615976.structure-report/public_type_duplicates.csv",
+      "bytes": 17238,
+      "sha256": "6cbaa427fef9360e8adb6245ea1eec66f5fdaf2624a24979e82d4877a28e31ac"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.workspace-cargo-clean-20261031T210118273.log",
+      "source": "workspace-cargo-clean-20261031T210118273.log",
+      "bytes": 43,
+      "sha256": "56b7f12cf8a818f319762cf6aa08b317b144248e0f248a2c3cedf93310b07f14"
+    },
+    {
+      "path": "task-presentation-vm-trap-raw.workspace-cargo-clean-20261031T210118273.log.result.json",
+      "source": "workspace-cargo-clean-20261031T210118273.log.result.json",
+      "bytes": 378,
+      "sha256": "7d5ca013e0ad3f68a7f1010940c294cfcc826363f3c2d1bff41e831b8a69f4b6"
+    }
+  ],
+  "artifactCount": 49,
+  "artifactBytes": 11248583,
+  "rawByteDrift": 0
+}

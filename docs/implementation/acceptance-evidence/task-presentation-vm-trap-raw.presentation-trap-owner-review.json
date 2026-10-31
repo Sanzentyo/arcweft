@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "base": "592ec4a9b20bc5d4a29ee5c3e8b858ee40e1195e",
+  "inspectedMain": "fc6a8477e32a1c07dc59fadf3ef05809f28de203",
+  "workingTree": "14 held tracked changes and 6 held untracked files; no Core source dirty after publication",
+  "files": [
+    {
+      "path": "crates/arcweft-core/src/awbc/vm.rs",
+      "package": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 222763,
+      "basePhysicalLoc": 5530,
+      "bytes": 223353,
+      "physicalLoc": 5551,
+      "growth": 21
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/vm/resources.rs",
+      "package": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 0,
+      "basePhysicalLoc": 0,
+      "bytes": 1628,
+      "physicalLoc": 42,
+      "growth": 42
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step.rs",
+      "package": "arcweft-core",
+      "classification": "production",
+      "baseBytes": 242447,
+      "basePhysicalLoc": 6008,
+      "bytes": 243388,
+      "physicalLoc": 6027,
+      "growth": 19
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "package": "arcweft-core",
+      "classification": "test",
+      "baseBytes": 37133,
+      "basePhysicalLoc": 960,
+      "bytes": 37144,
+      "physicalLoc": 961,
+      "growth": 1
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+      "package": "arcweft-core",
+      "classification": "test",
+      "baseBytes": 0,
+      "basePhysicalLoc": 0,
+      "bytes": 14956,
+      "physicalLoc": 409,
+      "growth": 409
+    }
+  ],
+  "review": [
+    "VM instruction/terminator dispatch retains its existing cohesive execution responsibility. The new private 42-line resource context borrows actual program/banks and owns no persisted state. The bank aggregate remains the sole scope retirement/preflight authority. Dependency direction and public visibility are unchanged.",
+    "Product step owns the first-in-slice budget transaction, complete checkpoint rollback and typed refusal reporting. Replenishment occurs once inside the first checkpoint; no duplicate runtime model, wire owner or lookup table was added.",
+    "The new focused traps test module grew from 0 lines and exceeds the 300-line review trigger. It covers one production responsibility: trap custody, real frame/scope creation, retirement order, rejection atomicity, retry, private checkpoint and public save. Its sole module importer is presentation.rs; dependencies are existing Core test helpers and typed Core VM/ledger APIs. It does not widen production visibility, duplicate implementation authority, introduce I/O or change Cargo edges."
+  ]
+}

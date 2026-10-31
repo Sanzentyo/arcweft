@@ -1,0 +1,7 @@
+From https://github.com/Sanzentyo/arcweft
+ * branch                main       -> FETCH_HEAD
+[main fc6a8477e] fix(core): restore the original budget when trap custody is refused
+ 2 files changed, 23 insertions(+), 6 deletions(-)
+To https://github.com/Sanzentyo/arcweft.git
+   8598c89dd..fc6a8477e  HEAD -> main
+{"commit":"fc6a8477e32a1c07dc59fadf3ef05809f28de203","parent":"8598c89ddaa07b8298ee630d3eff9f56897fa845","tree":"cd6b6f03db29628ac494db067bc66793e6181b5c","paths":2,"blobDrift":0,"originalWip":14,"separatelyHeld":0,"patchSha256":"944c8f1b2579f482ddac506e9a0c7d7fa027dc50c98c94f369e4b3babcffe88b","indexEmpty":true}

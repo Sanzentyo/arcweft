@@ -13573,3 +13573,17 @@ plain fixtureは5330 bytes・SHA256 7f42604e30c09a15e5752f75933e481af56dee7927a4
 最終Core ownerは2179／2179 PASS・0 skipped・終了0。追加testと2 fixtureを含む4021入力／binary／catalog差分0。同じ入力のCore全target／全feature Clippy・default全target check・doctest78／78・明示32 Rust pathのfmt・構造gateは各終了0。構造は97 package・3257 files・3127 Rust files・1771747 physical Rust LOC、review trigger382・blocking0。warning・初期失敗・fixture生成元・full SHA・原本bytesは[検証・生成・公開照合](acceptance-evidence/task-presentation-await-cancellation-owner-validation.json)に保持する。限定run・生成run・先行2173件の受入を最終2179件へ合算せず、workspace／全逆依存の最終受入とも同一視しない。
 
 Supersedes: 現状一覧の「Await／Need・Program Fanout由来の取消が未接続」は、この5経路の実装と実行結果を根拠に削除する。frame return／select／goto／trapの回収・escaping handle所有権移動、Native実借用parentのadmission、Source11 callable・mount・6 method・driver、active-bank置換・画像parity、最終逆依存／target matrixは別の未達条件である。全Product checkpoint・保存／custody基盤・lexical exit・line-task取消・Generic Matchの既受入を戻さず、現状一覧は一か所を維持する。公開済み履歴prefixと検証原本は書き換えない。
+
+## VM trap回収・予算の失敗原子性と全体clean — 2026-10-31
+
+ユーザーの指定に従い、実行中のCargo／rustc／nextestがないことと、workspace D:\git\arcweft・target D:\git\arcweft\targetを確認してcargo cleanを実行した。終了0、198,113 files・244.6 GiB削除。D:空き容量は直前115,473,866,752 bytesから直後366,249,754,624 bytesとなった。ソース・保持WIPを削除せず、生成物の移動・コピー・退避はしていない。これは以前のcleanとは別の、今回明示された全体cleanの実測である。
+
+checkpoint 8598c89ddaa07b8298ee630d3eff9f56897fa845（parent 592ec4a9b20bc5d4a29ee5c3e8b858ee40e1195e、tree 2f76f3aa98270be1af19016c928c8ec0b691848b、5 path、patch SHA256 c1a62255966f6aa8b4663c64485b681515c3d93c8f985faf22f680361ee6e1bf）は、cold build中の未検証checkpointとして通常pushした。VMが元program contextとbankを一sliceだけ借用し、明示Trap・Unreachable・命令内SequenceGet境界違反・評価エラーを共通の回収処理へ通す。全cleanup入力・実scope contour・元owner・全回収容量を検査してからbody／grantを移し、terminal化する。公開単独VMのledgerなし拒否も維持する。
+
+初回owner1は4,023凍結入力・全2,183件で2,181 PASS／2 FAIL／skipped 0。失敗は新規testだけで、4経路fixtureが既存Unit行をUInt行として参照したことと、Product public stepの予算補充がcheckpointより前だったことである。後者では容量拒否後のremaining=64が元の63と異なった。型IDを実際の追加行へ揃え、最初のVM操作の予算補充を元checkpoint内へ移した。後続操作は同じquantumを使い、完全snapshot一致のassertionは維持した。
+
+修復Source fc6a8477e32a1c07dc59fadf3ef05809f28de203（parent 8598c89ddaa07b8298ee630d3eff9f56897fa845、tree cd6b6f03db29628ac494db067bc66793e6181b5c、2 path、patch SHA256 944c8f1b2579f482ddac506e9a0c7d7fa027dc50c98c94f369e4b3babcffe88b）を通常pushし、remote／全blob差分0・index emptyを確認した。owner2は全2,183／2,183 PASS・除外0で、catalog／source／実行ファイル差分0。実CallFunction／EnterScopeから生成したcallee lexical・callee root・caller rootの3scopeを順に回収し、元body／token・公開save／restore・元checkpoint完全復元を検証した。handles=3／scopes=8の同一policyで2回の拒否時完全一致を確認し、旧回収項目のdriver acknowledgementを模したqueue解放後に同じ命令を再試行した。実driver ABIの受入をこの操作から推定しない。
+
+同じ4,023入力でCore全target／全feature Clippy・default全target check・doctest78／78・fmt34 path・構造gateは各終了0。構造は97 package・3,259 files・3,129 Rust files・1,772,239 physical LOC・382 review trigger・blocking 0。新規test moduleはbase 0→409 LOCとして責任・依存をレビューした。既存のVM dispatchとProduct transaction ownerを維持し、wire・Cargo edge・public APIを増やしていない。警告はraw logへ保持し、zero-warningとはしない。元14 tracked／6 untracked WIPも保持した。
+
+[原本と公開SHA・全49 artifact／11,248,583 bytes](acceptance-evidence/task-presentation-vm-trap-owner-validation.json)に初回失敗、修復後全件、品質検査、clean、owner reviewと両公開patchを保持する。Supersedes: 「VM trap回収が未接続」という先行の現状説明を、今回のVM4経路・Product main拒否の範囲で解消する。VM外のlifecycle trapや他の未検証条件は今回の受入へ含めない。現状の判定は[current-status](current-status.md)一か所に置き、先行のcheckpoint・取消・Generic Matchの受入と公開履歴prefixは変更しない。
