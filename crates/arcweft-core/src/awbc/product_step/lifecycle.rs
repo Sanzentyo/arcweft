@@ -432,15 +432,8 @@ impl AwbcProductStepExecutor {
         };
         match &suspension.reason {
             FiberSuspensionReason::DurationWait(wait) => FlowFiberStatus::DurationWaiting(*wait),
-            FiberSuspensionReason::Dialogue {
-                target: _,
-                target_type: _,
-                content: _,
-                values: _,
-                effects: _,
-                line_task_captures: _,
-                result: _,
-            } => self.dialogues.active_frame().map_or(
+            FiberSuspensionReason::Dialogue { .. }
+            | FiberSuspensionReason::DialogueActive { .. } => self.dialogues.active_frame().map_or(
                 FlowFiberStatus::Failed(
                     "AWBC dialogue suspension is missing its active typed owner".to_owned(),
                 ),

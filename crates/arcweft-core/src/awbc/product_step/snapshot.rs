@@ -1833,7 +1833,7 @@ impl AwbcProductExecutorSnapshot {
             .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                 message: error.to_string(),
             })?;
-        self.admit_presentation_execution(admission)?;
+        self.admit_presentation_execution(program, admission)?;
         if let Some(banks) = &snapshot.presentation {
             let artifact = AwbcProductStepExecutor::artifact_fingerprint(program)?;
             banks
@@ -2987,7 +2987,7 @@ impl AwbcProductExecutorSaveSnapshot {
     ) -> Result<AwbcProductExecutorSnapshot, AwbcProductStepBuildError> {
         let mut admission =
             program.retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default());
-        self.admit_presentation_execution(&mut admission)?;
+        self.admit_presentation_execution(program, &mut admission)?;
         let owner = crate::task::RuntimeProgramOwner::Awbc(program.program_arc());
         let presentation = self.presentation.map(|banks| {
             banks.retain_program(

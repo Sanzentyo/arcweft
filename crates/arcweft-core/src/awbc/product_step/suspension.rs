@@ -77,9 +77,9 @@ impl DeferredSuspensionDispatch {
                 call: *call,
                 destination: *destination,
             },
-            FiberSuspensionReason::Dialogue { .. } | FiberSuspensionReason::Choice { .. } => {
-                Self::Unsupported
-            }
+            FiberSuspensionReason::Dialogue { .. }
+            | FiberSuspensionReason::DialogueActive { .. }
+            | FiberSuspensionReason::Choice { .. } => Self::Unsupported,
         }
     }
 }

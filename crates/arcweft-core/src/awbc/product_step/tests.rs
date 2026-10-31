@@ -43,6 +43,220 @@ fn product_snapshot(
         .expect("fixture Product snapshot is valid")
 }
 
+/// Add a real parent without renumbering the activation/callback fixture code.
+fn dialogue_parent_program(
+    mut program: AwbcProgram,
+    content: AwbcContentUnitId,
+    target_type: AwbcTypeId,
+) -> AwbcProgram {
+    program.content_units[content.index()].public_id =
+        AwbcStringId(program.strings.len().try_into().unwrap());
+    program.strings.push("line.fixture.dialogue".into());
+    let group = &program.line_task_groups[program.content_units[content.index()]
+        .line_task_group
+        .unwrap()
+        .index()];
+    let result_type = group.result_type;
+    let pattern = AwbcPatternId(program.patterns.len().try_into().unwrap());
+    program.patterns.push(AwbcPattern::Bind {
+        target: AwbcRegisterId(0),
+        mutable: false,
+        expected: Some(result_type),
+    });
+    let capture_types = program.signatures[program.functions[group.activation.index()]
+        .signature
+        .index()]
+    .params
+    .clone();
+    let function = AwbcFunctionId(program.functions.len().try_into().unwrap());
+    let layout = AwbcFrameLayoutId(program.frame_layouts.len().try_into().unwrap());
+    let block = AwbcBlockId(program.blocks.len().try_into().unwrap());
+    let resume = AwbcResumePointId(program.resume_points.len().try_into().unwrap());
+    let instruction = u32::try_from(program.instructions.len()).unwrap();
+    let unit = AwbcConstantId(program.constants.len().try_into().unwrap());
+    let target = AwbcConstantId(unit.0 + 1);
+    program.constants.extend([
+        AwbcConstant::Unit,
+        AwbcConstant::Opaque {
+            ty: target_type,
+            payload: unit,
+        },
+    ]);
+    program.frame_layouts.push(AwbcFrameLayout {
+        scopes: Vec::new(),
+        slots: [result_type, target_type]
+            .into_iter()
+            .chain(capture_types.iter().copied())
+            .map(|ty| AwbcFrameSlot {
+                name: None,
+                ty,
+                role: AwbcFrameSlotRole::Temporary,
+                scope_depth: 0,
+            })
+            .collect(),
+        max_scope_depth: 0,
+    });
+    let signature = AwbcSignatureId(program.signatures.len().try_into().unwrap());
+    program.signatures.push(AwbcSignature {
+        params: Vec::new(),
+        result: None,
+        effects: AwbcEffectSetId(0),
+    });
+    for (index, ty) in capture_types.iter().enumerate() {
+        let signature = AwbcSignatureId(program.signatures.len().try_into().unwrap());
+        program.signatures.push(AwbcSignature {
+            params: Vec::new(),
+            result: Some(*ty),
+            effects: AwbcEffectSetId(0),
+        });
+        let intrinsic =
+            crate::awbc::schema::AwbcIntrinsicId(program.intrinsics.len().try_into().unwrap());
+        program.intrinsics.push(crate::awbc::schema::AwbcIntrinsic {
+            identity: crate::value::RuntimeCallTarget::try_from_label(&format!(
+                "fixture.dialogue.input{index}"
+            ))
+            .unwrap(),
+            signature,
+            revision: 1,
+        });
+        program.instructions.push(AwbcInstruction::CallIntrinsic {
+            dst: Some(AwbcRegisterId(u32::try_from(index + 2).unwrap())),
+            intrinsic,
+            args: Vec::new(),
+        });
+    }
+    program.functions.push(AwbcFunction {
+        definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+            *blake3::hash(b"arcweft.test.dialogue-parent.v1\0").as_bytes(),
+        ),
+        semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
+        public_id: Some(program.entries[0].public_id),
+        kind: AwbcFunctionKind::Flow,
+        signature,
+        type_context: None,
+        input_ownership: Vec::new(),
+        frame_layout: layout,
+        blocks: AwbcTableRange::new(block.0, 2),
+        entry_block: block,
+        flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::MaySuspend),
+    });
+    program.instructions.push(AwbcInstruction::LoadConst {
+        dst: AwbcRegisterId(1),
+        constant: target,
+    });
+    program.blocks.extend([
+        AwbcBlock {
+            owner: function,
+            instructions: AwbcTableRange::new(
+                instruction,
+                u32::try_from(capture_types.len() + 1).unwrap(),
+            ),
+            terminator: AwbcTerminator::Dialogue {
+                target: AwbcRegisterId(1),
+                content,
+                values: Vec::new(),
+                effects: Vec::new(),
+                line_task_captures: (0..capture_types.len())
+                    .map(|i| AwbcRegisterId(u32::try_from(i + 2).unwrap()))
+                    .collect(),
+                result: crate::awbc::schema::AwbcDialogueResultTarget {
+                    ty: result_type,
+                    pattern,
+                    destination: AwbcRegisterId(0),
+                },
+                resume,
+            },
+            safe_point: AwbcSafePointKind::FlowEntry,
+            source_map: None,
+        },
+        AwbcBlock {
+            owner: function,
+            instructions: AwbcTableRange::new(
+                u32::try_from(program.instructions.len()).unwrap(),
+                0,
+            ),
+            terminator: AwbcTerminator::Return { value: None },
+            safe_point: AwbcSafePointKind::Dialogue,
+            source_map: None,
+        },
+    ]);
+    program.resume_points.push(AwbcResumePoint {
+        function,
+        block: AwbcBlockId(block.0 + 1),
+        frame_layout: layout,
+        kind: AwbcSafePointKind::Dialogue,
+    });
+    program.entries[0].target = crate::awbc::schema::AwbcEntryTarget::Function { function };
+    program.functions[0].kind = AwbcFunctionKind::Ordinary;
+    program.functions[0].public_id = None;
+    program.blocks[program.functions[0].entry_block.index()].safe_point =
+        AwbcSafePointKind::CallableBoundary;
+    for binding in &mut program.flow_bindings {
+        binding.function = function;
+    }
+    for executable in &mut program.flow_executables {
+        executable.function = function;
+    }
+    program.canonicalize_string_table();
+    program
+        .verify(Default::default(), Default::default())
+        .expect("actual Dialogue parent verifies");
+    program
+}
+
+fn suspend_fixture_dialogue(executor: &mut AwbcProductStepExecutor, captures: Vec<RuntimeValue>) {
+    struct Inputs(std::collections::VecDeque<RuntimeValue>);
+    impl crate::awbc::vm::VmHost for Inputs {
+        fn call_intrinsic(
+            &mut self,
+            _: &AwbcProgram,
+            _: crate::awbc::schema::AwbcIntrinsicId,
+            args: Vec<RuntimeValue>,
+        ) -> Result<Option<RuntimeValue>, crate::awbc::vm::VmError> {
+            assert!(args.is_empty());
+            Ok(self.0.pop_front())
+        }
+        fn try_call_pure_helper(
+            &mut self,
+            _: &AwbcProgram,
+            _: crate::awbc::schema::AwbcPureHelperId,
+            _: &[RuntimeValue],
+        ) -> Result<Option<RuntimeValue>, crate::awbc::vm::VmError> {
+            Ok(None)
+        }
+    }
+    let max_instructions = u64::try_from(captures.len() + 2).unwrap();
+    let mut host = Inputs(captures.into());
+    let context = crate::awbc::vm::VmExecutionContext::for_program(
+        executor.artifact_fingerprint,
+        executor.program.clone(),
+    );
+    let output = crate::awbc::vm::step_with_presentation(
+        &executor.program,
+        &mut executor.fiber,
+        crate::awbc::vm::VmStepOptions { max_instructions },
+        &context,
+        &mut executor.presentation,
+        &mut host,
+    )
+    .unwrap();
+    assert!(host.0.is_empty());
+    assert!(
+        matches!(output.exit, crate::awbc::vm::VmExit::Suspended(_)),
+        "{output:?}"
+    );
+}
+
+fn begin_fixture_dialogue(
+    executor: &mut AwbcProductStepExecutor,
+    captures: Vec<RuntimeValue>,
+) -> crate::runtime_id::DialogueActivationId {
+    suspend_fixture_dialogue(executor, captures);
+    executor
+        .start_dialogue()
+        .expect("the actual pending packet hands off once")
+}
+
 fn issue_test_dialogue(
     executor: &mut AwbcProductStepExecutor,
     content: AwbcContentUnitId,
@@ -117,6 +331,7 @@ fn commit_test_dialogue_transaction(
 
 #[path = "tests/context.rs"]
 mod context;
+mod dialogue_handoff;
 mod presentation;
 
 fn completed_handle_program() -> (
@@ -626,43 +841,17 @@ fn asset_capture_program() -> (AwbcProgram, AwbcFunctionId) {
 
 #[test]
 fn product_snapshot_visitor_finds_asset_handles_in_dialogue_captures() {
-    let (program, function) = asset_capture_program();
-    let mut executor =
-        AwbcProductStepExecutor::for_entry(program, crate::awbc::schema::AwbcEntryId(0), 64)
-            .expect("fixture Product executor starts");
-    let content_id = AwbcContentUnitId(1);
-    let activation = issue_test_dialogue(&mut executor, content_id);
-    let activation_fiber = create_test_dialogue_fiber(&mut executor, activation, function);
-    executor
-        .dialogues
-        .begin(ActiveDialogue {
-            activation,
-            content: content_id,
-            target: fixture_dialogue_target(),
-            target_type: AwbcTypeId(6),
-            line: crate::plan::RuntimeLineId::from_runtime_line_value("line.asset.capture")
-                .expect("fixture line identity"),
-            result: crate::awbc::schema::AwbcDialogueResultTarget {
-                ty: AwbcTypeId(5),
-                pattern: AwbcPatternId(0),
-                destination: AwbcRegisterId(0),
-            },
-            captures: Box::new([RuntimeValue::Tuple(vec![fixture_bundle_image_handle()])]),
-            task_inputs: Box::new([]),
-            values: Box::new([]),
-            effect_callbacks: BTreeMap::new(),
-            voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
-            phase: ProductDialoguePhase::Activating {
-                fiber: activation_fiber,
-                pending: None,
-            },
-            elapsed_nanos: 0,
-            pending_content_events: Vec::new(),
-            pending_advance: false,
-            pending_line_outcomes: Vec::new(),
-            pending_activation_host_call: None,
-        })
-        .expect("dialogue capture remains owned by Product state");
+    let (program, _function) = asset_capture_program();
+    let mut executor = AwbcProductStepExecutor::for_entry(
+        dialogue_parent_program(program, AwbcContentUnitId(1), AwbcTypeId(6)),
+        crate::awbc::schema::AwbcEntryId(0),
+        64,
+    )
+    .expect("fixture Product executor starts");
+    begin_fixture_dialogue(
+        &mut executor,
+        vec![RuntimeValue::Tuple(vec![fixture_bundle_image_handle()])],
+    );
     let mut roles = Vec::new();
 
     executor
@@ -676,7 +865,7 @@ fn product_snapshot_visitor_finds_asset_handles_in_dialogue_captures() {
 
     assert_eq!(
         roles,
-        vec![crate::value::RuntimeBundleAssetOpaqueRole::ImageHandle]
+        vec![crate::value::RuntimeBundleAssetOpaqueRole::ImageHandle; 2]
     );
     let inert = executor.inert_rollback_image().unwrap();
     let mut inert_roles = Vec::new();
@@ -871,13 +1060,17 @@ fn mark_action_selection_restores_and_cancellation_can_override_it() {
             .expect("valid cancellation action");
     let mark = crate::runtime_id::RuntimeDialogueMarkId::from_zero_based(0).expect("mark identity");
     let mut executor = AwbcProductStepExecutor::for_entry(
-        mark_selector_program(cancellation_action.clone()),
+        dialogue_parent_program(
+            mark_selector_program(cancellation_action.clone()),
+            AwbcContentUnitId(0),
+            AwbcTypeId(2),
+        ),
         crate::awbc::schema::AwbcEntryId(0),
         64,
     )
     .expect("product executor starts");
     let content = AwbcContentUnitId(0);
-    let activation = issue_test_dialogue(&mut executor, AwbcContentUnitId(0));
+    let activation = begin_fixture_dialogue(&mut executor, Vec::new());
     let view = executor
         .line_task_view(content)
         .expect("mark line-task view");
@@ -912,33 +1105,9 @@ fn mark_action_selection_restores_and_cancellation_can_override_it() {
         })
         .expect("joined mark action tag");
 
-    executor
-        .dialogues
-        .begin(ActiveDialogue {
-            activation: activation.clone(),
-            content,
-            target: fixture_dialogue_target(),
-            target_type: AwbcTypeId(2),
-            line: crate::plan::RuntimeLineId::from_runtime_line_value("line.mark.result")
-                .expect("line identity"),
-            captures: Box::new([]),
-            task_inputs: Box::new([]),
-            values: Box::new([]),
-            effect_callbacks: BTreeMap::new(),
-            voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
-            result: crate::awbc::schema::AwbcDialogueResultTarget {
-                ty: AwbcTypeId(1),
-                pattern: AwbcPatternId(0),
-                destination: AwbcRegisterId(0),
-            },
-            phase: ProductDialoguePhase::Reducing { line_task: reducer },
-            elapsed_nanos: 0,
-            pending_content_events: Vec::new(),
-            pending_advance: false,
-            pending_line_outcomes: Vec::new(),
-            pending_activation_host_call: None,
-        })
-        .expect("active mark dialogue begins");
+    let mut transaction = executor.dialogues.begin_transaction(&activation).unwrap();
+    transaction.frame_mut().phase = ProductDialoguePhase::Reducing { line_task: reducer };
+    commit_test_dialogue_transaction(&mut executor, transaction);
     let mut transaction = executor
         .dialogues
         .begin_transaction(&activation)
@@ -1081,45 +1250,13 @@ fn line_activation_register_defer_commits_captures_and_cursor() {
     };
     program.strings[string.index()] = "captured at defer".into();
     program.canonicalize_string_table();
-    let mut executor = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 64)
-        .expect("line-root defer executor starts");
-    let activation_id = issue_test_dialogue(&mut executor, AwbcContentUnitId(0));
-    let activation_fiber = create_test_dialogue_fiber(&mut executor, activation_id, activation);
-    let target_owner = executor
-        .program
-        .opaque_owner(AwbcTypeId(2))
-        .unwrap()
-        .unwrap();
-    executor
-        .dialogues
-        .begin(ActiveDialogue {
-            activation: activation_id.clone(),
-            content: AwbcContentUnitId(0),
-            target: crate::value::RuntimeOpaqueValue::new_exact(&target_owner, RuntimeValue::Unit),
-            target_type: AwbcTypeId(2),
-            line: crate::plan::RuntimeLineId::from_runtime_line_value("line.defer")
-                .expect("line identity"),
-            captures: Box::new([]),
-            task_inputs: Box::new([]),
-            values: Box::new([]),
-            effect_callbacks: BTreeMap::new(),
-            voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
-            result: crate::awbc::schema::AwbcDialogueResultTarget {
-                ty: AwbcTypeId(0),
-                pattern: AwbcPatternId(0),
-                destination: AwbcRegisterId(0),
-            },
-            phase: ProductDialoguePhase::Activating {
-                fiber: activation_fiber,
-                pending: None,
-            },
-            elapsed_nanos: 0,
-            pending_content_events: Vec::new(),
-            pending_advance: false,
-            pending_line_outcomes: Vec::new(),
-            pending_activation_host_call: None,
-        })
-        .expect("line activation begins");
+    let mut executor = AwbcProductStepExecutor::for_entry(
+        dialogue_parent_program(program, AwbcContentUnitId(0), AwbcTypeId(2)),
+        AwbcEntryId(0),
+        64,
+    )
+    .expect("line-root defer executor starts");
+    let activation_id = begin_fixture_dialogue(&mut executor, Vec::new());
     let mut transaction = executor
         .dialogues
         .begin_transaction(&activation_id)
@@ -1159,58 +1296,21 @@ fn line_activation_register_defer_commits_captures_and_cursor() {
 #[test]
 fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
     let program = init_scope_defer_host_call_program();
-    let mut executor = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 64)
-        .expect("Init scope-defer executor starts");
-    let activation = issue_test_dialogue(&mut executor, AwbcContentUnitId(0));
-    let mut activation_fiber =
-        create_test_dialogue_fiber(&mut executor, activation, AwbcFunctionId(1));
-    activation_fiber
-        .active_frame_mut()
-        .expect("Init activation frame")
-        .bind_positional_arguments(
-            &executor.program,
-            &[RuntimeValue::String("before host result".to_owned())],
-        )
-        .expect("Init activation input seeds the typed destination register");
-    let target_owner = executor
-        .program
-        .opaque_owner(AwbcTypeId(2))
-        .expect("dialogue target owner resolves")
-        .expect("dialogue target type is opaque");
-    executor
-        .dialogues
-        .begin(ActiveDialogue {
-            activation: activation.clone(),
-            content: AwbcContentUnitId(0),
-            target: crate::value::RuntimeOpaqueValue::new_exact(&target_owner, RuntimeValue::Unit),
-            target_type: AwbcTypeId(2),
-            line: crate::plan::RuntimeLineId::from_runtime_line_value("line.init.out.defer")
-                .expect("line identity"),
-            captures: Box::new([RuntimeValue::String("before host result".to_owned())]),
-            task_inputs: Box::new([]),
-            values: Box::new([]),
-            effect_callbacks: BTreeMap::new(),
-            voice: crate::presentation::RuntimeDialogueVoiceState::Ready(
-                crate::presentation::RuntimeVoiceSessionId::try_new("init.voice")
-                    .expect("voice session identity"),
-            ),
-            result: crate::awbc::schema::AwbcDialogueResultTarget {
-                ty: AwbcTypeId(0),
-                pattern: AwbcPatternId(0),
-                destination: AwbcRegisterId(0),
-            },
-            phase: ProductDialoguePhase::Activating {
-                fiber: activation_fiber,
-                pending: None,
-            },
-            elapsed_nanos: 0,
-            pending_content_events: Vec::new(),
-            pending_advance: false,
-            pending_line_outcomes: Vec::new(),
-            pending_activation_host_call: None,
-        })
-        .expect("Init activation begins");
-
+    let mut executor = AwbcProductStepExecutor::for_entry(
+        dialogue_parent_program(program, AwbcContentUnitId(0), AwbcTypeId(2)),
+        AwbcEntryId(0),
+        64,
+    )
+    .expect("Init scope-defer executor starts");
+    let activation = begin_fixture_dialogue(
+        &mut executor,
+        vec![RuntimeValue::String("before host result".to_owned())],
+    );
+    let mut transaction = executor.dialogues.begin_transaction(&activation).unwrap();
+    transaction.frame_mut().voice = crate::presentation::RuntimeDialogueVoiceState::Ready(
+        crate::presentation::RuntimeVoiceSessionId::try_new("init.voice").unwrap(),
+    );
+    commit_test_dialogue_transaction(&mut executor, transaction);
     fn activation_step(
         executor: &mut AwbcProductStepExecutor,
         activation: &crate::runtime_id::DialogueActivationId,
@@ -1514,45 +1614,13 @@ fn registered_root_defer_executor(
     crate::runtime_id::DialogueActivationId,
     crate::pure::VmRuntimePureCallBackend,
 ) {
-    let mut executor = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 64)
-        .expect("deferred host-call executor starts");
-    let target_owner = executor
-        .program
-        .opaque_owner(AwbcTypeId(2))
-        .expect("dialogue target owner resolves")
-        .expect("dialogue target is opaque");
-    let activation = issue_test_dialogue(&mut executor, AwbcContentUnitId(0));
-    let activation_fiber = create_test_dialogue_fiber(&mut executor, activation, AwbcFunctionId(1));
-    executor
-        .dialogues
-        .begin(ActiveDialogue {
-            activation: activation.clone(),
-            content: AwbcContentUnitId(0),
-            target: crate::value::RuntimeOpaqueValue::new_exact(&target_owner, RuntimeValue::Unit),
-            target_type: AwbcTypeId(2),
-            line: crate::plan::RuntimeLineId::from_runtime_line_value("line.defer.lifo")
-                .expect("line identity"),
-            captures: Box::new([]),
-            task_inputs: Box::new([]),
-            values: Box::new([]),
-            effect_callbacks: BTreeMap::new(),
-            voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
-            result: crate::awbc::schema::AwbcDialogueResultTarget {
-                ty: AwbcTypeId(0),
-                pattern: AwbcPatternId(0),
-                destination: AwbcRegisterId(0),
-            },
-            phase: ProductDialoguePhase::Activating {
-                fiber: activation_fiber,
-                pending: None,
-            },
-            elapsed_nanos: 0,
-            pending_content_events: Vec::new(),
-            pending_advance: false,
-            pending_line_outcomes: Vec::new(),
-            pending_activation_host_call: None,
-        })
-        .expect("dialogue activation begins");
+    let mut executor = AwbcProductStepExecutor::for_entry(
+        dialogue_parent_program(program, AwbcContentUnitId(0), AwbcTypeId(2)),
+        AwbcEntryId(0),
+        64,
+    )
+    .expect("deferred host-call executor starts");
+    let activation = begin_fixture_dialogue(&mut executor, Vec::new());
 
     let mut transaction = executor
         .dialogues
@@ -2644,46 +2712,8 @@ fn actor_effect_program() -> AwbcProgram {
 fn begin_actor_look_dialogue(
     executor: &mut AwbcProductStepExecutor,
 ) -> crate::runtime_id::DialogueActivationId {
-    let activation = issue_test_dialogue(executor, AwbcContentUnitId(0));
-    let target_owner = executor
-        .program
-        .opaque_owner(AwbcTypeId(6))
-        .expect("fixture dialogue target type resolves")
-        .expect("fixture dialogue target is opaque");
-    let activation_fiber = create_test_dialogue_fiber(executor, activation, AwbcFunctionId(1));
-    executor
-        .dialogues
-        .begin(ActiveDialogue {
-            activation: activation.clone(),
-            content: AwbcContentUnitId(0),
-            target: crate::value::RuntimeOpaqueValue::new_exact(&target_owner, RuntimeValue::Unit),
-            target_type: AwbcTypeId(6),
-            line: crate::plan::RuntimeLineId::from_runtime_line_value("line.actor.look")
-                .expect("fixture line identity"),
-            captures: Box::new([]),
-            task_inputs: Box::new([]),
-            values: Box::new([]),
-            effect_callbacks: BTreeMap::new(),
-            voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
-            result: crate::awbc::schema::AwbcDialogueResultTarget {
-                ty: AwbcTypeId(5),
-                pattern: AwbcPatternId(0),
-                destination: AwbcRegisterId(0),
-            },
-            phase: ProductDialoguePhase::Activating {
-                fiber: activation_fiber,
-                pending: None,
-            },
-            elapsed_nanos: 0,
-            pending_content_events: Vec::new(),
-            pending_advance: false,
-            pending_line_outcomes: Vec::new(),
-            pending_activation_host_call: None,
-        })
-        .expect("fixture dialogue activation begins");
-    activation
+    begin_fixture_dialogue(executor, Vec::new())
 }
-
 fn publish_actor_stage_outcome(
     executor: &mut AwbcProductStepExecutor,
     activation: &crate::runtime_id::DialogueActivationId,
@@ -2724,9 +2754,16 @@ fn step_actor_activation_output(
 
 #[test]
 fn invalid_schedule_schema_preserves_admitted_captures_before_failure_close() {
-    let mut executor =
-        AwbcProductStepExecutor::for_entry(scheduled_actor_look_program(), AwbcEntryId(0), 64)
-            .expect("valid scheduled-capture Product executor starts");
+    let mut executor = AwbcProductStepExecutor::for_entry(
+        dialogue_parent_program(
+            scheduled_actor_look_program(),
+            AwbcContentUnitId(0),
+            AwbcTypeId(6),
+        ),
+        AwbcEntryId(0),
+        64,
+    )
+    .expect("valid scheduled-capture Product executor starts");
     let activation = begin_actor_look_dialogue(&mut executor);
     let mut backend = crate::pure::VmRuntimePureCallBackend::default();
     let mut actor_token = None;
@@ -2876,9 +2913,12 @@ fn invalid_schedule_schema_preserves_admitted_captures_before_failure_close() {
 
 #[test]
 fn activation_effect_moves_affine_handle_through_effect_observation_and_default_drop() {
-    let mut executor =
-        AwbcProductStepExecutor::for_entry(actor_effect_program(), AwbcEntryId(0), 64)
-            .expect("affine-effect Product executor starts");
+    let mut executor = AwbcProductStepExecutor::for_entry(
+        dialogue_parent_program(actor_effect_program(), AwbcContentUnitId(0), AwbcTypeId(6)),
+        AwbcEntryId(0),
+        64,
+    )
+    .expect("affine-effect Product executor starts");
     let activation = begin_actor_look_dialogue(&mut executor);
     let mut backend = crate::pure::VmRuntimePureCallBackend::default();
     let mut actor = None;
@@ -3074,7 +3114,8 @@ fn dialogue_frame_cannot_replace_the_original_registry_activation() {
     let error = AwbcProductExecutorSaveSnapshot::from_live(&snapshot, executor.admitted_program())
         .unwrap_err();
     assert!(
-        matches!(error, super::snapshot::AwbcProductSaveError::InvalidSnapshot { message } if message.contains("phase/result authority is not isomorphic"))
+        matches!(&error, super::snapshot::AwbcProductSaveError::InvalidSnapshot { message } if message.contains(&crate::awbc::fiber::FiberStateError::InvalidDialogueReceiver { activation }.to_string())),
+        "{error:?}"
     );
     assert_eq!(serde_json::to_vec(&snapshot.dialogues).unwrap(), before);
     assert!(executor.validate_snapshot(&snapshot).is_err());
@@ -3167,49 +3208,15 @@ fn initial_actor_dialogue_executor() -> (
     AwbcProductStepExecutor,
     crate::runtime_id::DialogueActivationId,
 ) {
-    let mut executor = AwbcProductStepExecutor::for_entry(actor_look_program(), AwbcEntryId(0), 64)
-        .expect("two-look Product executor starts");
-    let activation = issue_test_dialogue(&mut executor, AwbcContentUnitId(0));
-    let target_owner = executor
-        .program
-        .opaque_owner(AwbcTypeId(6))
-        .expect("fixture dialogue target type resolves")
-        .expect("fixture dialogue target is opaque");
-    let activation_fiber = create_test_dialogue_fiber(&mut executor, activation, AwbcFunctionId(1));
-    executor
-        .dialogues
-        .begin(ActiveDialogue {
-            activation: activation.clone(),
-            content: AwbcContentUnitId(0),
-            target: crate::value::RuntimeOpaqueValue::new_exact(&target_owner, RuntimeValue::Unit),
-            target_type: AwbcTypeId(6),
-            line: crate::plan::RuntimeLineId::from_runtime_line_value("line.actor.look")
-                .expect("fixture line identity"),
-            captures: Box::new([]),
-            task_inputs: Box::new([]),
-            values: Box::new([]),
-            effect_callbacks: BTreeMap::new(),
-            voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
-            result: crate::awbc::schema::AwbcDialogueResultTarget {
-                ty: AwbcTypeId(5),
-                pattern: AwbcPatternId(0),
-                destination: AwbcRegisterId(0),
-            },
-            phase: ProductDialoguePhase::Activating {
-                fiber: activation_fiber,
-                pending: None,
-            },
-            elapsed_nanos: 0,
-            pending_content_events: Vec::new(),
-            pending_advance: false,
-            pending_line_outcomes: Vec::new(),
-            pending_activation_host_call: None,
-        })
-        .expect("two-look dialogue activation begins");
-
+    let mut executor = AwbcProductStepExecutor::for_entry(
+        dialogue_parent_program(actor_look_program(), AwbcContentUnitId(0), AwbcTypeId(6)),
+        AwbcEntryId(0),
+        64,
+    )
+    .expect("two-look Product executor starts");
+    let activation = begin_actor_look_dialogue(&mut executor);
     (executor, activation)
 }
-
 #[test]
 fn actor_look_borrows_one_stage_actor_across_two_looks_and_out_return() {
     let (mut executor, activation) = initial_actor_dialogue_executor();
@@ -7860,12 +7867,31 @@ fn product_observation_inert_rollback_retains_typed_signal_and_metric_values() {
 #[test]
 fn blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budget() {
     let mut program = defer_host_call_program();
+    program.frame_layouts[1].slots.push(AwbcFrameSlot {
+        name: None,
+        ty: AwbcTypeId(0),
+        role: AwbcFrameSlotRole::Temporary,
+        scope_depth: 0,
+    });
+    program.instructions.extend([
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(3),
+            constant: AwbcConstantId(3),
+        },
+        AwbcInstruction::CommitDialogueResult {
+            source: AwbcRegisterId(3),
+        },
+    ]);
+    program.blocks[1].instructions.len += 2;
+    for block in &mut program.blocks[2..4] {
+        block.instructions.start += 2;
+    }
     let tail =
         AwbcFunctionId(u32::try_from(program.functions.len()).expect("tail function ordinal"));
     let tail_block = AwbcBlockId(u32::try_from(program.blocks.len()).expect("tail block ordinal"));
     let spawn = u32::try_from(program.instructions.len()).expect("spawn instruction ordinal");
     program.instructions.push(AwbcInstruction::Nop);
-    program.blocks[0].instructions = AwbcTableRange::new(spawn, 1);
+
     program.functions.push(AwbcFunction {
         definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
             *blake3::hash(b"g06.blocked-defer-running-tail.v1\0").as_bytes(),
@@ -7883,7 +7909,7 @@ fn blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budg
     });
     program.blocks.push(AwbcBlock {
         owner: tail,
-        instructions: AwbcTableRange::new(spawn + 1, 0),
+        instructions: AwbcTableRange::new(spawn, 1),
         terminator: AwbcTerminator::Return { value: None },
         safe_point: AwbcSafePointKind::CallableBoundary,
         source_map: None,
@@ -7898,6 +7924,20 @@ fn blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budg
         AwbcProgram::decode_canonical(&bytes, crate::awbc::codec::AwbcDecodeBudget::default())
             .expect("the actual queue program decodes");
     let (mut executor, activation, mut backend) = registered_root_defer_executor(program);
+    let mut transaction = executor.dialogues.begin_transaction(&activation).unwrap();
+    for _ in 0..2 {
+        executor
+            .step_dialogue_activation(&mut transaction, &mut backend)
+            .unwrap();
+    }
+    assert!(matches!(
+        transaction.line().result(),
+        crate::line_task::RuntimeDialogueResultState::Committed {
+            ty: AwbcTypeId(0),
+            value: RuntimeValue::Unit
+        }
+    ));
+    commit_test_dialogue_transaction(&mut executor, transaction);
     let (prepared, inflight) = prepare_root_defer_child(&mut executor, &activation);
     assert!(prepared);
     assert_eq!(inflight.map(|(_, site)| site.index()), Some(2));
@@ -7956,7 +7996,8 @@ fn blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budg
     assert_eq!(executor.child_fibers[1].fiber.cursor.function, tail);
     let returned = executor.step(RuntimeStepInput::default(), one_op);
     assert_eq!(returned.stats.executed_ops, 1);
-    assert_eq!(executor.fiber.status, FiberStatus::Returned);
+    assert_eq!(executor.fiber.status, FiberStatus::Suspended);
+    assert_eq!(executor.fiber.dialogue_receiver(), Some(activation));
     assert!(executor.has_internal_work());
 
     let live = product_snapshot(&executor);
@@ -8020,7 +8061,12 @@ fn blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budg
     let completed_replay = restored.step(resume(), drain);
     assert_eq!(completed, completed_replay);
     assert!(completed.stats.executed_ops > 0 && completed.stats.executed_ops <= 64);
-    assert_eq!(completed.stop_reason, RuntimeStepStopReason::Done);
+    assert_eq!(
+        completed.stop_reason,
+        RuntimeStepStopReason::Blocked,
+        "{completed:?}"
+    );
+    assert!(completed.output.diagnostics.is_empty());
     assert!(completed.output.requests.host_calls.is_empty());
     assert!(executor.child_fibers.is_empty());
     let transaction = executor
@@ -8032,4 +8078,62 @@ fn blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budg
         .dialogues
         .restore_transaction(transaction)
         .expect("inspection restores the owner");
+    let waiting = executor.step(RuntimeStepInput::default(), drain);
+    let waiting_replay = restored.step(RuntimeStepInput::default(), drain);
+    assert_eq!(waiting, waiting_replay);
+    assert_eq!(waiting.stats.executed_ops, 0);
+    assert_eq!(
+        waiting.stop_reason,
+        RuntimeStepStopReason::Blocked,
+        "{waiting:?}"
+    );
+    assert!(waiting.output.flow_events.is_empty());
+    assert_eq!(executor.fiber.dialogue_receiver(), Some(activation));
+    let advance = || RuntimeStepInput {
+        dialogue_advances: vec![activation],
+        ..Default::default()
+    };
+    let closing = executor.step(advance(), drain);
+    let closing_replay = restored.step(advance(), drain);
+    assert_eq!(closing, closing_replay);
+    assert!(closing.stats.executed_ops > 0 && closing.stats.executed_ops <= 64);
+    assert_eq!(
+        closing.stop_reason,
+        RuntimeStepStopReason::Output,
+        "{closing:?}"
+    );
+    assert!(closing.output.diagnostics.is_empty());
+    let [first] = closing.output.requests.host_calls.as_slice() else {
+        panic!(
+            "advance runs the remaining Always defer before delivering the actual result: {closing:?}"
+        );
+    };
+    assert_eq!(
+        first.args(),
+        [RuntimePayload(RuntimeValue::String("first".into()))]
+    );
+    assert_ne!(first.id, request_id);
+    assert_eq!(executor.child_fibers.len(), 1);
+    let first_id = first.id.clone();
+    let finish_first = || RuntimeStepInput {
+        host_call_results: vec![RuntimeHostCallResult {
+            id: first_id.clone(),
+            outcome: Ok(RuntimePayload(RuntimeValue::Unit)),
+        }],
+        ..Default::default()
+    };
+    let finished = executor.step(finish_first(), drain);
+    let finished_replay = restored.step(finish_first(), drain);
+    assert_eq!(finished, finished_replay);
+    assert!(finished.stats.executed_ops > 0 && finished.stats.executed_ops <= 64);
+    assert_eq!(
+        finished.stop_reason,
+        RuntimeStepStopReason::Done,
+        "{finished:?}"
+    );
+    assert!(finished.output.diagnostics.is_empty());
+    assert!(finished.output.requests.host_calls.is_empty());
+    assert!(executor.child_fibers.is_empty());
+    assert!(executor.dialogues.active_activation().is_none());
+    assert_eq!(executor.fiber.status, FiberStatus::Returned);
 }

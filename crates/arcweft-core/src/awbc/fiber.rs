@@ -842,17 +842,20 @@ pub enum FiberSuspensionReason<
     /// The cursor remains on the original Wait instruction until its exact
     /// following instruction is resumed by later logical-time ingress.
     DurationWait(crate::time::LogicalWait),
+    /// Owns the complete input packet until Product admits its receiver.
     Dialogue {
-        /// Before Product admission this carries the terminator target. The
-        /// Product dialogue registry owns it after presentation, so a live
-        /// suspended fiber then retains `None` and cannot duplicate it.
-        target: Option<O>,
+        target: O,
         target_type: AwbcTypeId,
         content: AwbcContentUnitId,
         values: Box<[RuntimeDialogueValueBinding<V>]>,
         effects: Box<[FiberDialogueContentEffectBinding<V>]>,
         line_task_captures: Box<[V]>,
         result: AwbcDialogueResultTarget,
+    },
+    /// The actual registry activation owns the input packet. The parent keeps
+    /// only its receiver identity and the original declared continuation.
+    DialogueActive {
+        activation: crate::runtime_id::DialogueActivationId,
     },
     Choice {
         choice: AwbcChoiceId,
@@ -907,7 +910,7 @@ impl<V, O, N> FiberSuspensionReason<V, O, N> {
     pub const fn kind(&self) -> FiberSuspensionKind {
         match self {
             Self::DurationWait(_) => FiberSuspensionKind::DurationWait,
-            Self::Dialogue { .. } => FiberSuspensionKind::Dialogue,
+            Self::Dialogue { .. } | Self::DialogueActive { .. } => FiberSuspensionKind::Dialogue,
             Self::Choice { .. } => FiberSuspensionKind::Choice,
             Self::Await { .. } => FiberSuspensionKind::Await,
             Self::AwaitMany(_) => FiberSuspensionKind::AwaitMany,
@@ -1166,9 +1169,7 @@ impl AwbcFiberStateSnapshot {
                     line_task_captures,
                     ..
                 } => {
-                    if let Some(target) = target {
-                        visit(target)?;
-                    }
+                    visit(target)?;
                     for binding in values.iter() {
                         visit(&binding.value)?;
                     }
@@ -1225,6 +1226,7 @@ impl AwbcFiberStateSnapshot {
                     }
                 }
                 FiberSuspensionReason::DurationWait(_)
+                | FiberSuspensionReason::DialogueActive { .. }
                 | FiberSuspensionReason::Choice { .. }
                 | FiberSuspensionReason::BudgetYield => {}
             }
@@ -1851,6 +1853,10 @@ pub enum FiberStateError {
     RegisterAlreadyInitialized { register: u32, layout: u32 },
     #[error("fiber frame function/layout pair is invalid")]
     InvalidFrame,
+    #[error("dialogue input handoff for {activation:?} has no matching receiver")]
+    InvalidDialogueReceiver {
+        activation: crate::runtime_id::DialogueActivationId,
+    },
     #[error("fiber checkpoint belongs to another original executable")]
     CheckpointProgramOwner,
     #[error("fiber call return value does not match its destination")]
@@ -2037,9 +2043,7 @@ impl FiberState {
                     line_task_captures,
                     ..
                 } => {
-                    if let Some(target) = target {
-                        visit_value_graph(target.payload(), &mut visitor)?;
-                    }
+                    visit_value_graph(target.payload(), &mut visitor)?;
                     for binding in values.iter() {
                         visit_value_graph(&binding.value, &mut visitor)?;
                     }
@@ -2086,6 +2090,7 @@ impl FiberState {
                     }
                 }
                 FiberSuspensionReason::DurationWait(_)
+                | FiberSuspensionReason::DialogueActive { .. }
                 | FiberSuspensionReason::Choice { .. }
                 | FiberSuspensionReason::BudgetYield => {}
             }
@@ -6825,7 +6830,7 @@ mod tests {
         )
         .expect("original opaque row admits the target before projection");
         let reason = FiberSuspensionReason::Dialogue {
-            target: Some(target.clone()),
+            target: target.clone(),
             target_type: AwbcTypeId(2),
             content: AwbcContentUnitId(0),
             values: Box::new([]),
@@ -6851,11 +6856,7 @@ mod tests {
             >,
         >(&encoded)
         .expect("snapshot decodes");
-        let FiberSuspensionReason::Dialogue {
-            target: Some(saved),
-            ..
-        } = &decoded
-        else {
+        let FiberSuspensionReason::Dialogue { target: saved, .. } = &decoded else {
             panic!("inert codec retains the target");
         };
         crate::program_types::RuntimeProgramValueType::Awbc {
@@ -6884,7 +6885,7 @@ mod tests {
         else {
             unreachable!("fixture is a dialogue suspension")
         };
-        assert_eq!(restored_target, Some(target));
+        assert_eq!(restored_target, target);
         assert_eq!(target_type, AwbcTypeId(2));
     }
 

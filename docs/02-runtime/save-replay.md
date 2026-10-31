@@ -362,6 +362,14 @@ content template の value slot と callback capture ABI を、live 値の構築
 activation 中の fiber root は、元 content group の activation function と一致させる。
 別の root として単体検証を通る fiber でも、この対応を置き換えられない。
 
+AWBC Dialogueの親suspensionは、引き渡し前の入力packetと、引き渡し済みの
+activation IDを別の状態として保持する。pending packetはtarget・補間値・effect・
+captureを所有し、引き渡し後は実registry frameがそれらを所有する。親側に空の
+packetを残さず、実frameのactivation key・content・結果・target型を、元の親fiberと
+Dialogue命令へ照合する。対応する実frameのないID、受領状態でない親、別の受領IDを
+live/private/public saveで拒否する。開始時の失敗は元の完全session checkpointへ戻し、
+入力packet、bank、発行cursorを保持する。このgrammarもversion 1で更新する。
+
 Native の fiber／frame、control kind と function return、formatter、Await／AwaitMany、
 対話 frame／scope／pending operation は、それぞれ同じ owning grammar の live／inert
 特殊化を使う。`RuntimeEnv` と `RootRuntime` も同じ構造を共有し、live owner に

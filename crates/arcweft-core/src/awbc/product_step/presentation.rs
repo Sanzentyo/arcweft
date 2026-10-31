@@ -172,8 +172,16 @@ impl AwbcProductStepExecutor {
                 admission,
             )?;
         }
+        let mut active_receiver = None;
         dialogues.try_visit_active(
             |activation, frame, _| -> Result<(), AwbcRuntimeValueSnapshotError> {
+                frame.admit_parent_receiver(
+                    &self.program,
+                    activation,
+                    std::iter::once(&self.fiber)
+                        .chain(self.child_fibers.iter().map(|child| &child.fiber)),
+                    &mut active_receiver,
+                )?;
                 context.admit_dialogue(*activation, admission)?;
                 if let Some(fiber) = frame.activation_fiber() {
                     context.register_fiber(
@@ -186,6 +194,11 @@ impl AwbcProductStepExecutor {
                 Ok(())
             },
         )?;
+        for parent in
+            std::iter::once(&self.fiber).chain(self.child_fibers.iter().map(|child| &child.fiber))
+        {
+            parent.validate_dialogue_receiver_presence(active_receiver)?;
+        }
         context.finish(
             self.presentation.iter().flat_map(|banks| banks.bank_ids()),
             admission,
@@ -196,6 +209,7 @@ impl AwbcProductStepExecutor {
 impl AwbcProductExecutorSnapshot {
     pub(super) fn admit_presentation_execution(
         &self,
+        program: &crate::awbc::schema::AwbcProgram,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<(), AwbcProductStepBuildError> {
         let invalid =
@@ -239,8 +253,22 @@ impl AwbcProductExecutorSnapshot {
                 )
                 .map_err(invalid)?;
         }
+        let mut active_receiver = None;
         self.dialogues
             .try_visit_active(|activation, frame, _| {
+                frame
+                    .admit_parent_receiver(
+                        program,
+                        activation,
+                        std::iter::once(&self.fiber)
+                            .chain(self.child_fibers.iter().map(|child| &child.fiber)),
+                        &mut active_receiver,
+                    )
+                    .map_err(|error| {
+                        crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
+                            message: error.to_string(),
+                        }
+                    })?;
                 context
                     .admit_dialogue(*activation, admission)
                     .map_err(|error| {
@@ -271,6 +299,15 @@ impl AwbcProductExecutorSnapshot {
                     }
                 },
             )?;
+        for parent in
+            std::iter::once(&self.fiber).chain(self.child_fibers.iter().map(|child| &child.fiber))
+        {
+            parent
+                .validate_dialogue_receiver_presence(active_receiver)
+                .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                    message: error.to_string(),
+                })?;
+        }
         context
             .finish(
                 self.presentation.iter().flat_map(|banks| banks.bank_ids()),
@@ -283,6 +320,7 @@ impl AwbcProductExecutorSnapshot {
 impl AwbcProductExecutorSaveSnapshot {
     pub(super) fn admit_presentation_execution(
         &self,
+        program: &crate::awbc::schema::AwbcProgram,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<(), AwbcProductStepBuildError> {
         let invalid =
@@ -326,8 +364,22 @@ impl AwbcProductExecutorSaveSnapshot {
                 )
                 .map_err(invalid)?;
         }
+        let mut active_receiver = None;
         self.dialogues
             .try_visit_active(|activation, frame, _| {
+                frame
+                    .admit_parent_receiver(
+                        program,
+                        activation,
+                        std::iter::once(&self.fiber)
+                            .chain(self.child_fibers.iter().map(|child| &child.fiber)),
+                        &mut active_receiver,
+                    )
+                    .map_err(|error| {
+                        crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
+                            message: error.to_string(),
+                        }
+                    })?;
                 context
                     .admit_dialogue(*activation, admission)
                     .map_err(|error| {
@@ -358,6 +410,15 @@ impl AwbcProductExecutorSaveSnapshot {
                     }
                 },
             )?;
+        for parent in
+            std::iter::once(&self.fiber).chain(self.child_fibers.iter().map(|child| &child.fiber))
+        {
+            parent
+                .validate_dialogue_receiver_presence(active_receiver)
+                .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                    message: error.to_string(),
+                })?;
+        }
         context
             .finish(
                 self.presentation.iter().flat_map(|banks| banks.bank_ids()),

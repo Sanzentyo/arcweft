@@ -2755,7 +2755,10 @@ impl AwbcProductStepExecutor {
                     .suspension
                     .as_ref()
                     .map(|suspension| &suspension.reason),
-                Some(FiberSuspensionReason::Dialogue { .. })
+                Some(
+                    FiberSuspensionReason::Dialogue { .. }
+                        | FiberSuspensionReason::DialogueActive { .. }
+                )
             ) && self
                 .dialogues
                 .has_internal_work(self.dialogues.active_frame().is_some_and(|frame| {
@@ -2775,7 +2778,10 @@ impl AwbcProductStepExecutor {
                 .suspension
                 .as_ref()
                 .map(|suspension| &suspension.reason),
-            Some(FiberSuspensionReason::Dialogue { .. })
+            Some(
+                FiberSuspensionReason::Dialogue { .. }
+                    | FiberSuspensionReason::DialogueActive { .. }
+            )
         ) && self.dialogues.activation_budget_exhausted()
     }
 
@@ -4242,44 +4248,16 @@ impl AwbcProductStepExecutor {
             );
             return;
         }
-        let dialogue = self
-            .fiber
-            .suspension
-            .as_mut()
-            .and_then(|suspension| match &mut suspension.reason {
-                FiberSuspensionReason::Dialogue {
-                    target,
-                    target_type,
-                    content,
-                    values,
-                    effects,
-                    line_task_captures,
-                    result,
-                } => Some((
-                    target.take(),
-                    *target_type,
-                    *content,
-                    std::mem::take(values),
-                    std::mem::take(effects),
-                    std::mem::take(line_task_captures),
-                    result.clone(),
-                )),
-                _ => None,
-            });
-        if let Some((target, target_type, content, values, effects, captures, result)) = dialogue {
-            let Some(target) = target else {
-                return;
-            };
-            self.present_dialogue(
-                target,
-                target_type,
-                content,
-                values,
-                effects,
-                captures,
-                result,
-                output,
-            );
+        if matches!(
+            self.fiber
+                .suspension
+                .as_ref()
+                .map(|suspension| &suspension.reason),
+            Some(FiberSuspensionReason::Dialogue { .. })
+        ) {
+            if let Err(error) = self.start_dialogue() {
+                self.fail_with_error(error, output);
+            }
             return;
         }
         enum Dispatch {
@@ -4297,7 +4275,8 @@ impl AwbcProductStepExecutor {
         }
         let Some((declared_resume, dispatch)) = self.fiber.suspension.as_ref().map(|suspension| {
             let dispatch = match &suspension.reason {
-                FiberSuspensionReason::Dialogue { .. } => Dispatch::Other,
+                FiberSuspensionReason::Dialogue { .. }
+                | FiberSuspensionReason::DialogueActive { .. } => Dispatch::Other,
                 FiberSuspensionReason::Choice { choice, .. } => Dispatch::Choice(*choice),
                 FiberSuspensionReason::Await {
                     target:
@@ -4396,38 +4375,29 @@ impl AwbcProductStepExecutor {
             Other,
             BudgetYield,
         }
-        let dialogue_resume = self.fiber.suspension.as_ref().and_then(|suspension| {
-            matches!(&suspension.reason, FiberSuspensionReason::Dialogue { .. })
-                .then(|| suspension.declared_resume())
-        });
-        let dialogue = self
-            .fiber
-            .suspension
-            .as_mut()
-            .and_then(|suspension| match &mut suspension.reason {
-                FiberSuspensionReason::Dialogue {
-                    target,
-                    target_type,
-                    content,
-                    values,
-                    effects,
-                    line_task_captures,
-                    result,
-                } => Some((
-                    dialogue_resume.flatten(),
-                    target.take(),
-                    *target_type,
-                    *content,
-                    std::mem::take(values),
-                    std::mem::take(effects),
-                    std::mem::take(line_task_captures),
-                    result.clone(),
-                )),
-                _ => None,
-            });
-        if let Some((resume, target, target_type, content, values, effects, captures, result)) =
-            dialogue
-        {
+        if matches!(
+            self.fiber
+                .suspension
+                .as_ref()
+                .map(|suspension| &suspension.reason),
+            Some(FiberSuspensionReason::Dialogue { .. })
+        ) {
+            if let Err(error) = self.start_dialogue() {
+                self.fail_with_error(error, output);
+                return false.into();
+            }
+        }
+        let dialogue =
+            self.fiber
+                .suspension
+                .as_ref()
+                .and_then(|suspension| match &suspension.reason {
+                    FiberSuspensionReason::DialogueActive { activation } => {
+                        Some((*activation, suspension.declared_resume()))
+                    }
+                    _ => None,
+                });
+        if let Some((activation, resume)) = dialogue {
             let Some(resume) = resume else {
                 self.fail_with_error(
                     ProductStepError::Internal(
@@ -4438,13 +4408,7 @@ impl AwbcProductStepExecutor {
                 return false.into();
             };
             return self.resume_dialogue(
-                target,
-                target_type,
-                content,
-                values,
-                effects,
-                captures,
-                result,
+                activation,
                 resume,
                 input.dialogue_input_actions.as_slice(),
                 &mut input.host_call_results,
@@ -4477,9 +4441,9 @@ impl AwbcProductStepExecutor {
             FiberSuspensionReason::HostCall {
                 call, destination, ..
             } => Dispatch::HostCall(*call, *destination),
-            FiberSuspensionReason::DurationWait(_) | FiberSuspensionReason::Dialogue { .. } => {
-                Dispatch::Other
-            }
+            FiberSuspensionReason::DurationWait(_)
+            | FiberSuspensionReason::Dialogue { .. }
+            | FiberSuspensionReason::DialogueActive { .. } => Dispatch::Other,
             FiberSuspensionReason::BudgetYield => Dispatch::BudgetYield,
         };
         let Some(resume) = declared_resume else {
@@ -4651,6 +4615,57 @@ impl AwbcProductStepExecutor {
         Ok(callbacks.into_iter().collect())
     }
 
+    fn start_dialogue(&mut self) -> Result<DialogueActivationId, ProductStepError> {
+        if !matches!(
+            self.fiber
+                .suspension
+                .as_ref()
+                .map(|suspension| &suspension.reason),
+            Some(FiberSuspensionReason::Dialogue { .. })
+        ) {
+            return Err(crate::awbc::fiber::FiberStateError::InvalidFrame.into());
+        }
+        let checkpoint = checkpoint::ProductSessionCheckpoint::capture(self)?;
+        let suspension = self
+            .fiber
+            .suspension
+            .take()
+            .expect("the original pending packet was admitted before withdrawal");
+        let FiberSuspensionReason::Dialogue {
+            target,
+            target_type,
+            content,
+            values,
+            effects,
+            line_task_captures,
+            result,
+        } = suspension.reason
+        else {
+            unreachable!("the admitted suspension owns one pending Dialogue packet")
+        };
+        match self.present_dialogue(
+            target,
+            target_type,
+            content,
+            values,
+            effects,
+            line_task_captures,
+            result,
+        ) {
+            Ok(activation) => {
+                self.fiber.suspension = Some(crate::awbc::fiber::FiberSuspension {
+                    resume: suspension.resume,
+                    reason: FiberSuspensionReason::DialogueActive { activation },
+                });
+                Ok(activation)
+            }
+            Err(error) => {
+                checkpoint.restore(self)?;
+                Err(error)
+            }
+        }
+    }
+
     fn present_dialogue(
         &mut self,
         target: crate::value::RuntimeOpaqueValue,
@@ -4660,88 +4675,51 @@ impl AwbcProductStepExecutor {
         effects: Box<[FiberDialogueContentEffectBinding]>,
         captures: Box<[RuntimeValue]>,
         result: crate::awbc::schema::AwbcDialogueResultTarget,
-        output: &mut RuntimeStepOutput,
-    ) {
-        if self
-            .dialogues
-            .active_frame()
-            .is_some_and(|active| active.content == content)
-        {
-            return;
+    ) -> Result<DialogueActivationId, ProductStepError> {
+        if self.dialogues.active_frame().is_some() {
+            return Err(crate::line_task::LineRuntimeError::DuplicateActivationLedger.into());
         }
         let effect_callbacks = match self.materialize_dialogue_effect_callbacks(content, effects) {
             Ok(callbacks) => callbacks,
-            Err(error) => {
-                self.record_error(error, output);
-                return;
-            }
+            Err(error) => return Err(error),
         };
         let line = self.content_public_id(content);
         let line_id = match line_id_from_awbc_public_id(&line) {
             Ok(line_id) => line_id,
-            Err(error) => {
-                self.record_error(error, output);
-                return;
-            }
+            Err(error) => return Err(error),
         };
         let (activation, occurrence_key, next_occurrence) =
             match self.prepare_dialogue_activation(content) {
                 Ok(prepared) => prepared,
-                Err(error) => {
-                    self.record_error(error, output);
-                    return;
-                }
+                Err(error) => return Err(error),
             };
         let Some(group_id) = self.dialogue_group(content) else {
-            self.record_error(
-                ProductStepError::Line(crate::line_task::LineRuntimeError::MissingTaskGroup),
-                output,
-            );
-            return;
+            return Err(crate::line_task::LineRuntimeError::MissingTaskGroup.into());
         };
         let Some(group) = self.program.line_task_groups.get(group_id.index()) else {
-            self.record_error(
-                ProductStepError::Line(crate::line_task::LineRuntimeError::UnknownTaskGroup),
-                output,
-            );
-            return;
+            return Err(crate::line_task::LineRuntimeError::UnknownTaskGroup.into());
         };
         if group.result_type != result.ty {
-            self.record_error(
-                ProductStepError::Line(
-                    crate::line_task::LineRuntimeError::DialogueResultTypeMismatch,
-                ),
-                output,
-            );
-            return;
+            return Err(crate::line_task::LineRuntimeError::DialogueResultTypeMismatch.into());
         }
         if captures
             .iter()
             .any(|capture| !capture.ownership().permits_copy())
         {
-            self.record_error(
-                crate::line_task::LineRuntimeError::AffineGroupCapture.into(),
-                output,
-            );
-            return;
+            return Err(crate::line_task::LineRuntimeError::AffineGroupCapture.into());
         }
         let Some(next_generation) = self.next_generation.checked_add(1) else {
-            self.record_error(ProductStepError::ChildGenerationOverflow, output);
-            return;
+            return Err(ProductStepError::ChildGenerationOverflow);
         };
         let Some(next_line_cursor) = self.fiber.line_cursor.checked_add(1) else {
-            self.record_error(ProductStepError::DialogueLineCursorOverflow, output);
-            return;
+            return Err(ProductStepError::DialogueLineCursorOverflow);
         };
         let mut next_fiber_instance = self.next_fiber_instance;
         let activation_fiber_instance = match next_fiber_instance
             .take_next(crate::runtime_id::RuntimeIdNamespace::FiberInstance)
         {
             Ok(instance) => crate::runtime_id::RuntimeFiberInstanceId::from_allocated(instance),
-            Err(error) => {
-                self.record_error(error.into(), output);
-                return;
-            }
+            Err(error) => return Err(error.into()),
         };
         let mut activation_fiber = match FiberState::for_function_in_context(
             &self.program,
@@ -4755,15 +4733,11 @@ impl AwbcProductStepExecutor {
             ),
         ) {
             Ok(fiber) => fiber,
-            Err(error) => {
-                self.record_error(ProductStepError::Internal(error.to_string()), output);
-                return;
-            }
+            Err(error) => return Err(error.into()),
         };
         if let Err(error) = activation_fiber.bind_function_argument_values(&self.program, &captures)
         {
-            self.record_error(ProductStepError::Type(error.to_string()), output);
-            return;
+            return Err(ProductStepError::Type(error.to_string()));
         }
         let active = ActiveDialogue {
             activation,
@@ -4787,26 +4761,18 @@ impl AwbcProductStepExecutor {
             pending_line_outcomes: Vec::new(),
             pending_activation_host_call: None,
         };
-        if let Err(error) = self.dialogues.begin(active) {
-            self.fail_with_error(error.into(), output);
-            return;
-        }
+        self.dialogues.begin(active)?;
         self.dialogue_occurrences
             .insert(occurrence_key, next_occurrence);
         self.next_generation = next_generation;
         self.next_fiber_instance = next_fiber_instance;
         self.fiber.line_cursor = next_line_cursor;
+        Ok(activation)
     }
 
     fn resume_dialogue(
         &mut self,
-        target: Option<crate::value::RuntimeOpaqueValue>,
-        target_type: crate::awbc::schema::AwbcTypeId,
-        content: AwbcContentUnitId,
-        values: Box<[crate::plan::RuntimeDialogueValueBinding]>,
-        effects: Box<[FiberDialogueContentEffectBinding]>,
-        captures: Box<[RuntimeValue]>,
-        result: crate::awbc::schema::AwbcDialogueResultTarget,
+        activation: DialogueActivationId,
         resume: AwbcResumePointId,
         input_actions: &[RuntimeDialogueInputActionEvent],
         host_call_results: &mut Vec<crate::step::RuntimeHostCallResult>,
@@ -4814,27 +4780,18 @@ impl AwbcProductStepExecutor {
         pure_backend: &mut impl RuntimeCallBackend,
         budgets: &mut ProductStepBudgets,
     ) -> ProductStepProgress {
-        if self.dialogues.active_frame().is_none() {
-            let Some(target) = target else {
-                self.fail_with_error(
-                    ProductStepError::Internal(
-                        "suspended dialogue lost its target before Product admission".to_owned(),
-                    ),
-                    output,
-                );
-                return false.into();
-            };
-            self.present_dialogue(
-                target,
-                target_type,
-                content,
-                values,
-                effects,
-                captures,
-                result,
+        let Some(active) = self
+            .dialogues
+            .active_frame()
+            .filter(|frame| frame.activation == activation)
+        else {
+            self.fail_with_error(
+                crate::awbc::fiber::FiberStateError::InvalidDialogueReceiver { activation }.into(),
                 output,
             );
-        }
+            return false.into();
+        };
+        let content = active.content;
         let publication_checkpoint = if self.dialogues.active_frame().is_some_and(|frame| {
             matches!(
                 frame.phase,

@@ -59,8 +59,13 @@ mod cancellation {
             AwbcLineTaskNode::Action(AwbcFunctionId(2)),
         ];
         program.line_task_groups[0].nodes = AwbcTableRange::new(0, 5);
-        let mut executor = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 64).unwrap();
-        let activation = issue_test_dialogue(&mut executor, AwbcContentUnitId(0));
+        let mut executor = AwbcProductStepExecutor::for_entry(
+            dialogue_parent_program(program, AwbcContentUnitId(0), AwbcTypeId(2)),
+            AwbcEntryId(0),
+            64,
+        )
+        .unwrap();
+        let activation = begin_fixture_dialogue(&mut executor, Vec::new());
         let view = executor.line_task_view(AwbcContentUnitId(0)).unwrap();
         let mut live = LineTaskLiveState::new(&view, activation);
         let run = crate::line_task::progress_live_line_task_group(
@@ -71,35 +76,9 @@ mod cancellation {
         )
         .unwrap();
         assert_eq!(run.commands.len(), 2);
-        executor
-            .dialogues
-            .begin(ActiveDialogue {
-                activation,
-                content: AwbcContentUnitId(0),
-                target: fixture_dialogue_target(),
-                target_type: AwbcTypeId(2),
-                line: crate::plan::RuntimeLineId::from_runtime_line_value(
-                    "line.presentation.cancel",
-                )
-                .unwrap(),
-                captures: Box::new([]),
-                task_inputs: Box::new([]),
-                values: Box::new([]),
-                effect_callbacks: BTreeMap::new(),
-                voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
-                result: AwbcDialogueResultTarget {
-                    ty: AwbcTypeId(1),
-                    pattern: AwbcPatternId(0),
-                    destination: AwbcRegisterId(0),
-                },
-                phase: ProductDialoguePhase::Reducing { line_task: live },
-                elapsed_nanos: 0,
-                pending_content_events: vec![],
-                pending_advance: false,
-                pending_line_outcomes: vec![],
-                pending_activation_host_call: None,
-            })
-            .unwrap();
+        let mut transaction = executor.dialogues.begin_transaction(&activation).unwrap();
+        transaction.frame_mut().phase = ProductDialoguePhase::Reducing { line_task: live };
+        commit_test_dialogue_transaction(&mut executor, transaction);
         let mut transaction = executor.dialogues.begin_transaction(&activation).unwrap();
         transaction
             .line_mut()

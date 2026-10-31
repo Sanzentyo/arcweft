@@ -477,11 +477,17 @@ fn forged_program_child_save_rejects_without_losing_the_original_handle_or_resul
                     _ => saved.child_fibers.push(saved.child_fibers[0].clone()),
                 }
                 let saved = serde_json::from_slice(&serde_json::to_vec(&saved).unwrap()).unwrap();
-                let bound = runtime.bind_product_save_snapshot(saved).unwrap();
-                let (original, reason) = runtime
-                    .restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(bound))
-                    .expect_err("forged child custody must not acquire a runnable owner")
-                    .into_parts();
+                let reason = match runtime.bind_product_save_snapshot(saved) {
+                    Err(reason) => reason,
+                    Ok(bound) => {
+                        let (original, reason) = runtime
+                            .restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(bound))
+                            .expect_err("forged child custody must not acquire a runnable owner")
+                            .into_parts();
+                        runtime = original;
+                        reason
+                    }
+                };
                 assert!(
                     matches!(
                         reason,
@@ -489,7 +495,6 @@ fn forged_program_child_save_rejects_without_losing_the_original_handle_or_resul
                     ),
                     "case={case}: {reason}"
                 );
-                runtime = original;
                 let ArcweftRuntimeExecutorSnapshot::AwbcProduct(after) =
                     runtime.snapshot().unwrap();
                 assert_eq!(after, before, "case={case}, backend={backend:?}");

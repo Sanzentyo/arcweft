@@ -12,6 +12,83 @@ use crate::program_types::RuntimeProgramValueType;
 use crate::task::RuntimeNeedHandleSaveSnapshot;
 use crate::value::{RuntimeNeedView, RuntimeValueView};
 
+impl<V, O, N, B, R, G> FiberState<V, O, N, B, R, G> {
+    pub(crate) fn dialogue_receiver(&self) -> Option<crate::runtime_id::DialogueActivationId> {
+        match self
+            .suspension
+            .as_ref()
+            .map(|suspension| &suspension.reason)
+        {
+            Some(FiberSuspensionReason::DialogueActive { activation }) => Some(*activation),
+            _ => None,
+        }
+    }
+
+    /// Authenticates the actual receiver against this parent's original site.
+    /// A closing consumer may outlive the parent's terminal transition, but a
+    /// waiting parent never substitutes an empty packet for transferred inputs.
+    pub(crate) fn validate_dialogue_receiver(
+        &self,
+        program: &AwbcProgram,
+        activation: crate::runtime_id::DialogueActivationId,
+        content: super::AwbcContentUnitId,
+        target_type: super::AwbcTypeId,
+        result: &super::AwbcDialogueResultTarget,
+        closing: bool,
+    ) -> Result<(), FiberStateError> {
+        let invalid = || FiberStateError::InvalidDialogueReceiver { activation };
+        if activation.owner_fiber().get() != self.instance.get().get()
+            || !(self.dialogue_receiver() == Some(activation)
+                || (closing
+                    && matches!(
+                        self.status,
+                        super::FiberStatus::Trapped | super::FiberStatus::Cancelled
+                    )
+                    && self.suspension.is_none()))
+        {
+            return Err(invalid());
+        }
+        let Some(super::super::schema::AwbcTerminator::Dialogue {
+            target,
+            content: source_content,
+            result: source_result,
+            ..
+        }) = program
+            .blocks
+            .get(self.cursor.block.index())
+            .map(|block| &block.terminator)
+        else {
+            return Err(invalid());
+        };
+        let source_target_type = program
+            .functions
+            .get(self.cursor.function.index())
+            .and_then(|function| program.frame_layouts.get(function.frame_layout.index()))
+            .and_then(|layout| layout.slots.get(target.index()))
+            .map(|slot| slot.ty);
+        if *source_content != content
+            || source_result != result
+            || source_target_type != Some(target_type)
+        {
+            return Err(invalid());
+        }
+        Ok(())
+    }
+
+    pub(crate) fn validate_dialogue_receiver_presence(
+        &self,
+        actual: Option<crate::runtime_id::DialogueActivationId>,
+    ) -> Result<(), FiberStateError> {
+        if let Some(activation) = self.dialogue_receiver()
+            && (actual != Some(activation)
+                || activation.owner_fiber().get() != self.instance.get().get())
+        {
+            return Err(FiberStateError::InvalidDialogueReceiver { activation });
+        }
+        Ok(())
+    }
+}
+
 impl<V, O, N> FiberSuspension<V, O, N> {
     pub(super) fn duration_wait_resume(
         &self,
@@ -318,6 +395,12 @@ impl<V, O, N> FiberSuspension<V, O, N> {
                 view,
                 opaque,
             ),
+            (
+                FiberSuspensionReason::DialogueActive { .. },
+                super::super::schema::AwbcTerminator::Dialogue {
+                    resume: original, ..
+                },
+            ) if resume == *original => Ok(()),
             _ => Err(FiberStateError::InvalidFrame),
         }
     }
@@ -392,18 +475,16 @@ impl<V, O, N> FiberSuspensionReason<V, O, N> {
                 .collection(count)
                 .map_err(|e| FiberStateError::Snapshot(e.into()))?;
         }
-        if let Some(target) = target {
-            RuntimeProgramValueType::Awbc {
-                program,
-                ty: *target_type,
-            }
-            .validate_view(opaque(target), frame.binding, resources)
-            .map_err(|e| {
-                FiberStateError::Snapshot(crate::value::AwbcRuntimeValueSnapshotError::ProgramType(
-                    Box::new(e),
-                ))
-            })?;
+        RuntimeProgramValueType::Awbc {
+            program,
+            ty: *target_type,
         }
+        .validate_view(opaque(target), frame.binding, resources)
+        .map_err(|e| {
+            FiberStateError::Snapshot(crate::value::AwbcRuntimeValueSnapshotError::ProgramType(
+                Box::new(e),
+            ))
+        })?;
         let content = program
             .content_units
             .get(content.index())
@@ -637,10 +718,7 @@ impl FiberSuspensionReason {
                 line_task_captures,
                 result,
             } => FiberSuspensionReason::Dialogue {
-                target: target
-                    .as_ref()
-                    .map(|v| AwbcRuntimeValueSnapshot::from_admitted_opaque(v, owner))
-                    .transpose()?,
+                target: AwbcRuntimeValueSnapshot::from_admitted_opaque(target, owner)?,
                 target_type: *target_type,
                 content: *content,
                 values: values
@@ -676,6 +754,9 @@ impl FiberSuspensionReason {
                     .collect::<Result<Vec<_>, _>>()?
                     .into_boxed_slice(),
                 result: result.clone(),
+            },
+            Self::DialogueActive { activation } => FiberSuspensionReason::DialogueActive {
+                activation: *activation,
             },
             Self::Choice {
                 choice,
@@ -765,16 +846,14 @@ impl
                 line_task_captures,
                 result,
             } => FiberSuspensionReason::Dialogue {
-                target: target
-                    .map(|v| {
-                        let RuntimeValue::Opaque(target) = value(v)? else {
-                            return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
-                                message: "admitted dialogue target is not opaque".into(),
-                            });
-                        };
-                        Ok(target)
-                    })
-                    .transpose()?,
+                target: {
+                    let RuntimeValue::Opaque(target) = value(target)? else {
+                        return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                            message: "admitted dialogue target is not opaque".into(),
+                        });
+                    };
+                    target
+                },
                 target_type,
                 content,
                 values: values
@@ -811,6 +890,9 @@ impl
                     .into_boxed_slice(),
                 result,
             },
+            Self::DialogueActive { activation } => {
+                FiberSuspensionReason::DialogueActive { activation }
+            }
             Self::Choice {
                 choice,
                 destination,
@@ -895,6 +977,9 @@ where
                 effects: effects.clone(),
                 line_task_captures: line_task_captures.clone(),
                 result: result.clone(),
+            },
+            Self::DialogueActive { activation } => Self::DialogueActive {
+                activation: *activation,
             },
             Self::Choice {
                 choice,

@@ -3148,7 +3148,7 @@ fn execute_terminator(
                 fiber,
                 *resume,
                 FiberSuspensionReason::Dialogue {
-                    target: Some(target_value),
+                    target: target_value,
                     target_type,
                     content: *content,
                     values,
