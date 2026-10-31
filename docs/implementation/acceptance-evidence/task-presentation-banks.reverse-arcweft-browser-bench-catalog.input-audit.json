@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "run": "presentation-banks.reverse-arcweft-browser-bench-catalog",
+  "actualExitCode": 0,
+  "scope": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-browser-bench",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "sourceInputs": 4010,
+  "sourceDrift": 0,
+  "held": 14,
+  "at": "2026-10-31T07:39:33.6505965Z"
+}

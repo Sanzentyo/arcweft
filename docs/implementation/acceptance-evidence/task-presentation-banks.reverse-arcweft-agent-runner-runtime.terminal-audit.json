@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "091ffdad88bf290912982bb8c484bf0efe700514",
+  "run": "presentation-banks.reverse-arcweft-agent-runner-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [   0.350s] 69 tests run: 69 passed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 69,
+  "passed": 69,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4010,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-31T07:37:57.7749195Z"
+}

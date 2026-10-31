@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "091ffdad88bf290912982bb8c484bf0efe700514",
+  "run": "presentation-banks.reverse-arcweft-adapter-desktop-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [   0.035s] 7 tests run: 7 passed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 7,
+  "passed": 7,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4010,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-31T07:26:48.9274643Z"
+}

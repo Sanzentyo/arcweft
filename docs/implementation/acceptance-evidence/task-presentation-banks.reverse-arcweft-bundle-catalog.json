@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "091ffdad88bf290912982bb8c484bf0efe700514",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-bundle",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\presentation-banks.reverse-arcweft-bundle-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-31T07:39:36.7247590Z",
+  "finishedAt": "2026-10-31T07:43:40.1165867Z"
+}

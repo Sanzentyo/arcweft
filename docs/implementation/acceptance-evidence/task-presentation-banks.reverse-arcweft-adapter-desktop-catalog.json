@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "091ffdad88bf290912982bb8c484bf0efe700514",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-adapter-desktop",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\presentation-banks.reverse-arcweft-adapter-desktop-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-31T07:25:25.6868416Z",
+  "finishedAt": "2026-10-31T07:26:45.9416782Z"
+}

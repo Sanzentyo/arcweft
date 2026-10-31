@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "091ffdad88bf290912982bb8c484bf0efe700514",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-agent-policy",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\presentation-banks.reverse-arcweft-agent-policy-catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-31T07:31:46.9787496Z",
+  "finishedAt": "2026-10-31T07:32:05.9253563Z"
+}

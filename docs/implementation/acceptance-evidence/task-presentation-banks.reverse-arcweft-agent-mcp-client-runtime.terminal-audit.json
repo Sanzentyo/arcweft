@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "091ffdad88bf290912982bb8c484bf0efe700514",
+  "run": "presentation-banks.reverse-arcweft-agent-mcp-client-runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [   0.013s] 2 tests run: 2 passed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 2,
+  "passed": 2,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4010,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-31T07:31:46.4946485Z"
+}

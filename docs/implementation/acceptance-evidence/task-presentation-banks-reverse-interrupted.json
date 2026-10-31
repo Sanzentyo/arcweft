@@ -1,0 +1,626 @@
+{
+  "version": 1,
+  "source": "091ffdad88bf290912982bb8c484bf0efe700514",
+  "status": "interrupted deliberately for continued implementation",
+  "selectedPackages": 53,
+  "ownerReused": {
+    "failed": 0,
+    "passed": 2144,
+    "executed": 2144
+  },
+  "terminalConsumers": 10,
+  "executed": 233.0,
+  "passed": 233.0,
+  "failed": 0.0,
+  "catalogFailures": 0,
+  "unfinished": {
+    "runtime": "no final summary or runtime receipt; partial PASS rows are not suite completion",
+    "package": "arcweft-bundle",
+    "stage": "runtime"
+  },
+  "sourceInputs": 4010,
+  "sourceDrift": 0,
+  "outerSession": 2867,
+  "outerExitCode": 1,
+  "cargoDescendantsObservedAfterInterrupt": 0,
+  "reason": "Continue the same Core implementation cohort; final full consumer validation follows the completed source changes, in accordance with user preference for intermediate checkpoints without requiring full green.",
+  "rows": [
+    {
+      "package": "arcweft",
+      "catalog": "presentation-banks.reverse-arcweft-catalog",
+      "catalogExitCode": 0,
+      "status": "no-native-matching-tests",
+      "runtime": null,
+      "executed": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    {
+      "package": "arcweft-adapter-desktop",
+      "catalog": "presentation-banks.reverse-arcweft-adapter-desktop-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "presentation-banks.reverse-arcweft-adapter-desktop-runtime",
+      "actualExitCode": 0,
+      "executed": 7,
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4010,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 2,
+      "binaryDrift": 0,
+      "failureSet": []
+    },
+    {
+      "package": "arcweft-adapter-sema",
+      "catalog": "presentation-banks.reverse-arcweft-adapter-sema-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "presentation-banks.reverse-arcweft-adapter-sema-runtime",
+      "actualExitCode": 0,
+      "executed": 13,
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4010,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 1,
+      "binaryDrift": 0,
+      "failureSet": []
+    },
+    {
+      "package": "arcweft-agent-mcp",
+      "catalog": "presentation-banks.reverse-arcweft-agent-mcp-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "presentation-banks.reverse-arcweft-agent-mcp-runtime",
+      "actualExitCode": 0,
+      "executed": 31,
+      "passed": 31,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4010,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 3,
+      "binaryDrift": 0,
+      "failureSet": []
+    },
+    {
+      "package": "arcweft-agent-mcp-client",
+      "catalog": "presentation-banks.reverse-arcweft-agent-mcp-client-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "presentation-banks.reverse-arcweft-agent-mcp-client-runtime",
+      "actualExitCode": 0,
+      "executed": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4010,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 1,
+      "binaryDrift": 0,
+      "failureSet": []
+    },
+    {
+      "package": "arcweft-agent-policy",
+      "catalog": "presentation-banks.reverse-arcweft-agent-policy-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "presentation-banks.reverse-arcweft-agent-policy-runtime",
+      "actualExitCode": 0,
+      "executed": 14,
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4010,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 1,
+      "binaryDrift": 0,
+      "failureSet": []
+    },
+    {
+      "package": "arcweft-agent-protocol",
+      "catalog": "presentation-banks.reverse-arcweft-agent-protocol-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "presentation-banks.reverse-arcweft-agent-protocol-runtime",
+      "actualExitCode": 0,
+      "executed": 54,
+      "passed": 54,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4010,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 1,
+      "binaryDrift": 0,
+      "failureSet": []
+    },
+    {
+      "package": "arcweft-agent-repl",
+      "catalog": "presentation-banks.reverse-arcweft-agent-repl-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "presentation-banks.reverse-arcweft-agent-repl-runtime",
+      "actualExitCode": 0,
+      "executed": 37,
+      "passed": 37,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4010,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 9,
+      "binaryDrift": 0,
+      "failureSet": []
+    },
+    {
+      "package": "arcweft-agent-runner",
+      "catalog": "presentation-banks.reverse-arcweft-agent-runner-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "presentation-banks.reverse-arcweft-agent-runner-runtime",
+      "actualExitCode": 0,
+      "executed": 69,
+      "passed": 69,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4010,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 1,
+      "binaryDrift": 0,
+      "failureSet": []
+    },
+    {
+      "package": "arcweft-browser-bench",
+      "catalog": "presentation-banks.reverse-arcweft-browser-bench-catalog",
+      "catalogExitCode": 0,
+      "status": "passed",
+      "runtime": "presentation-banks.reverse-arcweft-browser-bench-runtime",
+      "actualExitCode": 0,
+      "executed": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "sourceInputs": 4010,
+      "sourceDrift": 0,
+      "catalogCaseDrift": 0,
+      "binaryCount": 2,
+      "binaryDrift": 0,
+      "failureSet": []
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-adapter-desktop-catalog.input-audit.json",
+      "sha256": "0db099279189b310cf491b34d32938b782cf75288979e9db81cde4bab5450a5c",
+      "bytes": 389
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-adapter-desktop-catalog.inventory.json",
+      "sha256": "21a891b9af3ac159de3a9935b4d7092a880be5a651b3a73b0f50e7c57f63d296",
+      "bytes": 1764
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-adapter-desktop-catalog.json",
+      "sha256": "080d5cbc6ff833c24ea96da3874d367f1fc9e2858c724dc0d8269e90a5ee0830",
+      "bytes": 521
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-adapter-desktop-catalog.log",
+      "sha256": "413c8dd7442858577d5a143daeded22eed0fbeced0cc3d47d3830c2493c45379",
+      "bytes": 76754
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-adapter-desktop-runtime.binaries-before.json",
+      "sha256": "6f3dc6114011b022d39f0dccca08879a4d7ac64660c206310a41e449a6f7adca",
+      "bytes": 490
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-adapter-desktop-runtime.json",
+      "sha256": "bcc963682e9b2439102ab06183dca8e5adf94b8ec621f9b2202fa66c94115b0c",
+      "bytes": 613
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-adapter-desktop-runtime.log",
+      "sha256": "e9b3be4fa7684e206e218af6fadfe9bc32be65ed466e380d14df898569c2fe6b",
+      "bytes": 74534
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-adapter-desktop-runtime.terminal-audit.json",
+      "sha256": "5751ffd382ceeca5be41e6989701c3463dac8af05be1f91bfd9a969f7b121246",
+      "bytes": 627
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-adapter-sema-catalog.input-audit.json",
+      "sha256": "5d0fe39dd48f8994346255d59edc9cd5440363a753118df7cef417514ff78018",
+      "bytes": 383
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-adapter-sema-catalog.inventory.json",
+      "sha256": "a3793541d659785221052accc881ddca75ed71b2cbf36d3e9c206a50cb233835",
+      "bytes": 3372
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-adapter-sema-catalog.json",
+      "sha256": "5c9a6280734e4560df320d923144f0d031129d9d7bb0d09913d8cd20fcdf14d2",
+      "bytes": 515
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-adapter-sema-catalog.log",
+      "sha256": "a49d911f1f328e8ffaf817d25fc646ca89699e2af8f4c18f0aee5d051a7e8f45",
+      "bytes": 87911
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-adapter-sema-runtime.binaries-before.json",
+      "sha256": "e66c6d6ca2d13cf364dfa398e966edfaba46714149070f1c4d16b4e69f6ec5c7",
+      "bytes": 218
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-adapter-sema-runtime.json",
+      "sha256": "5a47a1116a4766faba5b4c6ede9f20ab90ee78da324259611e0a8309e934f6b5",
+      "bytes": 607
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-adapter-sema-runtime.log",
+      "sha256": "e39f7f55298140dc576eb63d941f0a498608bb39f2043bdee55da762acdee473",
+      "bytes": 88236
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-adapter-sema-runtime.terminal-audit.json",
+      "sha256": "42498f31d6508ed49746ccc82b1d1f00426ae3b33a418d6256760705f47fec9a",
+      "bytes": 628
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-mcp-catalog.input-audit.json",
+      "sha256": "716cfed5d7fbd6ec97128e6b51ee4b6e7910bcd33060ce9f2d39d897332a56ea",
+      "bytes": 377
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-mcp-catalog.inventory.json",
+      "sha256": "af39fb21fcf9b1c669d454ea9ed31115058e050ef0d2d080fe05c0e7686fe015",
+      "bytes": 7027
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-mcp-catalog.json",
+      "sha256": "d38428129bb9f294b9518489aa7c4d09b5c22975835be1df2a39ac1a4efa7d6a",
+      "bytes": 509
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-mcp-catalog.log",
+      "sha256": "bccc212a4c4f56d0d105977c2045abdd7aba9157f965ead0dfe62b13f4d21b72",
+      "bytes": 93829
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-mcp-client-catalog.input-audit.json",
+      "sha256": "7d7278999b0f4ab8adbfe80d79d1ad7db3e8b2dbf37f814e858f172cf865f2d1",
+      "bytes": 391
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-mcp-client-catalog.inventory.json",
+      "sha256": "90de1fe1c171d83bba76625b6f3941f5078c4379e46897a84f44f411231b1397",
+      "bytes": 525
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-mcp-client-catalog.json",
+      "sha256": "b72de1e10b5b1350c84d8c2d6c400c359b7b69ce0ff4ff47f1a488ba23ba22a2",
+      "bytes": 523
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-mcp-client-catalog.log",
+      "sha256": "8396658ccd22aa24afe063db81d650408cbbcec83d6d034588695dfd3088facc",
+      "bytes": 87337
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-mcp-client-runtime.binaries-before.json",
+      "sha256": "9e3d4392fe84e892056cb3238b2984a5ebc5b929f9a1dccb661893f4228b0e2b",
+      "bytes": 226
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-mcp-client-runtime.json",
+      "sha256": "0e176d89d8969783807f310e0eacd4e40f0189fc6bec34404a64ab94d1e94c35",
+      "bytes": 615
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-mcp-client-runtime.log",
+      "sha256": "638d5bb6ec03bcd2671901a8702809e05a7003ab646d5c4596dd781b80308a3f",
+      "bytes": 86527
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-mcp-client-runtime.terminal-audit.json",
+      "sha256": "5964bcf54ead9a98070aa75b2496138800a593e87ca82262a948f6adb1d1bc8e",
+      "bytes": 628
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-mcp-runtime.binaries-before.json",
+      "sha256": "170a71372febb71436df78dee44fc4ec1a897ceffdbd0b1e42580abe305f39b7",
+      "bytes": 710
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-mcp-runtime.json",
+      "sha256": "d8892b77d19c4c3b72a47b0b03f88fb96c092af97ebbe1b2ed2159e315d0dce3",
+      "bytes": 601
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-mcp-runtime.log",
+      "sha256": "fc99f3affd4522e69c219777e45e90e96a5ccf457450ef7c919e9eaba4421603",
+      "bytes": 93192
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-mcp-runtime.terminal-audit.json",
+      "sha256": "63b8d9e0558ed55eb9d538e113b20c82015c1af2c04796f7b4861d786e815e1a",
+      "bytes": 625
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-policy-catalog.input-audit.json",
+      "sha256": "8b06ed4b004ee52d16731ade319531fb1ce610693db3fee27c788fc0739f4f40",
+      "bytes": 383
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-policy-catalog.inventory.json",
+      "sha256": "45e29e73e5d87b0aa75b64af6daf6f95d88ffcb410fcbbae8466a70533e66b0a",
+      "bytes": 3151
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-policy-catalog.json",
+      "sha256": "aa42c26406725d30745934847da8debcda54239308af80a1b115f3b98cbb5d3c",
+      "bytes": 515
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-policy-catalog.log",
+      "sha256": "057d29c554339ae4247e95ea786689414fb47240955aece5d9836d6d3c091744",
+      "bytes": 76339
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-policy-runtime.binaries-before.json",
+      "sha256": "0898b9b82d1afb5ae78b6d75594d61fccb4fdb6a76be1a4a727fd27a08721a7b",
+      "bytes": 218
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-policy-runtime.json",
+      "sha256": "4a098e179f39a391023cc35b5c788e7e672e857df3801810042a05de4cb1a3d6",
+      "bytes": 607
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-policy-runtime.log",
+      "sha256": "3fbd38d4d612b579b2be6f558be528ee2157c2309bd6333b2c6371758458b31d",
+      "bytes": 76273
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-policy-runtime.terminal-audit.json",
+      "sha256": "6c4683dc1fe4f9f99438af9ec39ba26cbc87ad548b5568961f71e489706a6dcf",
+      "bytes": 628
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-protocol-catalog.input-audit.json",
+      "sha256": "67c1137869f9985a2f6cddc71de294fac92dd0e6e2304b9aec93cb7247398923",
+      "bytes": 387
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-protocol-catalog.inventory.json",
+      "sha256": "b332d9f971c4c98de3dfcbc22bf5ebce302ae524a700b5121bc35b1cff1b163e",
+      "bytes": 13523
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-protocol-catalog.json",
+      "sha256": "5a462efca54e18e30c76c83f659201c8eeef4ac8f606c185a3b84c374f2b2a2c",
+      "bytes": 519
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-protocol-catalog.log",
+      "sha256": "f044da1da1e2c6b2778b77cf36ed1c5a7cd174af7ec27a2627625f9508627cfb",
+      "bytes": 82158
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-protocol-runtime.binaries-before.json",
+      "sha256": "b0d12e7e002a8165829cd129accf8547a6bc1ba61e8dc16474a24e94c4a1f401",
+      "bytes": 222
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-protocol-runtime.json",
+      "sha256": "ddd1e56e61737fc18b94abad34ad14f8ec760168997edfb646eb1d62fd2c416f",
+      "bytes": 611
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-protocol-runtime.log",
+      "sha256": "0ad3e64c55762ec4cbf59888de5c017b46a5254e1eaeb69641ef4301ffd58e9d",
+      "bytes": 87761
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-protocol-runtime.terminal-audit.json",
+      "sha256": "96974dacd413377e83e88bc6fbdb2ad9325a3c22f2029a45c4cf76359c7ef068",
+      "bytes": 630
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-repl-catalog.input-audit.json",
+      "sha256": "635a11f34cbb91c596694d6081d4931fc30f5b260e12dd5f3731b3a8597b0c14",
+      "bytes": 379
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-repl-catalog.inventory.json",
+      "sha256": "b243903ae8d94e0e076d95d6ecea7fd58cc16b8719964862e17ca6fa9749e9ca",
+      "bytes": 8856
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-repl-catalog.json",
+      "sha256": "347fb87bf198cf7b2b3c44fb2daffde8d9cb022f86ffef2830de2824f06cc988",
+      "bytes": 511
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-repl-catalog.log",
+      "sha256": "784e5423686e86d2d55a1d4ad21f88010003bc4c133739c08e3b605f82a6e153",
+      "bytes": 95566
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-repl-runtime.binaries-before.json",
+      "sha256": "e0af2976846b3276fa691cfc97a4d10492816b3ee0c9c8538cc90da5a8b8f824",
+      "bytes": 2132
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-repl-runtime.json",
+      "sha256": "e918c73ab8bf67632758301840fbf144d69a849a668c33a15f4bb7736bd8bd8d",
+      "bytes": 603
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-repl-runtime.log",
+      "sha256": "3ea7d9db13609e3526a22a6a78b6c5a16727452fe5e4ed5abf9e475e862b92d3",
+      "bytes": 95703
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-repl-runtime.terminal-audit.json",
+      "sha256": "d4531d29b488a4b202d868ab5981a52591a9c92381a966229e7349931b43a82e",
+      "bytes": 635
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-runner-catalog.input-audit.json",
+      "sha256": "4041890dcf91033223ba38c8f443c345d3da33138fe7ae8a05f03bf7bfacbd97",
+      "bytes": 383
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-runner-catalog.inventory.json",
+      "sha256": "8e738216eab954b11d3a7af850be142f9a77fa13b209d572f074e5dae558e106",
+      "bytes": 16136
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-runner-catalog.json",
+      "sha256": "d98deb33710c7241accd6f80f8f82f2044afd206ed6c339b255a9aa84c1ae61e",
+      "bytes": 515
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-runner-catalog.log",
+      "sha256": "e3431a99a699f5bd0a7ff9ee1f2df7077fca756a7aa7487acf44a8fa98b94ad9",
+      "bytes": 96947
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-runner-runtime.binaries-before.json",
+      "sha256": "cd2271a1c49e0f96c6c13bfdd3d56a00b737742e59713139e606bb3bd301aa11",
+      "bytes": 218
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-runner-runtime.json",
+      "sha256": "89b42e31cd1036ba6a972e707862ed49bbc96d350d8a8747bcad3b8eec31cd8d",
+      "bytes": 607
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-runner-runtime.log",
+      "sha256": "f79fab43eb7d4b8539e7dab701719929439c97403238724e14534c5662e98ab4",
+      "bytes": 102136
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-agent-runner-runtime.terminal-audit.json",
+      "sha256": "16f008b57eedf2bee17f607a5c0f60e1d7346f1cf10fab22e5256d4239806144",
+      "bytes": 628
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-browser-bench-catalog.input-audit.json",
+      "sha256": "f3d844d462b528b93ed9cfa35ead08ea36984348d2a3929c8a668826b5b5458c",
+      "bytes": 385
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-browser-bench-catalog.inventory.json",
+      "sha256": "ddb2a4fad7f2155a722e7100361a05145cab88292343ed645326535bde243b23",
+      "bytes": 1415
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-browser-bench-catalog.json",
+      "sha256": "a8a4d1cf2d98eee4d6d4e503a0b540f08e9dc093536d9dddb1aa085bae5d67c3",
+      "bytes": 517
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-browser-bench-catalog.log",
+      "sha256": "553f89fece014b4c83ac3ed63dd29fc09b0e3056edb0b5a2181e21f7ba6e820a",
+      "bytes": 77866
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-browser-bench-runtime.binaries-before.json",
+      "sha256": "b61598b34c888f4f792b1db271bfd7c4165793f5d5506462555bd02741a8bb84",
+      "bytes": 488
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-browser-bench-runtime.json",
+      "sha256": "b20c9210799cfbb091071d6c606155b2cd5ffb5467a5089ba1e3e7c16d59bc78",
+      "bytes": 609
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-browser-bench-runtime.log",
+      "sha256": "829377f683164f0ad68ae676723d926c07dd0faa193e2ae474815c143607b83f",
+      "bytes": 74096
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-browser-bench-runtime.terminal-audit.json",
+      "sha256": "c2edaaa7c9729d238583cf1fd543e6bc2841ce8126330711d544059330dd47c0",
+      "bytes": 625
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-bundle-catalog.input-audit.json",
+      "sha256": "59afd717c9ff4be61c7fe80cae903959bf7949ac8ce91826d8b6febfa1e6b163",
+      "bytes": 371
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-bundle-catalog.inventory.json",
+      "sha256": "37c11bf27bb0b1b488da9314ef779df7907f84c22c13ec42ad632d66c9def9d5",
+      "bytes": 78899
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-bundle-catalog.json",
+      "sha256": "99f4d1d526eda8afe538eb696ce0fa56eb1b409ecb0e2a0005dae4f847aae530",
+      "bytes": 503
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-bundle-catalog.log",
+      "sha256": "96a556b68d84a59539ffc97afb79b69b2b9f16f2befc0df4c160fd8b82cbc3dc",
+      "bytes": 130764
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-bundle-runtime.binaries-before.json",
+      "sha256": "20533667335afeb6b73ee8819afbbd8349bd349b7cfbd047f9b65660873291fc",
+      "bytes": 5244
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-bundle-runtime.log",
+      "sha256": "0a89777ec901eaec9e981129c3a0f2b5188a7f297a22f75fcfa9407a67d5add6",
+      "bytes": 117765
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-catalog.input-audit.json",
+      "sha256": "c16c217398a52c6017201d39b7fba302afb2b0c1c9553b6cd7960d7bf29b84a9",
+      "bytes": 357
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-catalog.inventory.json",
+      "sha256": "1b8d7e704c793407cccc2b506b63ac665a2da6fe30f8ec21212e11e0a4fd1462",
+      "bytes": 38
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-catalog.json",
+      "sha256": "a973b1c45d2b09e4a8d3b2e1f73bb5351de3fd6f3399fd4d9cd4eaccd9096a1b",
+      "bytes": 489
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-arcweft-catalog.log",
+      "sha256": "5e0df9796a7aac4e1f56f1bb8223b008f2930eb8df8eedbeb8b0d5fce663cd04",
+      "bytes": 74120
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.reverse-reverse-matrix.json",
+      "sha256": "9c9cd180b2f9e19d8511ceb7b1dd962e6a948139237e8fba7bf4ba602bcdc2e8",
+      "bytes": 5970
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-banks.interruption-docs-audit1.log",
+      "sha256": "6303e8c6889c13aa48eae90386be3b361728f841117dc50c881c0a0512ce664d",
+      "bytes": 532
+    }
+  ],
+  "requiredRemaining": "Full owner/consumer acceptance on the final changed source; no prior accepted feature is reopened by this interruption.",
+  "recordedAt": "2026-10-31T07:48:40.5949063Z",
+  "supersedes": "The earlier owner-validation record remains immutable and its reverse.running value records the publication-time state. This interruption record supersedes only that ongoing-run status, not the accepted owner/quality results."
+}

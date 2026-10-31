@@ -1,0 +1,12 @@
+[
+  {
+    "binary": "arcweft-adapter-desktop",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_adapter_desktop-d8c69be73088279e.exe",
+    "sha256": "21a6a3f9c3a41bdf4636c1ad09853cfa0afa219f004348a83fba5340b3c9a0a7"
+  },
+  {
+    "binary": "arcweft-adapter-desktop::native_integration",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\native_integration-fafa925683fe34e2.exe",
+    "sha256": "a5122249451e0663609a873d4e3c2ae9170a11c63a6e8f5b3f2b8604cb932063"
+  }
+]

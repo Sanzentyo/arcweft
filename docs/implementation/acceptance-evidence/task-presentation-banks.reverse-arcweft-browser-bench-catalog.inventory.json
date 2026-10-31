@@ -1,0 +1,47 @@
+{
+  "rows": [
+    {
+      "package": "arcweft-browser-bench",
+      "binary": "arcweft-browser-bench",
+      "test": "tests::default_report_schema_serializes_without_paths",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-browser-bench",
+      "binary": "arcweft-browser-bench",
+      "test": "tests::recommendations_keep_cpu_when_gpu_is_not_faster",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-browser-bench",
+      "binary": "arcweft-browser-bench",
+      "test": "tests::recommendations_select_fastest_correct_gpu_case_with_capacity",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-browser-bench",
+      "binary": "arcweft-browser-bench",
+      "test": "tests::recommendations_treat_auto_as_policy_observation_not_candidate",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-browser-bench",
+      "binary": "arcweft-browser-bench",
+      "test": "tests::recommendations_use_median_of_repeated_mode_medians",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-browser-bench",
+      "binary": "arcweft-browser-bench",
+      "test": "tests::stability_groups_repeated_round_medians",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "excluded": 0
+}
