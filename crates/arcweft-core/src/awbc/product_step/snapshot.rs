@@ -3522,53 +3522,32 @@ impl AwbcProductStepExecutor {
         Ok(())
     }
 
-    #[must_use]
-    fn admit_task_state(
+    pub(super) fn admit_task_state(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
-    ) -> Result<(), AwbcProductSaveError> {
-        let invalid = |error: crate::value::AwbcRuntimeValueSnapshotError| {
-            AwbcProductSaveError::InvalidSnapshot {
-                message: error.to_string(),
-            }
-        };
-        admission
-            .validate_metadata_collection(self.queued_task_events.len())
-            .map_err(invalid)?;
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+        admission.validate_metadata_collection(self.queued_task_events.len())?;
         for event in &self.queued_task_events {
-            event
-                .admit_retained(self.need_producers.task_spec(event.correlation), admission)
-                .map_err(invalid)?;
+            event.admit_retained(self.need_producers.task_spec(event.correlation), admission)?;
         }
-        self.need_producers
-            .admit_retained(admission)
-            .map_err(invalid)
+        self.need_producers.admit_retained(admission)
     }
 
-    fn admit_fiber_state(
+    pub(super) fn admit_fiber_state(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
-    ) -> Result<(), AwbcProductSaveError> {
-        let invalid = |error: crate::value::AwbcRuntimeValueSnapshotError| {
-            AwbcProductSaveError::InvalidSnapshot {
-                message: error.to_string(),
-            }
-        };
-        admission
-            .validate_metadata_collection(self.child_fibers.len())
-            .map_err(invalid)?;
-        self.fiber.admit_retained(admission).map_err(invalid)?;
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+        admission.validate_metadata_collection(self.child_fibers.len())?;
+        self.fiber.admit_retained(admission)?;
         for child in &self.child_fibers {
-            child.fiber.admit_retained(admission).map_err(invalid)?;
+            child.fiber.admit_retained(admission)?;
         }
         self.facade_fiber
             .frame
             .observations
             .admit_retained(admission)
-            .map_err(|message| AwbcProductSaveError::InvalidSnapshot { message })?;
-        Ok(())
+            .map_err(|message| crate::value::AwbcRuntimeValueSnapshotError::Message { message })
     }
-
     fn snapshot_admitted_task_state(
         &self,
         owner: &crate::task::RuntimeProgramOwner,
@@ -3596,71 +3575,12 @@ impl AwbcProductStepExecutor {
         Ok((need_producers, queued_task_events))
     }
     pub fn snapshot(&self) -> Result<AwbcProductExecutorSnapshot, AwbcProductSaveError> {
-        if self.fiber.presentation_bank() != crate::runtime_id::RuntimePresentationBankId::Root {
-            return Err(AwbcProductSaveError::InvalidSnapshot {
-                message: "Product main fiber must retain the Root presentation bank".into(),
-            });
-        }
-        self.fiber
-            .root
-            .admit_executor_roots(
-                self.root.as_ref(),
-                &self.program,
-                self.child_fibers.iter().map(|child| {
-                    (
-                        child.fiber.root,
-                        child.fiber.status,
-                        matches!(child.owner, ProductChildFiberOwner::Independent),
-                        matches!(
-                            child
-                                .fiber
-                                .suspension
-                                .as_ref()
-                                .map(|suspension| &suspension.reason),
-                            Some(crate::awbc::fiber::FiberSuspensionReason::BudgetYield)
-                        ),
-                    )
-                }),
-            )
+        let _admission = self
+            .retained_execution_admission(super::checkpoint::ProductCheckpointTarget::Main)
             .map_err(|error| AwbcProductSaveError::InvalidSnapshot {
                 message: error.to_string(),
             })?;
         let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
-        let mut admission = self
-            .program
-            .retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default());
-        self.admit_presentation_execution(&mut admission)
-            .map_err(|error| AwbcProductSaveError::InvalidSnapshot {
-                message: error.to_string(),
-            })?;
-        if let Some(banks) = &self.presentation {
-            banks
-                .admit_retained(&owner, self.artifact_fingerprint, &mut admission)
-                .map_err(|error| AwbcProductSaveError::InvalidSnapshot {
-                    message: error.to_string(),
-                })?;
-        }
-        if let Some(root) = &self.root {
-            root.admit_retained(&mut admission).map_err(|error| {
-                AwbcProductSaveError::InvalidSnapshot {
-                    message: error.to_string(),
-                }
-            })?;
-        }
-        self.admit_fiber_state(&mut admission)?;
-        self.admit_task_state(&mut admission)?;
-        self.dialogues
-            .admit_retained(&mut admission, |activation, frame, line, admission| {
-                frame.admit_retained(&self.program, activation, line, admission)
-            })
-            .map_err(|error| AwbcProductSaveError::InvalidSnapshot {
-                message: error.to_string(),
-            })?;
-        admission.finish_presentation_custody().map_err(|error| {
-            AwbcProductSaveError::InvalidSnapshot {
-                message: error.to_string(),
-            }
-        })?;
         let root = self
             .root
             .as_ref()

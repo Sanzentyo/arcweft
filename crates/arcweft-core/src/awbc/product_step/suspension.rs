@@ -2663,17 +2663,14 @@ impl AwbcProductStepExecutor {
             );
             return;
         }
-        let checkpoint = match self.fiber.checkpoint(
-            &mut self
-                .program
-                .retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default()),
-        ) {
-            Ok(checkpoint) => checkpoint,
-            Err(error) => {
-                self.fail_with_error(ProductStepError::Fiber(error), output);
-                return;
-            }
-        };
+        let checkpoint =
+            match self.execution_checkpoint(super::checkpoint::ProductCheckpointTarget::Main) {
+                Ok(checkpoint) => checkpoint,
+                Err(error) => {
+                    self.fail_with_error(error.into(), output);
+                    return;
+                }
+            };
         let committed = self
             .need_producers
             .commit_start_visit_with(started, |handle| {
@@ -2685,7 +2682,9 @@ impl AwbcProductStepExecutor {
         let admission = match committed {
             Ok((admission, ())) => admission,
             Err(error) => {
-                if let Err(restore_error) = self.fiber.restore(checkpoint, &self.program) {
+                if let Err(restore_error) =
+                    checkpoint.restore(&mut self.fiber, &mut self.presentation, &self.program)
+                {
                     self.fail_with_error(ProductStepError::Fiber(restore_error), output);
                 } else {
                     self.fail_with_error(ProductStepError::Internal(error.to_string()), output);
@@ -2749,14 +2748,12 @@ impl AwbcProductStepExecutor {
             );
             return;
         }
-        let checkpoint = match self.child_fibers[index].fiber.checkpoint(
-            &mut self
-                .program
-                .retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default()),
-        ) {
+        let checkpoint = match self
+            .execution_checkpoint(super::checkpoint::ProductCheckpointTarget::Child(index))
+        {
             Ok(checkpoint) => checkpoint,
             Err(error) => {
-                self.fail_with_error(ProductStepError::Fiber(error), output);
+                self.fail_with_error(error.into(), output);
                 return;
             }
         };
@@ -2776,10 +2773,11 @@ impl AwbcProductStepExecutor {
         let admission = match committed {
             Ok((admission, ())) => admission,
             Err(error) => {
-                if let Err(restore_error) = self.child_fibers[index]
-                    .fiber
-                    .restore(checkpoint, &self.program)
-                {
+                if let Err(restore_error) = checkpoint.restore(
+                    &mut self.child_fibers[index].fiber,
+                    &mut self.presentation,
+                    &self.program,
+                ) {
                     self.fail_with_error(ProductStepError::Fiber(restore_error), output);
                 } else {
                     self.fail_with_error(ProductStepError::Internal(error.to_string()), output);

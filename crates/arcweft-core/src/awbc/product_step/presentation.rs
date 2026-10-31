@@ -46,8 +46,13 @@ impl AwbcProductChildFiberOwnerSnapshot {
 }
 
 impl AwbcProductStepExecutor {
-    pub(super) fn admit_presentation_execution(
+    pub(super) fn admit_presentation_execution_in(
         &self,
+        dialogues: &crate::line_task::RuntimeDialogueRetainedContour<
+            '_,
+            ActiveDialogue,
+            AwbcTypeId,
+        >,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         let mut context = PresentationExecutionAdmission::new(
@@ -80,8 +85,8 @@ impl AwbcProductStepExecutor {
                 admission,
             )?;
         }
-        self.dialogues
-            .try_visit_active(|activation, frame| {
+        dialogues
+            .try_visit_active(|activation, frame, _| {
                 context.admit_dialogue(*activation, admission)?;
                 if let Some(fiber) = frame.activation_fiber() {
                     context.register_fiber(

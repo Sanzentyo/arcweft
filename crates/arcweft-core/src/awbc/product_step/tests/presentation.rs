@@ -135,7 +135,12 @@ fn vm_terminal_dialogue_selection_preserves_its_value_until_scope_custody_is_ava
 }
 
 fn fixture() -> (AwbcProductStepExecutor, RuntimePresentationHandleToken) {
-    let mut program = return_program();
+    fixture_with_program(return_program())
+}
+
+fn fixture_with_program(
+    mut program: AwbcProgram,
+) -> (AwbcProductStepExecutor, RuntimePresentationHandleToken) {
     let expected = crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest();
     program
         .runtime_types
@@ -166,6 +171,170 @@ fn fixture() -> (AwbcProductStepExecutor, RuntimePresentationHandleToken) {
         .unwrap();
     executor.presentation = Some(banks);
     (executor, token)
+}
+
+#[test]
+fn execution_checkpoint_restores_the_original_bank_body_grant_and_cursors() {
+    let (mut executor, _) = fixture();
+    let before = executor.snapshot().unwrap();
+    let checkpoint = executor
+        .execution_checkpoint(super::super::checkpoint::ProductCheckpointTarget::Main)
+        .unwrap();
+    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
+    let ledger = executor
+        .presentation
+        .as_mut()
+        .unwrap()
+        .ledger_mut(RuntimePresentationBankId::Root)
+        .unwrap();
+    let retired = executor
+        .fiber
+        .release_presentation_scope(&owner, ledger)
+        .unwrap();
+    assert_eq!(retired.len(), 1);
+    let scope = executor
+        .fiber
+        .bind_presentation_scope(&owner, ledger)
+        .unwrap();
+    ledger
+        .register(
+            &owner,
+            scope,
+            PresentationRegistrationSite::Independent(PresentationResourceKind::View),
+            PresentationBody {
+                expected: crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest(),
+                binding: None,
+                value: RuntimePayload(RuntimeValue::Bool(false)),
+            },
+        )
+        .unwrap();
+    checkpoint
+        .restore(
+            &mut executor.fiber,
+            &mut executor.presentation,
+            &executor.program,
+        )
+        .unwrap();
+    assert_eq!(executor.snapshot().unwrap(), before);
+}
+
+#[test]
+fn execution_checkpoint_rejects_a_foreign_program_without_mutating_the_live_graph() {
+    let (mut executor, _) = fixture();
+    let before = executor.snapshot().unwrap();
+    let checkpoint = executor
+        .execution_checkpoint(super::super::checkpoint::ProductCheckpointTarget::Main)
+        .unwrap();
+    let foreign =
+        AwbcProductStepExecutor::for_entry(executor.program().clone(), AwbcEntryId(0), 64).unwrap();
+    assert!(
+        checkpoint
+            .restore(
+                &mut executor.fiber,
+                &mut executor.presentation,
+                &foreign.program
+            )
+            .is_err()
+    );
+    assert_eq!(executor.snapshot().unwrap(), before);
+}
+
+#[test]
+fn execution_checkpoint_includes_root_and_the_actual_withdrawn_dialogue_grants() {
+    let (mut executor, activation) = initial_actor_dialogue_executor();
+    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
+    let bank = RuntimePresentationBankId::Dialogue { activation };
+    let mut banks = PresentationBanks::<PresentationBody<RuntimePayload>>::new(
+        owner.clone(),
+        executor.artifact_fingerprint,
+        PresentationLedgerLimits::for_schema(crate::entry::RuntimeSchemaLimits::engine_default()),
+    );
+    executor
+        .fiber
+        .bind_presentation_scope(
+            &owner,
+            banks.ledger_mut(RuntimePresentationBankId::Root).unwrap(),
+        )
+        .unwrap();
+    let mut transaction = executor.dialogues.begin_transaction(&activation).unwrap();
+    let ProductDialoguePhase::Activating { fiber, .. } = &mut transaction.frame_mut().phase else {
+        unreachable!()
+    };
+    fiber
+        .bind_presentation_scope(&owner, banks.ledger_mut(bank).unwrap())
+        .unwrap();
+    executor.presentation = Some(banks);
+    commit_test_dialogue_transaction(&mut executor, transaction);
+    let before = executor.snapshot().unwrap();
+    let mut transaction = executor.dialogues.begin_transaction(&activation).unwrap();
+    assert!(
+        executor
+            .execution_checkpoint(super::super::checkpoint::ProductCheckpointTarget::Main)
+            .is_err(),
+        "a complete contour cannot silently omit the withdrawn owner"
+    );
+    let checkpoint = executor
+        .execution_checkpoint(super::super::checkpoint::ProductCheckpointTarget::Dialogue(
+            &transaction,
+        ))
+        .unwrap();
+    let ProductDialoguePhase::Activating { fiber, .. } = &mut transaction.frame_mut().phase else {
+        unreachable!()
+    };
+    fiber
+        .release_presentation_scope(
+            &owner,
+            executor
+                .presentation
+                .as_mut()
+                .unwrap()
+                .ledger_mut(bank)
+                .unwrap(),
+        )
+        .unwrap();
+    checkpoint
+        .restore(fiber, &mut executor.presentation, &executor.program)
+        .unwrap();
+    executor.dialogues.restore_transaction(transaction).unwrap();
+    assert_eq!(executor.snapshot().unwrap(), before);
+}
+
+#[test]
+fn product_one_op_runs_with_a_live_bank_before_its_lexical_exit() {
+    let mut program = return_program();
+    program.frame_layouts[0]
+        .scopes
+        .push(crate::awbc::schema::AwbcScopeDefinition {
+            kind: crate::scope::RuntimeScopeFrameKind::EmittedLexical,
+            parent: None,
+            identity: crate::scope::RuntimeScopeIdentity::Anonymous,
+        });
+    program.frame_layouts[0].max_scope_depth = 1;
+    program.instructions = vec![
+        AwbcInstruction::EnterScope {
+            scope: crate::awbc::schema::AwbcScopeId(0),
+        },
+        AwbcInstruction::ExitScope {
+            scope: crate::awbc::schema::AwbcScopeId(0),
+        },
+    ];
+    program.blocks[0].instructions = AwbcTableRange::new(0, 2);
+    let (mut executor, _) = fixture_with_program(program);
+    let output = executor.step(
+        Default::default(),
+        RuntimeStepOptions {
+            budget: crate::step::RuntimeStepBudget { max_ops: 1 },
+            ..RuntimeStepOptions::default()
+        },
+    );
+    assert!(
+        output.output.diagnostics.is_empty(),
+        "{:?}",
+        output.output.diagnostics
+    );
+    assert_eq!(executor.fiber.cursor.instruction_offset, 1);
+    assert_eq!(executor.fiber.active_frame().unwrap().scopes.len(), 1);
+    executor.snapshot().unwrap();
 }
 
 #[test]

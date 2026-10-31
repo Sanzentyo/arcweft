@@ -1168,7 +1168,7 @@ impl super::AwbcProductStepExecutor {
         {
             return self.resume_activation_out(transaction);
         }
-        let (frame, line) = transaction.parts_mut();
+        let frame = transaction.frame();
         let owner_content = frame.content;
         let before = match &frame.phase {
             ProductDialoguePhase::Activating {
@@ -1213,12 +1213,10 @@ impl super::AwbcProductStepExecutor {
         // until their complete ledger/materialization preflight commits.
         let effect_site = before.cursor;
         let effect_frame = before.active_frame()?.instance;
-        let mut effect_checkpoint =
-            Some(
-                before.checkpoint(&mut self.program.retained_value_admission(
-                    crate::entry::RuntimeSchemaLimits::engine_default(),
-                ))?,
-            );
+        let mut effect_checkpoint = Some(self.execution_checkpoint(
+            super::checkpoint::ProductCheckpointTarget::Dialogue(transaction),
+        )?);
+        let (frame, line) = transaction.parts_mut();
         let phase = std::mem::replace(&mut frame.phase, ProductDialoguePhase::Transitioning);
         let ProductDialoguePhase::Activating {
             fiber,
@@ -1248,13 +1246,12 @@ impl super::AwbcProductStepExecutor {
             let step = match step {
                 Ok(step) => step,
                 Err(error) => {
-                    candidate
-                        .as_mut()
-                        .expect("activation fiber remains owned")
+                    effect_checkpoint
+                        .take()
+                        .expect("activation step retained its checkpoint")
                         .restore(
-                            effect_checkpoint
-                                .take()
-                                .expect("activation step retained its checkpoint"),
+                            candidate.as_mut().expect("activation fiber remains owned"),
+                            &mut self.presentation,
                             &self.program,
                         )
                         .expect("accepted activation checkpoint restores in its original program");
@@ -1320,13 +1317,12 @@ impl super::AwbcProductStepExecutor {
                 drop(scoped_defer_observation.take());
                 drop(scoped_unwind_observation.take());
                 drop(std::mem::take(&mut activation_effects));
-                candidate
-                    .as_mut()
-                    .expect("activation fiber remains owned")
+                effect_checkpoint
+                    .take()
+                    .expect("activation step retained its checkpoint")
                     .restore(
-                        effect_checkpoint
-                            .take()
-                            .expect("activation step retained its checkpoint"),
+                        candidate.as_mut().expect("activation fiber remains owned"),
+                        &mut self.presentation,
                         &self.program,
                     )
                     .expect("accepted activation checkpoint restores in its original program");
@@ -1340,13 +1336,12 @@ impl super::AwbcProductStepExecutor {
                     || owned_observation.is_some())
             {
                 drop(activation_effects);
-                candidate
-                    .as_mut()
-                    .expect("activation fiber remains owned")
+                effect_checkpoint
+                    .take()
+                    .expect("effect-producing step retained its checkpoint")
                     .restore(
-                        effect_checkpoint
-                            .take()
-                            .expect("effect-producing step retained its checkpoint"),
+                        candidate.as_mut().expect("activation fiber remains owned"),
+                        &mut self.presentation,
                         &self.program,
                     )
                     .expect("accepted activation checkpoint restores in its original program");
@@ -1474,13 +1469,12 @@ impl super::AwbcProductStepExecutor {
                 Err(error) => {
                     if !activation_effects.is_empty() {
                         drop(std::mem::take(&mut activation_effects));
-                        candidate
-                            .as_mut()
-                            .expect("activation fiber remains owned")
+                        effect_checkpoint
+                            .take()
+                            .expect("effect-producing step retained its checkpoint")
                             .restore(
-                                effect_checkpoint
-                                    .take()
-                                    .expect("effect-producing step retained its checkpoint"),
+                                candidate.as_mut().expect("activation fiber remains owned"),
+                                &mut self.presentation,
                                 &self.program,
                             )
                             .expect(

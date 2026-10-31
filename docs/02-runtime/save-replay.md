@@ -304,6 +304,14 @@ Dialogue入口・line・callbackは完全なactivationのbankを選び、Program
 namespaceを照合する。detached childや空bankが残る間は元activationのnamespaceを
 保持し、compatible code replacementによって新artifactのbankへ再命名しない。
 
+AWBC Productのprivate実行checkpointは、実際のRoot・子fiber・Dialogueを含む
+完全なretained contourを検査してから、選択したinert fiberとbank集合を保持する。
+registryから借用中のDialogueも、元のwithdrawalに固有のlive予約とtransactionを
+照合して含める。予約は保存形やdigestへ入れない。checkpointは元program／Sourceと
+同じadmissionを一度だけ復元へ移動し、新しいallowanceを発行しない。
+元program・fiber・bankを照合し、body・grant・発行cursor・回収待ちbodyの候補を
+復元してから置換する。公開saveの検査も同じ完全なretained contourを使う。
+
 対話 frame と phase／closing／pending operation は live／inert 共通の owning grammar
 を使い、inert specialization だけが Clone と serde reader を持つ。registry の元の
 activation key、phase と結果、元 activation signature の capture、reveal 後の input、

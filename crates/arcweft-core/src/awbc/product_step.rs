@@ -6,7 +6,9 @@
 
 mod admission;
 mod audio;
+mod checkpoint;
 pub use admission::AwbcProductProgram;
+use checkpoint::{ProductCheckpointTarget, ProductExecutionCheckpoint};
 mod control;
 mod dialogue;
 mod execution;
@@ -40,8 +42,8 @@ pub use self::snapshot::{
     AwbcProductTaskEventSaveSnapshot,
 };
 use crate::awbc::fiber::{
-    FiberAwaitManyInFlight, FiberAwaitManyState, FiberAwaitTarget, FiberBudget, FiberCheckpoint,
-    FiberCursor, FiberDialogueContentEffectBinding, FiberState, FiberStatus, FiberSuspensionReason,
+    FiberAwaitManyInFlight, FiberAwaitManyState, FiberAwaitTarget, FiberBudget, FiberCursor,
+    FiberDialogueContentEffectBinding, FiberState, FiberStatus, FiberSuspensionReason,
     FiberTerminalValue, FiberTrap, runtime_value_matches_type,
 };
 use crate::awbc::schema::{
@@ -248,6 +250,10 @@ pub enum AwbcProductStepBuildError {
 #[derive(Debug, Error)]
 pub(super) enum ProductStepError {
     #[error(transparent)]
+    CheckpointValue(#[from] crate::value::AwbcRuntimeValueSnapshotError),
+    #[error(transparent)]
+    DialogueRegistry(#[from] crate::line_task::RuntimeDialogueRegistrySnapshotError),
+    #[error(transparent)]
     Root(Box<crate::root::RootRuntimeError>),
     #[error(transparent)]
     Vm(#[from] crate::awbc::vm::VmError),
@@ -307,6 +313,8 @@ impl ProductStepError {
             Self::Type(_) => RuntimeDiagnosticCategory::Type,
             Self::Host(_) => RuntimeDiagnosticCategory::Host,
             Self::Internal(_)
+            | Self::CheckpointValue(_)
+            | Self::DialogueRegistry(_)
             | Self::Root(_)
             | Self::ActivationTrap(_)
             | Self::Line(_)
@@ -328,6 +336,8 @@ impl ProductStepError {
             Self::Type(_) => AwbcTrapCode::TypeMismatch,
             Self::Host(_) => AwbcTrapCode::HostAbiMismatch,
             Self::Input(_)
+            | Self::CheckpointValue(_)
+            | Self::DialogueRegistry(_)
             | Self::Root(_)
             | Self::Internal(_)
             | Self::Line(_)
@@ -2734,11 +2744,7 @@ impl AwbcProductStepExecutor {
                     return 1;
                 }
             };
-        let checkpoint = match self.fiber.checkpoint(
-            &mut self
-                .program
-                .retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default()),
-        ) {
+        let checkpoint = match self.execution_checkpoint(ProductCheckpointTarget::Main) {
             Ok(checkpoint) => checkpoint,
             Err(error) => {
                 self.fail_with_error(error.into(), output);
@@ -2878,12 +2884,14 @@ impl AwbcProductStepExecutor {
 
     fn fail_main_vm_step(
         &mut self,
-        checkpoint: FiberCheckpoint,
+        checkpoint: ProductExecutionCheckpoint,
         error: ProductStepError,
         output: &mut RuntimeStepOutput,
         executed: u64,
     ) -> usize {
-        if let Err(restore_error) = self.fiber.restore(checkpoint, &self.program) {
+        if let Err(restore_error) =
+            checkpoint.restore(&mut self.fiber, &mut self.presentation, &self.program)
+        {
             self.fail_with_error(ProductStepError::Fiber(restore_error), output);
         } else {
             self.fail_with_error(error, output);
@@ -3006,7 +3014,7 @@ impl AwbcProductStepExecutor {
     fn rollback_selected_child_step(
         &mut self,
         mut child: ProductChildFiber,
-        checkpoint: FiberCheckpoint,
+        checkpoint: ProductExecutionCheckpoint,
         pending_host_call_before: Option<PendingHostCall>,
         mut journal: DeferredChildResumeJournal,
         _need_states: &mut Vec<RuntimeNeedState>,
@@ -3025,7 +3033,7 @@ impl AwbcProductStepExecutor {
         }
         journal.rollback(self);
         child.pending_host_call = pending_host_call_before;
-        let restore = child.fiber.restore(checkpoint, &self.program);
+        let restore = checkpoint.restore(&mut child.fiber, &mut self.presentation, &self.program);
         self.child_fibers.push_front(child);
         if let Err(error) = restore {
             self.fail_with_error(error.into(), output);
@@ -3130,11 +3138,7 @@ impl AwbcProductStepExecutor {
             }
             return false;
         }
-        let checkpoint = match front.fiber.checkpoint(
-            &mut self
-                .program
-                .retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default()),
-        ) {
+        let checkpoint = match self.execution_checkpoint(ProductCheckpointTarget::Child(0)) {
             Ok(checkpoint) => checkpoint,
             Err(error) => {
                 if let crate::awbc::fiber::AwbcFiberRoot::RootReducer(entry) = front.fiber.root {

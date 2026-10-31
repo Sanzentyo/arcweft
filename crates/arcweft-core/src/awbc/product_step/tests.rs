@@ -1069,157 +1069,34 @@ fn mark_action_selection_restores_and_cancellation_can_override_it() {
 
 #[test]
 fn line_activation_register_defer_commits_captures_and_cursor() {
-    let mut program = return_program();
-    let capture_string = AwbcStringId(u32::try_from(program.strings.len()).expect("string index"));
-    program.strings.push("captured at defer".to_owned());
-    program.runtime_types = vec![
-        AwbcRuntimeType::unit(),
-        AwbcRuntimeType::new(
-            crate::pattern::RuntimeCheckedType::String.semantic_identity_digest(),
-            AwbcRuntimeTypeShape::String,
-        ),
-    ];
-    program.constants = vec![AwbcConstant::String(capture_string), AwbcConstant::Unit];
-    program.signatures.extend([
-        AwbcSignature {
-            params: Vec::new(),
-            result: None,
-            effects: AwbcEffectSetId(0),
-        },
-        AwbcSignature {
-            params: vec![AwbcTypeId(1)],
-            result: Some(AwbcTypeId(0)),
-            effects: AwbcEffectSetId(0),
-        },
-    ]);
-    program.frame_layouts.extend([
-        AwbcFrameLayout {
-            scopes: Vec::new(),
-            slots: vec![AwbcFrameSlot {
-                name: None,
-                ty: AwbcTypeId(1),
-                role: AwbcFrameSlotRole::Temporary,
-                scope_depth: 0,
-            }],
-            max_scope_depth: 0,
-        },
-        AwbcFrameLayout {
-            scopes: Vec::new(),
-            slots: vec![
-                AwbcFrameSlot {
-                    name: None,
-                    ty: AwbcTypeId(1),
-                    role: AwbcFrameSlotRole::Parameter,
-                    scope_depth: 0,
-                },
-                AwbcFrameSlot {
-                    name: None,
-                    ty: AwbcTypeId(0),
-                    role: AwbcFrameSlotRole::ReturnValue,
-                    scope_depth: 0,
-                },
-            ],
-            max_scope_depth: 0,
-        },
-    ]);
-    program.instructions = vec![
-        AwbcInstruction::LoadConst {
-            dst: AwbcRegisterId(0),
-            constant: AwbcConstantId(0),
-        },
-        AwbcInstruction::RegisterDefer {
-            site: crate::runtime_id::RuntimeDeferSiteId::from_zero_based(0)
-                .expect("first defer site"),
-            outcome: crate::line_task::RuntimeDeferOutcomeFilter::Always,
-            owner: crate::awbc::schema::AwbcDeferOwner::LineRoot,
-            captures: vec![AwbcRegisterId(0)],
-        },
-        AwbcInstruction::LoadConst {
-            dst: AwbcRegisterId(1),
-            constant: AwbcConstantId(1),
-        },
-    ];
-    let activation = AwbcFunctionId(1);
-    let defer_body = AwbcFunctionId(2);
-    program.functions.extend([
-        AwbcFunction {
-            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.product_step.tests.line_activation_register_defer_commits_captures_and_cursor.definition.0.v1\0").as_bytes()),
-            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
-            public_id: None,
-            kind: AwbcFunctionKind::LineActivation,
-            signature: AwbcSignatureId(1),
-            type_context: None,
-            input_ownership: (0..program.signatures[AwbcSignatureId(1).index()].params.len())
-                .map(|position| {
-                    AwbcFunctionInputOwnership::capture(
-                manual_awbc_capture_origin(&format!("arcweft-core.src.awbc.product_step.tests.line_activation_register_defer_commits_captures_and_cursor.input-a[{position}]")),
-                        u32::try_from(position).expect("fixture input ordinal"),
-                        crate::plan::RuntimeFunctionCaptureMode::Move,
-                    )
-                })
-                .collect(),
-            frame_layout: AwbcFrameLayoutId(1),
-            blocks: AwbcTableRange::new(1, 1),
-            entry_block: AwbcBlockId(1),
-            flags: AwbcFunctionFlags::default(),
-        },
-        AwbcFunction {
-            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.product_step.tests.line_activation_register_defer_commits_captures_and_cursor.definition.1.v1\0").as_bytes()),
-            semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
-            public_id: None,
-            kind: AwbcFunctionKind::Ordinary,
-            signature: AwbcSignatureId(2),
-            type_context: None,
-            input_ownership: (0..program.signatures[AwbcSignatureId(2).index()].params.len())
-                .map(|position| {
-                    AwbcFunctionInputOwnership::capture(
-                manual_awbc_capture_origin(&format!("arcweft-core.src.awbc.product_step.tests.line_activation_register_defer_commits_captures_and_cursor.input-b[{position}]")),
-                        u32::try_from(position).expect("fixture input ordinal"),
-                        crate::plan::RuntimeFunctionCaptureMode::Move,
-                    )
-                })
-                .collect(),
-            frame_layout: AwbcFrameLayoutId(2),
-            blocks: AwbcTableRange::new(2, 1),
-            entry_block: AwbcBlockId(2),
-            flags: AwbcFunctionFlags::default(),
-        },
-    ]);
-    program.blocks.extend([
-        AwbcBlock {
-            owner: activation,
-            instructions: AwbcTableRange::new(0, 2),
-            terminator: AwbcTerminator::Return { value: None },
-            safe_point: AwbcSafePointKind::CallableBoundary,
-            source_map: None,
-        },
-        AwbcBlock {
-            owner: defer_body,
-            instructions: AwbcTableRange::new(2, 1),
-            terminator: AwbcTerminator::Return {
-                value: Some(AwbcRegisterId(1)),
-            },
-            safe_point: AwbcSafePointKind::CallableBoundary,
-            source_map: None,
-        },
-    ]);
-    program.defer_sites.push(defer_body);
+    let mut program = defer_host_call_program();
+    let activation = program.line_task_groups[0].activation;
+    let block = program.functions[activation.index()].entry_block;
+    let instruction = program.blocks[block.index()].instructions.start as usize;
+    let AwbcInstruction::LoadConst { constant, .. } = program.instructions[instruction] else {
+        unreachable!("defer fixture starts by materializing its capture")
+    };
+    let AwbcConstant::String(string) = program.constants[constant.index()] else {
+        unreachable!("defer fixture captures a String")
+    };
+    program.strings[string.index()] = "captured at defer".into();
     program.canonicalize_string_table();
-    program
-        .verify(Default::default(), Default::default())
-        .expect("line-root defer program verifies");
-
     let mut executor = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 64)
         .expect("line-root defer executor starts");
     let activation_id = issue_test_dialogue(&mut executor, AwbcContentUnitId(0));
     let activation_fiber = create_test_dialogue_fiber(&mut executor, activation_id, activation);
+    let target_owner = executor
+        .program
+        .opaque_owner(AwbcTypeId(2))
+        .unwrap()
+        .unwrap();
     executor
         .dialogues
         .begin(ActiveDialogue {
             activation: activation_id.clone(),
             content: AwbcContentUnitId(0),
-            target: fixture_dialogue_target(),
-            target_type: AwbcTypeId(0),
+            target: crate::value::RuntimeOpaqueValue::new_exact(&target_owner, RuntimeValue::Unit),
+            target_type: AwbcTypeId(2),
             line: crate::plan::RuntimeLineId::from_runtime_line_value("line.defer")
                 .expect("line identity"),
             captures: Box::new([]),
@@ -2932,9 +2809,8 @@ fn invalid_schedule_schema_preserves_admitted_captures_before_failure_close() {
     assert!(
         matches!(
             &error,
-            ProductStepError::Fiber(crate::awbc::fiber::FiberStateError::Snapshot(
-                crate::value::AwbcRuntimeValueSnapshotError::ResumeOwnership(source)
-            )) if matches!(source.as_ref(), crate::awbc::verify::AwbcVerifyError::InvalidInvariant {
+            ProductStepError::DialogueRegistry(crate::line_task::RuntimeDialogueRegistrySnapshotError::Value(crate::value::AwbcRuntimeValueSnapshotError::ResumeOwnership(source)))
+            if matches!(source.as_ref(), crate::awbc::verify::AwbcVerifyError::InvalidInvariant {
                 message, ..
             } if message == "Schedule capture destination local is duplicated")
         ),

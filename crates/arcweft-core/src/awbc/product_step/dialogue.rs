@@ -26,18 +26,6 @@ pub(super) type ProductDialogueTransaction =
     RuntimeDialogueActivationTransaction<ActiveDialogue, AwbcTypeId>;
 
 impl ProductDialogueStore {
-    /// Borrows the actual retained activation frames, including metadata-only
-    /// topology checks before an enclosing owner copies any frame values.
-    pub(super) fn try_visit_active<'a, E>(
-        &'a self,
-        mut visit: impl FnMut(&'a DialogueActivationId, &'a ActiveDialogue) -> Result<(), E>,
-    ) -> Result<(), E>
-    where
-        E: From<crate::line_task::RuntimeDialogueRegistrySnapshotError>,
-    {
-        self.registry
-            .try_visit_active(|activation, frame, _| visit(activation, frame))
-    }
     pub(super) fn into_published(
         self,
     ) -> Result<crate::line_task::RuntimePublishedDialogueRegistry, (Self, LineRuntimeError)> {
@@ -477,26 +465,6 @@ impl ProductDialogueStore {
         prepared: PreparedRuntimeParentFiberReconciliation,
     ) -> crate::line_task::RuntimeHandleDropReceipt {
         self.registry.commit_parent_fiber_reconciliation(prepared)
-    }
-
-    pub(super) fn admit_retained(
-        &self,
-        admission: &mut crate::value::RuntimeRetainedValueAdmission,
-        mut admit_frame: impl FnMut(
-            &DialogueActivationId,
-            &ActiveDialogue,
-            &crate::line_task::RuntimeDialogueActivationState<AwbcTypeId>,
-            &mut crate::value::RuntimeRetainedValueAdmission,
-        ) -> Result<
-            (),
-            crate::line_task::RuntimeDialogueRegistrySnapshotError,
-        >,
-    ) -> Result<(), crate::line_task::RuntimeDialogueRegistrySnapshotError> {
-        let contour = self.retained_contour(std::iter::empty(), admission)?;
-        contour.admit_retained(admission)?;
-        contour.try_visit_active(|activation, frame, line| {
-            admit_frame(activation, frame, line, admission)
-        })
     }
 
     pub(super) fn retained_contour<'a>(
