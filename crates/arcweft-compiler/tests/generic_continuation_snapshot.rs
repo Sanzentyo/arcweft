@@ -521,10 +521,12 @@ fn awfb_session_save_restores_the_generic_prefix_into_its_pinned_program() {
     let completed = restored
         .snapshot_session()
         .expect("completed session snapshot exports");
-    assert!(matches!(
+    assert_eq!(
         completed.executor.state.fiber.terminal,
-        Some(FiberTerminalValue::ReturnedTransferred)
-    ));
+        Some(FiberTerminalValue::Returned(Some(
+            AwbcRuntimeValueSnapshot::Bool(true)
+        )))
+    );
     assert_eq!(
         completed.executor.state.fiber.return_summary.as_deref(),
         Some("true")

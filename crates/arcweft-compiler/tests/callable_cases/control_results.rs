@@ -51,12 +51,14 @@ fn assert_labelled_loop_return(body: &str) {
                     exit,
                     &arcweft_core::engine::FlowExit::Return("42".to_owned())
                 );
-                // Product has delivered the owned value to its Flow result
-                // consumer. The typed VM result is checked separately above.
-                assert!(matches!(
+                // Emitting the Flow summary retains the typed Root result. The
+                // Product rollback above must preserve that exact value.
+                assert_eq!(
                     executor.compact_fiber().terminal,
-                    Some(arcweft_core::awbc::fiber::FiberTerminalValue::ReturnedTransferred)
-                ));
+                    Some(arcweft_core::awbc::fiber::FiberTerminalValue::Returned(
+                        Some(RuntimeValue::i64(42))
+                    ))
+                );
                 assert_eq!(
                     executor.compact_fiber().return_summary.as_deref(),
                     Some("42")
