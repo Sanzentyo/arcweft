@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "be18be8dbd044c5644af865165e7f7de56e74932",
+  "command": [
+    "test",
+    "-p",
+    "arcweft-core",
+    "--doc",
+    "--all-features",
+    "--locked"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-product-bank.owner2.doctest.log",
+  "exitCode": 0,
+  "sourceInputs": 4005,
+  "sourceDrift": 0,
+  "startedAt": "2026-10-31T04:05:42.4906956Z",
+  "finishedAt": "2026-10-31T04:05:52.7850381Z"
+}

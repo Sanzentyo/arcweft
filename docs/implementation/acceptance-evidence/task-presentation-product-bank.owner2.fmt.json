@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "exitCode": 0,
+  "files": 6,
+  "command": "rustfmt --check --edition 2024 --config skip_children=true with the six explicit owned Rust paths",
+  "recordedAt": "2026-10-31T04:07:47.1334337Z"
+}

@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "be18be8dbd044c5644af865165e7f7de56e74932",
+  "run": "presentation-product-bank.owner2.runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  78.256s] 2139 tests run: 2139 passed (1 slow), 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 2139,
+  "passed": 2139,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4005,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-31T04:04:52.6509979Z"
+}

@@ -1,0 +1,425 @@
+{
+  "version": 1,
+  "date": "2026-10-31",
+  "sourceCommit": "17c908018e5d157f4774c8a55ec3e347b0a28110",
+  "sourceBase": "be18be8dbd044c5644af865165e7f7de56e74932",
+  "sourcePatchSha256": "3c5a8839da384c9c06af3f3102bc1cb60e89bc10b78ef89d32cccd9cda1134e1",
+  "sourceBlobs": [
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+      "blob": "1431680f636f3a39cd2ffd53a8b83c02091ebf4f"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine.rs",
+      "blob": "522df8120e3906ce95d72a106b1e22abb99cad6f"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources.rs",
+      "blob": "d363e90f6c2e10865ef4180d05e266ee0c4f23ef"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/storage.rs",
+      "blob": "5352fb0f3595352f90215188cf48e3a7b11ab543"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/tests.rs",
+      "blob": "0f7b33ab539977f5e384e4638543679448ccf523"
+    },
+    {
+      "path": "crates/arcweft-core/src/value.rs",
+      "blob": "9c61c8598609bf6cfe7d6c377789a46468d6f5f4"
+    },
+    {
+      "path": "docs/02-runtime/save-replay.md",
+      "blob": "2c12c3e0ea1bc66ab1b16664532e1843fca56eee"
+    }
+  ],
+  "scope": "Core bank state, inert codec, complete restore-context propagation, and retained-site header admission. Native ledger consumers are migrated. Product storage and active-grant save/rollback, VM bank cleanup, Dialogue banks, Source producers/commands, and drivers remain unconnected.",
+  "model": "PresentationLedger retains the original program lease around a single PresentationLedgerState grammar. Only inert body storage has serde. Decoding state neither supplies a program lease nor issues a live grant. The existing Core PublicId codec is reused.",
+  "laws": [
+    "duplicate scope/lease keys are rejected before their second value is decoded",
+    "stored slot addresses use the same validation as construction, including bodyless leases",
+    "the original cumulative admission retains header failures",
+    "ledger materialization rejects a foreign program and forwards the complete original restore context",
+    "all retained registration sites consume metadata allowance even after their body is moved out"
+  ],
+  "finalRuntime": {
+    "version": 1,
+    "base": "be18be8dbd044c5644af865165e7f7de56e74932",
+    "run": "presentation-product-bank.owner2.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  78.256s] 2139 tests run: 2139 passed (1 slow), 0 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2139,
+    "passed": 2139,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4005,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-31T04:04:52.6509979Z"
+  },
+  "newCases": [
+    "inert_presentation_bank_roundtrips_before_restoring_its_original_scope",
+    "inert_presentation_bank_rejects_duplicate_ids_before_reading_a_second_body",
+    "inert_presentation_bank_rejects_a_foreign_materialization_lease",
+    "inert_presentation_slot_admission_uses_the_original_address_and_sticky_bank",
+    "cleared_presentation_slots_still_charge_their_retained_address_metadata"
+  ],
+  "doctestsPassed": 78,
+  "checks": [
+    {
+      "check": "check",
+      "exitCode": 0,
+      "command": [
+        "check",
+        "-p",
+        "arcweft-core",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "receipt": "task-presentation-product-bank.owner2.check.json"
+    },
+    {
+      "check": "clippy",
+      "exitCode": 0,
+      "command": [
+        "clippy",
+        "-p",
+        "arcweft-core",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "receipt": "task-presentation-product-bank.owner2.clippy.json"
+    },
+    {
+      "check": "doctest",
+      "exitCode": 0,
+      "command": [
+        "test",
+        "-p",
+        "arcweft-core",
+        "--doc",
+        "--all-features",
+        "--locked"
+      ],
+      "receipt": "task-presentation-product-bank.owner2.doctest.json"
+    },
+    {
+      "check": "default-check",
+      "exitCode": 0,
+      "command": [
+        "check",
+        "-p",
+        "arcweft-core",
+        "--all-targets",
+        "--locked"
+      ],
+      "receipt": "task-presentation-product-bank.owner2.default-check.json"
+    }
+  ],
+  "fmtExitCode": 0,
+  "inputCount": 4005,
+  "inputDrift": 0,
+  "catalogCaseDrift": 0,
+  "binaryDrift": 0,
+  "history": [
+    {
+      "attempt": "check1",
+      "exitCode": 101,
+      "reason": "PublicId intentionally has no blanket serde implementation; six generated trait errors. Repaired by sharing the existing Core runtime_public_id codec."
+    },
+    {
+      "attempt": "check2",
+      "exitCode": 0
+    },
+    {
+      "attempt": "owner1",
+      "executed": 2138,
+      "passed": 2138,
+      "failed": 0,
+      "reason": "Predecessor input before adding the bodyless-site regression and limiting test-only helpers to cfg(test). Final owner2 reruns the complete suite; counts are not summed."
+    }
+  ],
+  "impact": {
+    "owner": "arcweft-core",
+    "graph": "task-presentation-awbc-scopes.reverse-closure.json",
+    "resolvedGraph": "task-presentation-awbc-scopes.metadata-all-features.json",
+    "closurePackages": 53,
+    "consumerRuntime": "not-repeated",
+    "reason": "Changes are Core-private ownership/storage and grant admission. Cargo/features/dependencies and external APIs are unchanged; no Product public save field or external active-grant producer is added. Complete Core runtime, default/all-feature checks, Clippy and doctests are executed. The previous full reverse evidence remains attached to its c3b source epoch.",
+    "previousReverse": "task-presentation-awbc-scopes-reverse-acceptance.json",
+    "previousReverseSource": "c3b6ea79a7b16674ed0cbcd644b9e7bdd6c95030"
+  },
+  "limitations": [
+    "bank codec tests use the original verified AWBC Bool-body scope fixture; they do not accept runtime Surface/ViewValue construction",
+    "AWBC Source-bearing bank body restoration is not executed by this cut",
+    "Product bank placement, complete active-grant save/rollback and VM cleanup still require integration",
+    "Generic Match and all earlier accepted boundaries remain accepted"
+  ],
+  "originalTrackedWip": 14,
+  "originalUntrackedActualFiles": 6,
+  "artifacts": [
+    {
+      "path": "task-presentation-product-bank.check1.source-freeze.json",
+      "bytes": 782638,
+      "sha256": "eeb8b668c67331092e65b62e66c97673c857941430b6e908281433e12d006b78"
+    },
+    {
+      "path": "task-presentation-product-bank.check1.json",
+      "bytes": 369,
+      "sha256": "5d50287fe77af850c1a52cdce17b9043546e53dc2017175311ee1ab3f2682d23"
+    },
+    {
+      "path": "task-presentation-product-bank.check1.log",
+      "bytes": 31835,
+      "sha256": "3bec6e2eae41d0064acb33d700b32a4067d4650dd12f81c588fab3c704ba6a54"
+    },
+    {
+      "path": "task-presentation-product-bank.check2.source-freeze.json",
+      "bytes": 782638,
+      "sha256": "a31911ed5765ec373dbdb0d0ce2b7da530f0c42172fe79d2d7546c4080a5e96d"
+    },
+    {
+      "path": "task-presentation-product-bank.check2.json",
+      "bytes": 367,
+      "sha256": "e1b4b18ad08c6b6d5f9f836d6b357a8cb47f39900f0b981adf652c0a5af9d3af"
+    },
+    {
+      "path": "task-presentation-product-bank.check2.log",
+      "bytes": 83296,
+      "sha256": "c4ee9f2670fc4fe6374e913eaf286b01eae08561b2306281f642472fb3f66e10"
+    },
+    {
+      "path": "task-presentation-product-bank.owner1.source-freeze.json",
+      "bytes": 782659,
+      "sha256": "f31d33540eeb793481c0a978389e4ff6f8b49ec2bf0725ff1e1639d42f88a8b1"
+    },
+    {
+      "path": "task-presentation-product-bank.owner1.catalog.json",
+      "bytes": 485,
+      "sha256": "3756ee52e614830cb3fcc32c6f2fee4278cc883c9f8bafe1ef7feb57639abef2"
+    },
+    {
+      "path": "task-presentation-product-bank.owner1.catalog.log",
+      "bytes": 453874,
+      "sha256": "1be7b8c7019124179286b0b21f35c90e6cc16e5fb394ef7805d34d67eaaab2f3"
+    },
+    {
+      "path": "task-presentation-product-bank.owner1.catalog.inventory.json",
+      "bytes": 540727,
+      "sha256": "cbea7704f69f8c9df6ae11487fbe8385e40871b1267d3d0c3ce8d451d0c0a4e2"
+    },
+    {
+      "path": "task-presentation-product-bank.owner1.runtime.json",
+      "bytes": 577,
+      "sha256": "98e03695f2748e766392765c8474bdf848d66c4afb6879440b052e1b16f68a4d"
+    },
+    {
+      "path": "task-presentation-product-bank.owner1.runtime.log",
+      "bytes": 733138,
+      "sha256": "be65c9d39325b3cf5376b466eacd03d1bf94755305bfa8c459509a5e6c4a6e4e"
+    },
+    {
+      "path": "task-presentation-product-bank.owner1.runtime.terminal-audit.json",
+      "bytes": 630,
+      "sha256": "b6af1ba7fe7222b83f7873c6d083edab348a4b45c92642fbbd58f93c70a05716"
+    },
+    {
+      "path": "task-presentation-product-bank.owner1.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "3678301734644b53c846eca7c171894da01aab1638c712f9c96c6ebbf27a1093"
+    },
+    {
+      "path": "task-presentation-product-bank.owner2.source-freeze.json",
+      "bytes": 782659,
+      "sha256": "1b75c121b131b3c18b73c0d0f1f27535738dc37dd283418a87180eb688f330ce"
+    },
+    {
+      "path": "task-presentation-product-bank.owner2.catalog.json",
+      "bytes": 485,
+      "sha256": "234cdf5793e699dc412953e3915237305b6945b492f66c333298aebbcdb440e7"
+    },
+    {
+      "path": "task-presentation-product-bank.owner2.catalog.log",
+      "bytes": 453274,
+      "sha256": "10335125380277aaea81ceeb614e319e46879c2c84cbf7f846834b450ee671f8"
+    },
+    {
+      "path": "task-presentation-product-bank.owner2.catalog.inventory.json",
+      "bytes": 540985,
+      "sha256": "0033503f02458b3519f4effe9a97d4ca4f630c5947ac631bebc3840d89b23689"
+    },
+    {
+      "path": "task-presentation-product-bank.owner2.runtime.json",
+      "bytes": 577,
+      "sha256": "3e207ae398e2aec4f5eb782b138400a694e00356735feb8d16189d10935489d8"
+    },
+    {
+      "path": "task-presentation-product-bank.owner2.runtime.log",
+      "bytes": 732660,
+      "sha256": "8614d7478e81b60d9b951dad39219a8997b86f42c58719256ea5f1e981efebb4"
+    },
+    {
+      "path": "task-presentation-product-bank.owner2.runtime.terminal-audit.json",
+      "bytes": 630,
+      "sha256": "6633aa816ca58e4d0797f82fbe771bab44f6cb5b6926e7ac75ec55db9f7f1543"
+    },
+    {
+      "path": "task-presentation-product-bank.owner2.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "ebfcdeabbaad7a15e01acffc3bb99d46e843c837a7232e3a066ff1c16a99790d"
+    },
+    {
+      "path": "task-presentation-product-bank.owner1.clippy.json",
+      "bytes": 500,
+      "sha256": "ae314a7260b42429feee2e6570dbfb56a4b8370b9d2cf6d378459951b84e8c97"
+    },
+    {
+      "path": "task-presentation-product-bank.owner1.clippy.log",
+      "bytes": 2868507,
+      "sha256": "e2bc0e351a87718634a18d35f3638b317e08fdbd046f89118306d8236ffdb77f"
+    },
+    {
+      "path": "task-presentation-product-bank.owner1.doctest.json",
+      "bytes": 491,
+      "sha256": "3b3d160fad0c91535948ec52e43442700acb6e9eb2688fe88cafafd3a3ec99c2"
+    },
+    {
+      "path": "task-presentation-product-bank.owner1.doctest.log",
+      "bytes": 82446,
+      "sha256": "76eee4a6bb87ab73ecd2a3f20880f2f6edcde364cc513f9aebf7da5f34e693e0"
+    },
+    {
+      "path": "task-presentation-product-bank.owner1.default-check.json",
+      "bytes": 483,
+      "sha256": "4b5d1f36ea2e09268c043a4ec3a1fc132369c036351473c88aaa58f8a29fa11b"
+    },
+    {
+      "path": "task-presentation-product-bank.owner1.default-check.log",
+      "bytes": 83224,
+      "sha256": "33e5fd4ba82b467c7f6bfcfa0016ed9d47b177c03c112aee363a2512239b2b96"
+    },
+    {
+      "path": "task-presentation-product-bank.owner2.check.json",
+      "bytes": 498,
+      "sha256": "d285b8bf839bf0c65a89e2e1c3a116ba63cefed315d3587cac6c4174785a0c85"
+    },
+    {
+      "path": "task-presentation-product-bank.owner2.check.log",
+      "bytes": 82520,
+      "sha256": "35020da13fbf036802180fca9585578b4464f3a6d7b6fe697c6694b3a4512d33"
+    },
+    {
+      "path": "task-presentation-product-bank.owner2.clippy.json",
+      "bytes": 500,
+      "sha256": "2829520364eb5caa51169c4a2b955481a9eb56b6da6666df4649d86a949c1fc4"
+    },
+    {
+      "path": "task-presentation-product-bank.owner2.clippy.log",
+      "bytes": 2868812,
+      "sha256": "6355bb2833d932668354816013a9adb85cc2042970f58b87871654f3cd31f5cc"
+    },
+    {
+      "path": "task-presentation-product-bank.owner2.doctest.json",
+      "bytes": 491,
+      "sha256": "abde19d4f50fbb2f1ad6a3b7d634681b0a6ec1d698ccafbf42ead03c497c8fb8"
+    },
+    {
+      "path": "task-presentation-product-bank.owner2.doctest.log",
+      "bytes": 81654,
+      "sha256": "45290db382de0f69971137b8c779be531d1d3e09a9ca57a8445c1af91e3f4a9c"
+    },
+    {
+      "path": "task-presentation-product-bank.owner2.default-check.json",
+      "bytes": 483,
+      "sha256": "592d19ad8077eb0cc4eb1ae738f9f285d0f0a79decc94667bd16cc358700aa67"
+    },
+    {
+      "path": "task-presentation-product-bank.owner2.default-check.log",
+      "bytes": 82432,
+      "sha256": "c4bd18eabefda8894d6fecadd56abb93c60a8f1d48b2e936b6a3fcb2d24f2fc4"
+    },
+    {
+      "path": "task-presentation-product-bank.owner2.fmt.json",
+      "bytes": 219,
+      "sha256": "9c6b450ce45b9cfd3bc83826005b61c5adebe7995bb5e6d57f59b10b6cf59736"
+    },
+    {
+      "path": "task-run-presentation-product-bank-tests.ps1",
+      "bytes": 4302,
+      "sha256": "0078f856d0535a8b1715f679fbf9f0990c6a974a34e238a7e4c4fd0150ebc99c"
+    },
+    {
+      "path": "task-run-presentation-product-bank-tests2.ps1",
+      "bytes": 4302,
+      "sha256": "2190ccd67b7dcd6639a56883bbeafd32716bcd52eae8886da303b9414b41a3cd"
+    },
+    {
+      "path": "task-check-presentation-product-bank.ps1",
+      "bytes": 1800,
+      "sha256": "f4169db4b75c6c32dd44ca8f5f2aeb718340e86cc1fcfff5a9b39f92e99281e0"
+    },
+    {
+      "path": "task-check-presentation-product-bank2.ps1",
+      "bytes": 1919,
+      "sha256": "263cc26866c7b3437ad0f6e91dd9403d3d6ec59753afe909b97a0b6e784d3328"
+    },
+    {
+      "path": "task-audit-nextest-final-result.ps1",
+      "bytes": 5266,
+      "sha256": "9d136f5ff9dbe80e524a8c9adb2f11fc96cce75046e3e1fe3e93ba73888cc0ab"
+    }
+  ],
+  "newArtifacts": [
+    "task-presentation-product-bank.check1.source-freeze.json",
+    "task-presentation-product-bank.check1.json",
+    "task-presentation-product-bank.check1.log",
+    "task-presentation-product-bank.check2.source-freeze.json",
+    "task-presentation-product-bank.check2.json",
+    "task-presentation-product-bank.check2.log",
+    "task-presentation-product-bank.owner1.source-freeze.json",
+    "task-presentation-product-bank.owner1.catalog.json",
+    "task-presentation-product-bank.owner1.catalog.log",
+    "task-presentation-product-bank.owner1.catalog.inventory.json",
+    "task-presentation-product-bank.owner1.runtime.json",
+    "task-presentation-product-bank.owner1.runtime.log",
+    "task-presentation-product-bank.owner1.runtime.terminal-audit.json",
+    "task-presentation-product-bank.owner1.binaries-before.json",
+    "task-presentation-product-bank.owner2.source-freeze.json",
+    "task-presentation-product-bank.owner2.catalog.json",
+    "task-presentation-product-bank.owner2.catalog.log",
+    "task-presentation-product-bank.owner2.catalog.inventory.json",
+    "task-presentation-product-bank.owner2.runtime.json",
+    "task-presentation-product-bank.owner2.runtime.log",
+    "task-presentation-product-bank.owner2.runtime.terminal-audit.json",
+    "task-presentation-product-bank.owner2.binaries-before.json",
+    "task-presentation-product-bank.owner1.clippy.json",
+    "task-presentation-product-bank.owner1.clippy.log",
+    "task-presentation-product-bank.owner1.doctest.json",
+    "task-presentation-product-bank.owner1.doctest.log",
+    "task-presentation-product-bank.owner1.default-check.json",
+    "task-presentation-product-bank.owner1.default-check.log",
+    "task-presentation-product-bank.owner2.check.json",
+    "task-presentation-product-bank.owner2.check.log",
+    "task-presentation-product-bank.owner2.clippy.json",
+    "task-presentation-product-bank.owner2.clippy.log",
+    "task-presentation-product-bank.owner2.doctest.json",
+    "task-presentation-product-bank.owner2.doctest.log",
+    "task-presentation-product-bank.owner2.default-check.json",
+    "task-presentation-product-bank.owner2.default-check.log",
+    "task-presentation-product-bank.owner2.fmt.json",
+    "task-run-presentation-product-bank-tests.ps1",
+    "task-run-presentation-product-bank-tests2.ps1",
+    "task-check-presentation-product-bank.ps1",
+    "task-check-presentation-product-bank2.ps1"
+  ]
+}

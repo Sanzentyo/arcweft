@@ -13375,3 +13375,12 @@ Source bc798c0f3d99eb4c6cd1a401a7e2fd00721275ff、parent 6bcdd4d4e972e866031e003
 元の累積admissionを保持したまま、scope ownerがowner＋anchorのmetadata grammarを検査し、liveとinertが同じ経路を使う。public codec形状・version 1・program lease／custody検査は維持する。Core all-target/all-feature check・Clippy、default check、fmtは終了0、doctestは78／78 PASS。公開sourceの2 blobとremoteを照合し、保持WIP14 trackedと6 untrackedを混入させていない。
 
 Supersedes: 現状一覧のCore scope検証を今回の修復と全2,134件へ更新した。具体的な新規不具合の根拠は111 bytesのredであり、全体goal未完了を理由とする再開ではない。c3b6ea79a7b16674ed0cbcd644b9e7bdd6c95030の全53逆依存7,446件中7,403 PASS／43保持FAILは、その入力epochの結果として保持する。今回のprivate grant-header修正ではconsumer runtimeを重複実行せず、依存graph・public API・codecが不変で外部のactive grant生成が未接続という範囲を記録した。Generic Matchと各受入cut、およびSource／command ABI等の具体的な未接続範囲は維持する。
+
+
+## Presentation bank 状態の共通化とinert codec基盤 — 2026-10-31
+
+Source 17c908018e5d157f4774c8a55ec3e347b0a28110、parent be18be8dbd044c5644af865165e7f7de56e74932、source patch SHA256 3c5a8839da384c9c06af3f3102bc1cb60e89bc10b78ef89d32cccd9cda1134e1。Program leaseを持つledgerと、cursor・grant・leaseを保持する唯一のstate grammarを分け、Nativeの全利用側を移行した。body serdeは既存のinert storage capabilityで閉じ、PublicIdは既存Core codecを共有する。復元は完全な元restore contextをbodyへ渡し、別programを拒否する。bank headerの失敗を元の累積admissionへ保持し、bodyを外したslotもaddressのmetadataを課金する。[境界・具体的なケースと全原本](acceptance-evidence/task-presentation-bank-state-acceptance.json)。
+
+最初のall-target/all-feature checkはPublicIdの直接serde deriveによる6エラー・終了101で、そのlogと4,005入力を保持した。共有codecへの修正後check2は終了0。owner1は2,138／2,138 PASS。空slotのmetadata回帰を追加し、test専用getter／再結合helperをcfg(test)へ限定した最終owner2は2,139／2,139 PASS・0 skipped・終了0。scope／lease重複IDを二つ目のbody読取り前に拒否し、wire round-trip後に元の実scopeを退役できること、別leaseと不正addressの拒否、失敗後の同bank再検査拒否を確認した。最終check・Clippy・default check・fmtは終了0、doctestは78／78 PASS、入力／binary／catalog集合差分0。旧owner1と最終owner2を合算しない。
+
+Supersedes: 現状一覧のCore検証を今回の2,139件と実際のbank基盤へ更新した。既存のscope metadata 111 bytesのred／greenと全53逆依存の元入力epochは原本で保持し、Generic Matchと既存受入を未完了へ戻さない。Bool bodyの検証済みAWBC fixtureによるbank codecとNative移行の受入であり、Surface／ViewValueの構築、AWBC Sourceを持つbodyの復元、Productのbank所有・active grant保存／rollback・VM cleanup、Dialogue独立bank、Source／command ABIの受入には拡張しない。後続統合で扱う未接続境界を現状一覧の一行に維持する。
