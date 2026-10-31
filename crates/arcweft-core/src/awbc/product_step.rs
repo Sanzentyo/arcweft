@@ -268,6 +268,10 @@ pub(super) enum ProductStepError {
     Host(String),
     #[error("{0}")]
     Internal(String),
+    #[error(transparent)]
+    CheckpointSnapshot(#[from] AwbcProductSaveError),
+    #[error(transparent)]
+    CheckpointRestore(#[from] AwbcProductStepBuildError),
     #[error("AWBC activation trapped: {0:?}")]
     ActivationTrap(FiberTrap),
     #[error(transparent)]
@@ -332,6 +336,8 @@ impl ProductStepError {
             Self::Type(_) => RuntimeDiagnosticCategory::Type,
             Self::Host(_) => RuntimeDiagnosticCategory::Host,
             Self::Internal(_)
+            | Self::CheckpointSnapshot(_)
+            | Self::CheckpointRestore(_)
             | Self::CheckpointValue(_)
             | Self::DialogueRegistry(_)
             | Self::Root(_)
@@ -355,6 +361,8 @@ impl ProductStepError {
             Self::Type(_) => AwbcTrapCode::TypeMismatch,
             Self::Host(_) => AwbcTrapCode::HostAbiMismatch,
             Self::Input(_)
+            | Self::CheckpointSnapshot(_)
+            | Self::CheckpointRestore(_)
             | Self::CheckpointValue(_)
             | Self::DialogueRegistry(_)
             | Self::Root(_)
@@ -4065,7 +4073,11 @@ impl AwbcProductStepExecutor {
                     }
                 }
             }
-            let prepared = match self.preflight_line_task_commands(&mut transaction, &batch) {
+            let prepared = match self.preflight_line_task_commands(
+                &mut transaction,
+                &batch,
+                line::ProductLineTaskCommit::Commands,
+            ) {
                 Ok(prepared) => prepared,
                 Err(error) => {
                     self.rollback_line_task_preview(&mut transaction, &mut batch);
@@ -4163,7 +4175,11 @@ impl AwbcProductStepExecutor {
                 };
             return self.commit_product_dialogue_failure_close(transaction, batch, output);
         }
-        let prepared = match self.preflight_line_task_commands(&mut transaction, &batch) {
+        let prepared = match self.preflight_line_task_commands(
+            &mut transaction,
+            &batch,
+            line::ProductLineTaskCommit::Commands,
+        ) {
             Ok(prepared) => prepared,
             Err(error) => {
                 self.rollback_line_task_preview(&mut transaction, &mut batch);
@@ -4819,6 +4835,22 @@ impl AwbcProductStepExecutor {
                 output,
             );
         }
+        let publication_checkpoint = if self.dialogues.active_frame().is_some_and(|frame| {
+            matches!(
+                frame.phase,
+                ProductDialoguePhase::Reducing { .. } | ProductDialoguePhase::Publishing { .. }
+            )
+        }) {
+            match checkpoint::ProductSessionCheckpoint::capture(self) {
+                Ok(checkpoint) => Some(checkpoint),
+                Err(error) => {
+                    self.record_error(error, output);
+                    return false.into();
+                }
+            }
+        } else {
+            None
+        };
         let Ok(mut transaction) = self.dialogues.begin_active_transaction() else {
             return false.into();
         };
@@ -4881,8 +4913,11 @@ impl AwbcProductStepExecutor {
                 }
             };
             let mut command_batch = command_batch;
-            let prepared = match self.preflight_line_task_commands(&mut transaction, &command_batch)
-            {
+            let prepared = match self.preflight_line_task_commands(
+                &mut transaction,
+                &command_batch,
+                line::ProductLineTaskCommit::Commands,
+            ) {
                 Ok(prepared) => prepared,
                 Err(error) => {
                     return self
@@ -5160,20 +5195,23 @@ impl AwbcProductStepExecutor {
                 || !transaction.line().deferred_registrations().is_empty()
             {
                 let progressed = transaction.line().deferred_inflight().is_none();
-                let prepared =
-                    match self.preflight_line_task_commands(&mut transaction, &command_batch) {
-                        Ok(prepared) => prepared,
-                        Err(error) => {
-                            return self
-                                .begin_product_dialogue_failure_with_batch(
-                                    transaction,
-                                    error,
-                                    command_batch,
-                                    output,
-                                )
-                                .into();
-                        }
-                    };
+                let prepared = match self.preflight_line_task_commands(
+                    &mut transaction,
+                    &command_batch,
+                    line::ProductLineTaskCommit::Commands,
+                ) {
+                    Ok(prepared) => prepared,
+                    Err(error) => {
+                        return self
+                            .begin_product_dialogue_failure_with_batch(
+                                transaction,
+                                error,
+                                command_batch,
+                                output,
+                            )
+                            .into();
+                    }
+                };
                 let proof = match self.dialogues.inspect_commit(&transaction) {
                     Ok(proof) => proof,
                     Err(error) => {
@@ -5214,8 +5252,22 @@ impl AwbcProductStepExecutor {
             return (match publication {
                 line::ProductPublicationProgress::Pending => {
                     let prepared =
-                        match self.preflight_line_task_commands(&mut transaction, &command_batch) {
+                        match self.preflight_line_task_commands(
+                            &mut transaction,
+                            &command_batch,
+                            line::ProductLineTaskCommit::Commands,
+                        ) {
                             Ok(prepared) => prepared,
+                            Err(error) if error.is_presentation_refusal() => {
+                                drop(transaction);
+                                drop(command_batch);
+                                if let Err(restore_error) = publication_checkpoint
+        .expect("reducer publication retained its complete original session")
+        .restore(self)
+    { self.record_error(restore_error, output); }
+    else { self.record_error(error, output); }
+                                return false.into();
+                            }
                             Err(error) => {
                                 return self
                                     .begin_product_dialogue_failure_with_batch(
@@ -5255,13 +5307,24 @@ impl AwbcProductStepExecutor {
                     }
                     false
                 }
-                line::ProductPublicationProgress::Ready {
-                    resume: prepared_resume,
-                    pattern: prepared_pattern,
-                } => {
+                line::ProductPublicationProgress::Ready(publication) => {
                     let prepared =
-                        match self.preflight_line_task_commands(&mut transaction, &command_batch) {
+                        match self.preflight_line_task_commands(
+                            &mut transaction,
+                            &command_batch,
+                            line::ProductLineTaskCommit::Publication(publication),
+                        ) {
                             Ok(prepared) => prepared,
+                            Err(error) if error.is_presentation_refusal() => {
+                                drop(transaction);
+                                drop(command_batch);
+                                if let Err(restore_error) = publication_checkpoint
+        .expect("reducer publication retained its complete original session")
+        .restore(self)
+    { self.record_error(restore_error, output); }
+    else { self.record_error(error, output); }
+                                return false.into();
+                            }
                             Err(error) => {
                                 return self
                                     .begin_product_dialogue_failure_with_batch(
@@ -5290,21 +5353,6 @@ impl AwbcProductStepExecutor {
                         }
                     };
                     self.realize_line_task_commands(&mut transaction, &mut command_batch, prepared);
-                    transaction
-                        .line_mut()
-                        .release_frame()
-                        .expect("published dialogue release was preflighted");
-                    let (_, value) = transaction
-                        .line_mut()
-                        .finish_result_publication()
-                        .expect("published result owner was preflighted");
-                    crate::awbc::vm::bind_pattern_owned_prepared(
-                        &self.program,
-                        &mut self.fiber,
-                        prepared_pattern,
-                        value,
-                    );
-                    self.fiber.resume_at_prepared(prepared_resume);
                     let receipt = self.dialogues.commit_published_prepared(transaction, proof);
                     let commands = receipt.into_line().into_commands();
                     self.commit_line_task_commands(command_batch, output);
@@ -5319,7 +5367,11 @@ impl AwbcProductStepExecutor {
             })
             .into();
         }
-        let prepared = match self.preflight_line_task_commands(&mut transaction, &command_batch) {
+        let prepared = match self.preflight_line_task_commands(
+            &mut transaction,
+            &command_batch,
+            line::ProductLineTaskCommit::Commands,
+        ) {
             Ok(prepared) => prepared,
             Err(error) => {
                 return self
@@ -5577,7 +5629,11 @@ impl AwbcProductStepExecutor {
             )));
         }
         if scope_progress {
-            let prepared = match self.preflight_line_task_commands(&mut transaction, &batch) {
+            let prepared = match self.preflight_line_task_commands(
+                &mut transaction,
+                &batch,
+                line::ProductLineTaskCommit::Commands,
+            ) {
                 Ok(prepared) => prepared,
                 Err(error) => {
                     self.fail_transaction_preflight_preserving_batch(
@@ -5669,7 +5725,11 @@ impl AwbcProductStepExecutor {
         mut batch: ProductLineTaskExecutionBatch,
         output: &mut RuntimeStepOutput,
     ) -> bool {
-        let prepared = match self.preflight_line_task_commands(&mut transaction, &batch) {
+        let prepared = match self.preflight_line_task_commands(
+            &mut transaction,
+            &batch,
+            line::ProductLineTaskCommit::Commands,
+        ) {
             Ok(prepared) => prepared,
             Err(error) => {
                 self.fail_transaction_preflight_preserving_batch(transaction, batch, error, output);

@@ -50,6 +50,53 @@ pub(super) struct ProductExecutionCheckpoint {
     admission: RuntimeRetainedValueAdmission,
 }
 
+/// A reducer publication can own staged children as well as the line result.
+/// Its retry boundary therefore captures the complete admitted session before
+/// withdrawing a dialogue, rather than undoing selected metadata fields.
+pub(super) struct ProductSessionCheckpoint {
+    image: super::snapshot::AwbcProductExecutorSnapshot,
+    admission: RuntimeRetainedValueAdmission,
+    format_context: crate::value::RuntimeFormatContext,
+}
+
+impl ProductSessionCheckpoint {
+    pub(super) fn capture(executor: &AwbcProductStepExecutor) -> Result<Self, ProductStepError> {
+        let admission = executor.retained_execution_admission(ProductCheckpointTarget::Main)?;
+        let image = executor.snapshot()?;
+        Ok(Self {
+            image,
+            admission,
+            format_context: executor.format_context.clone(),
+        })
+    }
+
+    pub(super) fn restore(
+        self,
+        executor: &mut AwbcProductStepExecutor,
+    ) -> Result<(), ProductStepError> {
+        let owner = self
+            .admission
+            .program_owner()
+            .ok_or(FiberStateError::CheckpointProgramOwner)?;
+        if !owner.same_program(&RuntimeProgramOwner::Awbc(executor.program_arc()))
+            || self.admission.task_source() != executor.program.original_task_source()
+            || self.image.fiber.instance != executor.fiber.instance
+        {
+            return Err(FiberStateError::CheckpointProgramOwner.into());
+        }
+        let restored = AwbcProductStepExecutor::from_admitted_snapshot(
+            executor.program.clone(),
+            executor.artifact_fingerprint,
+            self.format_context,
+            self.image,
+            crate::task::NeedProducerRestorePolicy::Rollback,
+            &self.admission,
+        )?;
+        *executor = restored;
+        Ok(())
+    }
+}
+
 impl ProductExecutionCheckpoint {
     pub(super) fn restore(
         self,

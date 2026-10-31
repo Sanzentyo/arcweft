@@ -11,6 +11,22 @@ use crate::value::{
 };
 
 impl RuntimeValueView<'_> {
+    /// Projects the line ledger's family from the shared resource grammar.
+    /// Other resource families remain under their enclosing execution owner;
+    /// this does not admit a detached value or replace complete custody checks.
+    pub(crate) fn line_handle_projection(
+        self,
+    ) -> Result<Vec<RuntimeAffineLineHandle>, RuntimeAffineHandleError> {
+        Ok(self
+            .affine_handles()?
+            .into_iter()
+            .filter_map(|handle| match handle {
+                RuntimeAffineHandle::Line(handle) => Some(handle),
+                RuntimeAffineHandle::Presentation { .. } => None,
+            })
+            .collect())
+    }
+
     /// The enclosing owner admits resources before collecting this metadata.
     /// This traversal constructs no live value or executable capability.
     pub(crate) fn affine_line_handles(

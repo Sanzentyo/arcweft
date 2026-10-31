@@ -142,6 +142,24 @@ pub(crate) enum RuntimeAffineHandle {
     },
 }
 
+/// Identity of a resource, separate from its occurrence path in a value.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) enum RuntimeAffineResourceToken {
+    Line(crate::runtime_id::RuntimeLineHandleToken),
+    Presentation(crate::runtime_id::RuntimePresentationHandleToken),
+}
+
+impl RuntimeAffineHandle {
+    pub(crate) fn resource_token(&self) -> RuntimeAffineResourceToken {
+        match self {
+            Self::Line(handle) => RuntimeAffineResourceToken::Line(handle.token().clone()),
+            Self::Presentation { token, .. } => {
+                RuntimeAffineResourceToken::Presentation(token.clone())
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeAffineHandleError {
     #[error(transparent)]
@@ -318,6 +336,12 @@ impl RuntimeValue {
         let mut handles = RuntimeValueResourceGraph::default();
         self.collect_resources(&RuntimeValuePath::root(), &mut handles)?;
         handles.into_line_handles()
+    }
+
+    pub(crate) fn line_handle_projection(
+        &self,
+    ) -> Result<Vec<RuntimeAffineLineHandle>, RuntimeAffineHandleError> {
+        self.view().line_handle_projection()
     }
 
     pub(crate) fn affine_handles(

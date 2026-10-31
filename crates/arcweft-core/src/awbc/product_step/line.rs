@@ -54,10 +54,23 @@ pub(super) struct ProductActivationProgress {
 
 pub(super) enum ProductPublicationProgress {
     Pending,
-    Ready {
-        resume: crate::awbc::fiber::PreparedFiberResume,
-        pattern: crate::awbc::vm::PreparedPatternBinding,
-    },
+    Ready(PreparedDialoguePublication),
+}
+
+pub(super) struct PreparedDialoguePublication {
+    resume: crate::awbc::fiber::PreparedFiberResume,
+    pattern: crate::awbc::vm::PreparedPatternBinding,
+    presentation: ProductPresentationReceipt,
+}
+
+struct ProductPresentationReceipt {
+    kept: Vec<crate::runtime_id::RuntimePresentationHandleToken>,
+    discarded: Vec<crate::runtime_id::RuntimePresentationHandleToken>,
+}
+
+pub(super) enum ProductLineTaskCommit {
+    Commands,
+    Publication(PreparedDialoguePublication),
 }
 
 struct ProductLineSiteEvidence {
@@ -132,6 +145,7 @@ struct PreparedExistingChildCancel {
 }
 
 pub(super) struct PreparedLineTaskCommands {
+    commit: ProductLineTaskCommit,
     line_task: Option<LineTaskLiveState>,
     scheduled: RuntimeScheduledCompletionStage,
     commands: RuntimePreparedLineCommands,
@@ -224,18 +238,12 @@ impl super::AwbcProductStepExecutor {
         });
         let result_handles = unique_line_handles(value)?;
         for handle in &result_handles {
-            let destinations = crate::awbc::vm::pattern_handle_destinations(
-                &self.program,
-                &self.fiber,
-                frame.result.pattern,
-                value,
-                handle.token(),
-            )
-            .map_err(|_| LineRuntimeError::ResultPatternOrTypeMismatch)?;
-            if destinations.len() > 1 {
-                return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
-            }
-            if let Some(register) = destinations.into_iter().next() {
+            let destination = prepared_pattern
+                .resource_destination(&crate::value::ownership::RuntimeAffineResourceToken::Line(
+                    handle.token().clone(),
+                ))
+                .map_err(|_| LineRuntimeError::ResultPatternOrTypeMismatch)?;
+            if let Some(register) = destination {
                 let owner = RuntimeOwnedSlotId::AwbcRegister {
                     execution: self.facade_fiber.execution,
                     fiber: self.fiber.instance,
@@ -339,10 +347,43 @@ impl super::AwbcProductStepExecutor {
         }) {
             return Err(LineRuntimeError::UnownedLeaseAtPublish.into());
         }
-        Ok(ProductPublicationProgress::Ready {
-            resume: prepared_resume,
-            pattern: prepared_pattern,
-        })
+        let mut presentation = ProductPresentationReceipt {
+            kept: Vec::new(),
+            discarded: Vec::new(),
+        };
+        for (token, destination) in prepared_pattern.resource_destinations() {
+            if let crate::value::ownership::RuntimeAffineResourceToken::Presentation(token) = token
+            {
+                if destination.is_some() {
+                    presentation.kept.push(token.clone());
+                } else {
+                    presentation.discarded.push(token.clone());
+                }
+            }
+        }
+        for register in prepared_pattern.registers() {
+            for value in self.fiber.active_frame()?.registers[register.index()].values() {
+                for handle in value
+                    .affine_handles()
+                    .map_err(|error| ProductStepError::Internal(error.to_string()))?
+                {
+                    if let crate::value::ownership::RuntimeAffineHandle::Presentation {
+                        token,
+                        ..
+                    } = handle
+                    {
+                        presentation.discarded.push(token);
+                    }
+                }
+            }
+        }
+        Ok(ProductPublicationProgress::Ready(
+            PreparedDialoguePublication {
+                resume: prepared_resume,
+                pattern: prepared_pattern,
+                presentation,
+            },
+        ))
     }
 
     pub(super) fn prepare_line_task_commands(
@@ -388,6 +429,7 @@ impl super::AwbcProductStepExecutor {
             Some(&baseline),
             &batch.line_task_reserved_runs,
             true,
+            ProductLineTaskCommit::Commands,
         )?;
         if preview.runs.len() < batch.line_task_reserved_runs.len() {
             return Err(ProductStepError::Internal(
@@ -492,6 +534,7 @@ impl super::AwbcProductStepExecutor {
         &self,
         transaction: &mut ProductDialogueTransaction,
         batch: &super::ProductLineTaskExecutionBatch,
+        commit: ProductLineTaskCommit,
     ) -> Result<PreparedLineTaskCommands, ProductStepError> {
         let mut activation = LineTaskActivation::default();
         for staged in &batch.line_task_activations {
@@ -504,6 +547,7 @@ impl super::AwbcProductStepExecutor {
             batch.line_task_baseline.as_ref(),
             &batch.line_task_reserved_runs,
             false,
+            commit,
         )?;
         if prepared.runs.len() != batch.line_task_reserved_runs.len() {
             return Err(ProductStepError::Internal(
@@ -521,6 +565,7 @@ impl super::AwbcProductStepExecutor {
         baseline: Option<&Option<LineTaskLiveState>>,
         reserved_runs: &[ReservedLineRunIdentity],
         allow_new_runs: bool,
+        commit: ProductLineTaskCommit,
     ) -> Result<PreparedLineTaskCommands, ProductStepError> {
         let content = transaction.frame().content;
         let mut line_task = baseline
@@ -850,9 +895,55 @@ impl super::AwbcProductStepExecutor {
             .map(|child| &child.fiber)
             .collect::<Vec<_>>();
         cancelled.sort_by_key(|fiber| order.get(&fiber.instance).copied().unwrap_or(order.len()));
-        self.program
-            .preflight_fiber_unwinds(self.presentation.as_ref(), cancelled)?;
+        if let ProductLineTaskCommit::Publication(publication) = &commit {
+            let mut targets = Vec::new();
+            for fiber in cancelled {
+                if matches!(
+                    fiber.status,
+                    crate::awbc::fiber::FiberStatus::Running
+                        | crate::awbc::fiber::FiberStatus::Suspended
+                ) {
+                    fiber.validate_cleanup_inputs(&self.program)?;
+                    targets.extend(fiber.presentation_unwind_scopes().map_err(|error| {
+                        crate::awbc::fiber::FiberStateError::Snapshot(error.into())
+                    })?);
+                }
+            }
+            let receipt = &publication.presentation;
+            let instance = self.fiber.instance;
+            if let Some(banks) = &self.presentation {
+                banks
+                    .preflight_scope_transition(
+                        &crate::task::RuntimeProgramOwner::Awbc(self.program.program_arc()),
+                        targets,
+                        Some(crate::presentation::resources::PresentationScopeExit {
+                            execution: crate::runtime_id::ExecutionInstanceId::from_allocated(
+                                instance.get(),
+                            ),
+                            fiber: crate::runtime_id::RuntimePersistentFiberId::from_allocated(
+                                instance.get().get(),
+                            ),
+                            scope: self.fiber.active_frame()?.presentation_scope_ref(),
+                        }),
+                        &receipt.kept,
+                        &receipt.discarded,
+                    )
+                    .map_err(|error| crate::awbc::fiber::FiberStateError::Snapshot(error.into()))?;
+            } else if !targets.is_empty()
+                || !receipt.kept.is_empty()
+                || !receipt.discarded.is_empty()
+            {
+                return Err(crate::awbc::fiber::FiberStateError::Snapshot(
+                    crate::presentation::RuntimePresentationError::MissingLedger.into(),
+                )
+                .into());
+            }
+        } else {
+            self.program
+                .preflight_fiber_unwinds(self.presentation.as_ref(), cancelled)?;
+        }
         Ok(PreparedLineTaskCommands {
+            commit,
             line_task,
             scheduled,
             commands,
@@ -893,9 +984,55 @@ impl super::AwbcProductStepExecutor {
         // Stable ordering also preserves the later commit queue's order for
         // actions already staged before this command sequence.
         cancelled.sort_by_key(|fiber| order.get(&fiber.instance).copied().unwrap_or(order.len()));
-        self.program
-            .retire_fiber_scopes(&mut self.presentation, cancelled)
-            .expect("final command preflight retains the complete cancellation contour");
+        if let ProductLineTaskCommit::Publication(publication) = &prepared.commit {
+            let mut targets = Vec::new();
+            for fiber in cancelled {
+                if matches!(
+                    fiber.status,
+                    crate::awbc::fiber::FiberStatus::Running
+                        | crate::awbc::fiber::FiberStatus::Suspended
+                ) {
+                    targets.extend(
+                        fiber
+                            .presentation_unwind_scopes_mut()
+                            .expect("preflighted actual cancellation contour"),
+                    );
+                }
+            }
+            let instance = self.fiber.instance;
+            let receipt = &publication.presentation;
+            if let Some(banks) = self.presentation.as_mut() {
+                banks
+                    .transition_scope_contour(
+                        &crate::task::RuntimeProgramOwner::Awbc(self.program.program_arc()),
+                        targets,
+                        Some(crate::presentation::resources::PresentationScopeExit {
+                            execution: crate::runtime_id::ExecutionInstanceId::from_allocated(
+                                instance.get(),
+                            ),
+                            fiber: crate::runtime_id::RuntimePersistentFiberId::from_allocated(
+                                instance.get().get(),
+                            ),
+                            scope: self
+                                .fiber
+                                .active_frame_mut()
+                                .expect("preflighted publication receiver")
+                                .presentation_scope_target(),
+                        }),
+                        &receipt.kept,
+                        &receipt.discarded,
+                    )
+                    .expect("complete cancellation and receipt transition was admitted together");
+            } else {
+                assert!(
+                    targets.is_empty() && receipt.kept.is_empty() && receipt.discarded.is_empty()
+                );
+            }
+        } else {
+            self.program
+                .retire_fiber_scopes(&mut self.presentation, cancelled)
+                .expect("final command preflight retains the complete cancellation contour");
+        }
         batch.line_task_activations.clear();
         transaction
             .line_mut()
@@ -1014,6 +1151,23 @@ impl super::AwbcProductStepExecutor {
             "preflighted batch actions name existing staged children"
         );
         batch.existing_child_actions = prepared.executor_actions;
+        if let ProductLineTaskCommit::Publication(publication) = prepared.commit {
+            transaction
+                .line_mut()
+                .release_frame()
+                .expect("published dialogue release was preflighted");
+            let (_, value) = transaction
+                .line_mut()
+                .finish_result_publication()
+                .expect("published result owner was preflighted");
+            crate::awbc::vm::bind_pattern_owned_prepared(
+                &self.program,
+                &mut self.fiber,
+                publication.pattern,
+                value,
+            );
+            self.fiber.resume_at_prepared(publication.resume);
+        }
     }
 
     pub(super) fn prepare_next_deferred_child(
@@ -4279,16 +4433,8 @@ pub(super) fn unique_line_handles_view(
 ) -> Result<Vec<crate::value::ownership::RuntimeAffineLineHandle>, ProductStepError> {
     let handles = value
         .inspect()
-        .affine_handles()
-        .map_err(|_| LineRuntimeError::InvalidHandlePayload)?
-        .into_iter()
-        .filter_map(|handle| match handle {
-            crate::value::ownership::RuntimeAffineHandle::Line(handle) => Some(handle),
-            // The complete Product contour admits these under its original
-            // presentation banks; a line lease never decodes their tokens.
-            crate::value::ownership::RuntimeAffineHandle::Presentation { .. } => None,
-        })
-        .collect::<Vec<_>>();
+        .line_handle_projection()
+        .map_err(|_| LineRuntimeError::InvalidHandlePayload)?;
     let mut unique = BTreeSet::new();
     for handle in &handles {
         if !unique.insert(handle.token().clone()) {

@@ -862,7 +862,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         let mut tokens = std::collections::BTreeSet::new();
         for capture in captures {
             for handle in capture
-                .affine_line_handles()
+                .line_handle_projection()
                 .map_err(|_| LineRuntimeError::InvalidDeferredTransition)?
             {
                 if !tokens.insert(handle.token().clone()) {
@@ -1112,7 +1112,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         let mut tokens = std::collections::BTreeSet::new();
         for capture in captures {
             for handle in capture
-                .affine_line_handles()
+                .line_handle_projection()
                 .map_err(|_| LineRuntimeError::InvalidDeferredTransition)?
             {
                 if handle.token().activation() != activation
@@ -2300,7 +2300,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         let mut old_tokens = std::collections::BTreeSet::new();
         if let Some(pending_value) = pending_value {
             for handle in pending_value
-                .affine_line_handles()
+                .line_handle_projection()
                 .map_err(|_| LineRuntimeError::InvalidHandlePayload)?
             {
                 if !old_tokens.insert(handle.token().clone()) {
@@ -2318,7 +2318,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         }
         let mut selected_tokens = std::collections::BTreeSet::new();
         for handle in value
-            .affine_line_handles()
+            .line_handle_projection()
             .map_err(|_| LineRuntimeError::InvalidHandlePayload)?
         {
             if !selected_tokens.insert(handle.token().clone()) {
@@ -3973,7 +3973,7 @@ fn stage_scheduled_capture_completion<'a>(
     let mut tokens = std::collections::BTreeSet::new();
     for capture in captures {
         for handle in capture
-            .affine_line_handles()
+            .line_handle_projection()
             .map_err(|_| LineRuntimeError::InvalidScheduledCaptureGraph)?
         {
             if !tokens.insert(handle.token().clone()) {
@@ -5092,7 +5092,7 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
                 for capture in scheduled.custody.values() {
                     for handle in capture
                         .borrowed_view()
-                        .affine_line_handles()
+                        .line_handle_projection()
                         .map_err(|_| LineRuntimeError::InvalidRestoredScheduledState)?
                     {
                         if handle.token().activation() != activation
@@ -5159,7 +5159,7 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
             for capture in registration.captures() {
                 for handle in capture
                     .borrowed_view()
-                    .affine_line_handles()
+                    .line_handle_projection()
                     .map_err(|_| LineRuntimeError::InvalidRestoredDeferredState)?
                 {
                     if handle.token().activation() != activation
@@ -5196,7 +5196,7 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
             | RuntimeDialogueResultState::Publishing { value, .. } => {
                 for handle in value
                     .borrowed_view()
-                    .affine_line_handles()
+                    .line_handle_projection()
                     .map_err(|_| LineRuntimeError::InvalidRestoredResultState)?
                 {
                     if handle.token().activation() != activation {

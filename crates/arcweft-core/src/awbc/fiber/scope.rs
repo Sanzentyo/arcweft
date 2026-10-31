@@ -51,6 +51,21 @@ impl<V, O, N, B, R, G: crate::presentation::resources::PresentationScopeStorage>
 }
 
 impl super::FiberFrame {
+    pub(crate) fn presentation_scope_ref(&self) -> PresentationScopeRef<'_> {
+        match self.scopes.last() {
+            Some(scope) => PresentationScopeRef::awbc(
+                scope.presentation_scope.as_ref(),
+                self.instance,
+                Some(scope.id),
+            ),
+            None => PresentationScopeRef::awbc(
+                self.root_presentation_scope.as_ref(),
+                self.instance,
+                None,
+            ),
+        }
+    }
+
     pub(crate) fn presentation_scope_binding(
         &self,
     ) -> Option<&crate::presentation::RuntimePresentationScopeBinding> {

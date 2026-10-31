@@ -4804,11 +4804,39 @@ pub(crate) struct PreparedPatternBinding {
     layout: crate::awbc::schema::AwbcFrameLayoutId,
     cursor: FiberCursor,
     registers: Box<[AwbcRegisterId]>,
+    resources: std::collections::BTreeMap<
+        crate::value::ownership::RuntimeAffineResourceToken,
+        Option<AwbcRegisterId>,
+    >,
 }
 
 impl PreparedPatternBinding {
     pub(crate) fn registers(&self) -> &[AwbcRegisterId] {
         &self.registers
+    }
+
+    pub(crate) fn resource_destination(
+        &self,
+        token: &crate::value::ownership::RuntimeAffineResourceToken,
+    ) -> Result<Option<AwbcRegisterId>, VmError> {
+        self.resources.get(token).copied().ok_or_else(|| {
+            VmError::Runtime(
+                "pattern resource was not present in its admitted source value".to_owned(),
+            )
+        })
+    }
+
+    pub(crate) fn resource_destinations(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            &crate::value::ownership::RuntimeAffineResourceToken,
+            Option<AwbcRegisterId>,
+        ),
+    > {
+        self.resources
+            .iter()
+            .map(|(token, destination)| (token, *destination))
     }
 }
 
@@ -4843,6 +4871,18 @@ pub(crate) fn prepare_pattern_binding_view(
         .frame_layouts
         .get(frame.layout.index())
         .ok_or(FiberStateError::UnknownFrameLayout(frame.layout.0))?;
+    let mut resources = std::collections::BTreeMap::new();
+    for handle in value
+        .inspect()
+        .affine_handles()
+        .map_err(|error| VmError::Runtime(error.to_string()))?
+    {
+        if resources.insert(handle.resource_token(), None).is_some() {
+            return Err(VmError::Runtime(
+                "pattern source repeats an affine resource".to_owned(),
+            ));
+        }
+    }
     let mut registers = Vec::new();
     visit_pattern_bindings_view(
         program,
@@ -4866,6 +4906,22 @@ pub(crate) fn prepare_pattern_binding_view(
                 )));
             }
             registers.push(register);
+            for handle in view
+                .inspect()
+                .affine_handles()
+                .map_err(|error| VmError::Runtime(error.to_string()))?
+            {
+                let destination = resources.get_mut(&handle.resource_token()).ok_or_else(|| {
+                    VmError::Runtime(
+                        "pattern projection manufactured an affine resource".to_owned(),
+                    )
+                })?;
+                if destination.replace(register).is_some() {
+                    return Err(VmError::Runtime(
+                        "pattern duplicates an affine resource into multiple bindings".to_owned(),
+                    ));
+                }
+            }
             Ok(())
         },
     )?;
@@ -4883,6 +4939,7 @@ pub(crate) fn prepare_pattern_binding_view(
         layout: frame.layout,
         cursor: fiber.cursor,
         registers: registers.into_boxed_slice(),
+        resources,
     })
 }
 
@@ -5091,64 +5148,6 @@ fn pattern_has_binding(
         | AwbcPattern::Entity(_)
         | AwbcPattern::Variant { payload: None, .. } => Ok(false),
     }
-}
-
-/// Maps each affine handle token in a borrowed value to the one register that
-/// the already-tested pattern will bind it into. This is used by Product's
-/// ownership preflight before the source value leaves line custody.
-pub(crate) fn pattern_handle_destinations(
-    program: &AwbcProgram,
-    fiber: &FiberState,
-    pattern: AwbcPatternId,
-    value: &RuntimeValue,
-    token: &crate::runtime_id::RuntimeLineHandleToken,
-) -> Result<Vec<AwbcRegisterId>, VmError> {
-    pattern_handle_destinations_view(program, fiber, pattern, value.live_view(), token)
-}
-
-pub(crate) fn pattern_handle_destinations_view(
-    program: &AwbcProgram,
-    fiber: &FiberState,
-    pattern: AwbcPatternId,
-    value: LiveRuntimeValueView<'_>,
-    token: &crate::runtime_id::RuntimeLineHandleToken,
-) -> Result<Vec<AwbcRegisterId>, VmError> {
-    let prepared = prepare_pattern_binding_view(program, fiber, pattern, value)?;
-    let mut destinations = Vec::new();
-    visit_pattern_bindings_view(
-        program,
-        Some(fiber.active_frame()?),
-        pattern,
-        value,
-        0,
-        &mut |register, view| {
-            if view
-                .contains_line_handle(token)
-                .map_err(|error| VmError::Runtime(error.to_string()))?
-            {
-                destinations.push(register);
-            }
-            Ok(())
-        },
-    )?;
-    let admitted = prepared.registers.iter().copied().collect::<BTreeSet<_>>();
-    if destinations
-        .iter()
-        .any(|destination| !admitted.contains(destination))
-    {
-        return Err(VmError::Runtime(
-            "pattern handle preview referenced an unbound register".to_owned(),
-        ));
-    }
-    destinations.sort_unstable();
-    destinations.dedup();
-    if destinations.len() > 1 {
-        return Err(VmError::Runtime(
-            "AWBC result pattern duplicates one affine line handle into multiple registers"
-                .to_owned(),
-        ));
-    }
-    Ok(destinations)
 }
 
 /// Preflights every register that `bind_pattern_owned` will write, including

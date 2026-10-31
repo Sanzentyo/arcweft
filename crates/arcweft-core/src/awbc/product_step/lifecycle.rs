@@ -28,6 +28,12 @@ impl AwbcProductStepExecutor {
         output: &mut RuntimeStepOutput,
     ) {
         let (category, code, message) = match error {
+            error @ (ProductStepError::CheckpointSnapshot(_)
+            | ProductStepError::CheckpointRestore(_)) => (
+                RuntimeDiagnosticCategory::Internal,
+                AwbcTrapCode::InternalInvariant,
+                error.to_string(),
+            ),
             ProductStepError::CheckpointValue(error) => (
                 RuntimeDiagnosticCategory::Internal,
                 AwbcTrapCode::InternalInvariant,
@@ -172,6 +178,10 @@ impl AwbcProductStepExecutor {
 
     pub(super) fn record_error(&self, error: ProductStepError, output: &mut RuntimeStepOutput) {
         let (category, message) = match error {
+            error @ (ProductStepError::CheckpointSnapshot(_)
+            | ProductStepError::CheckpointRestore(_)) => {
+                (RuntimeDiagnosticCategory::Internal, error.to_string())
+            }
             ProductStepError::CheckpointValue(error) => {
                 (RuntimeDiagnosticCategory::Internal, error.to_string())
             }

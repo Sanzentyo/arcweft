@@ -1137,18 +1137,17 @@ impl AwbcProductStepExecutor {
                     self.fiber.instance,
                     state.plan,
                 );
-                if let Some(pattern) = state.binding {
+                if let Some(prepared_pattern) = binding.as_ref() {
                     for handle in super::line::unique_line_handles_view(value)? {
                         let token = handle.token().clone();
-                        let destinations = crate::awbc::vm::pattern_handle_destinations_view(
-                            &self.program,
-                            &self.fiber,
-                            pattern,
-                            value,
-                            &token,
-                        )
-                        .map_err(|error| ProductStepError::Internal(error.to_string()))?;
-                        if let Some(register) = destinations.first().copied() {
+                        let destination = prepared_pattern
+                            .resource_destination(
+                                &crate::value::ownership::RuntimeAffineResourceToken::Line(
+                                    token.clone(),
+                                ),
+                            )
+                            .map_err(|error| ProductStepError::Internal(error.to_string()))?;
+                        if let Some(register) = destination {
                             after.insert(
                                 token,
                                 crate::value::ownership::RuntimeOwnedSlotId::AwbcRegister {

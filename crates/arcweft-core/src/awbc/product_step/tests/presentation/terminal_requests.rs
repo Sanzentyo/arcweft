@@ -520,7 +520,11 @@ fn actual_activation_host_failure_retains_receipt_and_custody_until_unwind_is_ad
                     .unwrap(),
             };
             let prepared = executor
-                .preflight_line_task_commands(&mut transaction, &batch)
+                .preflight_line_task_commands(
+                    &mut transaction,
+                    &batch,
+                    crate::awbc::product_step::line::ProductLineTaskCommit::Commands,
+                )
                 .unwrap();
             let proof = executor.dialogues.inspect_commit(&transaction).unwrap();
             executor.commit_activation_host_result(&mut transaction, &mut host_results, ticket);

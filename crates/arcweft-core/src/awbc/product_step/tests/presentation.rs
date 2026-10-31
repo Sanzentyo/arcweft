@@ -6,6 +6,7 @@ use crate::runtime_id::{RuntimePresentationBankId, RuntimePresentationHandleToke
 use arcweft_interaction_model::presentation::PresentationResourceKind;
 
 mod cancellation_resume;
+mod receipt;
 mod terminal_requests;
 mod transfers;
 mod trap_lifecycle;
@@ -213,7 +214,11 @@ mod cancellation {
             .prepare_line_task_commands_from(&mut transaction, commands(tags), &mut batch)
             .unwrap();
         let prepared = executor
-            .preflight_line_task_commands(&mut transaction, &batch)
+            .preflight_line_task_commands(
+                &mut transaction,
+                &batch,
+                crate::awbc::product_step::line::ProductLineTaskCommit::Commands,
+            )
             .unwrap();
         let proof = executor.dialogues.inspect_commit(&transaction).unwrap();
         executor.realize_line_task_commands(&mut transaction, &mut batch, prepared);
