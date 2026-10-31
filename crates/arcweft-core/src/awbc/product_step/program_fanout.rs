@@ -249,6 +249,36 @@ impl AwbcProductStepExecutor {
                 "Program Fanout requires its accepted Program launch".into(),
             ));
         }
+        // Inspect the complete installed launch inventory before extracting the
+        // controller state or transferring an earlier Ready value.
+        if let Some(FiberSuspensionReason::ProgramFanout(state)) = child
+            .fiber
+            .suspension
+            .as_ref()
+            .map(|suspension| &suspension.reason)
+        {
+            let mut cancelling = false;
+            for flight in &state.in_flight {
+                let launch = self
+                    .need_producers
+                    .launch_for_handle(&flight.handle)
+                    .ok_or_else(|| {
+                        ProductStepError::Input(
+                            "Program Fanout worker lost its accepted launch".into(),
+                        )
+                    })?;
+                cancelling |= matches!(
+                    launch.state(),
+                    crate::task::RuntimeNeedProducerState::Cancelled
+                );
+            }
+            if cancelling {
+                self.program.preflight_fiber_cancellations(
+                    self.presentation.as_ref(),
+                    std::iter::once(&child.fiber),
+                )?;
+            }
+        }
         let Some(suspension) = child.fiber.suspension.as_mut() else {
             return Ok(false);
         };
@@ -320,8 +350,9 @@ impl AwbcProductStepExecutor {
         if cancelled {
             // Restore the original suspension owner before admitting unwind.
             // Its ordinary Program retirement joins already attached workers.
-            let cancellation = crate::awbc::vm::cancel_fiber(&self.program, &mut child.fiber)
-                .map_err(|error| ProductStepError::Internal(error.to_string()))?;
+            let cancellation = self
+                .program
+                .cancel_fiber(&mut child.fiber, &mut self.presentation)?;
             journal.record_drop_policy(crate::effect::RuntimeDropPolicy::Cancel);
             journal.record_deferred_observations(cancellation.observations);
             return Ok(true);

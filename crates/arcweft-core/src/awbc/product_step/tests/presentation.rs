@@ -5,6 +5,8 @@ use crate::presentation::resources::{
 use crate::runtime_id::{RuntimePresentationBankId, RuntimePresentationHandleToken};
 use arcweft_interaction_model::presentation::PresentationResourceKind;
 
+mod cancellation_resume;
+
 mod cancellation {
     use super::*;
     use crate::awbc::schema::*;

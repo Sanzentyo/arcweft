@@ -9,7 +9,6 @@ use super::{
     VmObservation, content_request, resolved_runtime_need_state, runtime_value_label,
     stream_id_for,
 };
-use crate::awbc::vm::cancel_fiber;
 use crate::stream::StreamEventKind;
 use crate::task::{NamedHostArg, NeedProducerRuntimeArgument};
 use crate::value::runtime_value_into_sequence_values;
@@ -329,6 +328,15 @@ impl AwbcProductStepExecutor {
                 }
             }
         }
+        if matches!(&state, AwaitNeedPublicationKind::Cancelled)
+            && let Err(error) = self.program.preflight_fiber_cancellations(
+                self.presentation.as_ref(),
+                std::iter::once(&self.fiber),
+            )
+        {
+            self.record_error(error.into(), output);
+            return false;
+        }
         self.need_publications.insert(publication_key, cursor);
         match state {
             AwaitNeedPublicationKind::InfrastructureFailure(failure) => {
@@ -408,7 +416,10 @@ impl AwbcProductStepExecutor {
                 true
             }
             AwaitNeedPublicationKind::Cancelled => {
-                match cancel_fiber(&self.program, &mut self.fiber) {
+                match self
+                    .program
+                    .cancel_fiber(&mut self.fiber, &mut self.presentation)
+                {
                     Ok(cancellation) => {
                         self.consume_observations(cancellation.observations, output);
                     }
@@ -922,6 +933,20 @@ impl AwbcProductStepExecutor {
             .iter()
             .map(|in_flight| in_flight.handle.correlation().task_id)
             .collect::<std::collections::BTreeSet<_>>();
+        if self
+            .next_await_many_task_event(&in_flight_tasks)
+            .is_some_and(|(_, event)| matches!(&event.kind, TaskEventKind::Cancelled))
+            && let Err(error) = self.program.preflight_fiber_cancellations(
+                self.presentation.as_ref(),
+                std::iter::once(&self.fiber),
+            )
+        {
+            if let Some(suspension) = self.fiber.suspension.as_mut() {
+                suspension.reason = FiberSuspensionReason::AwaitMany(state);
+            }
+            self.record_error(error.into(), output);
+            return false;
+        }
         let events = self.take_await_many_task_events(&in_flight_tasks);
         let mut progressed = false;
         let mut accepted_ready = false;
@@ -1007,13 +1032,6 @@ impl AwbcProductStepExecutor {
                     return true;
                 }
                 TaskEventKind::Cancelled => {
-                    if let Err(error) = self.fiber.validate_cleanup_inputs(&self.program) {
-                        if let Some(suspension) = self.fiber.suspension.as_mut() {
-                            suspension.reason = FiberSuspensionReason::AwaitMany(state);
-                        }
-                        self.record_error(error.into(), output);
-                        return false;
-                    }
                     if !self.discard_extracted_await_many(
                         state,
                         &before_handles,
@@ -1022,7 +1040,10 @@ impl AwbcProductStepExecutor {
                     ) {
                         return false;
                     }
-                    match cancel_fiber(&self.program, &mut self.fiber) {
+                    match self
+                        .program
+                        .cancel_fiber(&mut self.fiber, &mut self.presentation)
+                    {
                         Ok(cancellation) => {
                             self.consume_observations(cancellation.observations, output);
                         }
@@ -1826,6 +1847,14 @@ impl AwbcProductStepExecutor {
                 }
             }
         }
+        if matches!(&state, AwaitNeedPublicationKind::Cancelled)
+            && let Err(error) = self
+                .program
+                .preflight_fiber_cancellations(self.presentation.as_ref(), std::iter::once(&*fiber))
+        {
+            self.record_error(error.into(), output);
+            return false;
+        }
         self.need_publications.insert(publication_key, cursor);
         match state {
             AwaitNeedPublicationKind::InfrastructureFailure(failure) => {
@@ -1985,7 +2014,7 @@ impl AwbcProductStepExecutor {
                 true
             }
             AwaitNeedPublicationKind::Cancelled => {
-                match cancel_fiber(&self.program, fiber) {
+                match self.program.cancel_fiber(fiber, &mut self.presentation) {
                     Ok(cancellation) => {
                         journal.record_drop_policy(crate::effect::RuntimeDropPolicy::Cancel);
                         journal.record_deferred_observations(cancellation.observations);
@@ -2216,6 +2245,19 @@ impl AwbcProductStepExecutor {
             .iter()
             .map(|in_flight| in_flight.handle.correlation().task_id)
             .collect::<std::collections::BTreeSet<_>>();
+        if self
+            .next_await_many_task_event(&in_flight_tasks)
+            .is_some_and(|(_, event)| matches!(&event.kind, TaskEventKind::Cancelled))
+            && let Err(error) = self
+                .program
+                .preflight_fiber_cancellations(self.presentation.as_ref(), std::iter::once(&*fiber))
+        {
+            if let Some(suspension) = fiber.suspension.as_mut() {
+                suspension.reason = FiberSuspensionReason::AwaitMany(state);
+            }
+            self.record_error(error.into(), output);
+            return false;
+        }
         let events = self.take_await_many_task_events_for_deferred(&in_flight_tasks, journal);
         let mut progressed = false;
         for event_index in events {
@@ -2299,7 +2341,7 @@ impl AwbcProductStepExecutor {
                     return true;
                 }
                 TaskEventKind::Cancelled => {
-                    match cancel_fiber(&self.program, fiber) {
+                    match self.program.cancel_fiber(fiber, &mut self.presentation) {
                         Ok(cancellation) => {
                             journal.record_drop_policy(crate::effect::RuntimeDropPolicy::Cancel);
                             journal.record_deferred_observations(cancellation.observations);
@@ -2449,23 +2491,25 @@ impl AwbcProductStepExecutor {
         progressed || output.requests.tasks.len() > request_count
     }
 
+    fn next_await_many_task_event(
+        &self,
+        in_flight_tasks: &std::collections::BTreeSet<TaskId>,
+    ) -> Option<(usize, &TaskEvent)> {
+        self.queued_task_events
+            .iter()
+            .enumerate()
+            .find(|(_, event)| in_flight_tasks.contains(&event.correlation.task_id))
+    }
+
     fn take_await_many_task_events(
         &mut self,
         in_flight_tasks: &std::collections::BTreeSet<TaskId>,
     ) -> Vec<TaskEvent> {
-        let mut events = Vec::new();
-        let mut index = 0;
-        while index < self.queued_task_events.len() {
-            if in_flight_tasks.contains(&self.queued_task_events[index].correlation.task_id) {
-                if let Some(event) = self.queued_task_events.remove(index) {
-                    events.push(event);
-                }
-                break;
-            } else {
-                index += 1;
-            }
-        }
-        events
+        self.next_await_many_task_event(in_flight_tasks)
+            .map(|(index, _)| index)
+            .and_then(|index| self.queued_task_events.remove(index))
+            .into_iter()
+            .collect()
     }
 
     fn take_await_many_task_events_for_deferred(
@@ -2474,30 +2518,27 @@ impl AwbcProductStepExecutor {
         journal: &mut super::DeferredChildResumeJournal,
     ) -> std::ops::Range<usize> {
         let start = journal.consumed_task_events.len();
-        let mut index = 0;
-        while index < self.queued_task_events.len() {
-            if in_flight_tasks.contains(&self.queued_task_events[index].correlation.task_id) {
-                let event = self
-                    .queued_task_events
-                    .remove(index)
-                    .expect("checked queued task event remains present");
-                let mut original_index = index;
-                let mut prior_positions = journal
-                    .consumed_task_events
-                    .iter()
-                    .map(|entry| entry.queue_index)
-                    .collect::<Vec<_>>();
-                prior_positions.sort_unstable();
-                for position in prior_positions {
-                    if position <= original_index {
-                        original_index += 1;
-                    }
+        if let Some(index) = self
+            .next_await_many_task_event(in_flight_tasks)
+            .map(|(index, _)| index)
+        {
+            let event = self
+                .queued_task_events
+                .remove(index)
+                .expect("checked queued task event remains present");
+            let mut original_index = index;
+            let mut prior_positions = journal
+                .consumed_task_events
+                .iter()
+                .map(|entry| entry.queue_index)
+                .collect::<Vec<_>>();
+            prior_positions.sort_unstable();
+            for position in prior_positions {
+                if position <= original_index {
+                    original_index += 1;
                 }
-                journal.record_consumed_task_event(original_index, event);
-                break;
-            } else {
-                index += 1;
             }
+            journal.record_consumed_task_event(original_index, event);
         }
         start..journal.consumed_task_events.len()
     }
