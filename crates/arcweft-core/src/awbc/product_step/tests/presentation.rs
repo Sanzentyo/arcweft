@@ -103,9 +103,17 @@ mod cancellation {
         let mut banks = PresentationBanks::new(
             owner.clone(),
             executor.artifact_fingerprint,
-            PresentationLedgerLimits {
-                handles: 3,
-                scopes: 8,
+            if queued {
+                PresentationLedgerLimits {
+                    handles: 3,
+                    scopes: 8,
+                }
+            } else {
+                // Public restore selects the Product context's trusted policy;
+                // wire input does not retain a private fixture's smaller policy.
+                PresentationLedgerLimits::for_schema(
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                )
             },
         );
         let body = |value| PresentationBody {
