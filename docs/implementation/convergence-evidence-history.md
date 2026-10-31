@@ -13463,3 +13463,11 @@ Product snapshotのmetadata admissionはRoot・子fiber・active Dialogueの物�
 検証途中: 初期の生成経路接続入力はCore all-target/all-feature checkが終了0。その後の回帰test追加と重複index削除を含む凍結入力で、presentation-fiber-topology-20261031T091550884.owner1 のCore全件catalog／nextestを実行中。この公開cutはユーザーの途中commitのgreen確認を必須にしない指示によるcheckpointで、全件PASSや当該機能の最終受入とはしない。既存14 tracked／6 untracked WIPは保持する。
 
 Supersedes: AWBC実行bank選択の実装進捗を記録する。公開save decodeの最初のbody変換より前のmetadata検査、fiberを持たないDialogue phaseのnamespace検査、全実行checkpoint／VM cleanup、Source command ABI、driver・置換・画像parityは続けて完成させる。Generic Match等の既受入は維持し、現在の項目別状態は現状一覧だけを参照する。
+
+## AWBC実行bankの公開save早期検査・fixture移行の検証 — 2026-10-31
+
+確認base a47b3ebb24d2e0c35e451ece261cb4c394bdf829。公開saveのdecodeも、bank body・Root・taskの変換より前に実行metadataを同じadmissionで検査する。fiberを持たないDialogue phaseも発行済みnamespaceを検査する。既存のDialogue fixtureは実際のoccurrence準備とfiber cursor割当、creation contextによる生成へ移行した。foreign rootを検査する負例はbankと物理identityを正しい状態に固定し、従来のroot契約のassertionを維持した。
+
+初回owner1は2155件中2147 PASS／8 FAIL・0 skipped・source4015差分0。8件は旧fixtureのRoot context／未割当fiber／未発行namespaceが新しい境界で拒否された。owner2のcatalogはmutable-reference fixtureの再borrowによるE0596で終了101、runtime未実行。修正したowner3は2157／2157 PASS・0 skipped・終了0、source4015／binary／catalog差分0。新規9件はnamespace・親／bank関係とsticky failure、bind／releaseとlive／inert grantの失敗原子性、実Product公開saveのbank往復・重複activation fiber・不正bodyより前のmetadata拒否を確認した。先行check0と各失敗は別入力の履歴として保持し、最終owner結果へ合算しない。qualityと全逆依存は後続Core cohortで実施する。
+
+Supersedes: a47b3ebb24d2e0c35e451ece261cb4c394bdf829の検証途中記録を、上記の終端結果と早期検査追加で更新する。AWBCの実行bank生成／Product保存の当該境界を、全実行checkpoint／VM cleanup、Sourceの11 callable・mount(ViewValue)・6 method、Native借用Dialogue、driver・置換・画像parityの受入へ拡張しない。Generic Matchと他の既受入は維持する。

@@ -416,7 +416,7 @@ pub struct AwbcProductExecutorSnapshot {
 #[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AwbcProductExecutorSaveSnapshot {
-    presentation: Option<crate::presentation::resources::PresentationBanksSaveSnapshot>,
+    pub(super) presentation: Option<crate::presentation::resources::PresentationBanksSaveSnapshot>,
     pub root: Option<crate::root::RootStateSaveSnapshotV1>,
     pub runtime_generation: crate::task::GenerationId,
     pub fiber: AwbcFiberStateSnapshot,
@@ -424,7 +424,7 @@ pub struct AwbcProductExecutorSaveSnapshot {
     pub dialogue_effect_callback_activations: BTreeSet<RuntimeDialogueEffectCallbackActivationId>,
     pub live_flow_bindings: Vec<AwbcFlowBinding>,
     pub entry_bound: bool,
-    dialogues: crate::line_task::RuntimeDialogueRegistrySaveSnapshot<
+    pub(super) dialogues: crate::line_task::RuntimeDialogueRegistrySaveSnapshot<
         AwbcProductActiveDialogueSaveSnapshot,
         AwbcTypeId,
     >,
@@ -2985,6 +2985,9 @@ impl AwbcProductExecutorSaveSnapshot {
         self,
         program: &super::AwbcProductProgram,
     ) -> Result<AwbcProductExecutorSnapshot, AwbcProductStepBuildError> {
+        let mut admission =
+            program.retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default());
+        self.admit_presentation_execution(&mut admission)?;
         let owner = crate::task::RuntimeProgramOwner::Awbc(program.program_arc());
         let presentation = self.presentation.map(|banks| {
             banks.retain_program(
@@ -2994,8 +2997,6 @@ impl AwbcProductExecutorSaveSnapshot {
                 ),
             )
         });
-        let mut admission =
-            program.retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default());
         if let Some(banks) = &presentation {
             let artifact = AwbcProductStepExecutor::artifact_fingerprint(program)?;
             banks

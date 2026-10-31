@@ -84,6 +84,18 @@ impl<'a> PresentationExecutionAdmission<'a> {
         Ok(())
     }
 
+    pub(crate) fn admit_dialogue(
+        &self,
+        activation: DialogueActivationId,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        let result = admission.validate_metadata(&activation).and_then(|()| {
+            self.validate_bank(RuntimePresentationBankId::Dialogue { activation })
+                .map_err(Into::into)
+        });
+        result.inspect_err(|error| admission.retain_failure(error.clone()))
+    }
+
     pub(crate) fn register_fiber(
         &mut self,
         instance: RuntimeFiberInstanceId,

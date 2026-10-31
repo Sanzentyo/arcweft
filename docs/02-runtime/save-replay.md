@@ -289,12 +289,20 @@ bodyのlive materializationへは、選択済みprogramとadmit済みSourceを�
 contextをそのまま渡し、別programのleaseを拒否する。
 
 AWBC の Presentation scope header は、実際の動的 fiber・frame と、その frame の
-root または検証済み lexical scope 宣言に束縛する。同じ宣言へ再入しても動的 grant を
+root または検証済み lexical scope 宣言と実行bankに束縛する。同じ宣言へ再入しても動的 grant を
 再利用しない。live binding は元 program lease を保持し、serde reader／writer を持たない。
 wire snapshot は inert な座標だけを保持し、元 ledger の grant と全 header を一つの
 累積 admission で照合してから live binding へ変換する。header の入替・重複・偽造や
 回収済み grant は復元権限にならない。ledger を伴わない scope exit／取消は、未回収の
 grant を捨てずに型付きエラーを返す。
+
+AWBC fiberのversion 1保存grammarは実行bankを必須fieldとして持つ。Root入口はRoot、
+Dialogue入口・line・callbackは完全なactivationのbankを選び、Program子fiberと継続は
+生成元のbankを継承する。Productのmetadata admissionは、Root・子fiber・Dialogue内の
+物理fiberをまとめて検査し、未割当／重複fiber、親bank不一致、重複namespace frontier、
+未発行activationをbodyの検査・変換前に拒否する。fiberを持たないDialogue phaseも
+namespaceを照合する。detached childや空bankが残る間は元activationのnamespaceを
+保持し、compatible code replacementによって新artifactのbankへ再命名しない。
 
 対話 frame と phase／closing／pending operation は live／inert 共通の owning grammar
 を使い、inert specialization だけが Clone と serde reader を持つ。registry の元の

@@ -43,6 +43,40 @@ fn product_snapshot(
         .expect("fixture Product snapshot is valid")
 }
 
+fn issue_test_dialogue(
+    executor: &mut AwbcProductStepExecutor,
+    content: AwbcContentUnitId,
+) -> crate::runtime_id::DialogueActivationId {
+    let (activation, key, next) = executor.prepare_dialogue_activation(content).unwrap();
+    executor.dialogue_occurrences.insert(key, next);
+    activation
+}
+
+fn create_test_dialogue_fiber(
+    executor: &mut AwbcProductStepExecutor,
+    activation: crate::runtime_id::DialogueActivationId,
+    function: AwbcFunctionId,
+) -> FiberState {
+    let instance = crate::runtime_id::RuntimeFiberInstanceId::from_allocated(
+        executor
+            .next_fiber_instance
+            .take_next(crate::runtime_id::RuntimeIdNamespace::FiberInstance)
+            .unwrap(),
+    );
+    FiberState::for_function_in_context(
+        &executor.program,
+        crate::awbc::fiber::AwbcFiberRoot::Function(function),
+        function,
+        crate::awbc::fiber::FiberCreationContext::new(
+            instance,
+            executor.runtime_generation.get(),
+            executor.fiber.budget.quantum,
+            crate::runtime_id::RuntimePresentationBankId::Dialogue { activation },
+        ),
+    )
+    .unwrap()
+}
+
 /// These line-task fixtures need a second test fiber from a root fixture whose
 /// entire runtime-value graph is unrestricted. Keep the test-only copy proof
 /// explicit and reconstruct through the inert snapshot representation.
@@ -597,15 +631,8 @@ fn product_snapshot_visitor_finds_asset_handles_in_dialogue_captures() {
         AwbcProductStepExecutor::for_entry(program, crate::awbc::schema::AwbcEntryId(0), 64)
             .expect("fixture Product executor starts");
     let content_id = AwbcContentUnitId(1);
-    let content = crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
-        std::num::NonZeroU32::new(2).unwrap(),
-    );
-    let activation = crate::runtime_id::DialogueActivationId::new(
-        executor.artifact_fingerprint,
-        executor.facade_fiber.persistent_id,
-        content,
-        0,
-    );
+    let activation = issue_test_dialogue(&mut executor, content_id);
+    let activation_fiber = create_test_dialogue_fiber(&mut executor, activation, function);
     executor
         .dialogues
         .begin(ActiveDialogue {
@@ -626,14 +653,7 @@ fn product_snapshot_visitor_finds_asset_handles_in_dialogue_captures() {
             effect_callbacks: BTreeMap::new(),
             voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
             phase: ProductDialoguePhase::Activating {
-                fiber: FiberState::for_function(
-                    &executor.program,
-                    crate::awbc::fiber::AwbcFiberRoot::Function(function),
-                    function,
-                    1,
-                    64,
-                )
-                .unwrap(),
+                fiber: activation_fiber,
                 pending: None,
             },
             elapsed_nanos: 0,
@@ -713,15 +733,7 @@ fn only_explicit_selector_terminal_selects_dialogue_result_for_its_owner() {
         )
         .expect("product executor starts");
         let content_id = AwbcContentUnitId(0);
-        let content = crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
-            std::num::NonZeroU32::MIN,
-        );
-        let activation = crate::runtime_id::DialogueActivationId::new(
-            executor.artifact_fingerprint,
-            executor.facade_fiber.persistent_id,
-            content,
-            0,
-        );
+        let activation = issue_test_dialogue(&mut executor, AwbcContentUnitId(0));
         let view = executor
             .line_task_view(content_id)
             .expect("line-task group view");
@@ -865,14 +877,7 @@ fn mark_action_selection_restores_and_cancellation_can_override_it() {
     )
     .expect("product executor starts");
     let content = AwbcContentUnitId(0);
-    let activation = crate::runtime_id::DialogueActivationId::new(
-        executor.artifact_fingerprint,
-        executor.facade_fiber.persistent_id,
-        crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
-            std::num::NonZeroU32::MIN,
-        ),
-        0,
-    );
+    let activation = issue_test_dialogue(&mut executor, AwbcContentUnitId(0));
     let view = executor
         .line_task_view(content)
         .expect("mark line-task view");
@@ -1206,23 +1211,8 @@ fn line_activation_register_defer_commits_captures_and_cursor() {
 
     let mut executor = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 64)
         .expect("line-root defer executor starts");
-    let content = crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
-        std::num::NonZeroU32::MIN,
-    );
-    let activation_id = crate::runtime_id::DialogueActivationId::new(
-        executor.artifact_fingerprint,
-        executor.facade_fiber.persistent_id,
-        content,
-        0,
-    );
-    let activation_fiber = crate::awbc::fiber::FiberState::for_function(
-        &executor.program,
-        crate::awbc::fiber::AwbcFiberRoot::Function(activation),
-        activation,
-        1,
-        64,
-    )
-    .expect("line activation fiber initializes");
+    let activation_id = issue_test_dialogue(&mut executor, AwbcContentUnitId(0));
+    let activation_fiber = create_test_dialogue_fiber(&mut executor, activation_id, activation);
     executor
         .dialogues
         .begin(ActiveDialogue {
@@ -1294,22 +1284,9 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
     let program = init_scope_defer_host_call_program();
     let mut executor = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 64)
         .expect("Init scope-defer executor starts");
-    let activation = crate::runtime_id::DialogueActivationId::new(
-        executor.artifact_fingerprint,
-        executor.facade_fiber.persistent_id,
-        crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
-            std::num::NonZeroU32::MIN,
-        ),
-        0,
-    );
-    let mut activation_fiber = crate::awbc::fiber::FiberState::for_function(
-        &executor.program,
-        crate::awbc::fiber::AwbcFiberRoot::Function(AwbcFunctionId(1)),
-        AwbcFunctionId(1),
-        1,
-        64,
-    )
-    .expect("Init activation fiber initializes");
+    let activation = issue_test_dialogue(&mut executor, AwbcContentUnitId(0));
+    let mut activation_fiber =
+        create_test_dialogue_fiber(&mut executor, activation, AwbcFunctionId(1));
     activation_fiber
         .active_frame_mut()
         .expect("Init activation frame")
@@ -1666,14 +1643,8 @@ fn registered_root_defer_executor(
         .opaque_owner(AwbcTypeId(2))
         .expect("dialogue target owner resolves")
         .expect("dialogue target is opaque");
-    let activation = crate::runtime_id::DialogueActivationId::new(
-        executor.artifact_fingerprint,
-        executor.facade_fiber.persistent_id,
-        crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
-            std::num::NonZeroU32::MIN,
-        ),
-        0,
-    );
+    let activation = issue_test_dialogue(&mut executor, AwbcContentUnitId(0));
+    let activation_fiber = create_test_dialogue_fiber(&mut executor, activation, AwbcFunctionId(1));
     executor
         .dialogues
         .begin(ActiveDialogue {
@@ -1694,14 +1665,7 @@ fn registered_root_defer_executor(
                 destination: AwbcRegisterId(0),
             },
             phase: ProductDialoguePhase::Activating {
-                fiber: crate::awbc::fiber::FiberState::for_function(
-                    &executor.program,
-                    crate::awbc::fiber::AwbcFiberRoot::Function(AwbcFunctionId(1)),
-                    AwbcFunctionId(1),
-                    1,
-                    64,
-                )
-                .expect("line activation fiber initializes"),
+                fiber: activation_fiber,
                 pending: None,
             },
             elapsed_nanos: 0,
@@ -1910,15 +1874,7 @@ fn product_dialogue_failure_commits_abandoned_before_trapping_parent() {
         64,
     )
     .expect("product executor starts");
-    let content = crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
-        std::num::NonZeroU32::MIN,
-    );
-    let activation = crate::runtime_id::DialogueActivationId::new(
-        executor.artifact_fingerprint,
-        executor.facade_fiber.persistent_id,
-        content,
-        0,
-    );
+    let activation = issue_test_dialogue(&mut executor, AwbcContentUnitId(0));
     executor
         .dialogues
         .begin(ActiveDialogue {
@@ -2017,15 +1973,8 @@ fn product_dialogue_failure_cancels_joined_child_before_abandoning() {
                 audio: crate::awbc::schema::AwbcAudioCleanup::StopRegistered,
             },
         });
-    let content = crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
-        std::num::NonZeroU32::MIN,
-    );
-    let activation = crate::runtime_id::DialogueActivationId::new(
-        executor.artifact_fingerprint,
-        executor.facade_fiber.persistent_id,
-        content,
-        1,
-    );
+    issue_test_dialogue(&mut executor, AwbcContentUnitId(0));
+    let activation = issue_test_dialogue(&mut executor, AwbcContentUnitId(0));
     let (live, tag, policy) = {
         let view = executor
             .line_task_view(AwbcContentUnitId(0))
@@ -2816,19 +2765,13 @@ fn actor_effect_program() -> AwbcProgram {
 fn begin_actor_look_dialogue(
     executor: &mut AwbcProductStepExecutor,
 ) -> crate::runtime_id::DialogueActivationId {
-    let activation = crate::runtime_id::DialogueActivationId::new(
-        executor.artifact_fingerprint,
-        executor.facade_fiber.persistent_id,
-        crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
-            std::num::NonZeroU32::MIN,
-        ),
-        0,
-    );
+    let activation = issue_test_dialogue(executor, AwbcContentUnitId(0));
     let target_owner = executor
         .program
         .opaque_owner(AwbcTypeId(6))
         .expect("fixture dialogue target type resolves")
         .expect("fixture dialogue target is opaque");
+    let activation_fiber = create_test_dialogue_fiber(executor, activation, AwbcFunctionId(1));
     executor
         .dialogues
         .begin(ActiveDialogue {
@@ -2849,14 +2792,7 @@ fn begin_actor_look_dialogue(
                 destination: AwbcRegisterId(0),
             },
             phase: ProductDialoguePhase::Activating {
-                fiber: FiberState::for_function(
-                    &executor.program,
-                    crate::awbc::fiber::AwbcFiberRoot::Function(AwbcFunctionId(1)),
-                    AwbcFunctionId(1),
-                    1,
-                    64,
-                )
-                .expect("line activation fiber starts"),
+                fiber: activation_fiber,
                 pending: None,
             },
             elapsed_nanos: 0,
@@ -3281,8 +3217,21 @@ fn dialogue_activation_rejects_an_independently_valid_foreign_root_before_copy()
         )
         .unwrap();
     let mut encoded = serde_json::to_value(&snapshot.dialogues).unwrap();
+    let dialogue_instance = executor
+        .dialogues
+        .active_frame()
+        .unwrap()
+        .activation_fiber()
+        .unwrap()
+        .instance;
+    let mut foreign_root = snapshot.fiber.clone();
+    // Keep the issued physical coordinates valid so the original root-contract
+    // rejection remains the invariant under test, independently of bank checks.
+    foreign_root.instance = dialogue_instance;
+    foreign_root.presentation_bank =
+        crate::runtime_id::RuntimePresentationBankId::Dialogue { activation };
     encoded["entries"][0]["Active"]["frame"]["phase"]["Activating"]["fiber"] =
-        serde_json::to_value(&snapshot.fiber).unwrap();
+        serde_json::to_value(&foreign_root).unwrap();
     snapshot.dialogues = serde_json::from_value(encoded).unwrap();
     let before = serde_json::to_vec(&snapshot.dialogues).unwrap();
     let error = AwbcProductExecutorSaveSnapshot::from_live(&snapshot, executor.admitted_program())
@@ -3293,7 +3242,18 @@ fn dialogue_activation_rejects_an_independently_valid_foreign_root_before_copy()
     assert_eq!(serde_json::to_vec(&snapshot.dialogues).unwrap(), before);
     assert!(executor.validate_snapshot(&snapshot).is_err());
 
-    let entry = FiberState::for_entry(&executor.program, AwbcEntryId(0), 0, 64).unwrap();
+    let entry = FiberState::for_function_in_context(
+        &executor.program,
+        crate::awbc::fiber::AwbcFiberRoot::Entry(AwbcEntryId(0)),
+        executor.fiber.active_frame().unwrap().function,
+        crate::awbc::fiber::FiberCreationContext::new(
+            dialogue_instance,
+            0,
+            64,
+            crate::runtime_id::RuntimePresentationBankId::Dialogue { activation },
+        ),
+    )
+    .unwrap();
     entry
         .admit_retained(
             &mut crate::value::RuntimeRetainedValueAdmission::for_program(
@@ -3318,19 +3278,13 @@ fn initial_actor_dialogue_executor() -> (
 ) {
     let mut executor = AwbcProductStepExecutor::for_entry(actor_look_program(), AwbcEntryId(0), 64)
         .expect("two-look Product executor starts");
-    let activation = crate::runtime_id::DialogueActivationId::new(
-        executor.artifact_fingerprint,
-        executor.facade_fiber.persistent_id,
-        crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
-            std::num::NonZeroU32::MIN,
-        ),
-        0,
-    );
+    let activation = issue_test_dialogue(&mut executor, AwbcContentUnitId(0));
     let target_owner = executor
         .program
         .opaque_owner(AwbcTypeId(6))
         .expect("fixture dialogue target type resolves")
         .expect("fixture dialogue target is opaque");
+    let activation_fiber = create_test_dialogue_fiber(&mut executor, activation, AwbcFunctionId(1));
     executor
         .dialogues
         .begin(ActiveDialogue {
@@ -3351,14 +3305,7 @@ fn initial_actor_dialogue_executor() -> (
                 destination: AwbcRegisterId(0),
             },
             phase: ProductDialoguePhase::Activating {
-                fiber: FiberState::for_function(
-                    &executor.program,
-                    crate::awbc::fiber::AwbcFiberRoot::Function(AwbcFunctionId(1)),
-                    AwbcFunctionId(1),
-                    1,
-                    64,
-                )
-                .expect("line activation fiber starts"),
+                fiber: activation_fiber,
                 pending: None,
             },
             elapsed_nanos: 0,

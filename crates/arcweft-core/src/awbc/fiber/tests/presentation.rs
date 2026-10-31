@@ -61,6 +61,31 @@ fn foreign_bank_binding_and_release_leave_scope_values_and_issuance_unchanged() 
     );
 }
 
+#[test]
+fn live_and_saved_scope_grants_reject_a_forged_fiber_bank_before_copy() {
+    let mut fixture = Fixture::new(4);
+    fixture.register(true);
+    let original = fixture.image();
+    let forged_bank = crate::runtime_id::RuntimePresentationBankId::Dialogue {
+        activation: crate::runtime_id::DialogueActivationId::new(
+            fixture.artifact,
+            crate::runtime_id::RuntimePersistentFiberId::from_allocated(1),
+            crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
+                std::num::NonZeroU32::MIN,
+            ),
+            0,
+        ),
+    };
+    let mut saved = original.clone();
+    saved.presentation_bank = forged_bank;
+    assert!(fixture.admit_image(&saved).is_err());
+    fixture.fiber.presentation_bank = forged_bank;
+    assert!(AwbcFiberStateSnapshot::from_live(&fixture.fiber, &mut fixture.admission()).is_err());
+    fixture.fiber.presentation_bank = crate::runtime_id::RuntimePresentationBankId::Root;
+    assert_eq!(fixture.image(), original);
+    assert_eq!(fixture.retire(), [RuntimeValue::Bool(true)]);
+}
+
 impl Fixture {
     fn new(limit: usize) -> Self {
         let mut program = zero_parameter_entry_program();

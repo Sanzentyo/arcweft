@@ -29,10 +29,13 @@ pub(crate) type PresentationBanksSaveSnapshot = PresentationBanks<
     PresentationLedgerState<PresentationBody<AwbcRuntimeValueSnapshot>>,
 >;
 
-impl<V> PresentationBanks<V> {
+impl<V, L> PresentationBanks<V, L> {
     pub(crate) fn bank_ids(&self) -> impl Iterator<Item = RuntimePresentationBankId> + '_ {
         self.ledgers.keys().copied()
     }
+}
+
+impl<V> PresentationBanks<V> {
     pub(crate) fn new(
         program: RuntimeProgramOwner,
         artifact: RuntimeArtifactFingerprint,

@@ -128,7 +128,7 @@ fn public_restore_rejects_forged_bank_and_namespace_frontiers_atomically() {
         0,
     );
     let row = serde_json::json!({"owner": activation.owner_fiber(), "content": activation.content(), "next": 1});
-    for mutation in 0..5 {
+    for mutation in 0..6 {
         let mut wire = original.clone();
         match mutation {
             0 => {
@@ -155,6 +155,19 @@ fn public_restore_rejects_forged_bank_and_namespace_frontiers_atomically() {
                     .unwrap()
                     .remove("presentation_bank");
             }
+            5 => {
+                wire["dialogue_occurrences"] = serde_json::json!([row, row]);
+                let body = wire["presentation"]["ledgers"][0][1]["leases"]
+                    .as_object_mut()
+                    .unwrap()
+                    .values_mut()
+                    .next()
+                    .unwrap();
+                body["body"]["expected"] = serde_json::to_value(
+                    crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest(),
+                )
+                .unwrap();
+            }
             _ => unreachable!(),
         }
         let save = match serde_json::from_value(wire) {
@@ -162,8 +175,59 @@ fn public_restore_rejects_forged_bank_and_namespace_frontiers_atomically() {
             Err(_) if mutation == 4 => continue,
             Err(error) => panic!("mutation {mutation} must reach retained admission: {error}"),
         };
-        let (retained, _) = executor.restore_inert_snapshot_owned(save).unwrap_err();
+        let (retained, error) = executor.restore_inert_snapshot_owned(save).unwrap_err();
+        if mutation == 5 {
+            assert!(
+                error.to_string().contains(
+                    &crate::presentation::RuntimePresentationError::InvalidState.to_string()
+                ),
+                "metadata must reject before invalid body admission: {error}"
+            );
+        }
         executor = retained;
         assert_eq!(executor.snapshot().unwrap(), before, "mutation {mutation}");
     }
+}
+
+#[test]
+fn dialogue_bank_roundtrips_and_duplicate_activation_fiber_rejection_keeps_the_owner() {
+    let (executor, activation) = initial_actor_dialogue_executor();
+    let bank = RuntimePresentationBankId::Dialogue { activation };
+    let fiber = executor
+        .dialogues
+        .active_frame()
+        .unwrap()
+        .activation_fiber()
+        .unwrap();
+    assert_ne!(fiber.instance, executor.fiber.instance);
+    assert_eq!(fiber.presentation_bank(), bank);
+    let before = executor.snapshot().unwrap();
+    let save = AwbcProductExecutorSaveSnapshot::from_live(&before, &executor.program).unwrap();
+    let mut wire = serde_json::to_value(save).unwrap();
+    let executor = executor
+        .restore_inert_snapshot_owned(serde_json::from_value(wire.clone()).unwrap())
+        .unwrap();
+    assert_eq!(executor.snapshot().unwrap(), before);
+    assert_eq!(
+        executor
+            .dialogues
+            .active_frame()
+            .unwrap()
+            .activation_fiber()
+            .unwrap()
+            .presentation_bank(),
+        bank
+    );
+    wire["dialogues"]["entries"][0]["Active"]["frame"]["phase"]["Activating"]["fiber"]["instance"] =
+        serde_json::to_value(executor.fiber.instance).unwrap();
+    let (executor, error) = executor
+        .restore_inert_snapshot_owned(serde_json::from_value(wire).unwrap())
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains(&crate::presentation::RuntimePresentationError::InvalidState.to_string()),
+        "{error}"
+    );
+    assert_eq!(executor.snapshot().unwrap(), before);
 }
