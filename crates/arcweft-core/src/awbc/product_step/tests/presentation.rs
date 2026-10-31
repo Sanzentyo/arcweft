@@ -240,6 +240,39 @@ fn execution_checkpoint_rejects_a_foreign_program_without_mutating_the_live_grap
 }
 
 #[test]
+fn execution_checkpoint_preserves_the_typed_bank_metadata_rejection() {
+    let (mut executor, activation) = initial_actor_dialogue_executor();
+    let before = executor.snapshot().unwrap();
+    let mut transaction = executor.dialogues.begin_transaction(&activation).unwrap();
+    let ProductDialoguePhase::Activating { fiber, .. } = &mut transaction.frame_mut().phase else {
+        unreachable!()
+    };
+    fiber.presentation_bank = RuntimePresentationBankId::Root;
+    let Err(error) = executor.execution_checkpoint(
+        super::super::checkpoint::ProductCheckpointTarget::Dialogue(&transaction),
+    ) else {
+        panic!("a forged Dialogue bank must be rejected")
+    };
+    assert!(
+        matches!(
+            error,
+            ProductStepError::CheckpointValue(
+                crate::value::AwbcRuntimeValueSnapshotError::Presentation(
+                    crate::presentation::RuntimePresentationError::Owner
+                )
+            )
+        ),
+        "metadata errors retain their typed cause: {error:?}"
+    );
+    let ProductDialoguePhase::Activating { fiber, .. } = &mut transaction.frame_mut().phase else {
+        unreachable!()
+    };
+    fiber.presentation_bank = RuntimePresentationBankId::Dialogue { activation };
+    executor.dialogues.restore_transaction(transaction).unwrap();
+    assert_eq!(executor.snapshot().unwrap(), before);
+}
+
+#[test]
 fn execution_checkpoint_includes_root_and_the_actual_withdrawn_dialogue_grants() {
     let (mut executor, activation) = initial_actor_dialogue_executor();
     let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());

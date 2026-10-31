@@ -85,8 +85,8 @@ impl AwbcProductStepExecutor {
                 admission,
             )?;
         }
-        dialogues
-            .try_visit_active(|activation, frame, _| {
+        dialogues.try_visit_active(
+            |activation, frame, _| -> Result<(), AwbcRuntimeValueSnapshotError> {
                 context.admit_dialogue(*activation, admission)?;
                 if let Some(fiber) = frame.activation_fiber() {
                     context.register_fiber(
@@ -97,14 +97,8 @@ impl AwbcProductStepExecutor {
                     )?;
                 }
                 Ok(())
-            })
-            .map_err(
-                |error: crate::line_task::RuntimeDialogueRegistrySnapshotError| {
-                    AwbcRuntimeValueSnapshotError::Message {
-                        message: error.to_string(),
-                    }
-                },
-            )?;
+            },
+        )?;
         context.finish(
             self.presentation.iter().flat_map(|banks| banks.bank_ids()),
             admission,
