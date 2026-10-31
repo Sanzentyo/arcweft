@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "commit": "d6d4cac779e3650552c9d68726480a5dade7d4be",
+  "parent": "fa6bff7015c0f59f4f3bca4d937e7926792ba25f",
+  "tree": "447ef34c584012cf3545f4d64099375548c817ae",
+  "remote": "d6d4cac779e3650552c9d68726480a5dade7d4be",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step.rs",
+      "blob": "7b7627376cba7eaedf28833b4b65ee6b482a3881"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/checkpoint.rs",
+      "blob": "277e52942c8cadefa32308669b88519a76fe9f2b"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+      "blob": "f88d4bfd96bb697891d775143f5afafd83a84eda"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+      "blob": "89ac1e5aa973c9594cc67eba0ee9a73ae4006375"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+      "blob": "4666d6d39e7aef3cbd373cc9f026bd95e54fb64b"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+      "blob": "ba86e7e0e5d3ab23db87a4c90628b616f9aea811"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+      "blob": "4023fb7cea5d2cf808622f7f0403eebab00a17b4"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+      "blob": "d8484060e756008c3edfb45f0e473b14d33ea9be"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+      "blob": "2fbbdd52112a89bd5b5ece5b18411b9879e3f86b"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "blob": "d11776af4d19e163d5e587b136255876241f96f8"
+    },
+    {
+      "path": "docs/02-runtime/save-replay.md",
+      "blob": "880be4dfdee7257bac25b2ed8b59949e1289a635"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "b0f85ecede580ec22d31b19f3022c9c3b8851f6c"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "9592235565df545502e3cd5df28b19632554313219ee68134c2030d138d1aa1b",
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-31T10:08:45.9165763Z"
+}

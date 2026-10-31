@@ -1,0 +1,3 @@
+Admit actual borrowed dialogue owners through one retained contour
+
+Bind in-flight transactions and prepared proofs to their exact live reservation without altering saved data. Core owner: all 2163 tests passed.

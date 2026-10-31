@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "fa6bff7015c0f59f4f3bca4d937e7926792ba25f",
+  "run": "product-execution-checkpoint-20261031T100256457.owner3.runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  72.846s] 2167 tests run: 2167 passed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 2167,
+  "passed": 2167,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4018,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-31T10:05:18.1228687Z"
+}

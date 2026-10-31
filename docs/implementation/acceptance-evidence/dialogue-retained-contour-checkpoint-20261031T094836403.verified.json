@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "commit": "fa6bff7015c0f59f4f3bca4d937e7926792ba25f",
+  "parent": "778e50325a2b907511e7a8379c789f27a53664e3",
+  "tree": "3d9f0dd46639d7c859c37bed4d4439654dae8aa2",
+  "remote": "fa6bff7015c0f59f4f3bca4d937e7926792ba25f",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+      "blob": "85312ed1552b67bcb0c91f184e6cb595cb0ddb6b"
+    },
+    {
+      "path": "crates/arcweft-core/src/line_task.rs",
+      "blob": "2aea77367cb7eacbc9bb9a2408ecc42fb83c8606"
+    },
+    {
+      "path": "crates/arcweft-core/src/line_task/activation.rs",
+      "blob": "1415696eb4d2fa557cfa724e35e84c1026128b5c"
+    },
+    {
+      "path": "crates/arcweft-core/src/line_task/activation/contour.rs",
+      "blob": "2100af0b49fa974009592a523d8d27b9a3deef8b"
+    },
+    {
+      "path": "crates/arcweft-core/src/line_task/activation/contour/tests.rs",
+      "blob": "4980b82b9ad18077ea651698b46d3690a69d0d6c"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "046697b65509bbc28849f20610d63b05160dbdd6"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "347bcf8417c1efbb2aaefa1923004779e5563a5d069f76b6b50938f6409f36a7",
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-31T09:48:46.0414721Z"
+}

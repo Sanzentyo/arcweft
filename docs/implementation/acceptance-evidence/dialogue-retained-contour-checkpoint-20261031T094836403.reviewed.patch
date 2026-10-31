@@ -1,0 +1,610 @@
+diff --git a/crates/arcweft-core/src/awbc/product_step/dialogue.rs b/crates/arcweft-core/src/awbc/product_step/dialogue.rs
+index dfa71c9109c55d22a09bbc5d92f99494a7779e56..85312ed1552b67bcb0c91f184e6cb595cb0ddb6b 100644
+--- a/crates/arcweft-core/src/awbc/product_step/dialogue.rs
++++ b/crates/arcweft-core/src/awbc/product_step/dialogue.rs
+@@ -492,19 +492,22 @@ impl ProductDialogueStore {
+             crate::line_task::RuntimeDialogueRegistrySnapshotError,
+         >,
+     ) -> Result<(), crate::line_task::RuntimeDialogueRegistrySnapshotError> {
+-        self.registry.admit_retained(admission)?;
+-        for activation in self.registry.active_ids() {
+-            let frame = self
+-                .registry
+-                .active_frame(&activation)
+-                .expect("active entry owns its frame");
+-            let line = self
+-                .registry
+-                .active_line(&activation)
+-                .expect("active entry owns its line");
+-            admit_frame(&activation, frame, line, admission)?;
+-        }
+-        Ok(())
++        let contour = self.retained_contour(std::iter::empty(), admission)?;
++        contour.admit_retained(admission)?;
++        contour.try_visit_active(|activation, frame, line| {
++            admit_frame(activation, frame, line, admission)
++        })
++    }
++
++    pub(super) fn retained_contour<'a>(
++        &'a self,
++        transactions: impl ExactSizeIterator<Item = &'a ProductDialogueTransaction>,
++        admission: &mut crate::value::RuntimeRetainedValueAdmission,
++    ) -> Result<
++        crate::line_task::RuntimeDialogueRetainedContour<'a, ActiveDialogue, AwbcTypeId>,
++        crate::line_task::RuntimeDialogueRegistrySnapshotError,
++    > {
++        self.registry.retained_contour(transactions, admission)
+     }
+ 
+     pub(super) fn snapshot_admitted<S>(
+diff --git a/crates/arcweft-core/src/line_task.rs b/crates/arcweft-core/src/line_task.rs
+index 02cec8c329d6f3aaf9e96568a5924d1bdbdd30b5..2aea77367cb7eacbc9bb9a2408ecc42fb83c8606 100644
+--- a/crates/arcweft-core/src/line_task.rs
++++ b/crates/arcweft-core/src/line_task.rs
+@@ -28,7 +28,8 @@ pub(crate) use activation::{
+     RuntimeDialogueActivationRegistry, RuntimeDialogueActivationTransaction,
+     RuntimeDialogueCommitProof, RuntimeDialoguePublishedCommitProof,
+     RuntimeDialogueRegistryCommitReceipt, RuntimeDialogueRegistrySaveSnapshot,
+-    RuntimeDialogueRegistrySnapshotError, RuntimePublishedDialogueRegistry,
++    RuntimeDialogueRegistrySnapshotError, RuntimeDialogueRetainedContour,
++    RuntimePublishedDialogueRegistry,
+ };
+ pub(crate) use defer::AwbcRuntimeDeferredRegistrationSnapshot;
+ 
+diff --git a/crates/arcweft-core/src/line_task/activation.rs b/crates/arcweft-core/src/line_task/activation.rs
+index 484ec470ace04dfc751759711362039236211bd6..1415696eb4d2fa557cfa724e35e84c1026128b5c 100644
+--- a/crates/arcweft-core/src/line_task/activation.rs
++++ b/crates/arcweft-core/src/line_task/activation.rs
+@@ -12,6 +12,9 @@ use serde::{Deserialize, Serialize};
+ use std::collections::{BTreeMap, btree_map::Entry};
+ use thiserror::Error;
+ 
++mod contour;
++pub(crate) use contour::RuntimeDialogueRetainedContour;
++
+ /// Executor-neutral sole owner of active dialogue transactions and surviving
+ /// post-publication handle ledgers.
+ ///
+@@ -115,7 +118,10 @@ enum RuntimeDialogueRegistryEntry<F, T> {
+     },
+     /// The frame and line have moved into one transaction. No second live
+     /// transaction can be opened until that owner commits or is restored.
+-    InFlight { revision: u64 },
++    InFlight {
++        revision: u64,
++        reservation: RuntimeDialogueReservation,
++    },
+     PublishedHandles {
+         revision: u64,
+         handles: RuntimePublishedDialogueHandles,
+@@ -126,10 +132,23 @@ enum RuntimeDialogueRegistryEntry<F, T> {
+ pub(crate) struct RuntimeDialogueActivationTransaction<F, T> {
+     activation: DialogueActivationId,
+     revision: u64,
++    reservation: RuntimeDialogueReservation,
+     frame: F,
+     line: RuntimeDialogueActivationState<T>,
+ }
+ 
++/// Live provenance of one withdrawal. It is absent from snapshots and never
++/// contributes an address to deterministic data. Equality means the exact
++/// slot/transaction reservation, including reopen after a rejected operation.
++#[derive(Clone, Debug)]
++struct RuntimeDialogueReservation(std::sync::Arc<()>);
++
++impl PartialEq for RuntimeDialogueReservation {
++    fn eq(&self, other: &Self) -> bool {
++        std::sync::Arc::ptr_eq(&self.0, &other.0)
++    }
++}
++
+ #[derive(Clone, Debug, PartialEq)]
+ pub(crate) struct RuntimeDialogueRegistryCommitReceipt {
+     line: RuntimeDialogueCommitReceipt,
+@@ -138,6 +157,7 @@ pub(crate) struct RuntimeDialogueRegistryCommitReceipt {
+ pub(crate) struct RuntimeDialogueCommitProof {
+     activation: DialogueActivationId,
+     revision: u64,
++    reservation: RuntimeDialogueReservation,
+     next_revision: u64,
+ }
+ 
+@@ -146,6 +166,7 @@ pub(crate) struct RuntimeDialogueCommitProof {
+ pub(crate) struct RuntimeDialoguePublishedCommitProof {
+     activation: DialogueActivationId,
+     revision: u64,
++    reservation: RuntimeDialogueReservation,
+     next_revision: u64,
+ }
+ 
+@@ -153,6 +174,7 @@ pub(crate) struct RuntimeDialoguePublishedCommitProof {
+ pub(crate) struct RuntimeDialogueAbandonedCommitProof {
+     activation: DialogueActivationId,
+     revision: u64,
++    reservation: RuntimeDialogueReservation,
+ }
+ 
+ pub(crate) struct RuntimeDialoguePublishedOutcomeStage {
+@@ -297,6 +319,7 @@ impl<F, T> RuntimeDialogueActivationTransaction<F, T> {
+         RuntimeDialogueActivationTransaction {
+             activation: self.activation,
+             revision: self.revision,
++            reservation: self.reservation,
+             frame: map(self.frame),
+             line: self.line,
+         }
+@@ -356,27 +379,9 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
+     where
+         T: super::handle::RuntimeDialogueTypeCoordinate,
+     {
+-        admission.validate_metadata_collection(self.entries.len())?;
+-        for (activation, entry) in &self.entries {
+-            match entry {
+-                RuntimeDialogueRegistryEntry::Active { revision, line, .. } => {
+-                    admission.validate_metadata(&(activation, revision))?;
+-                    line.admit_retained_resources(admission)?;
+-                }
+-                RuntimeDialogueRegistryEntry::PublishedHandles { revision, handles } => {
+-                    admission.validate_metadata(&(activation, revision, handles))?;
+-                    handles.restore_admit(activation)?;
+-                }
+-                RuntimeDialogueRegistryEntry::InFlight { .. } => {
+-                    return Err(RuntimeDialogueRegistrySnapshotError::Frame {
+-                        message: "dialogue transaction is in flight".to_owned(),
+-                    });
+-                }
+-            }
+-        }
+-        Ok(())
++        self.retained_contour(std::iter::empty(), admission)?
++            .admit_retained(admission)
+     }
+-
+     pub(crate) fn snapshot_admitted<S>(
+         &self,
+         owner: Option<&RuntimeProgramOwner>,
+@@ -709,14 +714,20 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
+                     RuntimeDialogueRegistryEntry::Active { revision, .. } => *revision,
+                     _ => unreachable!(),
+                 };
+-                let RuntimeDialogueRegistryEntry::Active { frame, line, .. } =
+-                    std::mem::replace(entry, RuntimeDialogueRegistryEntry::InFlight { revision })
+-                else {
++                let reservation = RuntimeDialogueReservation(std::sync::Arc::new(()));
++                let RuntimeDialogueRegistryEntry::Active { frame, line, .. } = std::mem::replace(
++                    entry,
++                    RuntimeDialogueRegistryEntry::InFlight {
++                        revision,
++                        reservation: reservation.clone(),
++                    },
++                ) else {
+                     unreachable!("only an active payload can be taken")
+                 };
+                 Ok(RuntimeDialogueActivationTransaction {
+                     activation: activation.clone(),
+                     revision,
++                    reservation,
+                     frame,
+                     line,
+                 })
+@@ -742,7 +753,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
+         else {
+             return Err(LineRuntimeError::StaleActivationTransaction);
+         };
+-        if !matches!(entry, RuntimeDialogueRegistryEntry::InFlight { revision } if *revision == transaction.revision)
++        if !matches!(entry, RuntimeDialogueRegistryEntry::InFlight { revision, reservation } if *revision == transaction.revision && reservation == &transaction.reservation)
+         {
+             return Err(LineRuntimeError::StaleActivationTransaction);
+         }
+@@ -776,9 +787,10 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
+             return Err(LineRuntimeError::UnexpectedTerminalDisposition);
+         }
+         let next_revision = match self.entries.get(&transaction.activation) {
+-            Some(RuntimeDialogueRegistryEntry::InFlight { revision })
+-                if *revision == transaction.revision =>
+-            {
++            Some(RuntimeDialogueRegistryEntry::InFlight {
++                revision,
++                reservation,
++            }) if *revision == transaction.revision && reservation == &transaction.reservation => {
+                 revision
+                     .checked_add(1)
+                     .ok_or(LineRuntimeError::ActivationTransactionRevisionOverflow)
+@@ -795,6 +807,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
+         Ok(RuntimeDialogueCommitProof {
+             activation: transaction.activation.clone(),
+             revision: transaction.revision,
++            reservation: transaction.reservation.clone(),
+             next_revision,
+         })
+     }
+@@ -806,11 +819,12 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
+     ) -> RuntimeDialogueRegistryCommitReceipt {
+         assert_eq!(transaction.activation, proof.activation);
+         assert_eq!(transaction.revision, proof.revision);
++        assert_eq!(transaction.reservation, proof.reservation);
+         assert!(transaction.line.terminal_kind().is_none());
+         assert!(matches!(
+             self.entries.get(&proof.activation),
+-            Some(RuntimeDialogueRegistryEntry::InFlight { revision })
+-                if *revision == proof.revision
++            Some(RuntimeDialogueRegistryEntry::InFlight { revision, reservation })
++                if *revision == proof.revision && reservation == &proof.reservation
+         ));
+         let receipt = RuntimeDialogueRegistryCommitReceipt {
+             line: transaction.line.take_commit_receipt(),
+@@ -835,9 +849,10 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
+     ) -> Result<RuntimeDialoguePublishedCommitProof, LineRuntimeError> {
+         transaction.line.inspect_publish_completion()?;
+         let next_revision = match self.entries.get(&transaction.activation) {
+-            Some(RuntimeDialogueRegistryEntry::InFlight { revision })
+-                if *revision == transaction.revision =>
+-            {
++            Some(RuntimeDialogueRegistryEntry::InFlight {
++                revision,
++                reservation,
++            }) if *revision == transaction.revision && reservation == &transaction.reservation => {
+                 revision
+                     .checked_add(1)
+                     .ok_or(LineRuntimeError::ActivationTransactionRevisionOverflow)?
+@@ -854,6 +869,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
+         Ok(RuntimeDialoguePublishedCommitProof {
+             activation: transaction.activation.clone(),
+             revision: transaction.revision,
++            reservation: transaction.reservation.clone(),
+             next_revision,
+         })
+     }
+@@ -865,10 +881,11 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
+     ) -> RuntimeDialogueRegistryCommitReceipt {
+         assert_eq!(transaction.activation, proof.activation);
+         assert_eq!(transaction.revision, proof.revision);
++        assert_eq!(transaction.reservation, proof.reservation);
+         assert!(matches!(
+             self.entries.get(&proof.activation),
+-            Some(RuntimeDialogueRegistryEntry::InFlight { revision })
+-                if *revision == proof.revision
++            Some(RuntimeDialogueRegistryEntry::InFlight { revision, reservation })
++                if *revision == proof.revision && reservation == &proof.reservation
+         ));
+         assert!(transaction.line.can_into_published_handles().is_ok());
+         let receipt = RuntimeDialogueRegistryCommitReceipt {
+@@ -900,12 +917,14 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
+     ) -> Result<RuntimeDialogueAbandonedCommitProof, LineRuntimeError> {
+         transaction.line.inspect_abandon_completion()?;
+         match self.entries.get(&transaction.activation) {
+-            Some(RuntimeDialogueRegistryEntry::InFlight { revision })
+-                if *revision == transaction.revision =>
+-            {
++            Some(RuntimeDialogueRegistryEntry::InFlight {
++                revision,
++                reservation,
++            }) if *revision == transaction.revision && reservation == &transaction.reservation => {
+                 Ok(RuntimeDialogueAbandonedCommitProof {
+                     activation: transaction.activation.clone(),
+                     revision: transaction.revision,
++                    reservation: transaction.reservation.clone(),
+                 })
+             }
+             Some(
+@@ -926,10 +945,11 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
+     ) -> RuntimeDialogueRegistryCommitReceipt {
+         assert_eq!(transaction.activation, proof.activation);
+         assert_eq!(transaction.revision, proof.revision);
++        assert_eq!(transaction.reservation, proof.reservation);
+         assert!(matches!(
+             self.entries.get(&proof.activation),
+-            Some(RuntimeDialogueRegistryEntry::InFlight { revision })
+-                if *revision == proof.revision
++            Some(RuntimeDialogueRegistryEntry::InFlight { revision, reservation })
++                if *revision == proof.revision && reservation == &proof.reservation
+         ));
+         assert_eq!(
+             transaction.line.terminal_kind(),
+@@ -952,9 +972,10 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
+             return Err(LineRuntimeError::TerminalDispositionMismatch);
+         }
+         let next_revision = match self.entries.get(&transaction.activation) {
+-            Some(RuntimeDialogueRegistryEntry::InFlight { revision })
+-                if *revision == transaction.revision =>
+-            {
++            Some(RuntimeDialogueRegistryEntry::InFlight {
++                revision,
++                reservation,
++            }) if *revision == transaction.revision && reservation == &transaction.reservation => {
+                 revision
+                     .checked_add(1)
+                     .ok_or(LineRuntimeError::ActivationTransactionRevisionOverflow)
+@@ -1012,7 +1033,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
+             return Err(LineRuntimeError::TerminalDispositionMismatch);
+         }
+         if !matches!(self.entries.get(&transaction.activation),
+-            Some(RuntimeDialogueRegistryEntry::InFlight { revision }) if *revision == transaction.revision
++            Some(RuntimeDialogueRegistryEntry::InFlight { revision, reservation }) if *revision == transaction.revision && reservation == &transaction.reservation
+         ) {
+             self.restore_transaction(transaction)?;
+             return Err(LineRuntimeError::StaleActivationTransaction);
+diff --git a/crates/arcweft-core/src/line_task/activation/contour.rs b/crates/arcweft-core/src/line_task/activation/contour.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..2100af0b49fa974009592a523d8d27b9a3deef8b
+--- /dev/null
++++ b/crates/arcweft-core/src/line_task/activation/contour.rs
+@@ -0,0 +1,114 @@
++//! A complete borrowed registry view, including its actual withdrawn owners.
++
++use super::*;
++use crate::value::{AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission};
++
++/// This view does not copy a frame or issue a new activation. Every withdrawn
++/// entry must be paired with the unique transaction from that reservation.
++pub(crate) struct RuntimeDialogueRetainedContour<'a, F, T> {
++    registry: &'a RuntimeDialogueActivationRegistry<F, T>,
++    borrowed: BTreeMap<DialogueActivationId, &'a RuntimeDialogueActivationTransaction<F, T>>,
++}
++
++impl<F, T> RuntimeDialogueActivationRegistry<F, T> {
++    pub(crate) fn retained_contour<'a>(
++        &'a self,
++        transactions: impl ExactSizeIterator<Item = &'a RuntimeDialogueActivationTransaction<F, T>>,
++        admission: &mut RuntimeRetainedValueAdmission,
++    ) -> Result<RuntimeDialogueRetainedContour<'a, F, T>, RuntimeDialogueRegistrySnapshotError>
++    {
++        let result = (|| {
++            admission.validate_metadata_collection(self.entries.len())?;
++            admission.validate_metadata_collection(transactions.len())?;
++            let mut borrowed = BTreeMap::new();
++            for transaction in transactions {
++                admission.validate_metadata(&(transaction.activation, transaction.revision))?;
++                if !matches!(self.entries.get(&transaction.activation),
++                    Some(RuntimeDialogueRegistryEntry::InFlight { revision, reservation })
++                        if *revision == transaction.revision && reservation == &transaction.reservation)
++                    || borrowed
++                        .insert(transaction.activation, transaction)
++                        .is_some()
++                {
++                    return Err(LineRuntimeError::StaleActivationTransaction.into());
++                }
++            }
++            for (activation, entry) in &self.entries {
++                let revision = match entry {
++                    RuntimeDialogueRegistryEntry::Active { revision, .. }
++                    | RuntimeDialogueRegistryEntry::PublishedHandles { revision, .. } => revision,
++                    RuntimeDialogueRegistryEntry::InFlight { revision, .. } => {
++                        if !borrowed.contains_key(activation) {
++                            return Err(RuntimeDialogueRegistrySnapshotError::Frame {
++                                message: "dialogue transaction is in flight".to_owned(),
++                            });
++                        }
++                        revision
++                    }
++                };
++                admission.validate_metadata(&(activation, revision))?;
++            }
++            Ok(RuntimeDialogueRetainedContour {
++                registry: self,
++                borrowed,
++            })
++        })();
++        result.inspect_err(|error: &RuntimeDialogueRegistrySnapshotError| {
++            admission.retain_failure(AwbcRuntimeValueSnapshotError::Message {
++                message: error.to_string(),
++            });
++        })
++    }
++}
++
++impl<'a, F, T> RuntimeDialogueRetainedContour<'a, F, T> {
++    pub(crate) fn try_visit_active<E>(
++        &self,
++        mut visit: impl FnMut(
++            &'a DialogueActivationId,
++            &'a F,
++            &'a RuntimeDialogueActivationState<T>,
++        ) -> Result<(), E>,
++    ) -> Result<(), E> {
++        for (activation, entry) in &self.registry.entries {
++            match entry {
++                RuntimeDialogueRegistryEntry::Active { frame, line, .. } => {
++                    visit(activation, frame, line)?
++                }
++                RuntimeDialogueRegistryEntry::InFlight { .. } => {
++                    let transaction = self.borrowed[activation];
++                    visit(activation, &transaction.frame, &transaction.line)?;
++                }
++                RuntimeDialogueRegistryEntry::PublishedHandles { .. } => {}
++            }
++        }
++        Ok(())
++    }
++
++    pub(crate) fn admit_retained(
++        &self,
++        admission: &mut RuntimeRetainedValueAdmission,
++    ) -> Result<(), RuntimeDialogueRegistrySnapshotError>
++    where
++        T: super::super::handle::RuntimeDialogueTypeCoordinate,
++    {
++        for (activation, entry) in &self.registry.entries {
++            match entry {
++                RuntimeDialogueRegistryEntry::Active { line, .. } => {
++                    line.admit_retained_resources(admission)?
++                }
++                RuntimeDialogueRegistryEntry::InFlight { .. } => self.borrowed[activation]
++                    .line
++                    .admit_retained_resources(admission)?,
++                RuntimeDialogueRegistryEntry::PublishedHandles { handles, .. } => {
++                    admission.validate_metadata(handles)?;
++                    handles.restore_admit(activation)?;
++                }
++            }
++        }
++        Ok(())
++    }
++}
++
++#[cfg(test)]
++mod tests;
+diff --git a/crates/arcweft-core/src/line_task/activation/contour/tests.rs b/crates/arcweft-core/src/line_task/activation/contour/tests.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..4980b82b9ad18077ea651698b46d3690a69d0d6c
+--- /dev/null
++++ b/crates/arcweft-core/src/line_task/activation/contour/tests.rs
+@@ -0,0 +1,139 @@
++use super::*;
++use crate::awbc::schema::{AwbcProgram, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcTypeId};
++use crate::entry::RuntimeSchemaLimits;
++use crate::value::RuntimeValue;
++use std::num::NonZeroU32;
++use std::sync::Arc;
++
++fn activation(occurrence: u64) -> DialogueActivationId {
++    DialogueActivationId::new(
++        crate::effect::RuntimeArtifactFingerprint::try_from_bytes([0xc7; 32]).unwrap(),
++        crate::runtime_id::RuntimePersistentFiberId::from_allocated(1),
++        crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(NonZeroU32::MIN),
++        occurrence,
++    )
++}
++
++fn admission() -> RuntimeRetainedValueAdmission {
++    RuntimeRetainedValueAdmission::for_program(
++        RuntimeProgramOwner::Awbc(Arc::new(AwbcProgram {
++            runtime_types: vec![AwbcRuntimeType::new(
++                crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest(),
++                AwbcRuntimeTypeShape::Bool,
++            )],
++            ..AwbcProgram::default()
++        })),
++        RuntimeSchemaLimits::engine_default(),
++    )
++}
++
++fn registry() -> RuntimeDialogueActivationRegistry<RuntimeValue, AwbcTypeId> {
++    let mut registry = RuntimeDialogueActivationRegistry::default();
++    registry
++        .begin(activation(0), RuntimeValue::Bool(true))
++        .unwrap();
++    registry
++}
++
++#[test]
++fn complete_contour_borrows_actual_withdrawn_and_active_frames_without_copying() {
++    let mut registry = registry();
++    registry
++        .begin(activation(1), RuntimeValue::Bool(false))
++        .unwrap();
++    let mut transaction = registry.begin_transaction(&activation(0)).unwrap();
++    transaction
++        .line_mut()
++        .commit_result(AwbcTypeId(0), RuntimeValue::Bool(true))
++        .unwrap();
++    let mut admission = admission();
++    let contour = registry
++        .retained_contour([&transaction].into_iter(), &mut admission)
++        .unwrap();
++    contour.admit_retained(&mut admission).unwrap();
++    let mut visited = Vec::new();
++    contour
++        .try_visit_active(|id, frame, line| {
++            if *id == activation(0) {
++                assert!(std::ptr::eq(frame, transaction.frame()));
++                assert!(std::ptr::eq(line, transaction.line()));
++            }
++            admission.validate(frame)?;
++            visited.push(*id);
++            Ok::<_, AwbcRuntimeValueSnapshotError>(())
++        })
++        .unwrap();
++    assert_eq!(visited, [activation(0), activation(1)]);
++    registry.restore_transaction(transaction).unwrap();
++    assert_eq!(
++        registry.active_frame(&activation(0)),
++        Some(&RuntimeValue::Bool(true))
++    );
++}
++
++#[test]
++fn same_identity_and_revision_from_another_registry_cannot_supply_a_borrowed_owner() {
++    let mut registry = registry();
++    let mut foreign = super::tests::registry();
++    let transaction = registry.begin_transaction(&activation(0)).unwrap();
++    let other = foreign.begin_transaction(&activation(0)).unwrap();
++    assert!(matches!(
++        registry.inspect_commit(&other),
++        Err(LineRuntimeError::StaleActivationTransaction)
++    ));
++    assert!(matches!(
++        foreign.inspect_commit(&transaction),
++        Err(LineRuntimeError::StaleActivationTransaction)
++    ));
++    let mut admission = admission();
++    assert!(
++        registry
++            .retained_contour([&other].into_iter(), &mut admission)
++            .is_err()
++    );
++    assert!(
++        admission.validate(&RuntimeValue::Unit).is_err(),
++        "the first contour failure remains final"
++    );
++    assert_eq!(transaction.frame(), &RuntimeValue::Bool(true));
++    assert_eq!(other.frame(), &RuntimeValue::Bool(true));
++    registry.restore_transaction(transaction).unwrap();
++    foreign.restore_transaction(other).unwrap();
++    assert_eq!(
++        registry, foreign,
++        "live reservations do not enter restored active state"
++    );
++}
++
++#[test]
++fn missing_and_duplicate_withdrawn_owners_are_rejected_before_a_frame_visitor() {
++    let mut registry = registry();
++    let transaction = registry.begin_transaction(&activation(0)).unwrap();
++    for supplied in [vec![], vec![&transaction, &transaction]] {
++        let mut admission = admission();
++        assert!(
++            registry
++                .retained_contour(supplied.into_iter(), &mut admission)
++                .is_err()
++        );
++        assert!(admission.validate(&RuntimeValue::Unit).is_err());
++    }
++    registry.restore_transaction(transaction).unwrap();
++}
++
++#[test]
++fn borrowed_contour_metadata_uses_the_original_trusted_allowance() {
++    let mut registry = registry();
++    let transaction = registry.begin_transaction(&activation(0)).unwrap();
++    let mut admission = RuntimeRetainedValueAdmission::standalone(RuntimeSchemaLimits {
++        max_sequence_items: 0,
++        ..RuntimeSchemaLimits::engine_default()
++    });
++    assert!(
++        registry
++            .retained_contour([&transaction].into_iter(), &mut admission)
++            .is_err()
++    );
++    assert!(admission.validate(&RuntimeValue::Unit).is_err());
++    registry.restore_transaction(transaction).unwrap();
++}
+diff --git a/docs/implementation/convergence-evidence-history.md b/docs/implementation/convergence-evidence-history.md
+index c4c0b946c7a8906813b9c2e263cee760acf2dd4a..046697b65509bbc28849f20610d63b05160dbdd6 100644
+--- a/docs/implementation/convergence-evidence-history.md
++++ b/docs/implementation/convergence-evidence-history.md
+@@ -13493,3 +13493,13 @@ Source af8e7bbf72d008337d805370d1b70e5504e544e4、parent 9bfeeaeb00789fbb81b8b06
+ 所有境界のreview: FiberStateは物理frameの生成contextとcleanup preflight、resourcesの一時borrowed admission contextはnamespace／bank／親子関係、Productのlive／inert adapterは実際の全ownerの列挙を担う。既存の大きなfiber／VM／snapshot moduleはframe・終了dispatch・完全なimageという責務を維持する。別の永続indexや資源発行ownerを追加せず、個別testはProduct Presentation ownerの下に置いた。Cargo edge・I/O・unsafeは追加していない。該当ownerのbytes／physical LOC／埋込test LOC／依存fan-in/outとscanner原本を保持した。[全run・初回8 FAIL・catalog失敗・値損失red 2 FAIL・最終green・注釈reuse根拠・75原本](acceptance-evidence/task-presentation-fiber-context-owner-validation.json)。異なるSourceの2157／2159を合算しない。
+ 
+ Supersedes: 現状一覧のAWBC実行bank選択を「未接続」のまま残さず、実装・検証済みの生成／公開保存境界へ更新した。VMの値保持修復を全checkpoint／自動cleanup接続の完了とはしない。Root Bool bodyとDialogue namespace fixtureをSource ViewValue／mount、active-bank置換、画像parityの証拠へ拡張しない。全逆依存は後続の同一Core cohortで実施する。Generic Matchとその他の既受入を未完了へ戻さない。現状の項目別説明は現状一覧一か所を維持する。
++
++## 借用中Dialogueを含む実retained contourと予約provenance — 2026-10-31
++
++確認base 778e50325a2b907511e7a8379c789f27a53664e3。checkpointがregistryから取り出したDialogueも検査できるよう、実際のregistryと借用transactionを参照する一時contourを追加した。全InFlight slotに元transactionが一つだけ対応し、active／borrowedのframe・lineを同じvisitorへ渡す。欠落／重複・未対応transactionはframe処理前に拒否し、同じ資源allowanceへ失敗を保持する。通常のregistry admissionとAWBC Productもこの同じcontourを使う。別のsnapshotや偽child ownerを構築しない。
++
++activationとrevisionだけでは、同じ識別子を持つ別registryのlive transactionを区別できなかった。InFlight slot・transaction・各prepared commit proofは、そのwithdrawal固有のprivate Arc reservationで照合する。map_frameでも同じ予約を移動し、再openは新しい予約になる。予約はwire／snapshot／digestへ入れず、決定的な保存形を変えない。型付きownerはregistryのままであり、永続side tableや新しい発行counterを設けない。
++
++初期checkはmap_frameのreservation移動漏れE0063で終了101。修正したowner1はCore2163／2163 PASS・0 skipped・終了0、4017入力／binary／catalog差分0。追加4件は、actual active／withdrawn frameとlineの借用、同じactivation／revisionの別registry拒否、欠落・重複拒否、元のtrusted allowanceとsticky failureを確認した。既存14 tracked／6 untracked WIPは保持する。初回失敗原本と今回の終端・full SHAは後続cohortの検証記録へ保持する。
++
++Supersedes: bankを含むProduct実行checkpointとNative借用Dialogue contourを接続するための共有owner境界であり、それらの全接続やSource ABIの受入ではない。次に実際のmain／child／Dialogue／producer checkpointへ、元admissionとbank rollback ownerを移動する。Generic Match等の既受入は維持する。

@@ -1,0 +1,3 @@
+Retain bank custody and original admission in Product execution checkpoints
+
+Migrate main, child, dialogue and producer rollback through the complete actual retained contour; share snapshot preflight and preserve typed errors. All 2167 Core tests passed.

@@ -1,0 +1,6 @@
+crates/arcweft-core/src/awbc/product_step/dialogue.rs
+crates/arcweft-core/src/line_task.rs
+crates/arcweft-core/src/line_task/activation.rs
+crates/arcweft-core/src/line_task/activation/contour.rs
+crates/arcweft-core/src/line_task/activation/contour/tests.rs
+docs/implementation/convergence-evidence-history.md

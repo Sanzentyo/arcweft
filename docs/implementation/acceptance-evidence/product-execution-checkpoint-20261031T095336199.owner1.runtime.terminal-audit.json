@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "base": "fa6bff7015c0f59f4f3bca4d937e7926792ba25f",
+  "run": "product-execution-checkpoint-20261031T095336199.owner1.runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [  70.242s] 2167 tests run: 2164 passed, 3 failed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 2167,
+  "passed": 2164,
+  "failed": 3,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4018,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::invalid_schedule_schema_preserves_admitted_captures_before_failure_close"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::line_activation_register_defer_commits_captures_and_cursor"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::presentation::execution_checkpoint_includes_root_and_the_actual_withdrawn_dialogue_grants"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-31T09:56:21.8091140Z"
+}

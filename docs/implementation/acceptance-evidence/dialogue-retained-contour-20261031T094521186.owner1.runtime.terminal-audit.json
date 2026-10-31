@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "778e50325a2b907511e7a8379c789f27a53664e3",
+  "run": "dialogue-retained-contour-20261031T094521186.owner1.runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  70.714s] 2163 tests run: 2163 passed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 2163,
+  "passed": 2163,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4017,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-31T09:48:00.5379503Z"
+}

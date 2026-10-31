@@ -1,0 +1,98 @@
+diff --git a/crates/arcweft-core/src/awbc/product_step/presentation.rs b/crates/arcweft-core/src/awbc/product_step/presentation.rs
+index ba86e7e0e5d3ab23db87a4c90628b616f9aea811..a0b0f9aef00602d843e65900c6bf3b5502bd9862 100644
+--- a/crates/arcweft-core/src/awbc/product_step/presentation.rs
++++ b/crates/arcweft-core/src/awbc/product_step/presentation.rs
+@@ -85,8 +85,8 @@ impl AwbcProductStepExecutor {
+                 admission,
+             )?;
+         }
+-        dialogues
+-            .try_visit_active(|activation, frame, _| {
++        dialogues.try_visit_active(
++            |activation, frame, _| -> Result<(), AwbcRuntimeValueSnapshotError> {
+                 context.admit_dialogue(*activation, admission)?;
+                 if let Some(fiber) = frame.activation_fiber() {
+                     context.register_fiber(
+@@ -97,14 +97,8 @@ impl AwbcProductStepExecutor {
+                     )?;
+                 }
+                 Ok(())
+-            })
+-            .map_err(
+-                |error: crate::line_task::RuntimeDialogueRegistrySnapshotError| {
+-                    AwbcRuntimeValueSnapshotError::Message {
+-                        message: error.to_string(),
+-                    }
+-                },
+-            )?;
++            },
++        )?;
+         context.finish(
+             self.presentation.iter().flat_map(|banks| banks.bank_ids()),
+             admission,
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs b/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
+index d11776af4d19e163d5e587b136255876241f96f8..a74435c024b0405d33cd6823d3c0791dae918303 100644
+--- a/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
++++ b/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
+@@ -239,6 +239,39 @@ fn execution_checkpoint_rejects_a_foreign_program_without_mutating_the_live_grap
+     assert_eq!(executor.snapshot().unwrap(), before);
+ }
+ 
++#[test]
++fn execution_checkpoint_preserves_the_typed_bank_metadata_rejection() {
++    let (mut executor, activation) = initial_actor_dialogue_executor();
++    let before = executor.snapshot().unwrap();
++    let mut transaction = executor.dialogues.begin_transaction(&activation).unwrap();
++    let ProductDialoguePhase::Activating { fiber, .. } = &mut transaction.frame_mut().phase else {
++        unreachable!()
++    };
++    fiber.presentation_bank = RuntimePresentationBankId::Root;
++    let Err(error) = executor.execution_checkpoint(
++        super::super::checkpoint::ProductCheckpointTarget::Dialogue(&transaction),
++    ) else {
++        panic!("a forged Dialogue bank must be rejected")
++    };
++    assert!(
++        matches!(
++            error,
++            ProductStepError::CheckpointValue(
++                crate::value::AwbcRuntimeValueSnapshotError::Presentation(
++                    crate::presentation::RuntimePresentationError::Owner
++                )
++            )
++        ),
++        "metadata errors retain their typed cause: {error:?}"
++    );
++    let ProductDialoguePhase::Activating { fiber, .. } = &mut transaction.frame_mut().phase else {
++        unreachable!()
++    };
++    fiber.presentation_bank = RuntimePresentationBankId::Dialogue { activation };
++    executor.dialogues.restore_transaction(transaction).unwrap();
++    assert_eq!(executor.snapshot().unwrap(), before);
++}
++
+ #[test]
+ fn execution_checkpoint_includes_root_and_the_actual_withdrawn_dialogue_grants() {
+     let (mut executor, activation) = initial_actor_dialogue_executor();
+diff --git a/docs/implementation/convergence-evidence-history.md b/docs/implementation/convergence-evidence-history.md
+index b0f85ecede580ec22d31b19f3022c9c3b8851f6c..df6e0d6ece4134ce1bc397afaa3425dfa38b8deb 100644
+--- a/docs/implementation/convergence-evidence-history.md
++++ b/docs/implementation/convergence-evidence-history.md
+@@ -13513,3 +13513,17 @@ Root・全子fiber・実際のborrowed Dialogue・task・観測・bankの完全
+ 初期checkは追加error variantをlifecycle matchへ移行し忘れた2件で終了101。owner1は2167件中2164 PASS／3 FAIL。詳細errorの文字列化を修正し、defer testを完全な既存Dialogue fixtureへ移行し、rollback testをrevisionを進めるcommitから元transactionの復帰へ訂正した。対象owner2は6件中5 PASS／1 FAILで、実際のDialogue admission境界のtyped ResumeOwnershipを検査するよう最後の期待経路を移行した。元のduplicate Schedule local診断とcapture／lease保持のassertionは維持した。最終owner3はCore2167／2167 PASS・0 skipped・終了0、4018入力／binary／catalog差分0。新4件はbody・grant・cursor rollback、foreign program拒否、Rootと実借用Dialogueのscope保持、live bankを持つ1-op実行を確認した。各runは異なる入力として保持し、結果を合算しない。
+ 
+ 所有境界: checkpointは選択した物理fiberとbank rollback・元admissionの一時ownerであり、scope／leaseの最終authorityは従来のbank集合にある。全体の現在一覧を追加せず、現状一覧へ同期する。VM自動cleanup、Native借用中contourの実行への接続、Source command ABI・driver・置換・画像parity、最終cohortの全逆依存は引き続き未達とし、Generic Match等の既受入を戻さない。
++
++## Product実行checkpointの公開照合と現状訂正 — 2026-10-31
++
++Source d6d4cac779e3650552c9d68726480a5dade7d4be、parent fa6bff7015c0f59f4f3bca4d937e7926792ba25f、tree 447ef34c584012cf3545f4d64099375548c817ae、12 path、patch SHA256 9592235565df545502e3cd5df28b19632554313219ee68134c2030d138d1aa1bを通常pushし、remote／全blob差分0・index empty・既存14 tracked／6 untracked WIP保持を確認した。
++
++Core最終owner3は2167／2167 PASS・0 skipped。同じ4018入力でCore全target／全feature Clippy・default全target check・doctest 78／78・明示30 Rust pathのfmt・構造gateも各終了0、source／binary／catalog差分0。構造は97 package・3256 files・3126 Rust files・1769988 physical Rust LOC、review trigger 382・blocking 0。warningは原本に保持し、warningなしやworkspace全体の新規gate成功とはしない。初期check2回の終了101、contour owner2163 PASS、checkpoint初回3 FAIL、限定6件の1 FAILはそれぞれ元入力の別runで、最終owner件数へ合算しない。[全コマンド・67原本・公開SHA／blob・測定／所有境界](acceptance-evidence/task-product-execution-checkpoint-owner-validation.json)。
++
++Supersedes: 現状一覧の「bankを伴う全実行checkpointが未接続」という列挙は、今回Productの全実行経路を移行して検証したため削除・訂正する。public standalone fiber APIを、enclosing bank ownerを持つProduct checkpointと同一視しない。VM自動cleanup／所有権移動、Native借用parentの実保持graphへの接続、Source command ABI／driver／active-bank置換／画像parityは引き続き未達であり、このcheckpointの受入から全体完了を推定しない。Generic Matchと他の既受入は維持する。現在一覧は一か所を維持し、過去の結果・full SHA・raw bytesは履歴へ保持する。
++
++## checkpoint metadata errorの型付き原因保持を追加修復 — 2026-10-31
++
++先行Source d6d4cac779e3650552c9d68726480a5dade7d4beではResumeOwnershipなどframe/valueの詳細errorを維持したが、実行topologyのvisitorだけは一度registry errorへ変換し、Message文字列へ戻すadapterが残っていた。したがって先行の「詳細errorを元の型で維持」という説明は、そのmetadata経路まで完了した根拠にはならなかった。borrowed contour自身が予約を検査するため、visitorは直接AwbcRuntimeValueSnapshotErrorを返せる。重複adapterを削除し、bankのOwner拒否をPresentation(Owner)のまま保持した。
++
++追加の実Dialogue bank偽造testは、修復前redで1件FAIL・2114選択外。修復後owner4はCore2168／2168 PASS・0 skipped・終了0、4018入力／binary／catalog差分0。同じ入力のCore Clippy・default check・doctest78／78・fmt・構造gateも終了0。拒否後に元bankとtransactionへ戻した完全snapshotも一致する。これは具体的に残っていた原因型の欠落を追加修復したもので、実行checkpointの接続やGeneric Match等の受入を未完了へ戻す訂正ではない。先行67原本と各runは変更せず、今回のred／green／qualityを別入力として追加する。

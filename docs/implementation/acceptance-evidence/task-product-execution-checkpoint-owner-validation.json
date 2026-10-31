@@ -1,0 +1,1290 @@
+{
+  "version": 1,
+  "recordedAt": "2026-10-31T10:27:49.3772067Z",
+  "scope": "Actual borrowed Dialogue retained contour and Product main/child/Dialogue/Need-producer execution checkpoints owning their original bank snapshot and original admission.",
+  "sourcePublications": [
+    {
+      "version": 1,
+      "commit": "fa6bff7015c0f59f4f3bca4d937e7926792ba25f",
+      "parent": "778e50325a2b907511e7a8379c789f27a53664e3",
+      "tree": "3d9f0dd46639d7c859c37bed4d4439654dae8aa2",
+      "remote": "fa6bff7015c0f59f4f3bca4d937e7926792ba25f",
+      "paths": [
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+          "blob": "85312ed1552b67bcb0c91f184e6cb595cb0ddb6b"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task.rs",
+          "blob": "2aea77367cb7eacbc9bb9a2408ecc42fb83c8606"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task/activation.rs",
+          "blob": "1415696eb4d2fa557cfa724e35e84c1026128b5c"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task/activation/contour.rs",
+          "blob": "2100af0b49fa974009592a523d8d27b9a3deef8b"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task/activation/contour/tests.rs",
+          "blob": "4980b82b9ad18077ea651698b46d3690a69d0d6c"
+        },
+        {
+          "path": "docs/implementation/convergence-evidence-history.md",
+          "blob": "046697b65509bbc28849f20610d63b05160dbdd6"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "347bcf8417c1efbb2aaefa1923004779e5563a5d069f76b6b50938f6409f36a7",
+      "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-10-31T09:48:46.0414721Z"
+    },
+    {
+      "version": 1,
+      "commit": "d6d4cac779e3650552c9d68726480a5dade7d4be",
+      "parent": "fa6bff7015c0f59f4f3bca4d937e7926792ba25f",
+      "tree": "447ef34c584012cf3545f4d64099375548c817ae",
+      "remote": "d6d4cac779e3650552c9d68726480a5dade7d4be",
+      "paths": [
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step.rs",
+          "blob": "7b7627376cba7eaedf28833b4b65ee6b482a3881"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/checkpoint.rs",
+          "blob": "277e52942c8cadefa32308669b88519a76fe9f2b"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+          "blob": "f88d4bfd96bb697891d775143f5afafd83a84eda"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+          "blob": "89ac1e5aa973c9594cc67eba0ee9a73ae4006375"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "blob": "4666d6d39e7aef3cbd373cc9f026bd95e54fb64b"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+          "blob": "ba86e7e0e5d3ab23db87a4c90628b616f9aea811"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+          "blob": "4023fb7cea5d2cf808622f7f0403eebab00a17b4"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+          "blob": "d8484060e756008c3edfb45f0e473b14d33ea9be"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+          "blob": "2fbbdd52112a89bd5b5ece5b18411b9879e3f86b"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+          "blob": "d11776af4d19e163d5e587b136255876241f96f8"
+        },
+        {
+          "path": "docs/02-runtime/save-replay.md",
+          "blob": "880be4dfdee7257bac25b2ed8b59949e1289a635"
+        },
+        {
+          "path": "docs/implementation/convergence-evidence-history.md",
+          "blob": "b0f85ecede580ec22d31b19f3022c9c3b8851f6c"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "9592235565df545502e3cd5df28b19632554313219ee68134c2030d138d1aa1b",
+      "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-10-31T10:08:45.9165763Z"
+    },
+    {
+      "version": 1,
+      "commit": "1024f1caca6d6d3357ebe525259a9578eaf7b7d7",
+      "parent": "d6d4cac779e3650552c9d68726480a5dade7d4be",
+      "tree": "bd42db66553a290aa8b8ddc007b74f34c6a0a97b",
+      "remote": "1024f1caca6d6d3357ebe525259a9578eaf7b7d7",
+      "paths": [
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+          "blob": "a0b0f9aef00602d843e65900c6bf3b5502bd9862"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+          "blob": "a74435c024b0405d33cd6823d3c0791dae918303"
+        },
+        {
+          "path": "docs/implementation/convergence-evidence-history.md",
+          "blob": "df6e0d6ece4134ce1bc397afaa3425dfa38b8deb"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "b899bc356f2245b6c48af2a2d1d082e3173e2a508324bb81de8b6ea98a9191c1",
+      "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+      "separatelyHeld": [
+        {
+          "path": "docs/implementation/current-status.md",
+          "sha256": "0de0177f6eb3df88b192923c89a3ff46879b1ade4f4e562e3240c04ab2ce1817"
+        }
+      ],
+      "indexEmpty": true,
+      "at": "2026-10-31T10:24:39.9957194Z"
+    }
+  ],
+  "initialChecks": [
+    {
+      "stem": "dialogue-retained-contour-20261031T094352041",
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "arcweft-core",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 101,
+      "cause": "E0063: map_frame did not yet move the new reservation."
+    },
+    {
+      "stem": "product-execution-checkpoint-20261031T095121076",
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "arcweft-core",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 101,
+      "cause": "E0004: new checkpoint error needed both lifecycle match arms."
+    }
+  ],
+  "contourOwner": {
+    "version": 1,
+    "base": "778e50325a2b907511e7a8379c789f27a53664e3",
+    "run": "dialogue-retained-contour-20261031T094521186.owner1.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  70.714s] 2163 tests run: 2163 passed, 0 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2163,
+    "passed": 2163,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4017,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-31T09:48:00.5379503Z"
+  },
+  "checkpointFirst": {
+    "version": 1,
+    "base": "fa6bff7015c0f59f4f3bca4d937e7926792ba25f",
+    "run": "product-execution-checkpoint-20261031T095336199.owner1.runtime",
+    "actualExitCode": 100,
+    "summary": "Summary [  70.242s] 2167 tests run: 2164 passed, 3 failed, 0 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2167,
+    "passed": 2164,
+    "failed": 3,
+    "skipped": 0,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4018,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "awbc::product_step::tests::invalid_schedule_schema_preserves_admitted_captures_before_failure_close"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "awbc::product_step::tests::line_activation_register_defer_commits_captures_and_cursor"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "awbc::product_step::tests::presentation::execution_checkpoint_includes_root_and_the_actual_withdrawn_dialogue_grants"
+      }
+    ],
+    "isPassingRun": false,
+    "recordedAt": "2026-10-31T09:56:21.809114Z"
+  },
+  "checkpointTargeted": {
+    "version": 1,
+    "base": "fa6bff7015c0f59f4f3bca4d937e7926792ba25f",
+    "run": "product-execution-checkpoint-20261031T100040828.owner2.runtime",
+    "actualExitCode": 100,
+    "summary": "Summary [   0.055s] 6 tests run: 5 passed, 1 failed, 2108 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 6,
+    "passed": 5,
+    "failed": 1,
+    "skipped": 2108,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4018,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "awbc::product_step::tests::invalid_schedule_schema_preserves_admitted_captures_before_failure_close"
+      }
+    ],
+    "isPassingRun": false,
+    "recordedAt": "2026-10-31T10:01:58.2109504Z"
+  },
+  "checkpointFinal": {
+    "version": 1,
+    "base": "d6d4cac779e3650552c9d68726480a5dade7d4be",
+    "run": "product-execution-checkpoint-20261031T101951957.owner4.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  71.295s] 2168 tests run: 2168 passed, 0 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2168,
+    "passed": 2168,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4018,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-31T10:21:49.7097633Z"
+  },
+  "repairs": [
+    "Retain typed value and registry errors instead of flattening checkpoint preflight into save-error strings; keep the exact ResumeOwnership verifier cause and capture/lease assertions.",
+    "Use the complete admitted defer fixture with an actual typed target/content/group; retain its reached cursor, capture move and registration assertions.",
+    "Return the withdrawn transaction through restore_transaction for a rollback comparison, preserving the original revision instead of committing a new revision.",
+    "Remove the live topology visitor registry-to-Message adapter; its metadata refusal now retains the exact Presentation(Owner) cause, confirmed by a red/green regression."
+  ],
+  "quality": [
+    {
+      "version": 1,
+      "base": "d6d4cac779e3650552c9d68726480a5dade7d4be",
+      "command": [
+        "clippy",
+        "-p",
+        "arcweft-core",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4018,
+      "sourceDrift": 0,
+      "startedAt": "2026-10-31T10:21:51.1243443Z",
+      "finishedAt": "2026-10-31T10:22:11.6098101Z"
+    },
+    {
+      "version": 1,
+      "base": "d6d4cac779e3650552c9d68726480a5dade7d4be",
+      "command": [
+        "check",
+        "-p",
+        "arcweft-core",
+        "--all-targets",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4018,
+      "sourceDrift": 0,
+      "startedAt": "2026-10-31T10:22:12.0553861Z",
+      "finishedAt": "2026-10-31T10:22:25.8027825Z"
+    },
+    {
+      "version": 1,
+      "base": "d6d4cac779e3650552c9d68726480a5dade7d4be",
+      "command": [
+        "test",
+        "-p",
+        "arcweft-core",
+        "--doc",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4018,
+      "sourceDrift": 0,
+      "startedAt": "2026-10-31T10:22:26.2407684Z",
+      "finishedAt": "2026-10-31T10:22:34.8067696Z"
+    },
+    {
+      "version": 1,
+      "base": "d6d4cac779e3650552c9d68726480a5dade7d4be",
+      "command": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking",
+        "--write",
+        "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/product-execution-quality-20261031T102149730.structure-report"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4018,
+      "sourceDrift": 0,
+      "startedAt": "2026-10-31T10:22:35.2533176Z",
+      "finishedAt": "2026-10-31T10:22:38.8022022Z"
+    },
+    {
+      "version": 1,
+      "paths": [
+        "crates/arcweft-core/src/awbc/fiber.rs",
+        "crates/arcweft-core/src/awbc/fiber/program_task.rs",
+        "crates/arcweft-core/src/awbc/fiber/scope.rs",
+        "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+        "crates/arcweft-core/src/awbc/product_step.rs",
+        "crates/arcweft-core/src/awbc/product_step/checkpoint.rs",
+        "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+        "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+        "crates/arcweft-core/src/awbc/product_step/line.rs",
+        "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+        "crates/arcweft-core/src/awbc/product_step/program_fanout.rs",
+        "crates/arcweft-core/src/awbc/product_step/program_task/tests.rs",
+        "crates/arcweft-core/src/awbc/product_step/program.rs",
+        "crates/arcweft-core/src/awbc/product_step/root.rs",
+        "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+        "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+        "crates/arcweft-core/src/awbc/product_step/tests.rs",
+        "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+        "crates/arcweft-core/src/awbc/tests/dialogue_callback_projection.rs",
+        "crates/arcweft-core/src/awbc/vm.rs",
+        "crates/arcweft-core/src/engine.rs",
+        "crates/arcweft-core/src/line_task.rs",
+        "crates/arcweft-core/src/line_task/activation.rs",
+        "crates/arcweft-core/src/line_task/activation/contour.rs",
+        "crates/arcweft-core/src/line_task/activation/contour/tests.rs",
+        "crates/arcweft-core/src/line_task/handle.rs",
+        "crates/arcweft-core/src/presentation/resources.rs",
+        "crates/arcweft-core/src/presentation/resources/banks.rs",
+        "crates/arcweft-core/src/presentation/resources/execution.rs",
+        "crates/arcweft-core/src/presentation/resources/execution/tests.rs"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4018,
+      "sourceDrift": 0
+    }
+  ],
+  "ownerAndQualitySourceInputs": 4018,
+  "ownerAndQualitySourceDrift": 0,
+  "doctests": {
+    "passed": 78,
+    "failed": 0,
+    "ignored": 0
+  },
+  "structure": {
+    "files": 3256,
+    "rustFiles": 3126,
+    "physicalRustLines": 1770015,
+    "workspacePackages": 97,
+    "reviewTriggers": 382,
+    "blockingViolations": 0,
+    "measurements": [
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/checkpoint.rs",
+        "owner": "arcweft-core",
+        "bytes": "6438",
+        "physical_lines": "166",
+        "code_lines": "152",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+        "owner": "arcweft-core",
+        "bytes": "181876",
+        "physical_lines": "4276",
+        "code_lines": "4182",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "74"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+        "owner": "arcweft-core",
+        "bytes": "10535",
+        "physical_lines": "281",
+        "code_lines": "274",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+        "owner": "arcweft-core",
+        "bytes": "181239",
+        "physical_lines": "4261",
+        "code_lines": "4112",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "181"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step.rs",
+        "owner": "arcweft-core",
+        "bytes": "242335",
+        "physical_lines": "6005",
+        "code_lines": "5721",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/line_task/activation/contour.rs",
+        "owner": "arcweft-core",
+        "bytes": "4829",
+        "physical_lines": "114",
+        "code_lines": "105",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/line_task/activation.rs",
+        "owner": "arcweft-core",
+        "bytes": "48923",
+        "physical_lines": "1265",
+        "code_lines": "1162",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "82"
+      }
+    ],
+    "coreDependencyMetrics": {
+      "package": "arcweft-core",
+      "manifest": "crates/arcweft-core/Cargo.toml",
+      "workspace_fan_in": "31",
+      "workspace_fan_out": "7",
+      "development_workspace_fan_in": "4",
+      "development_workspace_fan_out": "5"
+    },
+    "disposition": "Registry owns live reservation provenance and actual withdrawn frames; the borrowed contour only indexes references. Product checkpoint owns one selected inert fiber, the existing bank grammar and the original non-Clone admission. Public snapshot shares the same retained preflight, with its old duplicate adapters removed. Existing large frame/VM/complete-image dispatchers keep their responsibilities. No new Cargo edge, I/O or unsafe; tests remain under actual registry/Product presentation owners."
+  },
+  "acceptanceBoundary": "Confirms Core borrowed-contour and private execution-checkpoint behavior, including actual Root/Dialogue scope grants, Bool bank-body rollback and a one-op Product run. This is not Source ViewValue/mount, automatic VM cleanup, active-bank replacement or image-parity acceptance.",
+  "notRunOrUnaccepted": [
+    "Current source workspace-wide check/Clippy, complete reverse dependencies and applicable final target/Tier2 matrix remain required for the continuing Core milestone; no new full reverse pass is claimed.",
+    "VM automatic Presentation cleanup/ownership transfer; Native Engine borrowed-parent execution contour integration.",
+    "Source View construction catalog/representation, 11 callables, mount(ViewValue), 6 methods, lowerer/VM/driver; active-bank replacement and Native/Web image parity."
+  ],
+  "preservedAcceptance": "Generic Match and other previously accepted boundaries remain accepted; whole-goal incompleteness does not reopen them.",
+  "rawEvidence": [
+    {
+      "path": "dialogue-retained-contour-20261031T094352041.check.exit",
+      "bytes": 3,
+      "sha256": "16dc368a89b428b2485484313ba67a3912ca03f2b2b42429174a4f8b3dc84e44"
+    },
+    {
+      "path": "dialogue-retained-contour-20261031T094352041.check.log",
+      "bytes": 12676,
+      "sha256": "1d9d087aee97d8abfee8c7a30c2522843e96f9267c7df788e11d516d20e0e48d"
+    },
+    {
+      "path": "dialogue-retained-contour-20261031T094521186.owner1.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "f15b0cfc0c1e6bc21aba2c229e424493f02c91c422104718c03e58242769ec82"
+    },
+    {
+      "path": "dialogue-retained-contour-20261031T094521186.owner1.catalog.inventory.json",
+      "bytes": 547365,
+      "sha256": "e6cace0a85394bf93388deab0ab4ef640a42671df4d458d1338c3655ea5ff011"
+    },
+    {
+      "path": "dialogue-retained-contour-20261031T094521186.owner1.catalog.json",
+      "bytes": 504,
+      "sha256": "1cb01002de16db2148eb98972415ef1128be47ecbb60a385aa3c3bff0e828eda"
+    },
+    {
+      "path": "dialogue-retained-contour-20261031T094521186.owner1.catalog.log",
+      "bytes": 458439,
+      "sha256": "a02cbb86d439bb4897269fb6fd3cea218931e959a2eb7b870980ca6ba0518452"
+    },
+    {
+      "path": "dialogue-retained-contour-20261031T094521186.owner1.runtime.json",
+      "bytes": 596,
+      "sha256": "8b62d32a962f1d183a314a7ba0db13becf26756fa38b0f06b0bea159bd967fc3"
+    },
+    {
+      "path": "dialogue-retained-contour-20261031T094521186.owner1.runtime.log",
+      "bytes": 741193,
+      "sha256": "9d89ebb356d7a2ae5b093a19c248c61eb4b1966011b0fe1cdfc522f353f698d0"
+    },
+    {
+      "path": "dialogue-retained-contour-20261031T094521186.owner1.runtime.terminal-audit.json",
+      "bytes": 640,
+      "sha256": "fc185cd6cb17f02f96a89a360ec0630a85e8ee2b6e5a7cae78378ce81a8503b7"
+    },
+    {
+      "path": "dialogue-retained-contour-20261031T094521186.owner1.source-freeze.json",
+      "bytes": 785063,
+      "sha256": "8a71eb0b7e7f14fe3b0011b09666ff0e018a823535061ba5a9f1ac1b1ff21e9d"
+    },
+    {
+      "path": "dialogue-retained-contour-checkpoint-20261031T094836403.message.txt",
+      "bytes": 212,
+      "sha256": "77755c24b1b5b1f789698dfdd93d3c11cd711a4bfcac0bf0fb3a81dcf66bb140"
+    },
+    {
+      "path": "dialogue-retained-contour-checkpoint-20261031T094836403.owned.txt",
+      "bytes": 315,
+      "sha256": "6989a013e8bc11c29c0bc200bca4bb639e981f6e9932b762b6c42229cd49162e"
+    },
+    {
+      "path": "dialogue-retained-contour-checkpoint-20261031T094836403.prepared.json",
+      "bytes": 2101,
+      "sha256": "d2648c6efea023eeefe31b1db538484dd355f80cbc086e3a27b823c15b4715eb"
+    },
+    {
+      "path": "dialogue-retained-contour-checkpoint-20261031T094836403.reviewed.patch",
+      "bytes": 30618,
+      "sha256": "347bcf8417c1efbb2aaefa1923004779e5563a5d069f76b6b50938f6409f36a7"
+    },
+    {
+      "path": "dialogue-retained-contour-checkpoint-20261031T094836403.verified.json",
+      "bytes": 1406,
+      "sha256": "3e08dd59c95a791ce340d8c776c3a2fea7646e7c164fc1fedcdd38f92f8ff078"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T095121076.check.exit",
+      "bytes": 3,
+      "sha256": "16dc368a89b428b2485484313ba67a3912ca03f2b2b42429174a4f8b3dc84e44"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T095121076.check.log",
+      "bytes": 14403,
+      "sha256": "b9ef5decb9f61134e51ef777c1635ca0bf0a92f92705a84a660e4a3ba3bfc026"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T095336199.owner1.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "e9bf73b0301d81b87bec7c4ae81f53d9d82495b0d79109d8db29c8b47452fa4f"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T095336199.owner1.catalog.inventory.json",
+      "bytes": 548424,
+      "sha256": "8cc1db848053b4970bc12b25bae3fd3a26cab57555a8468a73aa4f3815c1d2d7"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T095336199.owner1.catalog.json",
+      "bytes": 507,
+      "sha256": "93cbb43c7f039bfbb6842e2c5084b00196beae49bea0dbb61561b2b6dfc93a5f"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T095336199.owner1.catalog.log",
+      "bytes": 459815,
+      "sha256": "7f7f3ffd4b6ebe25cc17c86d45eea7ffbcebd7ec0a1c24e72d5ebbf80a04eb40"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T095336199.owner1.runtime.json",
+      "bytes": 601,
+      "sha256": "bc6442da337789740fba0819aaee769a8955ace4cc01cd0309daa9e777cedafd"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T095336199.owner1.runtime.log",
+      "bytes": 804054,
+      "sha256": "a0b0d5ab37d045d74aa0b68447aca9377a37d86685c496a1136eb59481e0e0dc"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T095336199.owner1.runtime.terminal-audit.json",
+      "bytes": 1232,
+      "sha256": "3ef0bcd58d1989eeb60f54c758feabfa248ab85ed67c0d97ca7820c0ca770293"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T095336199.owner1.source-freeze.json",
+      "bytes": 785258,
+      "sha256": "994f2c45573cdd74c9b3c9284f698a111ae10a4e31faa004e16bc5646fcf083a"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T100040828.owner2.binaries-before.json",
+      "bytes": 202,
+      "sha256": "976be6485fba1e41f17b5f948901010f20ed711e8818ed38ffe9bb8d54fdc7d6"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T100040828.owner2.catalog.inventory.json",
+      "bytes": 538133,
+      "sha256": "43737aa56e59a9332788a7172515df68c694aba4768262e37700ceb7b9f667ed"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T100040828.owner2.catalog.json",
+      "bytes": 684,
+      "sha256": "cebf934f1f7b8aaa0119eead545bfb884abd006fe4d279c005e4dfdb1d508f66"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T100040828.owner2.catalog.log",
+      "bytes": 444302,
+      "sha256": "2c0a9a2775e5742e68e41aef4d8e0e019949547288780840246ede10506d9a46"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T100040828.owner2.runtime.json",
+      "bytes": 778,
+      "sha256": "044e453d0dc6833a955c65d65baf148c2e128f8f6b910bb1513c64ea9378af02"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T100040828.owner2.runtime.log",
+      "bytes": 678088,
+      "sha256": "f0d5ab9230b237716c51dad3e42ed0cea401b1fdebede6af40629c76433865eb"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T100040828.owner2.runtime.terminal-audit.json",
+      "bytes": 843,
+      "sha256": "cbd01c57408ec9641e1cd7726adbe23d33b566d4217b33a0e609e47093de8727"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T100040828.owner2.source-freeze.json",
+      "bytes": 785258,
+      "sha256": "41e861a2dcae4a1fed00b14f8a318790047025580c3f2c0978779f13a6fa6070"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T100256457.owner3.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "d18ef25b1150e06cc13976db7f8c7c0a1b65125f7bf138fbc7818f171a185c34"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T100256457.owner3.catalog.inventory.json",
+      "bytes": 548424,
+      "sha256": "8cc1db848053b4970bc12b25bae3fd3a26cab57555a8468a73aa4f3815c1d2d7"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T100256457.owner3.catalog.json",
+      "bytes": 507,
+      "sha256": "50913f294e8b189698a353a9511b00462048fbe1068fce6172fb90576fd5f37f"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T100256457.owner3.catalog.log",
+      "bytes": 459186,
+      "sha256": "0f40d64103df0d70a188fe955f66994e00cda332ac3c23f6d149968de018ba59"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T100256457.owner3.runtime.json",
+      "bytes": 599,
+      "sha256": "66b802c4f3df64ef35860a87a6e472b1a1d45a8e55242845a79570c7c51b4b95"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T100256457.owner3.runtime.log",
+      "bytes": 742503,
+      "sha256": "85162e5333728cf64139f3c886c7f4fc30f7c86d4b0b2d234f1d192bc18fee6b"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T100256457.owner3.runtime.terminal-audit.json",
+      "bytes": 643,
+      "sha256": "4193778569f7dd1c475e66ee8ae410544fe8801ae2afef0b29b12c403f4229ee"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T100256457.owner3.source-freeze.json",
+      "bytes": 785258,
+      "sha256": "6971df1915758d53c59c1555b1ef0a0934d76612e9a49fba987f0b3603eb39a2"
+    },
+    {
+      "path": "product-execution-checkpoint-source-20261031T100835364.message.txt",
+      "bytes": 255,
+      "sha256": "764e5aa0c9fa46e6f82bfeb59a5a73d3d9d348e3534758de1dc0fe24b84a903f"
+    },
+    {
+      "path": "product-execution-checkpoint-source-20261031T100835364.owned.txt",
+      "bytes": 638,
+      "sha256": "ad3f8ceeca1cb322cb4cc1185888d6148414e9532a7fdbdbe27a68320e421dbb"
+    },
+    {
+      "path": "product-execution-checkpoint-source-20261031T100835364.prepared.json",
+      "bytes": 2964,
+      "sha256": "89b33d4ba37e49134e59a73f046c65b3b9bed87f35c0952be95421d1bb5bc44b"
+    },
+    {
+      "path": "product-execution-checkpoint-source-20261031T100835364.reviewed.patch",
+      "bytes": 54110,
+      "sha256": "9592235565df545502e3cd5df28b19632554313219ee68134c2030d138d1aa1b"
+    },
+    {
+      "path": "product-execution-checkpoint-source-20261031T100835364.verified.json",
+      "bytes": 2269,
+      "sha256": "c160e4234394bf9d51561bd8df55fe8e8429c08f0dc05419fe4f8ac41d2cd102"
+    },
+    {
+      "path": "product-execution-quality-20261031T100904672.clippy.json",
+      "bytes": 368,
+      "sha256": "a998e9b0d77c946d6bce0e1597eb522f7e7141f1d175025dcc940af68ce03706"
+    },
+    {
+      "path": "product-execution-quality-20261031T100904672.clippy.log",
+      "bytes": 4448258,
+      "sha256": "869ce455c16d7fa58f96a3281b37b7e7b1dc43241079796dfbe82370f1b3fd90"
+    },
+    {
+      "path": "product-execution-quality-20261031T100904672.default-check.json",
+      "bytes": 344,
+      "sha256": "31e9184e5ab9a6991d7e3db1ac9d93c77fe7545814cc79b64d75f2a24676758b"
+    },
+    {
+      "path": "product-execution-quality-20261031T100904672.default-check.log",
+      "bytes": 83273,
+      "sha256": "ae0fa4711064bee7770455778c91189edd9d8cf0154a44aba5cca19c40bb62ce"
+    },
+    {
+      "path": "product-execution-quality-20261031T100904672.doctest.json",
+      "bytes": 358,
+      "sha256": "309a8a74f4f7059ca06bd8e4a703f9613f241dfe13dca6510e596e1c0741358c"
+    },
+    {
+      "path": "product-execution-quality-20261031T100904672.doctest.log",
+      "bytes": 82423,
+      "sha256": "706692873cd21baed048b23d58018e0edeb50af2469a94e8fe07a03e31c864c0"
+    },
+    {
+      "path": "product-execution-quality-20261031T100904672.fmt.json",
+      "bytes": 1920,
+      "sha256": "f0d95a8dfd5ea41d9faa8bc7741ba072dd97ab29e0f11285293992444873d04e"
+    },
+    {
+      "path": "product-execution-quality-20261031T100904672.fmt.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "product-execution-quality-20261031T100904672.source-freeze.json",
+      "bytes": 785315,
+      "sha256": "1e80d718c7081a9c1d95a3c78b79c1f95936fec8c43ec86a7440895dc54a6713"
+    },
+    {
+      "path": "product-execution-quality-20261031T100904672.structure.json",
+      "bytes": 539,
+      "sha256": "262ce283bb1f77ee04d30ccd16ef343b6e6532383740974c72a2b6678db9cb90"
+    },
+    {
+      "path": "product-execution-quality-20261031T100904672.structure.log",
+      "bytes": 65048,
+      "sha256": "2061bd823310929d1b969e44795ce54be3dc86c69ffbdeaea7a5ebbbf6dedae4"
+    },
+    {
+      "path": "run-dialogue-retained-contour-20261031T094521186.owner1.ps1",
+      "bytes": 4716,
+      "sha256": "a7c8b4e22f865fcfae865e169c86d8d5fdd0b59e20a61f046008fc43be926a14"
+    },
+    {
+      "path": "run-product-execution-checkpoint-20261031T095336199.owner1.ps1",
+      "bytes": 4837,
+      "sha256": "964ff734e0cff9f744ed586419072b45e2e44f05f1b283cbadcaaf64b05f4bbf"
+    },
+    {
+      "path": "run-product-execution-checkpoint-20261031T100040828.owner2.ps1",
+      "bytes": 4993,
+      "sha256": "eb1e954d042e2e168273e2dcc370caa5200ad3232f8f839a8d852faff0f78cf3"
+    },
+    {
+      "path": "run-product-execution-checkpoint-20261031T100256457.owner3.ps1",
+      "bytes": 4837,
+      "sha256": "a9af03be373b0782984e75e6ba4e3fa4301ca625e467e5b28034f71d93f1491f"
+    },
+    {
+      "path": "run-product-execution-quality.ps1",
+      "bytes": 3062,
+      "sha256": "d1ca633b5d3bf8ecd4ba2fdeeafd1cfbfd689376fa4aa6aa1918834f2a0b05ca"
+    },
+    {
+      "path": "product-execution-quality-20261031T100904672.structure.dependency_edges.csv",
+      "bytes": 77544,
+      "sha256": "529e738d348314f7a4c0d909b165620d03ec57478b68ad42b06aa349b30e13f4"
+    },
+    {
+      "path": "product-execution-quality-20261031T100904672.structure.file_metrics.csv",
+      "bytes": 329755,
+      "sha256": "997e1e44a6692e39474dd3657c250961ad55a93128ded0288a5955fb612371cc"
+    },
+    {
+      "path": "product-execution-quality-20261031T100904672.structure.findings.md",
+      "bytes": 122295,
+      "sha256": "e07a0fde3d3c3338a617d43a15b6a113613dc50141bc5c5f030ef61b69039aba"
+    },
+    {
+      "path": "product-execution-quality-20261031T100904672.structure.package_metrics.csv",
+      "bytes": 6444,
+      "sha256": "c2df26363c079ef3c17be71810df334c6e4825ab5987b4951b3f1432368b85f2"
+    },
+    {
+      "path": "product-execution-quality-20261031T100904672.structure.public_type_duplicates.csv",
+      "bytes": 17238,
+      "sha256": "6cbaa427fef9360e8adb6245ea1eec66f5fdaf2624a24979e82d4877a28e31ac"
+    },
+    {
+      "path": "product-checkpoint-metadata-20261031T101815016.red.binaries-before.json",
+      "bytes": 202,
+      "sha256": "3f41390da5584cb08b039029c76d5a1129f82a8b7cd6306740dfb2cf9ae596ab"
+    },
+    {
+      "path": "product-checkpoint-metadata-20261031T101815016.red.catalog.inventory.json",
+      "bytes": 538397,
+      "sha256": "7013e521b815c3e391c1cfd5e3938e3915fb68a99c93702247bd72c7baca651a"
+    },
+    {
+      "path": "product-checkpoint-metadata-20261031T101815016.red.catalog.json",
+      "bytes": 607,
+      "sha256": "3fd12ed82f3acb926d21f8dad00122f5f16d4f1e0a50731f4c9686f058043870"
+    },
+    {
+      "path": "product-checkpoint-metadata-20261031T101815016.red.catalog.log",
+      "bytes": 444186,
+      "sha256": "ee91f39dc55146a702ebdd67c3c57ffff5dc9361f05bce887215ce121816a804"
+    },
+    {
+      "path": "product-checkpoint-metadata-20261031T101815016.red.runtime.json",
+      "bytes": 701,
+      "sha256": "c20006d8c62052690c287e601dc12f67656a4048aa2294e787cf848f9e42a995"
+    },
+    {
+      "path": "product-checkpoint-metadata-20261031T101815016.red.runtime.log",
+      "bytes": 678061,
+      "sha256": "33d3f1b1a8163d544fa18401d9c4282641d5a3986f87f9fb10097cc937b14724"
+    },
+    {
+      "path": "product-checkpoint-metadata-20261031T101815016.red.runtime.terminal-audit.json",
+      "bytes": 844,
+      "sha256": "2ecb820a72e1a2455c0868c5a8a4b02551b39ff430800db768de3d3bb3818480"
+    },
+    {
+      "path": "product-checkpoint-metadata-20261031T101815016.red.source-freeze.json",
+      "bytes": 785258,
+      "sha256": "4f50ef79cc9d4f18ff2f8ba13b22f9f4c772c4cc74fd8137c75965cb0b208ce0"
+    },
+    {
+      "path": "product-checkpoint-metadata-source-20261031T102430181.message.txt",
+      "bytes": 250,
+      "sha256": "ac65ce8a1e146f75b1094a963e1daa29bd26a961dfcecb58e909fcb1058afc2c"
+    },
+    {
+      "path": "product-checkpoint-metadata-source-20261031T102430181.owned.txt",
+      "bytes": 177,
+      "sha256": "0f417b3b2c539088c57c6264902b1d480c52d2cdc699efc96f54c094de53f003"
+    },
+    {
+      "path": "product-checkpoint-metadata-source-20261031T102430181.prepared.json",
+      "bytes": 1851,
+      "sha256": "75e9e6968adbc09b4378a7b0055b96291a6e4c23bb94d69c61df0a875b7dd85b"
+    },
+    {
+      "path": "product-checkpoint-metadata-source-20261031T102430181.reviewed.patch",
+      "bytes": 8566,
+      "sha256": "b899bc356f2245b6c48af2a2d1d082e3173e2a508324bb81de8b6ea98a9191c1"
+    },
+    {
+      "path": "product-checkpoint-metadata-source-20261031T102430181.verified.json",
+      "bytes": 1156,
+      "sha256": "0b365320666db72637ea1659f41157685e1eaa3effc77505ea30c73820947ca8"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T101951957.owner4.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "af97388893533c96912b513990fd1723edcf35d46a37ed69ce4845eb25d7f697"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T101951957.owner4.catalog.inventory.json",
+      "bytes": 548682,
+      "sha256": "62a71902a7a7e6e63f2cbf8d2ba42564605e7f6405dddcb7f1b1c4daefc3cf48"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T101951957.owner4.catalog.json",
+      "bytes": 507,
+      "sha256": "c1cbe9e8e64bfaea5d3aebe655168a967854860c918252e637d1431243d2b941"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T101951957.owner4.catalog.log",
+      "bytes": 459346,
+      "sha256": "61a65fa4146403b3383f3cc3f9e6a81f8bae3e78fce29ed0cb8bd5991f8c67bd"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T101951957.owner4.runtime.json",
+      "bytes": 599,
+      "sha256": "33a7581280d2a8dbf5829bb0db9c556d77d78da8e5d1e3e54c6d4b8810c9e471"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T101951957.owner4.runtime.log",
+      "bytes": 742817,
+      "sha256": "d8897752f6a15837a57dabcd263debaa2b981cbe706194299a9cf3773713ef4e"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T101951957.owner4.runtime.terminal-audit.json",
+      "bytes": 643,
+      "sha256": "2862710a3a573349ca56b42b5ca2275471879347ad8c6a42c88424cf28e2c1d5"
+    },
+    {
+      "path": "product-execution-checkpoint-20261031T101951957.owner4.source-freeze.json",
+      "bytes": 785258,
+      "sha256": "f8c2fec16c54b5a79843b49132d4d0bc9268b991dac8d24be3bdb76ecaaab8d8"
+    },
+    {
+      "path": "product-execution-quality-20261031T102149730.clippy.json",
+      "bytes": 368,
+      "sha256": "bd370c0887f801be1d143e1d801c8b5744d9bdbc26f1da471902572d965f547e"
+    },
+    {
+      "path": "product-execution-quality-20261031T102149730.clippy.log",
+      "bytes": 4447963,
+      "sha256": "6728c5d95af5743a863f00c3cdc6205116835b849da6496ebcdafac46b677820"
+    },
+    {
+      "path": "product-execution-quality-20261031T102149730.default-check.json",
+      "bytes": 344,
+      "sha256": "67db2346733ce03f17aab234d3c6de32054d73cf428e59536214f94d4c4efa65"
+    },
+    {
+      "path": "product-execution-quality-20261031T102149730.default-check.log",
+      "bytes": 83273,
+      "sha256": "9ed9dee5bd6ac10ce6532d2f8f26cd929183866c6486a56b5625a2c0563eca8f"
+    },
+    {
+      "path": "product-execution-quality-20261031T102149730.doctest.json",
+      "bytes": 358,
+      "sha256": "30b0277ad5f56991e0fb5db5ff7d2f4329fee99e4f7d77da3b951abfdec80044"
+    },
+    {
+      "path": "product-execution-quality-20261031T102149730.doctest.log",
+      "bytes": 82423,
+      "sha256": "040af5d9553646733236b5eb0f99077c95ab8f791aaeaa25874ce850340ecdb1"
+    },
+    {
+      "path": "product-execution-quality-20261031T102149730.fmt.json",
+      "bytes": 1920,
+      "sha256": "f0d95a8dfd5ea41d9faa8bc7741ba072dd97ab29e0f11285293992444873d04e"
+    },
+    {
+      "path": "product-execution-quality-20261031T102149730.fmt.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "product-execution-quality-20261031T102149730.source-freeze.json",
+      "bytes": 785315,
+      "sha256": "3eea92cdd830bd7f8aab05eab0ef467a5dda5db114e7f29e34ab2065cc5cb4ff"
+    },
+    {
+      "path": "product-execution-quality-20261031T102149730.structure.json",
+      "bytes": 539,
+      "sha256": "9902726e0c6beeaca495f3d133322683edd3142d00aa183cb9d5ffb72f5e575a"
+    },
+    {
+      "path": "product-execution-quality-20261031T102149730.structure.log",
+      "bytes": 65048,
+      "sha256": "370fc86009c93678e43cef3a6f5a2b35c3644eb5e0ef963f356f0b42143adace"
+    },
+    {
+      "path": "run-product-checkpoint-metadata-20261031T101815016.red.ps1",
+      "bytes": 4924,
+      "sha256": "d361d5c2a583132c577e480ec575f5a6da660897125c7bcdfc1cc371797949d9"
+    },
+    {
+      "path": "run-product-execution-checkpoint-20261031T101951957.owner4.ps1",
+      "bytes": 4845,
+      "sha256": "fa170632008d13368039c85ae11f596801d2c4816084c9f0715e484175d60cc4"
+    },
+    {
+      "path": "product-execution-quality-20261031T102149730.structure.dependency_edges.csv",
+      "bytes": 77544,
+      "sha256": "529e738d348314f7a4c0d909b165620d03ec57478b68ad42b06aa349b30e13f4"
+    },
+    {
+      "path": "product-execution-quality-20261031T102149730.structure.file_metrics.csv",
+      "bytes": 329755,
+      "sha256": "9f409d49b0453f389975de4089752ed92fc6be1962a2fb4df6d17cc5679cab64"
+    },
+    {
+      "path": "product-execution-quality-20261031T102149730.structure.findings.md",
+      "bytes": 122295,
+      "sha256": "e07a0fde3d3c3338a617d43a15b6a113613dc50141bc5c5f030ef61b69039aba"
+    },
+    {
+      "path": "product-execution-quality-20261031T102149730.structure.package_metrics.csv",
+      "bytes": 6444,
+      "sha256": "c2df26363c079ef3c17be71810df334c6e4825ab5987b4951b3f1432368b85f2"
+    },
+    {
+      "path": "product-execution-quality-20261031T102149730.structure.public_type_duplicates.csv",
+      "bytes": 17238,
+      "sha256": "6cbaa427fef9360e8adb6245ea1eec66f5fdaf2624a24979e82d4877a28e31ac"
+    }
+  ],
+  "documentationAudit": {
+    "date": "2026-10-31",
+    "base": "1024f1caca6d6d3357ebe525259a9578eaf7b7d7",
+    "changed": [
+      "docs/implementation/convergence-evidence-history.md",
+      "docs/implementation/current-status.md"
+    ],
+    "checkedDocuments": 129,
+    "relativeLinks": 648,
+    "brokenLinks": [],
+    "unclosedFences": [],
+    "statusCommitIds": 48,
+    "unretainedIds": [],
+    "historicalRawChanges": [],
+    "historicalPrefixPreserved": true,
+    "heldFiles": 20,
+    "heldDrift": 0,
+    "partialCliOriginalWipProof": true,
+    "rustCargoRun": false
+  },
+  "copiedRawEvidenceHashDrift": 0,
+  "checkpointPreMetadata": {
+    "version": 1,
+    "base": "fa6bff7015c0f59f4f3bca4d937e7926792ba25f",
+    "run": "product-execution-checkpoint-20261031T100256457.owner3.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  72.846s] 2167 tests run: 2167 passed, 0 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2167,
+    "passed": 2167,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4018,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-31T10:05:18.1228687Z"
+  },
+  "checkpointQualityBeforeMetadata": [
+    {
+      "version": 1,
+      "base": "d6d4cac779e3650552c9d68726480a5dade7d4be",
+      "command": [
+        "clippy",
+        "-p",
+        "arcweft-core",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4018,
+      "sourceDrift": 0,
+      "startedAt": "2026-10-31T10:09:07.0640571Z",
+      "finishedAt": "2026-10-31T10:09:53.2073221Z"
+    },
+    {
+      "version": 1,
+      "base": "d6d4cac779e3650552c9d68726480a5dade7d4be",
+      "command": [
+        "check",
+        "-p",
+        "arcweft-core",
+        "--all-targets",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4018,
+      "sourceDrift": 0,
+      "startedAt": "2026-10-31T10:09:53.630949Z",
+      "finishedAt": "2026-10-31T10:10:32.2136556Z"
+    },
+    {
+      "version": 1,
+      "base": "d6d4cac779e3650552c9d68726480a5dade7d4be",
+      "command": [
+        "test",
+        "-p",
+        "arcweft-core",
+        "--doc",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4018,
+      "sourceDrift": 0,
+      "startedAt": "2026-10-31T10:10:32.6600094Z",
+      "finishedAt": "2026-10-31T10:10:41.1654031Z"
+    },
+    {
+      "version": 1,
+      "base": "d6d4cac779e3650552c9d68726480a5dade7d4be",
+      "command": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking",
+        "--write",
+        "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/product-execution-quality-20261031T100904672.structure-report"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4018,
+      "sourceDrift": 0,
+      "startedAt": "2026-10-31T10:10:41.5791432Z",
+      "finishedAt": "2026-10-31T10:10:45.2892966Z"
+    },
+    {
+      "version": 1,
+      "paths": [
+        "crates/arcweft-core/src/awbc/fiber.rs",
+        "crates/arcweft-core/src/awbc/fiber/program_task.rs",
+        "crates/arcweft-core/src/awbc/fiber/scope.rs",
+        "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+        "crates/arcweft-core/src/awbc/product_step.rs",
+        "crates/arcweft-core/src/awbc/product_step/checkpoint.rs",
+        "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+        "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+        "crates/arcweft-core/src/awbc/product_step/line.rs",
+        "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+        "crates/arcweft-core/src/awbc/product_step/program_fanout.rs",
+        "crates/arcweft-core/src/awbc/product_step/program_task/tests.rs",
+        "crates/arcweft-core/src/awbc/product_step/program.rs",
+        "crates/arcweft-core/src/awbc/product_step/root.rs",
+        "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+        "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+        "crates/arcweft-core/src/awbc/product_step/tests.rs",
+        "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+        "crates/arcweft-core/src/awbc/tests/dialogue_callback_projection.rs",
+        "crates/arcweft-core/src/awbc/vm.rs",
+        "crates/arcweft-core/src/engine.rs",
+        "crates/arcweft-core/src/line_task.rs",
+        "crates/arcweft-core/src/line_task/activation.rs",
+        "crates/arcweft-core/src/line_task/activation/contour.rs",
+        "crates/arcweft-core/src/line_task/activation/contour/tests.rs",
+        "crates/arcweft-core/src/line_task/handle.rs",
+        "crates/arcweft-core/src/presentation/resources.rs",
+        "crates/arcweft-core/src/presentation/resources/banks.rs",
+        "crates/arcweft-core/src/presentation/resources/execution.rs",
+        "crates/arcweft-core/src/presentation/resources/execution/tests.rs"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4018,
+      "sourceDrift": 0
+    }
+  ],
+  "structureBeforeMetadata": {
+    "files": 3256,
+    "rustFiles": 3126,
+    "physicalRustLines": 1769988,
+    "workspacePackages": 97,
+    "reviewTriggers": 382,
+    "blockingViolations": 0,
+    "measurements": [
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/checkpoint.rs",
+        "owner": "arcweft-core",
+        "bytes": "6438",
+        "physical_lines": "166",
+        "code_lines": "152",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+        "owner": "arcweft-core",
+        "bytes": "181876",
+        "physical_lines": "4276",
+        "code_lines": "4182",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "74"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+        "owner": "arcweft-core",
+        "bytes": "181239",
+        "physical_lines": "4261",
+        "code_lines": "4112",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "181"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step.rs",
+        "owner": "arcweft-core",
+        "bytes": "242335",
+        "physical_lines": "6005",
+        "code_lines": "5721",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/line_task/activation/contour.rs",
+        "owner": "arcweft-core",
+        "bytes": "4829",
+        "physical_lines": "114",
+        "code_lines": "105",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/line_task/activation.rs",
+        "owner": "arcweft-core",
+        "bytes": "48923",
+        "physical_lines": "1265",
+        "code_lines": "1162",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "82"
+      }
+    ],
+    "coreDependencyMetrics": {
+      "package": "arcweft-core",
+      "manifest": "crates/arcweft-core/Cargo.toml",
+      "workspace_fan_in": "31",
+      "workspace_fan_out": "7",
+      "development_workspace_fan_in": "4",
+      "development_workspace_fan_out": "5"
+    },
+    "disposition": "Registry owns live reservation provenance and actual withdrawn frames; the borrowed contour only indexes references. Product checkpoint owns one selected inert fiber, the existing bank grammar and the original non-Clone admission. Public snapshot shares the same retained preflight, with its old duplicate adapters removed. Existing large frame/VM/complete-image dispatchers keep their responsibilities. No new Cargo edge, I/O or unsafe; tests remain under actual registry/Product presentation owners."
+  },
+  "metadataRegressionRed": {
+    "version": 1,
+    "base": "d6d4cac779e3650552c9d68726480a5dade7d4be",
+    "run": "product-checkpoint-metadata-20261031T101815016.red.runtime",
+    "actualExitCode": 100,
+    "summary": "Summary [   0.033s] 1 test run: 0 passed, 1 failed, 2114 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 1,
+    "passed": 0,
+    "failed": 1,
+    "skipped": 2114,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4018,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "awbc::product_step::tests::presentation::execution_checkpoint_preserves_the_typed_bank_metadata_rejection"
+      }
+    ],
+    "isPassingRun": false,
+    "recordedAt": "2026-10-31T10:18:51.3972558Z"
+  }
+}

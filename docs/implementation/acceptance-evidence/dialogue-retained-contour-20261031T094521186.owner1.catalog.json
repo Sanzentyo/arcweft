@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "778e50325a2b907511e7a8379c789f27a53664e3",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/dialogue-retained-contour-20261031T094521186.owner1.catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-31T09:45:23.3560985Z",
+  "finishedAt": "2026-10-31T09:46:46.5718916Z"
+}

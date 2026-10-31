@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "commit": "1024f1caca6d6d3357ebe525259a9578eaf7b7d7",
+  "parent": "d6d4cac779e3650552c9d68726480a5dade7d4be",
+  "tree": "bd42db66553a290aa8b8ddc007b74f34c6a0a97b",
+  "remote": "1024f1caca6d6d3357ebe525259a9578eaf7b7d7",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+      "blob": "a0b0f9aef00602d843e65900c6bf3b5502bd9862"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "blob": "a74435c024b0405d33cd6823d3c0791dae918303"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "df6e0d6ece4134ce1bc397afaa3425dfa38b8deb"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "b899bc356f2245b6c48af2a2d1d082e3173e2a508324bb81de8b6ea98a9191c1",
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "separatelyHeld": [
+    {
+      "path": "docs/implementation/current-status.md",
+      "sha256": "0de0177f6eb3df88b192923c89a3ff46879b1ade4f4e562e3240c04ab2ce1817"
+    }
+  ],
+  "indexEmpty": true,
+  "at": "2026-10-31T10:24:39.9957194Z"
+}

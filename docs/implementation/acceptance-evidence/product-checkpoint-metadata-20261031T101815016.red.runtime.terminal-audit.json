@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "d6d4cac779e3650552c9d68726480a5dade7d4be",
+  "run": "product-checkpoint-metadata-20261031T101815016.red.runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.033s] 1 test run: 0 passed, 1 failed, 2114 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 1,
+  "passed": 0,
+  "failed": 1,
+  "skipped": 2114,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4018,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::presentation::execution_checkpoint_preserves_the_typed_bank_metadata_rejection"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-31T10:18:51.3972558Z"
+}

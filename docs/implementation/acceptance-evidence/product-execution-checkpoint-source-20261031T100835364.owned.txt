@@ -1,0 +1,12 @@
+crates/arcweft-core/src/awbc/product_step.rs
+crates/arcweft-core/src/awbc/product_step/dialogue.rs
+crates/arcweft-core/src/awbc/product_step/lifecycle.rs
+crates/arcweft-core/src/awbc/product_step/line.rs
+crates/arcweft-core/src/awbc/product_step/presentation.rs
+crates/arcweft-core/src/awbc/product_step/snapshot.rs
+crates/arcweft-core/src/awbc/product_step/suspension.rs
+crates/arcweft-core/src/awbc/product_step/tests.rs
+crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
+crates/arcweft-core/src/awbc/product_step/checkpoint.rs
+docs/02-runtime/save-replay.md
+docs/implementation/convergence-evidence-history.md

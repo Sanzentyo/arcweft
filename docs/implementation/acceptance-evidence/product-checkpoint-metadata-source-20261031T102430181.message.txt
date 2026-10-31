@@ -1,0 +1,3 @@
+Preserve typed bank metadata errors in execution checkpoints
+
+Remove the registry-to-string adapter from the actual contour visitor. Reproduce the lost cause, retain the exact Owner rejection, and verify all 2168 Core tests plus Core quality checks.

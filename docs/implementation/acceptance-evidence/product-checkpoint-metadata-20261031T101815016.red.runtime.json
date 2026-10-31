@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "d6d4cac779e3650552c9d68726480a5dade7d4be",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked",
+    "--lib",
+    "-E",
+    "test(execution_checkpoint_preserves_the_typed_bank_metadata_rejection)",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/product-checkpoint-metadata-20261031T101815016.red.runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-31T10:18:48.7873230Z",
+  "finishedAt": "2026-10-31T10:18:50.6828378Z"
+}

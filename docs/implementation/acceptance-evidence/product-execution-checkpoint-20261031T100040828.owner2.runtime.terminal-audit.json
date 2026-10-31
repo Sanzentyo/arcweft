@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "base": "fa6bff7015c0f59f4f3bca4d937e7926792ba25f",
+  "run": "product-execution-checkpoint-20261031T100040828.owner2.runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.055s] 6 tests run: 5 passed, 1 failed, 2108 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 6,
+  "passed": 5,
+  "failed": 1,
+  "skipped": 2108,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4018,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::invalid_schedule_schema_preserves_admitted_captures_before_failure_close"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-31T10:01:58.2109504Z"
+}
