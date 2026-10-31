@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "base": "627ecbe6af58b682b0169d4c6ac01185d3e1753e",
+  "command": [
+    "clippy",
+    "-p",
+    "arcweft-core",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "exitCode": 0,
+  "sourceInputs": 4018,
+  "sourceDrift": 0,
+  "startedAt": "2026-10-31T10:42:51.5209731Z",
+  "finishedAt": "2026-10-31T10:43:14.7551107Z"
+}

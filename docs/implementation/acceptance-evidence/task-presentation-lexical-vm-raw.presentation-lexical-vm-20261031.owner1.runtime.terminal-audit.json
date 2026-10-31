@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "511ba94a34a9d186a0bc3f77b8f2ea8b50c2caa7",
+  "run": "presentation-lexical-vm-20261031.owner1.runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  72.624s] 2170 tests run: 2170 passed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 2170,
+  "passed": 2170,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4018,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-31T10:40:55.3691084Z"
+}

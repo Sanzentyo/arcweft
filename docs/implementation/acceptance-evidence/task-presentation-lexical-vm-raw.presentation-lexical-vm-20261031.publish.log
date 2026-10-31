@@ -1,0 +1,7 @@
+From https://github.com/Sanzentyo/arcweft
+ * branch                main       -> FETCH_HEAD
+[main 627ecbe6a] feat(core): retire actual lexical presentation scopes during Product VM execution
+ 5 files changed, 152 insertions(+), 15 deletions(-)
+To https://github.com/Sanzentyo/arcweft.git
+   511ba94a3..627ecbe6a  HEAD -> main
+{"commit":"627ecbe6af58b682b0169d4c6ac01185d3e1753e","parent":"511ba94a34a9d186a0bc3f77b8f2ea8b50c2caa7","tree":"d35806b0ee35dc2d73b25bee7fac329118af1995","paths":5,"blobDrift":0,"originalWip":14,"separatelyHeld":0,"patchSha256":"90f97030549bffe280546fef1edbbba8bd629501e8f5cde6265e7c68b1382fcb","indexEmpty":true}

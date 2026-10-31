@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "511ba94a34a9d186a0bc3f77b8f2ea8b50c2caa7",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-lexical-vm-20261031.owner1.runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-31T10:39:39.8317407Z",
+  "finishedAt": "2026-10-31T10:40:54.4354065Z"
+}

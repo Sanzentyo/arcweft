@@ -1,0 +1,7 @@
+From https://github.com/Sanzentyo/arcweft
+ * branch                main       -> FETCH_HEAD
+[main 511ba94a3] fix(core): preflight complete presentation scope retirement batches
+ 3 files changed, 275 insertions(+), 21 deletions(-)
+To https://github.com/Sanzentyo/arcweft.git
+   bb9fdbb8e..511ba94a3  HEAD -> main
+{"commit":"511ba94a34a9d186a0bc3f77b8f2ea8b50c2caa7","parent":"bb9fdbb8e2ec0d1c38b8bde978aabd6004541e9f","tree":"f1b4c576643deda5a020bf88effff815a06498c8","paths":3,"blobDrift":0,"originalWip":14,"separatelyHeld":0,"patchSha256":"da180dbee35579f5f8d87c51c142f9e55335caea59c6d12c2a219fc2cac31e31","indexEmpty":true}

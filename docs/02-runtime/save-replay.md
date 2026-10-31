@@ -296,6 +296,13 @@ wire snapshot は inert な座標だけを保持し、元 ledger の grant と�
 回収済み grant は復元権限にならない。ledger を伴わない scope exit／取消は、未回収の
 grant を捨てずに型付きエラーを返す。
 
+scope の一括回収は、実際の storage anchor と元 program／execution／fiber の grant、
+重複のない owner 群、全 bank に共通の回収待ち容量を、最初の body 移動より前に検査する。
+全対象が成立した後、callee／内側 scope からの指定された順序と、scope 内の発行順で
+body を同じ bank 集合の回収待ちへ移し、grant を解除する。AWBC Product の lexical
+`ExitScope` は、実行 owner から借用した bank を使い、scope を pop する前にこの回収を行う。
+回収待ちへの移動も、元の実行 checkpoint と公開 save の保持 graph に含める。
+
 AWBC fiberのversion 1保存grammarは実行bankを必須fieldとして持つ。Root入口はRoot、
 Dialogue入口・line・callbackは完全なactivationのbankを選び、Program子fiberと継続は
 生成元のbankを継承する。Productのmetadata admissionは、Root・子fiber・Dialogue内の

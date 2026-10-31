@@ -1,0 +1,522 @@
+{
+  "version": 1,
+  "recordedAt": "2026-10-31T10:44:47.3509412Z",
+  "scope": "Atomic complete presentation scope retirement batches, and actual Product VM lexical ExitScope using its original execution bank.",
+  "inspectedMain": "627ecbe6af58b682b0169d4c6ac01185d3e1753e",
+  "workingTree": {
+    "heldTracked": 14,
+    "heldUntracked": 6,
+    "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+    "coreDirty": false
+  },
+  "sourcePublications": [
+    {
+      "version": 1,
+      "commit": "511ba94a34a9d186a0bc3f77b8f2ea8b50c2caa7",
+      "parent": "bb9fdbb8e2ec0d1c38b8bde978aabd6004541e9f",
+      "tree": "f1b4c576643deda5a020bf88effff815a06498c8",
+      "remote": "511ba94a34a9d186a0bc3f77b8f2ea8b50c2caa7",
+      "paths": [
+        {
+          "path": "crates/arcweft-core/src/presentation/resources.rs",
+          "blob": "d2652351fee09f34d86645c7eb921643fff6fa79"
+        },
+        {
+          "path": "crates/arcweft-core/src/presentation/resources/banks.rs",
+          "blob": "ac2015ed511258777fdc08ffc25c8a1f0810b551"
+        },
+        {
+          "path": "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+          "blob": "93d5c362f7ebad0ec95b96f793532aed6cb8846e"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "da180dbee35579f5f8d87c51c142f9e55335caea59c6d12c2a219fc2cac31e31",
+      "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-10-31T10:37:49.2588323Z"
+    },
+    {
+      "version": 1,
+      "commit": "627ecbe6af58b682b0169d4c6ac01185d3e1753e",
+      "parent": "511ba94a34a9d186a0bc3f77b8f2ea8b50c2caa7",
+      "tree": "d35806b0ee35dc2d73b25bee7fac329118af1995",
+      "remote": "627ecbe6af58b682b0169d4c6ac01185d3e1753e",
+      "paths": [
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber/scope.rs",
+          "blob": "f46f2c4af3421bdc2bee6b23e86598c9639e1fb4"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step.rs",
+          "blob": "d00ec568a35839a59690bf5d1c228c3483f5f53c"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "blob": "ca9b8ac565e47031833bdf8120b1f04242f34104"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+          "blob": "6dfdb40eb1253defc3a91baef3e5dfd8cb2bec2f"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/vm.rs",
+          "blob": "8a85002266ef79a14acecaa6235dbefe347ff064"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "90f97030549bffe280546fef1edbbba8bd629501e8f5cde6265e7c68b1382fcb",
+      "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-10-31T10:41:18.2151102Z"
+    }
+  ],
+  "acceptance": [
+    "All original scope grants, actual storage anchors and aggregate retirement capacity are validated before the first body moves or binding clears.",
+    "A later invalid anchor or insufficient aggregate queue capacity preserves all ledgers, bodies, grants, issuance cursors and pending retirements; retry follows caller-supplied unwind order.",
+    "Product main, child and withdrawn Dialogue VM calls borrow the existing bank aggregate; no fresh ledger, scope identity or policy is substituted.",
+    "The actual one-op Root lexical exit retires its inner typed Bool body, preserves the outer root grant, round-trips through the public inert save, and restores the original complete execution checkpoint."
+  ],
+  "focusedFoundation": {
+    "command": "cargo nextest run -p arcweft-core --all-features --locked --lib -E test(presentation::resources::banks::tests) --no-tests fail --no-fail-fast --status-level all --final-status-level all",
+    "passed": 6,
+    "failed": 0,
+    "excluded": 2111,
+    "exitCode": 0,
+    "scope": "Library bank tests only; not added to the complete owner total."
+  },
+  "owner": {
+    "version": 1,
+    "base": "511ba94a34a9d186a0bc3f77b8f2ea8b50c2caa7",
+    "run": "presentation-lexical-vm-20261031.owner1.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  72.624s] 2170 tests run: 2170 passed, 0 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2170,
+    "passed": 2170,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4018,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-31T10:40:55.3691084Z"
+  },
+  "ownerBinaryDrift": 0,
+  "quality": [
+    {
+      "kind": "clippy",
+      "receipt": {
+        "version": 1,
+        "base": "627ecbe6af58b682b0169d4c6ac01185d3e1753e",
+        "command": [
+          "clippy",
+          "-p",
+          "arcweft-core",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4018,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T10:42:51.5209731Z",
+        "finishedAt": "2026-10-31T10:43:14.7551107Z"
+      }
+    },
+    {
+      "kind": "default-check",
+      "receipt": {
+        "version": 1,
+        "base": "627ecbe6af58b682b0169d4c6ac01185d3e1753e",
+        "command": [
+          "check",
+          "-p",
+          "arcweft-core",
+          "--all-targets",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4018,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T10:43:15.2079437Z",
+        "finishedAt": "2026-10-31T10:43:31.3176739Z"
+      }
+    },
+    {
+      "kind": "doctest",
+      "receipt": {
+        "version": 1,
+        "base": "627ecbe6af58b682b0169d4c6ac01185d3e1753e",
+        "command": [
+          "test",
+          "-p",
+          "arcweft-core",
+          "--doc",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4018,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T10:43:31.7244412Z",
+        "finishedAt": "2026-10-31T10:43:40.4790616Z"
+      }
+    },
+    {
+      "kind": "structure",
+      "receipt": {
+        "version": 1,
+        "base": "627ecbe6af58b682b0169d4c6ac01185d3e1753e",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/product-execution-quality-20261031T104249152.structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4018,
+        "sourceDrift": 0,
+        "startedAt": "2026-10-31T10:43:40.9216041Z",
+        "finishedAt": "2026-10-31T10:43:44.471128Z"
+      }
+    },
+    {
+      "kind": "fmt",
+      "receipt": {
+        "version": 1,
+        "paths": [
+          "crates/arcweft-core/src/awbc/fiber.rs",
+          "crates/arcweft-core/src/awbc/fiber/program_task.rs",
+          "crates/arcweft-core/src/awbc/fiber/scope.rs",
+          "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+          "crates/arcweft-core/src/awbc/product_step.rs",
+          "crates/arcweft-core/src/awbc/product_step/checkpoint.rs",
+          "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+          "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+          "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+          "crates/arcweft-core/src/awbc/product_step/program_fanout.rs",
+          "crates/arcweft-core/src/awbc/product_step/program_task/tests.rs",
+          "crates/arcweft-core/src/awbc/product_step/program.rs",
+          "crates/arcweft-core/src/awbc/product_step/root.rs",
+          "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+          "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests.rs",
+          "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+          "crates/arcweft-core/src/awbc/tests/dialogue_callback_projection.rs",
+          "crates/arcweft-core/src/awbc/vm.rs",
+          "crates/arcweft-core/src/engine.rs",
+          "crates/arcweft-core/src/line_task.rs",
+          "crates/arcweft-core/src/line_task/activation.rs",
+          "crates/arcweft-core/src/line_task/activation/contour.rs",
+          "crates/arcweft-core/src/line_task/activation/contour/tests.rs",
+          "crates/arcweft-core/src/line_task/handle.rs",
+          "crates/arcweft-core/src/presentation/resources.rs",
+          "crates/arcweft-core/src/presentation/resources/banks.rs",
+          "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+          "crates/arcweft-core/src/presentation/resources/execution.rs",
+          "crates/arcweft-core/src/presentation/resources/execution/tests.rs"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4018,
+        "sourceDrift": 0
+      }
+    }
+  ],
+  "doctest": {
+    "passed": 78,
+    "failed": 0,
+    "ignored": 0,
+    "filtered": 0
+  },
+  "structure": {
+    "packages": 97,
+    "files": 3256,
+    "rustFiles": 3126,
+    "rustPhysicalLoc": 1770406,
+    "reviewTriggers": 382,
+    "blocking": 0,
+    "disposition": "The existing ledger and aggregate bank remain the sole resource owners. Fiber supplies actual mutable scope storage, and Product only lends its bank to the VM. No alternative persisted owner, duplicate wire grammar, or I/O driver is introduced."
+  },
+  "warnings": "Existing compiler and Clippy warnings remain in the raw logs; exit 0 is not a zero-warning claim.",
+  "priorAcceptance": "task-product-execution-checkpoint-owner-validation.json",
+  "limits": [
+    "Source ViewValue construction, 11 presentation callables, mount(ViewValue), six handle methods and presentation driver dispatch are not demonstrated by this typed Bool body fixture.",
+    "Frame return, SelectDialogueResult, goto and cancellation automatic resource retirement and escaping-handle ownership transfer remain unconnected; standalone ledger-free VM exits continue to reject outstanding grants.",
+    "Cancellation integration must include all affected child scopes and aggregate retirement capacity in command preparation. Existing line cancellation commit paths remove children and expect cleanup to be infallible after preparation (product_step/line.rs prepare_line_task_commands_from / commit_line_task_commands); merely adding a fallible bank call at commit would violate that contract.",
+    "Native admission including the actually borrowed parent, active-bank replacement, Native/Web image parity and the final reverse-dependency/target matrix remain outside this owner cut.",
+    "Accepted Generic Match and previously accepted checkpoint/save boundaries are retained. These remaining boundaries do not reopen those acceptances."
+  ],
+  "artifacts": [
+    {
+      "path": "task-presentation-lexical-vm-raw.presentation-batch-20261031.log",
+      "source": "presentation-batch-20261031.log",
+      "bytes": 677811,
+      "sha256": "88d085a3d948a151d46aeaf144f31e0e7b29c3f502c4e66241ee618e4a831bbd"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.presentation-batch-20261031.json",
+      "source": "presentation-batch-20261031.json",
+      "bytes": 275,
+      "sha256": "df0d8c25e65b74c0ef2a8a63f35c6647ad58bd72ea7175362dc9a055919fd018"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.run-presentation-lexical-vm-20261031.owner1.ps1",
+      "source": "run-presentation-lexical-vm-20261031.owner1.ps1",
+      "bytes": 4830,
+      "sha256": "0643b344f5bc6010fce3fa3a8468bc3be85a98f0bab997e14266f8543b93017e"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.run-product-execution-quality.ps1",
+      "source": "run-product-execution-quality.ps1",
+      "bytes": 3062,
+      "sha256": "d1ca633b5d3bf8ecd4ba2fdeeafd1cfbfd689376fa4aa6aa1918834f2a0b05ca"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.presentation-scope-batch-20261031.owned.txt",
+      "source": "presentation-scope-batch-20261031.owned.txt",
+      "bytes": 171,
+      "sha256": "f2570d47548538570cb23eb5aed37eb3b0cb3f290c8406368fa7f18059ab0515"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.presentation-scope-batch-20261031.prepared.json",
+      "source": "presentation-scope-batch-20261031.prepared.json",
+      "bytes": 1687,
+      "sha256": "097ae17d0cd38abf4892a65fab061d4d0d5e47c91e2be22de1f457c2b29bf42d"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.presentation-scope-batch-20261031.verified.json",
+      "source": "presentation-scope-batch-20261031.verified.json",
+      "bytes": 992,
+      "sha256": "8098c527894c1f59f9e0e027de8d70911f296ffd39b6e449732e28875dac66e0"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.presentation-scope-batch-20261031.reviewed.patch",
+      "source": "presentation-scope-batch-20261031.reviewed.patch",
+      "bytes": 12123,
+      "sha256": "da180dbee35579f5f8d87c51c142f9e55335caea59c6d12c2a219fc2cac31e31"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.presentation-scope-batch-20261031.publish.log",
+      "source": "presentation-scope-batch-20261031.publish.log",
+      "bytes": 634,
+      "sha256": "058695d950393eb3dc38132412efdfa4d1ed0711f3543f64c3493bef155c3969"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.presentation-lexical-vm-20261031.owned.txt",
+      "source": "presentation-lexical-vm-20261031.owned.txt",
+      "bytes": 243,
+      "sha256": "1cb2449fc4216298480527b48758806f1de0d43a1db8048d6da010b599b14074"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.presentation-lexical-vm-20261031.prepared.json",
+      "source": "presentation-lexical-vm-20261031.prepared.json",
+      "bytes": 1939,
+      "sha256": "aa798972af2bca7daf4c429fef357e1a398987979c78bd756af78eb8b5317460"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.presentation-lexical-vm-20261031.verified.json",
+      "source": "presentation-lexical-vm-20261031.verified.json",
+      "bytes": 1244,
+      "sha256": "eceb2b97638a2e78f977bb07344064fb28339f09c187e3e7703bb694894e4921"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.presentation-lexical-vm-20261031.reviewed.patch",
+      "source": "presentation-lexical-vm-20261031.reviewed.patch",
+      "bytes": 13467,
+      "sha256": "90f97030549bffe280546fef1edbbba8bd629501e8f5cde6265e7c68b1382fcb"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.presentation-lexical-vm-20261031.publish.log",
+      "source": "presentation-lexical-vm-20261031.publish.log",
+      "bytes": 648,
+      "sha256": "3b2033431d5f0326972729df8b452fe6caf7ddbbfc8ba4ceff6b6b7929e8881f"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.presentation-lexical-vm-20261031.owner1.source-freeze.json",
+      "source": "presentation-lexical-vm-20261031.owner1.source-freeze.json",
+      "bytes": 785258,
+      "sha256": "5a5fb9d91121752ac0b905028f3ec828e09f776d9a57ea6a8c54384b25791866"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.presentation-lexical-vm-20261031.owner1.binaries-before.json",
+      "source": "presentation-lexical-vm-20261031.owner1.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "676d0fbaca12eefc478bab8ad6cd87472fad67d1d535575599a9a12c434ee522"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.presentation-lexical-vm-20261031.owner1.catalog.inventory.json",
+      "source": "presentation-lexical-vm-20261031.owner1.catalog.inventory.json",
+      "bytes": 549241,
+      "sha256": "8a1a86cc5dc41f1350b5eb29cabf1449eb6b658697e3964c593b11d823218b87"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.presentation-lexical-vm-20261031.owner1.catalog.json",
+      "source": "presentation-lexical-vm-20261031.owner1.catalog.json",
+      "bytes": 492,
+      "sha256": "1537baa693063b8ea266098404de3beadd90690315277ea28e354465b78fd5ec"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.presentation-lexical-vm-20261031.owner1.catalog.log",
+      "source": "presentation-lexical-vm-20261031.owner1.catalog.log",
+      "bytes": 458958,
+      "sha256": "7bcc82fe8bc52c200e97536e80cbfa4f39c773ccdb915a4da302f5f77216af08"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.presentation-lexical-vm-20261031.owner1.runtime.json",
+      "source": "presentation-lexical-vm-20261031.owner1.runtime.json",
+      "bytes": 584,
+      "sha256": "88891d5615cfa422232e17ad3f700bfaf59b4811871892b03f1a874225c508fd"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.presentation-lexical-vm-20261031.owner1.runtime.log",
+      "source": "presentation-lexical-vm-20261031.owner1.runtime.log",
+      "bytes": 742748,
+      "sha256": "6eef88109bde277df62e315756cae9c83749fd4f4b28cdebc2a5cdf7c2393d6f"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.presentation-lexical-vm-20261031.owner1.runtime.terminal-audit.json",
+      "source": "presentation-lexical-vm-20261031.owner1.runtime.terminal-audit.json",
+      "bytes": 628,
+      "sha256": "382cc9676b669d4d9857442108b1a06b3e2433d45c8fc66e4d366871a77da5e4"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.product-execution-quality-20261031T104249152.source-freeze.json",
+      "source": "product-execution-quality-20261031T104249152.source-freeze.json",
+      "bytes": 785300,
+      "sha256": "46940fedec81e1cf0fb7ad62914e8b279c988d19afc1c4558f20849f6b536ea4"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.product-execution-quality-20261031T104249152.clippy.json",
+      "source": "product-execution-quality-20261031T104249152.clippy.json",
+      "bytes": 368,
+      "sha256": "9063b439da9c802a3268f81d6f3f99dd79c70ebaca4d4d3f50cfba72bf10ad5c"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.product-execution-quality-20261031T104249152.clippy.log",
+      "source": "product-execution-quality-20261031T104249152.clippy.log",
+      "bytes": 4449953,
+      "sha256": "e17dc592faf55af175502e614be20777175bf4395c3db80c9a0c63a4f549ec73"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.product-execution-quality-20261031T104249152.default-check.json",
+      "source": "product-execution-quality-20261031T104249152.default-check.json",
+      "bytes": 344,
+      "sha256": "24e761dbaaa709175f538a14504243460c545f0f21af178fe96bd11d0c9e4d22"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.product-execution-quality-20261031T104249152.default-check.log",
+      "source": "product-execution-quality-20261031T104249152.default-check.log",
+      "bytes": 82490,
+      "sha256": "e22d13310d03864a0efcc3852338e637f639d290685c67f1429b210257b340a6"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.product-execution-quality-20261031T104249152.doctest.json",
+      "source": "product-execution-quality-20261031T104249152.doctest.json",
+      "bytes": 358,
+      "sha256": "8b7dbb0eb8e36ace90d25895d5f7b844c3661eaf7afbc2a9161813dd52fcb598"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.product-execution-quality-20261031T104249152.doctest.log",
+      "source": "product-execution-quality-20261031T104249152.doctest.log",
+      "bytes": 81640,
+      "sha256": "19256869f620bc5c0008442f9718c4fdc92689514d5b554d1b88018c4dd2b9a3"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.product-execution-quality-20261031T104249152.structure.json",
+      "source": "product-execution-quality-20261031T104249152.structure.json",
+      "bytes": 539,
+      "sha256": "4943358968e6fdda51d37c5edaac5d3007329399985807c50c4ae4f4afbc6e3b"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.product-execution-quality-20261031T104249152.structure.log",
+      "source": "product-execution-quality-20261031T104249152.structure.log",
+      "bytes": 65048,
+      "sha256": "8c34bfc4dd0ad3fdf476358f70c19e0c5833de9e067cdb46cd86f8ba0bbfc19d"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.product-execution-quality-20261031T104249152.fmt.json",
+      "source": "product-execution-quality-20261031T104249152.fmt.json",
+      "bytes": 1990,
+      "sha256": "eaf5318c35817f7ca48ae6bbf17aef4e79b4f5cac6ada983e26f9ae804f3a83b"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.product-execution-quality-20261031T104249152.fmt.log",
+      "source": "product-execution-quality-20261031T104249152.fmt.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.product-execution-quality-20261031T104249152.structure-report.dependency_edges.csv",
+      "source": "product-execution-quality-20261031T104249152.structure-report/dependency_edges.csv",
+      "bytes": 77544,
+      "sha256": "529e738d348314f7a4c0d909b165620d03ec57478b68ad42b06aa349b30e13f4"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.product-execution-quality-20261031T104249152.structure-report.file_metrics.csv",
+      "source": "product-execution-quality-20261031T104249152.structure-report/file_metrics.csv",
+      "bytes": 329755,
+      "sha256": "9d07be55e0e831986c3a0c2dff477b0aa2dde291d6ea5de7b6451e13703b9dea"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.product-execution-quality-20261031T104249152.structure-report.findings.md",
+      "source": "product-execution-quality-20261031T104249152.structure-report/findings.md",
+      "bytes": 122295,
+      "sha256": "6d830dc53d415784c85c91c3ebc38d85ff689e8c07fc609fe6429777a6caa52e"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.product-execution-quality-20261031T104249152.structure-report.package_metrics.csv",
+      "source": "product-execution-quality-20261031T104249152.structure-report/package_metrics.csv",
+      "bytes": 6444,
+      "sha256": "c2df26363c079ef3c17be71810df334c6e4825ab5987b4951b3f1432368b85f2"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.product-execution-quality-20261031T104249152.structure-report.public_type_duplicates.csv",
+      "source": "product-execution-quality-20261031T104249152.structure-report/public_type_duplicates.csv",
+      "bytes": 17238,
+      "sha256": "6cbaa427fef9360e8adb6245ea1eec66f5fdaf2624a24979e82d4877a28e31ac"
+    },
+    {
+      "path": "task-presentation-lexical-vm-raw.documentation-audit.json",
+      "source": "arcweft-docs-reconcile-20261027/task-wait-reverse-doc-audit.json",
+      "bytes": 574,
+      "sha256": "5b1b43374c19441bc178bef03a7da218236ef9974799f61eb3a6bf4a44cec8e6"
+    }
+  ],
+  "artifactCount": 39,
+  "artifactBytes": 9282023.0,
+  "rawByteDrift": 0,
+  "documentationAudit": {
+    "date": "2026-10-31",
+    "base": "627ecbe6af58b682b0169d4c6ac01185d3e1753e",
+    "changed": [
+      "docs/02-runtime/save-replay.md",
+      "docs/implementation/convergence-evidence-history.md",
+      "docs/implementation/current-status.md"
+    ],
+    "checkedDocuments": 129,
+    "relativeLinks": 648,
+    "brokenLinks": [],
+    "unclosedFences": [],
+    "statusCommitIds": 48,
+    "unretainedIds": [],
+    "historicalRawChanges": [],
+    "historicalPrefixPreserved": true,
+    "heldFiles": 20,
+    "heldDrift": 0,
+    "partialCliOriginalWipProof": true,
+    "rustCargoRun": false
+  }
+}

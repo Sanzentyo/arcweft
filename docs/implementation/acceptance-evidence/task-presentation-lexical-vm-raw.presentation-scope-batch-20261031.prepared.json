@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "base": "bb9fdbb8e2ec0d1c38b8bde978aabd6004541e9f",
+  "tree": "f1b4c576643deda5a020bf88effff815a06498c8",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/presentation/resources.rs",
+      "blob": "d2652351fee09f34d86645c7eb921643fff6fa79"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/banks.rs",
+      "blob": "ac2015ed511258777fdc08ffc25c8a1f0810b551"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+      "blob": "93d5c362f7ebad0ec95b96f793532aed6cb8846e"
+    }
+  ],
+  "other": [],
+  "held": [
+    "crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs",
+    "crates/arcweft-cli/tests/check/agent_script_debug.rs",
+    "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+    "crates/arcweft-cli/tests/check/profile_entry_selection.rs",
+    "crates/arcweft-runtime-host/src/native_task.rs",
+    "samples/agent-script/cli-read-resource-metadata-smoke.awfagent",
+    "samples/agent-script/cli-read-resource-smoke.awfagent",
+    "samples/agent-script/cli-read-resource-value-smoke.awfagent",
+    "samples/agent-script/native-choice-dispatch.arcw",
+    "samples/agent-script/native-project-graph-relations.arcw",
+    "samples/agent-script/native-visual-regression.arcw",
+    "samples/image-animation.arcw",
+    "samples/rich-text-full-grammar.arcw",
+    "samples/rich-text-windows-fonts.arcw"
+  ],
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "patchSha256": "da180dbee35579f5f8d87c51c142f9e55335caea59c6d12c2a219fc2cac31e31",
+  "preparedAt": "2026-10-31T10:37:42.1837075Z"
+}

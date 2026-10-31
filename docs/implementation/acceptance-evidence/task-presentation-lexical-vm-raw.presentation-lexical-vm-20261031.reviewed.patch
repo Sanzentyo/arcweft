@@ -1,0 +1,321 @@
+diff --git a/crates/arcweft-core/src/awbc/fiber/scope.rs b/crates/arcweft-core/src/awbc/fiber/scope.rs
+index 23de2d9bbdce42a051d2d4ac97cf88d6f09016d8..f46f2c4af3421bdc2bee6b23e86598c9639e1fb4 100644
+--- a/crates/arcweft-core/src/awbc/fiber/scope.rs
++++ b/crates/arcweft-core/src/awbc/fiber/scope.rs
+@@ -81,6 +81,32 @@ impl super::FiberFrame {
+ }
+ 
+ impl super::FiberState {
++    /// Moves the current real scope's bodies into its execution owner's queue.
++    /// A VM may borrow the owner, but cannot create a replacement ledger.
++    pub(crate) fn retire_presentation_scope<V>(
++        &mut self,
++        program: &RuntimeProgramOwner,
++        banks: &mut crate::presentation::resources::PresentationBanks<V>,
++    ) -> Result<(), crate::presentation::RuntimePresentationError> {
++        if !matches!(program, RuntimeProgramOwner::Awbc(_)) {
++            return Err(crate::presentation::RuntimePresentationError::Program);
++        }
++        let execution = crate::runtime_id::ExecutionInstanceId::from_allocated(self.instance.get());
++        let fiber =
++            crate::runtime_id::RuntimePersistentFiberId::from_allocated(self.instance.get().get());
++        let bank = self.presentation_bank;
++        let frame = self
++            .active_frame_mut()
++            .map_err(|_| crate::presentation::RuntimePresentationError::MissingScope)?;
++        if frame
++            .presentation_scope_binding()
++            .is_some_and(|binding| binding.bank() != bank)
++        {
++            return Err(crate::presentation::RuntimePresentationError::Owner);
++        }
++        banks.retire_bound_scope(program, execution, fiber, frame.presentation_scope_target())
++    }
++
+     pub(crate) fn bind_presentation_scope<V>(
+         &mut self,
+         program: &RuntimeProgramOwner,
+diff --git a/crates/arcweft-core/src/awbc/product_step.rs b/crates/arcweft-core/src/awbc/product_step.rs
+index 7b7627376cba7eaedf28833b4b65ee6b482a3881..d00ec568a35839a59690bf5d1c228c3483f5f53c 100644
+--- a/crates/arcweft-core/src/awbc/product_step.rs
++++ b/crates/arcweft-core/src/awbc/product_step.rs
+@@ -55,6 +55,7 @@ use crate::awbc::schema::{
+ use crate::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext};
+ use crate::awbc::vm::{
+     VmExecutionContext, VmExit, VmObservation, VmStepOptions, step_with_host_context,
++    step_with_presentation,
+ };
+ use crate::engine::{
+     AwaitState, ChoiceState, FlowExit, FlowFiber, FlowFiberId, FlowFiberOwner, FlowFiberStatus,
+@@ -2758,13 +2759,14 @@ impl AwbcProductStepExecutor {
+             fallback_stats: &mut candidate_stats,
+             context: &context,
+         };
+-        match step_with_host_context(
++        match step_with_presentation(
+             &self.program,
+             &mut self.fiber,
+             VmStepOptions {
+                 max_instructions: 1,
+             },
+             &context,
++            &mut self.presentation,
+             &mut host,
+         ) {
+             Ok(mut vm_output) => {
+@@ -3271,13 +3273,14 @@ impl AwbcProductStepExecutor {
+         } else {
+             terminal_exit.map_or_else(
+                 || {
+-                    step_with_host_context(
++                    step_with_presentation(
+                         &self.program,
+                         &mut child.fiber,
+                         VmStepOptions {
+                             max_instructions: 1,
+                         },
+                         &context,
++                        &mut self.presentation,
+                         &mut host,
+                     )
+                 },
+diff --git a/crates/arcweft-core/src/awbc/product_step/line.rs b/crates/arcweft-core/src/awbc/product_step/line.rs
+index 4666d6d39e7aef3cbd373cc9f026bd95e54fb64b..ca9b8ac565e47031833bdf8120b1f04242f34104 100644
+--- a/crates/arcweft-core/src/awbc/product_step/line.rs
++++ b/crates/arcweft-core/src/awbc/product_step/line.rs
+@@ -1234,13 +1234,14 @@ impl super::AwbcProductStepExecutor {
+                 fallback_stats: &mut candidate_stats,
+                 context: &context,
+             };
+-            let step = crate::awbc::vm::step_with_host_context(
++            let step = crate::awbc::vm::step_with_presentation(
+                 &self.program,
+                 candidate.as_mut().expect("activation fiber remains owned"),
+                 VmStepOptions {
+                     max_instructions: 1,
+                 },
+                 &context,
++                &mut self.presentation,
+                 &mut host,
+             );
+             let step = match step {
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs b/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
+index a74435c024b0405d33cd6823d3c0791dae918303..6dfdb40eb1253defc3a91baef3e5dfd8cb2bec2f 100644
+--- a/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
++++ b/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
+@@ -333,7 +333,7 @@ fn execution_checkpoint_includes_root_and_the_actual_withdrawn_dialogue_grants()
+ }
+ 
+ #[test]
+-fn product_one_op_runs_with_a_live_bank_before_its_lexical_exit() {
++fn product_one_op_lexical_exit_retires_only_its_actual_scope_and_checkpoint_restores_it() {
+     let mut program = return_program();
+     program.frame_layouts[0]
+         .scopes
+@@ -352,7 +352,7 @@ fn product_one_op_runs_with_a_live_bank_before_its_lexical_exit() {
+         },
+     ];
+     program.blocks[0].instructions = AwbcTableRange::new(0, 2);
+-    let (mut executor, _) = fixture_with_program(program);
++    let (mut executor, root_token) = fixture_with_program(program);
+     let output = executor.step(
+         Default::default(),
+         RuntimeStepOptions {
+@@ -367,7 +367,80 @@ fn product_one_op_runs_with_a_live_bank_before_its_lexical_exit() {
+     );
+     assert_eq!(executor.fiber.cursor.instruction_offset, 1);
+     assert_eq!(executor.fiber.active_frame().unwrap().scopes.len(), 1);
+-    executor.snapshot().unwrap();
++    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
++    let ledger = executor
++        .presentation
++        .as_mut()
++        .unwrap()
++        .ledger_mut(RuntimePresentationBankId::Root)
++        .unwrap();
++    let scope = executor
++        .fiber
++        .bind_presentation_scope(&owner, ledger)
++        .unwrap();
++    let (lexical_token, _) = ledger
++        .register(
++            &owner,
++            scope,
++            PresentationRegistrationSite::Independent(PresentationResourceKind::Image),
++            PresentationBody {
++                expected: crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest(),
++                binding: None,
++                value: RuntimePayload(RuntimeValue::Bool(false)),
++            },
++        )
++        .unwrap();
++    let before = executor.snapshot().unwrap();
++    let checkpoint = executor
++        .execution_checkpoint(super::super::checkpoint::ProductCheckpointTarget::Main)
++        .unwrap();
++    let output = executor.step(
++        Default::default(),
++        RuntimeStepOptions {
++            budget: crate::step::RuntimeStepBudget { max_ops: 1 },
++            ..Default::default()
++        },
++    );
++    assert!(
++        output.output.diagnostics.is_empty(),
++        "{:?}",
++        output.output.diagnostics
++    );
++    assert_eq!(executor.fiber.cursor.instruction_offset, 2);
++    assert!(executor.fiber.active_frame().unwrap().scopes.is_empty());
++    let banks = executor.presentation.as_ref().unwrap();
++    assert_eq!(banks.retirements().len(), 1);
++    assert_eq!(banks.retirements()[0].token, lexical_token);
++    assert_eq!(
++        banks.retirements()[0].body.value.0,
++        RuntimeValue::Bool(false)
++    );
++    let after = executor.snapshot().unwrap();
++    let save = AwbcProductExecutorSaveSnapshot::from_live(&after, &executor.program).unwrap();
++    let wire = serde_json::to_vec(&save).unwrap();
++    executor = executor
++        .restore_inert_snapshot_owned(serde_json::from_slice(&wire).unwrap())
++        .unwrap();
++    assert_eq!(executor.snapshot().unwrap(), after);
++    let root_scope = executor
++        .fiber
++        .active_frame()
++        .unwrap()
++        .presentation_scope_binding()
++        .expect("the outer root grant remains live");
++    assert_eq!(root_scope.bank(), root_token.bank());
++    checkpoint
++        .restore(
++            &mut executor.fiber,
++            &mut executor.presentation,
++            &executor.program,
++        )
++        .unwrap();
++    assert_eq!(
++        executor.snapshot().unwrap(),
++        before,
++        "the original checkpoint restores body, grant, cursor and queue after an actual VM retirement"
++    );
+ }
+ 
+ #[test]
+diff --git a/crates/arcweft-core/src/awbc/vm.rs b/crates/arcweft-core/src/awbc/vm.rs
+index 3461d9adae7474b93e291da0baf52ebccd68ed14..8a85002266ef79a14acecaa6235dbefe347ff064 100644
+--- a/crates/arcweft-core/src/awbc/vm.rs
++++ b/crates/arcweft-core/src/awbc/vm.rs
+@@ -29,6 +29,7 @@ use super::schema::{
+ use crate::effect::RuntimeArtifactFingerprint;
+ use crate::pattern::RuntimeSemanticTypeId;
+ use crate::plan::{RuntimeFlowTargetError, RuntimeValueOwnershipRequirement};
++use crate::presentation::resources::{PresentationBanks, PresentationBody};
+ use crate::stream::RuntimeStreamYieldCopyProof;
+ use crate::task::RuntimeProgramOwner;
+ use crate::time::LogicalDuration;
+@@ -514,7 +515,7 @@ pub fn step_with_host(
+     options: VmStepOptions,
+     host: &mut impl VmHost,
+ ) -> Result<VmStepOutput, VmError> {
+-    step_with_host_context_optional(program, fiber, options, None, host)
++    step_with_host_context_optional(program, fiber, options, None, None, host)
+ }
+ 
+ /// Executes a bounded AWBC slice with the exact artifact context used for
+@@ -526,7 +527,27 @@ pub fn step_with_host_context(
+     context: &VmExecutionContext,
+     host: &mut impl VmHost,
+ ) -> Result<VmStepOutput, VmError> {
+-    step_with_host_context_optional(program, fiber, options, Some(context), host)
++    step_with_host_context_optional(program, fiber, options, Some(context), None, host)
++}
++
++/// Borrows the Product execution's actual resource owner for this VM slice.
++/// Resource-free callers keep the public standalone boundary above.
++pub(crate) fn step_with_presentation(
++    program: &AwbcProgram,
++    fiber: &mut FiberState,
++    options: VmStepOptions,
++    context: &VmExecutionContext,
++    presentation: &mut Option<PresentationBanks<PresentationBody<crate::value::RuntimePayload>>>,
++    host: &mut impl VmHost,
++) -> Result<VmStepOutput, VmError> {
++    step_with_host_context_optional(
++        program,
++        fiber,
++        options,
++        Some(context),
++        presentation.as_mut(),
++        host,
++    )
+ }
+ 
+ fn step_with_host_context_optional(
+@@ -534,6 +555,9 @@ fn step_with_host_context_optional(
+     fiber: &mut FiberState,
+     options: VmStepOptions,
+     context: Option<&VmExecutionContext>,
++    mut presentation: Option<
++        &mut PresentationBanks<PresentationBody<crate::value::RuntimePayload>>,
++    >,
+     host: &mut impl VmHost,
+ ) -> Result<VmStepOutput, VmError> {
+     let mut observations = Vec::new();
+@@ -580,6 +604,7 @@ fn step_with_host_context_optional(
+                 fiber,
+                 host,
+                 context,
++                presentation.as_deref_mut(),
+                 instruction,
+                 source_map,
+                 &mut observations,
+@@ -712,12 +737,13 @@ fn step_with_host_context_optional(
+     })
+ }
+ 
+-#[allow(clippy::too_many_lines)]
++#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
+ fn execute_instruction(
+     program: &AwbcProgram,
+     fiber: &mut FiberState,
+     host: &mut impl VmHost,
+     context: Option<&VmExecutionContext>,
++    presentation: Option<&mut PresentationBanks<PresentationBody<crate::value::RuntimePayload>>>,
+     instruction: &AwbcInstruction,
+     source_map: Option<AwbcSourceMapId>,
+     observations: &mut Vec<VmObservation>,
+@@ -836,18 +862,26 @@ fn execute_instruction(
+                 });
+                 return Ok(InstructionControl::Yield);
+             }
+-            if active.presentation_scope.is_some() {
+-                return Err(FiberStateError::Snapshot(
+-                    crate::presentation::RuntimePresentationError::MissingLedger.into(),
+-                )
+-                .into());
+-            }
++            let has_presentation = active.presentation_scope.is_some();
+             let layout_id = fiber.active_frame()?.layout;
+             let layout = program
+                 .frame_layouts
+                 .get(layout_id.index())
+                 .ok_or(FiberStateError::UnknownFrameLayout(layout_id.0))?;
+             fiber.validate_cleanup_inputs(program)?;
++            if has_presentation {
++                let banks = presentation.ok_or_else(|| {
++                    FiberStateError::Snapshot(
++                        crate::presentation::RuntimePresentationError::MissingLedger.into(),
++                    )
++                })?;
++                let owner = context
++                    .ok_or(VmError::MissingExecutionContext)?
++                    .program_owner(program)?;
++                fiber
++                    .retire_presentation_scope(&owner, banks)
++                    .map_err(|error| FiberStateError::Snapshot(error.into()))?;
++            }
+             let frame = fiber.active_frame_mut()?;
+             let defer_failure = frame.scopes.pop().and_then(|scope| {
+                 emit_cleanup_observations(

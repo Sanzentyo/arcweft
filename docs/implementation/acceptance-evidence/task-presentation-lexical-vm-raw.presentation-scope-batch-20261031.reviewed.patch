@@ -1,0 +1,341 @@
+diff --git a/crates/arcweft-core/src/presentation/resources.rs b/crates/arcweft-core/src/presentation/resources.rs
+index c13d21f9e65e417270b4e0889a728217253a3386..d2652351fee09f34d86645c7eb921643fff6fa79 100644
+--- a/crates/arcweft-core/src/presentation/resources.rs
++++ b/crates/arcweft-core/src/presentation/resources.rs
+@@ -530,21 +530,39 @@ impl<V> PresentationLedger<V> {
+         fiber: RuntimePersistentFiberId,
+         mut target: PresentationScopeTarget<'_>,
+     ) -> Result<Vec<PresentationRetirement<V>>, RuntimePresentationError> {
+-        self.validate_program(program)?;
++        self.validate_bound_scope(program, execution, fiber, &target)?;
+         let Some(binding) = target.binding() else {
+             return Ok(Vec::new());
+         };
++        let owner = binding.owner;
++        let retired = self.exit_scope(program, owner)?;
++        target.install(None);
++        Ok(retired)
++    }
++
++    /// Checks the actual storage anchor as well as the issuing ledger record.
++    /// Batch exits use this before taking any body or clearing any grant.
++    fn validate_bound_scope(
++        &self,
++        program: &RuntimeProgramOwner,
++        execution: ExecutionInstanceId,
++        fiber: RuntimePersistentFiberId,
++        target: &PresentationScopeTarget<'_>,
++    ) -> Result<(), RuntimePresentationError> {
++        self.validate_program(program)?;
++        let Some(binding) = target.binding() else {
++            return Ok(());
++        };
+         if !binding.program.same_program(program)
+             || binding.owner.execution != execution
+             || binding.owner.fiber != fiber
+             || binding.anchor != target.anchor
++            || self.state.scopes.get(&binding.owner.scope)
++                != Some(&(execution, fiber, target.anchor))
+         {
+             return Err(RuntimePresentationError::Owner);
+         }
+-        let owner = binding.owner;
+-        let retired = self.exit_scope(program, owner)?;
+-        target.install(None);
+-        Ok(retired)
++        self.validate_scope(binding.owner)
+     }
+ 
+     fn validate_program(
+diff --git a/crates/arcweft-core/src/presentation/resources/banks.rs b/crates/arcweft-core/src/presentation/resources/banks.rs
+index d83d851da682ed45429818596d52a34aeacac5ae..ac2015ed511258777fdc08ffc25c8a1f0810b551 100644
+--- a/crates/arcweft-core/src/presentation/resources/banks.rs
++++ b/crates/arcweft-core/src/presentation/resources/banks.rs
+@@ -102,24 +102,56 @@ impl<V> PresentationBanks<V> {
+         fiber: RuntimePersistentFiberId,
+         target: PresentationScopeTarget<'_>,
+     ) -> Result<(), RuntimePresentationError> {
+-        let Some(binding) = target.binding() else {
+-            return Ok(());
+-        };
+-        let ledger = self
++        self.retire_bound_scopes(program, execution, fiber, vec![target])
++    }
++
++    /// Retires an actual lexical/frame contour in caller-supplied unwind order.
++    /// Every grant and the aggregate queue capacity precedes the first mutation.
++    pub(crate) fn retire_bound_scopes(
++        &mut self,
++        program: &RuntimeProgramOwner,
++        execution: ExecutionInstanceId,
++        fiber: RuntimePersistentFiberId,
++        targets: Vec<PresentationScopeTarget<'_>>,
++    ) -> Result<(), RuntimePresentationError> {
++        let root = self
+             .ledgers
+-            .get_mut(&binding.owner.bank)
+-            .ok_or(RuntimePresentationError::Owner)?;
+-        let count = ledger.bound_scope_body_count(Some(binding));
+-        if self
+-            .retirements
+-            .len()
+-            .checked_add(count)
+-            .is_none_or(|count| count > ledger.limits.handles)
+-        {
+-            return Err(RuntimePresentationError::RetirementCapacity);
++            .get(&RuntimePresentationBankId::Root)
++            .ok_or(RuntimePresentationError::InvalidState)?;
++        root.validate_program(program)?;
++        let mut count = self.retirements.len();
++        let mut seen = std::collections::BTreeSet::new();
++        for target in &targets {
++            let Some(binding) = target.binding() else {
++                continue;
++            };
++            let ledger = self
++                .ledgers
++                .get(&binding.owner.bank)
++                .ok_or(RuntimePresentationError::Owner)?;
++            ledger.validate_bound_scope(program, execution, fiber, target)?;
++            if ledger.limits != root.limits || !seen.insert(binding.owner) {
++                return Err(RuntimePresentationError::InvalidState);
++            }
++            count = count
++                .checked_add(ledger.bound_scope_body_count(Some(binding)))
++                .ok_or(RuntimePresentationError::RetirementCapacity)?;
++            if count > root.limits.handles {
++                return Err(RuntimePresentationError::RetirementCapacity);
++            }
++        }
++        for target in targets {
++            let Some(binding) = target.binding() else {
++                continue;
++            };
++            self.retirements.extend(
++                self.ledgers
++                    .get_mut(&binding.owner.bank)
++                    .expect("every issuing ledger was preflighted")
++                    .exit_bound_scope(program, execution, fiber, target)
++                    .expect("exclusive contour and ledger borrows retain the preflight"),
++            );
+         }
+-        self.retirements
+-            .extend(ledger.exit_bound_scope(program, execution, fiber, target)?);
+         Ok(())
+     }
+ 
+diff --git a/crates/arcweft-core/src/presentation/resources/banks/tests.rs b/crates/arcweft-core/src/presentation/resources/banks/tests.rs
+index 0fbac5000aed480a2267357c928901e73c3fd3f4..93d5c362f7ebad0ec95b96f793532aed6cb8846e 100644
+--- a/crates/arcweft-core/src/presentation/resources/banks/tests.rs
++++ b/crates/arcweft-core/src/presentation/resources/banks/tests.rs
+@@ -83,6 +83,210 @@ fn bind<V>(
+         .unwrap()
+ }
+ 
++#[test]
++fn scope_batch_rejects_a_later_wrong_anchor_without_retiring_the_first_scope() {
++    let (program, artifact, expected, dialogue) = fixture();
++    let mut banks = PresentationBanks::new(
++        program.clone(),
++        artifact,
++        PresentationLedgerLimits {
++            handles: 4,
++            scopes: 4,
++        },
++    );
++    let mut root = RuntimeEnv::default();
++    let mut child = RuntimeEnv::default();
++    for (bank, env, value) in [
++        (RuntimePresentationBankId::Root, &mut root, true),
++        (dialogue, &mut child, false),
++    ] {
++        let owner = bind(&mut banks, bank, &program, env);
++        banks
++            .ledger_mut(bank)
++            .unwrap()
++            .register(&program, owner, site(), body(expected, value))
++            .unwrap();
++    }
++    let before = banks.snapshot_admitted().unwrap();
++    let root_binding = root.presentation_scope_target().unwrap().binding().cloned();
++    let child_binding = child
++        .presentation_scope_target()
++        .unwrap()
++        .binding()
++        .cloned();
++    let mut wrong = child.presentation_scope_target().unwrap();
++    wrong.anchor = PresentationScopeAnchor::Awbc {
++        frame: crate::runtime_id::RuntimeFrameInstanceId::from_allocated(NonZeroU64::MIN),
++        scope: None,
++    };
++    assert_eq!(
++        banks.retire_bound_scopes(
++            &program,
++            execution(),
++            fiber(),
++            vec![root.presentation_scope_target().unwrap(), wrong],
++        ),
++        Err(RuntimePresentationError::Owner)
++    );
++    assert_eq!(banks.snapshot_admitted().unwrap(), before);
++    assert_eq!(
++        root.presentation_scope_target().unwrap().binding(),
++        root_binding.as_ref()
++    );
++    assert_eq!(
++        child.presentation_scope_target().unwrap().binding(),
++        child_binding.as_ref()
++    );
++    banks
++        .retire_bound_scopes(
++            &program,
++            execution(),
++            fiber(),
++            vec![
++                child.presentation_scope_target().unwrap(),
++                root.presentation_scope_target().unwrap(),
++            ],
++        )
++        .unwrap();
++    assert_eq!(
++        banks
++            .retirements
++            .iter()
++            .map(|entry| entry.token.bank())
++            .collect::<Vec<_>>(),
++        [dialogue, RuntimePresentationBankId::Root]
++    );
++    assert!(
++        root.presentation_scope_target()
++            .unwrap()
++            .binding()
++            .is_none()
++    );
++    assert!(
++        child
++            .presentation_scope_target()
++            .unwrap()
++            .binding()
++            .is_none()
++    );
++}
++
++#[test]
++fn whole_scope_batch_capacity_precedes_any_body_move_and_retry_keeps_unwind_order() {
++    let (program, artifact, expected, _) = fixture();
++    let bank = RuntimePresentationBankId::Root;
++    let mut banks = PresentationBanks::new(
++        program.clone(),
++        artifact,
++        PresentationLedgerLimits {
++            handles: 2,
++            scopes: 4,
++        },
++    );
++    let mut prior = RuntimeEnv::default();
++    let prior_owner = bind(&mut banks, bank, &program, &mut prior);
++    banks
++        .ledger_mut(bank)
++        .unwrap()
++        .register(&program, prior_owner, site(), body(expected, false))
++        .unwrap();
++    banks
++        .retire_bound_scope(
++            &program,
++            execution(),
++            fiber(),
++            prior.presentation_scope_target().unwrap(),
++        )
++        .unwrap();
++    let mut outer = RuntimeEnv::default();
++    let mut inner = RuntimeEnv::default();
++    let mut tokens = Vec::new();
++    for env in [&mut outer, &mut inner] {
++        let owner = bind(&mut banks, bank, &program, env);
++        tokens.push(
++            banks
++                .ledger_mut(bank)
++                .unwrap()
++                .register(
++                    &program,
++                    owner,
++                    PresentationRegistrationSite::Independent(PresentationResourceKind::Image),
++                    body(expected, true),
++                )
++                .unwrap()
++                .0,
++        );
++    }
++    let before = banks.snapshot_admitted().unwrap();
++    let grants = [
++        outer
++            .presentation_scope_target()
++            .unwrap()
++            .binding()
++            .cloned(),
++        inner
++            .presentation_scope_target()
++            .unwrap()
++            .binding()
++            .cloned(),
++    ];
++    assert_eq!(
++        banks.retire_bound_scopes(
++            &program,
++            execution(),
++            fiber(),
++            vec![
++                inner.presentation_scope_target().unwrap(),
++                outer.presentation_scope_target().unwrap(),
++            ]
++        ),
++        Err(RuntimePresentationError::RetirementCapacity)
++    );
++    assert_eq!(banks.snapshot_admitted().unwrap(), before);
++    assert_eq!(
++        outer.presentation_scope_target().unwrap().binding(),
++        grants[0].as_ref()
++    );
++    assert_eq!(
++        inner.presentation_scope_target().unwrap().binding(),
++        grants[1].as_ref()
++    );
++    banks.retirements.clear();
++    banks
++        .retire_bound_scopes(
++            &program,
++            execution(),
++            fiber(),
++            vec![
++                inner.presentation_scope_target().unwrap(),
++                outer.presentation_scope_target().unwrap(),
++            ],
++        )
++        .unwrap();
++    assert_eq!(
++        banks
++            .retirements
++            .iter()
++            .map(|entry| entry.token.clone())
++            .collect::<Vec<_>>(),
++        [tokens[1].clone(), tokens[0].clone()]
++    );
++    assert!(
++        outer
++            .presentation_scope_target()
++            .unwrap()
++            .binding()
++            .is_none()
++    );
++    assert!(
++        inner
++            .presentation_scope_target()
++            .unwrap()
++            .binding()
++            .is_none()
++    );
++}
++
+ #[test]
+ fn bank_headers_merge_before_bodies_and_same_fiber_grants_round_trip_without_collision() {
+     let (program, artifact, expected, dialogue) = fixture();
