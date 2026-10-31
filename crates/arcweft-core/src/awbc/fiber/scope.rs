@@ -81,6 +81,32 @@ impl super::FiberFrame {
 }
 
 impl super::FiberState {
+    /// Moves the current real scope's bodies into its execution owner's queue.
+    /// A VM may borrow the owner, but cannot create a replacement ledger.
+    pub(crate) fn retire_presentation_scope<V>(
+        &mut self,
+        program: &RuntimeProgramOwner,
+        banks: &mut crate::presentation::resources::PresentationBanks<V>,
+    ) -> Result<(), crate::presentation::RuntimePresentationError> {
+        if !matches!(program, RuntimeProgramOwner::Awbc(_)) {
+            return Err(crate::presentation::RuntimePresentationError::Program);
+        }
+        let execution = crate::runtime_id::ExecutionInstanceId::from_allocated(self.instance.get());
+        let fiber =
+            crate::runtime_id::RuntimePersistentFiberId::from_allocated(self.instance.get().get());
+        let bank = self.presentation_bank;
+        let frame = self
+            .active_frame_mut()
+            .map_err(|_| crate::presentation::RuntimePresentationError::MissingScope)?;
+        if frame
+            .presentation_scope_binding()
+            .is_some_and(|binding| binding.bank() != bank)
+        {
+            return Err(crate::presentation::RuntimePresentationError::Owner);
+        }
+        banks.retire_bound_scope(program, execution, fiber, frame.presentation_scope_target())
+    }
+
     pub(crate) fn bind_presentation_scope<V>(
         &mut self,
         program: &RuntimeProgramOwner,

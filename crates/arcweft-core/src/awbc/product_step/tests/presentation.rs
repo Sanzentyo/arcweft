@@ -333,7 +333,7 @@ fn execution_checkpoint_includes_root_and_the_actual_withdrawn_dialogue_grants()
 }
 
 #[test]
-fn product_one_op_runs_with_a_live_bank_before_its_lexical_exit() {
+fn product_one_op_lexical_exit_retires_only_its_actual_scope_and_checkpoint_restores_it() {
     let mut program = return_program();
     program.frame_layouts[0]
         .scopes
@@ -352,7 +352,7 @@ fn product_one_op_runs_with_a_live_bank_before_its_lexical_exit() {
         },
     ];
     program.blocks[0].instructions = AwbcTableRange::new(0, 2);
-    let (mut executor, _) = fixture_with_program(program);
+    let (mut executor, root_token) = fixture_with_program(program);
     let output = executor.step(
         Default::default(),
         RuntimeStepOptions {
@@ -367,7 +367,80 @@ fn product_one_op_runs_with_a_live_bank_before_its_lexical_exit() {
     );
     assert_eq!(executor.fiber.cursor.instruction_offset, 1);
     assert_eq!(executor.fiber.active_frame().unwrap().scopes.len(), 1);
-    executor.snapshot().unwrap();
+    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
+    let ledger = executor
+        .presentation
+        .as_mut()
+        .unwrap()
+        .ledger_mut(RuntimePresentationBankId::Root)
+        .unwrap();
+    let scope = executor
+        .fiber
+        .bind_presentation_scope(&owner, ledger)
+        .unwrap();
+    let (lexical_token, _) = ledger
+        .register(
+            &owner,
+            scope,
+            PresentationRegistrationSite::Independent(PresentationResourceKind::Image),
+            PresentationBody {
+                expected: crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest(),
+                binding: None,
+                value: RuntimePayload(RuntimeValue::Bool(false)),
+            },
+        )
+        .unwrap();
+    let before = executor.snapshot().unwrap();
+    let checkpoint = executor
+        .execution_checkpoint(super::super::checkpoint::ProductCheckpointTarget::Main)
+        .unwrap();
+    let output = executor.step(
+        Default::default(),
+        RuntimeStepOptions {
+            budget: crate::step::RuntimeStepBudget { max_ops: 1 },
+            ..Default::default()
+        },
+    );
+    assert!(
+        output.output.diagnostics.is_empty(),
+        "{:?}",
+        output.output.diagnostics
+    );
+    assert_eq!(executor.fiber.cursor.instruction_offset, 2);
+    assert!(executor.fiber.active_frame().unwrap().scopes.is_empty());
+    let banks = executor.presentation.as_ref().unwrap();
+    assert_eq!(banks.retirements().len(), 1);
+    assert_eq!(banks.retirements()[0].token, lexical_token);
+    assert_eq!(
+        banks.retirements()[0].body.value.0,
+        RuntimeValue::Bool(false)
+    );
+    let after = executor.snapshot().unwrap();
+    let save = AwbcProductExecutorSaveSnapshot::from_live(&after, &executor.program).unwrap();
+    let wire = serde_json::to_vec(&save).unwrap();
+    executor = executor
+        .restore_inert_snapshot_owned(serde_json::from_slice(&wire).unwrap())
+        .unwrap();
+    assert_eq!(executor.snapshot().unwrap(), after);
+    let root_scope = executor
+        .fiber
+        .active_frame()
+        .unwrap()
+        .presentation_scope_binding()
+        .expect("the outer root grant remains live");
+    assert_eq!(root_scope.bank(), root_token.bank());
+    checkpoint
+        .restore(
+            &mut executor.fiber,
+            &mut executor.presentation,
+            &executor.program,
+        )
+        .unwrap();
+    assert_eq!(
+        executor.snapshot().unwrap(),
+        before,
+        "the original checkpoint restores body, grant, cursor and queue after an actual VM retirement"
+    );
 }
 
 #[test]

@@ -55,6 +55,7 @@ use crate::awbc::schema::{
 use crate::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext};
 use crate::awbc::vm::{
     VmExecutionContext, VmExit, VmObservation, VmStepOptions, step_with_host_context,
+    step_with_presentation,
 };
 use crate::engine::{
     AwaitState, ChoiceState, FlowExit, FlowFiber, FlowFiberId, FlowFiberOwner, FlowFiberStatus,
@@ -2758,13 +2759,14 @@ impl AwbcProductStepExecutor {
             fallback_stats: &mut candidate_stats,
             context: &context,
         };
-        match step_with_host_context(
+        match step_with_presentation(
             &self.program,
             &mut self.fiber,
             VmStepOptions {
                 max_instructions: 1,
             },
             &context,
+            &mut self.presentation,
             &mut host,
         ) {
             Ok(mut vm_output) => {
@@ -3271,13 +3273,14 @@ impl AwbcProductStepExecutor {
         } else {
             terminal_exit.map_or_else(
                 || {
-                    step_with_host_context(
+                    step_with_presentation(
                         &self.program,
                         &mut child.fiber,
                         VmStepOptions {
                             max_instructions: 1,
                         },
                         &context,
+                        &mut self.presentation,
                         &mut host,
                     )
                 },

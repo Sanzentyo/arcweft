@@ -29,6 +29,7 @@ use super::schema::{
 use crate::effect::RuntimeArtifactFingerprint;
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::{RuntimeFlowTargetError, RuntimeValueOwnershipRequirement};
+use crate::presentation::resources::{PresentationBanks, PresentationBody};
 use crate::stream::RuntimeStreamYieldCopyProof;
 use crate::task::RuntimeProgramOwner;
 use crate::time::LogicalDuration;
@@ -514,7 +515,7 @@ pub fn step_with_host(
     options: VmStepOptions,
     host: &mut impl VmHost,
 ) -> Result<VmStepOutput, VmError> {
-    step_with_host_context_optional(program, fiber, options, None, host)
+    step_with_host_context_optional(program, fiber, options, None, None, host)
 }
 
 /// Executes a bounded AWBC slice with the exact artifact context used for
@@ -526,7 +527,27 @@ pub fn step_with_host_context(
     context: &VmExecutionContext,
     host: &mut impl VmHost,
 ) -> Result<VmStepOutput, VmError> {
-    step_with_host_context_optional(program, fiber, options, Some(context), host)
+    step_with_host_context_optional(program, fiber, options, Some(context), None, host)
+}
+
+/// Borrows the Product execution's actual resource owner for this VM slice.
+/// Resource-free callers keep the public standalone boundary above.
+pub(crate) fn step_with_presentation(
+    program: &AwbcProgram,
+    fiber: &mut FiberState,
+    options: VmStepOptions,
+    context: &VmExecutionContext,
+    presentation: &mut Option<PresentationBanks<PresentationBody<crate::value::RuntimePayload>>>,
+    host: &mut impl VmHost,
+) -> Result<VmStepOutput, VmError> {
+    step_with_host_context_optional(
+        program,
+        fiber,
+        options,
+        Some(context),
+        presentation.as_mut(),
+        host,
+    )
 }
 
 fn step_with_host_context_optional(
@@ -534,6 +555,9 @@ fn step_with_host_context_optional(
     fiber: &mut FiberState,
     options: VmStepOptions,
     context: Option<&VmExecutionContext>,
+    mut presentation: Option<
+        &mut PresentationBanks<PresentationBody<crate::value::RuntimePayload>>,
+    >,
     host: &mut impl VmHost,
 ) -> Result<VmStepOutput, VmError> {
     let mut observations = Vec::new();
@@ -580,6 +604,7 @@ fn step_with_host_context_optional(
                 fiber,
                 host,
                 context,
+                presentation.as_deref_mut(),
                 instruction,
                 source_map,
                 &mut observations,
@@ -712,12 +737,13 @@ fn step_with_host_context_optional(
     })
 }
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 fn execute_instruction(
     program: &AwbcProgram,
     fiber: &mut FiberState,
     host: &mut impl VmHost,
     context: Option<&VmExecutionContext>,
+    presentation: Option<&mut PresentationBanks<PresentationBody<crate::value::RuntimePayload>>>,
     instruction: &AwbcInstruction,
     source_map: Option<AwbcSourceMapId>,
     observations: &mut Vec<VmObservation>,
@@ -836,18 +862,26 @@ fn execute_instruction(
                 });
                 return Ok(InstructionControl::Yield);
             }
-            if active.presentation_scope.is_some() {
-                return Err(FiberStateError::Snapshot(
-                    crate::presentation::RuntimePresentationError::MissingLedger.into(),
-                )
-                .into());
-            }
+            let has_presentation = active.presentation_scope.is_some();
             let layout_id = fiber.active_frame()?.layout;
             let layout = program
                 .frame_layouts
                 .get(layout_id.index())
                 .ok_or(FiberStateError::UnknownFrameLayout(layout_id.0))?;
             fiber.validate_cleanup_inputs(program)?;
+            if has_presentation {
+                let banks = presentation.ok_or_else(|| {
+                    FiberStateError::Snapshot(
+                        crate::presentation::RuntimePresentationError::MissingLedger.into(),
+                    )
+                })?;
+                let owner = context
+                    .ok_or(VmError::MissingExecutionContext)?
+                    .program_owner(program)?;
+                fiber
+                    .retire_presentation_scope(&owner, banks)
+                    .map_err(|error| FiberStateError::Snapshot(error.into()))?;
+            }
             let frame = fiber.active_frame_mut()?;
             let defer_failure = frame.scopes.pop().and_then(|scope| {
                 emit_cleanup_observations(

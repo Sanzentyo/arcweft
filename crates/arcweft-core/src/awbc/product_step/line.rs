@@ -1234,13 +1234,14 @@ impl super::AwbcProductStepExecutor {
                 fallback_stats: &mut candidate_stats,
                 context: &context,
             };
-            let step = crate::awbc::vm::step_with_host_context(
+            let step = crate::awbc::vm::step_with_presentation(
                 &self.program,
                 candidate.as_mut().expect("activation fiber remains owned"),
                 VmStepOptions {
                     max_instructions: 1,
                 },
                 &context,
+                &mut self.presentation,
                 &mut host,
             );
             let step = match step {
