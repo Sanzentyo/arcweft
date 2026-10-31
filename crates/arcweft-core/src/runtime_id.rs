@@ -14,7 +14,9 @@ use thiserror::Error;
 
 #[allow(dead_code, reason = "the canonical snapshot consumer lands in G1.2-D")]
 pub(crate) mod binary;
+mod presentation_bank;
 mod presentation_handle;
+pub use presentation_bank::{RuntimePresentationBankId, RuntimePresentationBankIdDecodeError};
 pub use presentation_handle::{
     RuntimePresentationHandleToken, RuntimePresentationHandleTokenDecodeError,
 };
@@ -304,7 +306,7 @@ impl fmt::Display for RuntimeLineHandleSiteId {
 }
 
 /// Stable identity of one concrete activation of a dialogue content plan.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct DialogueActivationId {
     artifact: crate::effect::RuntimeArtifactFingerprint,
     owner_fiber: RuntimePersistentFiberId,

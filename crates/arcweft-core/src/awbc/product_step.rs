@@ -2180,6 +2180,7 @@ impl AwbcProductStepExecutor {
         let mut facade_fiber = FlowFiber {
             frame: crate::engine::NativeFlowExecutionFrame {
                 program: crate::task::RuntimeProgramOwner::Awbc(program.program_arc()),
+                presentation_bank: crate::runtime_id::RuntimePresentationBankId::Root,
                 line_cursor: 0,
                 pending_ops: VecDeque::new(),
                 control_stack: Vec::new(),

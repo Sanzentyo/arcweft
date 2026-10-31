@@ -1768,6 +1768,7 @@ mod host_ready_ownership_tests {
                 ExecutionInstanceId::from_allocated(NonZeroU64::new(3).unwrap()),
                 RuntimePersistentFiberId::from_allocated(0),
                 NonZeroU64::new(1).unwrap(),
+                crate::runtime_id::RuntimePresentationBankId::Root,
             );
             let owner = RuntimeOpaqueTypeOwner::exact_with(
                 RuntimeOpaqueTypeProducerId::try_new("test.presentation.host-ready").unwrap(),

@@ -409,6 +409,7 @@ mod presentation_custody_tests {
                 ExecutionInstanceId::from_allocated(NonZeroU64::new(7).unwrap()),
                 RuntimePersistentFiberId::from_allocated(4),
                 NonZeroU64::new(9).unwrap(),
+                crate::runtime_id::RuntimePresentationBankId::Root,
             );
             let owner = RuntimeOpaqueTypeOwner::exact_with(
                 RuntimeOpaqueTypeProducerId::try_new("test.presentation.custody").unwrap(),

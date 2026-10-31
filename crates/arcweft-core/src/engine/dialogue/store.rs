@@ -280,6 +280,18 @@ impl DialogueActivationStoreRollbackImage {
     ) -> Result<(), String> {
         self.registry
             .try_visit_active(|activation, active, _| {
+                if active.frame.execution.presentation_bank
+                    != (crate::runtime_id::RuntimePresentationBankId::Dialogue {
+                        activation: *activation,
+                    })
+                {
+                    return Err(
+                        crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
+                            message: "dialogue presentation bank differs from its activation"
+                                .into(),
+                        },
+                    );
+                }
                 active.frame.validate_parent(activation, next_fiber_id)
             })
             .map_err(|error| error.to_string())
@@ -712,6 +724,18 @@ impl DialogueActivationStore {
     ) -> Result<(), String> {
         self.registry
             .try_visit_active(|activation, active, _| {
+                if active.frame.execution.presentation_bank
+                    != (crate::runtime_id::RuntimePresentationBankId::Dialogue {
+                        activation: *activation,
+                    })
+                {
+                    return Err(
+                        crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
+                            message: "dialogue presentation bank differs from its activation"
+                                .into(),
+                        },
+                    );
+                }
                 active.frame.validate_parent(activation, next_fiber_id)
             })
             .map_err(|error| error.to_string())
@@ -1071,8 +1095,10 @@ impl DialogueActivationStore {
     pub(crate) fn begin(
         &mut self,
         activation: DialogueActivationId,
-        frame: DialogueActivationFrame,
+        mut frame: DialogueActivationFrame,
     ) -> Result<(), LineRuntimeError> {
+        frame.execution.presentation_bank =
+            crate::runtime_id::RuntimePresentationBankId::Dialogue { activation };
         self.registry.begin(
             activation,
             EngineDialogueActivationFrame {
@@ -1470,16 +1496,7 @@ mod tests {
             let mut frame = frame(test_program(), DialogueRuntimePhase::Ready);
             frame.parent = super::super::super::FlowFiberId::from_executor_ordinal(parent);
             let mut store = DialogueActivationStore::default();
-            store
-                .registry
-                .begin(
-                    activation(1),
-                    EngineDialogueActivationFrame {
-                        frame,
-                        inbox: DialogueStepInbox::default(),
-                    },
-                )
-                .unwrap();
+            store.begin(activation(1), frame).unwrap();
             store
         };
         let original = store(0);

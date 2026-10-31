@@ -1,6 +1,6 @@
 //! Exact execution identity for a general presentation resource lease.
 
-use super::{ExecutionInstanceId, RuntimePersistentFiberId};
+use super::{ExecutionInstanceId, RuntimePersistentFiberId, RuntimePresentationBankId};
 use crate::effect::RuntimeArtifactFingerprint;
 use crate::value::{RuntimeScalarView, RuntimeUInt, RuntimeValue, RuntimeValueView};
 use arcweft_interaction_model::presentation::PresentationResourceKind;
@@ -17,12 +17,15 @@ pub struct RuntimePresentationHandleToken {
     execution: ExecutionInstanceId,
     fiber: RuntimePersistentFiberId,
     issuance: NonZeroU64,
+    bank: RuntimePresentationBankId,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum RuntimePresentationHandleTokenDecodeError {
-    #[error("presentation handle token must contain its five canonical fields")]
+    #[error("presentation handle token must contain its six canonical fields")]
     Shape,
+    #[error(transparent)]
+    Bank(#[from] super::RuntimePresentationBankIdDecodeError),
     #[error("presentation handle token contains an unknown resource kind")]
     Resource,
     #[error("presentation handle token contains an invalid artifact fingerprint")]
@@ -40,6 +43,7 @@ impl RuntimePresentationHandleToken {
         execution: ExecutionInstanceId,
         fiber: RuntimePersistentFiberId,
         issuance: NonZeroU64,
+        bank: RuntimePresentationBankId,
     ) -> Self {
         Self {
             artifact,
@@ -47,6 +51,7 @@ impl RuntimePresentationHandleToken {
             execution,
             fiber,
             issuance,
+            bank,
         }
     }
 
@@ -67,6 +72,10 @@ impl RuntimePresentationHandleToken {
         self.issuance
     }
 
+    pub const fn bank(&self) -> RuntimePresentationBankId {
+        self.bank
+    }
+
     /// The canonical value envelope is independent of Native/AWBC storage.
     pub fn encode_payload(&self) -> RuntimeValue {
         RuntimeValue::Tuple(vec![
@@ -77,6 +86,7 @@ impl RuntimePresentationHandleToken {
             RuntimeValue::u64(self.execution.get().get()),
             RuntimeValue::u64(self.fiber.get()),
             RuntimeValue::u64(self.issuance.get()),
+            self.bank.encode_payload(),
         ])
     }
 
@@ -94,7 +104,7 @@ impl RuntimePresentationHandleToken {
         let RuntimeValueView::Tuple(fields) = value else {
             return Err(Error::Shape);
         };
-        if fields.len() != 5 {
+        if fields.len() != 6 {
             return Err(Error::Shape);
         }
         let Some(RuntimeValueView::Sequence(artifact)) = fields.get(0) else {
@@ -124,8 +134,12 @@ impl RuntimePresentationHandleToken {
             .ok_or(Error::Execution)?;
         let fiber = RuntimePersistentFiberId::from_allocated(scalar(3)?);
         let issuance = NonZeroU64::new(scalar(4)?).ok_or(Error::Issuance)?;
+        let bank = RuntimePresentationBankId::try_decode_view(fields.get(5).ok_or(Error::Shape)?)?;
+        if !bank.matches_artifact(artifact) {
+            return Err(Error::Artifact);
+        }
         Ok(Self::from_issued(
-            artifact, resource, execution, fiber, issuance,
+            artifact, resource, execution, fiber, issuance, bank,
         ))
     }
 }
@@ -141,6 +155,7 @@ mod tests {
             ExecutionInstanceId::from_allocated(NonZeroU64::new(3).unwrap()),
             RuntimePersistentFiberId::from_allocated(0),
             NonZeroU64::new(1).unwrap(),
+            RuntimePresentationBankId::Root,
         )
     }
 
@@ -167,6 +182,7 @@ mod tests {
                 token.execution(),
                 token.fiber(),
                 token.issuance(),
+                token.bank(),
             );
             assert_eq!(
                 RuntimePresentationHandleToken::try_decode_payload(&selected.encode_payload())
@@ -183,6 +199,7 @@ mod tests {
                 ExecutionInstanceId::from_allocated(NonZeroU64::new(4).unwrap()),
                 token.fiber(),
                 token.issuance(),
+                token.bank(),
             )
         );
     }
@@ -227,5 +244,73 @@ mod tests {
             .unwrap()
             .insert("dialogue".into(), serde_json::json!(1));
         assert!(serde_json::from_value::<RuntimePresentationHandleToken>(encoded).is_err());
+    }
+
+    #[test]
+    fn presentation_bank_is_part_of_exact_token_identity_and_closed_payload() {
+        use super::super::{DialogueActivationId, RuntimeDialogueContentPlanId};
+        use std::num::NonZeroU32;
+        let root = token();
+        let bank = RuntimePresentationBankId::Dialogue {
+            activation: DialogueActivationId::new(
+                *root.artifact(),
+                RuntimePersistentFiberId::from_allocated(11),
+                RuntimeDialogueContentPlanId::from_accepted_ordinal(NonZeroU32::new(3).unwrap()),
+                4,
+            ),
+        };
+        let dialogue = RuntimePresentationHandleToken::from_issued(
+            *root.artifact(),
+            root.resource(),
+            root.execution(),
+            root.fiber(),
+            root.issuance(),
+            bank,
+        );
+        assert_ne!(root, dialogue, "bank identity cannot alias a Root lease");
+        assert_eq!(
+            RuntimePresentationHandleToken::try_decode_payload(&dialogue.encode_payload()).unwrap(),
+            dialogue
+        );
+        assert_eq!(
+            serde_json::from_slice::<RuntimePresentationHandleToken>(
+                &serde_json::to_vec(&dialogue).unwrap()
+            )
+            .unwrap(),
+            dialogue
+        );
+        let RuntimeValue::Tuple(mut envelope) = dialogue.encode_payload() else {
+            unreachable!()
+        };
+        let RuntimeValue::Tuple(fields) = &mut envelope[5] else {
+            unreachable!()
+        };
+        fields[3] = RuntimeValue::u32(0);
+        assert_eq!(
+            RuntimePresentationHandleToken::try_decode_payload(&RuntimeValue::Tuple(envelope)),
+            Err(RuntimePresentationHandleTokenDecodeError::Bank(
+                super::super::RuntimePresentationBankIdDecodeError::Content
+            ))
+        );
+        let RuntimeValue::Tuple(mut envelope) = dialogue.encode_payload() else {
+            unreachable!()
+        };
+        let RuntimeValue::Tuple(fields) = &mut envelope[5] else {
+            unreachable!()
+        };
+        fields[1] = RuntimeValue::Seq(crate::value::RuntimeSeq::dense_bytes(vec![8; 32]));
+        assert_eq!(
+            RuntimePresentationHandleToken::try_decode_payload(&RuntimeValue::Tuple(envelope)),
+            Err(RuntimePresentationHandleTokenDecodeError::Artifact)
+        );
+        let RuntimeValue::Tuple(mut envelope) = root.encode_payload() else {
+            unreachable!()
+        };
+        envelope.pop();
+        assert_eq!(
+            RuntimePresentationHandleToken::try_decode_payload(&RuntimeValue::Tuple(envelope)),
+            Err(RuntimePresentationHandleTokenDecodeError::Shape),
+            "the replaced five-field reader is not retained"
+        );
     }
 }

@@ -420,7 +420,18 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
             admission.retain_failure(error.clone());
             return Err(error);
         }
-        admission.validate_metadata(&self.line_cursor)?;
+        admission.validate_metadata(&(self.line_cursor, self.presentation_bank))?;
+        if self
+            .env
+            .presentation_scope_bindings()
+            .any(|binding| binding.bank() != self.presentation_bank)
+        {
+            let error = crate::value::AwbcRuntimeValueSnapshotError::from(
+                crate::presentation::RuntimePresentationError::Owner,
+            );
+            admission.retain_failure(error.clone());
+            return Err(error);
+        }
         admission.validate_metadata_collection(self.root_cleanups.len())?;
         for cleanup in &self.root_cleanups {
             admission.validate_metadata_string(&cleanup.key)?;

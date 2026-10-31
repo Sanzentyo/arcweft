@@ -79,6 +79,7 @@ impl Fixture {
         let ledger = PresentationLedger::new(
             owner.clone(),
             artifact,
+            crate::runtime_id::RuntimePresentationBankId::Root,
             PresentationLedgerLimits {
                 handles: limit,
                 scopes: limit,
@@ -461,7 +462,10 @@ fn inert_presentation_bank_roundtrips_before_restoring_its_original_scope() {
     let bytes = serde_json::to_vec(inert.inert_state()).unwrap();
     let state: PresentationLedgerState<PresentationBody<AwbcRuntimeValueSnapshot>> =
         serde_json::from_slice(&bytes).unwrap();
-    let decoded = state.retain_program(fixture.owner.clone());
+    let decoded = state.retain_program(
+        fixture.owner.clone(),
+        crate::runtime_id::RuntimePresentationBankId::Root,
+    );
     assert_eq!(decoded.inert_state(), inert.inert_state());
 
     let mut admission = RuntimeRetainedValueAdmission::for_program(
@@ -591,7 +595,10 @@ fn inert_presentation_slot_admission_uses_the_original_address_and_sticky_bank()
     row["site"]["Slot"]["target"] = serde_json::json!("asset.invalid");
     let decoded = serde_json::from_value::<InertBank>(value)
         .unwrap()
-        .retain_program(fixture.owner.clone());
+        .retain_program(
+            fixture.owner.clone(),
+            crate::runtime_id::RuntimePresentationBankId::Root,
+        );
     let mut admission = RuntimeRetainedValueAdmission::for_program(
         fixture.owner.clone(),
         crate::entry::RuntimeSchemaLimits::engine_default(),

@@ -144,9 +144,12 @@ fn native_presentation_handle_custody_roundtrips_the_actual_frame_and_rejects_du
             .try_wrap(token.encode_payload())
             .unwrap(),
     ]);
-    duplicate.presentation_retirements[0].body.expected = fixture.tuple_type;
-    duplicate.presentation_retirements[0].body.value =
-        crate::value::AwbcRuntimeValueSnapshot::from_standalone_value(&value).unwrap();
+    duplicate.presentation.as_mut().unwrap().retirements_mut()[0]
+        .body
+        .expected = fixture.tuple_type;
+    duplicate.presentation.as_mut().unwrap().retirements_mut()[0]
+        .body
+        .value = crate::value::AwbcRuntimeValueSnapshot::from_standalone_value(&value).unwrap();
     let error = Engine::from_rollback_image(duplicate, &owner).unwrap_err();
     assert!(error.contains("invalid retained custody"), "{error}");
     assert!(error.contains("duplicate: true"), "{error}");
@@ -167,12 +170,22 @@ fn native_presentation_handle_requires_the_issuing_ledger_and_current_lease() {
     let bound = fixture
         .engine
         .fiber
-        .bind_presentation_scope(fixture.engine.presentation.as_mut().unwrap())
+        .bind_presentation_scope(
+            fixture
+                .engine
+                .presentation
+                .as_mut()
+                .unwrap()
+                .ledger_mut(crate::runtime_id::RuntimePresentationBankId::Root)
+                .unwrap(),
+        )
         .unwrap();
     fixture
         .engine
         .presentation
         .as_mut()
+        .unwrap()
+        .ledger_mut(crate::runtime_id::RuntimePresentationBankId::Root)
         .unwrap()
         .release(&owner, &token, Some(bound))
         .unwrap();
@@ -250,9 +263,18 @@ fn native_presentation_registration_moves_handle_captures_and_retires_the_owned_
         &mut RuntimeStepOutput::default(),
         &mut crate::pure::VmRuntimePureCallBackend::default(),
     );
-    assert_eq!(restored.presentation_retirements.len(), 2);
-    assert_eq!(restored.presentation_retirements[0].token, captured);
-    assert_eq!(restored.presentation_retirements[1].token, outer);
+    assert_eq!(
+        restored.presentation.as_ref().unwrap().retirements().len(),
+        2
+    );
+    assert_eq!(
+        restored.presentation.as_ref().unwrap().retirements()[0].token,
+        captured
+    );
+    assert_eq!(
+        restored.presentation.as_ref().unwrap().retirements()[1].token,
+        outer
+    );
     let retired_image = restored.inert_rollback_image().unwrap();
     assert_eq!(
         Engine::from_rollback_image(retired_image.clone(), &owner)

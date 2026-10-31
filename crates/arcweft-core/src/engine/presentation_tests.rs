@@ -20,6 +20,7 @@ fn ledger<V>(engine: &Engine) -> PresentationLedger<V> {
     PresentationLedger::new(
         engine.fiber.frame.program.clone(),
         crate::effect::RuntimeArtifactFingerprint::try_from_bytes([11; 32]).unwrap(),
+        crate::runtime_id::RuntimePresentationBankId::Root,
         PresentationLedgerLimits {
             handles: 8,
             scopes: 8,
@@ -226,16 +227,28 @@ fn engine_owned_presentation_survives_rollback_and_ordinary_scope_exit() {
             .presentation_scope_binding()
             .is_none()
     );
-    assert_eq!(restored.presentation_retirements.len(), 1);
-    assert_eq!(restored.presentation_retirements[0].token, token);
     assert_eq!(
-        restored.presentation_retirements[0].body.value.value(),
+        restored.presentation.as_ref().unwrap().retirements().len(),
+        1
+    );
+    assert_eq!(
+        restored.presentation.as_ref().unwrap().retirements()[0].token,
+        token
+    );
+    assert_eq!(
+        restored.presentation.as_ref().unwrap().retirements()[0]
+            .body
+            .value
+            .value(),
         &RuntimeValue::Bool(true)
     );
     let retired_image = restored.inert_rollback_image().unwrap();
     let retired = Engine::from_rollback_image(retired_image.clone(), &owner).unwrap();
     assert_eq!(retired.inert_rollback_image().unwrap(), retired_image);
-    assert_eq!(retired.presentation_retirements.len(), 1);
+    assert_eq!(
+        retired.presentation.as_ref().unwrap().retirements().len(),
+        1
+    );
     restored.push_scope_frame(crate::scope::RuntimeScopeIdentity::Anonymous);
     let (next, _) = restored
         .register_presentation_body(view_site(), ty, RuntimePayload(RuntimeValue::Bool(false)))
@@ -247,7 +260,10 @@ fn engine_owned_presentation_survives_rollback_and_ordinary_scope_exit() {
             &mut crate::pure::VmRuntimePureCallBackend::default(),
         )
         .unwrap();
-    assert_eq!(restored.presentation_retirements.len(), 2);
+    assert_eq!(
+        restored.presentation.as_ref().unwrap().retirements().len(),
+        2
+    );
 }
 
 #[test]
@@ -297,6 +313,19 @@ fn rollback_rejects_missing_ledger_duplicate_retirement_and_foreign_program() {
         .unwrap();
     let owner = engine.fiber.frame.program.clone();
     let image = engine.inert_rollback_image().unwrap();
+    let mut wrong_bank = image.clone();
+    wrong_bank.fiber.frame.presentation_bank =
+        crate::runtime_id::RuntimePresentationBankId::Dialogue {
+            activation: crate::runtime_id::DialogueActivationId::new(
+                engine.plan.artifact().unwrap(),
+                engine.fiber.persistent_id,
+                crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
+                    std::num::NonZeroU32::MIN,
+                ),
+                0,
+            ),
+        };
+    assert!(Engine::from_rollback_image(wrong_bank, &owner).is_err());
     let mut missing = image.clone();
     missing.presentation = None;
     assert!(Engine::from_rollback_image(missing, &owner).is_err());
@@ -316,9 +345,13 @@ fn rollback_rejects_missing_ledger_duplicate_retirement_and_foreign_program() {
         .unwrap();
     let valid = engine.inert_rollback_image().unwrap();
     let mut duplicate = valid.clone();
+    let retired = duplicate.presentation.as_ref().unwrap().retirements()[0].clone();
     duplicate
-        .presentation_retirements
-        .push(duplicate.presentation_retirements[0].clone());
+        .presentation
+        .as_mut()
+        .unwrap()
+        .retirements_mut()
+        .push(retired);
     assert!(Engine::from_rollback_image(duplicate, &owner).is_err());
     assert_eq!(engine.inert_rollback_image().unwrap(), valid);
 }
@@ -346,9 +379,15 @@ fn native_completion_and_child_close_retire_nested_presentation_scopes_in_order(
             FlowFiberStatus::Done(_)
         ));
         assert!(engine.fiber.frame.control_stack.is_empty());
-        assert_eq!(engine.presentation_retirements.len(), 2);
-        assert_eq!(engine.presentation_retirements[0].token, inner);
-        assert_eq!(engine.presentation_retirements[1].token, outer);
+        assert_eq!(engine.presentation.as_ref().unwrap().retirements().len(), 2);
+        assert_eq!(
+            engine.presentation.as_ref().unwrap().retirements()[0].token,
+            inner
+        );
+        assert_eq!(
+            engine.presentation.as_ref().unwrap().retirements()[1].token,
+            outer
+        );
         assert!(engine.inert_rollback_image().is_ok());
     }
 }

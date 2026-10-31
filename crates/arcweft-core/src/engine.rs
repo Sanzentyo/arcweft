@@ -124,12 +124,7 @@ pub struct Engine<
     generation: GenerationId,
     need_producers: N,
     presentation: Option<
-        crate::presentation::resources::PresentationLedger<
-            crate::presentation::resources::PresentationBody<P>,
-        >,
-    >,
-    presentation_retirements: Vec<
-        crate::presentation::resources::PresentationRetirement<
+        crate::presentation::resources::PresentationBanks<
             crate::presentation::resources::PresentationBody<P>,
         >,
     >,
@@ -184,7 +179,6 @@ impl Clone for NativeEngineRollbackImage {
             generation: self.generation,
             need_producers: self.need_producers.clone(),
             presentation: self.presentation.clone(),
-            presentation_retirements: self.presentation_retirements.clone(),
             task_request_quota_remaining: self.task_request_quota_remaining,
             scalar_step_charge: self.scalar_step_charge,
             need_publications: self.need_publications.clone(),
@@ -349,6 +343,8 @@ pub struct NativeFlowExecutionFrame<
 > {
     /// Immutable code and type authority retained by this execution frame.
     pub(crate) program: crate::task::RuntimeProgramOwner,
+    /// The activation owns presentation even while borrowing its parent fiber.
+    pub(crate) presentation_bank: crate::runtime_id::RuntimePresentationBankId,
     pub line_cursor: usize,
     pub(crate) pending_ops: VecDeque<O>,
     pub(crate) control_stack: Vec<C>,
@@ -393,6 +389,7 @@ impl Clone for NativeFlowExecutionFrameRollbackImage {
     fn clone(&self) -> Self {
         Self {
             program: self.program.clone(),
+            presentation_bank: self.presentation_bank,
             line_cursor: self.line_cursor,
             pending_ops: self.pending_ops.clone(),
             control_stack: self.control_stack.clone(),
@@ -549,6 +546,7 @@ impl NativeFlowExecutionFrame {
         self.ensure_program_owner(owner)?;
         Ok(NativeFlowExecutionFrameRollbackImage {
             program: self.program.clone(),
+            presentation_bank: self.presentation_bank,
             line_cursor: self.line_cursor,
             pending_ops: self
                 .pending_ops
@@ -624,6 +622,7 @@ impl NativeFlowExecutionFrame {
         image.ensure_program_owner(owner)?;
         Ok(Self {
             program: image.program,
+            presentation_bank: image.presentation_bank,
             line_cursor: image.line_cursor,
             pending_ops: image
                 .pending_ops
@@ -1975,6 +1974,7 @@ impl NativeFlowExecutionFrame {
     fn new(program: crate::task::RuntimeProgramOwner) -> Self {
         Self {
             program,
+            presentation_bank: crate::runtime_id::RuntimePresentationBankId::Root,
             line_cursor: 0,
             pending_ops: VecDeque::new(),
             control_stack: Vec::new(),
@@ -2042,17 +2042,6 @@ impl Engine {
                 .as_ref()
                 .map(|ledger| ledger.snapshot_admitted())
                 .transpose()
-                .map_err(|error| error.to_string())?,
-            presentation_retirements: self
-                .presentation_retirements
-                .iter()
-                .map(|retired| {
-                    Ok(crate::presentation::resources::PresentationRetirement {
-                        token: retired.token.clone(),
-                        body: retired.body.snapshot_admitted(&owner)?,
-                    })
-                })
-                .collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()
                 .map_err(|error| error.to_string())?,
             task_request_quota_remaining: self.task_request_quota_remaining,
             scalar_step_charge: self.scalar_step_charge,
@@ -2127,17 +2116,6 @@ impl Engine {
                 .presentation
                 .map(|ledger| ledger.into_admitted_live(owner))
                 .transpose()
-                .map_err(|error| error.to_string())?,
-            presentation_retirements: image
-                .presentation_retirements
-                .into_iter()
-                .map(|retired| {
-                    Ok(crate::presentation::resources::PresentationRetirement {
-                        token: retired.token,
-                        body: retired.body.into_admitted_live(owner)?,
-                    })
-                })
-                .collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()
                 .map_err(|error| error.to_string())?,
             task_request_quota_remaining: image.task_request_quota_remaining,
             scalar_step_charge: image.scalar_step_charge,
@@ -2284,7 +2262,6 @@ impl Engine {
             generation,
             need_producers: NeedProducerRegistry::default(),
             presentation: None,
-            presentation_retirements: Vec::new(),
             task_request_quota_remaining: usize::MAX,
             scalar_step_charge: None,
             need_publications: BTreeMap::new(),
@@ -2295,6 +2272,7 @@ impl Engine {
             fiber: FlowFiber {
                 frame: crate::engine::NativeFlowExecutionFrame {
                     program: crate::task::RuntimeProgramOwner::Plan(plan),
+                    presentation_bank: crate::runtime_id::RuntimePresentationBankId::Root,
                     line_cursor: 0,
                     pending_ops: VecDeque::new(),
                     control_stack: Vec::new(),
@@ -3378,6 +3356,7 @@ impl Engine {
             FlowFiber {
                 frame: crate::engine::NativeFlowExecutionFrame {
                     program: self.fiber.frame.program.clone(),
+                    presentation_bank: self.fiber.frame.presentation_bank,
                     line_cursor: 0,
                     pending_ops,
                     control_stack: Vec::new(),
@@ -3543,6 +3522,9 @@ impl Engine {
         FlowFiber {
             frame: crate::engine::NativeFlowExecutionFrame {
                 program: self.fiber.frame.program.clone(),
+                presentation_bank: crate::runtime_id::RuntimePresentationBankId::Dialogue {
+                    activation: *prepared.key.dialogue(),
+                },
                 line_cursor: 0,
                 pending_ops: prepared.pending_ops,
                 control_stack: Vec::new(),
@@ -3861,6 +3843,10 @@ impl Engine {
                     batch.child_fibers.push_back(FlowFiber {
                         frame: crate::engine::NativeFlowExecutionFrame {
                             program: self.fiber.frame.program.clone(),
+                            presentation_bank:
+                                crate::runtime_id::RuntimePresentationBankId::Dialogue {
+                                    activation: activation_id,
+                                },
                             line_cursor: 0,
                             pending_ops,
                             control_stack: Vec::new(),
@@ -4091,6 +4077,9 @@ impl Engine {
         let child = FlowFiber {
             frame: crate::engine::NativeFlowExecutionFrame {
                 program: self.fiber.frame.program.clone(),
+                presentation_bank: crate::runtime_id::RuntimePresentationBankId::Dialogue {
+                    activation: *activation,
+                },
                 line_cursor: 0,
                 pending_ops: prepared.pending_ops,
                 control_stack: Vec::new(),

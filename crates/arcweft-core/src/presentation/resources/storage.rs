@@ -129,21 +129,36 @@ impl Clone for PresentationRetirement<PresentationBody<AwbcRuntimeValueSnapshot>
 /// its occurrence here; the contour cannot issue grants or live handles.
 pub(crate) struct PresentationAdmission {
     program: RuntimeProgramOwner,
-    scopes: BTreeMap<
-        RuntimeScopeInstanceId,
-        (
-            ExecutionInstanceId,
-            RuntimePersistentFiberId,
-            PresentationScopeAnchor,
-        ),
-    >,
-    unseen: std::collections::BTreeSet<RuntimeScopeInstanceId>,
+    banks: std::collections::BTreeSet<RuntimePresentationBankId>,
+    scopes: BTreeMap<PresentationScopeOwner, PresentationScopeAnchor>,
+    unseen: std::collections::BTreeSet<PresentationScopeOwner>,
     handles: std::collections::BTreeSet<RuntimePresentationHandleToken>,
     seen_handles: std::collections::BTreeSet<RuntimePresentationHandleToken>,
     detached: std::collections::BTreeSet<RuntimePresentationHandleToken>,
 }
 
 impl PresentationAdmission {
+    /// Joins disjoint bank headers before observing any value. The original
+    /// program and the same admission allowance still own the whole contour.
+    pub(crate) fn merge(&mut self, other: Self) -> Result<(), RuntimePresentationError> {
+        if !self.program.same_program(&other.program)
+            || !self.seen_handles.is_empty()
+            || !other.seen_handles.is_empty()
+            || self.unseen.len() != self.scopes.len()
+            || other.unseen.len() != other.scopes.len()
+            || !self.banks.is_disjoint(&other.banks)
+            || !self.handles.is_disjoint(&other.handles)
+        {
+            return Err(RuntimePresentationError::InvalidState);
+        }
+        self.banks.extend(other.banks);
+        self.scopes.extend(other.scopes);
+        self.unseen.extend(other.unseen);
+        self.handles.extend(other.handles);
+        self.detached.extend(other.detached);
+        Ok(())
+    }
+
     pub(crate) fn admit_handle(
         &mut self,
         token: &RuntimePresentationHandleToken,
@@ -189,8 +204,8 @@ impl PresentationAdmission {
         anchor: PresentationScopeAnchor,
     ) -> bool {
         self.program.same_program(program)
-            && self.scopes.get(&owner.scope) == Some(&(owner.execution, owner.fiber, anchor))
-            && self.unseen.remove(&owner.scope)
+            && self.scopes.get(&owner) == Some(&anchor)
+            && self.unseen.remove(&owner)
     }
 
     pub(crate) fn complete(&self) -> bool {
@@ -209,6 +224,7 @@ impl<V: RuntimeStoredValue> PresentationLedger<PresentationBody<V>> {
             let invalid =
                 || AwbcRuntimeValueSnapshotError::from(RuntimePresentationError::InvalidState);
             if !self.program.same_program(owner)
+                || !self.bank.matches_artifact(artifact)
                 || self.state.artifact != artifact
                 || self.state.leases.len() > self.state.limits.handles
                 || self.state.scopes.len() > self.state.limits.scopes
@@ -242,6 +258,7 @@ impl<V: RuntimeStoredValue> PresentationLedger<PresentationBody<V>> {
                     admission.validate_metadata(&(owner.execution, owner.fiber, owner.scope))?;
                 }
                 if lease.token.issuance() != *issuance
+                    || lease.token.bank() != self.bank
                     || lease.token.artifact() != &self.state.artifact
                     || self
                         .state
@@ -265,8 +282,34 @@ impl<V: RuntimeStoredValue> PresentationLedger<PresentationBody<V>> {
             }
             Ok(PresentationAdmission {
                 program: self.program.clone(),
-                unseen: self.state.scopes.keys().copied().collect(),
-                scopes: self.state.scopes.clone(),
+                banks: std::iter::once(self.bank).collect(),
+                unseen: self
+                    .state
+                    .scopes
+                    .iter()
+                    .map(|(scope, (execution, fiber, _))| PresentationScopeOwner {
+                        bank: self.bank,
+                        execution: *execution,
+                        fiber: *fiber,
+                        scope: *scope,
+                    })
+                    .collect(),
+                scopes: self
+                    .state
+                    .scopes
+                    .iter()
+                    .map(|(scope, (execution, fiber, anchor))| {
+                        (
+                            PresentationScopeOwner {
+                                bank: self.bank,
+                                execution: *execution,
+                                fiber: *fiber,
+                                scope: *scope,
+                            },
+                            *anchor,
+                        )
+                    })
+                    .collect(),
                 handles: self
                     .state
                     .leases
@@ -305,6 +348,7 @@ impl Clone for PresentationLedger<PresentationBody<AwbcRuntimeValueSnapshot>> {
     fn clone(&self) -> Self {
         Self {
             program: self.program.clone(),
+            bank: self.bank,
             state: self.state.clone(),
         }
     }
@@ -339,6 +383,7 @@ impl PresentationLedger<PresentationBody<RuntimePayload>> {
             .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?;
         Ok(PresentationLedger {
             program: self.program.clone(),
+            bank: self.bank,
             state: PresentationLedgerState {
                 artifact: self.state.artifact,
                 next: self.state.next,
@@ -389,6 +434,7 @@ impl PresentationLedger<PresentationBody<AwbcRuntimeValueSnapshot>> {
             .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?;
         Ok(PresentationLedger {
             program: self.program,
+            bank: self.bank,
             state: PresentationLedgerState {
                 artifact: self.state.artifact,
                 next: self.state.next,
@@ -408,9 +454,11 @@ impl PresentationLedgerState<PresentationBody<AwbcRuntimeValueSnapshot>> {
     pub(crate) fn retain_program(
         self,
         program: RuntimeProgramOwner,
+        bank: RuntimePresentationBankId,
     ) -> PresentationLedger<PresentationBody<AwbcRuntimeValueSnapshot>> {
         PresentationLedger {
             program,
+            bank,
             state: self,
         }
     }

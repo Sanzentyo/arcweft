@@ -265,6 +265,15 @@ tokenは元のleaseまたは回収待ちの所有headerに完全一致し、同�
 scopeからdetachしたleaseは、保持値のグラフに一意なHandleを必要とする。
 contourと既に観測したHandleはbankの一時停止・再開で移動し、再発行しない。
 
+Presentation の資源bankは `Root` または完全な `DialogueActivationId` で識別する。
+bank identityはtokenと動的scope ownerに含まれ、同じprogram・fiber・局所発行番号でも
+異なるbankのlease／slotを操作できない。tokenのversion 1 payloadはartifact・resource・
+execution・fiber・issuance・bank identityの厳密な6項目であり、bankを
+省略したpayloadは受理しない。Dialogueが親fiberを借りる間も、実行frameがactivationの
+bankを保持する。全bankのheaderを検査して一つのcustody contourへ統合した後にbodyを
+読む。bankと回収待ちbodyは同じ所有者のrollbackへ含め、空になったbankの発行cursorを
+再初期化しない。
+
 Presentation bodyへの所有権移動も既存のlive保持状態と同じbankで検査し、元の型・
 function binding・候補body・Handle custodyがすべて成立してからscope束縛と発行へ進む。
 失敗時は候補bodyを呼出側へ返し、既存のbody・slot・発行cursorを変更しない。

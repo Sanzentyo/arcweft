@@ -8,7 +8,8 @@ use super::RuntimePresentationError;
 use crate::effect::RuntimeArtifactFingerprint;
 use crate::runtime_id::{
     ExecutionInstanceId, RuntimeIdCursor, RuntimeIdExhausted, RuntimeIdNamespace,
-    RuntimePersistentFiberId, RuntimePresentationHandleToken, RuntimeScopeInstanceId,
+    RuntimePersistentFiberId, RuntimePresentationBankId, RuntimePresentationHandleToken,
+    RuntimeScopeInstanceId,
 };
 use crate::task::RuntimeProgramOwner;
 use arcweft_id::PublicId;
@@ -16,13 +17,16 @@ use arcweft_interaction_model::presentation::PresentationResourceKind;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::num::NonZeroU64;
+mod banks;
 mod storage;
+pub(crate) use banks::PresentationBanks;
 pub(crate) use storage::{PresentationAdmission, PresentationBody};
 
 /// Dynamic owner, never a scope name or a reusable static instruction coordinate.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PresentationScopeOwner {
+    bank: RuntimePresentationBankId,
     execution: ExecutionInstanceId,
     fiber: RuntimePersistentFiberId,
     scope: RuntimeScopeInstanceId,
@@ -107,6 +111,10 @@ pub struct RuntimePresentationScopeSnapshot {
 }
 
 impl RuntimePresentationScopeBinding {
+    pub(crate) const fn bank(&self) -> RuntimePresentationBankId {
+        self.owner.bank
+    }
+
     pub(crate) fn snapshot_admitted(
         &self,
         program: &RuntimeProgramOwner,
@@ -321,6 +329,7 @@ pub(crate) struct PresentationLedgerLimits {
 #[derive(Debug, PartialEq)]
 pub(crate) struct PresentationLedger<V> {
     program: RuntimeProgramOwner,
+    bank: RuntimePresentationBankId,
     state: PresentationLedgerState<V>,
 }
 
@@ -362,6 +371,7 @@ impl<V> PresentationLedger<V> {
         token: &RuntimePresentationHandleToken,
     ) -> Result<(), RuntimePresentationError> {
         if token.artifact() != &self.state.artifact
+            || token.bank() != self.bank
             || self.state.leases.contains_key(&token.issuance())
             || self
                 .state
@@ -400,10 +410,12 @@ impl<V> PresentationLedger<V> {
     pub(crate) fn new(
         program: RuntimeProgramOwner,
         artifact: RuntimeArtifactFingerprint,
+        bank: RuntimePresentationBankId,
         limits: PresentationLedgerLimits,
     ) -> Self {
         Self {
             program,
+            bank,
             state: PresentationLedgerState {
                 artifact,
                 next: RuntimeIdCursor::initial(),
@@ -444,6 +456,7 @@ impl<V> PresentationLedger<V> {
             next.take_next(RuntimeIdNamespace::ScopeInstance)?,
         );
         let owner = PresentationScopeOwner {
+            bank: self.bank,
             execution,
             fiber,
             scope,
@@ -464,11 +477,12 @@ impl<V> PresentationLedger<V> {
         &self,
         owner: PresentationScopeOwner,
     ) -> Result<(), RuntimePresentationError> {
-        if self
-            .state
-            .scopes
-            .get(&owner.scope)
-            .is_none_or(|record| record.0 != owner.execution || record.1 != owner.fiber)
+        if owner.bank != self.bank
+            || self
+                .state
+                .scopes
+                .get(&owner.scope)
+                .is_none_or(|record| record.0 != owner.execution || record.1 != owner.fiber)
         {
             return Err(RuntimePresentationError::Owner);
         }
@@ -506,6 +520,9 @@ impl<V> PresentationLedger<V> {
         if !self.program.same_program(program) {
             return Err(RuntimePresentationError::Program);
         }
+        if !self.bank.matches_artifact(self.state.artifact) {
+            return Err(RuntimePresentationError::Execution);
+        }
         Ok(())
     }
 
@@ -516,7 +533,7 @@ impl<V> PresentationLedger<V> {
         owner: Option<PresentationScopeOwner>,
     ) -> Result<NonZeroU64, RuntimePresentationError> {
         self.validate_program(program)?;
-        if token.artifact() != &self.state.artifact {
+        if token.artifact() != &self.state.artifact || token.bank() != self.bank {
             return Err(RuntimePresentationError::Execution);
         }
         let Some(lease) = self.state.leases.get(&token.issuance()) else {
@@ -570,6 +587,7 @@ impl<V> PresentationLedger<V> {
             owner.execution,
             owner.fiber,
             issuance,
+            self.bank,
         );
         self.state.leases.insert(
             issuance,

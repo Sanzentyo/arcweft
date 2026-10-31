@@ -257,6 +257,13 @@ resource leases. The syntax/typecheck layer validates that background calls use
 `@slot.background.*`, character calls use `@slot.character.*`, and targets use
 `@target.*`.
 
+Root and each dialogue activation have independent presentation banks. A bank
+identity is part of both the resource token and its dynamic scope grant; matching
+local issuance numbers or slot addresses do not cross that boundary. Execution
+frames retain the selected bank while a dialogue borrows its parent fiber.
+The Core custody owner retains all banks and pending resource retirements, and
+keeps empty-bank cursors so stale tokens cannot become current again.
+
 ## HTML / Servo / DOM layer
 
 HTML/CSS View は Game Native View とは別の `HtmlView` layer として扱う。

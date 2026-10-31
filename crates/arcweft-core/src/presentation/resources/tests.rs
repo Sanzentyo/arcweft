@@ -19,6 +19,7 @@ fn bodies<V>(retired: Vec<PresentationRetirement<V>>) -> Vec<V> {
 
 fn scope(fiber: u64, scope: u64) -> PresentationScopeOwner {
     PresentationScopeOwner {
+        bank: RuntimePresentationBankId::Root,
         execution: execution(),
         fiber: RuntimePersistentFiberId::from_allocated(fiber),
         scope: RuntimeScopeInstanceId::from_allocated(NonZeroU64::new(scope).unwrap()),
@@ -55,11 +56,86 @@ fn new_ledger<V>(program: RuntimeProgramOwner, capacity: usize) -> PresentationL
     PresentationLedger::new(
         program,
         RuntimeArtifactFingerprint::try_from_bytes([7; 32]).unwrap(),
+        crate::runtime_id::RuntimePresentationBankId::Root,
         PresentationLedgerLimits {
             handles: capacity,
             scopes: capacity,
         },
     )
+}
+
+#[test]
+fn separate_banks_with_equal_local_cursors_cannot_release_each_others_lease() {
+    use crate::runtime_id::{DialogueActivationId, RuntimeDialogueContentPlanId};
+    use std::num::NonZeroU32;
+    let program = new_program();
+    let artifact = RuntimeArtifactFingerprint::try_from_bytes([7; 32]).unwrap();
+    let dialogue_bank = RuntimePresentationBankId::Dialogue {
+        activation: DialogueActivationId::new(
+            artifact,
+            RuntimePersistentFiberId::from_allocated(0),
+            RuntimeDialogueContentPlanId::from_accepted_ordinal(NonZeroU32::MIN),
+            0,
+        ),
+    };
+    let mut root = new_ledger(program.clone(), 4);
+    let mut dialogue = PresentationLedger::new(
+        program.clone(),
+        artifact,
+        dialogue_bank,
+        PresentationLedgerLimits {
+            handles: 4,
+            scopes: 4,
+        },
+    );
+    let root_scope = new_scope(&mut root, &program, 0);
+    let dialogue_scope = new_scope(&mut dialogue, &program, 0);
+    let root_handle = root
+        .register(
+            &program,
+            root_scope,
+            PresentationRegistrationSite::Slot(address("shared")),
+            10,
+        )
+        .unwrap()
+        .0;
+    let dialogue_handle = dialogue
+        .register(
+            &program,
+            dialogue_scope,
+            PresentationRegistrationSite::Slot(address("shared")),
+            20,
+        )
+        .unwrap()
+        .0;
+    assert_eq!(root_handle.execution(), dialogue_handle.execution());
+    assert_eq!(root_handle.fiber(), dialogue_handle.fiber());
+    assert_eq!(root_handle.issuance(), dialogue_handle.issuance());
+    assert_ne!(root_handle, dialogue_handle);
+    assert_eq!(
+        dialogue.release(&program, &root_handle, Some(dialogue_scope)),
+        Err(RuntimePresentationError::Execution)
+    );
+    assert_eq!(
+        root.release(&program, &dialogue_handle, Some(root_scope)),
+        Err(RuntimePresentationError::Execution)
+    );
+    assert_eq!(
+        dialogue.release(&program, &dialogue_handle, Some(root_scope)),
+        Err(RuntimePresentationError::Owner)
+    );
+    assert_eq!(root.clear(&program, &address("shared")).unwrap(), Some(10));
+    assert_eq!(
+        dialogue
+            .release(&program, &dialogue_handle, Some(dialogue_scope))
+            .unwrap(),
+        Some(20)
+    );
+    assert_eq!(
+        root.release(&program, &root_handle, Some(root_scope))
+            .unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -133,6 +209,7 @@ fn original_lease_exact_token_owner_and_replay_checks_are_failure_atomic() {
         token.execution(),
         token.fiber(),
         token.issuance(),
+        token.bank(),
     );
     let checks = [
         (
@@ -169,6 +246,7 @@ fn original_lease_exact_token_owner_and_replay_checks_are_failure_atomic() {
         ExecutionInstanceId::from_allocated(NonZeroU64::new(2).unwrap()),
         decoded.fiber(),
         decoded.issuance(),
+        decoded.bank(),
     );
     assert_eq!(
         ledger.release(&program, &foreign_execution, Some(owner)),

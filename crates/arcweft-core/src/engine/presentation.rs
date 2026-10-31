@@ -3,7 +3,7 @@
 use super::*;
 use crate::presentation::RuntimePresentationError;
 use crate::presentation::resources::{
-    PresentationBody, PresentationLedger, PresentationLedgerLimits, PresentationRegistrationSite,
+    PresentationBanks, PresentationBody, PresentationLedgerLimits, PresentationRegistrationSite,
 };
 use crate::value::RuntimeStoredValue;
 
@@ -13,43 +13,12 @@ impl<N, P: RuntimeStoredValue, R, F, D> Engine<N, P, R, F, D> {
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
         let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&self.plan));
-        let mut proof = if let Some(ledger) = &self.presentation {
+        if let Some(banks) = &self.presentation {
             let artifact = self
                 .plan
                 .artifact()
                 .ok_or(RuntimePresentationError::MissingArtifact)?;
-            Some(ledger.admit_ownership(&owner, artifact, admission)?)
-        } else {
-            None
-        };
-        admission.validate_metadata_collection(self.presentation_retirements.len())?;
-        let mut retired_ids = BTreeSet::new();
-        for retired in &self.presentation_retirements {
-            admission.validate_metadata(&retired.token)?;
-            let ledger = self
-                .presentation
-                .as_ref()
-                .ok_or(RuntimePresentationError::InvalidState)?;
-            ledger.validate_retirement(&retired.token)?;
-            if !retired_ids.insert(retired.token.issuance()) {
-                return Err(RuntimePresentationError::InvalidState.into());
-            }
-            if Some(*retired.token.artifact()) != self.plan.artifact() {
-                return Err(RuntimePresentationError::InvalidState.into());
-            }
-            proof
-                .as_mut()
-                .ok_or(RuntimePresentationError::InvalidState)?
-                .include_retirement(&retired.token);
-        }
-        if let Some(proof) = proof {
-            admission.bind_presentation_custody(proof)?;
-        }
-        if let Some(ledger) = &self.presentation {
-            ledger.admit_bodies(admission)?;
-        }
-        for retired in &self.presentation_retirements {
-            retired.body.admit_retained(admission)?;
+            banks.admit_retained(&owner, artifact, admission)?;
         }
         Ok(())
     }
@@ -102,8 +71,8 @@ impl Engine {
                 binding.map(Arc::as_ref),
             )?;
             admission.finish_presentation_custody()?;
-            let ledger = self.presentation.get_or_insert_with(|| {
-                PresentationLedger::new(
+            let banks = self.presentation.get_or_insert_with(|| {
+                PresentationBanks::new(
                     owner.clone(),
                     artifact,
                     PresentationLedgerLimits {
@@ -112,6 +81,8 @@ impl Engine {
                     },
                 )
             });
+            banks.preflight_register(&owner)?;
+            let ledger = banks.ledger_mut(self.fiber.frame.presentation_bank)?;
             ledger.preflight_register(&owner)?;
             Ok::<_, crate::value::AwbcRuntimeValueSnapshotError>(
                 self.fiber.bind_presentation_scope(ledger)?,
@@ -129,7 +100,9 @@ impl Engine {
         let ledger = self
             .presentation
             .as_mut()
-            .expect("prepared original resource owner");
+            .expect("prepared original resource owner")
+            .ledger_mut(self.fiber.frame.presentation_bank)
+            .expect("prepared original bank");
         let (token, previous) = ledger
             .register(
                 &owner,
@@ -160,24 +133,16 @@ impl Engine {
 
     pub(super) fn retire_current_presentation_scope(&mut self) -> Result<(), RuntimeEvalError> {
         if self.fiber.frame.env.presentation_scope_binding().is_some() {
-            let ledger = self
+            let banks = self
                 .presentation
                 .as_mut()
                 .ok_or(RuntimePresentationError::Owner)?;
-            let maximum =
-                crate::entry::RuntimeSchemaLimits::engine_default().max_sequence_items as usize;
-            let count =
-                ledger.bound_scope_body_count(self.fiber.frame.env.presentation_scope_binding());
-            if self
-                .presentation_retirements
-                .len()
-                .checked_add(count)
-                .is_none_or(|count| count > maximum)
-            {
-                return Err(RuntimePresentationError::RetirementCapacity.into());
-            }
-            let retired = self.fiber.release_presentation_scope(ledger)?;
-            self.presentation_retirements.extend(retired);
+            banks.retire_bound_scope(
+                &self.fiber.frame.program,
+                self.fiber.execution,
+                self.fiber.persistent_id,
+                self.fiber.frame.env.presentation_scope_target()?,
+            )?;
         }
         Ok(())
     }
