@@ -1,0 +1,1623 @@
+   Compiling arcweft-interaction-model v0.1.0 (D:\git\arcweft\crates\arcweft-interaction-model)
+   Compiling arcweft-core v0.1.0 (D:\git\arcweft\crates\arcweft-core)
+   Compiling arcweft-presentation v0.1.0 (D:\git\arcweft\crates\arcweft-presentation)
+   Compiling arcweft-audio-core v0.1.0 (D:\git\arcweft\crates\arcweft-audio-core)
+warning: unused import: `std::sync::Arc`
+  --> crates\arcweft-core\src\awbc\product_step\line.rs:39:5
+   |
+39 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `HostRestartPolicy`
+  --> crates\arcweft-core\src\awbc\product_step\snapshot.rs:23:5
+   |
+23 |     HostRestartPolicy, NeedProducerInvocationFrontier, NeedProducerInvocationToken,
+   |     ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `NeedId`
+ --> crates\arcweft-core\src\awbc\product_step\suspension.rs:5:53
+  |
+5 |     FiberSuspensionReason, FlowEvent, MappedEffect, NeedId, PendingHostCall, ProductStepError,
+  |                                                     ^^^^^^
+
+warning: unused import: `runtime_sequence_values`
+  --> crates\arcweft-core\src\awbc\product_step.rs:87:5
+   |
+87 |     runtime_sequence_values, runtime_value_label,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeIterator`
+  --> crates\arcweft-core\src\awbc\value_admission.rs:20:5
+   |
+20 |     RuntimeIterator, RuntimeRange, RuntimeRangeIterator, RuntimeReductionProducer,
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeCallableInputSource`
+  --> crates\arcweft-core\src\awbc\verify\code.rs:30:5
+   |
+30 |     RuntimeCallableInputSource, RuntimeCallableParameterKind, RuntimeCallablePosition,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeRegistryUpdateJournalError` and `RuntimeRegistryUpdateJournal`
+  --> crates\arcweft-core\src\effect.rs:15:27
+   |
+15 | pub(crate) use registry::{RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJournalError};
+   |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::plan::code::RuntimeCodeOwner`
+ --> crates\arcweft-core\src\engine.rs:7:5
+  |
+7 | use crate::plan::code::RuntimeCodeOwner;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `NeedId`
+  --> crates\arcweft-core\src\engine.rs:28:51
+   |
+28 |     AwaitManyTarget, CancelScopeId, GenerationId, NeedId, NeedProducerOwnedTaskEventDisposition,
+   |                                                   ^^^^^^
+
+warning: unused import: `RuntimeExpr`
+  --> crates\arcweft-core\src\engine\flow.rs:14:23
+   |
+14 |     RuntimeEvalError, RuntimeExpr, RuntimeIterator, RuntimePattern, RuntimeStepOutput,
+   |                       ^^^^^^^^^^^
+
+warning: unused import: `pattern_binding_capacity`
+  --> crates\arcweft-core\src\engine\flow.rs:18:57
+   |
+18 | use crate::pattern::{RuntimeBuiltinVariantCaseIdentity, pattern_binding_capacity};
+   |                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `HostTaskRequest`
+  --> crates\arcweft-core\src\engine\flow.rs:26:19
+   |
+26 | use crate::task::{HostTaskRequest, NamedHostArg, RuntimeHostArgumentTemplate};
+   |                   ^^^^^^^^^^^^^^^
+
+warning: unused imports: `CancelScopeId`, `TaskKey`, `TaskPolicy`, and `TaskPriority`
+ --> crates\arcweft-core\src\engine\suspend.rs:4:67
+  |
+4 |     AwaitItemType, AwaitManyInFlight, AwaitManyState, AwaitState, CancelScopeId, ChoiceState,
+  |                                                                   ^^^^^^^^^^^^^
+...
+7 |     RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
+  |                                                                ^^^^^^^  ^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `TaskId`
+  --> crates\arcweft-core\src\engine\suspend.rs:21:43
+   |
+21 |     HttpFetchRequest, HttpRespondRequest, NeedId, NeedProducerRuntimeArgument,
+   |                                           ^^^^^^
+...
+24 |     SystemInfoKind, SystemInfoRequest, TaskId, TtsRequest, WasmCallRequest,
+   |                                        ^^^^^^
+
+warning: unused import: `RuntimeFunctionSiteBodyKind`
+  --> crates\arcweft-core\src\plan\construction\lower.rs:68:33
+   |
+68 |     RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind, RuntimeHostCallTarget,
+   |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NeedId` and `TaskId`
+  --> crates\arcweft-core\src\plan\construction\seed.rs:25:37
+   |
+25 | use crate::task::{HostCapabilityId, NeedId, NeedProducerTaskPlan, TaskId};
+   |                                     ^^^^^^                        ^^^^^^
+
+warning: unused import: `RuntimeDialogueEffectSite`
+   --> crates\arcweft-core\src\plan\construction.rs:109:73
+    |
+109 |     RuntimeDialogueContentSlot, RuntimeDialogueContentTemplateManifest, RuntimeDialogueEffectSite,
+    |                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimePureHelperId`
+  --> crates\arcweft-core\src\plan\entry_inventory.rs:29:49
+   |
+29 | use super::{FlowOp, FlowRuntimeId, RuntimePlan, RuntimePureHelperId};
+   |                                                 ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeAwbcProgramSourceField`
+  --> crates\arcweft-core\src\plan\task_source\program.rs:27:62
+   |
+27 | pub(crate) use program_task::{RuntimeAwbcProgramSourceError, RuntimeAwbcProgramSourceField};
+   |                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeAwbcHostSourceError`, `RuntimeAwbcHostSourceField`, `RuntimeAwbcSelectedSourceError`, `RuntimeAwbcSelectedSourceField`, `RuntimeAwbcTemplateSourceError`, `RuntimeAwbcTemplateSourceField`, and `RuntimeTaskSourceProgramError`
+  --> crates\arcweft-core\src\plan\task_source.rs:17:5
+   |
+17 |     RuntimeAwbcHostSourceError, RuntimeAwbcHostSourceField, RuntimeAwbcProgramSourceError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+18 |     RuntimeAwbcSelectedSourceError, RuntimeAwbcSelectedSourceField, RuntimeAwbcTemplateSourceError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+19 |     RuntimeAwbcTemplateSourceField, RuntimeTaskSourceProgram, RuntimeTaskSourceProgramError,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeIterator`
+  --> crates\arcweft-core\src\plan\value_admission.rs:22:5
+   |
+22 |     RuntimeIterator, RuntimeRange, RuntimeRangeIterator, RuntimeReductionProducer,
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeIdExhausted`
+  --> crates\arcweft-core\src\presentation\resources.rs:10:43
+   |
+10 |     ExecutionInstanceId, RuntimeIdCursor, RuntimeIdExhausted, RuntimeIdNamespace,
+   |                                           ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeBuiltinVariantCaseIdentity`
+  --> crates\arcweft-core\src\pure.rs:20:5
+   |
+20 |     RuntimeBuiltinVariantCaseIdentity, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::BTreeMap`
+ --> crates\arcweft-core\src\pure\function.rs:3:5
+  |
+3 | use std::collections::BTreeMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `NeedProducerAssertionError` and `NeedProducerAssertionField`
+  --> crates\arcweft-core\src\task.rs:58:32
+   |
+58 | pub(crate) use specification::{NeedProducerAssertionError, NeedProducerAssertionField};
+   |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RuntimeCallableGroupInspection`
+  --> crates\arcweft-core\src\value\callable.rs:23:63
+   |
+23 |     RuntimeCallableApplication, RuntimeCallableBodyReference, RuntimeCallableGroupInspection,
+   |                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `RuntimeCommand` and `RuntimeSeq`
+  --> crates\arcweft-core\src\value\literal_semantic.rs:9:5
+   |
+ 9 |     RuntimeCommand, RuntimeInt, RuntimeOpaquePersistence, RuntimeOpaqueValueClass, RuntimeRange,
+   |     ^^^^^^^^^^^^^^
+10 |     RuntimeRangeIterator, RuntimeRecordView, RuntimeScalarView, RuntimeSeq, RuntimeSignedIntWidth,
+   |                                                                 ^^^^^^^^^^
+
+warning: type `NativeSourceOperation` is more private than the item `FlowControlStackEntryKind::Loop::source`
+   --> crates\arcweft-core\src\engine.rs:860:9
+    |
+860 |         source: NativeSourceOperation,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `FlowControlStackEntryKind::Loop::source` is reachable at visibility `pub(crate)`
+    |
+note: but type `NativeSourceOperation` is only usable at visibility `pub(in crate::engine)`
+   --> crates\arcweft-core\src\engine\code_cursor.rs:29:1
+    |
+ 29 | pub(super) struct NativeSourceOperation {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: `#[warn(private_interfaces)]` on by default
+
+warning: type `NativeSourceOperation` is more private than the item `FlowControlStackEntryKind::While::source`
+   --> crates\arcweft-core\src\engine.rs:863:9
+    |
+863 |         source: NativeSourceOperation,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `FlowControlStackEntryKind::While::source` is reachable at visibility `pub(crate)`
+    |
+note: but type `NativeSourceOperation` is only usable at visibility `pub(in crate::engine)`
+   --> crates\arcweft-core\src\engine\code_cursor.rs:29:1
+    |
+ 29 | pub(super) struct NativeSourceOperation {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `NativeSourceOperation` is more private than the item `FlowControlStackEntryKind::WhileLet::source`
+   --> crates\arcweft-core\src\engine.rs:866:9
+    |
+866 |         source: NativeSourceOperation,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `FlowControlStackEntryKind::WhileLet::source` is reachable at visibility `pub(crate)`
+    |
+note: but type `NativeSourceOperation` is only usable at visibility `pub(in crate::engine)`
+   --> crates\arcweft-core\src\engine\code_cursor.rs:29:1
+    |
+ 29 | pub(super) struct NativeSourceOperation {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `NativeSourceOperation` is more private than the item `FlowControlStackEntryKind::For::source`
+   --> crates\arcweft-core\src\engine.rs:869:9
+    |
+869 |         source: NativeSourceOperation,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `FlowControlStackEntryKind::For::source` is reachable at visibility `pub(crate)`
+    |
+note: but type `NativeSourceOperation` is only usable at visibility `pub(in crate::engine)`
+   --> crates\arcweft-core\src\engine\code_cursor.rs:29:1
+    |
+ 29 | pub(super) struct NativeSourceOperation {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `RuntimeStoredValue` is more private than the item `engine::presentation::<impl engine::Engine<N, P, R, F, D>>`
+  --> crates\arcweft-core\src\engine\presentation.rs:10:1
+   |
+10 | impl<N, P: RuntimeStoredValue, R, F, D> Engine<N, P, R, F, D> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `engine::presentation::<impl engine::Engine<N, P, R, F, D>>` is reachable at visibility `pub`
+   |
+note: but trait `RuntimeStoredValue` is only usable at visibility `pub(crate)`
+  --> crates\arcweft-core\src\value\storage.rs:15:1
+   |
+15 | pub(crate) trait RuntimeStoredValue {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: `#[warn(private_bounds)]` on by default
+
+warning: trait `RuntimeStoredValue` is more private than the item `NativePendingWork<V, I>`
+   --> crates\arcweft-core\src\engine\work.rs:513:1
+    |
+513 | / impl<V: crate::value::RuntimeStoredValue, I: crate::value::RuntimeStoredValue>
+514 | |     NativePendingWork<V, I>
+    | |___________________________^ implementation `NativePendingWork<V, I>` is reachable at visibility `pub`
+    |
+note: but trait `RuntimeStoredValue` is only usable at visibility `pub(crate)`
+   --> crates\arcweft-core\src\value\storage.rs:15:1
+    |
+ 15 | pub(crate) trait RuntimeStoredValue {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `task::execution::TaskExecutionSource` is more private than the item `NeedProducerRegistryRestore<V, P, S>`
+    --> crates\arcweft-core\src\task\producer.rs:1702:1
+     |
+1702 | impl<V, P, S: super::TaskExecutionSource + PartialEq> NeedProducerRegistryRestore<V, P, S> {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `NeedProducerRegistryRestore<V, P, S>` is reachable at visibility `pub`
+     |
+note: but trait `task::execution::TaskExecutionSource` is only usable at visibility `pub(crate)`
+    --> crates\arcweft-core\src\task\execution.rs:449:1
+     |
+ 449 | pub(crate) trait TaskExecutionSource {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `task::execution::TaskExecutionSource` is more private than the item `producer::NeedProducerLaunchRestore<V, P, S>`
+    --> crates\arcweft-core\src\task\producer.rs:1786:1
+     |
+1786 | impl<V, P, S: super::TaskExecutionSource> NeedProducerLaunchRestore<V, P, S> {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `producer::NeedProducerLaunchRestore<V, P, S>` is reachable at visibility `pub`
+     |
+note: but trait `task::execution::TaskExecutionSource` is only usable at visibility `pub(crate)`
+    --> crates\arcweft-core\src\task\execution.rs:449:1
+     |
+ 449 | pub(crate) trait TaskExecutionSource {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `RuntimeStoredValue` is more private than the item `RuntimeNeedProducerStart<V, P, S>`
+   --> crates\arcweft-core\src\task\producer\start.rs:147:1
+    |
+147 | / impl<V: RuntimeStoredValue, P: RuntimeStoredValue, S: crate::task::TaskExecutionSource>
+148 | |     RuntimeNeedProducerStart<V, P, S>
+    | |_____________________________________^ implementation `RuntimeNeedProducerStart<V, P, S>` is reachable at visibility `pub`
+    |
+note: but trait `RuntimeStoredValue` is only usable at visibility `pub(crate)`
+   --> crates\arcweft-core\src\value\storage.rs:15:1
+    |
+ 15 | pub(crate) trait RuntimeStoredValue {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `task::execution::TaskExecutionSource` is more private than the item `RuntimeNeedProducerStart<V, P, S>`
+   --> crates\arcweft-core\src\task\producer\start.rs:147:1
+    |
+147 | / impl<V: RuntimeStoredValue, P: RuntimeStoredValue, S: crate::task::TaskExecutionSource>
+148 | |     RuntimeNeedProducerStart<V, P, S>
+    | |_____________________________________^ implementation `RuntimeNeedProducerStart<V, P, S>` is reachable at visibility `pub`
+    |
+note: but trait `task::execution::TaskExecutionSource` is only usable at visibility `pub(crate)`
+   --> crates\arcweft-core\src\task\execution.rs:449:1
+    |
+449 | pub(crate) trait TaskExecutionSource {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `task::execution::TaskExecutionSource` is more private than the item `specification::TaskSpec<P, producer::TaskPlanSemanticDigest, S>`
+   --> crates\arcweft-core\src\task\specification.rs:206:1
+    |
+206 | impl<P, S: super::TaskExecutionSource> TaskSpec<P, TaskPlanSemanticDigest, S> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `specification::TaskSpec<P, producer::TaskPlanSemanticDigest, S>` is reachable at visibility `pub`
+    |
+note: but trait `task::execution::TaskExecutionSource` is only usable at visibility `pub(crate)`
+   --> crates\arcweft-core\src\task\execution.rs:449:1
+    |
+449 | pub(crate) trait TaskExecutionSource {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `task::execution::TaskExecutionSource` is more private than the item `task::journal::TaskSubmission<P, producer::TaskPlanSemanticDigest, S>`
+   --> crates\arcweft-core\src\task\journal.rs:40:1
+    |
+ 40 | impl<P, S: super::TaskExecutionSource> TaskSubmission<P, super::TaskPlanSemanticDigest, S> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `task::journal::TaskSubmission<P, producer::TaskPlanSemanticDigest, S>` is reachable at visibility `pub`
+    |
+note: but trait `task::execution::TaskExecutionSource` is only usable at visibility `pub(crate)`
+   --> crates\arcweft-core\src\task\execution.rs:449:1
+    |
+449 | pub(crate) trait TaskExecutionSource {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `TaskSnapshotSource` is more private than the item `task::snapshot::<impl specification::TaskSpec<awbc_save::AwbcRuntimeValueSnapshot, producer::TaskPlanSemanticDigest, S>>`
+  --> crates\arcweft-core\src\task\snapshot.rs:90:1
+   |
+90 | impl<S: TaskSnapshotSource> TaskSpec<AwbcRuntimeValueSnapshot, super::TaskPlanSemanticDigest, S> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `task::snapshot::<impl specification::TaskSpec<awbc_save::AwbcRuntimeValueSnapshot, producer::TaskPlanSemanticDigest, S>>` is reachable at visibility `pub`
+   |
+note: but trait `TaskSnapshotSource` is only usable at visibility `pub(crate)`
+  --> crates\arcweft-core\src\task\snapshot.rs:23:1
+   |
+23 | pub(crate) trait TaskSnapshotSource: super::TaskExecutionSource + Sized {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `task::execution::TaskExecutionSource` is more private than the item `task::descriptor::<impl specification::TaskSpec<P, producer::TaskPlanSemanticDigest, S>>`
+   --> crates\arcweft-core\src\task\descriptor.rs:17:1
+    |
+ 17 | impl<P, S: super::TaskExecutionSource> TaskSpec<P, super::TaskPlanSemanticDigest, S> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `task::descriptor::<impl specification::TaskSpec<P, producer::TaskPlanSemanticDigest, S>>` is reachable at visibility `pub`
+    |
+note: but trait `task::execution::TaskExecutionSource` is only usable at visibility `pub(crate)`
+   --> crates\arcweft-core\src\task\execution.rs:449:1
+    |
+449 | pub(crate) trait TaskExecutionSource {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `task::execution::TaskExecutionSource` is more private than the item `task::descriptor::<impl specification::TaskSpec<P, producer::TaskPlanSemanticDigest, S>>`
+   --> crates\arcweft-core\src\task\descriptor.rs:107:1
+    |
+107 | impl<P, S: super::TaskExecutionSource> TaskSpec<P, super::TaskPlanSemanticDigest, S> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `task::descriptor::<impl specification::TaskSpec<P, producer::TaskPlanSemanticDigest, S>>` is reachable at visibility `pub`
+    |
+note: but trait `task::execution::TaskExecutionSource` is only usable at visibility `pub(crate)`
+   --> crates\arcweft-core\src\task\execution.rs:449:1
+    |
+449 | pub(crate) trait TaskExecutionSource {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: trait `task::execution::TaskExecutionSource` is more private than the item `TaskRequest<P, S>`
+   --> crates\arcweft-core\src\task\execution.rs:608:1
+    |
+608 | impl<P, S: TaskExecutionSource> TaskRequest<P, S> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ implementation `TaskRequest<P, S>` is reachable at visibility `pub`
+    |
+note: but trait `task::execution::TaskExecutionSource` is only usable at visibility `pub(crate)`
+   --> crates\arcweft-core\src\task\execution.rs:449:1
+    |
+449 | pub(crate) trait TaskExecutionSource {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `replace_from_snapshot` and `push_call_frame_with_continuation` are never used
+    --> crates\arcweft-core\src\awbc\fiber.rs:2644:19
+     |
+1803 | impl FiberState {
+     | --------------- methods in this implementation
+...
+2644 |     pub(crate) fn replace_from_snapshot(
+     |                   ^^^^^^^^^^^^^^^^^^^^^
+...
+3522 |     pub(crate) fn push_call_frame_with_continuation(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `is_task_handle` is never used
+    --> crates\arcweft-core\src\awbc\verify\code.rs:6699:4
+     |
+6699 | fn is_task_handle(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
+     |    ^^^^^^^^^^^^^^
+
+warning: function `bind_pattern_copyable` is never used
+    --> crates\arcweft-core\src\awbc\vm.rs:4788:15
+     |
+4788 | pub(crate) fn bind_pattern_copyable(
+     |               ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `pattern_binding_registers` is never used
+    --> crates\arcweft-core\src\awbc\vm.rs:5032:15
+     |
+5032 | pub(crate) fn pattern_binding_registers(
+     |               ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `RuntimeRegistryUpdateJournalError` is never used
+  --> crates\arcweft-core\src\effect\registry\journal.rs:17:17
+   |
+17 | pub(crate) enum RuntimeRegistryUpdateJournalError {
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `Bank` is never used
+  --> crates\arcweft-core\src\effect\registry\journal.rs:24:6
+   |
+24 | enum Bank {
+   |      ^^^^
+
+warning: struct `RuntimeRegistryUpdateJournal` is never constructed
+  --> crates\arcweft-core\src\effect\registry\journal.rs:31:19
+   |
+31 | pub(crate) struct RuntimeRegistryUpdateJournal {
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated items `new`, `try_push`, and `finish` are never used
+  --> crates\arcweft-core\src\effect\registry\journal.rs:37:19
+   |
+36 | impl RuntimeRegistryUpdateJournal {
+   | --------------------------------- associated items in this implementation
+37 |     pub(crate) fn new(
+   |                   ^^^
+...
+51 |     pub(crate) fn try_push(
+   |                   ^^^^^^^^
+...
+89 |     pub(crate) fn finish(
+   |                   ^^^^^^
+
+warning: method `bind_presentation_scope` is never used
+   --> crates\arcweft-core\src\engine.rs:268:19
+    |
+265 | impl FlowFiber {
+    | -------------- method in this implementation
+...
+268 |     pub(crate) fn bind_presentation_scope<V>(
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `owner` is never used
+   --> crates\arcweft-core\src\engine\code_cursor.rs:201:25
+    |
+200 | impl NativeSourceOperation {
+    | -------------------------- method in this implementation
+201 |     pub(super) const fn owner(&self) -> RuntimeCodeOwner {
+    |                         ^^^^^
+
+warning: method `register_presentation_body` is never used
+  --> crates\arcweft-core\src\engine\presentation.rs:59:19
+   |
+58 | impl Engine {
+   | ----------- method in this implementation
+59 |     pub(crate) fn register_presentation_body(
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `allocate_scheduled_scope` and `push_control_scope_frame` are never used
+    --> crates\arcweft-core\src\engine\flow.rs:1433:8
+     |
+  32 | impl Engine {
+     | ----------- methods in this implementation
+...
+1433 |     fn allocate_scheduled_scope(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1452 |     pub(super) fn push_control_scope_frame(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `code_owner` is never used
+   --> crates\arcweft-core\src\engine\work.rs:233:19
+    |
+206 | impl<V, I> NativePendingWork<V, I> {
+    | ---------------------------------- method in this implementation
+...
+233 |     pub(super) fn code_owner(&self) -> Option<crate::plan::code::RuntimeCodeOwner> {
+    |                   ^^^^^^^^^^
+
+warning: function `canonical_runtime_tuple_digest` is never used
+   --> crates\arcweft-core\src\entry\schema.rs:627:15
+    |
+627 | pub(crate) fn canonical_runtime_tuple_digest(
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated items `try_into_state` and `from_state` are never used
+  --> crates\arcweft-core\src\entry\schema\value_budget.rs:71:19
+   |
+68 | impl ValidationWork {
+   | ------------------- associated items in this implementation
+...
+71 |     pub(crate) fn try_into_state(self) -> Result<ValidationWorkState, Self> {
+   |                   ^^^^^^^^^^^^^^
+...
+77 |     pub(crate) fn from_state(state: ValidationWorkState) -> Self {
+   |                   ^^^^^^^^^^
+
+warning: function `validate_live` is never used
+   --> crates\arcweft-core\src\entry\schema\value_encoding.rs:185:15
+    |
+185 | pub(crate) fn validate_live<V: ValueValidation>(
+    |               ^^^^^^^^^^^^^
+
+warning: function `validate_without_digest` is never used
+   --> crates\arcweft-core\src\entry\schema\value_encoding.rs:213:4
+    |
+213 | fn validate_without_digest<V: ValueValidation>(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type alias `ValueResourceAdmissionState` is never used
+   --> crates\arcweft-core\src\entry\schema\value_encoding.rs:495:17
+    |
+495 | pub(crate) type ValueResourceAdmissionState = ValueResourceAdmission<ValidationWorkState>;
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `map_work` is never used
+   --> crates\arcweft-core\src\entry\schema\value_encoding.rs:498:8
+    |
+497 | impl<Work> ValueResourceAdmission<Work> {
+    | --------------------------------------- method in this implementation
+498 |     fn map_work<Next>(self, map: impl FnOnce(Work) -> Next) -> ValueResourceAdmission<Next> {
+    |        ^^^^^^^^
+
+warning: method `resume` is never used
+   --> crates\arcweft-core\src\entry\schema\value_encoding.rs:511:19
+    |
+510 | impl ValueResourceAdmissionState {
+    | -------------------------------- method in this implementation
+511 |     pub(crate) fn resume(self) -> ValueResourceAdmission {
+    |                   ^^^^^^
+
+warning: method `try_into_state` is never used
+   --> crates\arcweft-core\src\entry\schema\value_encoding.rs:524:19
+    |
+516 | impl ValueResourceAdmission {
+    | --------------------------- method in this implementation
+...
+524 |     pub(crate) fn try_into_state(self) -> Result<ValueResourceAdmissionState, Self> {
+    |                   ^^^^^^^^^^^^^^
+
+warning: associated functions `new` and `from_flow_invocation` are never used
+   --> crates\arcweft-core\src\executor.rs:163:19
+    |
+162 | impl VmExecutor {
+    | --------------- associated functions in this implementation
+163 |     pub(crate) fn new(plan: RuntimePlan) -> Self {
+    |                   ^^^
+...
+176 |     pub(crate) fn from_flow_invocation(
+    |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `new` and `from_flow_invocation` are never used
+   --> crates\arcweft-core\src\executor.rs:214:19
+    |
+213 | impl AotExecutor {
+    | ---------------- associated functions in this implementation
+214 |     pub(crate) fn new(plan: RuntimePlan) -> Self {
+    |                   ^^^
+...
+232 |     pub(crate) fn from_flow_invocation(
+    |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `commit_published`, `commit_abandoned`, and `accept_published_outcome` are never used
+    --> crates\arcweft-core\src\line_task\activation.rs:946:19
+     |
+ 568 | impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
+     | --------------------------------------------------------- methods in this implementation
+...
+ 946 |     pub(crate) fn commit_published(
+     |                   ^^^^^^^^^^^^^^^^
+...
+1004 |     pub(crate) fn commit_abandoned(
+     |                   ^^^^^^^^^^^^^^^^
+...
+1027 |     pub(crate) fn accept_published_outcome(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `issued_command` is never used
+   --> crates\arcweft-core\src\line_task\handle.rs:522:19
+    |
+513 | impl RuntimeDialogueOutcomeStage {
+    | -------------------------------- method in this implementation
+...
+522 |     pub(crate) fn issued_command(
+    |                   ^^^^^^^^^^^^^^
+
+warning: methods `ledger` and `ledger_mut` are never used
+   --> crates\arcweft-core\src\line_task\handle.rs:601:25
+    |
+600 | impl RuntimeScheduledCompletionStage {
+    | ------------------------------------ methods in this implementation
+601 |     pub(crate) const fn ledger(&self) -> &RuntimeLineHandleLedger {
+    |                         ^^^^^^
+...
+605 |     pub(crate) fn ledger_mut(&mut self) -> &mut RuntimeLineHandleLedger {
+    |                   ^^^^^^^^^^
+
+warning: methods `allocate_deferred_registration`, `terminalize_unstarted_scheduled_packet`, `complete_unstarted_scheduled`, `stage_scheduled_child_work_completion`, `replace_transaction_parts`, and `accept_runtime_outcome` are never used
+    --> crates\arcweft-core\src\line_task\handle.rs:914:19
+     |
+ 789 | impl<T: Clone> RuntimeDialogueActivationState<T> {
+     | ------------------------------------------------ methods in this implementation
+...
+ 914 |     pub(crate) fn allocate_deferred_registration(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1385 |     pub(crate) fn terminalize_unstarted_scheduled_packet(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1394 |     pub(crate) fn complete_unstarted_scheduled(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1488 |     pub(crate) fn stage_scheduled_child_work_completion(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1603 |     pub(crate) fn replace_transaction_parts(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1979 |     pub(crate) fn accept_runtime_outcome(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `transition` is never used
+    --> crates\arcweft-core\src\line_task\handle.rs:4262:19
+     |
+4053 | impl RuntimeScheduledLineTask {
+     | ----------------------------- method in this implementation
+...
+4262 |     pub(crate) fn transition(
+     |                   ^^^^^^^^^^
+
+warning: function `match_runtime_pattern` is never used
+    --> crates\arcweft-core\src\pattern.rs:1554:15
+     |
+1554 | pub(crate) fn match_runtime_pattern(
+     |               ^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `value_field_count` and `value_field` are never used
+    --> crates\arcweft-core\src\pattern.rs:2529:8
+     |
+2517 | impl RuntimeRecordPatternDomain<'_> {
+     | ----------------------------------- methods in this implementation
+...
+2529 |     fn value_field_count(&self, value: &RuntimeValue) -> Option<usize> {
+     |        ^^^^^^^^^^^^^^^^^
+...
+2539 |     fn value_field<'value>(
+     |        ^^^^^^^^^^^
+
+warning: function `collect_pattern_bindings` is never used
+    --> crates\arcweft-core\src\pattern.rs:2757:4
+     |
+2757 | fn collect_pattern_bindings(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `collect_record_pattern_bindings` is never used
+    --> crates\arcweft-core\src\pattern.rs:2830:4
+     |
+2830 | fn collect_record_pattern_bindings(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `collect_sequence_pattern_bindings` is never used
+    --> crates\arcweft-core\src\pattern.rs:2862:4
+     |
+2862 | fn collect_sequence_pattern_bindings(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `collect_pattern_list` is never used
+    --> crates\arcweft-core\src\pattern.rs:2889:4
+     |
+2889 | fn collect_pattern_list(
+     |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `from_runtime_contract` is never used
+   --> crates\arcweft-core\src\plan.rs:641:19
+    |
+603 | impl FlowRuntimeId {
+    | ------------------ associated function in this implementation
+...
+641 |     pub(crate) fn from_runtime_contract(
+    |                   ^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `function_row_digest` is never used
+   --> crates\arcweft-core\src\plan\body_semantic\executable_metadata.rs:316:19
+    |
+  7 | impl RuntimeBodySemanticContext<'_> {
+    | ----------------------------------- method in this implementation
+...
+316 |     pub(crate) fn function_row_digest(
+    |                   ^^^^^^^^^^^^^^^^^^^
+
+warning: method `static_request_template_digest` is never used
+   --> crates\arcweft-core\src\plan\body_semantic\request.rs:342:19
+    |
+339 | impl RuntimeBodySemanticContext<'_> {
+    | ----------------------------------- method in this implementation
+...
+342 |     pub(crate) fn static_request_template_digest(
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `storage_bytes` is never used
+  --> crates\arcweft-core\src\plan\body_semantic\request\codec.rs:46:25
+   |
+41 | impl PreparedRuntimeTaskRequestEncoding<'_> {
+   | ------------------------------------------- method in this implementation
+...
+46 |     pub(crate) const fn storage_bytes(&self) -> usize {
+   |                         ^^^^^^^^^^^^^
+
+warning: method `storage_bytes` is never used
+  --> crates\arcweft-core\src\plan\body_semantic\request\codec.rs:88:25
+   |
+87 | impl ValidatedRuntimeTaskRequestSource<'_> {
+   | ------------------------------------------ method in this implementation
+88 |     pub(crate) const fn storage_bytes(&self) -> usize {
+   |                         ^^^^^^^^^^^^^
+
+warning: associated items `encode` and `decode` are never used
+   --> crates\arcweft-core\src\plan\body_semantic\request\codec.rs:149:19
+    |
+148 | impl RuntimeTaskRequestTemplate {
+    | ------------------------------- associated items in this implementation
+149 |     pub(crate) fn encode(
+    |                   ^^^^^^
+...
+244 |     pub(crate) fn decode(
+    |                   ^^^^^^
+
+warning: associated function `decode_task_sources` is never used
+   --> crates\arcweft-core\src\plan\body_semantic\task_image\codec.rs:227:28
+    |
+224 | impl UnsealedRuntimePlanImage {
+    | ----------------------------- associated function in this implementation
+...
+227 |     pub(in crate::plan) fn decode_task_sources(
+    |                            ^^^^^^^^^^^^^^^^^^^
+
+warning: method `bytes` is never used
+   --> crates\arcweft-core\src\plan\body_semantic\task_image\codec.rs:345:34
+    |
+255 | impl<'bytes, 'resources> PreparedRuntimeTaskSource<'bytes, 'resources> {
+    | ---------------------------------------------------------------------- method in this implementation
+...
+345 |     pub(in crate::plan) const fn bytes(&self) -> &'bytes [u8] {
+    |                                  ^^^^^
+
+warning: method `lower_pattern_seed` is never used
+   --> crates\arcweft-core\src\plan\construction\lower.rs:190:19
+    |
+146 | impl RuntimePlanBuilder {
+    | ----------------------- method in this implementation
+...
+190 |     pub(super) fn lower_pattern_seed(
+    |                   ^^^^^^^^^^^^^^^^^^
+
+warning: function `collect_expr_refs_free_locals` is never used
+    --> crates\arcweft-core\src\plan\construction\seed.rs:1398:4
+     |
+1398 | fn collect_expr_refs_free_locals(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: variant `OutputCapacity` is never constructed
+  --> crates\arcweft-core\src\plan\construction\source\audio_commands.rs:52:5
+   |
+30 | pub(in crate::plan) enum RuntimeAudioCommandSourceError {
+   |                          ------------------------------ variant in this enum
+...
+52 |     OutputCapacity { required: usize, remaining: usize },
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `RuntimeAudioCommandSourceError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `footprint` is never read
+  --> crates\arcweft-core\src\plan\construction\source\audio_commands\encoding.rs:12:5
+   |
+10 | pub(in crate::plan) struct EncodedRuntimeAudioCommandSource {
+   |                            -------------------------------- field in this struct
+11 |     bytes: Vec<u8>,
+12 |     footprint: Footprint,
+   |     ^^^^^^^^^
+
+warning: methods `into_bytes`, `storage_bytes`, `elements`, `node_count`, and `append_to` are never used
+  --> crates\arcweft-core\src\plan\construction\source\audio_commands\encoding.rs:18:28
+   |
+14 | impl EncodedRuntimeAudioCommandSource {
+   | ------------------------------------- methods in this implementation
+...
+18 |     pub(in crate::plan) fn into_bytes(self) -> Vec<u8> {
+   |                            ^^^^^^^^^^
+...
+21 |     pub(in crate::plan) const fn storage_bytes(&self) -> usize {
+   |                                  ^^^^^^^^^^^^^
+...
+24 |     pub(in crate::plan) const fn elements(&self) -> usize {
+   |                                  ^^^^^^^^
+...
+27 |     pub(in crate::plan) const fn node_count(&self) -> usize {
+   |                                  ^^^^^^^^^^
+...
+30 |     pub(in crate::plan) fn append_to(self, output: &mut Vec<u8>) -> Result<(), Error> {
+   |                            ^^^^^^^^^
+
+warning: method `into_bytes` is never used
+  --> crates\arcweft-core\src\plan\construction\source\content_plans\encoding.rs:21:28
+   |
+17 | impl EncodedRuntimeContentPlanSources {
+   | ------------------------------------- method in this implementation
+...
+21 |     pub(in crate::plan) fn into_bytes(self) -> Vec<u8> {
+   |                            ^^^^^^^^^^
+
+warning: variant `OutputCapacity` is never constructed
+  --> crates\arcweft-core\src\plan\construction\source\evaluated_effects.rs:55:5
+   |
+29 | pub(in crate::plan) enum RuntimeEvaluatedEffectSourceError {
+   |                          --------------------------------- variant in this enum
+...
+55 |     OutputCapacity { required: usize, remaining: usize },
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `RuntimeEvaluatedEffectSourceError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `footprint` is never read
+  --> crates\arcweft-core\src\plan\construction\source\evaluated_effects\encoding.rs:14:5
+   |
+12 | pub(in crate::plan) struct EncodedRuntimeEvaluatedEffectSource {
+   |                            ----------------------------------- field in this struct
+13 |     bytes: Vec<u8>,
+14 |     footprint: Footprint,
+   |     ^^^^^^^^^
+
+warning: methods `into_bytes`, `storage_bytes`, `elements`, `node_count`, and `append_to` are never used
+  --> crates\arcweft-core\src\plan\construction\source\evaluated_effects\encoding.rs:20:28
+   |
+16 | impl EncodedRuntimeEvaluatedEffectSource {
+   | ---------------------------------------- methods in this implementation
+...
+20 |     pub(in crate::plan) fn into_bytes(self) -> Vec<u8> {
+   |                            ^^^^^^^^^^
+...
+23 |     pub(in crate::plan) const fn storage_bytes(&self) -> usize {
+   |                                  ^^^^^^^^^^^^^
+...
+26 |     pub(in crate::plan) const fn elements(&self) -> usize {
+   |                                  ^^^^^^^^
+...
+29 |     pub(in crate::plan) const fn node_count(&self) -> usize {
+   |                                  ^^^^^^^^^^
+...
+32 |     pub(in crate::plan) fn append_to(self, output: &mut Vec<u8>) -> Result<(), Error> {
+   |                            ^^^^^^^^^
+
+warning: variant `OutputCapacity` is never constructed
+   --> crates\arcweft-core\src\plan\construction\source\expression.rs:109:5
+    |
+ 59 | pub(in crate::plan) enum RuntimeExpressionSourceError {
+    |                          ---------------------------- variant in this enum
+...
+109 |     OutputCapacity { required: usize, remaining: usize },
+    |     ^^^^^^^^^^^^^^
+    |
+    = note: `RuntimeExpressionSourceError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: methods `into_bytes` and `append_to` are never used
+  --> crates\arcweft-core\src\plan\construction\source\expression\encoding.rs:19:28
+   |
+18 | impl EncodedRuntimeExpressionSource {
+   | ----------------------------------- methods in this implementation
+19 |     pub(in crate::plan) fn into_bytes(self) -> Vec<u8> {
+   |                            ^^^^^^^^^^
+...
+34 |     pub(in crate::plan) fn append_to(self, output: &mut Vec<u8>) -> Result<(), Error> {
+   |                            ^^^^^^^^^
+
+warning: variant `OutputCapacity` is never constructed
+   --> crates\arcweft-core\src\plan\construction\source\flow.rs:130:5
+    |
+ 62 | pub(in crate::plan) enum RuntimeFlowSourceError {
+    |                          ---------------------- variant in this enum
+...
+130 |     OutputCapacity { required: usize, remaining: usize },
+    |     ^^^^^^^^^^^^^^
+    |
+    = note: `RuntimeFlowSourceError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `footprint` is never read
+  --> crates\arcweft-core\src\plan\construction\source\flow\encoding.rs:13:5
+   |
+11 | pub(in crate::plan) struct EncodedRuntimeFlowSource {
+   |                            ------------------------ field in this struct
+12 |     bytes: Vec<u8>,
+13 |     footprint: Footprint,
+   |     ^^^^^^^^^
+
+warning: methods `node_count`, `elements`, `storage_bytes`, and `append_to` are never used
+  --> crates\arcweft-core\src\plan\construction\source\flow\encoding.rs:19:34
+   |
+15 | impl EncodedRuntimeFlowSource {
+   | ----------------------------- methods in this implementation
+...
+19 |     pub(in crate::plan) const fn node_count(&self) -> usize {
+   |                                  ^^^^^^^^^^
+...
+22 |     pub(in crate::plan) const fn elements(&self) -> usize {
+   |                                  ^^^^^^^^
+...
+25 |     pub(in crate::plan) const fn storage_bytes(&self) -> usize {
+   |                                  ^^^^^^^^^^^^^
+...
+28 |     pub(in crate::plan) fn append_to(self, output: &mut Vec<u8>) -> Result<(), Error> {
+   |                            ^^^^^^^^^
+
+warning: variant `OutputCapacity` is never constructed
+  --> crates\arcweft-core\src\plan\construction\source\host_calls.rs:75:5
+   |
+39 | pub(in crate::plan) enum RuntimeHostCallSourceError {
+   |                          -------------------------- variant in this enum
+...
+75 |     OutputCapacity { required: usize, remaining: usize },
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `RuntimeHostCallSourceError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `footprint` is never read
+  --> crates\arcweft-core\src\plan\construction\source\host_calls\encoding.rs:12:5
+   |
+10 | pub(in crate::plan) struct EncodedRuntimeHostCallSource {
+   |                            ---------------------------- field in this struct
+11 |     bytes: Vec<u8>,
+12 |     footprint: Footprint,
+   |     ^^^^^^^^^
+
+warning: methods `storage_bytes`, `elements`, `node_count`, and `append_to` are never used
+  --> crates\arcweft-core\src\plan\construction\source\host_calls\encoding.rs:18:34
+   |
+14 | impl EncodedRuntimeHostCallSource {
+   | --------------------------------- methods in this implementation
+...
+18 |     pub(in crate::plan) const fn storage_bytes(&self) -> usize {
+   |                                  ^^^^^^^^^^^^^
+...
+21 |     pub(in crate::plan) const fn elements(&self) -> usize {
+   |                                  ^^^^^^^^
+...
+24 |     pub(in crate::plan) const fn node_count(&self) -> usize {
+   |                                  ^^^^^^^^^^
+...
+27 |     pub(in crate::plan) fn append_to(self, output: &mut Vec<u8>) -> Result<(), Error> {
+   |                            ^^^^^^^^^
+
+warning: field `footprint` is never read
+   --> crates\arcweft-core\src\plan\construction\source\program.rs:275:9
+    |
+270 | pub(in crate::plan) struct OriginalRuntimeProgramSource {
+    |                            ---------------------------- field in this struct
+...
+275 |     pub footprint: Footprint,
+    |         ^^^^^^^^^
+
+warning: methods `node_count` and `elements` are never used
+  --> crates\arcweft-core\src\plan\construction\source\program\encoding.rs:16:34
+   |
+12 | impl EncodedRuntimeProgramSource {
+   | -------------------------------- methods in this implementation
+...
+16 |     pub(in crate::plan) const fn node_count(&self) -> usize {
+   |                                  ^^^^^^^^^^
+...
+19 |     pub(in crate::plan) const fn elements(&self) -> usize {
+   |                                  ^^^^^^^^
+
+warning: variant `OutputCapacity` is never constructed
+  --> crates\arcweft-core\src\plan\construction\source\project_calls.rs:68:5
+   |
+36 | pub(in crate::plan) enum RuntimeProjectCallSourceError {
+   |                          ----------------------------- variant in this enum
+...
+68 |     OutputCapacity { required: usize, remaining: usize },
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `RuntimeProjectCallSourceError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `footprint` is never read
+  --> crates\arcweft-core\src\plan\construction\source\project_calls\encoding.rs:17:5
+   |
+15 | pub(in crate::plan) struct EncodedRuntimeProjectCallSource {
+   |                            ------------------------------- field in this struct
+16 |     bytes: Vec<u8>,
+17 |     footprint: Footprint,
+   |     ^^^^^^^^^
+
+warning: methods `into_bytes`, `storage_bytes`, `elements`, `node_count`, and `append_to` are never used
+  --> crates\arcweft-core\src\plan\construction\source\project_calls\encoding.rs:23:28
+   |
+19 | impl EncodedRuntimeProjectCallSource {
+   | ------------------------------------ methods in this implementation
+...
+23 |     pub(in crate::plan) fn into_bytes(self) -> Vec<u8> {
+   |                            ^^^^^^^^^^
+...
+26 |     pub(in crate::plan) const fn storage_bytes(&self) -> usize {
+   |                                  ^^^^^^^^^^^^^
+...
+29 |     pub(in crate::plan) const fn elements(&self) -> usize {
+   |                                  ^^^^^^^^
+...
+32 |     pub(in crate::plan) const fn node_count(&self) -> usize {
+   |                                  ^^^^^^^^^^
+...
+35 |     pub(in crate::plan) fn append_to(self, output: &mut Vec<u8>) -> Result<(), Error> {
+   |                            ^^^^^^^^^
+
+warning: variant `OutputCapacity` is never constructed
+  --> crates\arcweft-core\src\plan\construction\source\selected_producers.rs:72:5
+   |
+32 | pub(in crate::plan) enum RuntimeSelectedProducerSourceError {
+   |                          ---------------------------------- variant in this enum
+...
+72 |     OutputCapacity { required: usize, remaining: usize },
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `RuntimeSelectedProducerSourceError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `footprint` is never read
+  --> crates\arcweft-core\src\plan\construction\source\selected_producers\encoding.rs:13:5
+   |
+11 | pub(in crate::plan) struct EncodedRuntimeSelectedProducerSource {
+   |                            ------------------------------------ field in this struct
+12 |     bytes: Vec<u8>,
+13 |     footprint: Footprint,
+   |     ^^^^^^^^^
+
+warning: methods `storage_bytes`, `elements`, `node_count`, and `append_to` are never used
+  --> crates\arcweft-core\src\plan\construction\source\selected_producers\encoding.rs:19:34
+   |
+15 | impl EncodedRuntimeSelectedProducerSource {
+   | ----------------------------------------- methods in this implementation
+...
+19 |     pub(in crate::plan) const fn storage_bytes(&self) -> usize {
+   |                                  ^^^^^^^^^^^^^
+...
+22 |     pub(in crate::plan) const fn elements(&self) -> usize {
+   |                                  ^^^^^^^^
+...
+25 |     pub(in crate::plan) const fn node_count(&self) -> usize {
+   |                                  ^^^^^^^^^^
+...
+28 |     pub(in crate::plan) fn append_to(self, output: &mut Vec<u8>) -> Result<(), Error> {
+   |                            ^^^^^^^^^
+
+warning: variant `OutputCapacity` is never constructed
+  --> crates\arcweft-core\src\plan\construction\source\static_effects.rs:58:5
+   |
+30 | pub(in crate::plan) enum RuntimeStaticEffectSourceError {
+   |                          ------------------------------ variant in this enum
+...
+58 |     OutputCapacity { required: usize, remaining: usize },
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `RuntimeStaticEffectSourceError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `footprint` is never read
+  --> crates\arcweft-core\src\plan\construction\source\static_effects\encoding.rs:13:5
+   |
+11 | pub(in crate::plan) struct EncodedRuntimeStaticEffectSource {
+   |                            -------------------------------- field in this struct
+12 |     bytes: Vec<u8>,
+13 |     footprint: Footprint,
+   |     ^^^^^^^^^
+
+warning: methods `into_bytes`, `storage_bytes`, `elements`, `node_count`, and `append_to` are never used
+  --> crates\arcweft-core\src\plan\construction\source\static_effects\encoding.rs:19:28
+   |
+15 | impl EncodedRuntimeStaticEffectSource {
+   | ------------------------------------- methods in this implementation
+...
+19 |     pub(in crate::plan) fn into_bytes(self) -> Vec<u8> {
+   |                            ^^^^^^^^^^
+...
+22 |     pub(in crate::plan) const fn storage_bytes(&self) -> usize {
+   |                                  ^^^^^^^^^^^^^
+...
+25 |     pub(in crate::plan) const fn elements(&self) -> usize {
+   |                                  ^^^^^^^^
+...
+28 |     pub(in crate::plan) const fn node_count(&self) -> usize {
+   |                                  ^^^^^^^^^^
+...
+31 |     pub(in crate::plan) fn append_to(self, output: &mut Vec<u8>) -> Result<(), Error> {
+   |                            ^^^^^^^^^
+
+warning: method `into_bytes` is never used
+  --> crates\arcweft-core\src\plan\construction\source\streams\encoding.rs:23:28
+   |
+19 | impl EncodedRuntimeStreamSources {
+   | -------------------------------- method in this implementation
+...
+23 |     pub(in crate::plan) fn into_bytes(self) -> Vec<u8> {
+   |                            ^^^^^^^^^^
+
+warning: method `materialize` is never used
+   --> crates\arcweft-core\src\plan\control_effect\source_codec.rs:130:28
+    |
+119 | impl PreparedRuntimeControlSources<'_> {
+    | -------------------------------------- method in this implementation
+...
+130 |     pub(in crate::plan) fn materialize(
+    |                            ^^^^^^^^^^^
+
+warning: method `encode_sources` is never used
+   --> crates\arcweft-core\src\plan\control_effect\source_codec.rs:196:28
+    |
+172 | impl RuntimeControlEffectContractTable {
+    | -------------------------------------- method in this implementation
+...
+196 |     pub(in crate::plan) fn encode_sources(
+    |                            ^^^^^^^^^^^^^^
+
+warning: method `storage_bytes` is never used
+   --> crates\arcweft-core\src\plan\declaration_sources.rs:169:25
+    |
+158 | impl PreparedRuntimePlanDeclarationSources<'_> {
+    | ---------------------------------------------- method in this implementation
+...
+169 |     pub(super) const fn storage_bytes(&self) -> usize {
+    |                         ^^^^^^^^^^^^^
+
+warning: method `literals_permit_copy` is never used
+   --> crates\arcweft-core\src\plan\flow_ops.rs:467:19
+    |
+249 | impl FlowOp {
+    | ----------- method in this implementation
+...
+467 |     pub(crate) fn literals_permit_copy(&self) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: method `operation` is never used
+  --> crates\arcweft-core\src\plan\flow_ops\location.rs:72:19
+   |
+31 | impl RuntimeFlowBodyLocation {
+   | ---------------------------- method in this implementation
+...
+72 |     pub(crate) fn operation(self, operation: usize) -> RuntimeFlowOperationLocation {
+   |                   ^^^^^^^^^
+
+warning: methods `body` and `operation_index` are never used
+  --> crates\arcweft-core\src\plan\flow_ops\location.rs:85:19
+   |
+80 | impl RuntimeFlowOperationLocation {
+   | --------------------------------- methods in this implementation
+...
+85 |     pub(crate) fn body(&self) -> &RuntimeFlowBodyLocation {
+   |                   ^^^^
+...
+89 |     pub(crate) fn operation_index(&self) -> usize {
+   |                   ^^^^^^^^^^^^^^^
+
+warning: method `encode_sources` is never used
+   --> crates\arcweft-core\src\plan\local_declarations\source_codec.rs:174:28
+    |
+151 | impl RuntimeLocalDeclarationTable {
+    | --------------------------------- method in this implementation
+...
+174 |     pub(in crate::plan) fn encode_sources(
+    |                            ^^^^^^^^^^^^^^
+
+warning: variant `MissingOriginalSource` is never constructed
+  --> crates\arcweft-core\src\plan\task_source\program.rs:58:5
+   |
+56 | pub(crate) enum RuntimeTaskSourceProgramError {
+   |                 ----------------------------- variant in this enum
+57 |     #[error("AWBC has no original Task Source")]
+58 |     MissingOriginalSource,
+   |     ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `RuntimeTaskSourceProgramError` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: associated function `admit_awbc` is never used
+  --> crates\arcweft-core\src\plan\task_source\program.rs:75:19
+   |
+65 | impl RuntimeTaskSourceProgram {
+   | ----------------------------- associated function in this implementation
+...
+75 |     pub(crate) fn admit_awbc(
+   |                   ^^^^^^^^^^
+
+warning: associated function `preflight_source` is never used
+   --> crates\arcweft-core\src\plan\type_scope\function_codec.rs:335:28
+    |
+275 | impl RuntimeFunctionTypeContract {
+    | -------------------------------- associated function in this implementation
+...
+335 |     pub(in crate::plan) fn preflight_source<'a>(
+    |                            ^^^^^^^^^^^^^^^^
+
+warning: associated items `prepare_source_encoding`, `preflight_source`, and `preflight_source_in_frame` are never used
+   --> crates\arcweft-core\src\plan\type_scope\function_codec\formula.rs:87:28
+    |
+ 86 | impl Formula {
+    | ------------ associated items in this implementation
+ 87 |     pub(in crate::plan) fn prepare_source_encoding<'a>(
+    |                            ^^^^^^^^^^^^^^^^^^^^^^^
+...
+136 |     pub(in crate::plan) fn preflight_source<'a>(
+    |                            ^^^^^^^^^^^^^^^^
+...
+153 |     pub(in crate::plan) fn preflight_source_in_frame<'a>(
+    |                            ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `preflight_source` is never used
+   --> crates\arcweft-core\src\plan\type_scope\source_codec.rs:235:28
+    |
+197 | impl RuntimeTypeScope {
+    | --------------------- associated function in this implementation
+...
+235 |     pub(in crate::plan) fn preflight_source<'a>(
+    |                            ^^^^^^^^^^^^^^^^
+
+warning: associated items `encode_sources` and `decode_sources` are never used
+   --> crates\arcweft-core\src\plan\type_table\source_codec.rs:326:28
+    |
+302 | impl RuntimePlanTypeTable {
+    | ------------------------- associated items in this implementation
+...
+326 |     pub(in crate::plan) fn encode_sources(
+    |                            ^^^^^^^^^^^^^^
+...
+362 |     pub(in crate::plan) fn decode_sources(
+    |                            ^^^^^^^^^^^^^^
+
+warning: method `validate_live_value_with_work` is never used
+  --> crates\arcweft-core\src\plan\value_admission.rs:60:19
+   |
+48 | impl RuntimePlan {
+   | ---------------- method in this implementation
+...
+60 |     pub(crate) fn validate_live_value_with_work(
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `decode_literal_source_value`, `materialize_literal_source_value`, and `admit_literal_source_value` are never used
+  --> crates\arcweft-core\src\plan\value_admission\literal_source.rs:18:19
+   |
+17 | impl crate::plan::RuntimePlanInventory {
+   | -------------------------------------- methods in this implementation
+18 |     pub(crate) fn decode_literal_source_value(
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+30 |     pub(crate) fn materialize_literal_source_value(
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+38 |     pub(crate) fn admit_literal_source_value(
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `decode_static_literal_source_value` and `decode_literal_source_value` are never used
+   --> crates\arcweft-core\src\plan\value_admission\literal_source.rs:61:28
+    |
+ 48 | impl PlanValueAuthority<'_> {
+    | --------------------------- methods in this implementation
+...
+ 61 |     pub(in crate::plan) fn decode_static_literal_source_value(
+    |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+118 |     pub(in crate::plan) fn decode_literal_source_value(
+    |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `try_new` is never used
+  --> crates\arcweft-core\src\presentation\resources.rs:73:19
+   |
+72 | impl PresentationSlotAddress {
+   | ---------------------------- associated function in this implementation
+73 |     pub(crate) fn try_new(
+   |                   ^^^^^^^
+
+warning: variants `Slot` and `Independent` are never constructed
+  --> crates\arcweft-core\src\presentation\resources.rs:94:5
+   |
+93 | pub(crate) enum PresentationRegistrationSite {
+   |                 ---------------------------- variants in this enum
+94 |     Slot(PresentationSlotAddress),
+   |     ^^^^
+95 |     Independent(PresentationResourceKind),
+   |     ^^^^^^^^^^^
+   |
+   = note: `PresentationRegistrationSite` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: method `into_body` is never used
+   --> crates\arcweft-core\src\presentation\resources.rs:122:19
+    |
+121 | impl<V> PresentationRetirement<V> {
+    | --------------------------------- method in this implementation
+122 |     pub(crate) fn into_body(self) -> V {
+    |                   ^^^^^^^^^
+
+warning: struct `PresentationRegisterError` is never constructed
+   --> crates\arcweft-core\src\presentation\resources.rs:148:19
+    |
+148 | pub(crate) struct PresentationRegisterError<V, E = RuntimePresentationError> {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: multiple associated items are never used
+   --> crates\arcweft-core\src\presentation\resources.rs:169:19
+    |
+153 | impl<V> PresentationLedger<V> {
+    | ----------------------------- associated items in this implementation
+...
+169 |     pub(crate) fn preflight_register(
+    |                   ^^^^^^^^^^^^^^^^^^
+...
+189 |     pub(crate) fn new(
+    |                   ^^^
+...
+207 |     pub(crate) fn bind_scope<VS>(
+    |                   ^^^^^^^^^^
+...
+289 |     fn validate_handle(
+    |        ^^^^^^^^^^^^^^^
+...
+319 |     pub(crate) fn register(
+    |                   ^^^^^^^^
+...
+364 |     pub(crate) fn clear(
+    |                   ^^^^^
+...
+373 |     fn take_slot_body(&mut self, address: &PresentationSlotAddress) -> Option<V> {
+    |        ^^^^^^^^^^^^^^
+...
+384 |     pub(crate) fn transfer(
+    |                   ^^^^^^^^
+...
+402 |     pub(crate) fn release(
+    |                   ^^^^^^^
+
+warning: variant `RuntimeContract` is never constructed
+   --> crates\arcweft-core\src\runtime_id.rs:970:5
+    |
+968 | enum RuntimeIdPathSourceMode {
+    |      ----------------------- variant in this enum
+969 |     Canonical,
+970 |     RuntimeContract,
+    |     ^^^^^^^^^^^^^^^
+    |
+    = note: `RuntimeIdPathSourceMode` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+warning: associated functions `from_runtime_contract_str` and `preflight_runtime_contract_source` are never used
+    --> crates\arcweft-core\src\runtime_id.rs:1154:19
+     |
+1141 | impl RuntimeIdPath {
+     | ------------------ associated functions in this implementation
+...
+1154 |     pub(crate) fn from_runtime_contract_str(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1161 |     pub(crate) fn preflight_runtime_contract_source(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `selected_producer_spec` and `host_producer_spec` are never used
+   --> crates\arcweft-core\src\task\producer\source.rs:247:19
+    |
+142 | impl RuntimeTaskSourceRef<'_> {
+    | ----------------------------- methods in this implementation
+...
+247 |     pub(crate) fn selected_producer_spec<V: RuntimeStoredValue>(
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+...
+260 |     pub(crate) fn host_producer_spec<V: RuntimeStoredValue>(
+    |                   ^^^^^^^^^^^^^^^^^^
+
+warning: method `selected_start` is never used
+  --> crates\arcweft-core\src\task\producer\start.rs:57:19
+   |
+56 | impl RuntimeTaskSourceRef<'_> {
+   | ----------------------------- method in this implementation
+57 |     pub(crate) fn selected_start(
+   |                   ^^^^^^^^^^^^^^
+
+warning: method `into_live` is never used
+   --> crates\arcweft-core\src\task\need_handle.rs:115:19
+    |
+ 37 | impl RuntimeNeedHandleSaveSnapshot {
+    | ---------------------------------- method in this implementation
+...
+115 |     pub(crate) fn into_live(
+    |                   ^^^^^^^^^
+
+warning: enum `NeedProducerAssertionField` is never used
+  --> crates\arcweft-core\src\task\specification.rs:14:17
+   |
+14 | pub(crate) enum NeedProducerAssertionField {
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `NeedProducerAssertionError` is never used
+  --> crates\arcweft-core\src\task\specification.rs:24:17
+   |
+24 | pub(crate) enum NeedProducerAssertionError {
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `plan_assertion` is never used
+  --> crates\arcweft-core\src\task\specification.rs:88:19
+   |
+85 | impl NeedProducerInstance {
+   | ------------------------- method in this implementation
+...
+88 |     pub(crate) fn plan_assertion(&self) -> NeedProducerInstance<super::ExpectedTaskPlanKey> {
+   |                   ^^^^^^^^^^^^^^
+
+warning: method `admit_original_spec` is never used
+   --> crates\arcweft-core\src\task\specification.rs:127:19
+    |
+124 | impl NeedProducerInstance<super::ExpectedTaskPlanKey> {
+    | ----------------------------------------------------- method in this implementation
+...
+127 |     pub(crate) fn admit_original_spec(
+    |                   ^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `validate_submissions` is never used
+   --> crates\arcweft-core\src\task\journal.rs:154:19
+    |
+137 | impl TaskAdmissionJournal {
+    | ------------------------- associated function in this implementation
+...
+154 |     pub(super) fn validate_submissions<
+    |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `from_admitted_parts` is never used
+    --> crates\arcweft-core\src\value.rs:1659:19
+     |
+1658 | impl RuntimeLocalRead {
+     | --------------------- associated function in this implementation
+1659 |     pub(crate) fn from_admitted_parts(
+     |                   ^^^^^^^^^^^^^^^^^^^
+
+warning: methods `predicate_collection_lengths` and `additional_structural_node_count` are never used
+    --> crates\arcweft-core\src\value\agent.rs:1701:19
+     |
+1489 | impl RuntimeAgentValue {
+     | ---------------------- methods in this implementation
+...
+1701 |     pub(crate) fn predicate_collection_lengths(&self) -> Vec<usize> {
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+1709 |     pub(crate) fn additional_structural_node_count(&self) -> usize {
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `collect_predicate_collection_lengths` is never used
+    --> crates\arcweft-core\src\value\agent.rs:1805:4
+     |
+1805 | fn collect_predicate_collection_lengths(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `predicate_node_count` is never used
+    --> crates\arcweft-core\src\value\agent.rs:1826:4
+     |
+1826 | fn predicate_node_count(predicate: &RuntimeAgentPredicate) -> usize {
+     |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `from_standalone_value` is never used
+   --> crates\arcweft-core\src\value\awbc_save.rs:632:19
+    |
+447 | impl AwbcRuntimeValueSnapshot {
+    | ----------------------------- associated function in this implementation
+...
+632 |     pub(crate) fn from_standalone_value(
+    |                   ^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `prepare_literal_source_encoding` is never used
+   --> crates\arcweft-core\src\value\awbc_save\source_codec.rs:347:19
+    |
+346 | impl AwbcRuntimeValueSnapshot {
+    | ----------------------------- method in this implementation
+347 |     pub(crate) fn prepare_literal_source_encoding<'a>(
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `RuntimeRetainedValueAdmissionState` is never constructed
+  --> crates\arcweft-core\src\value\awbc_save\retained_admission.rs:59:19
+   |
+59 | pub(crate) struct RuntimeRetainedValueAdmissionState {
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `resume` is never used
+  --> crates\arcweft-core\src\value\awbc_save\retained_admission.rs:67:19
+   |
+66 | impl RuntimeRetainedValueAdmissionState {
+   | --------------------------------------- method in this implementation
+67 |     pub(crate) fn resume(self) -> RuntimeRetainedValueAdmission {
+   |                   ^^^^^^
+
+warning: methods `try_into_state` and `validate_scalar` are never used
+   --> crates\arcweft-core\src\value\awbc_save\retained_admission.rs:165:19
+    |
+ 77 | impl RuntimeRetainedValueAdmission {
+    | ---------------------------------- methods in this implementation
+...
+165 |     pub(crate) fn try_into_state(self) -> Result<RuntimeRetainedValueAdmissionState, Self> {
+    |                   ^^^^^^^^^^^^^^
+...
+245 |     pub(crate) fn validate_scalar(
+    |                   ^^^^^^^^^^^^^^^
+
+warning: method `reason` is never used
+  --> crates\arcweft-core\src\value\callable.rs:42:25
+   |
+37 | impl<T> RuntimeCallableOwnedInputError<T> {
+   | ----------------------------------------- method in this implementation
+...
+42 |     pub(crate) const fn reason(&self) -> &RuntimeCallableValueError {
+   |                         ^^^^^^
+
+warning: method `try_duplicate_unrestricted` is never used
+   --> crates\arcweft-core\src\value\callable.rs:171:19
+    |
+138 | impl RuntimeCallableValue {
+    | ------------------------- method in this implementation
+...
+171 |     pub(crate) fn try_duplicate_unrestricted(&self) -> Result<Self, RuntimeCallableValueError> {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: field `0` is never read
+   --> crates\arcweft-core\src\value\callable\application.rs:129:21
+    |
+129 |     AttachedDefault(RuntimeCallableBodyReference),
+    |     --------------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |     |
+    |     field in this variant
+    |
+    = note: `RuntimeCallableGroupInspection` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+help: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field
+    |
+129 -     AttachedDefault(RuntimeCallableBodyReference),
+129 +     AttachedDefault(()),
+    |
+
+warning: method `try_reclaim_inputs` is never used
+   --> crates\arcweft-core\src\value\callable\application.rs:239:19
+    |
+176 | impl RuntimeCallablePendingGroup {
+    | -------------------------------- method in this implementation
+...
+239 |     pub(crate) fn try_reclaim_inputs(
+    |                   ^^^^^^^^^^^^^^^^^^
+
+warning: associated items `from_live` and `into_live` are never used
+   --> crates\arcweft-core\src\value\callable\application.rs:703:19
+    |
+702 | impl RuntimeCallablePendingSnapshot {
+    | ----------------------------------- associated items in this implementation
+703 |     pub(crate) fn from_live(
+    |                   ^^^^^^^^^
+...
+756 |     pub(crate) fn into_live<'a>(
+    |                   ^^^^^^^^^
+
+warning: method `inspect_group` is never used
+   --> crates\arcweft-core\src\value\callable\application.rs:992:19
+    |
+797 | impl RuntimeCallableValue {
+    | ------------------------- method in this implementation
+...
+992 |     pub(crate) fn inspect_group(
+    |                   ^^^^^^^^^^^^^
+
+warning: method `assign_runtime_place` is never used
+   --> crates\arcweft-core\src\value\env.rs:871:19
+    |
+432 | impl RuntimeEnv {
+    | --------------- method in this implementation
+...
+871 |     pub(crate) fn assign_runtime_place(
+    |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: method `literals_permit_copy` is never used
+  --> crates\arcweft-core\src\value\expression_literals.rs:10:19
+   |
+ 6 | impl RuntimeExpr {
+   | ---------------- method in this implementation
+...
+10 |     pub(crate) fn literals_permit_copy(&self) -> bool {
+   |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: method `literals_permit_copy` is never used
+  --> crates\arcweft-core\src\value\expression_literals.rs:16:19
+   |
+15 | impl RuntimeExpressionNode<'_> {
+   | ------------------------------ method in this implementation
+16 |     pub(crate) fn literals_permit_copy(self) -> bool {
+   |                   ^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `try_from_evaluated_bindings_parts_with_effect_bindings` is never used
+    --> crates\arcweft-core\src\value\opaque.rs:1540:19
+     |
+1143 | impl RuntimeDialogueContentValue {
+     | -------------------------------- associated function in this implementation
+...
+1540 |     pub(crate) fn try_from_evaluated_bindings_parts_with_effect_bindings(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+   Compiling arcweft-resource-model v0.1.0 (D:\git\arcweft\crates\arcweft-resource-model)
+   Compiling arcweft-view v0.1.0 (D:\git\arcweft\crates\arcweft-view)
+   Compiling arcweft-resource-manifest v0.1.0 (D:\git\arcweft\crates\arcweft-resource-manifest)
+   Compiling arcweft-dialogue v0.1.0 (D:\git\arcweft\crates\arcweft-dialogue)
+   Compiling arcweft-text-model v0.1.0 (D:\git\arcweft\crates\arcweft-text-model)
+   Compiling arcweft-render-text v0.1.0 (D:\git\arcweft\crates\arcweft-render-text)
+   Compiling arcweft-text-layout v0.1.0 (D:\git\arcweft\crates\arcweft-text-layout)
+warning: unused variable: `document`
+   --> crates\arcweft-text-layout\src\document_layout.rs:419:9
+    |
+419 |         document: &ResolvedTextDocument<'_>,
+    |         ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_document`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling arcweft-agent-protocol v0.1.0 (D:\git\arcweft\crates\arcweft-agent-protocol)
+warning: `arcweft-text-layout` (lib) generated 1 warning (run `cargo fix --lib -p arcweft-text-layout` to apply 1 suggestion)
+warning: `arcweft-core` (lib) generated 164 warnings (run `cargo fix --lib -p arcweft-core` to apply 27 suggestions)
+   Compiling arcweft-bundle v0.1.0 (D:\git\arcweft\crates\arcweft-bundle)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 54s
+{"rust-build-meta":{"target-directory":"D:\\git\\arcweft\\target","build-directory":"D:\\git\\arcweft\\target","base-output-directories":["debug"],"non-test-binaries":{},"build-script-out-dirs":{},"build-script-info":{},"linked-paths":["debug/build/blake3-10d058e1ab0beac6/out","debug/build/zstd-sys-6cceb1064e6d7a37/out"],"platforms":{"host":{"platform":{"triple":"x86_64-pc-windows-msvc","target-features":"unknown"},"libdir":{"status":"available","path":"C:\\Users\\sanze\\.rustup\\toolchains\\stable-x86_64-pc-windows-msvc\\lib\\rustlib\\x86_64-pc-windows-msvc\\lib"}},"targets":[]},"target-platforms":[{"triple":"x86_64-pc-windows-msvc","target-features":"unknown"}],"target-platform":null},"test-count":329,"rust-suites":{"arcweft-bundle":{"package-name":"arcweft-bundle","binary-id":"arcweft-bundle","binary-name":"arcweft_bundle","package-id":"path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0","kind":"lib","binary-path":"D:\\git\\arcweft\\target\\debug\\deps\\arcweft_bundle-65d2b711aa14f9f1.exe","build-platform":"target","cwd":"D:\\git\\arcweft\\crates\\arcweft-bundle","status":"listed","testcases":{"bundle_artifact_identity::tests::awfb_identity_has_one_variant_tagged_asset_binding_digest":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"container::tests::artifact_identity_changes_for_manifest_only_delta":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"container::tests::awfb_manifest_policy_enums_parse_display_and_default":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"container::tests::awfb_v1_content_pack_rejects_executable_sections":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"container::tests::awfb_v1_decodes_external_section_from_verified_payload":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"container::tests::awfb_v1_decodes_zstd_embedded_sections_with_output_limit":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"container::tests::awfb_v1_exposes_bounded_signature_block":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"container::tests::awfb_v1_external_section_descriptors_round_trip_without_payload":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"container::tests::awfb_v1_header_index_and_embedded_sections_round_trip":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"container::tests::awfb_v1_patch_rejects_direct_executable_sections":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"container::tests::awfb_v1_program_requires_core_sections":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"container::tests::awfb_v1_rejects_digest_corruption":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"container::tests::awfb_v1_rejects_duplicate_section_ids":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"container::tests::awfb_v1_rejects_embedded_section_exceeding_decoded_budget":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"container::tests::awfb_v1_rejects_external_descriptor_exceeding_decoded_budget":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"container::tests::awfb_v1_rejects_external_section_payload_digest_mismatch":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"container::tests::awfb_v1_rejects_missing_external_section_payload":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"container::tests::awfb_v1_rejects_signature_overlap_with_header_ranges":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"container::tests::awfb_v1_rejects_zstd_section_exceeding_decoded_budget":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"container::tests::awfb_v1_retains_unknown_optional_external_descriptors":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"container::tests::awfb_v1_retains_unknown_optional_sections_and_rejects_required_unknown":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"container::tests::awfb_v1_signing_digest_excludes_trailing_signature_block":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"fx_definitions::tests::canonical_section_rejects_noncanonical_framing":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"fx_definitions::tests::canonical_section_revalidates_definition_and_inventory_order":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"fx_definitions::tests::canonical_section_sorts_round_trips_and_rejects_tampering":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"fx_definitions::tests::duplicate_identity_is_rejected":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"patch::tests::awbc_patch_classifies_each_same_label_flow_independently":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"patch::tests::awbc_patch_fingerprints_keep_same_label_checked_flows_distinct":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"product::tests::awfb_product_decodes_verified_external_program_bytecode_section":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"product::tests::awfb_product_encodes_program_bytecode_as_canonical_awbc":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"product::tests::awfb_product_manifest_discriminator_round_trips_canonically":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"product::tests::awfb_product_path_decode_accepts_external_sections":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"product::tests::awfb_product_rejects_duplicate_executable_payload_as_malformed":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"product::tests::awfb_product_rejects_missing_executable_payload_discriminator":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"product::tests::awfb_product_rejects_missing_runtime_artifact_fingerprint":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"product::tests::awfb_product_rejects_null_executable_payload_as_malformed":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"product::tests::awfb_product_rejects_schema_five_after_runtime_artifact_cut":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"product::tests::awfb_product_rejects_wrong_executable_payload_discriminator":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"product::tests::awfb_product_rejects_wrong_width_runtime_artifact_fingerprint":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"product::tests::awfb_product_rejects_zero_runtime_artifact_fingerprint":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"product::tests::awfb_product_round_trips_first_class_fx_definitions_section":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"product::tests::product_awfb_requires_and_reconstructs_resource_manifest_section_22":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"product::tests::product_awfb_roundtrips_character_package_and_rejects_changed_png_bytes":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::archive::tests::awfr_archive_json_is_deterministic":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::archive::tests::awfr_unsigned_digest_ignores_detached_signature_refs":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::archive::tests::external_payload_carrier_binds_descriptor_and_verifies_bytes":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::archive::tests::rewrite_plan_add_replace_remove_payload_carriers":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::signing_policy::tests::changed_targets_never_preserve_base_signature_validity":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::signing_policy::tests::local_dev_allows_unsigned_materialized_targets":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::signing_policy::tests::patch_subject_is_schema_neutral_and_round_trips":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::signing_policy::tests::release_policy_owns_verification_trust_generation_floors":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::signing_policy::tests::release_policy_requires_target_signatures_and_rejects_unsigned":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::signing_policy::tests::transcript_digest_changes_when_channel_changes":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::signing_policy::tests::verification_trust_transcript_rejects_unrelated_fields":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::signing_policy::tests::verification_trust_transcripts_have_distinct_subject_digests":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::tests::release_bundle_ref_verifies_length_and_digest":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::tests::release_manifest_allows_signature_policy_for_non_awfb_subjects":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::tests::release_manifest_builds_sorted_fetch_plan_and_verifies_result":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::tests::release_manifest_fetch_plan_accepts_rotated_ed25519_key_epoch":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::tests::release_manifest_fetch_plan_accepts_trusted_signature_envelope":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::tests::release_manifest_fetch_plan_carries_network_client_policy":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::tests::release_manifest_fetch_plan_carries_retry_cancel_and_budget_policy":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::tests::release_manifest_fetch_plan_enforces_required_awfb_signature":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::tests::release_manifest_fetch_plan_rejects_bad_ed25519_signature_payload":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::tests::release_manifest_fetch_plan_rejects_candidate_over_byte_budget":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::tests::release_manifest_fetch_plan_rejects_ed25519_key_epoch_outside_validity":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::tests::release_manifest_fetch_plan_rejects_invalid_signature_envelope":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::tests::release_manifest_fetch_plan_rejects_missing_content_root":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::tests::release_manifest_fetch_plan_rejects_revoked_ed25519_key":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::tests::release_manifest_fetch_plan_rejects_signature_envelope_for_other_content_root":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::tests::release_manifest_fetch_plan_rejects_signature_envelope_with_wrong_signing_digest":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::tests::release_manifest_fetch_plan_rejects_unsupported_signature_envelope_algorithm":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::tests::release_manifest_fetch_plan_rejects_untrusted_signature_envelope":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::tests::release_manifest_fetch_plan_verifies_ed25519_signature_payload":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::tests::release_manifest_rejects_duplicate_content_roots":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::tests::release_manifest_rejects_invalid_network_policy_profiles":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::tests::release_manifest_rejects_invalid_network_policy_user_agent":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::tests::release_manifest_rejects_invalid_trusted_key_epoch_window":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::tests::release_manifest_rejects_unknown_signature_algorithm_policy":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::tests::release_manifest_rejects_unsupported_mirror_scheme":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::tests::release_manifest_round_trips_external_awfb_reference":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::verification_trust::tests::admission_rejects_evidence_for_another_contract":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::verification_trust::tests::all_evidence_variants_round_trip_with_exact_typed_fields":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::verification_trust::tests::artifact_byte_limit_is_checked_before_deserialization":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::verification_trust::tests::authority_json_requires_all_top_level_fields_and_both_signatures":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::verification_trust::tests::authority_rejects_nested_manifest_and_signature_schema_mismatches":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::verification_trust::tests::authority_rejects_revocation_policy_id_mismatch":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::verification_trust::tests::authority_rejects_unsupported_schema_before_signature_work":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::verification_trust::tests::canonical_artifact_json_round_trip_preserves_bytes_and_digests":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::verification_trust::tests::canonical_digest_goldens":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::verification_trust::tests::manifest_digest_and_json_are_independent_of_admission_order":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::verification_trust::tests::manifest_rejects_wrong_admission_id_and_duplicate_subject":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::verification_trust::tests::record_limits_are_checked_before_duplicate_processing":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::verification_trust::tests::revocation_digest_is_order_independent_and_duplicates_reject":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::verification_trust::tests::signed_authority_json_round_trip_is_strict":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::verification_trust::tests::signed_authority_rejects_manifest_and_transcript_digest_tampering":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::verification_trust::tests::signed_authority_rejects_revoked_or_wrong_epoch_key":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::verification_trust::tests::signed_authority_rejects_stale_generations_and_wrong_channel":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::verification_trust::tests::signed_authority_rejects_stale_revocations_and_an_older_signed_pair_replay":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::verification_trust::tests::signed_authority_rejects_wrong_algorithm_untrusted_signer_and_bad_signature":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::verification_trust::tests::signing_policy_key_epoch_window_is_inclusive_min_exclusive_max":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::verification_trust::tests::strict_json_rejects_unknown_and_duplicate_fields":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::verification_trust::tests::trust_artifact_signatures_are_required_independently_of_awfb_policy":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::verification_trust::tests::trust_reason_rejects_blank_and_preserves_valid_bytes":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"release::verification_trust::tests::valid_signed_authority_is_accepted_and_retains_revocations":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"resource_codec::runtime::opaque_runtime_type_tests::agent_awbc_type_projects_to_non_colliding_bundle_value_family":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"resource_codec::runtime::opaque_runtime_type_tests::bound_type_layout_commits_its_scope_and_projects_a_distinct_value_kind":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"resource_codec::runtime::opaque_runtime_type_tests::canonical_runtime_digest_rejects_a_missing_table_reference":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"resource_codec::runtime::opaque_runtime_type_tests::function_layout_commits_its_effect_binder_contract":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"resource_codec::runtime::opaque_runtime_type_tests::opaque_awbc_type_projects_to_final_bundle_value_family":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"resource_codec::runtime::opaque_runtime_type_tests::runtime_layout_and_function_abi_digests_ignore_generation_local_indices":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"resource_codec::runtime::opaque_runtime_type_tests::runtime_type_layout_digest_commits_agent_data_shape_child":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"resource_codec::runtime::opaque_runtime_type_tests::runtime_type_layout_digest_commits_data_codec_occurrences":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"resource_codec::runtime::opaque_runtime_type_tests::runtime_type_layout_digest_commits_map_ordering_kind":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"resource_codec::runtime::opaque_runtime_type_tests::runtime_type_layout_digest_commits_sequence_storage_kind":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"resource_codec::runtime::opaque_runtime_type_tests::traversal_layout_keeps_its_type_head_and_source_callback_roles":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"resource_codec::source_map::model::tests::collision_policy_rejects_distinct_logical_documents_before_construction":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"resource_codec::view::codec::style_environment::tests::containment_accepts_strict_and_equal_boundaries_and_rejects_one_byte_beyond":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"resource_codec::view::merge::tests::merge_count_preflight_rejects_public_table_index_overflow_without_allocation":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"resource_codec::view::merge::tests::merge_offset_preflight_rejects_patch_and_instruction_overflow":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"resource_codec::view::merge::tests::merge_offset_preflight_rejects_source_id_overflow_without_allocating_tables":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"resource_codec::view::merge::tests::program_and_style_preflight_applies_supplied_style_budget":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"resource_codec::view::model::tests::runtime_text_control_carries_authored_change_and_submit_handlers":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"standard_view::handler::tests::installer_publishes_one_verified_typed_projection":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"standard_view::handler::tests::installer_rejects_program_collision_and_conflicting_type_before_publication":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"tests::awfb_path_does_not_fall_back_to_json_decoder":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"tests::awfb_rejects_runtime_types_layout_digest_mismatch":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"tests::awfb_round_trip_retains_typed_runtime_assertion_payload":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"tests::bundle_agent_kind_requires_agent_manifest":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"tests::bundle_agent_manifest_marks_agent_controller_and_round_trips":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"tests::bundle_audio_graph_round_trips_and_resolves_asset_bytes":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"tests::bundle_format_can_be_inferred_from_common_extensions":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"tests::bundle_format_codecs_round_trip_supported_formats":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"tests::bundle_game_kind_rejects_agent_manifest":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"tests::bundle_image_asset_reports_missing_virtual_file":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"tests::bundle_image_assets_resolve_encoded_virtual_file_bytes":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"tests::bundle_image_objects_round_trip_as_typed_metadata":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"tests::bundle_json_requires_and_round_trips_project_locale":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"tests::bundle_json_round_trips_without_paths":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"tests::bundle_rejects_duplicate_adapter_manifest_ids_instead_of_deduplicating":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"tests::bundle_rejects_duplicate_image_asset_ids_instead_of_deduplicating":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"tests::context_template_requires_canonical_catalog_body_at_bundle_admission":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"tests::inspection_json_path_decodes_bundle_export":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"tests::inspection_path_requires_explicit_json_format_extension":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"tests::product_path_requires_awfb_extension":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"tests::serialized_dialogue_parameter_role_is_required":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"tests::tampered_dialogue_projection_surface_is_rejected":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"tests::tampered_dialogue_text_parameter_role_is_rejected":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"tests::yaml_bundle_conversion_preserves_option_and_tuple_distinctions":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"tests::yaml_bundle_mapping_cannot_shadow_arcweft_value_tags":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}}}},"arcweft-bundle::character_package":{"package-name":"arcweft-bundle","binary-id":"arcweft-bundle::character_package","binary-name":"character_package","package-id":"path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0","kind":"test","binary-path":"D:\\git\\arcweft\\target\\debug\\deps\\character_package-7176e1329438a8b3.exe","build-platform":"target","cwd":"D:\\git\\arcweft\\crates\\arcweft-bundle","status":"listed","testcases":{"bundle_character_package_emits_manifest_and_layers":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"bundle_character_package_rejects_missing_layer_virtual_file":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"missing_manifest_file_is_rejected":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}}}},"arcweft-bundle::ime_player_rendered":{"package-name":"arcweft-bundle","binary-id":"arcweft-bundle::ime_player_rendered","binary-name":"ime_player_rendered","package-id":"path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0","kind":"test","binary-path":"D:\\git\\arcweft\\target\\debug\\deps\\ime_player_rendered-7239537ee836ae84.exe","build-platform":"target","cwd":"D:\\git\\arcweft\\crates\\arcweft-bundle","status":"listed","testcases":{"ime_generator_publishes_deterministic_controls_and_executable_callbacks":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}}}},"arcweft-bundle::locale_catalog_resource_codec":{"package-name":"arcweft-bundle","binary-id":"arcweft-bundle::locale_catalog_resource_codec","binary-name":"locale_catalog_resource_codec","package-id":"path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0","kind":"test","binary-path":"D:\\git\\arcweft\\target\\debug\\deps\\locale_catalog_resource_codec-1c8f6b427c3f2d0b.exe","build-platform":"target","cwd":"D:\\git\\arcweft\\crates\\arcweft-bundle","status":"listed","testcases":{"bundle_logical_identity_binds_project_locale_without_reencoding_character_catalog":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"locale_catalog_codec_kind_owns_tag_magic_section_and_patch_policy":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"locale_catalog_rejects_digest_key_reference_and_size_tampering":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"locale_catalog_rejects_header_and_table_tampering":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"locale_catalog_rejects_public_id_record_order_span_and_field_tampering":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"locale_catalog_rejects_reordered_fields_and_wrong_requirement_flags":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"locale_catalog_rejects_truncation_trailing_bytes_and_invalid_character_family":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"locale_catalog_round_trips_the_only_canonical_compact_family":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}}}},"arcweft-bundle::patch_schema":{"package-name":"arcweft-bundle","binary-id":"arcweft-bundle::patch_schema","binary-name":"patch_schema","package-id":"path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0","kind":"test","binary-path":"D:\\git\\arcweft\\target\\debug\\deps\\patch_schema-0b13a77ba48fb8e3.exe","build-platform":"target","cwd":"D:\\git\\arcweft\\crates\\arcweft-bundle","status":"listed","testcases":{"external_descriptor_change_is_metadata_only_and_preserved":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"materialization_rejects_every_tampered_compatibility_fingerprint_field":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"materialization_rewrites_manifest_and_reports_unsigned_target_identity":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"missing_target_manifest_rolls_back_before_target_encoding":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"patch_bytes_are_deterministic_and_round_trip_schema_one":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"patch_plan_rejects_duplicate_operation_ids":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"patch_schema_one_is_the_only_decoded_schema":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"unknown_optional_section_kind_is_preserved_through_patch":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}}}},"arcweft-bundle::product_awbc_only":{"package-name":"arcweft-bundle","binary-id":"arcweft-bundle::product_awbc_only","binary-name":"product_awbc_only","package-id":"path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0","kind":"test","binary-path":"D:\\git\\arcweft\\target\\debug\\deps\\product_awbc_only-3cca9aeefa9d3180.exe","build-platform":"target","cwd":"D:\\git\\arcweft\\crates\\arcweft-bundle","status":"listed","testcases":{"product_awbc_embeds_awbc_only_executable_section":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"product_awbc_malformed_reports_typed_diagnostic":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"product_awbc_section_rejects_a_tampered_envelope_length":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"product_awbc_section_roundtrip_preserves_the_canonical_core_bytes":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}}}},"arcweft-bundle::product_catalog_resource_codecs":{"package-name":"arcweft-bundle","binary-id":"arcweft-bundle::product_catalog_resource_codecs","binary-name":"product_catalog_resource_codecs","package-id":"path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0","kind":"test","binary-path":"D:\\git\\arcweft\\target\\debug\\deps\\product_catalog_resource_codecs-a0b49bdc96f71775.exe","build-platform":"target","cwd":"D:\\git\\arcweft\\crates\\arcweft-bundle","status":"listed","testcases":{"asset_catalog_budget_bounds_raw_bytes_without_rejecting_canonical_json_expansion":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"canonical_source_map_rejects_unknown_optional_and_required_fields":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"image_object_decode_requires_explicit_image_values_and_validates_alignment":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"product_awfb_uses_compact_sections_for_migrated_catalog_families":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"product_catalog_common_budget_failures_are_reported":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"product_catalog_compact_codecs_round_trip_current_bundle_resources":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}}}},"arcweft-bundle::resource_codec_common":{"package-name":"arcweft-bundle","binary-id":"arcweft-bundle::resource_codec_common","binary-name":"resource_codec_common","package-id":"path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0","kind":"test","binary-path":"D:\\git\\arcweft\\target\\debug\\deps\\resource_codec_common-95141f8b07d36e7c.exe","build-platform":"target","cwd":"D:\\git\\arcweft\\crates\\arcweft-bundle","status":"listed","testcases":{"budgets_fail_for_byte_count_string_and_item_limits":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"budgets_fail_for_depth_reference_and_fanout_limits":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"canonical_digest_is_stable_for_equivalent_logical_resources":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"common_decoder_rejects_noncanonical_input_field_order_before_reconstruction":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"common_decoder_requires_the_registry_field_requirement_flag":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"common_wire_bytes_are_deterministic_for_canonical_table_ordering":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"duplicate_table_entries_are_rejected_when_decoding_non_canonical_bytes":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"inspection_json_round_trips_through_typed_owner_api_not_product_json_fallback":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"public_id_table_enforces_count_and_byte_budgets":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"public_id_table_rejects_duplicates_without_deduplicating":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"resource_codec_header_validates_magic_schema_and_budgets":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"resource_codec_inventory_is_complete_and_bijective":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"string_table_sorts_and_deduplicates_values":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"unknown_optional_fields_skip_and_unknown_required_fields_reject":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}}}},"arcweft-bundle::resource_type_manifest_section":{"package-name":"arcweft-bundle","binary-id":"arcweft-bundle::resource_type_manifest_section","binary-name":"resource_type_manifest_section","package-id":"path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0","kind":"test","binary-path":"D:\\git\\arcweft\\target\\debug\\deps\\resource_type_manifest_section-31db4ba1c056ffb6.exe","build-platform":"target","cwd":"D:\\git\\arcweft\\crates\\arcweft-bundle","status":"listed","testcases":{"code_22_required_section_round_trips_against_the_engine_base":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"empty_extension_set_omits_the_section":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"entry_digest_is_checked_before_json_decode":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"final_registry_digest_and_exact_section_end_are_authoritative":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"reordered_entries_are_rejected_before_publication":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"truncated_entry_and_count_overflow_are_rejected_as_malformed":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"valid_noncanonical_json_is_rejected_after_the_sole_manifest_decode":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}}}},"arcweft-bundle::runtime_control_style_resolution":{"package-name":"arcweft-bundle","binary-id":"arcweft-bundle::runtime_control_style_resolution","binary-name":"runtime_control_style_resolution","package-id":"path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0","kind":"test","binary-path":"D:\\git\\arcweft\\target\\debug\\deps\\runtime_control_style_resolution-c25cfe9d38ecc633.exe","build-platform":"target","cwd":"D:\\git\\arcweft\\crates\\arcweft-bundle","status":"listed","testcases":{"every_canonical_property_is_retained_in_exactly_one_runtime_partition":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"malformed_computed_property_value_is_a_typed_error":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"paint_effects_project_without_being_sent_to_layout":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"projection_uses_the_supplied_environment_palette_for_system_colors":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"theme_owns_checked_environment_and_palette_resolution":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}}}},"arcweft-bundle::runtime_resource_codecs":{"package-name":"arcweft-bundle","binary-id":"arcweft-bundle::runtime_resource_codecs","binary-name":"runtime_resource_codecs","package-id":"path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0","kind":"test","binary-path":"D:\\git\\arcweft\\target\\debug\\deps\\runtime_resource_codecs-f2942d1a10643701.exe","build-platform":"target","cwd":"D:\\git\\arcweft\\crates\\arcweft-bundle","status":"listed","testcases":{"adapter_requirements_compact_bytes_round_trip_without_json_fallback":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"entrypoints_compact_bytes_are_deterministic_and_round_trip":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"executable_record_fingerprints_preserve_empty_shapes_and_field_names":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"migrated_runtime_section_compatibility_decodes_compact_bytes":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"patch_artifact_from_views_uses_compact_runtime_compatibility":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"patch_compatibility_fingerprints_classify_runtime_resource_changes":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"runtime_resource_budget_failures_are_reported_by_family":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"runtime_types_compact_bytes_are_deterministic_and_round_trip":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"runtime_types_must_match_the_awbc_header_exactly":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"unknown_optional_fields_are_skipped_and_unknown_required_fields_reject":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}}}},"arcweft-bundle::source_map":{"package-name":"arcweft-bundle","binary-id":"arcweft-bundle::source_map","binary-name":"source_map","package-id":"path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0","kind":"test","binary-path":"D:\\git\\arcweft\\target\\debug\\deps\\source_map-f4cb299cfc7e6001.exe","build-platform":"target","cwd":"D:\\git\\arcweft\\crates\\arcweft-bundle","status":"listed","testcases":{"projected_source_map_names_preserve_identity_and_are_relocation_deterministic":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"source_map_codec_charges_the_combined_text_budget_before_the_next_payload":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"source_map_codec_rejects_absolute_display_metadata_before_publication":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"source_map_codec_rejects_oversized_declared_text_before_payload_materialization":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"source_map_count_limit_precedes_invalid_metadata_and_duplicate_identities":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"source_map_document_count_limit_is_exact":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"source_map_extension_keeps_project_metadata_and_generated_identity":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"source_map_id_display_and_document_byte_limits_are_exact":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"source_map_identity_projection_preserves_names_and_rejects_missing_stale_or_duplicate_sources":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"source_map_primary_document_is_independent_of_canonical_document_order_and_round_trips":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"source_map_rejects_digest_extent_set_revision_and_schema_tampering":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"source_map_rejects_duplicate_logical_documents":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"source_map_rejects_missing_absent_and_out_of_bounds_primary_documents":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"source_map_rejects_nonportable_display_paths_at_construction":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"source_map_rejects_product_id_mismatch_and_noncanonical_envelopes":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"source_map_total_byte_limit_is_exact_and_candidate_first":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}}}},"arcweft-bundle::standard_dialogue_view":{"package-name":"arcweft-bundle","binary-id":"arcweft-bundle::standard_dialogue_view","binary-name":"standard_dialogue_view","package-id":"path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0","kind":"test","binary-path":"D:\\git\\arcweft\\target\\debug\\deps\\standard_dialogue_view-f69e6797b8bc07ce.exe","build-platform":"target","cwd":"D:\\git\\arcweft\\crates\\arcweft-bundle","status":"listed","testcases":{"authored_program_is_merged_without_replacing_the_reserved_standard_definition":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"bundle_source_map_owns_both_standard_dialogue_sources_without_changing_the_authored_primary":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"dialogue_primary_action_requires_a_declared_typed_parameter":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"one_free_source_slot_is_insufficient_for_both_reserved_standard_sources":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"reserved_standard_dialogue_view_id_cannot_be_overridden":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"reserved_standard_source_collisions_are_typed_bundle_build_errors":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"standard_dialogue_view_is_a_complete_encodable_authored_resource":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"validated_view_product_attachment_accepts_an_exact_source_superset":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"validated_view_product_attachment_rejects_a_different_primary_document":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"validated_view_product_attachment_rejects_missing_or_conflicting_bundle_documents":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}}}},"arcweft-bundle::style_cross_section_refs":{"package-name":"arcweft-bundle","binary-id":"arcweft-bundle::style_cross_section_refs","binary-name":"style_cross_section_refs","package-id":"path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0","kind":"test","binary-path":"D:\\git\\arcweft\\target\\debug\\deps\\style_cross_section_refs-02b09db8826d64e6.exe","build-platform":"target","cwd":"D:\\git\\arcweft\\crates\\arcweft-bundle","status":"listed","testcases":{"style_cross_section_references_round_trip_from_every_supported_location":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"style_decode_rejects_missing_target_from_every_supported_location":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"style_decode_rejects_public_id_on_target_without_public_id_table":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"style_decode_rejects_target_identity_and_public_id_mismatches":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"style_encode_rejects_missing_target_from_every_supported_location":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"style_encode_rejects_public_id_on_target_without_public_id_table":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"style_encode_rejects_target_identity_and_public_id_mismatches":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}}}},"arcweft-bundle::view_action_button_resources":{"package-name":"arcweft-bundle","binary-id":"arcweft-bundle::view_action_button_resources","binary-name":"view_action_button_resources","package-id":"path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0","kind":"test","binary-path":"D:\\git\\arcweft\\target\\debug\\deps\\view_action_button_resources-404555466e8588db.exe","build-platform":"target","cwd":"D:\\git\\arcweft\\crates\\arcweft-bundle","status":"listed","testcases":{"runtime_action_button_resolves_action_invoke_action":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"runtime_action_button_resolves_label_and_noop_action":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}}}},"arcweft-bundle::view_focus_navigation_resources":{"package-name":"arcweft-bundle","binary-id":"arcweft-bundle::view_focus_navigation_resources","binary-name":"view_focus_navigation_resources","package-id":"path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0","kind":"test","binary-path":"D:\\git\\arcweft\\target\\debug\\deps\\view_focus_navigation_resources-89ff6d3cb6ad2485.exe","build-platform":"target","cwd":"D:\\git\\arcweft\\crates\\arcweft-bundle","status":"listed","testcases":{"view_focus_navigation_compact_round_trip_is_deterministic":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"view_focus_navigation_missing_explicit_target_is_rejected":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}}}},"arcweft-bundle::view_product_validation":{"package-name":"arcweft-bundle","binary-id":"arcweft-bundle::view_product_validation","binary-name":"view_product_validation","package-id":"path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0","kind":"test","binary-path":"D:\\git\\arcweft\\target\\debug\\deps\\view_product_validation-5f8276c8bc23ce97.exe","build-platform":"target","cwd":"D:\\git\\arcweft\\crates\\arcweft-bundle","status":"listed","testcases":{"accepted_revision_changes_with_typed_semantics":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"accepted_revision_excludes_source_identity_text_and_ranges":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"accepted_revision_is_independent_of_definition_table_order":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"borrowed_product_admission_preserves_source_identity_and_exact_limits":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"complete_product_accepts_exact_revision_and_exposes_only_validated_views":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"complete_product_enforces_exact_candidate_first_limits":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"complete_product_rejects_cross_source_and_uncontained_export_ranges":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"complete_product_rejects_invalid_reversed_out_of_bounds_and_non_utf8_ranges":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"complete_product_rejects_missing_unknown_and_stale_sources":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}}}},"arcweft-bundle::view_resource_codecs":{"package-name":"arcweft-bundle","binary-id":"arcweft-bundle::view_resource_codecs","binary-name":"view_resource_codecs","package-id":"path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0","kind":"test","binary-path":"D:\\git\\arcweft\\target\\debug\\deps\\view_resource_codecs-265949a42f2586fa.exe","build-platform":"target","cwd":"D:\\git\\arcweft\\crates\\arcweft-bundle","status":"listed","testcases":{"dialogue_action_result_rejects_a_same_producer_forged_semantic_identity":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"dialogue_parameter_rejects_a_forged_semantic_identity":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"emit_text_requires_a_one_to_one_owned_text_block_graph":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"emit_text_transcript_requires_the_text_block_reference":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"exported_part_identities_reject_malformed_resource_ids":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"exported_part_identity_is_scoped_to_its_owning_view":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"exported_part_old_flat_record_has_no_compatibility_reader":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"exported_part_references_are_validated_by_the_program_codec":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"exported_part_source_provenance_is_validated_as_a_complete_product":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"exported_part_source_ranges_reject_structural_tampering":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"instruction_parts_reject_malformed_resource_ids":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"nested_view_calls_preserve_authored_order_and_require_typed_bindings":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"scalar_await_record_is_rejected_at_instruction_and_section_ingress":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"scalar_branch_record_has_no_compatibility_reader":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"scalar_repeat_and_ordinal_input_have_no_compatibility_reader":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"text_control_handler_owners_are_authenticated_with_the_complete_input_catalog":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"view_definition_reference_preserves_the_nominal_view_identity":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"view_element_inventory_owns_codec_tags_and_round_trips":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"view_envelope_declared_inventory_must_match_the_typed_transcript":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"view_fx_bindings_are_canonical_bounded_and_unique":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"view_handler_cross_section_rejects_missing_binding_and_nonempty_effects":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"view_input_secure_policy_changes_are_restart_required":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"view_program_identities_reject_malformed_resource_ids":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"view_program_layout_bounds_reject_zero_size_rects":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"view_program_rejects_unknown_resource_fields":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"view_program_scroll_region_policy_defaults_are_round_tripped":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"view_program_scroll_region_policy_values_are_preserved":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"view_program_scroll_regions_reject_pre_axis_payload_shape":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"view_resource_budget_failures_are_reported":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"view_resource_compact_sections_round_trip_with_deterministic_bytes":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"view_resource_merge_does_not_publish_a_candidate_that_fails_canonical_validation":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"view_resource_merge_remaps_program_source_indexes":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"view_resource_rejects_json_fallback":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"view_resource_unknown_optional_fields_skip_and_unknown_required_reject":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"view_resource_value_program_codec_round_trips_u32_boundaries":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"view_style_codec_rejects_missing_and_ambiguous_inline_token_owners":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"view_theme_palette_changes_are_content_only":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"view_value_program_references_require_existing_programs_and_result_types":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}}}},"arcweft-bundle::view_runtime_text_controls":{"package-name":"arcweft-bundle","binary-id":"arcweft-bundle::view_runtime_text_controls","binary-name":"view_runtime_text_controls","package-id":"path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0","kind":"test","binary-path":"D:\\git\\arcweft\\target\\debug\\deps\\view_runtime_text_controls-cbe870c7851993dc.exe","build-platform":"target","cwd":"D:\\git\\arcweft\\crates\\arcweft-bundle","status":"listed","testcases":{"runtime_text_control_session_is_stable_across_reorder":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"view_input_resource_emits_runtime_text_control_shape":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"view_input_resource_stacks_default_text_control_bounds_by_height":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"view_program_layout_bounds_override_stacked_runtime_text_control_fallback":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}}}},"arcweft-bundle::view_style_environment_codec":{"package-name":"arcweft-bundle","binary-id":"arcweft-bundle::view_style_environment_codec","binary-name":"view_style_environment_codec","package-id":"path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0","kind":"test","binary-path":"D:\\git\\arcweft\\target\\debug\\deps\\view_style_environment_codec-a0b26cf5ac7ac385.exe","build-platform":"target","cwd":"D:\\git\\arcweft\\crates\\arcweft-bundle","status":"listed","testcases":{"environment_complete_product_enforces_missing_source_map_and_aggregate_work":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"environment_complete_product_rejects_a_noncanonical_in_memory_candidate":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"environment_complete_product_rejects_missing_stale_and_invalid_source_indices":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"environment_cross_source_relation_rejects_complete_product":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"environment_empty_and_reversed_ranges_reject_for_every_retained_role":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"environment_integrated_equality_boundaries_are_accepted":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"environment_merge_accepts_exact_budgets_and_rejects_each_one_over_atomically":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"environment_merge_preflight_rejects_each_local_containment_failure_on_either_side":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"environment_merge_remaps_every_nested_source_and_rejects_invalid_candidates_atomically":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"environment_product_round_trips_canonical_json_cbor_msgpack":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"environment_relation_edges_report_the_exact_failed_contract":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"environment_removed_and_unknown_wire_shapes_reject_in_every_enabled_format":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"environment_source_range_out_of_bounds_or_utf8_boundary_rejects":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"environment_sources_promote_only_inside_complete_product":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"environment_wrapper_budget_counts_the_complete_nested_inventory":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"every_retained_environment_field_has_equivalent_wire_tamper_rejection":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"merged_style_defers_missing_right_document_rejection_to_product_promotion":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"nested_outer_and_inner_wrapper_fields_have_equivalent_wire_tamper_rejection":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"owning_predicate_must_contain_each_clause":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}}}},"arcweft-bundle::view_style_program":{"package-name":"arcweft-bundle","binary-id":"arcweft-bundle::view_style_program","binary-name":"view_style_program","package-id":"path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0","kind":"test","binary-path":"D:\\git\\arcweft\\target\\debug\\deps\\view_style_program-7bab42394cac6cd5.exe","build-platform":"target","cwd":"D:\\git\\arcweft\\crates\\arcweft-bundle","status":"listed","testcases":{"equivalent_reversed_style_merges_have_deterministic_bytes":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"native_style_program_round_trips_with_sheet_and_patch_ownership":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"style_merge_rebases_patch_and_source_ids_as_one_canonical_program":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"style_merge_rejects_public_owner_collision_without_changing_either_input":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"style_metadata_inventory_order_does_not_change_canonical_bytes":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}},"style_program_contract_rejects_dangling_targets_and_inline_definition_roots":{"kind":"test","ignored":false,"filter-match":{"status":"matches"}}}}}}

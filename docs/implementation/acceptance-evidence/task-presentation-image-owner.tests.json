@@ -1,0 +1,131 @@
+{
+  "version": 1,
+  "base": "1c7a0e705e618de2ab4b60ad7bd33a51c7628710",
+  "startedAt": "2026-10-31T00:12:24.5470346Z",
+  "status": "terminal",
+  "currentPackage": null,
+  "rows": [
+    {
+      "package": "arcweft-interaction-model",
+      "filter": "all()",
+      "selected": 20,
+      "executed": 20,
+      "passed": 20,
+      "failed": 0,
+      "exitCode": 0,
+      "sourceInputs": 4004,
+      "sourceDrift": 0,
+      "binaryCount": 2,
+      "binaryDrift": 0,
+      "finishedAt": "2026-10-31T00:12:35.3567341Z"
+    },
+    {
+      "package": "arcweft-bundle",
+      "filter": "all()",
+      "selected": 329,
+      "executed": 329,
+      "passed": 329,
+      "failed": 0,
+      "exitCode": 0,
+      "sourceInputs": 4004,
+      "sourceDrift": 0,
+      "binaryCount": 21,
+      "binaryDrift": 0,
+      "finishedAt": "2026-10-31T00:21:44.1844616Z"
+    },
+    {
+      "package": "arcweft-runtime-driver",
+      "filter": "all()",
+      "selected": 177,
+      "executed": 177,
+      "passed": 177,
+      "failed": 0,
+      "exitCode": 0,
+      "sourceInputs": 4004,
+      "sourceDrift": 0,
+      "binaryCount": 4,
+      "binaryDrift": 0,
+      "finishedAt": "2026-10-31T00:24:13.3289465Z"
+    },
+    {
+      "package": "arcweft-player-scene",
+      "filter": "all()",
+      "selected": 128,
+      "executed": 128,
+      "passed": 128,
+      "failed": 0,
+      "exitCode": 0,
+      "sourceInputs": 4004,
+      "sourceDrift": 0,
+      "binaryCount": 10,
+      "binaryDrift": 0,
+      "finishedAt": "2026-10-31T00:26:21.8454052Z"
+    },
+    {
+      "package": "arcweft-player-native",
+      "filter": "all()",
+      "selected": 63,
+      "executed": 63,
+      "passed": 63,
+      "failed": 0,
+      "exitCode": 0,
+      "sourceInputs": 4004,
+      "sourceDrift": 0,
+      "binaryCount": 5,
+      "binaryDrift": 0,
+      "finishedAt": "2026-10-31T00:29:50.8448237Z"
+    },
+    {
+      "package": "arcweft-compiler",
+      "stem": "presentation-image-owner.arcweft-compiler.retry1",
+      "filter": "all()",
+      "selected": 661,
+      "executed": 661,
+      "passed": 661,
+      "failed": 0,
+      "exitCode": 0,
+      "sourceInputs": 4004,
+      "sourceDrift": 0,
+      "binaryCount": 26,
+      "binaryDrift": 0,
+      "finishedAt": "2026-10-31T00:37:56.0077237Z"
+    },
+    {
+      "package": "arcweft-cli",
+      "stem": "presentation-image-owner.arcweft-cli",
+      "filter": "test(app::agent::native::player_observation::tests::)",
+      "selected": 9,
+      "executed": 9,
+      "passed": 9,
+      "failed": 0,
+      "exitCode": 0,
+      "sourceInputs": 4004,
+      "sourceDrift": 0,
+      "binaryCount": 1,
+      "binaryDrift": 0,
+      "finishedAt": "2026-10-31T00:41:24.7373848Z"
+    }
+  ],
+  "catalogFailures": [
+    {
+      "package": "arcweft-compiler",
+      "stem": "presentation-image-owner.arcweft-compiler",
+      "exitCode": 101,
+      "sourceInputs": 4004,
+      "sourceDrift": 0,
+      "testsExecuted": 0,
+      "startedAt": "2026-10-31T00:29:52.322865Z",
+      "finishedAt": "2026-10-31T00:33:21.9475829Z",
+      "diagnostic": "Missing rlib form; delayed rustc internal diagnostics; cause not established"
+    }
+  ],
+  "finishedAt": "2026-10-31T00:42:05.6279397Z",
+  "recordingFailureHistory": [
+    {
+      "phase": "terminal state serialization after all seven package assertions",
+      "cause": "Resumed matrix deserialized to PSCustomObject; missing finishedAt property assignment threw before Save-State",
+      "correction": "Verified all seven actual runtime receipts and exact terminal IDs; source hashes4004 unchanged; added terminal property without rerunning tests",
+      "wasm": "Initial guard stopped before Cargo; cross-target check not executed in that attempt"
+    }
+  ]
+}

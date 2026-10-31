@@ -24,10 +24,11 @@ The current workspace member list is `[workspace].members` in [Cargo.toml](../..
   境界を所有する。product encoding、filesystem、network、signing、runtime
   lowering、VM 実行、JIT/AOT backend、patch materialization は所有しない。
 - 広い application prelude は facade crate `arcweft` が提供する。低レイヤ crate に便利 re-export を置かない。
-- `arcweft-presentation` は `bg(...)` / `show(...)` が返す scope-bound
-  presentation handles、typed target/slot refs、clear operations、scope exit
-  cleanup registry を持つ Sans I/O data/model crate とする。renderer、
-  filesystem、asset loading、windowing、clock には依存しない。
+- `arcweft-core::presentation` は実行中の presentation handle の発行、元programに
+  結び付くledger、bodyのcustody、scope exitのcleanupを所有する。
+  `arcweft-presentation` は表示側のtyped target/slot address、layer、hit/focus等の
+  Sans I/O data/modelを所有し、Coreの実行grantを再発行しない。renderer、
+  filesystem、asset loading、windowing、clockには依存しない。
 - Data-format crate は Sans I/O を保つ。manifest、schema、bytecode、bundle、save snapshot は構造体と bytes/string codec までを担当し、path read/write、network、clock、backend resource 確保は CLI / build / player adapter に置く。
 - `arcweft-data` は format-neutral な `Value`、type shape、Encode / Decode、decode limits、codec registry を所有する builtin data contract とする。`arcweft-codec-json`、`arcweft-codec-toml`、`arcweft-codec-yaml`、`arcweft-codec-msgpack`、`arcweft-codec-cbor`、`arcweft-codec-csv`、`arcweft-codec-arrow`、`arcweft-codec-avro`、`arcweft-codec-binary` は concrete external format adapter crate として分離し、`arcweft-save`、`arcweft-config`、`arcweft-http-codec` はこの registry 境界を使う。
   typed JSON save の構築前検証は `arcweft-save -> arcweft-codec-json -> arcweft-data` の同じ parser／DecodeBudget を使う。型付き decode は元の payload bytes を保持する。

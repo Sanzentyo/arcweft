@@ -1,0 +1,642 @@
+[
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_geometry::tests::supported_surface_product_contributes_container_intrinsic_size_not_authored_position"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "fonts::tests::sfnt_font_resource_bytes_are_accepted"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::surfaces::tests::nested_mount_expands_at_its_exact_parent_painter_slot"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "fonts::tests::bundled_default_prefers_text_fonts_before_display_font"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_geometry::error::tests::structured_conversion_failure_retains_exact_index_context"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "fonts::tests::web_default_japanese_and_emoji_font_resource_bytes_are_accepted"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "fonts::tests::empty_font_set_is_rejected_before_registration"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::time::tests::samples_keep_exact_nanoseconds_and_reject_the_first_overflowing_millisecond"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_geometry::tests::web_zero_viewport_remains_zero_without_adapter_clamping"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "fonts::tests::bundled_default_registers_with_frame_planner"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "fonts::tests::empty_font_resource_is_rejected_with_index"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_geometry::tests::row_container_measures_and_places_children_in_authored_order"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_geometry::error::tests::structured_scroll_failure_retains_node_axis_range_and_consumer"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_geometry::tests::intrinsic_change_misses_exact_measure_key_without_mutating_old_cache_before_publish"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_geometry::tests::native_pointer_conversion_floors_to_milli_without_zero_fallback"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_geometry::cache::tests::generation_overflow_is_rejected_before_staging"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_geometry::tests::transparent_parent_collapses_without_creating_a_second_geometry_owner"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::surfaces::tests::current_surface_border_reaches_view_border_primitive"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_style::tests::disappearing_mounts_are_removed_from_the_long_lived_provider_index"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_style::tests::every_executable_consumer_accepts_canonical_physical_box_placement"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_style::tests::generated_row_target_does_not_masquerade_as_a_surface_consumer"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_geometry::tests::cache_candidate_stages_without_mutation_and_exact_hits_publish_one_live_entry"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_style::tests::hover_path_retains_ancestor_hover_and_simultaneous_child_focus"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_style::tests::image_consumer_allows_parent_inherited_color_but_rejects_direct_color"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_geometry::tests::product_failure_preserves_published_frame_cache_generation_and_input"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_style::tests::inherited_style_resolves_across_a_live_call_view_mount_boundary"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_style::tests::live_text_style_target_is_bound_to_its_actual_payload_and_source"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_style::tests::native_web_and_headless_style_states_match_for_default_and_every_explicit_seed"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_style::tests::nested_mount_rejects_a_host_seed_before_style_resolution"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_style::tests::placeholder_shown_is_retained_as_a_typed_element_state"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_style::tests::planner_receives_exact_session_changed_set"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_style::tests::prepared_environment_stamp_is_field_local"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_style::tests::projection_only_update_reprojects_palette_and_requests_redraw"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_style::tests::rich_text_direction_and_theme_never_infer_a_different_axis_provider"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_style::tests::same_value_update_does_not_invalidate_prepared_frame"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_style::tests::silent_runtime_style_drops_are_rejected_with_typed_errors"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_style::tests::targetless_image_binds_its_mount_scoped_image_identity"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_style::tests::top_level_host_seed_is_required_and_explicit_modes_reach_the_shared_player_path"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "frame::view_style::tests::used_field_change_discards_prepared_work_but_unrelated_change_keeps_it"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::scroll::spring_tests::critical_spring_is_partition_invariant"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::backspace_advances_dialogue_only_without_view_control_focus"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::clamp_overscroll_chains_unconsumed_delta_to_parent"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::committed_text_input_emits_typed_change_write_back"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::contain_overscroll_stops_scroll_chaining_without_transient_offset"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::elastic_overscroll_is_transient_and_settles_without_changing_snapshot_offset"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::ensure_choice_focus_does_not_autofocus_view_text_controls"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::enter_with_text_input_focus_does_not_advance_dialogue"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::focus_auto_scroll_policy_offsets_are_clamped"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::enter_without_view_control_focus_advances_dialogue"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::enter_without_view_control_focus_completes_dialogue_reveal_before_advance"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::focus_loss_commits_active_ime_composition"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::ime_preedit_does_not_write_back_until_commit"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::missing_scroll_region_by_id_is_noop"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::no_op_delete_command_does_not_emit_change_write_back"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::pointer_activation_on_action_button_clears_text_editor_focus"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::pointer_activation_on_blank_area_advances_dialogue_without_view_control_focus"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::pointer_activation_on_revealing_dialogue_completes_reveal_before_advance"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::pointer_activation_on_text_input_does_not_advance_dialogue"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::pointer_down_outside_view_control_clears_text_focus_without_advancing"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::precision_scroll_uses_x_delta_for_horizontal_region"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::reduce_motion_consumes_elastic_boundary_delta_without_displacement"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::right_stick_analog_scroll_uses_the_shared_pointer_region_route"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::scroll_region_by_id_scrolls_without_pointer_and_clamps"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::secure_write_back_value_is_available_but_redacted_in_debug"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::submit_command_is_distinguishable_from_change"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::submit_command_with_text_focus_does_not_advance_active_dialogue"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::wheel::tests::custom_policy_preserves_negative_and_zero_components"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::text_input_edits_player_owned_focused_text_editor_state"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::wheel::tests::default_policy_normalizes_lines_and_physical_pixels_identically"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::tests::wheel_updates_scroll_region_under_pointer_and_clamps"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::wheel::tests::extreme_logical_delta_is_rejected_instead_of_saturating"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::wheel::tests::invalid_line_policy_is_rejected"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene",
+    "test": "input::wheel::tests::invalid_scale_and_non_finite_input_are_rejected"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::action_button_submit",
+    "test": "dialogue_action_button_with_unmatched_root_mount_emits_only_generic_action"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::action_button_submit",
+    "test": "accepted_dialogue_action_button_emits_the_exact_prepared_dialogue_token"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::action_button_submit",
+    "test": "arrow_navigation_moves_from_text_field_to_right_action_button"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::action_button_submit",
+    "test": "keyboard_activation_on_focused_action_button_emits_semantic_action"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::action_button_submit",
+    "test": "pointer_activation_on_action_button_does_not_implicitly_advance_dialogue"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::action_button_submit",
+    "test": "runtime_action_invoke_payload_reads_text_control_projection"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::action_button_submit",
+    "test": "pointer_activation_on_action_button_emits_semantic_action"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::action_button_submit",
+    "test": "pointer_activation_on_action_invoke_button_emits_semantic_action"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::character_stage",
+    "test": "observe_reports_selected_character_look_and_stable_bbox"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::action_button_submit",
+    "test": "pointer_activation_on_noop_button_does_not_emit_action_or_write_back"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::character_stage",
+    "test": "retained_view_layers_match_resolved_manifest_order"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::action_button_submit",
+    "test": "pointer_activation_reports_semantic_action_rejection"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::character_stage",
+    "test": "selected_looks_prepare_without_flat_png_swaps"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::controller_navigation",
+    "test": "dpad_confirm_cancel_are_normalized"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::controller_navigation",
+    "test": "left_stick_dead_zone_and_repeat_are_deterministic"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::controller_navigation",
+    "test": "right_stick_scroll_is_dead_zone_adjusted_and_time_integrated"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::runtime_control_style_lowering",
+    "test": "runtime_action_button_style_reaches_render_action_button"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::responsive_stage_placement",
+    "test": "player_frame_uses_same_resolved_bbox_for_render_and_observe"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::runtime_control_style_lowering",
+    "test": "runtime_control_backdrop_filter_reaches_render_style"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::runtime_control_style_lowering",
+    "test": "runtime_control_corner_frame_reaches_render_style"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::runtime_control_style_lowering",
+    "test": "runtime_control_font_family_reaches_render_style"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::runtime_control_style_lowering",
+    "test": "runtime_text_area_preserves_current_visual_style"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::runtime_control_style_lowering",
+    "test": "runtime_text_control_style_reaches_render_text_input_control"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::dialogue_view",
+    "test": "standard_dialogue_view_preserves_vertical_ruby_and_final_panel_geometry"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::dialogue_view",
+    "test": "standard_dialogue_view_pointer_activation_emits_its_exact_typed_handler_route"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::dialogue_view",
+    "test": "unrelated_newer_dialogue_does_not_complete_a_rendered_active_entry"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::runtime_text_controls",
+    "test": "pointer_drag_selection_autoscrolls_containing_scroll_region"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::runtime_text_controls",
+    "test": "hidden_runtime_text_control_clears_focus_and_rejects_stale_writeback"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::runtime_text_controls",
+    "test": "runtime_text_control_lowers_selection_shortcut_and_tab_policies"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::runtime_text_controls",
+    "test": "pointer_click_places_caret_after_focused_geometry_is_available"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::runtime_text_controls",
+    "test": "committed_text_updates_player_owned_state_and_next_frame_value"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::runtime_text_controls",
+    "test": "pointer_focus_uses_lower_for_frame_activation_path"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::runtime_text_controls",
+    "test": "repeated_pointer_clicks_select_word_then_line"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::runtime_text_controls",
+    "test": "runtime_text_control_lowers_into_render_scene_and_focused_target"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::runtime_text_controls",
+    "test": "pointer_drag_extends_focused_text_selection"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::runtime_text_controls",
+    "test": "secure_runtime_text_control_redacts_snapshot_and_visual_secret"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::scroll_regions",
+    "test": "input_snapshot_preserves_signed_scroll_offsets"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::scroll_regions",
+    "test": "input_snapshot_rejects_non_finite_scroll_offsets"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::runtime_text_controls",
+    "test": "selected_text_drag_moves_text_and_emits_writeback"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::scroll_regions",
+    "test": "input_snapshot_rejects_pre_xy_scroll_offset_shape"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::runtime_text_controls",
+    "test": "shift_pointer_click_extends_focused_text_selection"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::runtime_text_controls",
+    "test": "selection_update_changes_next_prepared_caret_geometry"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::scroll_regions",
+    "test": "product_only_hidden_scroll_region_is_not_retained_geometry"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::scroll_regions",
+    "test": "registered_player_planner_prepares_runtime_text_in_canonical_batch"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::scroll_regions",
+    "test": "mounted_view_rich_text_preserves_vertical_ruby_in_prepared_painter_order"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::scroll_regions",
+    "test": "product_only_horizontal_scroll_region_is_not_retained_geometry"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::view_geometry_transaction",
+    "test": "tx_headless_preflight_rejects_stale_before_side_effecting_staging"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::scroll_regions",
+    "test": "product_only_scroll_region_is_not_treated_as_retained_geometry"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::view_geometry_transaction",
+    "test": "tx_success_atomically_publishes_candidate_arc_and_invokes_adapter_once"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::scroll_regions",
+    "test": "product_only_surface_is_not_treated_as_retained_geometry"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::scroll_regions",
+    "test": "mounted_view_localized_and_display_stage_sources_prepare_without_plain_fallback"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::view_geometry_transaction",
+    "test": "tx_stale_generation_never_invokes_adapter_or_changes_input"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::scroll_regions",
+    "test": "retained_text_ignores_unretained_product_scroll_metadata"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::dialogue_view",
+    "test": "sampled_reveal_is_reversible_and_preserves_runtime_state_and_layout"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-player-scene::scroll_regions",
+    "test": "selectable_runtime_text_block_drag_adds_selection_rectangles"
+  }
+]

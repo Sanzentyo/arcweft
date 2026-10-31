@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "base": "1c7a0e705e618de2ab4b60ad7bd33a51c7628710",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-runtime-driver",
+    "--all-features",
+    "--locked",
+    "-E",
+    "all()",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "exitCode": 0,
+  "startedAt": "2026-10-31T00:24:10.7824203Z",
+  "finishedAt": "2026-10-31T00:24:13.3289465Z"
+}

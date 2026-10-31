@@ -1,0 +1,254 @@
+[
+  {
+    "binary": "arcweft-player-native",
+    "test": "dev_capture::tests::capture_preparation_uses_the_normal_prepared_text_batch"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "dev_capture::tests::content_stats_are_derived_from_shared_capture_pixels"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "dev_capture::tests::empty_capture_has_no_content_bounds"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "dev_capture::tests::zero_capture_extent_is_rejected_without_clamping"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "patch_endpoint::tests::native_manifest_only_patch_replaces_the_active_artifact"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "patch_endpoint::tests::native_noop_patch_validates_without_replacing_active_bytes"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "patch_endpoint::tests::native_patch_endpoint_accepts_cli_style_cwd_relative_patch_path"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "patch_endpoint::tests::native_patch_endpoint_applies_code_compatible_patch_target"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "patch_endpoint::tests::native_patch_endpoint_applies_content_patch_live"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "patch_endpoint::tests::native_patch_endpoint_applies_watch_transport_sidecar"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "patch_endpoint::tests::native_patch_endpoint_rejects_mismatched_transport_action"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "patch_endpoint::tests::native_prepared_patch_rejects_a_stale_endpoint_generation"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "patch_endpoint::tests::native_prepared_patch_rejects_same_root_from_a_different_artifact"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "scene_windowed::tests::native_player_session_save_decode_rejects_unknown_payload_fields"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "scene_windowed::tests::surrounding_excerpt_keeps_cursor_and_anchor_inside_utf8_window"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "scene_windowed::tests::winit_keyboard_text_commits_printable_text_only"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "scene_windowed::tests::winit_preedit_selection_rejects_non_boundary_offsets_to_end"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "scene_windowed::tests::winit_preedit_selection_uses_utf8_byte_offsets"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "tests::bundle_headless_rejects_dialogue_without_checked_presentation_projection"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "tests::headless_report_serializes_capture_metadata_with_dev_capture"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "text_input_bridge::tests::secure_focus_trace_is_redacted_before_backend_publication"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "text_input_bridge::tests::winit_backend_reports_capabilities_without_native_identity"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "window_driver::tests::owned_window_cursor_icon_mapping_covers_visible_contract_icons"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "window_driver::tests::owned_window_driver_applies_window_cursor_and_close_requests"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "window_driver::tests::owned_window_driver_lists_primary_window_without_native_handles"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "window_driver::tests::owned_window_wayland_rejects_absolute_bounds"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "windowed_environment_ingress::tests::dropping_producer_handle_does_not_shutdown_player"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "windowed_environment_ingress::tests::environment_fifo_order_matches_reserved_sequence_across_threads"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "windowed_environment_ingress::tests::queue_exact_capacity_and_one_over"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "windowed_environment_ingress::tests::receipt_reports_exact_session_update"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "windowed_environment_ingress::tests::sequence_overflow_rejects_without_enqueue"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "windowed_environment_ingress::tests::shutdown_completes_queued_and_rejects_future_updates"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "windowed_ingress::tests::closed_ingress_reports_typed_player_closed"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "windowed_ingress::tests::completed_boundary_releases_backpressure_slot"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "windowed_ingress::tests::ingress_enqueues_patch_event_without_mutating_session_state"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "windowed_ingress::tests::ingress_preserves_fifo_order_across_coalesced_wakeups"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "windowed_ingress::tests::ingress_state_enforces_capacity_before_proxy_wake"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "windowed_ingress::tests::malformed_sidecar_retains_rejected_report"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "windowed_ingress::tests::unsupported_transport_action_reports_typed_error"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "windowed_ingress::tests::wake_failure_reports_event_loop_closed"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "windowed_ingress::tests::wrong_base_sidecar_reports_typed_error_before_enqueue"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "windowed_patch::tests::queue_preserves_event_order_at_safe_boundary"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "windowed_patch::tests::queue_rejects_mutation_before_safe_boundary"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "windowed_patch::tests::reports_last_patch_state"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "windowed_player_ingress::tests::aggregate_keeps_patch_and_environment_as_distinct_real_handles"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "windowed_runtime::tests::content_only_patch_refreshes_image_catalog_at_safe_boundary"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "windowed_runtime::tests::explicit_restart_rebinds_asset_catalog_to_new_awfb_identity"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "windowed_runtime::tests::invalid_patch_report_leaves_previous_session_and_image_catalog_observable"
+  },
+  {
+    "binary": "arcweft-player-native",
+    "test": "windowed_runtime::tests::unsafe_boundaries_do_not_pop_queued_owner_events"
+  },
+  {
+    "binary": "arcweft-player-native::windowed_ingress_runtime",
+    "test": "malformed_sidecar_reaches_owner_retained_report_without_session_mutation"
+  },
+  {
+    "binary": "arcweft-player-native::windowed_ingress_runtime",
+    "test": "wrong_base_sidecar_does_not_mutate_active_session_catalog"
+  },
+  {
+    "binary": "arcweft-player-native::windowed_live_patch_smoke",
+    "test": "code_generational_patch_commits_new_generation_and_keeps_old_foreground_state"
+  },
+  {
+    "binary": "arcweft-player-native::windowed_live_patch_smoke",
+    "test": "code_generational_patch_keeps_pending_task_generation_until_task_completion"
+  },
+  {
+    "binary": "arcweft-player-native::windowed_live_patch_smoke",
+    "test": "content_only_patch_refreshes_catalog_and_preserves_window_renderer_input_clock_shells"
+  },
+  {
+    "binary": "arcweft-player-native::windowed_live_patch_smoke",
+    "test": "fixture_regeneration_set_contains_all_binary_patches_and_reports"
+  },
+  {
+    "binary": "arcweft-player-native::windowed_live_patch_smoke",
+    "test": "generated_awfb_patch_fixtures_have_expected_compatibility_classes"
+  },
+  {
+    "binary": "arcweft-player-native::windowed_live_patch_smoke",
+    "test": "malformed_patch_rejects_without_mutating_active_session_or_catalog"
+  },
+  {
+    "binary": "arcweft-player-native::windowed_live_patch_smoke",
+    "test": "restart_required_patch_restarts_session_but_preserves_shell_state"
+  },
+  {
+    "binary": "arcweft-player-native::windowed_live_patch_smoke",
+    "test": "wrong_base_patch_rejects_without_mutating_active_session_or_catalog"
+  },
+  {
+    "binary": "arcweft-player-native::bin/arcweft-player-native",
+    "test": "tests::capture_mode_requires_capture_out"
+  },
+  {
+    "binary": "arcweft-player-native::bin/arcweft-player-native",
+    "test": "tests::default_bundle_mode_runs_awfb_without_source_flag"
+  },
+  {
+    "binary": "arcweft-player-native::bin/arcweft-player-native",
+    "test": "tests::default_input_requires_awfb_bundle"
+  },
+  {
+    "binary": "arcweft-player-native::bin/arcweft-player-native",
+    "test": "tests::product_awfb_input_does_not_fall_back_to_json_export"
+  }
+]

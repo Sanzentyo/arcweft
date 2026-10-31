@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "base": "1c7a0e705e618de2ab4b60ad7bd33a51c7628710",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-cli",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(app::agent::native::player_observation::tests::)",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all",
+    "--lib"
+  ],
+  "exitCode": 0,
+  "startedAt": "2026-10-31T00:41:22.5218507Z",
+  "finishedAt": "2026-10-31T00:41:24.7373848Z"
+}

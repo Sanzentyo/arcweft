@@ -1,0 +1,46 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.29s
+────────────
+ Nextest run ID bf5c707e-a5e3-45a7-ac36-1552b5db8720 with nextest profile: default
+    Starting 20 tests across 2 binaries
+        PASS [   0.009s] ( 1/20) arcweft-interaction-model::model identifier_rejects_whitespace_only_input
+        PASS [   0.013s] ( 2/20) arcweft-interaction-model id::tests::identifier_trims_outer_whitespace
+        PASS [   0.018s] ( 3/20) arcweft-interaction-model dialogue::tests::custom_field_id_preserves_the_accepted_family_and_serde_spelling
+        PASS [   0.021s] ( 4/20) arcweft-interaction-model audio::tests::effect_parameter_kind_tags_are_stable_and_closed
+        PASS [   0.025s] ( 5/20) arcweft-interaction-model dialogue::tests::ordered_patch_coordinates_and_clear_actions_round_trip
+        PASS [   0.029s] ( 6/20) arcweft-interaction-model id::tests::borrowed_identifier_admission_retains_the_original_normalized_slice
+        PASS [   0.032s] ( 7/20) arcweft-interaction-model dialogue::tests::custom_field_id_rejects_wrong_family_invalid_text_and_oversize
+        PASS [   0.036s] ( 8/20) arcweft-interaction-model dialogue::tests::runtime_roles_have_fixed_version_one_wire_names
+        PASS [   0.041s] ( 9/20) arcweft-interaction-model presentation::tests::playback_roundtrip_preserves_all_explicit_units_and_optional_times
+        PASS [   0.044s] (10/20) arcweft-interaction-model presentation::tests::resource_kind_roundtrip_is_closed_and_keeps_distinct_semantic_identities
+        PASS [   0.047s] (11/20) arcweft-interaction-model presentation::tests::playback_uses_pinned_then_paused_then_visual_time_without_advancing_state
+        PASS [   0.051s] (12/20) arcweft-interaction-model presentation::image::tests::pixel_conversion_accepts_exact_storage_boundaries_and_rejects_each_overflow
+        PASS [   0.055s] (13/20) arcweft-interaction-model::model audio_events_are_typed_and_roundtrip_without_string_dispatch
+        PASS [   0.058s] (14/20) arcweft-interaction-model presentation::tests::fit_and_transform_decode_are_closed_and_require_actual_encoded_components
+        PASS [   0.062s] (15/20) arcweft-interaction-model presentation::tests::alignment_decode_requires_both_axes_and_rejects_unknown_or_duplicate_fields
+        PASS [   0.066s] (16/20) arcweft-interaction-model presentation::tests::playback_decode_never_supplies_a_missing_start_or_rate_or_repairs_invalid_units
+        PASS [   0.069s] (17/20) arcweft-interaction-model id::tests::identifier_rejects_empty_values
+        PASS [   0.072s] (18/20) arcweft-interaction-model presentation::tests::alignment_construction_and_decode_enforce_the_same_closed_range
+        PASS [   0.076s] (19/20) arcweft-interaction-model::model routed_input_roundtrip_preserves_routing_metadata
+        PASS [   0.080s] (20/20) arcweft-interaction-model presentation::image::tests::pixel_conversion_preserves_negative_coordinates_and_zero_extents
+────────────
+     Summary [   0.081s] 20 tests run: 20 passed, 0 skipped
+        PASS [   0.009s] ( 1/20) arcweft-interaction-model::model identifier_rejects_whitespace_only_input
+        PASS [   0.013s] ( 2/20) arcweft-interaction-model id::tests::identifier_trims_outer_whitespace
+        PASS [   0.018s] ( 3/20) arcweft-interaction-model dialogue::tests::custom_field_id_preserves_the_accepted_family_and_serde_spelling
+        PASS [   0.021s] ( 4/20) arcweft-interaction-model audio::tests::effect_parameter_kind_tags_are_stable_and_closed
+        PASS [   0.025s] ( 5/20) arcweft-interaction-model dialogue::tests::ordered_patch_coordinates_and_clear_actions_round_trip
+        PASS [   0.029s] ( 6/20) arcweft-interaction-model id::tests::borrowed_identifier_admission_retains_the_original_normalized_slice
+        PASS [   0.032s] ( 7/20) arcweft-interaction-model dialogue::tests::custom_field_id_rejects_wrong_family_invalid_text_and_oversize
+        PASS [   0.036s] ( 8/20) arcweft-interaction-model dialogue::tests::runtime_roles_have_fixed_version_one_wire_names
+        PASS [   0.041s] ( 9/20) arcweft-interaction-model presentation::tests::playback_roundtrip_preserves_all_explicit_units_and_optional_times
+        PASS [   0.044s] (10/20) arcweft-interaction-model presentation::tests::resource_kind_roundtrip_is_closed_and_keeps_distinct_semantic_identities
+        PASS [   0.047s] (11/20) arcweft-interaction-model presentation::tests::playback_uses_pinned_then_paused_then_visual_time_without_advancing_state
+        PASS [   0.051s] (12/20) arcweft-interaction-model presentation::image::tests::pixel_conversion_accepts_exact_storage_boundaries_and_rejects_each_overflow
+        PASS [   0.055s] (13/20) arcweft-interaction-model::model audio_events_are_typed_and_roundtrip_without_string_dispatch
+        PASS [   0.058s] (14/20) arcweft-interaction-model presentation::tests::fit_and_transform_decode_are_closed_and_require_actual_encoded_components
+        PASS [   0.062s] (15/20) arcweft-interaction-model presentation::tests::alignment_decode_requires_both_axes_and_rejects_unknown_or_duplicate_fields
+        PASS [   0.066s] (16/20) arcweft-interaction-model presentation::tests::playback_decode_never_supplies_a_missing_start_or_rate_or_repairs_invalid_units
+        PASS [   0.069s] (17/20) arcweft-interaction-model id::tests::identifier_rejects_empty_values
+        PASS [   0.072s] (18/20) arcweft-interaction-model presentation::tests::alignment_construction_and_decode_enforce_the_same_closed_range
+        PASS [   0.076s] (19/20) arcweft-interaction-model::model routed_input_roundtrip_preserves_routing_metadata
+        PASS [   0.080s] (20/20) arcweft-interaction-model presentation::image::tests::pixel_conversion_preserves_negative_coordinates_and_zero_extents

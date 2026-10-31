@@ -1,0 +1,12 @@
+[
+  {
+    "binary": "arcweft-interaction-model",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_interaction_model-f34b179f45553a35.exe",
+    "sha256": "cc23014c310a722997fb0d51e61a6eb9d022209a6b8411810f961fcf9eeddc92"
+  },
+  {
+    "binary": "arcweft-interaction-model::model",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\model-71ab4eaa8b3e64a3.exe",
+    "sha256": "db1400e48dcaabf1e0b3c04cd449b1dc7ade9c9c9e6dae32e8b49bc024d36125"
+  }
+]

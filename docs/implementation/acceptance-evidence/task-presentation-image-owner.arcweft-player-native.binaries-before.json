@@ -1,0 +1,27 @@
+[
+  {
+    "binary": "arcweft-player-native",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_player_native-cea890b8083c68e7.exe",
+    "sha256": "2ac98043e1b043b6688a210f10d85509b76e9661c0d4f70166ba491dd318fab3"
+  },
+  {
+    "binary": "arcweft-player-native::windowed_ingress_runtime",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\windowed_ingress_runtime-1324d0f94022ebe0.exe",
+    "sha256": "48a4581a540e596f9ea4d8c9ce151270f88a7f54b7320dd3761b2ba5125b9be9"
+  },
+  {
+    "binary": "arcweft-player-native::windowed_live_patch_smoke",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\windowed_live_patch_smoke-6652454d96e97710.exe",
+    "sha256": "43c3c75e0cf02af359c76ee9e56cc8ea779247a6bf1213a04e2946242eebbb3f"
+  },
+  {
+    "binary": "arcweft-player-native::bin/arcweft-player-native",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_player_native-5f85ff62a6e3b666.exe",
+    "sha256": "b436257dea8d14ec6763653378e1719de8baac7eae257ed01114d3357b20d1dd"
+  },
+  {
+    "binary": "arcweft-player-native::bin/windows-tsf-ime-sample",
+    "path": "D:\\git\\arcweft\\target\\debug\\deps\\windows_tsf_ime_sample-9fec9cb82a10a4ad.exe",
+    "sha256": "90c248cfbd3d23d8cfcf32b03624292be45a46a622e752fcde9981146c5b9ef3"
+  }
+]

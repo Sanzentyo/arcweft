@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "commit": "f9f6639d6b3c5b005afa60df117354160ff02fcd",
+  "parent": "1c7a0e705e618de2ab4b60ad7bd33a51c7628710",
+  "tree": "9a7df3e718168554f39a79668cac37448a64a930",
+  "remote": "f9f6639d6b3c5b005afa60df117354160ff02fcd",
+  "paths": [
+    {
+      "path": "Cargo.lock",
+      "blob": "597a347ac0a85be69b80198521ef3d17758f5521"
+    },
+    {
+      "path": "crates/arcweft-bundle/src/lib.rs",
+      "blob": "ab3cdaf51ba1a18fcbfdf82504d3ed768dcd944a"
+    },
+    {
+      "path": "crates/arcweft-bundle/src/resource_codec/product_catalog.rs",
+      "blob": "09b4b5cf52fdfb98a056f90675d8805d831d3caa"
+    },
+    {
+      "path": "crates/arcweft-bundle/tests/product_catalog_resource_codecs.rs",
+      "blob": "be66788b4f2d28d576caca5859731460cb58b93d"
+    },
+    {
+      "path": "crates/arcweft-cli/src/app/agent/native/player_observation.rs",
+      "blob": "5afeb5a0b348356cd0a5020696c982576cc5756b"
+    },
+    {
+      "path": "crates/arcweft-cli/src/app/agent/native/player_observation/tests.rs",
+      "blob": "ecf25225bd495ffad5bfbc36f64651ab2a249f30"
+    },
+    {
+      "path": "crates/arcweft-compiler/src/view.rs",
+      "blob": "e496ef9c1fcabf4ba3ac695eea68dde347d72030"
+    },
+    {
+      "path": "crates/arcweft-interaction-model/Cargo.toml",
+      "blob": "c065f89b429ab91999e3f59b6547d0b36a26e537"
+    },
+    {
+      "path": "crates/arcweft-interaction-model/src/presentation.rs",
+      "blob": "0bb667b17f295cbf0e97caf51ebfebdb1624be41"
+    },
+    {
+      "path": "crates/arcweft-interaction-model/src/presentation/image.rs",
+      "blob": "bd6dbd6d1dfc981883b786a01f0fcc534299dc58"
+    },
+    {
+      "path": "crates/arcweft-player-native/src/windowed_runtime.rs",
+      "blob": "2b49313b1f4052e9b3c99498295ec229f6b2010d"
+    },
+    {
+      "path": "crates/arcweft-player-native/tests/support/windowed_live_patch_fixtures.rs",
+      "blob": "5b40324739c70445984417baef6235d48afa3979"
+    },
+    {
+      "path": "crates/arcweft-player-scene/src/frame/view_geometry/intrinsic.rs",
+      "blob": "817d65a73e8873030cdbf7134dd365c19d1d489d"
+    },
+    {
+      "path": "crates/arcweft-player-scene/src/frame/view_style/consumer.rs",
+      "blob": "98027e445fe9b4a3cf185b47b04b932f40fdc3cb"
+    },
+    {
+      "path": "crates/arcweft-player-scene/src/images.rs",
+      "blob": "79799a8a84b836c0465906e8f6c6d578805b4188"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/src/display.rs",
+      "blob": "ac76e0617de352e6586d9d66a308cbfce4dda38a"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/src/display/tests.rs",
+      "blob": "b03689e1344a87e712fe239eacacfa677329824c"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/src/presentation_handles.rs",
+      "blob": "bf516725e45235d2d159c2bdfb3193834e9f4190"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/src/session.rs",
+      "blob": "f163f0a6512f8e6e8c96a66db2ac5a02b13fea52"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/src/session/construction.rs",
+      "blob": "f1cda6af76c130bf01f36df9995644f7fb3948e6"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/src/swap.rs",
+      "blob": "61b76c3ed509f88db94845cf87e23500ad5a7bef"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/src/view_projection.rs",
+      "blob": "7e806c357d885480e0884da892359cabbb207a13"
+    },
+    {
+      "path": "docs/00-overview/crate-map.md",
+      "blob": "81ea221d48ebcb58c323aea67cf777e71c08d981"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-image-owner-checkpoint.json",
+      "blob": "2721c6d684edbe0ab1ce66d33c72518f09f17942"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-image-owner.reverse-closure.json",
+      "blob": "8877eb8b6cee87c884846fbc90c98386fe7cac01"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-image-owner.source-freeze.json",
+      "blob": "f5efa069ff8a23c5421874997fbbd0bcc5641acd"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-presentation-image-owner.workspace-check.log",
+      "blob": "29993b5e734cc96c3819dfdc04e7dcc44dfa9913"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-wait-reverse-source-publication-index.json",
+      "blob": "f181677df168e27537b135928fad42566d6962f0"
+    },
+    {
+      "path": "docs/implementation/acceptance-evidence/task-wait-reverse-source-publication.json",
+      "blob": "5b1892bceefa044c21a57e945230497433445194"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "bc729bc5fa473e175c0c935a0fb96102af43a733"
+    },
+    {
+      "path": "docs/implementation/current-status.md",
+      "blob": "b67c47a91adf714f93c3d1b595c4c2d6c6561257"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "152005d762b869f9f7fcd69bc886532199870887fcf3b5292d99f26971d9b54a",
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-31T00:12:21.1009147Z"
+}

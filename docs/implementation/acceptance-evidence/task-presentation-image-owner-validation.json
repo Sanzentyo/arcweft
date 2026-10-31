@@ -1,0 +1,750 @@
+{
+  "version": 1,
+  "date": "2026-10-31",
+  "sourceCommit": "f9f6639d6b3c5b005afa60df117354160ff02fcd",
+  "parent": "1c7a0e705e618de2ab4b60ad7bd33a51c7628710",
+  "tree": "9a7df3e718168554f39a79668cac37448a64a930",
+  "sourcePatchSha256": "152005d762b869f9f7fcd69bc886532199870887fcf3b5292d99f26971d9b54a",
+  "scope": "Canonical inert image registration data shared by artifacts and execution consumers; no claim of Presentation Source/command ABI completion",
+  "sourceInputs": 4004,
+  "sourceDrift": 0,
+  "sourceFreeze": "task-presentation-image-owner.source-freeze.json",
+  "check": {
+    "exitCode": 0,
+    "completedUtc": "2026-10-31T00:08:41.5307146Z"
+  },
+  "clippy": {
+    "version": 1,
+    "base": "1c7a0e705e618de2ab4b60ad7bd33a51c7628710",
+    "command": [
+      "clippy",
+      "--workspace",
+      "--all-targets",
+      "--all-features",
+      "--locked"
+    ],
+    "exitCode": 0,
+    "finishedAt": "2026-10-31T00:11:47.8156312Z"
+  },
+  "clippyWarnings": 8742,
+  "toolchain": "task-presentation-image-owner.toolchain.json",
+  "structure": {
+    "exitCode": 0,
+    "packages": 97,
+    "reviewTriggers": 382,
+    "blocking": 0,
+    "measurements": [
+      {
+        "path": "crates/arcweft-bundle/src/lib.rs",
+        "owner": "arcweft-bundle",
+        "bytes": "98164",
+        "physical_lines": "2547",
+        "code_lines": "2337",
+        "classification": "facade",
+        "is_rust": "true",
+        "embedded_test_lines": "973"
+      },
+      {
+        "path": "crates/arcweft-bundle/src/resource_codec/product_catalog.rs",
+        "owner": "arcweft-bundle",
+        "bytes": "17160",
+        "physical_lines": "512",
+        "code_lines": "458",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-bundle/tests/product_catalog_resource_codecs.rs",
+        "owner": "arcweft-bundle",
+        "bytes": "17437",
+        "physical_lines": "461",
+        "code_lines": "437",
+        "classification": "test",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-cli/src/app/agent/native/player_observation/tests.rs",
+        "owner": "arcweft-cli",
+        "bytes": "15941",
+        "physical_lines": "450",
+        "code_lines": "418",
+        "classification": "test",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-cli/src/app/agent/native/player_observation.rs",
+        "owner": "arcweft-cli",
+        "bytes": "43581",
+        "physical_lines": "1218",
+        "code_lines": "1174",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-compiler/src/view.rs",
+        "owner": "arcweft-compiler",
+        "bytes": "118828",
+        "physical_lines": "2951",
+        "code_lines": "2856",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-interaction-model/src/presentation/image.rs",
+        "owner": "arcweft-interaction-model",
+        "bytes": "6537",
+        "physical_lines": "186",
+        "code_lines": "166",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "48"
+      },
+      {
+        "path": "crates/arcweft-interaction-model/src/presentation.rs",
+        "owner": "arcweft-interaction-model",
+        "bytes": "9829",
+        "physical_lines": "348",
+        "code_lines": "282",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-player-native/src/windowed_runtime.rs",
+        "owner": "arcweft-player-native",
+        "bytes": "51083",
+        "physical_lines": "1282",
+        "code_lines": "1157",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "488"
+      },
+      {
+        "path": "crates/arcweft-player-native/tests/support/windowed_live_patch_fixtures.rs",
+        "owner": "arcweft-player-native",
+        "bytes": "67182",
+        "physical_lines": "1820",
+        "code_lines": "1716",
+        "classification": "test",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-player-scene/src/frame/view_geometry/intrinsic.rs",
+        "owner": "arcweft-player-scene",
+        "bytes": "8284",
+        "physical_lines": "212",
+        "code_lines": "194",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-player-scene/src/frame/view_style/consumer.rs",
+        "owner": "arcweft-player-scene",
+        "bytes": "14296",
+        "physical_lines": "392",
+        "code_lines": "367",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-player-scene/src/images.rs",
+        "owner": "arcweft-player-scene",
+        "bytes": "6846",
+        "physical_lines": "193",
+        "code_lines": "181",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-runtime-driver/src/display/tests.rs",
+        "owner": "arcweft-runtime-driver",
+        "bytes": "79512",
+        "physical_lines": "2107",
+        "code_lines": "1993",
+        "classification": "test",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-runtime-driver/src/display.rs",
+        "owner": "arcweft-runtime-driver",
+        "bytes": "56101",
+        "physical_lines": "1514",
+        "code_lines": "1428",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-runtime-driver/src/presentation_handles.rs",
+        "owner": "arcweft-runtime-driver",
+        "bytes": "38464",
+        "physical_lines": "1123",
+        "code_lines": "1043",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "344"
+      },
+      {
+        "path": "crates/arcweft-runtime-driver/src/session/construction.rs",
+        "owner": "arcweft-runtime-driver",
+        "bytes": "22876",
+        "physical_lines": "580",
+        "code_lines": "553",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-runtime-driver/src/session.rs",
+        "owner": "arcweft-runtime-driver",
+        "bytes": "77331",
+        "physical_lines": "1898",
+        "code_lines": "1780",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "328"
+      },
+      {
+        "path": "crates/arcweft-runtime-driver/src/swap.rs",
+        "owner": "arcweft-runtime-driver",
+        "bytes": "29267",
+        "physical_lines": "871",
+        "code_lines": "776",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "40"
+      },
+      {
+        "path": "crates/arcweft-runtime-driver/src/view_projection.rs",
+        "owner": "arcweft-runtime-driver",
+        "bytes": "21189",
+        "physical_lines": "591",
+        "code_lines": "565",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "206"
+      }
+    ],
+    "disposition": "The shared image owner contains only inert registration metadata, exact coordinate conversion and its boundary tests. It depends on neutral layout placement data, not a renderer/adapter. Bundle retains envelope/catalog codec ownership and directly stores the shared type. Existing large consumer modules only change the referenced data type; they gain no new state or algorithm. No size-driven API widening or duplicated schema is introduced."
+  },
+  "runtime": {
+    "selectedPackages": 7,
+    "executed": 1387.0,
+    "passed": 1387.0,
+    "failed": 0,
+    "rows": [
+      {
+        "package": "arcweft-interaction-model",
+        "filter": "all()",
+        "selected": 20,
+        "executed": 20,
+        "passed": 20,
+        "failed": 0,
+        "exitCode": 0,
+        "sourceInputs": 4004,
+        "sourceDrift": 0,
+        "binaryCount": 2,
+        "binaryDrift": 0,
+        "finishedAt": "2026-10-31T00:12:35.3567341Z"
+      },
+      {
+        "package": "arcweft-bundle",
+        "filter": "all()",
+        "selected": 329,
+        "executed": 329,
+        "passed": 329,
+        "failed": 0,
+        "exitCode": 0,
+        "sourceInputs": 4004,
+        "sourceDrift": 0,
+        "binaryCount": 21,
+        "binaryDrift": 0,
+        "finishedAt": "2026-10-31T00:21:44.1844616Z"
+      },
+      {
+        "package": "arcweft-runtime-driver",
+        "filter": "all()",
+        "selected": 177,
+        "executed": 177,
+        "passed": 177,
+        "failed": 0,
+        "exitCode": 0,
+        "sourceInputs": 4004,
+        "sourceDrift": 0,
+        "binaryCount": 4,
+        "binaryDrift": 0,
+        "finishedAt": "2026-10-31T00:24:13.3289465Z"
+      },
+      {
+        "package": "arcweft-player-scene",
+        "filter": "all()",
+        "selected": 128,
+        "executed": 128,
+        "passed": 128,
+        "failed": 0,
+        "exitCode": 0,
+        "sourceInputs": 4004,
+        "sourceDrift": 0,
+        "binaryCount": 10,
+        "binaryDrift": 0,
+        "finishedAt": "2026-10-31T00:26:21.8454052Z"
+      },
+      {
+        "package": "arcweft-player-native",
+        "filter": "all()",
+        "selected": 63,
+        "executed": 63,
+        "passed": 63,
+        "failed": 0,
+        "exitCode": 0,
+        "sourceInputs": 4004,
+        "sourceDrift": 0,
+        "binaryCount": 5,
+        "binaryDrift": 0,
+        "finishedAt": "2026-10-31T00:29:50.8448237Z"
+      },
+      {
+        "package": "arcweft-compiler",
+        "stem": "presentation-image-owner.arcweft-compiler.retry1",
+        "filter": "all()",
+        "selected": 661,
+        "executed": 661,
+        "passed": 661,
+        "failed": 0,
+        "exitCode": 0,
+        "sourceInputs": 4004,
+        "sourceDrift": 0,
+        "binaryCount": 26,
+        "binaryDrift": 0,
+        "finishedAt": "2026-10-31T00:37:56.0077237Z"
+      },
+      {
+        "package": "arcweft-cli",
+        "stem": "presentation-image-owner.arcweft-cli",
+        "filter": "test(app::agent::native::player_observation::tests::)",
+        "selected": 9,
+        "executed": 9,
+        "passed": 9,
+        "failed": 0,
+        "exitCode": 0,
+        "sourceInputs": 4004,
+        "sourceDrift": 0,
+        "binaryCount": 1,
+        "binaryDrift": 0,
+        "finishedAt": "2026-10-31T00:41:24.7373848Z"
+      }
+    ],
+    "catalogCaseDrift": 0,
+    "binaryDrift": 0
+  },
+  "catalogFailureHistory": [
+    {
+      "package": "arcweft-compiler",
+      "stem": "presentation-image-owner.arcweft-compiler",
+      "exitCode": 101,
+      "sourceInputs": 4004,
+      "sourceDrift": 0,
+      "testsExecuted": 0,
+      "startedAt": "2026-10-31T00:29:52.322865Z",
+      "finishedAt": "2026-10-31T00:33:21.9475829Z",
+      "diagnostic": "Missing rlib form; delayed rustc internal diagnostics; cause not established"
+    }
+  ],
+  "recordingFailureHistory": [
+    {
+      "phase": "terminal state serialization after all seven package assertions",
+      "cause": "Resumed matrix deserialized to PSCustomObject; missing finishedAt property assignment threw before Save-State",
+      "correction": "Verified all seven actual runtime receipts and exact terminal IDs; source hashes4004 unchanged; added terminal property without rerunning tests",
+      "wasm": "Initial guard stopped before Cargo; cross-target check not executed in that attempt"
+    }
+  ],
+  "compilerRetry": "Original exit101 had missing rlib form and rustc internal no-resolution-for-an-import diagnostics before tests. The isolated retry uses the same4004 inputs, toolchain and Compiler arguments, without source/cache/profile changes. Its completed tests are counted once; the original failure log remains history and its cause is not established.",
+  "wasm": {
+    "version": 1,
+    "sourceCommit": "f9f6639d6b3c5b005afa60df117354160ff02fcd",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "arcweft-core",
+      "-p",
+      "arcweft-player-web",
+      "--target",
+      "wasm32-unknown-unknown",
+      "--locked"
+    ],
+    "features": "default",
+    "exitCode": 0,
+    "sourceInputs": 4004,
+    "sourceDrift": 0,
+    "startedAt": "2026-10-31T00:42:06.536501Z",
+    "finishedAt": "2026-10-31T00:43:11.7622Z",
+    "scope": "Compilation only; this is not Native/Web image parity acceptance"
+  },
+  "runtimeSelection": "All matching nonignored tests for interaction-model, Bundle, runtime-driver, player-scene, player-native and Compiler. CLI is limited to the 9 player_observation tests; its full integration suite was not rerun. No filter or assertion was weakened.",
+  "reverseGraph": "task-presentation-image-owner.reverse-closure.json",
+  "reversePackages": 62,
+  "fullReverseRuntime": "not run for this intermediate source cut; graph coverage is not runtime acceptance",
+  "reverseGraphAllFeatures": "task-presentation-image-owner.graph-feature-audit.json",
+  "snapshotAndWire": "Existing Bundle image metadata round trips, explicit image value rejection and alignment validation are exercised by Bundle tests. Serialized fields, variants and version 1 are retained.",
+  "newBehavior": "Two owner tests exercise negative/zero conversion, exact integer boundaries and each overflowing component. Overflow is rejected rather than saturated.",
+  "remaining": "Source operation schema, independent Dialogue bank, AWBC ledger and typed driver connection remain unaccepted. Existing accepted Generic Match/token/custody cuts are unchanged.",
+  "originalWip": {
+    "tracked": 14,
+    "untrackedFiles": 6,
+    "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+    "sourcePublicationBlobDrift": 0
+  },
+  "artifacts": [
+    {
+      "path": "task-presentation-image-owner.tests.json",
+      "sha256": "e4eb62c4893cc628c81343792fb888d23d8334081f2612614be5e01b62d8ceb1",
+      "bytes": 3835
+    },
+    {
+      "path": "task-presentation-image-owner.toolchain.json",
+      "sha256": "114edc51f2615a380479f4e0f0c05a2380e5d0e10b10938bde9c290ae17e9d5e",
+      "bytes": 633
+    },
+    {
+      "path": "task-presentation-image-owner.clippy.log",
+      "sha256": "f3b56a197b4d88ba99380370467de220426d68ce58db3e3908e1bf1f05689f5c",
+      "bytes": 6749041
+    },
+    {
+      "path": "task-presentation-image-owner.clippy.result.json",
+      "sha256": "8c3d67e908846a74a20f8f18c9c4e826a4783cfbdc2019e400c0ebde00e31eaa",
+      "bytes": 262
+    },
+    {
+      "path": "task-presentation-image-owner.check.result.json",
+      "sha256": "6eba174e0cf68edd6186fd09a06c7e8e2167dba5ebed9b85887228cce6a8a94a",
+      "bytes": 74
+    },
+    {
+      "path": "task-presentation-image-owner.structure.log",
+      "sha256": "258329e541395051175d3a249920a3510705f299b1212e267fd66393bf19c840",
+      "bytes": 65021
+    },
+    {
+      "path": "task-presentation-image-owner.structure.result.json",
+      "sha256": "1c9277323c1d7e54d5d7b8a7e11dc16b73f8d638e70817d0cbe9a2ec8949cfb3",
+      "bytes": 89
+    },
+    {
+      "path": "task-presentation-image-owner.graph-diff.json",
+      "sha256": "39bb33d755c9c5d165f0158fcc1c10cf57a688e7702f9cf0a15a57cb9b41fe80",
+      "bytes": 429
+    },
+    {
+      "path": "task-presentation-image-owner.graph-feature-audit.json",
+      "sha256": "34522122de6621cf53233d323fff7e9ff8adcf9e343652a7c76ba1c52d8e49ea",
+      "bytes": 2058
+    },
+    {
+      "path": "task-presentation-image-owner.wasm.log",
+      "sha256": "31d9083fef81230199600930e3ee431049aeb6774fe4794290cf043f4db5bcb8",
+      "bytes": 73705
+    },
+    {
+      "path": "task-presentation-image-owner.wasm.result.json",
+      "sha256": "1a0ab115b613745c1854937af623f6d3fede621db2a7281cec87403b1bfd15ff",
+      "bytes": 536
+    },
+    {
+      "path": "task-checkpoint-presentation-image-owner.verified.json",
+      "sha256": "11f458fbfabf1f101727d92654fa81fa812b5e5f2c919f79cc5fe46596a9cda0",
+      "bytes": 5155
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-interaction-model.catalog.log",
+      "sha256": "c3decd8759289883707e8730f056e2965bbec2645cf321be65465268381136ed",
+      "bytes": 4977
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-interaction-model.catalog.result.json",
+      "sha256": "c3fe7272c75158beab30564b225e48b4e2a1c531049663fd463cdcbdd17e2a84",
+      "bytes": 390
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-interaction-model.runtime.log",
+      "sha256": "7ce20085b78eb95e1ee7aa1a58ae4b74410d0f95c30d3ce104bfaccc06351f7f",
+      "bytes": 5844
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-interaction-model.runtime.result.json",
+      "sha256": "64dfe8c68c9b4ef0ba15b58ebca6da652422ce13c3b53bef63b82a0f084612a3",
+      "bytes": 482
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-interaction-model.binaries-before.json",
+      "sha256": "66d027b0eefb78add89b0cd21e2df14160be725620853b39f9781657a77cded8",
+      "bytes": 470
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-interaction-model.selected.json",
+      "sha256": "03204d13cf49909dd590a915f4f9e0f38ce3c1213287caaf06589cc0d136e0ed",
+      "bytes": 2959
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-interaction-model.terminals.json",
+      "sha256": "438f24ed186d52d36bbb1d48ff44997ab0e2aaa68a35a81b2599a042553bb07d",
+      "bytes": 3419
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-bundle.catalog.log",
+      "sha256": "4dbce5d37c8c29f664233b20d0315cb846f4188652de3196fc0898b4c485e3ec",
+      "bytes": 128610
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-bundle.catalog.result.json",
+      "sha256": "118a6a55e763e60faf0d9d29a439f7f3ba4f7c1c8707b2d7710d398c982f645b",
+      "bytes": 379
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-bundle.runtime.log",
+      "sha256": "6d46b0bc88d5f5ae5925d263cc9d029edfdc10acaecc523446d47ed8f1b40cba",
+      "bytes": 160396
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-bundle.runtime.result.json",
+      "sha256": "c306127829a8dcd1e27b06222668248c8bcb2c9feef17ca08bb03d6882ed586e",
+      "bytes": 471
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-bundle.binaries-before.json",
+      "sha256": "1994e57f420fa415c0afbfc8dfbfa6424cadcec86ac462b25df0bf06d2aeb076",
+      "bytes": 5244
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-bundle.selected.json",
+      "sha256": "9453cc17738dae8aadbfbac2e7b9693ba3329476ca590b90dec13b1f3523e8d2",
+      "bytes": 46950
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-bundle.terminals.json",
+      "sha256": "a1afe7cef4421738135df83af5447409112ad65d89a26ac3e1127810c060e011",
+      "bytes": 54517
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-runtime-driver.catalog.log",
+      "sha256": "8ca5ac88e093f977baad52d9d65fb91e97ea9552fdf7ac5a530898599da9346b",
+      "bytes": 114285
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-runtime-driver.catalog.result.json",
+      "sha256": "33e5a541d58145bc77a6f61078ab175a42bd2319a1c5a24321b7acf08b7d9bdf",
+      "bytes": 387
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-runtime-driver.runtime.log",
+      "sha256": "56a6636b1adf30a6db5294703a261636f870f8ecc080e5d9d2099183876c4e74",
+      "bytes": 135983
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-runtime-driver.runtime.result.json",
+      "sha256": "2e344797d35e8a4ecd0c498d1aae11c4d9325335b9041c984e27c4547aaa4bba",
+      "bytes": 479
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-runtime-driver.binaries-before.json",
+      "sha256": "5576411972e11ac88e6e2d0d3c380619657aa5dc76deaa8880b95b70c1a27c9b",
+      "bytes": 979
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-runtime-driver.selected.json",
+      "sha256": "0607d9f5ad4d226aaf9d254c1f94186b6c4ba14bbbed8722a3eea1541a77d6af",
+      "bytes": 27351
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-runtime-driver.terminals.json",
+      "sha256": "5639c075e47da50fc8c8beb91af3c12be26cca1c84cd8ad6108241ecac12c3ee",
+      "bytes": 31422
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-player-scene.catalog.log",
+      "sha256": "5dc498fe3f37cd1108286f25da52727aa12c3ec49134415b710e0779f99e170c",
+      "bytes": 96832
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-player-scene.catalog.result.json",
+      "sha256": "92a0fa9a293b933242b5ffda75ec47cbd55656c4067e2f70c50958b1f6243466",
+      "bytes": 385
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-player-scene.runtime.log",
+      "sha256": "74e3cdbc9faca4e06a58f79fde921d25311a89123f112fc9596565a70e61c749",
+      "bytes": 107178
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-player-scene.runtime.result.json",
+      "sha256": "89ba24f3e815d195bfd48ea2475451e61b4178a38940a97034f337a379d96f03",
+      "bytes": 477
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-player-scene.binaries-before.json",
+      "sha256": "ca49d76db21e8b0892fbc4933c1f08e83978a33eaf13313cabe3d119c81b32f7",
+      "bytes": 2503
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-player-scene.selected.json",
+      "sha256": "7efd06878aad0fdee7bb35d91c411463bb37274be5866a61b2475123ae92a772",
+      "bytes": 18614
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-player-scene.terminals.json",
+      "sha256": "cf862996e6a4f46bb39ed4f89fb1a1ad355b535fe394f8e6d3fbf71cdfd212d0",
+      "bytes": 21558
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-player-native.catalog.log",
+      "sha256": "8e9a65b5d45340efd285bf9b3c6370b4c8578cc5bf7526fb12c50f6b46088c16",
+      "bytes": 100707
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-player-native.catalog.result.json",
+      "sha256": "c2873d94b4e5b40254e6499482e945151d6cf0fe897c111c0c6f833f75bff40c",
+      "bytes": 386
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-player-native.runtime.log",
+      "sha256": "f266ac859cd1b1fe31b55f35a2f953b9ef58496e949fa138996ea145218d38b3",
+      "bytes": 102726
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-player-native.runtime.result.json",
+      "sha256": "3826b2bb07dbf1a55f7922aaef9db78fe78db52c8647688dda5feed979f57d3a",
+      "bytes": 478
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-player-native.binaries-before.json",
+      "sha256": "a9965b901aefaa39d5e43917beaada26285a09f3af659241585c68ff88706210",
+      "bytes": 1276
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-player-native.selected.json",
+      "sha256": "3ce5abbb925777f495a6ed3789a76fabf38781b8d454cbad252ecc7228c8ed22",
+      "bytes": 9267
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-player-native.terminals.json",
+      "sha256": "d19bba3cc7203660bffc1fe54e1581f8858abf9535164a89cbfd05b4bf2e6e40",
+      "bytes": 10716
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-compiler.retry1.catalog.log",
+      "sha256": "a77037a506b0712dca23778f67a9d4827d0dfe3d9ca66280521af7f4be8f9ead",
+      "bytes": 192473
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-compiler.retry1.catalog.result.json",
+      "sha256": "f9c884a3569ba7148f1722e7435eb23c6cabee62f8772b8e77eb2cfd95f2fdf9",
+      "bytes": 381
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-compiler.retry1.runtime.log",
+      "sha256": "fa790ec09c00fa9f259252bf929c567baef7478064d7b58099b921e7aef8a3a8",
+      "bytes": 270818
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-compiler.retry1.runtime.result.json",
+      "sha256": "b3f3b1413a08bec84596d14c7604c2266db2ba27f70fab64427caae678934bda",
+      "bytes": 473
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-compiler.retry1.binaries-before.json",
+      "sha256": "2b3b57139ae01f22fef7586de83a3818f9733ce3b511667f389bb74754fd1061",
+      "bytes": 6275
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-compiler.retry1.selected.json",
+      "sha256": "e43355fe6d225f57c03a0b8c8212ceab501e98c6f6bc7c53e588ec5c0f493df9",
+      "bytes": 97216
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-compiler.retry1.terminals.json",
+      "sha256": "31f2a35901d4b777784673454debe8b65af051bc39d85a1e37f8b4ac4c2be8d1",
+      "bytes": 112419
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-cli.catalog.log",
+      "sha256": "c4378b9257f8c17a780bde186d930b72aa247d74d015e3301135015b665f9bcd",
+      "bytes": 126751
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-cli.catalog.result.json",
+      "sha256": "70dbe35694df2ce6e0175c7189b87ec8d3bcb080ae2336b3fba77eb289116e77",
+      "bytes": 438
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-cli.runtime.log",
+      "sha256": "8830790f183bfe8d35434fbde2e1cdf0029bc25bf803f41ff1b0babe3a9fc4a4",
+      "bytes": 140430
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-cli.runtime.result.json",
+      "sha256": "fc637c4808cca91e6a304d31683ffead7e5f0ab4f524743974db27188d1b6d79",
+      "bytes": 530
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-cli.binaries-before.json",
+      "sha256": "adc619dc6fb8de5994c6adc8a9fa1ca3c96b4b6fa112e7b150b530f8a1313f34",
+      "bytes": 200
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-cli.selected.json",
+      "sha256": "0e64eae80b74e6e1356193959bfed6ea327ffe454137c2e8ee7c4ab9272bab0d",
+      "bytes": 1514
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-cli.terminals.json",
+      "sha256": "c7c4944a59fd7d26e7d07259076ac767ef10f0ad548e42e4f6799efd4fcacb42",
+      "bytes": 1721
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-compiler.catalog.log",
+      "sha256": "1341f09b5df8fdb542242c330c5fc88989b79813022133c69c0129a6a652e142",
+      "bytes": 163106
+    },
+    {
+      "path": "task-presentation-image-owner.arcweft-compiler.catalog.result.json",
+      "sha256": "fd7f505f6b8c3634d01ce8b3d0b7a9f308ff7c69ace1eedf1cf0ec353ca76079",
+      "bytes": 383
+    },
+    {
+      "path": "task-presentation-image-owner.structure.dependency_edges.csv",
+      "sha256": "529e738d348314f7a4c0d909b165620d03ec57478b68ad42b06aa349b30e13f4",
+      "bytes": 77544
+    },
+    {
+      "path": "task-presentation-image-owner.structure.file_metrics.csv",
+      "sha256": "b749511977b2aa851f1b21c81c5f65b2fbfa42be8c80f8ff8d50ae5a8ba1ca53",
+      "bytes": 328310
+    },
+    {
+      "path": "task-presentation-image-owner.structure.package_metrics.csv",
+      "sha256": "c2df26363c079ef3c17be71810df334c6e4825ab5987b4951b3f1432368b85f2",
+      "bytes": 6444
+    },
+    {
+      "path": "task-presentation-image-owner.structure.findings.md",
+      "sha256": "cc40f2f635aedce542e29a9a26867f55978eb5a9ee9fc3dc531f763f86673e85",
+      "bytes": 122295
+    },
+    {
+      "path": "task-presentation-image-owner.structure.public_type_duplicates.csv",
+      "sha256": "f9dc066739a6670027e5c13a00b6c9a4091b7680fb33e3c12c871b7993a69014",
+      "bytes": 17146
+    }
+  ]
+}

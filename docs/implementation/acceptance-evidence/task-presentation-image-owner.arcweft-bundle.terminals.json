@@ -1,0 +1,1647 @@
+[
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "container::tests::awfb_v1_rejects_missing_external_section_payload"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "container::tests::artifact_identity_changes_for_manifest_only_delta"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "container::tests::awfb_manifest_policy_enums_parse_display_and_default"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "bundle_artifact_identity::tests::awfb_identity_has_one_variant_tagged_asset_binding_digest"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "container::tests::awfb_v1_rejects_digest_corruption"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "container::tests::awfb_v1_external_section_descriptors_round_trip_without_payload"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "container::tests::awfb_v1_exposes_bounded_signature_block"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "container::tests::awfb_v1_retains_unknown_optional_external_descriptors"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "container::tests::awfb_v1_content_pack_rejects_executable_sections"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "container::tests::awfb_v1_decodes_external_section_from_verified_payload"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "container::tests::awfb_v1_rejects_external_descriptor_exceeding_decoded_budget"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "container::tests::awfb_v1_rejects_external_section_payload_digest_mismatch"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "container::tests::awfb_v1_decodes_zstd_embedded_sections_with_output_limit"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "container::tests::awfb_v1_patch_rejects_direct_executable_sections"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "container::tests::awfb_v1_program_requires_core_sections"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "container::tests::awfb_v1_rejects_duplicate_section_ids"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "container::tests::awfb_v1_header_index_and_embedded_sections_round_trip"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "container::tests::awfb_v1_rejects_embedded_section_exceeding_decoded_budget"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "container::tests::awfb_v1_rejects_zstd_section_exceeding_decoded_budget"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "container::tests::awfb_v1_rejects_signature_overlap_with_header_ranges"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "container::tests::awfb_v1_retains_unknown_optional_sections_and_rejects_required_unknown"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "container::tests::awfb_v1_signing_digest_excludes_trailing_signature_block"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "fx_definitions::tests::canonical_section_rejects_noncanonical_framing"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "fx_definitions::tests::canonical_section_revalidates_definition_and_inventory_order"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "fx_definitions::tests::canonical_section_sorts_round_trips_and_rejects_tampering"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "fx_definitions::tests::duplicate_identity_is_rejected"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "patch::tests::awbc_patch_fingerprints_keep_same_label_checked_flows_distinct"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "patch::tests::awbc_patch_classifies_each_same_label_flow_independently"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "product::tests::awfb_product_decodes_verified_external_program_bytecode_section"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "product::tests::awfb_product_path_decode_accepts_external_sections"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "product::tests::awfb_product_encodes_program_bytecode_as_canonical_awbc"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "product::tests::awfb_product_rejects_duplicate_executable_payload_as_malformed"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "product::tests::awfb_product_rejects_missing_executable_payload_discriminator"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "product::tests::awfb_product_manifest_discriminator_round_trips_canonically"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "product::tests::awfb_product_rejects_missing_runtime_artifact_fingerprint"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "product::tests::awfb_product_rejects_null_executable_payload_as_malformed"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "product::tests::awfb_product_rejects_schema_five_after_runtime_artifact_cut"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "product::tests::awfb_product_rejects_wrong_executable_payload_discriminator"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "product::tests::awfb_product_rejects_wrong_width_runtime_artifact_fingerprint"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "product::tests::awfb_product_rejects_zero_runtime_artifact_fingerprint"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "product::tests::awfb_product_round_trips_first_class_fx_definitions_section"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::archive::tests::awfr_archive_json_is_deterministic"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "product::tests::product_awfb_requires_and_reconstructs_resource_manifest_section_22"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::archive::tests::awfr_unsigned_digest_ignores_detached_signature_refs"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::archive::tests::external_payload_carrier_binds_descriptor_and_verifies_bytes"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "product::tests::product_awfb_roundtrips_character_package_and_rejects_changed_png_bytes"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::signing_policy::tests::changed_targets_never_preserve_base_signature_validity"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::archive::tests::rewrite_plan_add_replace_remove_payload_carriers"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::signing_policy::tests::local_dev_allows_unsigned_materialized_targets"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::signing_policy::tests::patch_subject_is_schema_neutral_and_round_trips"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::signing_policy::tests::release_policy_owns_verification_trust_generation_floors"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::signing_policy::tests::release_policy_requires_target_signatures_and_rejects_unsigned"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::signing_policy::tests::transcript_digest_changes_when_channel_changes"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::signing_policy::tests::verification_trust_transcript_rejects_unrelated_fields"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::signing_policy::tests::verification_trust_transcripts_have_distinct_subject_digests"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::tests::release_bundle_ref_verifies_length_and_digest"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::tests::release_manifest_allows_signature_policy_for_non_awfb_subjects"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::tests::release_manifest_builds_sorted_fetch_plan_and_verifies_result"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::tests::release_manifest_fetch_plan_accepts_trusted_signature_envelope"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::tests::release_manifest_fetch_plan_accepts_rotated_ed25519_key_epoch"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::tests::release_manifest_fetch_plan_carries_network_client_policy"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::tests::release_manifest_fetch_plan_carries_retry_cancel_and_budget_policy"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::tests::release_manifest_fetch_plan_enforces_required_awfb_signature"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::tests::release_manifest_fetch_plan_rejects_candidate_over_byte_budget"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::tests::release_manifest_fetch_plan_rejects_bad_ed25519_signature_payload"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::tests::release_manifest_fetch_plan_rejects_ed25519_key_epoch_outside_validity"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::tests::release_manifest_fetch_plan_rejects_invalid_signature_envelope"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::tests::release_manifest_fetch_plan_rejects_missing_content_root"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::tests::release_manifest_fetch_plan_rejects_revoked_ed25519_key"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::tests::release_manifest_fetch_plan_rejects_signature_envelope_for_other_content_root"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::tests::release_manifest_fetch_plan_rejects_signature_envelope_with_wrong_signing_digest"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::tests::release_manifest_fetch_plan_rejects_unsupported_signature_envelope_algorithm"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::tests::release_manifest_fetch_plan_rejects_untrusted_signature_envelope"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::tests::release_manifest_rejects_duplicate_content_roots"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::tests::release_manifest_fetch_plan_verifies_ed25519_signature_payload"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::tests::release_manifest_rejects_invalid_network_policy_profiles"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::tests::release_manifest_rejects_invalid_network_policy_user_agent"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::tests::release_manifest_rejects_invalid_trusted_key_epoch_window"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::tests::release_manifest_rejects_unknown_signature_algorithm_policy"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::tests::release_manifest_round_trips_external_awfb_reference"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::tests::release_manifest_rejects_unsupported_mirror_scheme"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::verification_trust::tests::admission_rejects_evidence_for_another_contract"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::verification_trust::tests::all_evidence_variants_round_trip_with_exact_typed_fields"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::verification_trust::tests::authority_json_requires_all_top_level_fields_and_both_signatures"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::verification_trust::tests::authority_rejects_nested_manifest_and_signature_schema_mismatches"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::verification_trust::tests::authority_rejects_revocation_policy_id_mismatch"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::verification_trust::tests::authority_rejects_unsupported_schema_before_signature_work"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::verification_trust::tests::canonical_artifact_json_round_trip_preserves_bytes_and_digests"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::verification_trust::tests::canonical_digest_goldens"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::verification_trust::tests::manifest_digest_and_json_are_independent_of_admission_order"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::verification_trust::tests::manifest_rejects_wrong_admission_id_and_duplicate_subject"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::verification_trust::tests::revocation_digest_is_order_independent_and_duplicates_reject"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::verification_trust::tests::signed_authority_rejects_manifest_and_transcript_digest_tampering"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::verification_trust::tests::signed_authority_rejects_revoked_or_wrong_epoch_key"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::verification_trust::tests::signed_authority_json_round_trip_is_strict"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::verification_trust::tests::signed_authority_rejects_stale_generations_and_wrong_channel"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::verification_trust::tests::record_limits_are_checked_before_duplicate_processing"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::verification_trust::tests::signed_authority_rejects_wrong_algorithm_untrusted_signer_and_bad_signature"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::verification_trust::tests::signed_authority_rejects_stale_revocations_and_an_older_signed_pair_replay"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::verification_trust::tests::strict_json_rejects_unknown_and_duplicate_fields"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::verification_trust::tests::signing_policy_key_epoch_window_is_inclusive_min_exclusive_max"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::verification_trust::tests::trust_reason_rejects_blank_and_preserves_valid_bytes"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::verification_trust::tests::trust_artifact_signatures_are_required_independently_of_awfb_policy"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "resource_codec::runtime::opaque_runtime_type_tests::agent_awbc_type_projects_to_non_colliding_bundle_value_family"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "resource_codec::runtime::opaque_runtime_type_tests::bound_type_layout_commits_its_scope_and_projects_a_distinct_value_kind"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::verification_trust::tests::valid_signed_authority_is_accepted_and_retains_revocations"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "resource_codec::runtime::opaque_runtime_type_tests::canonical_runtime_digest_rejects_a_missing_table_reference"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "resource_codec::runtime::opaque_runtime_type_tests::function_layout_commits_its_effect_binder_contract"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "resource_codec::runtime::opaque_runtime_type_tests::opaque_awbc_type_projects_to_final_bundle_value_family"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "resource_codec::runtime::opaque_runtime_type_tests::runtime_layout_and_function_abi_digests_ignore_generation_local_indices"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "resource_codec::runtime::opaque_runtime_type_tests::runtime_type_layout_digest_commits_agent_data_shape_child"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "resource_codec::runtime::opaque_runtime_type_tests::runtime_type_layout_digest_commits_data_codec_occurrences"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "resource_codec::runtime::opaque_runtime_type_tests::runtime_type_layout_digest_commits_map_ordering_kind"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "resource_codec::runtime::opaque_runtime_type_tests::runtime_type_layout_digest_commits_sequence_storage_kind"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "resource_codec::runtime::opaque_runtime_type_tests::traversal_layout_keeps_its_type_head_and_source_callback_roles"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "resource_codec::source_map::model::tests::collision_policy_rejects_distinct_logical_documents_before_construction"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "resource_codec::view::codec::style_environment::tests::containment_accepts_strict_and_equal_boundaries_and_rejects_one_byte_beyond"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "release::verification_trust::tests::artifact_byte_limit_is_checked_before_deserialization"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "resource_codec::view::merge::tests::merge_count_preflight_rejects_public_table_index_overflow_without_allocation"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "resource_codec::view::merge::tests::merge_offset_preflight_rejects_patch_and_instruction_overflow"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "resource_codec::view::merge::tests::merge_offset_preflight_rejects_source_id_overflow_without_allocating_tables"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "resource_codec::view::merge::tests::program_and_style_preflight_applies_supplied_style_budget"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "resource_codec::view::model::tests::runtime_text_control_carries_authored_change_and_submit_handlers"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "standard_view::handler::tests::installer_publishes_one_verified_typed_projection"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "standard_view::handler::tests::installer_rejects_program_collision_and_conflicting_type_before_publication"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "tests::awfb_path_does_not_fall_back_to_json_decoder"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "tests::awfb_rejects_runtime_types_layout_digest_mismatch"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "tests::bundle_agent_kind_requires_agent_manifest"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "tests::awfb_round_trip_retains_typed_runtime_assertion_payload"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "tests::bundle_agent_manifest_marks_agent_controller_and_round_trips"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "tests::bundle_format_can_be_inferred_from_common_extensions"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "tests::bundle_audio_graph_round_trips_and_resolves_asset_bytes"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "tests::bundle_game_kind_rejects_agent_manifest"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "tests::bundle_image_asset_reports_missing_virtual_file"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "tests::bundle_image_assets_resolve_encoded_virtual_file_bytes"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "tests::bundle_image_objects_round_trip_as_typed_metadata"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "tests::bundle_json_requires_and_round_trips_project_locale"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "tests::bundle_rejects_duplicate_adapter_manifest_ids_instead_of_deduplicating"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "tests::bundle_json_round_trips_without_paths"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "tests::bundle_rejects_duplicate_image_asset_ids_instead_of_deduplicating"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "tests::inspection_json_path_decodes_bundle_export"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "tests::context_template_requires_canonical_catalog_body_at_bundle_admission"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "tests::inspection_path_requires_explicit_json_format_extension"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "tests::product_path_requires_awfb_extension"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "tests::serialized_dialogue_parameter_role_is_required"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "tests::tampered_dialogue_projection_surface_is_rejected"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "tests::tampered_dialogue_text_parameter_role_is_rejected"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "tests::yaml_bundle_conversion_preserves_option_and_tuple_distinctions"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "tests::yaml_bundle_mapping_cannot_shadow_arcweft_value_tags"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::character_package",
+    "test": "bundle_character_package_emits_manifest_and_layers"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::character_package",
+    "test": "bundle_character_package_rejects_missing_layer_virtual_file"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::character_package",
+    "test": "missing_manifest_file_is_rejected"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle",
+    "test": "tests::bundle_format_codecs_round_trip_supported_formats"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::locale_catalog_resource_codec",
+    "test": "locale_catalog_codec_kind_owns_tag_magic_section_and_patch_policy"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::locale_catalog_resource_codec",
+    "test": "locale_catalog_rejects_digest_key_reference_and_size_tampering"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::locale_catalog_resource_codec",
+    "test": "locale_catalog_rejects_header_and_table_tampering"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::locale_catalog_resource_codec",
+    "test": "bundle_logical_identity_binds_project_locale_without_reencoding_character_catalog"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::locale_catalog_resource_codec",
+    "test": "locale_catalog_rejects_public_id_record_order_span_and_field_tampering"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::locale_catalog_resource_codec",
+    "test": "locale_catalog_rejects_reordered_fields_and_wrong_requirement_flags"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::locale_catalog_resource_codec",
+    "test": "locale_catalog_rejects_truncation_trailing_bytes_and_invalid_character_family"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::patch_schema",
+    "test": "external_descriptor_change_is_metadata_only_and_preserved"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::locale_catalog_resource_codec",
+    "test": "locale_catalog_round_trips_the_only_canonical_compact_family"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::patch_schema",
+    "test": "materialization_rejects_every_tampered_compatibility_fingerprint_field"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::patch_schema",
+    "test": "materialization_rewrites_manifest_and_reports_unsigned_target_identity"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::patch_schema",
+    "test": "missing_target_manifest_rolls_back_before_target_encoding"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::patch_schema",
+    "test": "patch_plan_rejects_duplicate_operation_ids"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::patch_schema",
+    "test": "patch_bytes_are_deterministic_and_round_trip_schema_one"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::patch_schema",
+    "test": "patch_schema_one_is_the_only_decoded_schema"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::patch_schema",
+    "test": "unknown_optional_section_kind_is_preserved_through_patch"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::product_awbc_only",
+    "test": "product_awbc_malformed_reports_typed_diagnostic"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::product_awbc_only",
+    "test": "product_awbc_section_rejects_a_tampered_envelope_length"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::product_awbc_only",
+    "test": "product_awbc_section_roundtrip_preserves_the_canonical_core_bytes"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::product_awbc_only",
+    "test": "product_awbc_embeds_awbc_only_executable_section"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::product_catalog_resource_codecs",
+    "test": "canonical_source_map_rejects_unknown_optional_and_required_fields"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::product_catalog_resource_codecs",
+    "test": "image_object_decode_requires_explicit_image_values_and_validates_alignment"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::product_catalog_resource_codecs",
+    "test": "product_catalog_common_budget_failures_are_reported"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::product_catalog_resource_codecs",
+    "test": "product_catalog_compact_codecs_round_trip_current_bundle_resources"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::resource_codec_common",
+    "test": "budgets_fail_for_byte_count_string_and_item_limits"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::resource_codec_common",
+    "test": "budgets_fail_for_depth_reference_and_fanout_limits"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::product_catalog_resource_codecs",
+    "test": "product_awfb_uses_compact_sections_for_migrated_catalog_families"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::resource_codec_common",
+    "test": "canonical_digest_is_stable_for_equivalent_logical_resources"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::resource_codec_common",
+    "test": "common_decoder_rejects_noncanonical_input_field_order_before_reconstruction"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::resource_codec_common",
+    "test": "common_decoder_requires_the_registry_field_requirement_flag"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::resource_codec_common",
+    "test": "common_wire_bytes_are_deterministic_for_canonical_table_ordering"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::resource_codec_common",
+    "test": "duplicate_table_entries_are_rejected_when_decoding_non_canonical_bytes"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::resource_codec_common",
+    "test": "inspection_json_round_trips_through_typed_owner_api_not_product_json_fallback"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::resource_codec_common",
+    "test": "public_id_table_enforces_count_and_byte_budgets"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::resource_codec_common",
+    "test": "public_id_table_rejects_duplicates_without_deduplicating"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::resource_codec_common",
+    "test": "resource_codec_header_validates_magic_schema_and_budgets"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::resource_codec_common",
+    "test": "resource_codec_inventory_is_complete_and_bijective"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::resource_codec_common",
+    "test": "string_table_sorts_and_deduplicates_values"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::resource_codec_common",
+    "test": "unknown_optional_fields_skip_and_unknown_required_fields_reject"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::resource_type_manifest_section",
+    "test": "code_22_required_section_round_trips_against_the_engine_base"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::resource_type_manifest_section",
+    "test": "empty_extension_set_omits_the_section"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::resource_type_manifest_section",
+    "test": "entry_digest_is_checked_before_json_decode"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::resource_type_manifest_section",
+    "test": "final_registry_digest_and_exact_section_end_are_authoritative"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::resource_type_manifest_section",
+    "test": "reordered_entries_are_rejected_before_publication"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::resource_type_manifest_section",
+    "test": "truncated_entry_and_count_overflow_are_rejected_as_malformed"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::resource_type_manifest_section",
+    "test": "valid_noncanonical_json_is_rejected_after_the_sole_manifest_decode"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::runtime_control_style_resolution",
+    "test": "every_canonical_property_is_retained_in_exactly_one_runtime_partition"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::runtime_control_style_resolution",
+    "test": "malformed_computed_property_value_is_a_typed_error"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::runtime_control_style_resolution",
+    "test": "paint_effects_project_without_being_sent_to_layout"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::runtime_control_style_resolution",
+    "test": "projection_uses_the_supplied_environment_palette_for_system_colors"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::runtime_control_style_resolution",
+    "test": "theme_owns_checked_environment_and_palette_resolution"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::runtime_resource_codecs",
+    "test": "adapter_requirements_compact_bytes_round_trip_without_json_fallback"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::runtime_resource_codecs",
+    "test": "entrypoints_compact_bytes_are_deterministic_and_round_trip"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::runtime_resource_codecs",
+    "test": "executable_record_fingerprints_preserve_empty_shapes_and_field_names"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::runtime_resource_codecs",
+    "test": "migrated_runtime_section_compatibility_decodes_compact_bytes"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::runtime_resource_codecs",
+    "test": "patch_artifact_from_views_uses_compact_runtime_compatibility"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::runtime_resource_codecs",
+    "test": "patch_compatibility_fingerprints_classify_runtime_resource_changes"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::runtime_resource_codecs",
+    "test": "runtime_resource_budget_failures_are_reported_by_family"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::runtime_resource_codecs",
+    "test": "runtime_types_compact_bytes_are_deterministic_and_round_trip"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::runtime_resource_codecs",
+    "test": "runtime_types_must_match_the_awbc_header_exactly"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::runtime_resource_codecs",
+    "test": "unknown_optional_fields_are_skipped_and_unknown_required_fields_reject"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::source_map",
+    "test": "projected_source_map_names_preserve_identity_and_are_relocation_deterministic"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::source_map",
+    "test": "source_map_codec_rejects_absolute_display_metadata_before_publication"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::source_map",
+    "test": "source_map_codec_rejects_oversized_declared_text_before_payload_materialization"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::source_map",
+    "test": "source_map_count_limit_precedes_invalid_metadata_and_duplicate_identities"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::source_map",
+    "test": "source_map_extension_keeps_project_metadata_and_generated_identity"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::source_map",
+    "test": "source_map_identity_projection_preserves_names_and_rejects_missing_stale_or_duplicate_sources"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::source_map",
+    "test": "source_map_primary_document_is_independent_of_canonical_document_order_and_round_trips"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::source_map",
+    "test": "source_map_rejects_digest_extent_set_revision_and_schema_tampering"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::source_map",
+    "test": "source_map_rejects_duplicate_logical_documents"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::source_map",
+    "test": "source_map_rejects_missing_absent_and_out_of_bounds_primary_documents"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::source_map",
+    "test": "source_map_rejects_nonportable_display_paths_at_construction"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::source_map",
+    "test": "source_map_rejects_product_id_mismatch_and_noncanonical_envelopes"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::standard_dialogue_view",
+    "test": "bundle_source_map_owns_both_standard_dialogue_sources_without_changing_the_authored_primary"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::standard_dialogue_view",
+    "test": "authored_program_is_merged_without_replacing_the_reserved_standard_definition"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::standard_dialogue_view",
+    "test": "dialogue_primary_action_requires_a_declared_typed_parameter"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::source_map",
+    "test": "source_map_id_display_and_document_byte_limits_are_exact"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::standard_dialogue_view",
+    "test": "reserved_standard_dialogue_view_id_cannot_be_overridden"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::standard_dialogue_view",
+    "test": "reserved_standard_source_collisions_are_typed_bundle_build_errors"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::standard_dialogue_view",
+    "test": "standard_dialogue_view_is_a_complete_encodable_authored_resource"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::standard_dialogue_view",
+    "test": "validated_view_product_attachment_accepts_an_exact_source_superset"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::standard_dialogue_view",
+    "test": "validated_view_product_attachment_rejects_a_different_primary_document"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::product_catalog_resource_codecs",
+    "test": "asset_catalog_budget_bounds_raw_bytes_without_rejecting_canonical_json_expansion"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::standard_dialogue_view",
+    "test": "validated_view_product_attachment_rejects_missing_or_conflicting_bundle_documents"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::source_map",
+    "test": "source_map_total_byte_limit_is_exact_and_candidate_first"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::style_cross_section_refs",
+    "test": "style_decode_rejects_missing_target_from_every_supported_location"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::style_cross_section_refs",
+    "test": "style_decode_rejects_public_id_on_target_without_public_id_table"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::style_cross_section_refs",
+    "test": "style_cross_section_references_round_trip_from_every_supported_location"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::style_cross_section_refs",
+    "test": "style_encode_rejects_missing_target_from_every_supported_location"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::source_map",
+    "test": "source_map_codec_charges_the_combined_text_budget_before_the_next_payload"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::style_cross_section_refs",
+    "test": "style_decode_rejects_target_identity_and_public_id_mismatches"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::style_cross_section_refs",
+    "test": "style_encode_rejects_public_id_on_target_without_public_id_table"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_action_button_resources",
+    "test": "runtime_action_button_resolves_action_invoke_action"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_action_button_resources",
+    "test": "runtime_action_button_resolves_label_and_noop_action"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_focus_navigation_resources",
+    "test": "view_focus_navigation_compact_round_trip_is_deterministic"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_focus_navigation_resources",
+    "test": "view_focus_navigation_missing_explicit_target_is_rejected"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::style_cross_section_refs",
+    "test": "style_encode_rejects_target_identity_and_public_id_mismatches"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_product_validation",
+    "test": "accepted_revision_changes_with_typed_semantics"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_product_validation",
+    "test": "accepted_revision_excludes_source_identity_text_and_ranges"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_product_validation",
+    "test": "accepted_revision_is_independent_of_definition_table_order"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_product_validation",
+    "test": "borrowed_product_admission_preserves_source_identity_and_exact_limits"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_product_validation",
+    "test": "complete_product_accepts_exact_revision_and_exposes_only_validated_views"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_product_validation",
+    "test": "complete_product_rejects_cross_source_and_uncontained_export_ranges"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_product_validation",
+    "test": "complete_product_enforces_exact_candidate_first_limits"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_product_validation",
+    "test": "complete_product_rejects_invalid_reversed_out_of_bounds_and_non_utf8_ranges"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_product_validation",
+    "test": "complete_product_rejects_missing_unknown_and_stale_sources"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "dialogue_action_result_rejects_a_same_producer_forged_semantic_identity"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "dialogue_parameter_rejects_a_forged_semantic_identity"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "emit_text_requires_a_one_to_one_owned_text_block_graph"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "emit_text_transcript_requires_the_text_block_reference"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "exported_part_identities_reject_malformed_resource_ids"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "exported_part_identity_is_scoped_to_its_owning_view"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "exported_part_old_flat_record_has_no_compatibility_reader"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "exported_part_references_are_validated_by_the_program_codec"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "exported_part_source_provenance_is_validated_as_a_complete_product"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "exported_part_source_ranges_reject_structural_tampering"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "instruction_parts_reject_malformed_resource_ids"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "nested_view_calls_preserve_authored_order_and_require_typed_bindings"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "scalar_await_record_is_rejected_at_instruction_and_section_ingress"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "scalar_branch_record_has_no_compatibility_reader"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "scalar_repeat_and_ordinal_input_have_no_compatibility_reader"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "text_control_handler_owners_are_authenticated_with_the_complete_input_catalog"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "view_definition_reference_preserves_the_nominal_view_identity"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "view_element_inventory_owns_codec_tags_and_round_trips"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "view_envelope_declared_inventory_must_match_the_typed_transcript"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "view_fx_bindings_are_canonical_bounded_and_unique"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "view_handler_cross_section_rejects_missing_binding_and_nonempty_effects"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "view_input_secure_policy_changes_are_restart_required"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "view_program_identities_reject_malformed_resource_ids"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "view_program_layout_bounds_reject_zero_size_rects"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "view_program_rejects_unknown_resource_fields"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "view_program_scroll_region_policy_defaults_are_round_tripped"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "view_program_scroll_region_policy_values_are_preserved"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "view_program_scroll_regions_reject_pre_axis_payload_shape"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "view_resource_budget_failures_are_reported"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "view_resource_compact_sections_round_trip_with_deterministic_bytes"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "view_resource_merge_does_not_publish_a_candidate_that_fails_canonical_validation"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "view_resource_merge_remaps_program_source_indexes"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "view_resource_rejects_json_fallback"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "view_resource_unknown_optional_fields_skip_and_unknown_required_reject"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "view_resource_value_program_codec_round_trips_u32_boundaries"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "view_style_codec_rejects_missing_and_ambiguous_inline_token_owners"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "view_theme_palette_changes_are_content_only"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_resource_codecs",
+    "test": "view_value_program_references_require_existing_programs_and_result_types"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_runtime_text_controls",
+    "test": "runtime_text_control_session_is_stable_across_reorder"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_runtime_text_controls",
+    "test": "view_input_resource_emits_runtime_text_control_shape"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_runtime_text_controls",
+    "test": "view_input_resource_stacks_default_text_control_bounds_by_height"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_runtime_text_controls",
+    "test": "view_program_layout_bounds_override_stacked_runtime_text_control_fallback"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_style_environment_codec",
+    "test": "environment_complete_product_enforces_missing_source_map_and_aggregate_work"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_style_environment_codec",
+    "test": "environment_complete_product_rejects_a_noncanonical_in_memory_candidate"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_style_environment_codec",
+    "test": "environment_complete_product_rejects_missing_stale_and_invalid_source_indices"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_style_environment_codec",
+    "test": "environment_cross_source_relation_rejects_complete_product"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_style_environment_codec",
+    "test": "environment_empty_and_reversed_ranges_reject_for_every_retained_role"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_style_environment_codec",
+    "test": "environment_integrated_equality_boundaries_are_accepted"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_style_environment_codec",
+    "test": "environment_merge_accepts_exact_budgets_and_rejects_each_one_over_atomically"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_style_environment_codec",
+    "test": "environment_merge_preflight_rejects_each_local_containment_failure_on_either_side"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_style_environment_codec",
+    "test": "environment_merge_remaps_every_nested_source_and_rejects_invalid_candidates_atomically"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_style_environment_codec",
+    "test": "environment_product_round_trips_canonical_json_cbor_msgpack"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_style_environment_codec",
+    "test": "environment_relation_edges_report_the_exact_failed_contract"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_style_environment_codec",
+    "test": "environment_removed_and_unknown_wire_shapes_reject_in_every_enabled_format"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_style_environment_codec",
+    "test": "environment_source_range_out_of_bounds_or_utf8_boundary_rejects"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_style_environment_codec",
+    "test": "environment_sources_promote_only_inside_complete_product"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_style_environment_codec",
+    "test": "environment_wrapper_budget_counts_the_complete_nested_inventory"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_style_environment_codec",
+    "test": "every_retained_environment_field_has_equivalent_wire_tamper_rejection"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_style_environment_codec",
+    "test": "merged_style_defers_missing_right_document_rejection_to_product_promotion"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_style_environment_codec",
+    "test": "nested_outer_and_inner_wrapper_fields_have_equivalent_wire_tamper_rejection"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_style_environment_codec",
+    "test": "owning_predicate_must_contain_each_clause"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_style_program",
+    "test": "equivalent_reversed_style_merges_have_deterministic_bytes"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_style_program",
+    "test": "native_style_program_round_trips_with_sheet_and_patch_ownership"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_style_program",
+    "test": "style_merge_rebases_patch_and_source_ids_as_one_canonical_program"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_style_program",
+    "test": "style_merge_rejects_public_owner_collision_without_changing_either_input"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_style_program",
+    "test": "style_metadata_inventory_order_does_not_change_canonical_bytes"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::view_style_program",
+    "test": "style_program_contract_rejects_dangling_targets_and_inline_definition_roots"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::source_map",
+    "test": "source_map_document_count_limit_is_exact"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-bundle::standard_dialogue_view",
+    "test": "one_free_source_slot_is_insufficient_for_both_reserved_standard_sources"
+  },
+  {
+    "status": "SLOW",
+    "binary": "arcweft-bundle::ime_player_rendered",
+    "test": "ime_generator_publishes_deterministic_controls_and_executable_callbacks"
+  }
+]

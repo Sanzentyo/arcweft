@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "base": "1c7a0e705e618de2ab4b60ad7bd33a51c7628710",
+  "sourceCommit": "f9f6639d6b3c5b005afa60df117354160ff02fcd",
+  "previousEdges": 962,
+  "currentEdges": 963,
+  "added": [
+    "arcweft-interaction-model\tarcweft-layout\tnormal\t"
+  ],
+  "removed": [],
+  "previousGraphSourceCommit": "e6d24eeb893e7e56b383024f462c29c35ac24100",
+  "previousGraphReceipt": "task-final-r3615-wait-structure.json"
+}

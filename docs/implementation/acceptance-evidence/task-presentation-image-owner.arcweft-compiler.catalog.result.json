@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "1c7a0e705e618de2ab4b60ad7bd33a51c7628710",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-compiler",
+    "--all-features",
+    "--locked",
+    "-E",
+    "all()",
+    "--message-format",
+    "json"
+  ],
+  "exitCode": 101,
+  "startedAt": "2026-10-31T00:29:52.3228650Z",
+  "finishedAt": "2026-10-31T00:33:21.9475829Z"
+}

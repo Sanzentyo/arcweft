@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "base": "1c7a0e705e618de2ab4b60ad7bd33a51c7628710",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-cli",
+    "--all-features",
+    "--locked",
+    "-E",
+    "test(app::agent::native::player_observation::tests::)",
+    "--message-format",
+    "json",
+    "--lib"
+  ],
+  "exitCode": 0,
+  "startedAt": "2026-10-31T00:38:00.2621989Z",
+  "finishedAt": "2026-10-31T00:41:21.6429505Z"
+}

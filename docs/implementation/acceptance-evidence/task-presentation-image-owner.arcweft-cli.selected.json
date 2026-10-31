@@ -1,0 +1,38 @@
+[
+  {
+    "binary": "arcweft-cli",
+    "test": "app::agent::native::player_observation::tests::fx_diagnostic_projection_coalesces_duplicates_and_retains_distinct_evidence"
+  },
+  {
+    "binary": "arcweft-cli",
+    "test": "app::agent::native::player_observation::tests::hidden_image_object_capture_scope_reports_missing_scope_diagnostic"
+  },
+  {
+    "binary": "arcweft-cli",
+    "test": "app::agent::native::player_observation::tests::missing_requested_capture_scopes_report_structured_diagnostics"
+  },
+  {
+    "binary": "arcweft-cli",
+    "test": "app::agent::native::player_observation::tests::native_agent_runtime_assertion_projection_uses_compiled_session_capability"
+  },
+  {
+    "binary": "arcweft-cli",
+    "test": "app::agent::native::player_observation::tests::player_image_object_observation_skips_hidden_source_and_frame"
+  },
+  {
+    "binary": "arcweft-cli",
+    "test": "app::agent::native::player_observation::tests::player_image_object_observation_uses_scroll_clipped_visible_quad"
+  },
+  {
+    "binary": "arcweft-cli",
+    "test": "app::agent::native::player_observation::tests::player_semantic_actions_become_agent_action_targets"
+  },
+  {
+    "binary": "arcweft-cli",
+    "test": "app::agent::native::player_observation::tests::player_semantic_objects_preserve_runtime_view_parent"
+  },
+  {
+    "binary": "arcweft-cli",
+    "test": "app::agent::native::player_observation::tests::released_image_object_capture_scope_reports_missing_scope_diagnostic"
+  }
+]

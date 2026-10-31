@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "sourceCommit": "f9f6639d6b3c5b005afa60df117354160ff02fcd",
+  "command": [
+    "cargo",
+    "check",
+    "-p",
+    "arcweft-core",
+    "-p",
+    "arcweft-player-web",
+    "--target",
+    "wasm32-unknown-unknown",
+    "--locked"
+  ],
+  "features": "default",
+  "exitCode": 0,
+  "sourceInputs": 4004,
+  "sourceDrift": 0,
+  "startedAt": "2026-10-31T00:42:06.5365010Z",
+  "finishedAt": "2026-10-31T00:43:11.7622000Z",
+  "scope": "Compilation only; this is not Native/Web image parity acceptance"
+}

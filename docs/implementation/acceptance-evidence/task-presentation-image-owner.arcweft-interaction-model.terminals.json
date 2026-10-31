@@ -1,0 +1,102 @@
+[
+  {
+    "status": "PASS",
+    "binary": "arcweft-interaction-model::model",
+    "test": "identifier_rejects_whitespace_only_input"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-interaction-model",
+    "test": "id::tests::identifier_trims_outer_whitespace"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-interaction-model",
+    "test": "dialogue::tests::custom_field_id_preserves_the_accepted_family_and_serde_spelling"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-interaction-model",
+    "test": "audio::tests::effect_parameter_kind_tags_are_stable_and_closed"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-interaction-model",
+    "test": "dialogue::tests::ordered_patch_coordinates_and_clear_actions_round_trip"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-interaction-model",
+    "test": "id::tests::borrowed_identifier_admission_retains_the_original_normalized_slice"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-interaction-model",
+    "test": "dialogue::tests::custom_field_id_rejects_wrong_family_invalid_text_and_oversize"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-interaction-model",
+    "test": "dialogue::tests::runtime_roles_have_fixed_version_one_wire_names"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-interaction-model",
+    "test": "presentation::tests::playback_roundtrip_preserves_all_explicit_units_and_optional_times"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-interaction-model",
+    "test": "presentation::tests::resource_kind_roundtrip_is_closed_and_keeps_distinct_semantic_identities"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-interaction-model",
+    "test": "presentation::tests::playback_uses_pinned_then_paused_then_visual_time_without_advancing_state"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-interaction-model",
+    "test": "presentation::image::tests::pixel_conversion_accepts_exact_storage_boundaries_and_rejects_each_overflow"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-interaction-model::model",
+    "test": "audio_events_are_typed_and_roundtrip_without_string_dispatch"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-interaction-model",
+    "test": "presentation::tests::fit_and_transform_decode_are_closed_and_require_actual_encoded_components"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-interaction-model",
+    "test": "presentation::tests::alignment_decode_requires_both_axes_and_rejects_unknown_or_duplicate_fields"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-interaction-model",
+    "test": "presentation::tests::playback_decode_never_supplies_a_missing_start_or_rate_or_repairs_invalid_units"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-interaction-model",
+    "test": "id::tests::identifier_rejects_empty_values"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-interaction-model",
+    "test": "presentation::tests::alignment_construction_and_decode_enforce_the_same_closed_range"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-interaction-model::model",
+    "test": "routed_input_roundtrip_preserves_routing_metadata"
+  },
+  {
+    "status": "PASS",
+    "binary": "arcweft-interaction-model",
+    "test": "presentation::image::tests::pixel_conversion_preserves_negative_coordinates_and_zero_extents"
+  }
+]
