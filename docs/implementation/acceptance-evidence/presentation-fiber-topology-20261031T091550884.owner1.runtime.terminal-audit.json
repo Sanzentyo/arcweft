@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "base": "723e6eb0383a1049ef0faa5a7448360e328bf4db",
+  "run": "presentation-fiber-topology-20261031T091550884.owner1.runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [  72.062s] 2155 tests run: 2147 passed, 8 failed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 2155,
+  "passed": 2147,
+  "failed": 8,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4015,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::activation_effect_moves_affine_handle_through_effect_observation_and_default_drop"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budget"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::dialogue_activation_rejects_an_independently_valid_foreign_root_before_copy"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::dialogue_frame_cannot_replace_the_original_registry_activation"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::dialogue_frame_joins_the_original_bank_before_capture_or_restore"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::product_snapshot_visitor_finds_asset_handles_in_dialogue_captures"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-31T09:18:51.8356034Z"
+}

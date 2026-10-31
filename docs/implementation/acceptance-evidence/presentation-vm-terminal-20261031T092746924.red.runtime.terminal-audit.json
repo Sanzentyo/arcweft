@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "base": "9bfeeaeb00789fbb81b8b0647da2f135e1567f2f",
+  "run": "presentation-vm-terminal-20261031T092746924.red.runtime",
+  "actualExitCode": 100,
+  "summary": "Summary [   0.043s] 2 tests run: 0 passed, 2 failed, 2104 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 2,
+  "passed": 0,
+  "failed": 2,
+  "skipped": 2104,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4015,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::presentation::vm_terminal_dialogue_selection_preserves_its_value_until_scope_custody_is_available"
+    },
+    {
+      "status": "FAIL",
+      "binary": "arcweft-core",
+      "test": "awbc::product_step::tests::presentation::vm_terminal_return_preserves_the_affine_result_until_scope_custody_is_available"
+    }
+  ],
+  "isPassingRun": false,
+  "recordedAt": "2026-10-31T09:28:23.2291584Z"
+}

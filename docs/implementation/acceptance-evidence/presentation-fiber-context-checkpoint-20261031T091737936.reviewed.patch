@@ -1,0 +1,1729 @@
+diff --git a/crates/arcweft-core/src/awbc/fiber.rs b/crates/arcweft-core/src/awbc/fiber.rs
+index f6ac03e3165e9fd00f3f145efba809059dbf5bb7..6dde206524ab647979879cd66c62a36b8452fa7d 100644
+--- a/crates/arcweft-core/src/awbc/fiber.rs
++++ b/crates/arcweft-core/src/awbc/fiber.rs
+@@ -327,6 +327,7 @@ pub struct FiberState<
+     G = crate::presentation::RuntimePresentationScopeBinding,
+ > {
+     pub instance: RuntimeFiberInstanceId,
++    pub(in crate::awbc) presentation_bank: crate::runtime_id::RuntimePresentationBankId,
+     pub next_frame_instance: RuntimeIdCursor,
+     /// Next per-fiber AwaitMany occurrence ordinal, persisted across safe points.
+     pub generation: u64,
+@@ -343,6 +344,39 @@ pub struct FiberState<
+     pub streams: Vec<FiberStreamState<V>>,
+ }
+ 
++impl<V, O, N, B, R, G> FiberState<V, O, N, B, R, G> {
++    /// The execution bank is independent of both the dynamic fiber number and
++    /// a callable's declaration. Nested calls keep this reached context.
++    pub const fn presentation_bank(&self) -> crate::runtime_id::RuntimePresentationBankId {
++        self.presentation_bank
++    }
++}
++
++/// Complete execution coordinates chosen by the actual spawning owner before
++/// a prepared input packet constructs its frame. This contains no grant.
++pub(crate) struct FiberCreationContext {
++    instance: RuntimeFiberInstanceId,
++    generation: u64,
++    budget_quantum: u64,
++    presentation_bank: crate::runtime_id::RuntimePresentationBankId,
++}
++
++impl FiberCreationContext {
++    pub(crate) const fn new(
++        instance: RuntimeFiberInstanceId,
++        generation: u64,
++        budget_quantum: u64,
++        presentation_bank: crate::runtime_id::RuntimePresentationBankId,
++    ) -> Self {
++        Self {
++            instance,
++            generation,
++            budget_quantum,
++            presentation_bank,
++        }
++    }
++}
++
+ impl<
+     V: InertRuntimeValueStorage + Clone,
+     O: InertRuntimeValueStorage + Clone,
+@@ -356,6 +390,7 @@ impl<
+         Self {
+             instance: self.instance,
+             next_frame_instance: self.next_frame_instance,
++            presentation_bank: self.presentation_bank,
+             generation: self.generation,
+             root: self.root,
+             cursor: self.cursor,
+@@ -414,19 +449,10 @@ impl PreparedFunctionInputBinding {
+         self,
+         program: &AwbcProgram,
+         root: AwbcFiberRoot,
+-        instance: RuntimeFiberInstanceId,
+-        generation: u64,
+-        budget_quantum: u64,
++        creation: FiberCreationContext,
+     ) -> (FiberState, Box<[AwbcRegisterId]>) {
+-        let mut fiber = FiberState::allocate_function_frame(
+-            program,
+-            root,
+-            self.function,
+-            instance,
+-            generation,
+-            budget_quantum,
+-        )
+-        .expect("prepared function input binding validated the AWBC frame");
++        let mut fiber = FiberState::allocate_function_frame(program, root, self.function, creation)
++            .expect("prepared function input binding validated the AWBC frame");
+         fiber.frames[0].type_instantiation = self.type_instantiation.map(std::sync::Arc::new);
+         (fiber, self.parameter_registers)
+     }
+@@ -1203,6 +1229,7 @@ impl AwbcFiberStateSnapshot {
+         Ok(Self {
+             instance: state.instance,
+             next_frame_instance: state.next_frame_instance,
++            presentation_bank: state.presentation_bank,
+             generation: state.generation,
+             root: state.root,
+             cursor: state.cursor,
+@@ -1286,6 +1313,7 @@ impl AwbcFiberStateSnapshot {
+         Ok(FiberState {
+             instance: self.instance,
+             next_frame_instance: self.next_frame_instance,
++            presentation_bank: self.presentation_bank,
+             generation: self.generation,
+             root: self.root,
+             cursor: self.cursor,
+@@ -2163,13 +2191,16 @@ impl FiberState {
+             AwbcEntryTarget::Function { function, .. } => *function,
+             AwbcEntryTarget::Routes(_) => return Err(FiberStateError::RouteSelectionRequired),
+         };
+-        Self::for_function_with_instance(
++        Self::for_function_in_context(
+             program,
+             AwbcFiberRoot::Entry(entry),
+             function,
+-            instance,
+-            generation,
+-            budget_quantum,
++            FiberCreationContext::new(
++                instance,
++                generation,
++                budget_quantum,
++                crate::runtime_id::RuntimePresentationBankId::Root,
++            ),
+         )
+     }
+ 
+@@ -2213,35 +2244,29 @@ impl FiberState {
+         generation: u64,
+         budget_quantum: u64,
+     ) -> Result<Self, FiberStateError> {
+-        Self::for_function_with_instance(
++        Self::for_function_in_context(
+             program,
+             root,
+             function,
+-            RuntimeFiberInstanceId::from_allocated(std::num::NonZeroU64::MIN),
+-            generation,
+-            budget_quantum,
++            FiberCreationContext::new(
++                RuntimeFiberInstanceId::from_allocated(std::num::NonZeroU64::MIN),
++                generation,
++                budget_quantum,
++                crate::runtime_id::RuntimePresentationBankId::Root,
++            ),
+         )
+     }
+ 
+-    pub(crate) fn for_function_with_instance(
++    pub(crate) fn for_function_in_context(
+         program: &AwbcProgram,
+         root: AwbcFiberRoot,
+         function: AwbcFunctionId,
+-        instance: RuntimeFiberInstanceId,
+-        generation: u64,
+-        budget_quantum: u64,
++        creation: FiberCreationContext,
+     ) -> Result<Self, FiberStateError> {
+         if matches!(root, AwbcFiberRoot::Task(_)) {
+             return Err(FiberStateError::InvalidFrame);
+         }
+-        let mut fiber = Self::allocate_function_frame(
+-            program,
+-            root,
+-            function,
+-            instance,
+-            generation,
+-            budget_quantum,
+-        )?;
++        let mut fiber = Self::allocate_function_frame(program, root, function, creation)?;
+         let signature = program
+             .functions
+             .get(function.index())
+@@ -2259,10 +2284,14 @@ impl FiberState {
+         program: &AwbcProgram,
+         root: AwbcFiberRoot,
+         function: AwbcFunctionId,
+-        instance: RuntimeFiberInstanceId,
+-        generation: u64,
+-        budget_quantum: u64,
++        creation: FiberCreationContext,
+     ) -> Result<Self, FiberStateError> {
++        let FiberCreationContext {
++            instance,
++            generation,
++            budget_quantum,
++            presentation_bank,
++        } = creation;
+         if root == AwbcFiberRoot::Empty
+             || root
+                 .validate_root_frame(program, Some(function))?
+@@ -2282,6 +2311,7 @@ impl FiberState {
+         Ok(Self {
+             instance,
+             next_frame_instance,
++            presentation_bank,
+             generation,
+             root,
+             cursor: FiberCursor {
+@@ -2322,13 +2352,10 @@ impl FiberState {
+         root: AwbcFiberRoot,
+         args: Vec<RuntimeValue>,
+         prepared: PreparedFunctionInputBinding,
+-        instance: RuntimeFiberInstanceId,
+-        generation: u64,
+-        budget_quantum: u64,
++        creation: FiberCreationContext,
+     ) -> Self {
+         debug_assert_eq!(prepared.parameter_registers.len(), args.len());
+-        let (mut fiber, parameters) =
+-            prepared.allocate_fiber(program, root, instance, generation, budget_quantum);
++        let (mut fiber, parameters) = prepared.allocate_fiber(program, root, creation);
+         let registers = &mut fiber.frames[0].registers;
+         for (register, value) in parameters.into_iter().zip(args) {
+             registers[register.index()] = value.into();
+@@ -2344,9 +2371,7 @@ impl FiberState {
+         program: &AwbcProgram,
+         callable: RuntimeCallableValue,
+         prepared: PreparedCallableCallbackActivation,
+-        instance: RuntimeFiberInstanceId,
+-        generation: u64,
+-        budget_quantum: u64,
++        creation: FiberCreationContext,
+     ) -> Self {
+         let PreparedCallableCallbackActivation {
+             function,
+@@ -2373,9 +2398,7 @@ impl FiberState {
+             AwbcFiberRoot::Function(function),
+             values,
+             input_layout,
+-            instance,
+-            generation,
+-            budget_quantum,
++            creation,
+         )
+     }
+ 
+diff --git a/crates/arcweft-core/src/awbc/fiber/program_task.rs b/crates/arcweft-core/src/awbc/fiber/program_task.rs
+index 3a965bc385252b770bfcf56f92bf779c58d60f0d..f0c35b004d49adfad5dd2f72a91c33539276a0bf 100644
+--- a/crates/arcweft-core/src/awbc/fiber/program_task.rs
++++ b/crates/arcweft-core/src/awbc/fiber/program_task.rs
+@@ -29,9 +29,7 @@ impl PreparedFunctionInputBinding {
+         self,
+         program: &AwbcProgram,
+         task: crate::awbc::schema::AwbcTaskPlanId,
+-        instance: RuntimeFiberInstanceId,
+-        generation: u64,
+-        quantum: u64,
++        creation: FiberCreationContext,
+     ) -> Result<PreparedOwnedProgramTaskFiber, FiberStateError> {
+         let Some(crate::awbc::schema::AwbcTaskPlanExecution::Program(body)) = program
+             .task_plans
+@@ -43,13 +41,7 @@ impl PreparedFunctionInputBinding {
+         if self.function != body.kernel {
+             return Err(FiberStateError::InvalidFrame);
+         }
+-        let (fiber, parameters) = self.allocate_fiber(
+-            program,
+-            AwbcFiberRoot::Task(task),
+-            instance,
+-            generation,
+-            quantum.max(1),
+-        );
++        let (fiber, parameters) = self.allocate_fiber(program, AwbcFiberRoot::Task(task), creation);
+         Ok(PreparedOwnedProgramTaskFiber { fiber, parameters })
+     }
+ }
+@@ -132,9 +124,12 @@ impl FiberState {
+         let (mut child, parameters) = inputs.allocate_fiber(
+             program,
+             AwbcFiberRoot::Task(task),
+-            instance,
+-            generation,
+-            self.budget.quantum.max(1),
++            FiberCreationContext::new(
++                instance,
++                generation,
++                self.budget.quantum.max(1),
++                self.presentation_bank,
++            ),
+         );
+         let mut moves = Vec::with_capacity(moved.len());
+         for ((source, mode), destination) in captures.iter().zip(modes).zip(parameters) {
+diff --git a/crates/arcweft-core/src/awbc/fiber/scope.rs b/crates/arcweft-core/src/awbc/fiber/scope.rs
+index b977feca6e8a03899b8700c581bfe6f72d5e78ec..23de2d9bbdce42a051d2d4ac97cf88d6f09016d8 100644
+--- a/crates/arcweft-core/src/awbc/fiber/scope.rs
++++ b/crates/arcweft-core/src/awbc/fiber/scope.rs
+@@ -21,14 +21,22 @@ impl<V, O, N, B, R, G: crate::presentation::resources::PresentationScopeStorage>
+         admission: &mut crate::value::RuntimeRetainedValueAdmission,
+     ) -> AwbcSaveResult<()> {
+         let result = (|| {
++            admission.validate_metadata(&self.presentation_bank)?;
+             for frame in &self.frames {
+                 if let Some(binding) = &frame.root_presentation_scope {
+-                    binding.admit_awbc_scope(admission, self.instance, frame.instance, None)?;
++                    binding.admit_awbc_scope(
++                        admission,
++                        self.presentation_bank,
++                        self.instance,
++                        frame.instance,
++                        None,
++                    )?;
+                 }
+                 for scope in &frame.scopes {
+                     if let Some(binding) = &scope.presentation_scope {
+                         binding.admit_awbc_scope(
+                             admission,
++                            self.presentation_bank,
+                             self.instance,
+                             frame.instance,
+                             Some(scope.id),
+@@ -84,6 +92,9 @@ impl super::FiberState {
+         if !matches!(program, RuntimeProgramOwner::Awbc(_)) {
+             return Err(crate::presentation::RuntimePresentationError::Program);
+         }
++        if ledger.bank() != self.presentation_bank {
++            return Err(crate::presentation::RuntimePresentationError::Owner);
++        }
+         let execution = crate::runtime_id::ExecutionInstanceId::from_allocated(self.instance.get());
+         let fiber =
+             crate::runtime_id::RuntimePersistentFiberId::from_allocated(self.instance.get().get());
+@@ -104,6 +115,9 @@ impl super::FiberState {
+         if !matches!(program, RuntimeProgramOwner::Awbc(_)) {
+             return Err(crate::presentation::RuntimePresentationError::Program);
+         }
++        if ledger.bank() != self.presentation_bank {
++            return Err(crate::presentation::RuntimePresentationError::Owner);
++        }
+         let execution = crate::runtime_id::ExecutionInstanceId::from_allocated(self.instance.get());
+         let fiber =
+             crate::runtime_id::RuntimePersistentFiberId::from_allocated(self.instance.get().get());
+diff --git a/crates/arcweft-core/src/awbc/fiber/tests/presentation.rs b/crates/arcweft-core/src/awbc/fiber/tests/presentation.rs
+index 9c25de6709cdb4cc4a55de8d2c64c3440a04b79f..7aa88c905c03f583855241dabb547c4eaeda60a8 100644
+--- a/crates/arcweft-core/src/awbc/fiber/tests/presentation.rs
++++ b/crates/arcweft-core/src/awbc/fiber/tests/presentation.rs
+@@ -15,6 +15,52 @@ struct Fixture {
+     ledger: PresentationLedger<PresentationBody<RuntimePayload>>,
+ }
+ 
++#[test]
++fn foreign_bank_binding_and_release_leave_scope_values_and_issuance_unchanged() {
++    let mut fixture = Fixture::new(4);
++    let token = fixture.register(true);
++    let before = fixture.image();
++    let bank = crate::runtime_id::RuntimePresentationBankId::Dialogue {
++        activation: crate::runtime_id::DialogueActivationId::new(
++            fixture.artifact,
++            crate::runtime_id::RuntimePersistentFiberId::from_allocated(1),
++            crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
++                std::num::NonZeroU32::MIN,
++            ),
++            0,
++        ),
++    };
++    let mut foreign = PresentationLedger::<PresentationBody<RuntimePayload>>::new(
++        fixture.owner.clone(),
++        fixture.artifact,
++        bank,
++        PresentationLedgerLimits {
++            handles: 4,
++            scopes: 4,
++        },
++    );
++    let foreign_before = foreign.snapshot_admitted().unwrap();
++    assert_eq!(
++        fixture
++            .fiber
++            .bind_presentation_scope(&fixture.owner, &mut foreign),
++        Err(RuntimePresentationError::Owner)
++    );
++    assert!(matches!(
++        fixture
++            .fiber
++            .release_presentation_scope(&fixture.owner, &mut foreign),
++        Err(RuntimePresentationError::Owner)
++    ));
++    assert_eq!(foreign.snapshot_admitted().unwrap(), foreign_before);
++    assert_eq!(fixture.image(), before);
++    assert_eq!(fixture.retire(), [RuntimeValue::Bool(true)]);
++    assert_eq!(
++        fixture.ledger.release(&fixture.owner, &token, None),
++        Err(RuntimePresentationError::UnknownHandle)
++    );
++}
++
+ impl Fixture {
+     fn new(limit: usize) -> Self {
+         let mut program = zero_parameter_entry_program();
+@@ -408,6 +454,7 @@ fn live_and_inert_scope_headers_observe_identical_metadata_quota_boundaries() {
+         if inert {
+             snapshot.admit_awbc_scope(
+                 &mut admission,
++                fixture.fiber.presentation_bank(),
+                 fixture.fiber.instance,
+                 frame.instance,
+                 None,
+@@ -415,6 +462,7 @@ fn live_and_inert_scope_headers_observe_identical_metadata_quota_boundaries() {
+         } else {
+             binding.admit_awbc_scope(
+                 &mut admission,
++                fixture.fiber.presentation_bank(),
+                 fixture.fiber.instance,
+                 frame.instance,
+                 None,
+diff --git a/crates/arcweft-core/src/awbc/product_step.rs b/crates/arcweft-core/src/awbc/product_step.rs
+index 1d7ed46c24c2969a1df75082022bc959abeb0676..67c368e8ca7a1195f75a3e5eecbb73340068d59e 100644
+--- a/crates/arcweft-core/src/awbc/product_step.rs
++++ b/crates/arcweft-core/src/awbc/product_step.rs
+@@ -13,6 +13,7 @@ mod execution;
+ mod lifecycle;
+ mod line;
+ mod mapping;
++mod presentation;
+ pub mod program;
+ mod program_fanout;
+ mod program_task;
+@@ -583,6 +584,14 @@ impl AwbcProductStepExecutor {
+         let content = Self::runtime_dialogue_content_id(content)?;
+         let owner = self.facade_fiber.persistent_id;
+         let key = (owner, content);
++        if !self.dialogue_occurrences.contains_key(&key)
++            && self.dialogue_occurrences.len()
++                >= crate::entry::RuntimeSchemaLimits::engine_default().max_sequence_items as usize
++        {
++            return Err(ProductStepError::Line(
++                crate::line_task::LineRuntimeError::DialogueNamespaceCapacity,
++            ));
++        }
+         let occurrence = self.dialogue_occurrences.get(&key).copied().unwrap_or(0);
+         let next = occurrence
+             .checked_add(1)
+@@ -1963,6 +1972,7 @@ impl AwbcProductStepExecutor {
+                 });
+             }
+             FiberState {
++                presentation_bank: crate::runtime_id::RuntimePresentationBankId::Root,
+                 instance: crate::runtime_id::RuntimeFiberInstanceId::from_allocated(
+                     std::num::NonZeroU64::MIN,
+                 ),
+@@ -2277,6 +2287,7 @@ impl AwbcProductStepExecutor {
+ 
+     fn prepare_dialogue_effect_callback(
+         &self,
++        activation: crate::runtime_id::DialogueActivationId,
+         callback: RuntimeCallableValue,
+         prepared: crate::awbc::fiber::PreparedCallableCallbackActivation,
+         instance: crate::runtime_id::RuntimeFiberInstanceId,
+@@ -2285,9 +2296,12 @@ impl AwbcProductStepExecutor {
+             &self.program,
+             callback,
+             prepared,
+-            instance,
+-            self.runtime_generation.get(),
+-            self.fiber.budget.quantum.max(1),
++            crate::awbc::fiber::FiberCreationContext::new(
++                instance,
++                self.runtime_generation.get(),
++                self.fiber.budget.quantum.max(1),
++                crate::runtime_id::RuntimePresentationBankId::Dialogue { activation },
++            ),
+         );
+         ProductChildFiber {
+             owner: ProductChildFiberOwner::Independent,
+@@ -2342,7 +2356,8 @@ impl AwbcProductStepExecutor {
+                 .effect_callbacks
+                 .remove(&site)
+                 .expect("callback was preflighted in the owning dialogue frame");
+-            let child = self.prepare_dialogue_effect_callback(callback, proof, instance);
++            let child =
++                self.prepare_dialogue_effect_callback(activation, callback, proof, instance);
+             batch.child_fibers.push_back(child);
+         }
+         batch.next_fiber_instance = next_fiber_instance;
+@@ -4578,13 +4593,16 @@ impl AwbcProductStepExecutor {
+                 return;
+             }
+         };
+-        let mut activation_fiber = match FiberState::for_function_with_instance(
++        let mut activation_fiber = match FiberState::for_function_in_context(
+             &self.program,
+             crate::awbc::fiber::AwbcFiberRoot::Function(group.activation),
+             group.activation,
+-            activation_fiber_instance,
+-            self.next_generation,
+-            self.fiber.budget.quantum.max(1),
++            crate::awbc::fiber::FiberCreationContext::new(
++                activation_fiber_instance,
++                self.next_generation,
++                self.fiber.budget.quantum.max(1),
++                crate::runtime_id::RuntimePresentationBankId::Dialogue { activation },
++            ),
+         ) {
+             Ok(fiber) => fiber,
+             Err(error) => {
+diff --git a/crates/arcweft-core/src/awbc/product_step/dialogue.rs b/crates/arcweft-core/src/awbc/product_step/dialogue.rs
+index 115d12d4145e8528c863a108832335b1ae02b4c6..dfa71c9109c55d22a09bbc5d92f99494a7779e56 100644
+--- a/crates/arcweft-core/src/awbc/product_step/dialogue.rs
++++ b/crates/arcweft-core/src/awbc/product_step/dialogue.rs
+@@ -26,6 +26,18 @@ pub(super) type ProductDialogueTransaction =
+     RuntimeDialogueActivationTransaction<ActiveDialogue, AwbcTypeId>;
+ 
+ impl ProductDialogueStore {
++    /// Borrows the actual retained activation frames, including metadata-only
++    /// topology checks before an enclosing owner copies any frame values.
++    pub(super) fn try_visit_active<'a, E>(
++        &'a self,
++        mut visit: impl FnMut(&'a DialogueActivationId, &'a ActiveDialogue) -> Result<(), E>,
++    ) -> Result<(), E>
++    where
++        E: From<crate::line_task::RuntimeDialogueRegistrySnapshotError>,
++    {
++        self.registry
++            .try_visit_active(|activation, frame, _| visit(activation, frame))
++    }
+     pub(super) fn into_published(
+         self,
+     ) -> Result<crate::line_task::RuntimePublishedDialogueRegistry, (Self, LineRuntimeError)> {
+diff --git a/crates/arcweft-core/src/awbc/product_step/line.rs b/crates/arcweft-core/src/awbc/product_step/line.rs
+index 28c706537360477c6ac92dae7a8000f3a8e79e6f..8e166a2b1414409347a2dc1c144e445855cfce55 100644
+--- a/crates/arcweft-core/src/awbc/product_step/line.rs
++++ b/crates/arcweft-core/src/awbc/product_step/line.rs
+@@ -905,9 +905,14 @@ impl super::AwbcProductStepExecutor {
+                 crate::awbc::fiber::AwbcFiberRoot::Function(run.spawn.inputs.function()),
+                 args,
+                 run.spawn.inputs,
+-                run.spawn.fiber_instance,
+-                run.spawn.child_generation,
+-                self.fiber.budget.quantum.max(1),
++                crate::awbc::fiber::FiberCreationContext::new(
++                    run.spawn.fiber_instance,
++                    run.spawn.child_generation,
++                    self.fiber.budget.quantum.max(1),
++                    crate::runtime_id::RuntimePresentationBankId::Dialogue {
++                        activation: transaction.frame().activation,
++                    },
++                ),
+             );
+             batch.child_fibers.push_back(super::ProductChildFiber {
+                 owner: run.owner,
+@@ -1007,6 +1012,7 @@ impl super::AwbcProductStepExecutor {
+                 let content = transaction.frame().content;
+                 batch.spawn_prepared(
+                     self,
++                    crate::runtime_id::RuntimePresentationBankId::Dialogue { activation },
+                     super::ProductChildFiberOwner::Deferred {
+                         content,
+                         activation,
+@@ -2649,6 +2655,9 @@ impl super::AwbcProductStepExecutor {
+                 let content = content.expect("Run content was preflighted above");
+                 batch.spawn_prepared(
+                     self,
++                    crate::runtime_id::RuntimePresentationBankId::Dialogue {
++                        activation: *activation,
++                    },
+                     super::ProductChildFiberOwner::ScopedDeferred {
+                         content,
+                         activation: activation.clone(),
+@@ -3497,6 +3506,7 @@ impl super::ProductLineTaskExecutionBatch {
+     fn spawn_prepared(
+         &mut self,
+         executor: &super::AwbcProductStepExecutor,
++        bank: crate::runtime_id::RuntimePresentationBankId,
+         owner: super::ProductChildFiberOwner,
+         args: Vec<RuntimeValue>,
+         prepared: PreparedLineChildSpawn,
+@@ -3506,9 +3516,12 @@ impl super::ProductLineTaskExecutionBatch {
+             crate::awbc::fiber::AwbcFiberRoot::Function(prepared.inputs.function()),
+             args,
+             prepared.inputs,
+-            prepared.fiber_instance,
+-            prepared.child_generation,
+-            executor.fiber.budget.quantum.max(1),
++            crate::awbc::fiber::FiberCreationContext::new(
++                prepared.fiber_instance,
++                prepared.child_generation,
++                executor.fiber.budget.quantum.max(1),
++                bank,
++            ),
+         );
+         self.next_generation = prepared.next_generation;
+         self.next_fiber_instance = prepared.next_fiber_instance;
+diff --git a/crates/arcweft-core/src/awbc/product_step/presentation.rs b/crates/arcweft-core/src/awbc/product_step/presentation.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..32511df9f6ee70fa7403cb7f873f684932f0f633
+--- /dev/null
++++ b/crates/arcweft-core/src/awbc/product_step/presentation.rs
+@@ -0,0 +1,187 @@
++//! Execution topology supplies bank authority from actual physical owners.
++
++use super::snapshot::{
++    AwbcProductChildFiberOwnerSnapshot, AwbcProductExecutorSnapshot,
++    AwbcProductLineTaskWorkInstanceSnapshot,
++};
++use super::*;
++use crate::presentation::resources::{PresentationExecutionAdmission, PresentationExecutionRole};
++use crate::value::{AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission};
++
++impl ProductChildFiberOwner {
++    fn presentation_role(&self) -> PresentationExecutionRole {
++        match self {
++            Self::Independent => PresentationExecutionRole::Independent,
++            Self::Program { parent, .. } => {
++                PresentationExecutionRole::ProgramChild { parent: *parent }
++            }
++            Self::LineTask { tag, .. } => PresentationExecutionRole::Dialogue(*tag.activation_id()),
++            Self::Deferred { activation, .. } | Self::ScopedDeferred { activation, .. } => {
++                PresentationExecutionRole::Dialogue(*activation)
++            }
++        }
++    }
++}
++
++impl AwbcProductChildFiberOwnerSnapshot {
++    fn presentation_role(&self) -> PresentationExecutionRole {
++        match self {
++            Self::Independent => PresentationExecutionRole::Independent,
++            Self::Program { parent, .. } => {
++                PresentationExecutionRole::ProgramChild { parent: *parent }
++            }
++            Self::LineTask { tag, .. } => {
++                PresentationExecutionRole::Dialogue(match &tag.instance {
++                    AwbcProductLineTaskWorkInstanceSnapshot::Activation(activation) => *activation,
++                    AwbcProductLineTaskWorkInstanceSnapshot::Scheduled(token) => {
++                        *token.activation()
++                    }
++                })
++            }
++            Self::Deferred { activation, .. } | Self::ScopedDeferred { activation, .. } => {
++                PresentationExecutionRole::Dialogue(*activation)
++            }
++        }
++    }
++}
++
++impl AwbcProductStepExecutor {
++    pub(super) fn admit_presentation_execution(
++        &self,
++        admission: &mut RuntimeRetainedValueAdmission,
++    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
++        let mut context = PresentationExecutionAdmission::new(
++            self.next_fiber_instance.last_issued(),
++            self.dialogue_occurrences
++                .iter()
++                .map(|(&(owner, content), next)| (owner, content, next)),
++            admission,
++        )?;
++        context.register_fiber(
++            self.fiber.instance,
++            self.fiber.presentation_bank(),
++            PresentationExecutionRole::Root,
++            admission,
++        )?;
++        admission.validate_metadata_collection(self.child_fibers.len())?;
++        for child in &self.child_fibers {
++            let role = if matches!(
++                child.fiber.root,
++                crate::awbc::fiber::AwbcFiberRoot::RootReducer(_)
++            ) {
++                PresentationExecutionRole::Root
++            } else {
++                child.owner.presentation_role()
++            };
++            context.register_fiber(
++                child.fiber.instance,
++                child.fiber.presentation_bank(),
++                role,
++                admission,
++            )?;
++        }
++        self.dialogues
++            .try_visit_active(|activation, frame| {
++                if let Some(fiber) = frame.activation_fiber() {
++                    context.register_fiber(
++                        fiber.instance,
++                        fiber.presentation_bank(),
++                        PresentationExecutionRole::Dialogue(*activation),
++                        admission,
++                    )?;
++                }
++                Ok(())
++            })
++            .map_err(
++                |error: crate::line_task::RuntimeDialogueRegistrySnapshotError| {
++                    AwbcRuntimeValueSnapshotError::Message {
++                        message: error.to_string(),
++                    }
++                },
++            )?;
++        context.finish(
++            self.presentation.iter().flat_map(|banks| banks.bank_ids()),
++            admission,
++        )
++    }
++}
++
++impl AwbcProductExecutorSnapshot {
++    pub(super) fn admit_presentation_execution(
++        &self,
++        admission: &mut RuntimeRetainedValueAdmission,
++    ) -> Result<(), AwbcProductStepBuildError> {
++        let invalid =
++            |error: AwbcRuntimeValueSnapshotError| AwbcProductStepBuildError::RestoreSnapshot {
++                message: error.to_string(),
++            };
++        let mut context = PresentationExecutionAdmission::new(
++            self.next_fiber_instance.last_issued(),
++            self.dialogue_occurrences
++                .iter()
++                .map(|row| (row.owner, row.content, &row.next)),
++            admission,
++        )
++        .map_err(invalid)?;
++        context
++            .register_fiber(
++                self.fiber.instance,
++                self.fiber.presentation_bank(),
++                PresentationExecutionRole::Root,
++                admission,
++            )
++            .map_err(invalid)?;
++        admission
++            .validate_metadata_collection(self.child_fibers.len())
++            .map_err(invalid)?;
++        for child in &self.child_fibers {
++            let role = if matches!(
++                child.fiber.root,
++                crate::awbc::fiber::AwbcFiberRoot::RootReducer(_)
++            ) {
++                PresentationExecutionRole::Root
++            } else {
++                child.owner.presentation_role()
++            };
++            context
++                .register_fiber(
++                    child.fiber.instance,
++                    child.fiber.presentation_bank(),
++                    role,
++                    admission,
++                )
++                .map_err(invalid)?;
++        }
++        self.dialogues
++            .try_visit_active(|activation, frame, _| {
++                if let Some(fiber) = frame.activation_fiber() {
++                    context
++                        .register_fiber(
++                            fiber.instance,
++                            fiber.presentation_bank(),
++                            PresentationExecutionRole::Dialogue(*activation),
++                            admission,
++                        )
++                        .map_err(|error| {
++                            crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
++                                message: error.to_string(),
++                            }
++                        })?;
++                }
++                Ok(())
++            })
++            .map_err(
++                |error: crate::line_task::RuntimeDialogueRegistrySnapshotError| {
++                    AwbcProductStepBuildError::RestoreSnapshot {
++                        message: error.to_string(),
++                    }
++                },
++            )?;
++        context
++            .finish(
++                self.presentation.iter().flat_map(|banks| banks.bank_ids()),
++                admission,
++            )
++            .map_err(invalid)
++    }
++}
+diff --git a/crates/arcweft-core/src/awbc/product_step/program.rs b/crates/arcweft-core/src/awbc/product_step/program.rs
+index 216006fe995e514b68111a478409b408071752d3..d5e0fb83f7f913fc0c64e4bd693ad6ded329f096 100644
+--- a/crates/arcweft-core/src/awbc/product_step/program.rs
++++ b/crates/arcweft-core/src/awbc/product_step/program.rs
+@@ -152,9 +152,12 @@ impl AwbcProductStepExecutor {
+             AwbcFiberRoot::Program(id),
+             into_values(inputs, result),
+             layout,
+-            self.fiber.instance,
+-            self.runtime_generation.get(),
+-            self.fiber.budget.quantum,
++            crate::awbc::fiber::FiberCreationContext::new(
++                self.fiber.instance,
++                self.runtime_generation.get(),
++                self.fiber.budget.quantum,
++                self.fiber.presentation_bank(),
++            ),
+         );
+         self.facade_fiber.frame.status = crate::engine::FlowFiberStatus::Running;
+         self.fiber.frames[0].instance = frame_instance;
+@@ -324,9 +327,12 @@ impl AwbcProductStepExecutor {
+             AwbcFiberRoot::Program(id),
+             inputs.into_owned(),
+             prepared,
+-            executor.fiber.instance,
+-            generation.get(),
+-            budget_quantum.max(1),
++            crate::awbc::fiber::FiberCreationContext::new(
++                executor.fiber.instance,
++                generation.get(),
++                budget_quantum.max(1),
++                executor.fiber.presentation_bank(),
++            ),
+         );
+         Ok(executor)
+     }
+diff --git a/crates/arcweft-core/src/awbc/product_step/program_fanout.rs b/crates/arcweft-core/src/awbc/product_step/program_fanout.rs
+index ea2e1eed6029910b37076b3eaccab1cd25dbabee..5c5728a86b1f51300df1f67e2c3f64b91edc1315 100644
+--- a/crates/arcweft-core/src/awbc/product_step/program_fanout.rs
++++ b/crates/arcweft-core/src/awbc/product_step/program_fanout.rs
+@@ -157,9 +157,12 @@ impl AwbcProductStepExecutor {
+         let child = binding.prepare_owned_program_task_fiber(
+             &admitted,
+             *worker,
+-            instance,
+-            self.next_generation,
+-            parent.budget.quantum,
++            crate::awbc::fiber::FiberCreationContext::new(
++                instance,
++                self.next_generation,
++                parent.budget.quantum.max(1),
++                parent.presentation_bank(),
++            ),
+         )?;
+         let last = index as usize + 1 == state.items.len();
+         let mut copies = Vec::with_capacity(inputs.len());
+diff --git a/crates/arcweft-core/src/awbc/product_step/program_task/tests.rs b/crates/arcweft-core/src/awbc/product_step/program_task/tests.rs
+index 52f3327365c6578a26d08060c711513b3905d081..deaf2994133088fe8e34861b454c1d80ac72584f 100644
+--- a/crates/arcweft-core/src/awbc/product_step/program_task/tests.rs
++++ b/crates/arcweft-core/src/awbc/product_step/program_task/tests.rs
+@@ -641,9 +641,12 @@ fn program_handle_private_fiber_checkpoint_restores_its_original_source() {
+         AwbcFiberRoot::Task(AwbcTaskPlanId(0)),
+         vec![capture],
+         inputs,
+-        crate::runtime_id::RuntimeFiberInstanceId::from_allocated(std::num::NonZeroU64::MIN),
+-        0,
+-        64,
++        crate::awbc::fiber::FiberCreationContext::new(
++            crate::runtime_id::RuntimeFiberInstanceId::from_allocated(std::num::NonZeroU64::MIN),
++            0,
++            64,
++            crate::runtime_id::RuntimePresentationBankId::Root,
++        ),
+     );
+     fiber
+         .active_frame_mut()
+diff --git a/crates/arcweft-core/src/awbc/product_step/root.rs b/crates/arcweft-core/src/awbc/product_step/root.rs
+index cda85155b26c6234359fb5c487ba8c6a631b2999..c90e96a147bde9a9842bc188cefe7ca907699f81 100644
+--- a/crates/arcweft-core/src/awbc/product_step/root.rs
++++ b/crates/arcweft-core/src/awbc/product_step/root.rs
+@@ -178,9 +178,12 @@ impl AwbcProductStepExecutor {
+             origin,
+             args,
+             prepared,
+-            instance,
+-            self.runtime_generation.get(),
+-            self.fiber.budget.quantum.max(1),
++            crate::awbc::fiber::FiberCreationContext::new(
++                instance,
++                self.runtime_generation.get(),
++                self.fiber.budget.quantum.max(1),
++                crate::runtime_id::RuntimePresentationBankId::Root,
++            ),
+         );
+         self.next_fiber_instance = next_instance;
+         self.child_fibers.push_front(super::ProductChildFiber {
+diff --git a/crates/arcweft-core/src/awbc/product_step/snapshot.rs b/crates/arcweft-core/src/awbc/product_step/snapshot.rs
+index 42bed9aea1e8e07897ecec420953be366beebc06..cd0e6aa63a262a7bbc0f5d9ef21e63105600b412 100644
+--- a/crates/arcweft-core/src/awbc/product_step/snapshot.rs
++++ b/crates/arcweft-core/src/awbc/product_step/snapshot.rs
+@@ -123,22 +123,24 @@ fn validate_product_dialogue_phase<V, O, E, F, L, P, H, R>(
+     })
+ }
+ 
+-fn activation_fiber_in_phase<V, O, E, F, L, P, H>(
+-    frame: &super::AwbcProductActiveDialogue<V, O, E, super::AwbcProductDialoguePhase<F, L, P>, H>,
+-) -> Option<&F> {
+-    match &frame.phase {
+-        super::AwbcProductDialoguePhase::Activating { fiber, .. }
+-        | super::AwbcProductDialoguePhase::Closing(super::AwbcProductDialogueClosing {
+-            state: super::AwbcProductDialogueClosingState::Activation { fiber, .. },
+-            ..
+-        }) => Some(fiber),
+-        super::AwbcProductDialoguePhase::Reducing { .. }
+-        | super::AwbcProductDialoguePhase::Publishing { .. }
+-        | super::AwbcProductDialoguePhase::Transitioning
+-        | super::AwbcProductDialoguePhase::Closing(super::AwbcProductDialogueClosing {
+-            state: super::AwbcProductDialogueClosingState::LineTask { .. },
+-            ..
+-        }) => None,
++impl<V, O, E, F, L, P, H>
++    super::AwbcProductActiveDialogue<V, O, E, super::AwbcProductDialoguePhase<F, L, P>, H>
++{
++    pub(super) fn activation_fiber(&self) -> Option<&F> {
++        match &self.phase {
++            super::AwbcProductDialoguePhase::Activating { fiber, .. }
++            | super::AwbcProductDialoguePhase::Closing(super::AwbcProductDialogueClosing {
++                state: super::AwbcProductDialogueClosingState::Activation { fiber, .. },
++                ..
++            }) => Some(fiber),
++            super::AwbcProductDialoguePhase::Reducing { .. }
++            | super::AwbcProductDialoguePhase::Publishing { .. }
++            | super::AwbcProductDialoguePhase::Transitioning
++            | super::AwbcProductDialoguePhase::Closing(super::AwbcProductDialogueClosing {
++                state: super::AwbcProductDialogueClosingState::LineTask { .. },
++                ..
++            }) => None,
++        }
+     }
+ }
+ 
+@@ -874,7 +876,7 @@ impl<V, O, E, N, B, R, G, L, P, H>
+             .line_task_group
+             .and_then(|id| program.line_task_groups.get(id.index()))
+             .ok_or_else(|| invalid("active dialogue snapshot content has no line-task group"))?;
+-        if activation_fiber_in_phase(self).is_some_and(|fiber| {
++        if self.activation_fiber().is_some_and(|fiber| {
+             fiber.root != crate::awbc::fiber::AwbcFiberRoot::Function(group.activation)
+         }) {
+             return Err(invalid(
+@@ -1801,13 +1803,11 @@ impl AwbcProductExecutorSnapshot {
+                 message: error.to_string(),
+             })?;
+         let snapshot = self;
+-        if let Some(banks) = &snapshot.presentation {
+-            let artifact = AwbcProductStepExecutor::artifact_fingerprint(program)?;
+-            banks
+-                .admit_retained(owner, artifact, admission)
+-                .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+-                    message: error.to_string(),
+-                })?;
++        if snapshot.fiber.presentation_bank() != crate::runtime_id::RuntimePresentationBankId::Root
++        {
++            return Err(AwbcProductStepBuildError::RestoreSnapshot {
++                message: "Product main fiber must retain the Root presentation bank".into(),
++            });
+         }
+         admission
+             .validate_metadata(&(
+@@ -1825,7 +1825,6 @@ impl AwbcProductExecutorSnapshot {
+                     &self.stream_sequences,
+                     self.next_generation,
+                     self.next_fiber_instance,
+-                    &self.dialogue_occurrences,
+                     self.next_host_call_sequence,
+                     self.next_audio_sequence,
+                 ),
+@@ -1834,11 +1833,15 @@ impl AwbcProductExecutorSnapshot {
+             .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                 message: error.to_string(),
+             })?;
+-        admission
+-            .validate_metadata_collection(snapshot.child_fibers.len())
+-            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+-                message: error.to_string(),
+-            })?;
++        self.admit_presentation_execution(admission)?;
++        if let Some(banks) = &snapshot.presentation {
++            let artifact = AwbcProductStepExecutor::artifact_fingerprint(program)?;
++            banks
++                .admit_retained(owner, artifact, admission)
++                .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
++                    message: error.to_string(),
++                })?;
++        }
+         snapshot
+             .fiber
+             .root
+@@ -1876,21 +1879,6 @@ impl AwbcProductExecutorSnapshot {
+                 message: "Product main fiber does not own the initial fiber identity".to_owned(),
+             });
+         }
+-        let mut fiber_instances = BTreeSet::new();
+-        for fiber in std::iter::once(&snapshot.fiber)
+-            .chain(snapshot.child_fibers.iter().map(|child| &child.fiber))
+-        {
+-            if snapshot
+-                .next_fiber_instance
+-                .last_issued()
+-                .is_none_or(|last| fiber.instance.get() > last)
+-                || !fiber_instances.insert(fiber.instance)
+-            {
+-                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+-                    message: "Product fiber instance is duplicated or was not allocated".to_owned(),
+-                });
+-            }
+-        }
+         let has_invalid_await_many_identity = |fiber: &AwbcFiberStateSnapshot| {
+             fiber.suspension.as_ref().is_some_and(|suspension| {
+                 matches!(
+@@ -2176,10 +2164,12 @@ impl AwbcProductExecutorSnapshot {
+                     });
+                 }
+             }
+-            let activation_host_suspension = activation_fiber_in_phase(active)
++            let activation_host_suspension = active
++                .activation_fiber()
+                 .and_then(|fiber| fiber.suspension.as_ref())
+                 .filter(|_| {
+-                    activation_fiber_in_phase(active)
++                    active
++                        .activation_fiber()
+                         .is_some_and(|fiber| fiber.status == FiberStatus::Suspended)
+                 });
+             match (
+@@ -2372,7 +2362,7 @@ impl AwbcProductExecutorSnapshot {
+                     });
+                 }
+             }
+-            let activation_fiber = activation_fiber_in_phase(active);
++            let activation_fiber = active.activation_fiber();
+             let mut actual_scoped_inflight = None;
+             for child in &snapshot.child_fibers {
+                 let AwbcProductChildFiberOwnerSnapshot::ScopedDeferred {
+@@ -3605,6 +3595,11 @@ impl AwbcProductStepExecutor {
+         Ok((need_producers, queued_task_events))
+     }
+     pub fn snapshot(&self) -> Result<AwbcProductExecutorSnapshot, AwbcProductSaveError> {
++        if self.fiber.presentation_bank() != crate::runtime_id::RuntimePresentationBankId::Root {
++            return Err(AwbcProductSaveError::InvalidSnapshot {
++                message: "Product main fiber must retain the Root presentation bank".into(),
++            });
++        }
+         self.fiber
+             .root
+             .admit_executor_roots(
+@@ -3633,6 +3628,10 @@ impl AwbcProductStepExecutor {
+         let mut admission = self
+             .program
+             .retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default());
++        self.admit_presentation_execution(&mut admission)
++            .map_err(|error| AwbcProductSaveError::InvalidSnapshot {
++                message: error.to_string(),
++            })?;
+         if let Some(banks) = &self.presentation {
+             banks
+                 .admit_retained(&owner, self.artifact_fingerprint, &mut admission)
+@@ -3813,18 +3812,9 @@ impl AwbcProductStepExecutor {
+                 message: format!("invalid Need producer registry snapshot: {error}"),
+             })?;
+         let need_producers = registry;
+-        let fibers = std::iter::once(snapshot.fiber.instance)
+-            .chain(
+-                snapshot
+-                    .child_fibers
+-                    .iter()
+-                    .map(|child| child.fiber.instance),
+-            )
+-            .collect::<BTreeSet<_>>();
+         let mut launches = BTreeSet::new();
+         for child in &snapshot.child_fibers {
+-            let AwbcProductChildFiberOwnerSnapshot::Program { handle, parent } = &child.owner
+-            else {
++            let AwbcProductChildFiberOwnerSnapshot::Program { handle, .. } = &child.owner else {
+                 if matches!(child.fiber.root, crate::awbc::fiber::AwbcFiberRoot::Task(_)) {
+                     return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                         message: "task root lacks its accepted Program owner".into(),
+@@ -3840,11 +3830,7 @@ impl AwbcProductStepExecutor {
+                     && body.source.bytes() == launch.source().task_plan().key().as_bytes()
+                     && child.runtime_generation == handle.correlation.generation
+             });
+-            if !matched
+-                || !fibers.contains(parent)
+-                || parent.get() >= child.fiber.instance.get()
+-                || !launches.insert(handle.correlation)
+-            {
++            if !matched || !launches.insert(handle.correlation) {
+                 return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                     message: "Program child origin, parent or launch is invalid".into(),
+                 });
+@@ -4213,6 +4199,7 @@ mod tests {
+             },
+             state: AwbcProductDialogueClosingStateSaveSnapshot::Activation {
+                 fiber: AwbcFiberStateSnapshot {
++                    presentation_bank: crate::runtime_id::RuntimePresentationBankId::Root,
+                     instance: RuntimeFiberInstanceId::from_allocated(NonZeroU64::MIN),
+                     next_frame_instance: RuntimeIdCursor::initial(),
+                     generation: 1,
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests.rs b/crates/arcweft-core/src/awbc/product_step/tests.rs
+index 31573cfa20dd781c5204354feb777e6b5376f070..6e06d61f8329c8396bce3d8ed312eac6882cadf2 100644
+--- a/crates/arcweft-core/src/awbc/product_step/tests.rs
++++ b/crates/arcweft-core/src/awbc/product_step/tests.rs
+@@ -8095,13 +8095,16 @@ fn blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budg
+             .take_next(crate::runtime_id::RuntimeIdNamespace::FiberInstance)
+             .unwrap(),
+     );
+-    let fiber = FiberState::for_function_with_instance(
++    let fiber = FiberState::for_function_in_context(
+         &executor.program,
+         crate::awbc::fiber::AwbcFiberRoot::Function(tail),
+         tail,
+-        instance,
+-        executor.next_generation,
+-        executor.fiber.budget.quantum,
++        crate::awbc::fiber::FiberCreationContext::new(
++            instance,
++            executor.next_generation,
++            executor.fiber.budget.quantum,
++            executor.fiber.presentation_bank(),
++        ),
+     )
+     .unwrap();
+     executor.next_generation += 1;
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs b/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
+index e8b11f6988ddaaccd64387654e6d5eb6341d67b2..3ece5b73b319e8b4399e659bfa6b3ffdbb7237ca 100644
+--- a/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
++++ b/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
+@@ -112,3 +112,58 @@ fn product_save_visitors_include_retirements_and_body_headers_reject_wrong_types
+         .unwrap();
+     assert_eq!(bool_roots, 1);
+ }
++
++#[test]
++fn public_restore_rejects_forged_bank_and_namespace_frontiers_atomically() {
++    let (mut executor, _) = fixture();
++    let before = executor.snapshot().unwrap();
++    let save = AwbcProductExecutorSaveSnapshot::from_live(&before, &executor.program).unwrap();
++    let original = serde_json::to_value(save).unwrap();
++    let activation = crate::runtime_id::DialogueActivationId::new(
++        executor.artifact_fingerprint,
++        crate::runtime_id::RuntimePersistentFiberId::from_allocated(1),
++        crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
++            std::num::NonZeroU32::MIN,
++        ),
++        0,
++    );
++    let row = serde_json::json!({"owner": activation.owner_fiber(), "content": activation.content(), "next": 1});
++    for mutation in 0..5 {
++        let mut wire = original.clone();
++        match mutation {
++            0 => {
++                wire["dialogue_occurrences"] = serde_json::json!([row]);
++                wire["fiber"]["presentation_bank"] =
++                    serde_json::to_value(RuntimePresentationBankId::Dialogue { activation })
++                        .unwrap();
++            }
++            1 => wire["dialogue_occurrences"] = serde_json::json!([row, row]),
++            2 => {
++                wire["dialogue_occurrences"] = serde_json::json!([row]);
++                wire["dialogue_occurrences"][0]["next"] = 0.into();
++            }
++            3 => {
++                wire["dialogue_occurrences"] = serde_json::json!([row]);
++                wire["dialogue_occurrences"][0]["owner"] = serde_json::to_value(
++                    crate::runtime_id::RuntimePersistentFiberId::from_allocated(2),
++                )
++                .unwrap();
++            }
++            4 => {
++                wire["fiber"]
++                    .as_object_mut()
++                    .unwrap()
++                    .remove("presentation_bank");
++            }
++            _ => unreachable!(),
++        }
++        let save = match serde_json::from_value(wire) {
++            Ok(save) => save,
++            Err(_) if mutation == 4 => continue,
++            Err(error) => panic!("mutation {mutation} must reach retained admission: {error}"),
++        };
++        let (retained, _) = executor.restore_inert_snapshot_owned(save).unwrap_err();
++        executor = retained;
++        assert_eq!(executor.snapshot().unwrap(), before, "mutation {mutation}");
++    }
++}
+diff --git a/crates/arcweft-core/src/awbc/tests/dialogue_callback_projection.rs b/crates/arcweft-core/src/awbc/tests/dialogue_callback_projection.rs
+index 057a148eb6c9a121f1afec0505bb0077686ae390..fff4c8de82a3113f8faf749fa5bfd104707f2165 100644
+--- a/crates/arcweft-core/src/awbc/tests/dialogue_callback_projection.rs
++++ b/crates/arcweft-core/src/awbc/tests/dialogue_callback_projection.rs
+@@ -152,8 +152,17 @@ fn dialogue_callback_projects_retained_parameter_into_body_argument_and_executes
+     let instance = crate::runtime_id::RuntimeFiberInstanceId::from_allocated(
+         std::num::NonZeroU64::new(1).unwrap(),
+     );
+-    let mut fiber =
+-        FiberState::for_callable_callback_prepared(&program, callback, prepared, instance, 1, 1);
++    let mut fiber = FiberState::for_callable_callback_prepared(
++        &program,
++        callback,
++        prepared,
++        crate::awbc::fiber::FiberCreationContext::new(
++            instance,
++            1,
++            1,
++            crate::runtime_id::RuntimePresentationBankId::Root,
++        ),
++    );
+     assert_eq!(
+         fiber.frames[0].registers[0].as_ref(),
+         Some(&RuntimeValue::Bool(true))
+diff --git a/crates/arcweft-core/src/engine.rs b/crates/arcweft-core/src/engine.rs
+index 66e69502c21428cb293e476c81f62b1a1c3175b7..49eceed213552a81093195f938ccc015764deb95 100644
+--- a/crates/arcweft-core/src/engine.rs
++++ b/crates/arcweft-core/src/engine.rs
+@@ -2208,6 +2208,12 @@ impl Engine {
+             .artifact()
+             .ok_or(crate::line_task::LineRuntimeError::UnboundArtifact)?;
+         let key = (self.fiber.persistent_id, content);
++        if !self.dialogue_occurrences.contains_key(&key)
++            && self.dialogue_occurrences.len()
++                >= crate::entry::RuntimeSchemaLimits::engine_default().max_sequence_items as usize
++        {
++            return Err(crate::line_task::LineRuntimeError::DialogueNamespaceCapacity);
++        }
+         let occurrence = self.dialogue_occurrences.get(&key).copied().unwrap_or(0);
+         let next = occurrence
+             .checked_add(1)
+diff --git a/crates/arcweft-core/src/line_task/handle.rs b/crates/arcweft-core/src/line_task/handle.rs
+index 15ada44dc69b20ac666a7ee27933fa7afd4f0430..4e17a2ecfb14735ccd5fa98fa1980b02c888fc5c 100644
+--- a/crates/arcweft-core/src/line_task/handle.rs
++++ b/crates/arcweft-core/src/line_task/handle.rs
+@@ -4369,6 +4369,8 @@ pub enum LineRuntimeError {
+     UnboundArtifact,
+     #[error("dialogue occurrence identity overflowed")]
+     DialogueOccurrenceOverflow,
++    #[error("dialogue occurrence namespace capacity exceeded")]
++    DialogueNamespaceCapacity,
+     #[error("dialogue content has no result-producing line task group")]
+     MissingTaskGroup,
+     #[error("dialogue content references a missing line task group")]
+diff --git a/crates/arcweft-core/src/presentation/resources.rs b/crates/arcweft-core/src/presentation/resources.rs
+index bb00be01864672f67b9b26d183b961dfb2c5a124..c13d21f9e65e417270b4e0889a728217253a3386 100644
+--- a/crates/arcweft-core/src/presentation/resources.rs
++++ b/crates/arcweft-core/src/presentation/resources.rs
+@@ -18,9 +18,11 @@ use serde::{Deserialize, Serialize};
+ use std::collections::BTreeMap;
+ use std::num::NonZeroU64;
+ mod banks;
++mod execution;
+ mod storage;
+ pub(crate) use banks::PresentationBanks;
+ pub(crate) use banks::PresentationBanksSaveSnapshot;
++pub(crate) use execution::{PresentationExecutionAdmission, PresentationExecutionRole};
+ pub(crate) use storage::{PresentationAdmission, PresentationBody};
+ 
+ /// Dynamic owner, never a scope name or a reusable static instruction coordinate.
+@@ -50,6 +52,7 @@ pub(crate) trait PresentationScopeStorage {
+     fn admit_awbc_scope(
+         &self,
+         admission: &mut crate::value::RuntimeRetainedValueAdmission,
++        bank: RuntimePresentationBankId,
+         fiber: crate::runtime_id::RuntimeFiberInstanceId,
+         frame: crate::runtime_id::RuntimeFrameInstanceId,
+         scope: Option<crate::awbc::schema::AwbcScopeId>,
+@@ -68,11 +71,13 @@ impl PresentationScopeOwner {
+     fn validate_awbc_anchor(
+         self,
+         anchor: PresentationScopeAnchor,
++        bank: RuntimePresentationBankId,
+         fiber: crate::runtime_id::RuntimeFiberInstanceId,
+         frame: crate::runtime_id::RuntimeFrameInstanceId,
+         scope: Option<crate::awbc::schema::AwbcScopeId>,
+     ) -> Result<(), RuntimePresentationError> {
+-        if self.execution.get() != fiber.get()
++        if self.bank != bank
++            || self.execution.get() != fiber.get()
+             || self.fiber.get() != fiber.get().get()
+             || anchor != (PresentationScopeAnchor::Awbc { frame, scope })
+         {
+@@ -165,12 +170,13 @@ impl PresentationScopeStorage for RuntimePresentationScopeBinding {
+     fn admit_awbc_scope(
+         &self,
+         admission: &mut crate::value::RuntimeRetainedValueAdmission,
++        bank: RuntimePresentationBankId,
+         fiber: crate::runtime_id::RuntimeFiberInstanceId,
+         frame: crate::runtime_id::RuntimeFrameInstanceId,
+         scope: Option<crate::awbc::schema::AwbcScopeId>,
+     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+         self.owner
+-            .validate_awbc_anchor(self.anchor, fiber, frame, scope)?;
++            .validate_awbc_anchor(self.anchor, bank, fiber, frame, scope)?;
+         self.admit_retained(admission)
+     }
+ }
+@@ -179,12 +185,13 @@ impl PresentationScopeStorage for RuntimePresentationScopeSnapshot {
+     fn admit_awbc_scope(
+         &self,
+         admission: &mut crate::value::RuntimeRetainedValueAdmission,
++        bank: RuntimePresentationBankId,
+         fiber: crate::runtime_id::RuntimeFiberInstanceId,
+         frame: crate::runtime_id::RuntimeFrameInstanceId,
+         scope: Option<crate::awbc::schema::AwbcScopeId>,
+     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+         self.owner
+-            .validate_awbc_anchor(self.anchor, fiber, frame, scope)?;
++            .validate_awbc_anchor(self.anchor, bank, fiber, frame, scope)?;
+         self.admit_retained(admission)
+     }
+ }
+@@ -389,6 +396,10 @@ pub(crate) struct PresentationRegisterError<V, E = RuntimePresentationError> {
+ }
+ 
+ impl<V> PresentationLedger<V> {
++    pub(crate) const fn bank(&self) -> RuntimePresentationBankId {
++        self.bank
++    }
++
+     pub(crate) fn validate_retirement(
+         &self,
+         token: &RuntimePresentationHandleToken,
+diff --git a/crates/arcweft-core/src/presentation/resources/banks.rs b/crates/arcweft-core/src/presentation/resources/banks.rs
+index 9612066938e647443c59eb6b0c8c885c3457d150..d81e6bd91eeaef082013e4bc63d224713f1b0e36 100644
+--- a/crates/arcweft-core/src/presentation/resources/banks.rs
++++ b/crates/arcweft-core/src/presentation/resources/banks.rs
+@@ -30,6 +30,9 @@ pub(crate) type PresentationBanksSaveSnapshot = PresentationBanks<
+ >;
+ 
+ impl<V> PresentationBanks<V> {
++    pub(crate) fn bank_ids(&self) -> impl Iterator<Item = RuntimePresentationBankId> + '_ {
++        self.ledgers.keys().copied()
++    }
+     pub(crate) fn new(
+         program: RuntimeProgramOwner,
+         artifact: RuntimeArtifactFingerprint,
+diff --git a/crates/arcweft-core/src/presentation/resources/execution.rs b/crates/arcweft-core/src/presentation/resources/execution.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..dba973d99578b00100408279a54b8d8c1f14b638
+--- /dev/null
++++ b/crates/arcweft-core/src/presentation/resources/execution.rs
+@@ -0,0 +1,149 @@
++//! Read-only admission of actual execution coordinates. The temporary index
++//! relates physical owners; it cannot issue a bank, scope, activation or value.
++
++use super::*;
++use crate::runtime_id::{
++    DialogueActivationId, RuntimeDialogueContentPlanId, RuntimeFiberInstanceId,
++};
++use crate::value::{AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission};
++
++#[derive(Clone, Copy)]
++pub(crate) enum PresentationExecutionRole {
++    Root,
++    Dialogue(DialogueActivationId),
++    ProgramChild {
++        parent: RuntimeFiberInstanceId,
++    },
++    /// A detached line child may retain its original Dialogue bank after the
++    /// activation frame has closed.
++    Independent,
++}
++
++pub(crate) struct PresentationExecutionAdmission<'a> {
++    last_fiber: NonZeroU64,
++    occurrences: BTreeMap<(RuntimePersistentFiberId, RuntimeDialogueContentPlanId), &'a u64>,
++    fibers:
++        BTreeMap<RuntimeFiberInstanceId, (RuntimePresentationBankId, PresentationExecutionRole)>,
++}
++
++impl<'a> PresentationExecutionAdmission<'a> {
++    pub(crate) fn new(
++        last_fiber: Option<NonZeroU64>,
++        occurrences: impl ExactSizeIterator<
++            Item = (
++                RuntimePersistentFiberId,
++                RuntimeDialogueContentPlanId,
++                &'a u64,
++            ),
++        >,
++        admission: &mut RuntimeRetainedValueAdmission,
++    ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
++        let result = (|| {
++            let last_fiber = last_fiber.ok_or(RuntimePresentationError::InvalidState)?;
++            admission.validate_metadata_collection(occurrences.len())?;
++            let mut rows = BTreeMap::new();
++            for (owner, content, next) in occurrences {
++                admission.validate_metadata(&(owner, content, next))?;
++                // Closed namespace cursors survive a compatible code change;
++                // their content need not exist in the replacement artifact.
++                if owner.get() == 0
++                    || owner.get() > last_fiber.get()
++                    || *next == 0
++                    || rows.insert((owner, content), next).is_some()
++                {
++                    return Err(RuntimePresentationError::InvalidState.into());
++                }
++            }
++            Ok(Self {
++                last_fiber,
++                occurrences: rows,
++                fibers: BTreeMap::new(),
++            })
++        })();
++        result.inspect_err(|error: &AwbcRuntimeValueSnapshotError| {
++            admission.retain_failure(error.clone())
++        })
++    }
++
++    fn validate_bank(
++        &self,
++        bank: RuntimePresentationBankId,
++    ) -> Result<(), RuntimePresentationError> {
++        if let RuntimePresentationBankId::Dialogue { activation } = bank {
++            // An activation namespace survives a compatible code replacement.
++            // Its issuing artifact is checked by the resource bank; rebasing
++            // the executing code does not rename the activation or its bank.
++            if self
++                .occurrences
++                .get(&(activation.owner_fiber(), activation.content()))
++                .is_none_or(|next| activation.occurrence() >= **next)
++            {
++                return Err(RuntimePresentationError::Owner);
++            }
++        }
++        Ok(())
++    }
++
++    pub(crate) fn register_fiber(
++        &mut self,
++        instance: RuntimeFiberInstanceId,
++        bank: RuntimePresentationBankId,
++        role: PresentationExecutionRole,
++        admission: &mut RuntimeRetainedValueAdmission,
++    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
++        let result = (|| {
++            admission.validate_metadata(&(instance, bank))?;
++            self.validate_bank(bank)?;
++            if instance.get() > self.last_fiber || self.fibers.contains_key(&instance) {
++                return Err(RuntimePresentationError::InvalidState.into());
++            }
++            match role {
++                PresentationExecutionRole::Root if bank != RuntimePresentationBankId::Root => {
++                    return Err(RuntimePresentationError::Owner.into());
++                }
++                PresentationExecutionRole::Dialogue(activation)
++                    if bank != (RuntimePresentationBankId::Dialogue { activation }) =>
++                {
++                    return Err(RuntimePresentationError::Owner.into());
++                }
++                _ => {}
++            }
++            self.fibers.insert(instance, (bank, role));
++            Ok(())
++        })();
++        result.inspect_err(|error: &AwbcRuntimeValueSnapshotError| {
++            admission.retain_failure(error.clone())
++        })
++    }
++
++    pub(crate) fn finish(
++        self,
++        banks: impl Iterator<Item = RuntimePresentationBankId>,
++        admission: &mut RuntimeRetainedValueAdmission,
++    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
++        let result = (|| {
++            for (instance, (bank, role)) in &self.fibers {
++                if let PresentationExecutionRole::ProgramChild { parent } = role {
++                    if parent.get() >= instance.get()
++                        || self
++                            .fibers
++                            .get(parent)
++                            .is_none_or(|(parent_bank, _)| parent_bank != bank)
++                    {
++                        return Err(RuntimePresentationError::Owner.into());
++                    }
++                }
++            }
++            for bank in banks {
++                self.validate_bank(bank)?;
++            }
++            Ok(())
++        })();
++        result.inspect_err(|error: &AwbcRuntimeValueSnapshotError| {
++            admission.retain_failure(error.clone())
++        })
++    }
++}
++
++#[cfg(test)]
++mod tests;
+diff --git a/crates/arcweft-core/src/presentation/resources/execution/tests.rs b/crates/arcweft-core/src/presentation/resources/execution/tests.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..131bd3abc597f53b632146fe5c67aba78cf595b8
+--- /dev/null
++++ b/crates/arcweft-core/src/presentation/resources/execution/tests.rs
+@@ -0,0 +1,237 @@
++use super::*;
++use crate::entry::RuntimeSchemaLimits;
++use std::num::NonZeroU32;
++
++fn new_admission() -> RuntimeRetainedValueAdmission {
++    RuntimeRetainedValueAdmission::standalone(RuntimeSchemaLimits::engine_default())
++}
++
++fn fiber(id: u64) -> RuntimeFiberInstanceId {
++    RuntimeFiberInstanceId::from_allocated(NonZeroU64::new(id).unwrap())
++}
++
++fn activation(occurrence: u64) -> DialogueActivationId {
++    DialogueActivationId::new(
++        RuntimeArtifactFingerprint::try_from_bytes([0x74; 32]).unwrap(),
++        RuntimePersistentFiberId::from_allocated(1),
++        RuntimeDialogueContentPlanId::from_accepted_ordinal(NonZeroU32::MIN),
++        occurrence,
++    )
++}
++
++#[test]
++fn namespace_frontiers_reject_duplicates_zero_and_unallocated_owners_stickily() {
++    let act = activation(0);
++    for rows in [
++        vec![
++            (act.owner_fiber(), act.content(), 1),
++            (act.owner_fiber(), act.content(), 2),
++        ],
++        vec![(act.owner_fiber(), act.content(), 0)],
++        vec![(
++            RuntimePersistentFiberId::from_allocated(0),
++            act.content(),
++            1,
++        )],
++        vec![(
++            RuntimePersistentFiberId::from_allocated(4),
++            act.content(),
++            1,
++        )],
++    ] {
++        let mut admission = new_admission();
++        assert!(
++            PresentationExecutionAdmission::new(
++                NonZeroU64::new(3),
++                rows.iter()
++                    .map(|(owner, content, next)| (*owner, *content, next)),
++                &mut admission,
++            )
++            .is_err()
++        );
++        assert!(
++            admission
++                .validate(&crate::value::RuntimeValue::Bool(true))
++                .is_err()
++        );
++    }
++}
++
++#[test]
++fn physical_inventory_includes_dialogue_parents_and_detached_bank_lifetimes() {
++    let act = activation(0);
++    let next = 1;
++    let bank = RuntimePresentationBankId::Dialogue { activation: act };
++    let mut admission = new_admission();
++    let mut context = PresentationExecutionAdmission::new(
++        NonZeroU64::new(4),
++        [(act.owner_fiber(), act.content(), &next)].into_iter(),
++        &mut admission,
++    )
++    .unwrap();
++    context
++        .register_fiber(
++            fiber(1),
++            RuntimePresentationBankId::Root,
++            PresentationExecutionRole::Root,
++            &mut admission,
++        )
++        .unwrap();
++    context
++        .register_fiber(
++            fiber(2),
++            bank,
++            PresentationExecutionRole::Dialogue(act),
++            &mut admission,
++        )
++        .unwrap();
++    context
++        .register_fiber(
++            fiber(3),
++            bank,
++            PresentationExecutionRole::ProgramChild { parent: fiber(2) },
++            &mut admission,
++        )
++        .unwrap();
++    context
++        .register_fiber(
++            fiber(4),
++            bank,
++            PresentationExecutionRole::Independent,
++            &mut admission,
++        )
++        .unwrap();
++    context.finish([bank].into_iter(), &mut admission).unwrap();
++
++    // No active Dialogue frame is needed once a line child is detached.
++    let mut admission = new_admission();
++    let mut context = PresentationExecutionAdmission::new(
++        NonZeroU64::new(4),
++        [(act.owner_fiber(), act.content(), &next)].into_iter(),
++        &mut admission,
++    )
++    .unwrap();
++    context
++        .register_fiber(
++            fiber(4),
++            bank,
++            PresentationExecutionRole::Independent,
++            &mut admission,
++        )
++        .unwrap();
++    context.finish([bank].into_iter(), &mut admission).unwrap();
++}
++
++#[test]
++fn physical_inventory_rejects_duplicate_or_unallocated_fibers_and_wrong_roles() {
++    let act = activation(0);
++    let next = 2;
++    let bank = RuntimePresentationBankId::Dialogue { activation: act };
++    for (id, bank, role) in [
++        (1, bank, PresentationExecutionRole::Dialogue(act)),
++        (4, bank, PresentationExecutionRole::Dialogue(act)),
++        (2, bank, PresentationExecutionRole::Root),
++        (
++            2,
++            RuntimePresentationBankId::Root,
++            PresentationExecutionRole::Dialogue(act),
++        ),
++        (2, bank, PresentationExecutionRole::Dialogue(activation(1))),
++        (
++            2,
++            RuntimePresentationBankId::Dialogue {
++                activation: activation(2),
++            },
++            PresentationExecutionRole::Independent,
++        ),
++    ] {
++        let mut admission = new_admission();
++        let mut context = PresentationExecutionAdmission::new(
++            NonZeroU64::new(3),
++            [(act.owner_fiber(), act.content(), &next)].into_iter(),
++            &mut admission,
++        )
++        .unwrap();
++        context
++            .register_fiber(
++                fiber(1),
++                RuntimePresentationBankId::Root,
++                PresentationExecutionRole::Root,
++                &mut admission,
++            )
++            .unwrap();
++        assert!(
++            context
++                .register_fiber(fiber(id), bank, role, &mut admission)
++                .is_err()
++        );
++        assert!(
++            admission
++                .validate(&crate::value::RuntimeValue::Bool(true))
++                .is_err()
++        );
++    }
++}
++
++#[test]
++fn program_children_require_the_actual_parent_and_inherited_bank() {
++    let act = activation(0);
++    let next = 1;
++    for parent in [1, 2, 3] {
++        let mut admission = new_admission();
++        let mut context = PresentationExecutionAdmission::new(
++            NonZeroU64::new(3),
++            [(act.owner_fiber(), act.content(), &next)].into_iter(),
++            &mut admission,
++        )
++        .unwrap();
++        context
++            .register_fiber(
++                fiber(1),
++                RuntimePresentationBankId::Root,
++                PresentationExecutionRole::Root,
++                &mut admission,
++            )
++            .unwrap();
++        context
++            .register_fiber(
++                fiber(3),
++                RuntimePresentationBankId::Dialogue { activation: act },
++                PresentationExecutionRole::ProgramChild {
++                    parent: fiber(parent),
++                },
++                &mut admission,
++            )
++            .unwrap();
++        assert!(context.finish(std::iter::empty(), &mut admission).is_err());
++        assert!(
++            admission
++                .validate(&crate::value::RuntimeValue::Bool(true))
++                .is_err()
++        );
++    }
++}
++
++#[test]
++fn bank_tombstones_cannot_reference_unissued_dialogue_namespaces() {
++    let mut admission = new_admission();
++    let context =
++        PresentationExecutionAdmission::new(NonZeroU64::new(1), std::iter::empty(), &mut admission)
++            .unwrap();
++    assert!(
++        context
++            .finish(
++                [RuntimePresentationBankId::Dialogue {
++                    activation: activation(0)
++                }]
++                .into_iter(),
++                &mut admission
++            )
++            .is_err()
++    );
++    assert!(
++        admission
++            .validate(&crate::value::RuntimeValue::Bool(true))
++            .is_err()
++    );
++}
+diff --git a/docs/implementation/convergence-evidence-history.md b/docs/implementation/convergence-evidence-history.md
+index c9933f50adee5902fdd32e7281e5920f9dcf26ef..dd06f562e370b808c64244acc829bf65fb9162fe 100644
+--- a/docs/implementation/convergence-evidence-history.md
++++ b/docs/implementation/convergence-evidence-history.md
+@@ -13453,4 +13453,13 @@ Supersedes: 個別bank状態codecを、Productの集合保存grammarへ接続し
+ 
+ Source 9987b86e6399afe6f2803944665e1df6cb53cf56、parent 11efc2f8d7534640aee7e902f1e5cc207d789805、tree a9662985211e9a3edd3af9908aa03a87efdf615d、15 path、patch SHA256 658349177f4ad5b9cda83f2c49f08cb3685b7873ac571192fa7933eb7993a842。通常push後のremote／全blob差分0・index empty。4012凍結入力でのCore owner3は2148／2148 PASS・0 skipped。Core Clippy・default check・doctest 78／78・fmt 13 path・構造gateは終了0、構造は97 package・3250 files・3120 Rust files・review trigger 382・blocking 0。warningなしとはしない。[全コマンド・原本・先行catalog失敗・受入の境界](acceptance-evidence/task-presentation-banks-product-save-owner-validation.json)。
+ 
+-Supersedes: 現状一覧のAWBC Product bank所有と公開保存を「全て未接続」のまま残さず、実装済みの保存grammar／visitor／元context保持と、未接続の実行bank選択・checkpoint／VM cleanupを分けた。Root bank／Bool bodyの実公開saveの成功から、Source ViewValue／mount、Dialogue transaction全体、置換、画像parity、実行ABI全体を完了と推定しない。先行確認main 091ffdad88bf290912982bb8c484bf0efe700514、資料公開1447b8d2e969028e12ecd11a29ad7c982e49480e、中断記録公開11efc2f8d7534640aee7e902f1e5cc207d789805のfull SHAを履歴として保持する。Source091の233 PASSや先行全53結果は、このSourceで再実行した横断結果に合算しない。Generic Matchと他の受入済み機能は変更しない。
+\ No newline at end of file
++Supersedes: 現状一覧のAWBC Product bank所有と公開保存を「全て未接続」のまま残さず、実装済みの保存grammar／visitor／元context保持と、未接続の実行bank選択・checkpoint／VM cleanupを分けた。Root bank／Bool bodyの実公開saveの成功から、Source ViewValue／mount、Dialogue transaction全体、置換、画像parity、実行ABI全体を完了と推定しない。先行確認main 091ffdad88bf290912982bb8c484bf0efe700514、資料公開1447b8d2e969028e12ecd11a29ad7c982e49480e、中断記録公開11efc2f8d7534640aee7e902f1e5cc207d789805のfull SHAを履歴として保持する。Source091の233 PASSや先行全53結果は、このSourceで再実行した横断結果に合算しない。Generic Matchと他の受入済み機能は変更しない。
++## AWBC fiberの実行bankと物理ownerの接続checkpoint — 2026-10-31
++
++確認base 723e6eb0383a1049ef0faa5a7448360e328bf4db。fiber生成時のinstance・generation・budget・bankを一つのcreation contextで渡し、Root／Dialogue入口、line・callback、Program子fiberと継続を実際の生成ownerへ接続した。live／inertは同じfiber grammarの必須bank fieldを保持する。scope grantはbankと物理fiber／frame／lexical anchorを一緒に検証し、異なるbankによるbind／releaseを変更前に拒否する。
++
++Product snapshotのmetadata admissionはRoot・子fiber・active Dialogueの物理fiberを一つの検証contextへ集める。既存のRootと子だけの重複／parent indexを置換し、Dialogue親のProgram子も同じ規則で扱う。namespace frontierの重複、zero、未割当owner、未発行occurrence、重複物理fiber、親bank不一致を拒否する。検証用indexはmetadataを一時参照し、別の永続ownerを作らない。Dialogue bankはactivationの生存identityであり、resourceのないcompatible replacementで新しいcode artifactへ再命名しない。元programに属するresource custodyの検査は別途維持する。両backendのnamespace新規行数にも製品上限を適用した。
++
++検証途中: 初期の生成経路接続入力はCore all-target/all-feature checkが終了0。その後の回帰test追加と重複index削除を含む凍結入力で、presentation-fiber-topology-20261031T091550884.owner1 のCore全件catalog／nextestを実行中。この公開cutはユーザーの途中commitのgreen確認を必須にしない指示によるcheckpointで、全件PASSや当該機能の最終受入とはしない。既存14 tracked／6 untracked WIPは保持する。
++
++Supersedes: AWBC実行bank選択の実装進捗を記録する。公開save decodeの最初のbody変換より前のmetadata検査、fiberを持たないDialogue phaseのnamespace検査、全実行checkpoint／VM cleanup、Source command ABI、driver・置換・画像parityは続けて完成させる。Generic Match等の既受入は維持し、現在の項目別状態は現状一覧だけを参照する。

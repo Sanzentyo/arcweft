@@ -1,0 +1,3 @@
+Preflight VM terminal cleanup custody before moving values
+
+Preserve affine return values and dialogue selections when the issuing ledger is unavailable; preflight goto unwind too. Red: 2 reproduced losses. Green: all 2159 Core tests passed.

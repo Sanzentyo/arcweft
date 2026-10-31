@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "path": "crates/arcweft-core/src/awbc/fiber.rs",
+  "owner": "presentation-vm-terminal-20261031T092854460.green",
+  "testedSha256": "4e45a1b3c6d5aaf33a4d56e32d641d7e5d0c6dac9f9af8f86841755eeacf90dd",
+  "qualitySha256": "c88d863686f93c03d55ff4f8a9b287adc25b3b652845334d4dd54cb676e6ec00",
+  "reconstructedTestedSha256": "4e45a1b3c6d5aaf33a4d56e32d641d7e5d0c6dac9f9af8f86841755eeacf90dd",
+  "commentOnlyDifference": true,
+  "behaviorAndTestsUnchanged": true,
+  "explanation": "Only private-method documentation comments were moved/reworded after the full owner run; restoring those exact comments reproduces the tested source hash."
+}

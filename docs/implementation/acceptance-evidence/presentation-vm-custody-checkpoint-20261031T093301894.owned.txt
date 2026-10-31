@@ -1,0 +1,4 @@
+crates/arcweft-core/src/awbc/fiber.rs
+crates/arcweft-core/src/awbc/vm.rs
+crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
+docs/implementation/convergence-evidence-history.md

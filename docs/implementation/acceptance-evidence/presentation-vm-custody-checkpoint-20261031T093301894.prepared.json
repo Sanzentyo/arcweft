@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "base": "9bfeeaeb00789fbb81b8b0647da2f135e1567f2f",
+  "tree": "2318b653f1cf85a8c7471c73e22fb6389efced6a",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber.rs",
+      "blob": "15458f1ecdd6e569c0f3e24c08886e8dd926234a"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "blob": "a26940ac89e5b7bc85af42a3c90f9d5cec60a4ff"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/vm.rs",
+      "blob": "3461d9adae7474b93e291da0baf52ebccd68ed14"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "e42a3b9a6f8fa4c5da4d9c90c64d00ddc629c135"
+    }
+  ],
+  "other": [],
+  "held": [
+    "crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs",
+    "crates/arcweft-cli/tests/check/agent_script_debug.rs",
+    "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+    "crates/arcweft-cli/tests/check/profile_entry_selection.rs",
+    "crates/arcweft-runtime-host/src/native_task.rs",
+    "samples/agent-script/cli-read-resource-metadata-smoke.awfagent",
+    "samples/agent-script/cli-read-resource-smoke.awfagent",
+    "samples/agent-script/cli-read-resource-value-smoke.awfagent",
+    "samples/agent-script/native-choice-dispatch.arcw",
+    "samples/agent-script/native-project-graph-relations.arcw",
+    "samples/agent-script/native-visual-regression.arcw",
+    "samples/image-animation.arcw",
+    "samples/rich-text-full-grammar.arcw",
+    "samples/rich-text-windows-fonts.arcw"
+  ],
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "patchSha256": "451b9044f05b471564627d60ac0a2cd9335b4124f20d133d0fcc4e8c797afdb7",
+  "preparedAt": "2026-10-31T09:33:02.7774257Z"
+}

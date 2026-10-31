@@ -1,0 +1,964 @@
+{
+  "version": 1,
+  "scope": "AWBC actual fiber bank context, whole Product execution topology/public-save admission, and failure-atomic VM terminal preflight. Source commands and automatic bank cleanup are not accepted by this record.",
+  "recordedAt": "2026-10-31T09:34:43.1287671Z",
+  "sourcePublications": [
+    {
+      "version": 1,
+      "commit": "a47b3ebb24d2e0c35e451ece261cb4c394bdf829",
+      "parent": "723e6eb0383a1049ef0faa5a7448360e328bf4db",
+      "tree": "86d7b499a18c43e6ea9d7c95669854ff6cb47fff",
+      "remote": "a47b3ebb24d2e0c35e451ece261cb4c394bdf829",
+      "paths": [
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber.rs",
+          "blob": "6dde206524ab647979879cd66c62a36b8452fa7d"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber/program_task.rs",
+          "blob": "f0c35b004d49adfad5dd2f72a91c33539276a0bf"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber/scope.rs",
+          "blob": "23de2d9bbdce42a051d2d4ac97cf88d6f09016d8"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+          "blob": "7aa88c905c03f583855241dabb547c4eaeda60a8"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step.rs",
+          "blob": "67c368e8ca7a1195f75a3e5eecbb73340068d59e"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+          "blob": "dfa71c9109c55d22a09bbc5d92f99494a7779e56"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "blob": "8e166a2b1414409347a2dc1c144e445855cfce55"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+          "blob": "32511df9f6ee70fa7403cb7f873f684932f0f633"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/program.rs",
+          "blob": "d5e0fb83f7f913fc0c64e4bd693ad6ded329f096"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/program_fanout.rs",
+          "blob": "5c5728a86b1f51300df1f67e2c3f64b91edc1315"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/program_task/tests.rs",
+          "blob": "deaf2994133088fe8e34861b454c1d80ac72584f"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/root.rs",
+          "blob": "c90e96a147bde9a9842bc188cefe7ca907699f81"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+          "blob": "cd0e6aa63a262a7bbc0f5d9ef21e63105600b412"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+          "blob": "6e06d61f8329c8396bce3d8ed312eac6882cadf2"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+          "blob": "3ece5b73b319e8b4399e659bfa6b3ffdbb7237ca"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/tests/dialogue_callback_projection.rs",
+          "blob": "fff4c8de82a3113f8faf749fa5bfd104707f2165"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine.rs",
+          "blob": "49eceed213552a81093195f938ccc015764deb95"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task/handle.rs",
+          "blob": "4e17a2ecfb14735ccd5fa98fa1980b02c888fc5c"
+        },
+        {
+          "path": "crates/arcweft-core/src/presentation/resources.rs",
+          "blob": "c13d21f9e65e417270b4e0889a728217253a3386"
+        },
+        {
+          "path": "crates/arcweft-core/src/presentation/resources/banks.rs",
+          "blob": "d81e6bd91eeaef082013e4bc63d224713f1b0e36"
+        },
+        {
+          "path": "crates/arcweft-core/src/presentation/resources/execution.rs",
+          "blob": "dba973d99578b00100408279a54b8d8c1f14b638"
+        },
+        {
+          "path": "crates/arcweft-core/src/presentation/resources/execution/tests.rs",
+          "blob": "131bd3abc597f53b632146fe5c67aba78cf595b8"
+        },
+        {
+          "path": "docs/implementation/convergence-evidence-history.md",
+          "blob": "dd06f562e370b808c64244acc829bf65fb9162fe"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "d7810b1949b285732d5c3688b42b623ac8a869c6ffa54bb547281f5af2e8294b",
+      "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-10-31T09:17:52.7182689Z"
+    },
+    {
+      "version": 1,
+      "commit": "9bfeeaeb00789fbb81b8b0647da2f135e1567f2f",
+      "parent": "a47b3ebb24d2e0c35e451ece261cb4c394bdf829",
+      "tree": "cb6bff251807cf7ee58ecd0bd963fd2f2d5bf30a",
+      "remote": "9bfeeaeb00789fbb81b8b0647da2f135e1567f2f",
+      "paths": [
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+          "blob": "6883cfab882fa2b21dee08738c499094f694c428"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+          "blob": "d1dcfd320626ee8f7cf9255082c067124aa90276"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+          "blob": "baf87ddcf79952991ce66246576c462bc85b2996"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+          "blob": "8e9485c4e1803ce914656cf15c62492dc0f50c71"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+          "blob": "af9a804d27f0997731585de717a2f6f8bf425360"
+        },
+        {
+          "path": "crates/arcweft-core/src/presentation/resources/banks.rs",
+          "blob": "d83d851da682ed45429818596d52a34aeacac5ae"
+        },
+        {
+          "path": "crates/arcweft-core/src/presentation/resources/execution.rs",
+          "blob": "7bea53bed76217128db687f49c535e7c97da5db1"
+        },
+        {
+          "path": "docs/02-runtime/save-replay.md",
+          "blob": "40a15bda20cb47508b857e938af7dcce214e9449"
+        },
+        {
+          "path": "docs/implementation/convergence-evidence-history.md",
+          "blob": "60594091a6a28b2eaff45e8ca45274e0734f1de6"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "77f1fa8aecff9b989c1d13dc7691d94cecbfa173745479467aeffdda6872556b",
+      "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-10-31T09:25:39.2239047Z"
+    },
+    {
+      "version": 1,
+      "commit": "af8e7bbf72d008337d805370d1b70e5504e544e4",
+      "parent": "9bfeeaeb00789fbb81b8b0647da2f135e1567f2f",
+      "tree": "2318b653f1cf85a8c7471c73e22fb6389efced6a",
+      "remote": "af8e7bbf72d008337d805370d1b70e5504e544e4",
+      "paths": [
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber.rs",
+          "blob": "15458f1ecdd6e569c0f3e24c08886e8dd926234a"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+          "blob": "a26940ac89e5b7bc85af42a3c90f9d5cec60a4ff"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/vm.rs",
+          "blob": "3461d9adae7474b93e291da0baf52ebccd68ed14"
+        },
+        {
+          "path": "docs/implementation/convergence-evidence-history.md",
+          "blob": "e42a3b9a6f8fa4c5da4d9c90c64d00ddc629c135"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "451b9044f05b471564627d60ac0a2cd9335b4124f20d133d0fcc4e8c797afdb7",
+      "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-10-31T09:33:06.5004304Z"
+    }
+  ],
+  "initialCheck": {
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "arcweft-core",
+      "--all-targets",
+      "--all-features",
+      "--locked"
+    ],
+    "exitCode": 0,
+    "log": "presentation-fiber-topology-20261031T091350251.check.log",
+    "scope": "Earlier context-connection source, before regression additions and removal of the old duplicate parent index; not the final owner input."
+  },
+  "topologyOwnerFirst": {
+    "version": 1,
+    "base": "723e6eb0383a1049ef0faa5a7448360e328bf4db",
+    "run": "presentation-fiber-topology-20261031T091550884.owner1.runtime",
+    "actualExitCode": 100,
+    "summary": "Summary [  72.062s] 2155 tests run: 2147 passed, 8 failed, 0 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2155,
+    "passed": 2147,
+    "failed": 8,
+    "skipped": 0,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4015,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "awbc::product_step::tests::activation_effect_moves_affine_handle_through_effect_observation_and_default_drop"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "awbc::product_step::tests::blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budget"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "awbc::product_step::tests::dialogue_activation_rejects_an_independently_valid_foreign_root_before_copy"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "awbc::product_step::tests::dialogue_frame_cannot_replace_the_original_registry_activation"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "awbc::product_step::tests::dialogue_frame_joins_the_original_bank_before_capture_or_restore"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "awbc::product_step::tests::init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "awbc::product_step::tests::line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "awbc::product_step::tests::product_snapshot_visitor_finds_asset_handles_in_dialogue_captures"
+      }
+    ],
+    "isPassingRun": false,
+    "recordedAt": "2026-10-31T09:18:51.8356034Z"
+  },
+  "topologyCatalogFailure": {
+    "record": {
+      "version": 1,
+      "base": "a47b3ebb24d2e0c35e451ece261cb4c394bdf829",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-core",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-fiber-topology-20261031T092119987.owner2.catalog.log",
+      "exitCode": 101,
+      "startedAt": "2026-10-31T09:21:22.0901514Z",
+      "finishedAt": "2026-10-31T09:21:58.351228Z"
+    },
+    "runtime": "not-run",
+    "cause": "E0596 in a migrated fixture reborrow; corrected without changing assertions."
+  },
+  "topologyOwnerFinal": {
+    "version": 1,
+    "base": "a47b3ebb24d2e0c35e451ece261cb4c394bdf829",
+    "run": "presentation-fiber-topology-20261031T092223258.owner3.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  70.345s] 2157 tests run: 2157 passed, 0 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2157,
+    "passed": 2157,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4015,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-31T09:24:40.8990961Z"
+  },
+  "terminalRegressionRed": {
+    "version": 1,
+    "base": "9bfeeaeb00789fbb81b8b0647da2f135e1567f2f",
+    "run": "presentation-vm-terminal-20261031T092746924.red.runtime",
+    "actualExitCode": 100,
+    "summary": "Summary [   0.043s] 2 tests run: 0 passed, 2 failed, 2104 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2,
+    "passed": 0,
+    "failed": 2,
+    "skipped": 2104,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4015,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "awbc::product_step::tests::presentation::vm_terminal_dialogue_selection_preserves_its_value_until_scope_custody_is_available"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "awbc::product_step::tests::presentation::vm_terminal_return_preserves_the_affine_result_until_scope_custody_is_available"
+      }
+    ],
+    "isPassingRun": false,
+    "recordedAt": "2026-10-31T09:28:23.2291584Z"
+  },
+  "terminalOwnerGreen": {
+    "version": 1,
+    "base": "9bfeeaeb00789fbb81b8b0647da2f135e1567f2f",
+    "run": "presentation-vm-terminal-20261031T092854460.green.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  70.293s] 2159 tests run: 2159 passed, 0 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2159,
+    "passed": 2159,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4015,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-10-31T09:30:45.1886535Z"
+  },
+  "commentOnlyOwnerReuse": {
+    "version": 1,
+    "path": "crates/arcweft-core/src/awbc/fiber.rs",
+    "owner": "presentation-vm-terminal-20261031T092854460.green",
+    "testedSha256": "4e45a1b3c6d5aaf33a4d56e32d641d7e5d0c6dac9f9af8f86841755eeacf90dd",
+    "qualitySha256": "c88d863686f93c03d55ff4f8a9b287adc25b3b652845334d4dd54cb676e6ec00",
+    "reconstructedTestedSha256": "4e45a1b3c6d5aaf33a4d56e32d641d7e5d0c6dac9f9af8f86841755eeacf90dd",
+    "commentOnlyDifference": true,
+    "behaviorAndTestsUnchanged": true,
+    "explanation": "Only private-method documentation comments were moved/reworded after the full owner run; restoring those exact comments reproduces the tested source hash."
+  },
+  "quality": [
+    {
+      "version": 1,
+      "base": "9bfeeaeb00789fbb81b8b0647da2f135e1567f2f",
+      "command": [
+        "clippy",
+        "-p",
+        "arcweft-core",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4015,
+      "sourceDrift": 0,
+      "startedAt": "2026-10-31T09:31:13.9136858Z",
+      "finishedAt": "2026-10-31T09:31:59.9018867Z"
+    },
+    {
+      "version": 1,
+      "base": "9bfeeaeb00789fbb81b8b0647da2f135e1567f2f",
+      "command": [
+        "check",
+        "-p",
+        "arcweft-core",
+        "--all-targets",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4015,
+      "sourceDrift": 0,
+      "startedAt": "2026-10-31T09:32:00.34648Z",
+      "finishedAt": "2026-10-31T09:32:25.5421166Z"
+    },
+    {
+      "version": 1,
+      "base": "9bfeeaeb00789fbb81b8b0647da2f135e1567f2f",
+      "command": [
+        "test",
+        "-p",
+        "arcweft-core",
+        "--doc",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4015,
+      "sourceDrift": 0,
+      "startedAt": "2026-10-31T09:32:25.9558014Z",
+      "finishedAt": "2026-10-31T09:32:47.3471186Z"
+    },
+    {
+      "version": 1,
+      "base": "9bfeeaeb00789fbb81b8b0647da2f135e1567f2f",
+      "command": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking",
+        "--write",
+        "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-fiber-quality-20261031T093111456.structure-report"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4015,
+      "sourceDrift": 0,
+      "startedAt": "2026-10-31T09:32:47.7603647Z",
+      "finishedAt": "2026-10-31T09:32:51.3493891Z"
+    },
+    {
+      "version": 1,
+      "paths": [
+        "crates/arcweft-core/src/awbc/fiber.rs",
+        "crates/arcweft-core/src/awbc/fiber/program_task.rs",
+        "crates/arcweft-core/src/awbc/fiber/scope.rs",
+        "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+        "crates/arcweft-core/src/awbc/product_step.rs",
+        "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+        "crates/arcweft-core/src/awbc/product_step/line.rs",
+        "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+        "crates/arcweft-core/src/awbc/product_step/program_fanout.rs",
+        "crates/arcweft-core/src/awbc/product_step/program_task/tests.rs",
+        "crates/arcweft-core/src/awbc/product_step/program.rs",
+        "crates/arcweft-core/src/awbc/product_step/root.rs",
+        "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+        "crates/arcweft-core/src/awbc/product_step/tests.rs",
+        "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+        "crates/arcweft-core/src/awbc/tests/dialogue_callback_projection.rs",
+        "crates/arcweft-core/src/awbc/vm.rs",
+        "crates/arcweft-core/src/engine.rs",
+        "crates/arcweft-core/src/line_task/handle.rs",
+        "crates/arcweft-core/src/presentation/resources.rs",
+        "crates/arcweft-core/src/presentation/resources/banks.rs",
+        "crates/arcweft-core/src/presentation/resources/execution.rs",
+        "crates/arcweft-core/src/presentation/resources/execution/tests.rs"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4015,
+      "sourceDrift": 0
+    }
+  ],
+  "doctests": {
+    "passed": 78,
+    "failed": 0,
+    "ignored": 0
+  },
+  "structure": {
+    "gateExitCode": 0,
+    "files": 3253,
+    "rustFiles": 3123,
+    "physicalRustLines": 1769594,
+    "workspacePackages": 97,
+    "measurements": [
+      {
+        "path": "crates/arcweft-core/src/awbc/fiber.rs",
+        "owner": "arcweft-core",
+        "bytes": "289735",
+        "physical_lines": "7599",
+        "code_lines": "7082",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "1881"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+        "owner": "arcweft-core",
+        "bytes": "10602",
+        "physical_lines": "282",
+        "code_lines": "275",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+        "owner": "arcweft-core",
+        "bytes": "184291",
+        "physical_lines": "4341",
+        "code_lines": "4191",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "181"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/vm.rs",
+        "owner": "arcweft-core",
+        "bytes": "221347",
+        "physical_lines": "5496",
+        "code_lines": "5291",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/execution.rs",
+        "owner": "arcweft-core",
+        "bytes": "6150",
+        "physical_lines": "161",
+        "code_lines": "143",
+        "classification": "production",
+        "is_rust": "true",
+        "embedded_test_lines": "0"
+      }
+    ],
+    "coreDependencyMetrics": {
+      "package": "arcweft-core",
+      "manifest": "crates/arcweft-core/Cargo.toml",
+      "workspace_fan_in": "31",
+      "workspace_fan_out": "7",
+      "development_workspace_fan_in": "4",
+      "development_workspace_fan_out": "5"
+    },
+    "disposition": "FiberState owns physical frame creation and cleanup preflight; PresentationExecutionAdmission owns metadata-only namespace/topology checks; Product adapters enumerate their actual live/inert owners. Temporary borrowed indexes do not issue or persist authority. Existing large fiber/VM/snapshot dispatchers keep cohesive frame/termination/image boundaries; tests remain with their Product presentation owner. No new Cargo edge, I/O, unsafe or alternate persisted model.",
+    "reviewTriggers": 382,
+    "blockingViolations": 0
+  },
+  "notRunOrUnaccepted": [
+    "Current source workspace-wide check/Clippy and full reverse dependencies are deferred to the continuing Core cohort; the earlier interrupted matrix is historical, not a pass.",
+    "AWBC bank-carrying execution checkpoints and automatic VM cleanup; Native borrowed Dialogue contour.",
+    "Source 11 callables, mount(ViewValue), 6 methods, complete construction model/lowering/driver; active-bank replacement and Native/Web image parity."
+  ],
+  "acceptanceBoundary": "Root-bank save fixture owns a typed Bool body. Dialogue save fixture proves actual activation bank identity and physical fiber inventory; it is not a Source ViewValue/mount test. Generic Match and other previously accepted features remain accepted.",
+  "rawEvidence": [
+    {
+      "path": "presentation-fiber-admission-checkpoint-20261031T092529412.message.txt",
+      "bytes": 201,
+      "sha256": "8ef1826a9480a87692a84227d26f31f3b3b81ac3848bb8e207122aa7f7ac17b3"
+    },
+    {
+      "path": "presentation-fiber-admission-checkpoint-20261031T092529412.owned.txt",
+      "bytes": 492,
+      "sha256": "c9158e84d0f71697bd9fc48dfcf27f79bf5cfef4128b2ae062630cad46b2f149"
+    },
+    {
+      "path": "presentation-fiber-admission-checkpoint-20261031T092529412.prepared.json",
+      "bytes": 2548,
+      "sha256": "0e795e80849fc7a8da56ef25103c923968f54773ca0b9e2d3b98f49417ee6e98"
+    },
+    {
+      "path": "presentation-fiber-admission-checkpoint-20261031T092529412.reviewed.patch",
+      "bytes": 35801,
+      "sha256": "77f1fa8aecff9b989c1d13dc7691d94cecbfa173745479467aeffdda6872556b"
+    },
+    {
+      "path": "presentation-fiber-admission-checkpoint-20261031T092529412.verified.json",
+      "bytes": 1853,
+      "sha256": "11d090c0bc4dd41cece5b72352bd13df90f3dfff55f56c702b12a18b9dcdbf83"
+    },
+    {
+      "path": "presentation-fiber-context-checkpoint-20261031T091737936.message.txt",
+      "bytes": 252,
+      "sha256": "73614d99cb0276ace501a3f6fe432f55edac86c74234e058611091a7d140bd54"
+    },
+    {
+      "path": "presentation-fiber-context-checkpoint-20261031T091737936.owned.txt",
+      "bytes": 1245,
+      "sha256": "e90fac76c8b382871383aeeac6048c8ccb8507f623f69f890104e805b4a185f4"
+    },
+    {
+      "path": "presentation-fiber-context-checkpoint-20261031T091737936.prepared.json",
+      "bytes": 4561,
+      "sha256": "bf0c64effadc62301758104fe9f5b6de9f90fa41221234c5fbe3df0826e489f4"
+    },
+    {
+      "path": "presentation-fiber-context-checkpoint-20261031T091737936.reviewed.patch",
+      "bytes": 76711,
+      "sha256": "d7810b1949b285732d5c3688b42b623ac8a869c6ffa54bb547281f5af2e8294b"
+    },
+    {
+      "path": "presentation-fiber-context-checkpoint-20261031T091737936.verified.json",
+      "bytes": 3866,
+      "sha256": "603ab2687334a79d6f91c5ddd374d34297156585d50206a3196d37675c02c9aa"
+    },
+    {
+      "path": "presentation-fiber-quality-20261031T093111456.clippy.json",
+      "bytes": 368,
+      "sha256": "3d330aab8eaed8264be52c78636c27c0dc6db33d114b84a050efb84aa79e6a6f"
+    },
+    {
+      "path": "presentation-fiber-quality-20261031T093111456.clippy.log",
+      "bytes": 4383078,
+      "sha256": "ea46c60343e1f3cbc24d43039b48ae536011bf7036c8acb244ae7473073deec5"
+    },
+    {
+      "path": "presentation-fiber-quality-20261031T093111456.comment-reuse.json",
+      "bytes": 662,
+      "sha256": "e83a5ec013cdbca4dd654c36377b03a5cc2809d7fa97f0d258f5b455a6c1f808"
+    },
+    {
+      "path": "presentation-fiber-quality-20261031T093111456.default-check.json",
+      "bytes": 344,
+      "sha256": "4985654673746dd09d275b666ae6e504da5d832051bf7f6e7d6f526fa82cfe22"
+    },
+    {
+      "path": "presentation-fiber-quality-20261031T093111456.default-check.log",
+      "bytes": 83273,
+      "sha256": "ec9229ae905d725d6568701906392a6e4b9bf6c43965531c7905fd68d2d888e2"
+    },
+    {
+      "path": "presentation-fiber-quality-20261031T093111456.doctest.json",
+      "bytes": 358,
+      "sha256": "d6dc11ef167e93dd46249d35684371157cdbc5d94bf06d04774fbf0579dc933c"
+    },
+    {
+      "path": "presentation-fiber-quality-20261031T093111456.doctest.log",
+      "bytes": 82495,
+      "sha256": "cf5df3be52f5e2da21f20dcc6f46bbe8168a95c3e5ce3a2f05508a9dfcbde40b"
+    },
+    {
+      "path": "presentation-fiber-quality-20261031T093111456.fmt.json",
+      "bytes": 1494,
+      "sha256": "c42039f597a51c2c29e71304f781262a5c84206dc3155d8b8eef40f30765bfeb"
+    },
+    {
+      "path": "presentation-fiber-quality-20261031T093111456.fmt.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "presentation-fiber-quality-20261031T093111456.source-freeze.json",
+      "bytes": 784719,
+      "sha256": "16f23b4dc06aacd008e3d9a197384993010485d172efeb8edf5ff111bc038c10"
+    },
+    {
+      "path": "presentation-fiber-quality-20261031T093111456.structure.json",
+      "bytes": 540,
+      "sha256": "ca60b3f4191cd57cbdcfe7fece7fe935bd4bf91b0c41cdb94f46e430571b908b"
+    },
+    {
+      "path": "presentation-fiber-quality-20261031T093111456.structure.log",
+      "bytes": 65049,
+      "sha256": "04567a7b8247c23eebf42248e50a9e1efdcb579776d650fe2c195dcbf2648620"
+    },
+    {
+      "path": "presentation-fiber-topology-20261031T091350251.check.exit",
+      "bytes": 1,
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "path": "presentation-fiber-topology-20261031T091350251.check.log",
+      "bytes": 83278,
+      "sha256": "a858709d7520814551d0742db0ddb83b0466a5fb1034d16b915c94622e0b2bf8"
+    },
+    {
+      "path": "presentation-fiber-topology-20261031T091550884.owner1.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "da406bdefb8e368632a198d32f1a6e06ea1720d5979cc66565ec266a5380698a"
+    },
+    {
+      "path": "presentation-fiber-topology-20261031T091550884.owner1.catalog.inventory.json",
+      "bytes": 545230,
+      "sha256": "575573606c94d2163dbba59013ec251aea8dd17a5234aeae91da1400554a689b"
+    },
+    {
+      "path": "presentation-fiber-topology-20261031T091550884.owner1.catalog.json",
+      "bytes": 506,
+      "sha256": "8d7b67e2f5906347d2168e6ff830598ba09a27b829fc7ce0560ecfe5fa719171"
+    },
+    {
+      "path": "presentation-fiber-topology-20261031T091550884.owner1.catalog.log",
+      "bytes": 456965,
+      "sha256": "ad886c9094138e9cb2d218691a98082af48e5911ce00f499e1521e69844bd47f"
+    },
+    {
+      "path": "presentation-fiber-topology-20261031T091550884.owner1.runtime.json",
+      "bytes": 600,
+      "sha256": "031a3e2ef72bfd3e4c9b320df3b0eac38c2461b49bac193741d27012811df071"
+    },
+    {
+      "path": "presentation-fiber-topology-20261031T091550884.owner1.runtime.log",
+      "bytes": 745351,
+      "sha256": "dee9803307313d7575f8cde1dfd5a2c06d894e7e2e85e1a1921571c00d814a0d"
+    },
+    {
+      "path": "presentation-fiber-topology-20261031T091550884.owner1.runtime.terminal-audit.json",
+      "bytes": 2164,
+      "sha256": "2bad6b21b55ea369da548deff68ac56380892770fb534a6a5151cf50307eec5e"
+    },
+    {
+      "path": "presentation-fiber-topology-20261031T091550884.owner1.source-freeze.json",
+      "bytes": 784665,
+      "sha256": "c3bc70e781b9cf4efc97c31730d68880f18201ee952ef4a03ab4c7116e1dc763"
+    },
+    {
+      "path": "presentation-fiber-topology-20261031T092119987.owner2.catalog.json",
+      "bytes": 508,
+      "sha256": "7c6ef5ca334d6bd6f1d6ea90cb79af1bd8d7e26c600adee032154b47b20e3bc2"
+    },
+    {
+      "path": "presentation-fiber-topology-20261031T092119987.owner2.catalog.log",
+      "bytes": 78276,
+      "sha256": "22fe2d2524651aa4d3575391617cb662e48338cffdd30228b6d6ee1edad8460b"
+    },
+    {
+      "path": "presentation-fiber-topology-20261031T092119987.owner2.source-freeze.json",
+      "bytes": 784666,
+      "sha256": "77d36f0432b368dfd34e76c947de1fa0f4ef9882e14d75fec364030accab74de"
+    },
+    {
+      "path": "presentation-fiber-topology-20261031T092223258.owner3.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "a6df12ebe806c9fb7a75d280b4f5fea9bfa9824b6c56919a6bfe068b5c4a1f61"
+    },
+    {
+      "path": "presentation-fiber-topology-20261031T092223258.owner3.catalog.inventory.json",
+      "bytes": 545758,
+      "sha256": "6cd30fd80a9b1401e40a774f18edfc01e48b67382fe45c79f5f632fec89f8ae3"
+    },
+    {
+      "path": "presentation-fiber-topology-20261031T092223258.owner3.catalog.json",
+      "bytes": 506,
+      "sha256": "0f379e50c92280c105e26411fcdfaae5c6220c2a4d7d6ddb40e38bd7b8fc40ed"
+    },
+    {
+      "path": "presentation-fiber-topology-20261031T092223258.owner3.catalog.log",
+      "bytes": 457324,
+      "sha256": "3b610d7ac7e083b60e874fab5ba3c054ba7cd1b2e5946187e42f2c40470ab4c4"
+    },
+    {
+      "path": "presentation-fiber-topology-20261031T092223258.owner3.runtime.json",
+      "bytes": 598,
+      "sha256": "e41024002e3fef7c503ea88f29d3062ffa4a5ac6f606fff36bd349945e98f317"
+    },
+    {
+      "path": "presentation-fiber-topology-20261031T092223258.owner3.runtime.log",
+      "bytes": 739191,
+      "sha256": "b0e4b82479f4d1cea5414712430b0369665d08ff8aa1f76fdff2c6038386339e"
+    },
+    {
+      "path": "presentation-fiber-topology-20261031T092223258.owner3.runtime.terminal-audit.json",
+      "bytes": 642,
+      "sha256": "ed10b248b87ddfbdac74fafdedbab17f4efdaebcb43d54747ab9e15180556d2b"
+    },
+    {
+      "path": "presentation-fiber-topology-20261031T092223258.owner3.source-freeze.json",
+      "bytes": 784666,
+      "sha256": "14ae8283b6ed5e68990a52115353f6d1e81bf7e87bedb7d0e5aede58647ec927"
+    },
+    {
+      "path": "presentation-vm-custody-checkpoint-20261031T093301894.message.txt",
+      "bytes": 242,
+      "sha256": "ae41b03dc90c88ddbec6ae51000eaa44256d4a7e66faede0cd7e5f2655509afc"
+    },
+    {
+      "path": "presentation-vm-custody-checkpoint-20261031T093301894.owned.txt",
+      "bytes": 193,
+      "sha256": "e2aa60c195ac5ef189f4c0e64e5ab8c9909f9b1a1b8d20d08e9e39749ed1dfaf"
+    },
+    {
+      "path": "presentation-vm-custody-checkpoint-20261031T093301894.prepared.json",
+      "bytes": 1799,
+      "sha256": "41eccd4dfb8f2f6fa964f15ce74f6ebbff82bc8cdbcbb631d6a9bb8acbf7d798"
+    },
+    {
+      "path": "presentation-vm-custody-checkpoint-20261031T093301894.reviewed.patch",
+      "bytes": 13900,
+      "sha256": "451b9044f05b471564627d60ac0a2cd9335b4124f20d133d0fcc4e8c797afdb7"
+    },
+    {
+      "path": "presentation-vm-custody-checkpoint-20261031T093301894.verified.json",
+      "bytes": 1104,
+      "sha256": "4d65bdabac31a66387e64396ed85aa2b1911b3e5e926a97162198e0503f45513"
+    },
+    {
+      "path": "presentation-vm-terminal-20261031T092746924.red.binaries-before.json",
+      "bytes": 202,
+      "sha256": "036724a85974ae6507c946c825c24d0cc3502ce74cc9371233cc194ad60b774e"
+    },
+    {
+      "path": "presentation-vm-terminal-20261031T092746924.red.catalog.inventory.json",
+      "bytes": 536013,
+      "sha256": "7a7825ada187904c46e13d5b9c1b956eb413d37f527581bd42c493a480685a82"
+    },
+    {
+      "path": "presentation-vm-terminal-20261031T092746924.red.catalog.json",
+      "bytes": 552,
+      "sha256": "3eccdaeb4a3be6b380539a21d999088a21491524b964a454d80da4e26226cfda"
+    },
+    {
+      "path": "presentation-vm-terminal-20261031T092746924.red.catalog.log",
+      "bytes": 442320,
+      "sha256": "1fe33b8900d2329b452c8130aff68edde898ec648addb429b6cbadf23726c76e"
+    },
+    {
+      "path": "presentation-vm-terminal-20261031T092746924.red.runtime.json",
+      "bytes": 646,
+      "sha256": "47231442fbe5b4bc402021f2bc20f5f1e7851c76060568f816eca5b31d3ab3ad"
+    },
+    {
+      "path": "presentation-vm-terminal-20261031T092746924.red.runtime.log",
+      "bytes": 675971,
+      "sha256": "88474987f4261ec8789edfea6906ef04ddee08f6bbf456d2e07c8c45f741c9f3"
+    },
+    {
+      "path": "presentation-vm-terminal-20261031T092746924.red.runtime.terminal-audit.json",
+      "bytes": 1072,
+      "sha256": "bab2f161d327a057b884cc447ea0110ff405c1d390db386bdff3709caf2dd970"
+    },
+    {
+      "path": "presentation-vm-terminal-20261031T092746924.red.source-freeze.json",
+      "bytes": 784667,
+      "sha256": "7e3dccf2a9f3db78ce155db93837c30d9b66441e198a2554693871f52ec2b180"
+    },
+    {
+      "path": "presentation-vm-terminal-20261031T092854460.green.binaries-before.json",
+      "bytes": 3108,
+      "sha256": "5a4d4b43bb578b8c00744d92aa0bca22f905010b0b3221cd908f61a00469408a"
+    },
+    {
+      "path": "presentation-vm-terminal-20261031T092854460.green.catalog.inventory.json",
+      "bytes": 546308,
+      "sha256": "65c4667ef3d7f113128ee93465095afc0702c770b09380de7fc35e779362171d"
+    },
+    {
+      "path": "presentation-vm-terminal-20261031T092854460.green.catalog.json",
+      "bytes": 502,
+      "sha256": "b237884787e0af8d42ad12f45b1d8706c0373ac490f967ab2b63af2e22e29ac7"
+    },
+    {
+      "path": "presentation-vm-terminal-20261031T092854460.green.catalog.log",
+      "bytes": 457710,
+      "sha256": "4618053bffd680ef119f491aed34c33d8d9b974c23cfb34ccfa4f388aca8ab32"
+    },
+    {
+      "path": "presentation-vm-terminal-20261031T092854460.green.runtime.json",
+      "bytes": 594,
+      "sha256": "cbae75cdd81d504934cc84b724e68943ffd7bb7076b20e62dbac7ee2a6b3cb42"
+    },
+    {
+      "path": "presentation-vm-terminal-20261031T092854460.green.runtime.log",
+      "bytes": 739887,
+      "sha256": "166d94cdaf2c32a53a9f8f7ea51185fdca9f4814aa23115a04e5dc9b1b3057cb"
+    },
+    {
+      "path": "presentation-vm-terminal-20261031T092854460.green.runtime.terminal-audit.json",
+      "bytes": 638,
+      "sha256": "63460b8e64b67355cd3ad01aed4de7b4c4af46bac0dc38a5708ba1688d05b909"
+    },
+    {
+      "path": "presentation-vm-terminal-20261031T092854460.green.source-freeze.json",
+      "bytes": 784667,
+      "sha256": "dd2fe9d85948d692f34f1e6c88e9c20fc5d415efdd21b063e0ad351e6543fc4e"
+    },
+    {
+      "path": "run-presentation-fiber-quality.ps1",
+      "bytes": 3060,
+      "sha256": "b82fe92dcc6e400afd538d712d243742607e958175a0c5ba3ca12fcef1966cb4"
+    },
+    {
+      "path": "run-presentation-fiber-topology-20261031T091550884.owner1.ps1",
+      "bytes": 4465,
+      "sha256": "b51c114d6ef5d89d965a9582227d0248b30053832cf5fcf7b5b58d3a89c2b09c"
+    },
+    {
+      "path": "run-presentation-fiber-topology-20261031T092119987.owner2.ps1",
+      "bytes": 4601,
+      "sha256": "613cd0f7c000e49922fbc592296244784f77da701613d13889e65044a27b73b9"
+    },
+    {
+      "path": "run-presentation-fiber-topology-20261031T092223258.owner3.ps1",
+      "bytes": 4601,
+      "sha256": "13ae16d69714b513d8543cf5c1a8cd92a30ed8097b7821338b2070dc47f22aff"
+    },
+    {
+      "path": "run-presentation-vm-terminal-20261031T092746924.red.ps1",
+      "bytes": 4626,
+      "sha256": "aa1167144c87ee409d7906c1138da5f4d69a4442f7a17641e6a1a4fcfbc9ccdf"
+    },
+    {
+      "path": "run-presentation-vm-terminal-20261031T092854460.green.ps1",
+      "bytes": 4597,
+      "sha256": "1ba5dd2939a2560bd1fae831e55de744d7cfcb83fa30c7b5abf704b857d9e2ac"
+    },
+    {
+      "path": "presentation-fiber-quality-20261031T093111456.structure.dependency_edges.csv",
+      "bytes": 77544,
+      "sha256": "529e738d348314f7a4c0d909b165620d03ec57478b68ad42b06aa349b30e13f4"
+    },
+    {
+      "path": "presentation-fiber-quality-20261031T093111456.structure.file_metrics.csv",
+      "bytes": 329455,
+      "sha256": "2b10a6e2fb732e79d70f7f0a73a52ad4140ebcce201c886f5ca314501defa76d"
+    },
+    {
+      "path": "presentation-fiber-quality-20261031T093111456.structure.findings.md",
+      "bytes": 122295,
+      "sha256": "a6346db5992fd8a5af3488eff56cad719a16f4c38646cbd02d612675d81a4ee4"
+    },
+    {
+      "path": "presentation-fiber-quality-20261031T093111456.structure.package_metrics.csv",
+      "bytes": 6444,
+      "sha256": "c2df26363c079ef3c17be71810df334c6e4825ab5987b4951b3f1432368b85f2"
+    },
+    {
+      "path": "presentation-fiber-quality-20261031T093111456.structure.public_type_duplicates.csv",
+      "bytes": 17238,
+      "sha256": "6cbaa427fef9360e8adb6245ea1eec66f5fdaf2624a24979e82d4877a28e31ac"
+    }
+  ],
+  "documentationAudit": {
+    "date": "2026-10-31",
+    "base": "af8e7bbf72d008337d805370d1b70e5504e544e4",
+    "changed": [
+      "docs/implementation/convergence-evidence-history.md",
+      "docs/implementation/current-status.md"
+    ],
+    "checkedDocuments": 129,
+    "relativeLinks": 648,
+    "brokenLinks": [],
+    "unclosedFences": [],
+    "statusCommitIds": 48,
+    "unretainedIds": [],
+    "historicalRawChanges": [],
+    "historicalPrefixPreserved": true,
+    "heldFiles": 20,
+    "heldDrift": 0,
+    "partialCliOriginalWipProof": true,
+    "rustCargoRun": false
+  },
+  "copiedRawEvidenceHashDrift": 0
+}

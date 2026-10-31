@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "commit": "9bfeeaeb00789fbb81b8b0647da2f135e1567f2f",
+  "parent": "a47b3ebb24d2e0c35e451ece261cb4c394bdf829",
+  "tree": "cb6bff251807cf7ee58ecd0bd963fd2f2d5bf30a",
+  "remote": "9bfeeaeb00789fbb81b8b0647da2f135e1567f2f",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+      "blob": "6883cfab882fa2b21dee08738c499094f694c428"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+      "blob": "d1dcfd320626ee8f7cf9255082c067124aa90276"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+      "blob": "baf87ddcf79952991ce66246576c462bc85b2996"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+      "blob": "8e9485c4e1803ce914656cf15c62492dc0f50c71"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "blob": "af9a804d27f0997731585de717a2f6f8bf425360"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/banks.rs",
+      "blob": "d83d851da682ed45429818596d52a34aeacac5ae"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/execution.rs",
+      "blob": "7bea53bed76217128db687f49c535e7c97da5db1"
+    },
+    {
+      "path": "docs/02-runtime/save-replay.md",
+      "blob": "40a15bda20cb47508b857e938af7dcce214e9449"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "60594091a6a28b2eaff45e8ca45274e0734f1de6"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "77f1fa8aecff9b989c1d13dc7691d94cecbfa173745479467aeffdda6872556b",
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-31T09:25:39.2239047Z"
+}

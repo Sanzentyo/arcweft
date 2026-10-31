@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "9bfeeaeb00789fbb81b8b0647da2f135e1567f2f",
+  "run": "presentation-vm-terminal-20261031T092854460.green.runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [  70.293s] 2159 tests run: 2159 passed, 0 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 2159,
+  "passed": 2159,
+  "failed": 0,
+  "skipped": 0,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4015,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-31T09:30:45.1886535Z"
+}

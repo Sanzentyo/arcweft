@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "commit": "af8e7bbf72d008337d805370d1b70e5504e544e4",
+  "parent": "9bfeeaeb00789fbb81b8b0647da2f135e1567f2f",
+  "tree": "2318b653f1cf85a8c7471c73e22fb6389efced6a",
+  "remote": "af8e7bbf72d008337d805370d1b70e5504e544e4",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber.rs",
+      "blob": "15458f1ecdd6e569c0f3e24c08886e8dd926234a"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "blob": "a26940ac89e5b7bc85af42a3c90f9d5cec60a4ff"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/vm.rs",
+      "blob": "3461d9adae7474b93e291da0baf52ebccd68ed14"
+    },
+    {
+      "path": "docs/implementation/convergence-evidence-history.md",
+      "blob": "e42a3b9a6f8fa4c5da4d9c90c64d00ddc629c135"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "451b9044f05b471564627d60ac0a2cd9335b4124f20d133d0fcc4e8c797afdb7",
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-31T09:33:06.5004304Z"
+}

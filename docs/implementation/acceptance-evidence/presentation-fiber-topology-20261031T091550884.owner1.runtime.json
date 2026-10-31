@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "base": "723e6eb0383a1049ef0faa5a7448360e328bf4db",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-fiber-topology-20261031T091550884.owner1.runtime.log",
+  "exitCode": 100,
+  "startedAt": "2026-10-31T09:17:36.6931326Z",
+  "finishedAt": "2026-10-31T09:18:50.7886483Z"
+}

@@ -1,0 +1,261 @@
+diff --git a/crates/arcweft-core/src/awbc/fiber.rs b/crates/arcweft-core/src/awbc/fiber.rs
+index 6dde206524ab647979879cd66c62a36b8452fa7d..15458f1ecdd6e569c0f3e24c08886e8dd926234a 100644
+--- a/crates/arcweft-core/src/awbc/fiber.rs
++++ b/crates/arcweft-core/src/awbc/fiber.rs
+@@ -3943,22 +3943,27 @@ impl FiberState {
+         }
+         Ok(())
+     }
+-    /// Detaches all registered cleanups in whole-stack unwind order.
+-    ///
+-    /// Frames unwind from callee to caller. Each frame first drains lexical
+-    /// scopes from innermost to outermost and then drains frame-root cleanups.
+-    /// Entries are removed while collecting them, so a later terminal signal
+-    /// cannot execute the same cleanup twice.
+-    pub(super) fn take_unwind_cleanups(
+-        &mut self,
++    /// Checks whole-stack custody before a goto moves its target or arguments.
++    pub(super) fn validate_unwind_cleanup_inputs(
++        &self,
+         program: &AwbcProgram,
+-    ) -> Result<Vec<FiberCleanupDispatch>, FiberStateError> {
++    ) -> Result<(), FiberStateError> {
+         if self.frames.iter().any(FiberFrame::has_presentation_scopes) {
+             return Err(FiberStateError::Snapshot(
+                 crate::presentation::RuntimePresentationError::MissingLedger.into(),
+             ));
+         }
+-        self.validate_cleanup_inputs(program)?;
++        self.validate_cleanup_inputs(program)
++    }
++
++    /// Detaches all registered cleanups in whole-stack unwind order.
++    /// Frames unwind from callee to caller, lexical scopes before root cleanups.
++    /// Removing entries here prevents a later terminal signal from repeating them.
++    pub(super) fn take_unwind_cleanups(
++        &mut self,
++        program: &AwbcProgram,
++    ) -> Result<Vec<FiberCleanupDispatch>, FiberStateError> {
++        self.validate_unwind_cleanup_inputs(program)?;
+         let mut cleanups = Vec::new();
+         for frame in self.frames.iter_mut().rev() {
+             for scope in frame.scopes.iter_mut().rev() {
+@@ -3973,16 +3978,24 @@ impl FiberState {
+         Ok(cleanups)
+     }
+ 
+-    pub(super) fn take_active_frame_cleanups(
+-        &mut self,
++    /// Checks return/selection custody without moving the result register.
++    pub(super) fn validate_active_frame_cleanup_inputs(
++        &self,
+         program: &AwbcProgram,
+-    ) -> Result<Vec<FiberCleanupDispatch>, FiberStateError> {
++    ) -> Result<(), FiberStateError> {
+         if self.active_frame()?.has_presentation_scopes() {
+             return Err(FiberStateError::Snapshot(
+                 crate::presentation::RuntimePresentationError::MissingLedger.into(),
+             ));
+         }
+-        self.validate_cleanup_inputs(program)?;
++        self.validate_cleanup_inputs(program)
++    }
++
++    pub(super) fn take_active_frame_cleanups(
++        &mut self,
++        program: &AwbcProgram,
++    ) -> Result<Vec<FiberCleanupDispatch>, FiberStateError> {
++        self.validate_active_frame_cleanup_inputs(program)?;
+         let frame = self.active_frame_mut()?;
+         let mut cleanups = Vec::new();
+         for scope in frame.scopes.iter_mut().rev() {
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs b/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
+index af9a804d27f0997731585de717a2f6f8bf425360..a26940ac89e5b7bc85af42a3c90f9d5cec60a4ff 100644
+--- a/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
++++ b/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
+@@ -5,6 +5,135 @@ use crate::presentation::resources::{
+ use crate::runtime_id::{RuntimePresentationBankId, RuntimePresentationHandleToken};
+ use arcweft_interaction_model::presentation::PresentationResourceKind;
+ 
++#[test]
++fn vm_terminal_return_preserves_the_affine_result_until_scope_custody_is_available() {
++    use crate::program_invocation::RuntimeProgramInput;
++    let (executor, program, token) = completed_handle_program();
++    let mut executor = executor
++        .continue_program(program, vec![RuntimeProgramInput::PreviousResult])
++        .unwrap();
++    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
++    let mut banks = PresentationBanks::<PresentationBody<RuntimePayload>>::new(
++        owner.clone(),
++        executor.artifact_fingerprint,
++        PresentationLedgerLimits::for_schema(crate::entry::RuntimeSchemaLimits::engine_default()),
++    );
++    let ledger = banks.ledger_mut(RuntimePresentationBankId::Root).unwrap();
++    executor
++        .fiber
++        .bind_presentation_scope(&owner, ledger)
++        .unwrap();
++    let cursor = executor.fiber.cursor;
++    let error = crate::awbc::vm::step(
++        &executor.program,
++        &mut executor.fiber,
++        crate::awbc::vm::VmStepOptions {
++            max_instructions: 64,
++        },
++    )
++    .unwrap_err();
++    assert!(
++        error
++            .to_string()
++            .contains(&crate::presentation::RuntimePresentationError::MissingLedger.to_string()),
++        "{error}"
++    );
++    let retained = executor.fiber.active_frame().unwrap().registers[0]
++        .as_ref()
++        .expect("failed return must retain the affine register");
++    assert_eq!(retained.affine_line_handles().unwrap()[0].token(), &token);
++    assert_eq!(executor.fiber.cursor, cursor);
++    assert_eq!(executor.fiber.status, FiberStatus::Running);
++    assert!(
++        executor
++            .fiber
++            .release_presentation_scope(&owner, ledger)
++            .unwrap()
++            .is_empty()
++    );
++    let output = crate::awbc::vm::step(
++        &executor.program,
++        &mut executor.fiber,
++        crate::awbc::vm::VmStepOptions {
++            max_instructions: 64,
++        },
++    )
++    .unwrap();
++    let crate::awbc::vm::VmExit::Returned(Some(value)) = output.exit else {
++        panic!("return resumes after original scope retirement")
++    };
++    assert_eq!(value.affine_line_handles().unwrap()[0].token(), &token);
++}
++
++#[test]
++fn vm_terminal_dialogue_selection_preserves_its_value_until_scope_custody_is_available() {
++    let program = mark_selector_program(
++        arcweft_interaction_model::input::InputActionId::new("dialogue.cancel.cleanup").unwrap(),
++    );
++    let mut executor = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 64).unwrap();
++    let activation = issue_test_dialogue(&mut executor, AwbcContentUnitId(0));
++    let mut fiber = create_test_dialogue_fiber(&mut executor, activation, AwbcFunctionId(2));
++    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
++    let mut banks = PresentationBanks::<PresentationBody<RuntimePayload>>::new(
++        owner.clone(),
++        executor.artifact_fingerprint,
++        PresentationLedgerLimits::for_schema(crate::entry::RuntimeSchemaLimits::engine_default()),
++    );
++    let ledger = banks
++        .ledger_mut(RuntimePresentationBankId::Dialogue { activation })
++        .unwrap();
++    fiber.bind_presentation_scope(&owner, ledger).unwrap();
++    crate::awbc::vm::step(
++        &executor.program,
++        &mut fiber,
++        crate::awbc::vm::VmStepOptions {
++            max_instructions: 1,
++        },
++    )
++    .unwrap();
++    let cursor = fiber.cursor;
++    let error = crate::awbc::vm::step(
++        &executor.program,
++        &mut fiber,
++        crate::awbc::vm::VmStepOptions {
++            max_instructions: 1,
++        },
++    )
++    .unwrap_err();
++    assert!(
++        error
++            .to_string()
++            .contains(&crate::presentation::RuntimePresentationError::MissingLedger.to_string()),
++        "{error}"
++    );
++    assert_eq!(
++        fiber.active_frame().unwrap().registers[0].as_ref(),
++        Some(&RuntimeValue::String("selected-result".into()))
++    );
++    assert_eq!(fiber.cursor, cursor);
++    assert_eq!(fiber.status, FiberStatus::Running);
++    assert!(
++        fiber
++            .release_presentation_scope(&owner, ledger)
++            .unwrap()
++            .is_empty()
++    );
++    let output = crate::awbc::vm::step(
++        &executor.program,
++        &mut fiber,
++        crate::awbc::vm::VmStepOptions {
++            max_instructions: 1,
++        },
++    )
++    .unwrap();
++    assert_eq!(
++        output.exit,
++        crate::awbc::vm::VmExit::DialogueResultSelected(RuntimeValue::String(
++            "selected-result".into()
++        ))
++    );
++}
++
+ fn fixture() -> (AwbcProductStepExecutor, RuntimePresentationHandleToken) {
+     let mut program = return_program();
+     let expected = crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest();
+diff --git a/crates/arcweft-core/src/awbc/vm.rs b/crates/arcweft-core/src/awbc/vm.rs
+index 3eb694b542b8bcc8e6f6ea54ba9a6174a3286a6a..3461d9adae7474b93e291da0baf52ebccd68ed14 100644
+--- a/crates/arcweft-core/src/awbc/vm.rs
++++ b/crates/arcweft-core/src/awbc/vm.rs
+@@ -2823,15 +2823,16 @@ fn execute_terminator(
+ ) -> Result<VmExit, VmError> {
+     // These exits transfer registers before dropping frame custody. Reject an
+     // invalid later cleanup before the first return value or argument moves.
+-    if matches!(
+-        terminator,
+-        AwbcTerminator::GotoStatic { .. }
+-            | AwbcTerminator::GotoDynamic { .. }
+-            | AwbcTerminator::Return { .. }
+-            | AwbcTerminator::Complete
+-            | AwbcTerminator::SelectDialogueResult { .. }
+-    ) {
+-        fiber.validate_cleanup_inputs(program)?;
++    match terminator {
++        AwbcTerminator::GotoStatic { .. } | AwbcTerminator::GotoDynamic { .. } => {
++            fiber.validate_unwind_cleanup_inputs(program)?;
++        }
++        AwbcTerminator::Return { .. }
++        | AwbcTerminator::Complete
++        | AwbcTerminator::SelectDialogueResult { .. } => {
++            fiber.validate_active_frame_cleanup_inputs(program)?;
++        }
++        _ => {}
+     }
+     match terminator {
+         AwbcTerminator::Jump { target } => {
+diff --git a/docs/implementation/convergence-evidence-history.md b/docs/implementation/convergence-evidence-history.md
+index 60594091a6a28b2eaff45e8ca45274e0734f1de6..e42a3b9a6f8fa4c5da4d9c90c64d00ddc629c135 100644
+--- a/docs/implementation/convergence-evidence-history.md
++++ b/docs/implementation/convergence-evidence-history.md
+@@ -13471,3 +13471,15 @@ Supersedes: AWBC実行bank選択の実装進捗を記録する。公開save deco
+ 初回owner1は2155件中2147 PASS／8 FAIL・0 skipped・source4015差分0。8件は旧fixtureのRoot context／未割当fiber／未発行namespaceが新しい境界で拒否された。owner2のcatalogはmutable-reference fixtureの再borrowによるE0596で終了101、runtime未実行。修正したowner3は2157／2157 PASS・0 skipped・終了0、source4015／binary／catalog差分0。新規9件はnamespace・親／bank関係とsticky failure、bind／releaseとlive／inert grantの失敗原子性、実Product公開saveのbank往復・重複activation fiber・不正bodyより前のmetadata拒否を確認した。先行check0と各失敗は別入力の履歴として保持し、最終owner結果へ合算しない。qualityと全逆依存は後続Core cohortで実施する。
+ 
+ Supersedes: a47b3ebb24d2e0c35e451ece261cb4c394bdf829の検証途中記録を、上記の終端結果と早期検査追加で更新する。AWBCの実行bank生成／Product保存の当該境界を、全実行checkpoint／VM cleanup、Sourceの11 callable・mount(ViewValue)・6 method、Native借用Dialogue、driver・置換・画像parityの受入へ拡張しない。Generic Matchと他の既受入は維持する。
++
++## VM終了前のcleanup custody検査と値保持 — 2026-10-31
++
++確認base 9bfeeaeb00789fbb81b8b0647da2f135e1567f2f（AWBC bank早期検査の通常公開、parent a47b3ebb24d2e0c35e451ece261cb4c394bdf829、tree cb6bff251807cf7ee58ecd0bd963fd2f2d5bf30a、patch SHA256 77f1fa8aecff9b989c1d13dc7691d94cecbfa173745479467aeffdda6872556b、9 path、remote／blob差分0）。
++
++新たに再現した不具合: VM ReturnとSelectDialogueResultは、scope cleanupが元ledgerを必要とする場合でも、結果registerをtakeした後でMissingLedgerを返していた。通常returnでは実affine StageActor handleが失われ、Dialogue結果選択ではString registerがNoneになった。redの限定2件は両方FAIL・2104選択外でこの実値損失を示した。これはGeneric Matchなど既受入の取り消しではなく、Presentation scopeを持つVM終了という新しい境界の不具合である。
++
++FiberStateに、active frameとwhole-stack unwindそれぞれのread-only cleanup preflightを置いた。VM Return／Complete／結果選択はactive frame、静的／動的gotoは全frameを、結果・target・引数を動かす前に検査する。既存のcleanupを取り出す処理も同じpreflightを使う。scope回収後の再実行で同じaffine tokenが一度だけ返ること、Dialogue選択値が保持され再実行できることを確認した。MissingLedgerを隠したり、別bankや新しいownerへ退避したりしていない。
++
++修正したgreenはCore全2159／2159 PASS・0 skipped・終了0、4015入力／binary／catalog差分0。全件の後にfiber.rsのprivate methodのdoc commentのみを修正し、実行コード／testは変更していない。qualityはこの注釈修正後の4015入力を別途凍結して実行している。Core Clippyは終了0、default／doctest／構造／fmtは記録時点で進行中。各runの原本とfull SHAを次の検証記録へ保持する。既存14 tracked／6 untracked WIPを維持する。
++
++Supersedes: 既存cleanup条件を値移動前に検査する修復であり、bankを伴う全checkpointやVMの自動cleanup接続の完了ではない。Sourceの11 callable・mount(ViewValue)・6 method、Native Dialogue借用contour、driver・置換・画像parityも別の未達条件として維持する。

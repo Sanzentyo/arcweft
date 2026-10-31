@@ -13483,3 +13483,13 @@ FiberStateに、active frameとwhole-stack unwindそれぞれのread-only cleanu
 修正したgreenはCore全2159／2159 PASS・0 skipped・終了0、4015入力／binary／catalog差分0。全件の後にfiber.rsのprivate methodのdoc commentのみを修正し、実行コード／testは変更していない。qualityはこの注釈修正後の4015入力を別途凍結して実行している。Core Clippyは終了0、default／doctest／構造／fmtは記録時点で進行中。各runの原本とfull SHAを次の検証記録へ保持する。既存14 tracked／6 untracked WIPを維持する。
 
 Supersedes: 既存cleanup条件を値移動前に検査する修復であり、bankを伴う全checkpointやVMの自動cleanup接続の完了ではない。Sourceの11 callable・mount(ViewValue)・6 method、Native Dialogue借用contour、driver・置換・画像parityも別の未達条件として維持する。
+
+## AWBC実行bank・VM terminal修復の公開照合と品質検証 — 2026-10-31
+
+Source af8e7bbf72d008337d805370d1b70e5504e544e4、parent 9bfeeaeb00789fbb81b8b0647da2f135e1567f2f、tree 2318b653f1cf85a8c7471c73e22fb6389efced6a、4 path、patch SHA256 451b9044f05b471564627d60ac0a2cd9335b4124f20d133d0fcc4e8c797afdb7を通常pushし、remote／全blob差分0・index empty・元14 tracked／6 untracked WIP保持を確認した。先行bank context公開a47b3ebb24d2e0c35e451ece261cb4c394bdf829からのSource三cutを、同じ履歴の中に保持する。
+
+最後のruntime greenは2159／2159 PASS・0 skipped・4015入力差分0。後続のprivate doc commentだけの差分は、元注釈へ戻すとtested fiber.rsのSHA256と完全一致することで照合した。注釈修正後の4015入力は別に凍結し、Core all-target/all-feature Clippy・Core default all-target check・doctest 78／78・明示23 Rust pathのfmt・構造gateが各終了0。構造は97 package・3253 files・3123 Rust files・1769594 physical Rust LOCで、blockingなし。warningを成功件数から隠したり、workspace／全逆依存の新規runと読み替えたりしない。
+
+所有境界のreview: FiberStateは物理frameの生成contextとcleanup preflight、resourcesの一時borrowed admission contextはnamespace／bank／親子関係、Productのlive／inert adapterは実際の全ownerの列挙を担う。既存の大きなfiber／VM／snapshot moduleはframe・終了dispatch・完全なimageという責務を維持する。別の永続indexや資源発行ownerを追加せず、個別testはProduct Presentation ownerの下に置いた。Cargo edge・I/O・unsafeは追加していない。該当ownerのbytes／physical LOC／埋込test LOC／依存fan-in/outとscanner原本を保持した。[全run・初回8 FAIL・catalog失敗・値損失red 2 FAIL・最終green・注釈reuse根拠・75原本](acceptance-evidence/task-presentation-fiber-context-owner-validation.json)。異なるSourceの2157／2159を合算しない。
+
+Supersedes: 現状一覧のAWBC実行bank選択を「未接続」のまま残さず、実装・検証済みの生成／公開保存境界へ更新した。VMの値保持修復を全checkpoint／自動cleanup接続の完了とはしない。Root Bool bodyとDialogue namespace fixtureをSource ViewValue／mount、active-bank置換、画像parityの証拠へ拡張しない。全逆依存は後続の同一Core cohortで実施する。Generic Matchとその他の既受入を未完了へ戻さない。現状の項目別説明は現状一覧一か所を維持する。
