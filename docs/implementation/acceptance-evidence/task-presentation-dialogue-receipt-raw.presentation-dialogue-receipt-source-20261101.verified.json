@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "commit": "9b2915863eb5f37b44ec1d421b48f1980f683789",
+  "parent": "d2134c4eac4223729a7d6b3b69f7f2f9bcc51273",
+  "tree": "1e85c348847a15195ac4bc1c1e11b7587eb66980",
+  "remote": "9b2915863eb5f37b44ec1d421b48f1980f683789",
+  "paths": [
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber/scope.rs",
+      "blob": "d9328c58265016d3bbf000293b05cced4dd2180b"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step.rs",
+      "blob": "7d202fc8742ed96086ef2478802d3f20624e7788"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/checkpoint.rs",
+      "blob": "38d704b5e7eff6ed302251367713cb72a08f3f6c"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+      "blob": "7e65164b055d9312ba94a7e0fa16d7478739a1fc"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+      "blob": "6f5545dcb007697814229d6388fbd48a5e5766d8"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+      "blob": "1d0fd119f39b5de7fa5074bfc3d3368a4f8ab841"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+      "blob": "bce0329a660c8ba9a093f01c103a4ae24e88f990"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/receipt.rs",
+      "blob": "f357623c4bcc1b673a353b4aabdd975086bd2f48"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs",
+      "blob": "ffca1308798222325b355d6efe1b34e52187b678"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/vm.rs",
+      "blob": "d32e9a1279803ff730798c505c6b1845f62f37b6"
+    },
+    {
+      "path": "crates/arcweft-core/src/line_task/handle.rs",
+      "blob": "84675171b7a6ecad12946709232e6fcefc15156c"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resources/banks/transition.rs",
+      "blob": "6b70b6c1f3e8480ce79df17748de61f1ccbafde8"
+    },
+    {
+      "path": "crates/arcweft-core/src/value/ownership.rs",
+      "blob": "6c13983b9428bf9c66a895f6d3459dc46df857cc"
+    },
+    {
+      "path": "crates/arcweft-core/src/value/ownership/resources.rs",
+      "blob": "b41ea287eecd434c1e1a44677aa30d0bb9c40a77"
+    }
+  ],
+  "blobDrift": 0,
+  "patchSha256": "6939c7e2bc4424b36fe5b3e7a4bd1cbba595abaa3fcf8ab9b415f8c828435672",
+  "heldPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+  "separatelyHeld": [],
+  "indexEmpty": true,
+  "at": "2026-10-31T16:40:43.8508872Z"
+}

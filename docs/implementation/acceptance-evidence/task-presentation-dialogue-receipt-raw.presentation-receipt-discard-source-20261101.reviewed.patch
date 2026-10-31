@@ -1,0 +1,409 @@
+diff --git a/crates/arcweft-core/src/awbc/vm/resources.rs b/crates/arcweft-core/src/awbc/vm/resources.rs
+index f9ee2571b356a0aad8d1aa77be2a53dbd2de3192..f252dbc4f175b71f61f73fc2f48fa832b4afa326 100644
+--- a/crates/arcweft-core/src/awbc/vm/resources.rs
++++ b/crates/arcweft-core/src/awbc/vm/resources.rs
+@@ -56,7 +56,7 @@ impl VmExecutionResources<'_> {
+             .ok_or(VmError::MissingExecutionContext)?
+             .program_owner(program)?;
+         banks
+-            .exit_scope_contour(&owner, targets, destination, &escaping)
++            .transition_scope_contour(&owner, targets, destination, &escaping, &[])
+             .map_err(|error| FiberStateError::Snapshot(error.into()))?;
+         Ok(())
+     }
+@@ -87,7 +87,7 @@ impl VmExecutionResources<'_> {
+             .ok_or(VmError::MissingExecutionContext)?
+             .program_owner(program)?;
+         banks
+-            .exit_scope_contour(
++            .transition_scope_contour(
+                 &owner,
+                 targets,
+                 Some(crate::presentation::resources::PresentationScopeExit {
+@@ -100,6 +100,7 @@ impl VmExecutionResources<'_> {
+                     scope: replacement.presentation_scope_target(),
+                 }),
+                 &escaping,
++                &[],
+             )
+             .map_err(|error| FiberStateError::Snapshot(error.into()))?;
+         Ok(())
+diff --git a/crates/arcweft-core/src/presentation/resources/banks.rs b/crates/arcweft-core/src/presentation/resources/banks.rs
+index 786bf736d647cf8a2df02323c26ef78ae616c3fe..b35b04d9421f71113a9dc9524b40b18506028de2 100644
+--- a/crates/arcweft-core/src/presentation/resources/banks.rs
++++ b/crates/arcweft-core/src/presentation/resources/banks.rs
+@@ -133,7 +133,11 @@ impl<V> PresentationBanks<V> {
+         targets: impl IntoIterator<Item = PresentationScopeExit<PresentationScopeRef<'scope>>>,
+     ) -> Result<(), RuntimePresentationError> {
+         let owners = self.inspect_scope_contour(program, targets)?;
+-        self.preflight_scope_retirements(&owners, &std::collections::BTreeSet::new())
++        self.preflight_scope_retirements(
++            &owners,
++            &std::collections::BTreeSet::new(),
++            &std::collections::BTreeSet::new(),
++        )
+     }
+ 
+     fn inspect_scope_contour<'scope>(
+@@ -186,6 +190,7 @@ impl<V> PresentationBanks<V> {
+         &self,
+         owners: &std::collections::BTreeSet<PresentationScopeOwner>,
+         escaping: &std::collections::BTreeSet<RuntimePresentationHandleToken>,
++        discarding: &std::collections::BTreeSet<RuntimePresentationHandleToken>,
+     ) -> Result<(), RuntimePresentationError> {
+         let root = self
+             .ledgers
+@@ -196,7 +201,8 @@ impl<V> PresentationBanks<V> {
+             .values()
+             .flat_map(|ledger| ledger.state.leases.values())
+             .filter(|lease| {
+-                lease.owner.is_some_and(|owner| owners.contains(&owner))
++                (lease.owner.is_some_and(|owner| owners.contains(&owner))
++                    || discarding.contains(&lease.token))
+                     && lease.body.is_some()
+                     && !escaping.contains(&lease.token)
+             })
+diff --git a/crates/arcweft-core/src/presentation/resources/banks/tests/transition.rs b/crates/arcweft-core/src/presentation/resources/banks/tests/transition.rs
+index cc3a6f1f70e578fe1e22b2aafbf79df84c30ef32..8de19cb711d91cab351011d37a4a035dc8c19fbb 100644
+--- a/crates/arcweft-core/src/presentation/resources/banks/tests/transition.rs
++++ b/crates/arcweft-core/src/presentation/resources/banks/tests/transition.rs
+@@ -29,7 +29,7 @@ fn exit(
+     destination: Option<&mut RuntimeEnv>,
+     escaping: &[RuntimePresentationHandleToken],
+ ) -> Result<(), RuntimePresentationError> {
+-    banks.exit_scope_contour(
++    banks.transition_scope_contour(
+         program,
+         vec![PresentationScopeExit {
+             execution: execution(),
+@@ -42,6 +42,7 @@ fn exit(
+             scope: env.presentation_scope_target().unwrap(),
+         }),
+         escaping,
++        &[],
+     )
+ }
+ 
+@@ -499,3 +500,229 @@ fn terminal_receipt_detaches_from_an_independent_issuer_before_that_scope_ends()
+             .is_some()
+     );
+ }
++
++#[test]
++fn one_receipt_keeps_its_original_bank_and_discards_both_scoped_and_external_values_once() {
++    let (program, artifact, expected, dialogue) = fixture();
++    let root = RuntimePresentationBankId::Root;
++    let mut banks = PresentationBanks::new(
++        program.clone(),
++        artifact,
++        PresentationLedgerLimits {
++            handles: 4,
++            scopes: 4,
++        },
++    );
++    let mut source = RuntimeEnv::default();
++    let mut issuer = RuntimeEnv::default();
++    let mut receiver = RuntimeEnv::default();
++    let scoped = register(&mut banks, &program, root, &mut source, expected, false);
++    let kept = register(&mut banks, &program, dialogue, &mut issuer, expected, true);
++    let dropped = register(&mut banks, &program, dialogue, &mut issuer, expected, false);
++    let sentinel = register(&mut banks, &program, root, &mut receiver, expected, true);
++    banks
++        .transition_scope_contour(
++            &program,
++            vec![PresentationScopeExit {
++                execution: execution(),
++                fiber: fiber(),
++                scope: source.presentation_scope_target().unwrap(),
++            }],
++            Some(PresentationScopeExit {
++                execution: execution(),
++                fiber: fiber(),
++                scope: receiver.presentation_scope_target().unwrap(),
++            }),
++            std::slice::from_ref(&kept),
++            &[dropped.clone(), scoped.clone()],
++        )
++        .unwrap();
++    assert!(source.presentation_scope_binding().is_none());
++    assert_eq!(
++        banks
++            .retirements()
++            .iter()
++            .map(|item| item.token.clone())
++            .collect::<Vec<_>>(),
++        [scoped, dropped]
++    );
++    let owner = receiver.presentation_scope_binding().unwrap().grants[&dialogue].owner;
++    assert!(
++        banks.ledgers[&dialogue]
++            .validate_handle(&program, &kept, Some(owner))
++            .is_ok()
++    );
++    banks
++        .retire_bound_scope(
++            &program,
++            execution(),
++            fiber(),
++            issuer.presentation_scope_target().unwrap(),
++        )
++        .unwrap();
++    assert_eq!(banks.retirements().len(), 2);
++    banks
++        .retire_bound_scope(
++            &program,
++            execution(),
++            fiber(),
++            receiver.presentation_scope_target().unwrap(),
++        )
++        .unwrap();
++    assert_eq!(
++        banks.retirements()[2..]
++            .iter()
++            .map(|item| item.token.clone())
++            .collect::<Vec<_>>(),
++        [sentinel, kept]
++    );
++}
++
++#[test]
++fn receipt_capacity_includes_unwind_and_external_discard_before_any_input_moves() {
++    let (program, artifact, expected, dialogue) = fixture();
++    let root = RuntimePresentationBankId::Root;
++    let mut banks = PresentationBanks::new(
++        program.clone(),
++        artifact,
++        PresentationLedgerLimits {
++            handles: 3,
++            scopes: 4,
++        },
++    );
++    let mut prior = RuntimeEnv::default();
++    register(&mut banks, &program, root, &mut prior, expected, false);
++    banks
++        .retire_bound_scope(
++            &program,
++            execution(),
++            fiber(),
++            prior.presentation_scope_target().unwrap(),
++        )
++        .unwrap();
++    let mut source = RuntimeEnv::default();
++    let mut issuer = RuntimeEnv::default();
++    let mut receiver = RuntimeEnv::default();
++    let scoped = register(&mut banks, &program, root, &mut source, expected, false);
++    let other = register(&mut banks, &program, root, &mut source, expected, false);
++    let kept = register(&mut banks, &program, dialogue, &mut issuer, expected, true);
++    let dropped = register(&mut banks, &program, dialogue, &mut issuer, expected, false);
++    let before = banks.snapshot_admitted().unwrap();
++    let original_scope = source
++        .presentation_scope_binding()
++        .unwrap()
++        .snapshot_admitted(&program)
++        .unwrap();
++    for _ in 0..2 {
++        assert_eq!(
++            banks.transition_scope_contour(
++                &program,
++                vec![PresentationScopeExit {
++                    execution: execution(),
++                    fiber: fiber(),
++                    scope: source.presentation_scope_target().unwrap(),
++                }],
++                Some(PresentationScopeExit {
++                    execution: execution(),
++                    fiber: fiber(),
++                    scope: receiver.presentation_scope_target().unwrap(),
++                }),
++                std::slice::from_ref(&kept),
++                &[dropped.clone(), scoped.clone()]
++            ),
++            Err(RuntimePresentationError::RetirementCapacity)
++        );
++        assert_eq!(banks.snapshot_admitted().unwrap(), before);
++        assert_eq!(
++            source
++                .presentation_scope_binding()
++                .unwrap()
++                .snapshot_admitted(&program)
++                .unwrap(),
++            original_scope
++        );
++        assert!(receiver.presentation_scope_binding().is_none());
++    }
++    banks.retirements_mut().clear();
++    banks
++        .transition_scope_contour(
++            &program,
++            vec![PresentationScopeExit {
++                execution: execution(),
++                fiber: fiber(),
++                scope: source.presentation_scope_target().unwrap(),
++            }],
++            Some(PresentationScopeExit {
++                execution: execution(),
++                fiber: fiber(),
++                scope: receiver.presentation_scope_target().unwrap(),
++            }),
++            std::slice::from_ref(&kept),
++            &[dropped.clone(), scoped.clone()],
++        )
++        .unwrap();
++    assert_eq!(
++        banks
++            .retirements()
++            .iter()
++            .map(|item| item.token.clone())
++            .collect::<Vec<_>>(),
++        [scoped, other, dropped]
++    );
++    assert!(receiver.presentation_scope_binding().is_some());
++}
++
++#[test]
++fn invalid_or_overlapping_discard_cannot_follow_an_earlier_escape_move() {
++    let (program, artifact, expected, _) = fixture();
++    let root = RuntimePresentationBankId::Root;
++    let mut banks = PresentationBanks::new(
++        program.clone(),
++        artifact,
++        PresentationLedgerLimits {
++            handles: 4,
++            scopes: 4,
++        },
++    );
++    let mut source = RuntimeEnv::default();
++    let mut receiver = RuntimeEnv::default();
++    let kept = register(&mut banks, &program, root, &mut source, expected, true);
++    let dropped = register(&mut banks, &program, root, &mut source, expected, false);
++    let invalid = RuntimePresentationHandleToken::from_issued(
++        artifact,
++        PresentationResourceKind::Image,
++        execution(),
++        fiber(),
++        NonZeroU64::new(99).unwrap(),
++        root,
++    );
++    let before = banks.snapshot_admitted().unwrap();
++    for discarded in [
++        vec![kept.clone()],
++        vec![dropped.clone(), dropped.clone()],
++        vec![dropped, invalid],
++    ] {
++        assert!(
++            banks
++                .transition_scope_contour(
++                    &program,
++                    vec![PresentationScopeExit {
++                        execution: execution(),
++                        fiber: fiber(),
++                        scope: source.presentation_scope_target().unwrap(),
++                    }],
++                    Some(PresentationScopeExit {
++                        execution: execution(),
++                        fiber: fiber(),
++                        scope: receiver.presentation_scope_target().unwrap(),
++                    }),
++                    std::slice::from_ref(&kept),
++                    &discarded
++                )
++                .is_err()
++        );
++        assert_eq!(banks.snapshot_admitted().unwrap(), before);
++        assert!(source.presentation_scope_binding().is_some());
++        assert!(receiver.presentation_scope_binding().is_none());
++    }
++}
+diff --git a/crates/arcweft-core/src/presentation/resources/banks/transition.rs b/crates/arcweft-core/src/presentation/resources/banks/transition.rs
+index ddfd9bcb5ae4a1c82e405d4627b43dcbf0651863..332e190786cfe4292fde7ed128760834856e26b5 100644
+--- a/crates/arcweft-core/src/presentation/resources/banks/transition.rs
++++ b/crates/arcweft-core/src/presentation/resources/banks/transition.rs
+@@ -7,19 +7,24 @@ impl<V> PresentationBanks<V> {
+     /// The source and receiver are actual borrowed storage anchors. All grant,
+     /// token, queue and destination cursor admission precedes the first move.
+     /// No body is cloned and a terminal receiver retains its original token.
+-    pub(crate) fn exit_scope_contour(
++    pub(crate) fn transition_scope_contour(
+         &mut self,
+         program: &RuntimeProgramOwner,
+         targets: Vec<PresentationScopeExit<PresentationScopeTarget<'_>>>,
+         mut destination: Option<PresentationScopeExit<PresentationScopeTarget<'_>>>,
+         escaping: &[RuntimePresentationHandleToken],
++        discarding: &[RuntimePresentationHandleToken],
+     ) -> Result<(), RuntimePresentationError> {
+         let root = self
+             .ledgers
+             .get(&RuntimePresentationBankId::Root)
+             .ok_or(RuntimePresentationError::InvalidState)?;
+         root.validate_program(program)?;
+-        if escaping.len() > root.limits.handles {
++        if escaping
++            .len()
++            .checked_add(discarding.len())
++            .is_none_or(|count| count > root.limits.handles)
++        {
+             return Err(RuntimePresentationError::Capacity);
+         }
+         let mut selected = BTreeSet::new();
+@@ -28,6 +33,24 @@ impl<V> PresentationBanks<V> {
+                 return Err(RuntimePresentationError::InvalidState);
+             }
+         }
++        let mut discarded = BTreeSet::new();
++        let mut discard_owners = Vec::new();
++        for token in discarding {
++            if selected.contains(token) || !discarded.insert(token.clone()) {
++                return Err(RuntimePresentationError::InvalidState);
++            }
++            let ledger = self
++                .ledgers
++                .get(&token.bank())
++                .ok_or(RuntimePresentationError::UnknownHandle)?;
++            let lease = ledger
++                .state
++                .leases
++                .get(&token.issuance())
++                .ok_or(RuntimePresentationError::UnknownHandle)?;
++            ledger.validate_handle(program, token, lease.owner)?;
++            discard_owners.push((token, lease.owner));
++        }
+         let owners = self.inspect_scope_contour(
+             program,
+             targets.iter().map(|target| PresentationScopeExit {
+@@ -36,7 +59,7 @@ impl<V> PresentationBanks<V> {
+                 scope: target.scope.as_ref(),
+             }),
+         )?;
+-        self.preflight_scope_retirements(&owners, &selected)?;
++        self.preflight_scope_retirements(&owners, &selected, &discarded)?;
+         let receiving_owners = if let Some(receiver) = &destination {
+             let receiving = self.inspect_scope_contour(
+                 program,
+@@ -101,6 +124,27 @@ impl<V> PresentationBanks<V> {
+         }
+         self.retire_scope_contour(program, targets)
+             .expect("exclusive contour remains admitted after escaping leases detach");
++        // Discards in the exiting contour already followed its deterministic
++        // scope/bank/issuance order. The remaining packet values follow their
++        // original source order, under the same aggregate capacity admission.
++        for (token, owner) in discard_owners {
++            if owner.is_some_and(|owner| owners.contains(&owner)) {
++                continue;
++            }
++            let ledger = self
++                .ledgers
++                .get_mut(&token.bank())
++                .expect("discarding ledger admitted");
++            if let Some(body) = ledger
++                .release(program, token, owner)
++                .expect("discarding token and original owner admitted")
++            {
++                self.retirements.push(PresentationRetirement {
++                    token: token.clone(),
++                    body,
++                });
++            }
++        }
+         if let Some(receiver) = destination.as_mut() {
+             for (bank, expected) in &receiving {
+                 let actual = self

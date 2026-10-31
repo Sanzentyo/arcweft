@@ -1,0 +1,5 @@
+Preflight presentation receipt discards with scope retirement
+
+Use one original-bank transaction for escaping and explicitly discarded tokens. Count the union of scope retirement and discarded leases before any move, reject overlapping/duplicate inputs, and keep contour retirement order without double release.
+
+Validation: 16 focused domain and real VM Return/Goto cases passed on 4031 frozen inputs, with zero input/catalog/executable drift. Actual Dialogue publication integration follows this foundation cut.

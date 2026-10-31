@@ -1,0 +1,7 @@
+Bind actual Dialogue presentation results into Root custody
+
+Prepare all affine pattern destinations through one typed resource inventory. Commit original-bank receipt transfers and discards together with the complete actual cancelled-child contour. Shared line-ledger projections select their own family while standalone line-only custody remains strict.
+
+Checkpoint the complete admitted session before reducer publication so a refused transition restores the actual result, grants, pending ingress and staged ownership. The trusted test producer issues a real D-bank token on the actual action child; production VM Select and Root publication consume it without renaming.
+
+Validation: two direct real-D receipt/ExitScope/modelled ACK and bounded refusal/retry tests pass on4032 frozen inputs. Earlier pre-session-checkpoint Core run2214 passed on4031 inputs. Final full gates and additional save/checkpoint coverage follow this cut; no Source ViewValue/driver acceptance is claimed.

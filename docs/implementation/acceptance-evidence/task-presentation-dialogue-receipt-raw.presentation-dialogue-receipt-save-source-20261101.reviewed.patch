@@ -1,0 +1,48 @@
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests/presentation/receipt.rs b/crates/arcweft-core/src/awbc/product_step/tests/presentation/receipt.rs
+index f357623c4bcc1b673a353b4aabdd975086bd2f48..e71c52068ef2f1d89acaad8b03cce2dfd76c4d56 100644
+--- a/crates/arcweft-core/src/awbc/product_step/tests/presentation/receipt.rs
++++ b/crates/arcweft-core/src/awbc/product_step/tests/presentation/receipt.rs
+@@ -353,6 +353,10 @@ fn fixture(
+ #[test]
+ fn actual_dialogue_handle_receives_root_scope_and_lexical_exit_retires_it_once() {
+     let (mut executor, token) = fixture(false, false);
++    let before_publication = executor.snapshot().unwrap();
++    let checkpoint =
++        crate::awbc::product_step::checkpoint::ProductSessionCheckpoint::capture(&executor)
++            .unwrap();
+     advance(&mut executor);
+     assert_eq!(executor.fiber.status, FiberStatus::Running);
+     assert!(
+@@ -365,6 +369,20 @@ fn actual_dialogue_handle_receives_root_scope_and_lexical_exit_retires_it_once()
+         [crate::value::ownership::RuntimeAffineHandle::Presentation { token: received, .. }] if received == &token)
+     );
+     executor.snapshot().unwrap();
++    let published = executor.snapshot().unwrap();
++    let saved = AwbcProductExecutorSaveSnapshot::from_live(
++        &executor.snapshot_for_save().unwrap(),
++        executor.admitted_program(),
++    )
++    .unwrap();
++    let bytes = serde_json::to_vec(&saved).unwrap();
++    executor = executor
++        .restore_inert_snapshot_owned(serde_json::from_slice(&bytes).unwrap())
++        .unwrap();
++    assert_eq!(executor.snapshot().unwrap(), published);
++    checkpoint.restore(&mut executor).unwrap();
++    assert_eq!(executor.snapshot().unwrap(), before_publication);
++    advance(&mut executor);
+     advance(&mut executor); // Actual Root ExitScope.
+     assert_eq!(
+         executor.presentation.as_ref().unwrap().retirements()[0].token,
+@@ -387,6 +405,11 @@ fn discarded_dialogue_handle_refuses_without_losing_result_and_retries_after_ack
+     for _ in 0..2 {
+         let result = executor.step(Default::default(), one_op());
+         assert_eq!(result.output.diagnostics.len(), 1);
++        assert!(result.output.diagnostics[0].message.contains(
++            &crate::presentation::RuntimePresentationError::RetirementCapacity.to_string()
++        ));
++        assert!(result.output.requests.line_commands.is_empty());
++        assert!(result.output.flow_events.is_empty());
+         assert_eq!(executor.snapshot().unwrap(), before);
+     }
+     executor

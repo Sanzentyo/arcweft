@@ -1,0 +1,403 @@
+use super::*;
+use crate::awbc::schema::*;
+use crate::awbc::vm::{VmError, VmExecutionContext, VmExit, VmHost, VmStepOptions};
+use crate::pattern::{RuntimeCheckedType, RuntimeOpaqueTypeAdmission};
+use crate::value::{RuntimeOpaquePersistence, RuntimeOpaqueValue, RuntimeOpaqueValueClass};
+
+struct IssuedHandleHost(Option<RuntimeValue>);
+
+impl VmHost for IssuedHandleHost {
+    fn call_intrinsic(
+        &mut self,
+        _: &AwbcProgram,
+        _: AwbcIntrinsicId,
+        args: Vec<RuntimeValue>,
+    ) -> Result<Option<RuntimeValue>, VmError> {
+        assert!(args.is_empty());
+        Ok(self.0.take())
+    }
+
+    fn try_call_pure_helper(
+        &mut self,
+        _: &AwbcProgram,
+        _: AwbcPureHelperId,
+        _: &[RuntimeValue],
+    ) -> Result<Option<RuntimeValue>, VmError> {
+        Ok(None)
+    }
+}
+
+fn one_op() -> RuntimeStepOptions {
+    RuntimeStepOptions {
+        budget: crate::step::RuntimeStepBudget { max_ops: 1 },
+        ..Default::default()
+    }
+}
+
+fn advance(executor: &mut AwbcProductStepExecutor) {
+    let output = executor.step(Default::default(), one_op());
+    assert!(
+        output.output.diagnostics.is_empty(),
+        "{:?}",
+        output.output.diagnostics
+    );
+}
+
+fn program(discard: bool) -> AwbcProgram {
+    let mut program = mark_selector_program(
+        arcweft_interaction_model::input::InputActionId::new("receipt.cancel").unwrap(),
+    );
+    let producer = AwbcStringId(program.strings.len().try_into().unwrap());
+    program.strings.push("fixture.presentation.handle".into());
+    program.content_units[0].public_id = AwbcStringId(program.strings.len().try_into().unwrap());
+    program.strings.push("line.receipt".into());
+    let handle = AwbcTypeId(3);
+    program.runtime_types.push(AwbcRuntimeType::new(
+        RuntimeSemanticTypeId::from_bytes([0xad; 32]),
+        AwbcRuntimeTypeShape::Opaque {
+            producer,
+            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+            value_class: RuntimeOpaqueValueClass::PresentationHandle,
+            persistence: RuntimeOpaquePersistence::SnapshotOnly,
+            arguments: vec![],
+        },
+    ));
+    program.runtime_types.push(AwbcRuntimeType::new(
+        RuntimeCheckedType::Bool.semantic_identity_digest(),
+        AwbcRuntimeTypeShape::Bool,
+    ));
+    program.frame_layouts.push(AwbcFrameLayout {
+        scopes: vec![AwbcScopeDefinition {
+            kind: crate::scope::RuntimeScopeFrameKind::EmittedLexical,
+            parent: None,
+            identity: crate::scope::RuntimeScopeIdentity::Anonymous,
+        }],
+        slots: [AwbcTypeId(2), handle]
+            .into_iter()
+            .map(|ty| AwbcFrameSlot {
+                name: None,
+                ty,
+                role: AwbcFrameSlotRole::Temporary,
+                scope_depth: 1,
+            })
+            .collect(),
+        max_scope_depth: 1,
+    });
+    program.frame_layouts[1].slots[0].ty = handle;
+    program.functions[0].frame_layout = AwbcFrameLayoutId(2);
+    program.functions[0].blocks = AwbcTableRange::new(0, 2);
+    for function in program.functions.iter_mut().skip(1) {
+        function.blocks.start += 1;
+        function.entry_block.0 += 1;
+    }
+    program.line_task_groups[0].result_type = handle;
+    program.patterns = vec![if discard {
+        AwbcPattern::Discard
+    } else {
+        AwbcPattern::Bind {
+            target: AwbcRegisterId(1),
+            mutable: false,
+            expected: Some(handle),
+        }
+    }];
+    program.signatures.push(AwbcSignature {
+        params: vec![],
+        result: Some(handle),
+        effects: AwbcEffectSetId(0),
+    });
+    program.intrinsics.push(AwbcIntrinsic {
+        identity: crate::value::RuntimeCallTarget::try_from_label("fixture.presentation.produce")
+            .unwrap(),
+        signature: AwbcSignatureId(1),
+        revision: 1,
+    });
+    program.constants.push(AwbcConstant::Unit);
+    program.constants.push(AwbcConstant::Opaque {
+        ty: AwbcTypeId(2),
+        payload: AwbcConstantId(1),
+    });
+    program.instructions = vec![
+        AwbcInstruction::EnterScope {
+            scope: AwbcScopeId(0),
+        },
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(0),
+            constant: AwbcConstantId(2),
+        },
+        AwbcInstruction::ExitScope {
+            scope: AwbcScopeId(0),
+        },
+        AwbcInstruction::CallIntrinsic {
+            dst: Some(AwbcRegisterId(0)),
+            intrinsic: AwbcIntrinsicId(0),
+            args: vec![],
+        },
+    ];
+    program.blocks = vec![
+        AwbcBlock {
+            owner: AwbcFunctionId(0),
+            instructions: AwbcTableRange::new(0, 2),
+            terminator: AwbcTerminator::Dialogue {
+                target: AwbcRegisterId(0),
+                content: AwbcContentUnitId(0),
+                values: vec![],
+                effects: vec![],
+                line_task_captures: vec![],
+                result: AwbcDialogueResultTarget {
+                    ty: handle,
+                    pattern: AwbcPatternId(0),
+                    destination: AwbcRegisterId(1),
+                },
+                resume: AwbcResumePointId(0),
+            },
+            safe_point: AwbcSafePointKind::FlowEntry,
+            source_map: None,
+        },
+        AwbcBlock {
+            owner: AwbcFunctionId(0),
+            instructions: AwbcTableRange::new(2, 1),
+            terminator: AwbcTerminator::Return { value: None },
+            safe_point: AwbcSafePointKind::Dialogue,
+            source_map: None,
+        },
+        AwbcBlock {
+            owner: AwbcFunctionId(1),
+            instructions: AwbcTableRange::new(4, 0),
+            terminator: AwbcTerminator::Return { value: None },
+            safe_point: AwbcSafePointKind::CallableBoundary,
+            source_map: None,
+        },
+        AwbcBlock {
+            owner: AwbcFunctionId(2),
+            instructions: AwbcTableRange::new(3, 1),
+            terminator: AwbcTerminator::SelectDialogueResult {
+                value: AwbcRegisterId(0),
+            },
+            safe_point: AwbcSafePointKind::CallableBoundary,
+            source_map: None,
+        },
+        AwbcBlock {
+            owner: AwbcFunctionId(3),
+            instructions: AwbcTableRange::new(4, 0),
+            terminator: AwbcTerminator::Return { value: None },
+            safe_point: AwbcSafePointKind::CallableBoundary,
+            source_map: None,
+        },
+    ];
+    program.resume_points = vec![AwbcResumePoint {
+        function: AwbcFunctionId(0),
+        block: AwbcBlockId(1),
+        frame_layout: AwbcFrameLayoutId(2),
+        kind: AwbcSafePointKind::Dialogue,
+    }];
+    program.canonicalize_string_table();
+    program
+}
+
+fn fixture(
+    discard: bool,
+    queued: bool,
+) -> (AwbcProductStepExecutor, RuntimePresentationHandleToken) {
+    let mut executor =
+        AwbcProductStepExecutor::for_entry(program(discard), AwbcEntryId(0), 64).unwrap();
+    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
+    executor.presentation = Some(PresentationBanks::new(
+        owner.clone(),
+        executor.artifact_fingerprint,
+        if queued {
+            PresentationLedgerLimits {
+                handles: 1,
+                scopes: 4,
+            }
+        } else {
+            PresentationLedgerLimits::for_schema(crate::entry::RuntimeSchemaLimits::engine_default())
+        },
+    ));
+    if queued {
+        let banks = executor.presentation.as_mut().unwrap();
+        let ledger = banks.ledger_mut(RuntimePresentationBankId::Root).unwrap();
+        let scope = executor
+            .fiber
+            .bind_presentation_scope(&owner, ledger)
+            .unwrap();
+        ledger
+            .register(
+                &owner,
+                scope,
+                PresentationRegistrationSite::Independent(PresentationResourceKind::Image),
+                PresentationBody {
+                    expected: RuntimeCheckedType::Bool.semantic_identity_digest(),
+                    binding: None,
+                    value: RuntimePayload(RuntimeValue::Bool(false)),
+                },
+            )
+            .unwrap();
+        executor
+            .fiber
+            .retire_presentation_scope(&owner, banks)
+            .unwrap();
+    }
+    for _ in 0..16 {
+        if executor
+            .dialogues
+            .active_frame()
+            .is_some_and(|frame| matches!(frame.phase, ProductDialoguePhase::Reducing { .. }))
+        {
+            break;
+        }
+        advance(&mut executor);
+    }
+    let activation = executor.dialogues.active_activation().unwrap();
+    let mut transaction = executor.dialogues.begin_transaction(&activation).unwrap();
+    let view = executor.line_task_view(AwbcContentUnitId(0)).unwrap();
+    let state = transaction.frame_mut().line_task_mut().unwrap();
+    let mark = crate::runtime_id::RuntimeDialogueMarkId::from_zero_based(0).unwrap();
+    let accepted = state
+        .accept_content_event_kinds(
+            &[crate::step::RuntimeDialogueContentEventKind::Mark(mark)],
+            |_| true,
+        )
+        .unwrap();
+    let commands = crate::line_task::progress_live_line_task_group(
+        &view,
+        crate::time::LogicalDuration::default(),
+        accepted.ready(),
+        state,
+    )
+    .unwrap();
+    let mut batch = executor
+        .prepare_line_task_commands(&mut transaction, commands)
+        .unwrap();
+    let prepared = executor
+        .preflight_line_task_commands(
+            &mut transaction,
+            &batch,
+            crate::awbc::product_step::line::ProductLineTaskCommit::Commands,
+        )
+        .unwrap();
+    let proof = executor.dialogues.inspect_commit(&transaction).unwrap();
+    executor.realize_line_task_commands(&mut transaction, &mut batch, prepared);
+    executor.dialogues.commit_prepared(transaction, proof);
+    executor.commit_line_task_commands(batch, &mut crate::step::RuntimeStepOutput::default());
+    let index = executor
+        .child_fibers
+        .iter()
+        .position(|child| {
+            matches!(&child.owner,
+        ProductChildFiberOwner::LineTask { tag, .. } if tag.activation_id() == &activation)
+        })
+        .unwrap();
+    let banks = executor.presentation.as_mut().unwrap();
+    let ledger = banks
+        .ledger_mut(RuntimePresentationBankId::Dialogue { activation })
+        .unwrap();
+    let scope = executor.child_fibers[index]
+        .fiber
+        .bind_presentation_scope(&owner, ledger)
+        .unwrap();
+    let token = ledger
+        .register(
+            &owner,
+            scope,
+            PresentationRegistrationSite::Independent(PresentationResourceKind::Image),
+            PresentationBody {
+                expected: RuntimeCheckedType::Bool.semantic_identity_digest(),
+                binding: None,
+                value: RuntimePayload(RuntimeValue::Bool(true)),
+            },
+        )
+        .unwrap()
+        .0;
+    let opaque = executor
+        .program
+        .opaque_owner(AwbcTypeId(3))
+        .unwrap()
+        .unwrap();
+    let mut host = IssuedHandleHost(Some(RuntimeValue::Opaque(RuntimeOpaqueValue::new_exact(
+        &opaque,
+        token.encode_payload(),
+    ))));
+    let context =
+        VmExecutionContext::for_program(executor.artifact_fingerprint, executor.program.clone());
+    let output = crate::awbc::vm::step_with_presentation(
+        &executor.program,
+        &mut executor.child_fibers[index].fiber,
+        VmStepOptions {
+            max_instructions: 1,
+        },
+        &context,
+        &mut executor.presentation,
+        &mut host,
+    )
+    .unwrap();
+    assert_eq!(output.exit, VmExit::Running);
+    assert!(host.0.is_none());
+    executor.snapshot().unwrap();
+    advance(&mut executor); // Production child VM selects the actual issued D handle.
+    assert!(matches!(
+        executor.dialogues.active_line().unwrap().result(),
+        crate::line_task::RuntimeDialogueResultState::Selected { .. }
+    ));
+    executor.snapshot().unwrap();
+    (executor, token)
+}
+
+#[test]
+fn actual_dialogue_handle_receives_root_scope_and_lexical_exit_retires_it_once() {
+    let (mut executor, token) = fixture(false, false);
+    advance(&mut executor);
+    assert_eq!(executor.fiber.status, FiberStatus::Running);
+    assert!(
+        executor.fiber.frames[0].scopes[0]
+            .presentation_scope
+            .is_some()
+    );
+    assert!(
+        matches!(&executor.fiber.frames[0].registers[1].as_ref().unwrap().view().affine_handles().unwrap()[..],
+        [crate::value::ownership::RuntimeAffineHandle::Presentation { token: received, .. }] if received == &token)
+    );
+    executor.snapshot().unwrap();
+    advance(&mut executor); // Actual Root ExitScope.
+    assert_eq!(
+        executor.presentation.as_ref().unwrap().retirements()[0].token,
+        token
+    );
+    assert!(executor.fiber.frames[0].registers[1].is_vacant());
+    executor
+        .presentation
+        .as_mut()
+        .unwrap()
+        .retirements_mut()
+        .clear();
+    executor.snapshot().unwrap();
+}
+
+#[test]
+fn discarded_dialogue_handle_refuses_without_losing_result_and_retries_after_ack() {
+    let (mut executor, token) = fixture(true, true);
+    let before = executor.snapshot().unwrap();
+    for _ in 0..2 {
+        let result = executor.step(Default::default(), one_op());
+        assert_eq!(result.output.diagnostics.len(), 1);
+        assert_eq!(executor.snapshot().unwrap(), before);
+    }
+    executor
+        .presentation
+        .as_mut()
+        .unwrap()
+        .retirements_mut()
+        .clear();
+    advance(&mut executor);
+    assert_eq!(
+        executor.presentation.as_ref().unwrap().retirements()[0].token,
+        token
+    );
+    assert!(executor.fiber.frames[0].registers[1].is_vacant());
+    executor
+        .presentation
+        .as_mut()
+        .unwrap()
+        .retirements_mut()
+        .clear();
+    executor.snapshot().unwrap();
+}

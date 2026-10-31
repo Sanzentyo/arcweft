@@ -1,0 +1,1716 @@
+diff --git a/crates/arcweft-core/src/awbc/fiber/scope.rs b/crates/arcweft-core/src/awbc/fiber/scope.rs
+index e3768b2d70e1a5cda9002c5d20b5212027cb1c9f..d9328c58265016d3bbf000293b05cced4dd2180b 100644
+--- a/crates/arcweft-core/src/awbc/fiber/scope.rs
++++ b/crates/arcweft-core/src/awbc/fiber/scope.rs
+@@ -51,6 +51,21 @@ impl<V, O, N, B, R, G: crate::presentation::resources::PresentationScopeStorage>
+ }
+ 
+ impl super::FiberFrame {
++    pub(crate) fn presentation_scope_ref(&self) -> PresentationScopeRef<'_> {
++        match self.scopes.last() {
++            Some(scope) => PresentationScopeRef::awbc(
++                scope.presentation_scope.as_ref(),
++                self.instance,
++                Some(scope.id),
++            ),
++            None => PresentationScopeRef::awbc(
++                self.root_presentation_scope.as_ref(),
++                self.instance,
++                None,
++            ),
++        }
++    }
++
+     pub(crate) fn presentation_scope_binding(
+         &self,
+     ) -> Option<&crate::presentation::RuntimePresentationScopeBinding> {
+diff --git a/crates/arcweft-core/src/awbc/product_step.rs b/crates/arcweft-core/src/awbc/product_step.rs
+index 8970b1fd2a4702df84990e6b16886bdb4d0156b2..7d202fc8742ed96086ef2478802d3f20624e7788 100644
+--- a/crates/arcweft-core/src/awbc/product_step.rs
++++ b/crates/arcweft-core/src/awbc/product_step.rs
+@@ -268,6 +268,10 @@ pub(super) enum ProductStepError {
+     Host(String),
+     #[error("{0}")]
+     Internal(String),
++    #[error(transparent)]
++    CheckpointSnapshot(#[from] AwbcProductSaveError),
++    #[error(transparent)]
++    CheckpointRestore(#[from] AwbcProductStepBuildError),
+     #[error("AWBC activation trapped: {0:?}")]
+     ActivationTrap(FiberTrap),
+     #[error(transparent)]
+@@ -332,6 +336,8 @@ impl ProductStepError {
+             Self::Type(_) => RuntimeDiagnosticCategory::Type,
+             Self::Host(_) => RuntimeDiagnosticCategory::Host,
+             Self::Internal(_)
++            | Self::CheckpointSnapshot(_)
++            | Self::CheckpointRestore(_)
+             | Self::CheckpointValue(_)
+             | Self::DialogueRegistry(_)
+             | Self::Root(_)
+@@ -355,6 +361,8 @@ impl ProductStepError {
+             Self::Type(_) => AwbcTrapCode::TypeMismatch,
+             Self::Host(_) => AwbcTrapCode::HostAbiMismatch,
+             Self::Input(_)
++            | Self::CheckpointSnapshot(_)
++            | Self::CheckpointRestore(_)
+             | Self::CheckpointValue(_)
+             | Self::DialogueRegistry(_)
+             | Self::Root(_)
+@@ -4065,7 +4073,11 @@ impl AwbcProductStepExecutor {
+                     }
+                 }
+             }
+-            let prepared = match self.preflight_line_task_commands(&mut transaction, &batch) {
++            let prepared = match self.preflight_line_task_commands(
++                &mut transaction,
++                &batch,
++                line::ProductLineTaskCommit::Commands,
++            ) {
+                 Ok(prepared) => prepared,
+                 Err(error) => {
+                     self.rollback_line_task_preview(&mut transaction, &mut batch);
+@@ -4163,7 +4175,11 @@ impl AwbcProductStepExecutor {
+                 };
+             return self.commit_product_dialogue_failure_close(transaction, batch, output);
+         }
+-        let prepared = match self.preflight_line_task_commands(&mut transaction, &batch) {
++        let prepared = match self.preflight_line_task_commands(
++            &mut transaction,
++            &batch,
++            line::ProductLineTaskCommit::Commands,
++        ) {
+             Ok(prepared) => prepared,
+             Err(error) => {
+                 self.rollback_line_task_preview(&mut transaction, &mut batch);
+@@ -4819,6 +4835,22 @@ impl AwbcProductStepExecutor {
+                 output,
+             );
+         }
++        let publication_checkpoint = if self.dialogues.active_frame().is_some_and(|frame| {
++            matches!(
++                frame.phase,
++                ProductDialoguePhase::Reducing { .. } | ProductDialoguePhase::Publishing { .. }
++            )
++        }) {
++            match checkpoint::ProductSessionCheckpoint::capture(self) {
++                Ok(checkpoint) => Some(checkpoint),
++                Err(error) => {
++                    self.record_error(error, output);
++                    return false.into();
++                }
++            }
++        } else {
++            None
++        };
+         let Ok(mut transaction) = self.dialogues.begin_active_transaction() else {
+             return false.into();
+         };
+@@ -4881,8 +4913,11 @@ impl AwbcProductStepExecutor {
+                 }
+             };
+             let mut command_batch = command_batch;
+-            let prepared = match self.preflight_line_task_commands(&mut transaction, &command_batch)
+-            {
++            let prepared = match self.preflight_line_task_commands(
++                &mut transaction,
++                &command_batch,
++                line::ProductLineTaskCommit::Commands,
++            ) {
+                 Ok(prepared) => prepared,
+                 Err(error) => {
+                     return self
+@@ -5160,20 +5195,23 @@ impl AwbcProductStepExecutor {
+                 || !transaction.line().deferred_registrations().is_empty()
+             {
+                 let progressed = transaction.line().deferred_inflight().is_none();
+-                let prepared =
+-                    match self.preflight_line_task_commands(&mut transaction, &command_batch) {
+-                        Ok(prepared) => prepared,
+-                        Err(error) => {
+-                            return self
+-                                .begin_product_dialogue_failure_with_batch(
+-                                    transaction,
+-                                    error,
+-                                    command_batch,
+-                                    output,
+-                                )
+-                                .into();
+-                        }
+-                    };
++                let prepared = match self.preflight_line_task_commands(
++                    &mut transaction,
++                    &command_batch,
++                    line::ProductLineTaskCommit::Commands,
++                ) {
++                    Ok(prepared) => prepared,
++                    Err(error) => {
++                        return self
++                            .begin_product_dialogue_failure_with_batch(
++                                transaction,
++                                error,
++                                command_batch,
++                                output,
++                            )
++                            .into();
++                    }
++                };
+                 let proof = match self.dialogues.inspect_commit(&transaction) {
+                     Ok(proof) => proof,
+                     Err(error) => {
+@@ -5214,8 +5252,22 @@ impl AwbcProductStepExecutor {
+             return (match publication {
+                 line::ProductPublicationProgress::Pending => {
+                     let prepared =
+-                        match self.preflight_line_task_commands(&mut transaction, &command_batch) {
++                        match self.preflight_line_task_commands(
++                            &mut transaction,
++                            &command_batch,
++                            line::ProductLineTaskCommit::Commands,
++                        ) {
+                             Ok(prepared) => prepared,
++                            Err(error) if error.is_presentation_refusal() => {
++                                drop(transaction);
++                                drop(command_batch);
++                                if let Err(restore_error) = publication_checkpoint
++        .expect("reducer publication retained its complete original session")
++        .restore(self)
++    { self.record_error(restore_error, output); }
++    else { self.record_error(error, output); }
++                                return false.into();
++                            }
+                             Err(error) => {
+                                 return self
+                                     .begin_product_dialogue_failure_with_batch(
+@@ -5255,13 +5307,24 @@ impl AwbcProductStepExecutor {
+                     }
+                     false
+                 }
+-                line::ProductPublicationProgress::Ready {
+-                    resume: prepared_resume,
+-                    pattern: prepared_pattern,
+-                } => {
++                line::ProductPublicationProgress::Ready(publication) => {
+                     let prepared =
+-                        match self.preflight_line_task_commands(&mut transaction, &command_batch) {
++                        match self.preflight_line_task_commands(
++                            &mut transaction,
++                            &command_batch,
++                            line::ProductLineTaskCommit::Publication(publication),
++                        ) {
+                             Ok(prepared) => prepared,
++                            Err(error) if error.is_presentation_refusal() => {
++                                drop(transaction);
++                                drop(command_batch);
++                                if let Err(restore_error) = publication_checkpoint
++        .expect("reducer publication retained its complete original session")
++        .restore(self)
++    { self.record_error(restore_error, output); }
++    else { self.record_error(error, output); }
++                                return false.into();
++                            }
+                             Err(error) => {
+                                 return self
+                                     .begin_product_dialogue_failure_with_batch(
+@@ -5290,21 +5353,6 @@ impl AwbcProductStepExecutor {
+                         }
+                     };
+                     self.realize_line_task_commands(&mut transaction, &mut command_batch, prepared);
+-                    transaction
+-                        .line_mut()
+-                        .release_frame()
+-                        .expect("published dialogue release was preflighted");
+-                    let (_, value) = transaction
+-                        .line_mut()
+-                        .finish_result_publication()
+-                        .expect("published result owner was preflighted");
+-                    crate::awbc::vm::bind_pattern_owned_prepared(
+-                        &self.program,
+-                        &mut self.fiber,
+-                        prepared_pattern,
+-                        value,
+-                    );
+-                    self.fiber.resume_at_prepared(prepared_resume);
+                     let receipt = self.dialogues.commit_published_prepared(transaction, proof);
+                     let commands = receipt.into_line().into_commands();
+                     self.commit_line_task_commands(command_batch, output);
+@@ -5319,7 +5367,11 @@ impl AwbcProductStepExecutor {
+             })
+             .into();
+         }
+-        let prepared = match self.preflight_line_task_commands(&mut transaction, &command_batch) {
++        let prepared = match self.preflight_line_task_commands(
++            &mut transaction,
++            &command_batch,
++            line::ProductLineTaskCommit::Commands,
++        ) {
+             Ok(prepared) => prepared,
+             Err(error) => {
+                 return self
+@@ -5577,7 +5629,11 @@ impl AwbcProductStepExecutor {
+             )));
+         }
+         if scope_progress {
+-            let prepared = match self.preflight_line_task_commands(&mut transaction, &batch) {
++            let prepared = match self.preflight_line_task_commands(
++                &mut transaction,
++                &batch,
++                line::ProductLineTaskCommit::Commands,
++            ) {
+                 Ok(prepared) => prepared,
+                 Err(error) => {
+                     self.fail_transaction_preflight_preserving_batch(
+@@ -5669,7 +5725,11 @@ impl AwbcProductStepExecutor {
+         mut batch: ProductLineTaskExecutionBatch,
+         output: &mut RuntimeStepOutput,
+     ) -> bool {
+-        let prepared = match self.preflight_line_task_commands(&mut transaction, &batch) {
++        let prepared = match self.preflight_line_task_commands(
++            &mut transaction,
++            &batch,
++            line::ProductLineTaskCommit::Commands,
++        ) {
+             Ok(prepared) => prepared,
+             Err(error) => {
+                 self.fail_transaction_preflight_preserving_batch(transaction, batch, error, output);
+diff --git a/crates/arcweft-core/src/awbc/product_step/checkpoint.rs b/crates/arcweft-core/src/awbc/product_step/checkpoint.rs
+index 277e52942c8cadefa32308669b88519a76fe9f2b..38d704b5e7eff6ed302251367713cb72a08f3f6c 100644
+--- a/crates/arcweft-core/src/awbc/product_step/checkpoint.rs
++++ b/crates/arcweft-core/src/awbc/product_step/checkpoint.rs
+@@ -50,6 +50,53 @@ pub(super) struct ProductExecutionCheckpoint {
+     admission: RuntimeRetainedValueAdmission,
+ }
+ 
++/// A reducer publication can own staged children as well as the line result.
++/// Its retry boundary therefore captures the complete admitted session before
++/// withdrawing a dialogue, rather than undoing selected metadata fields.
++pub(super) struct ProductSessionCheckpoint {
++    image: super::snapshot::AwbcProductExecutorSnapshot,
++    admission: RuntimeRetainedValueAdmission,
++    format_context: crate::value::RuntimeFormatContext,
++}
++
++impl ProductSessionCheckpoint {
++    pub(super) fn capture(executor: &AwbcProductStepExecutor) -> Result<Self, ProductStepError> {
++        let admission = executor.retained_execution_admission(ProductCheckpointTarget::Main)?;
++        let image = executor.snapshot()?;
++        Ok(Self {
++            image,
++            admission,
++            format_context: executor.format_context.clone(),
++        })
++    }
++
++    pub(super) fn restore(
++        self,
++        executor: &mut AwbcProductStepExecutor,
++    ) -> Result<(), ProductStepError> {
++        let owner = self
++            .admission
++            .program_owner()
++            .ok_or(FiberStateError::CheckpointProgramOwner)?;
++        if !owner.same_program(&RuntimeProgramOwner::Awbc(executor.program_arc()))
++            || self.admission.task_source() != executor.program.original_task_source()
++            || self.image.fiber.instance != executor.fiber.instance
++        {
++            return Err(FiberStateError::CheckpointProgramOwner.into());
++        }
++        let restored = AwbcProductStepExecutor::from_admitted_snapshot(
++            executor.program.clone(),
++            executor.artifact_fingerprint,
++            self.format_context,
++            self.image,
++            crate::task::NeedProducerRestorePolicy::Rollback,
++            &self.admission,
++        )?;
++        *executor = restored;
++        Ok(())
++    }
++}
++
+ impl ProductExecutionCheckpoint {
+     pub(super) fn restore(
+         self,
+diff --git a/crates/arcweft-core/src/awbc/product_step/lifecycle.rs b/crates/arcweft-core/src/awbc/product_step/lifecycle.rs
+index c0c4def6f2b7a1c3b6ad45ddeb25c99d9287f4b6..7e65164b055d9312ba94a7e0fa16d7478739a1fc 100644
+--- a/crates/arcweft-core/src/awbc/product_step/lifecycle.rs
++++ b/crates/arcweft-core/src/awbc/product_step/lifecycle.rs
+@@ -28,6 +28,12 @@ impl AwbcProductStepExecutor {
+         output: &mut RuntimeStepOutput,
+     ) {
+         let (category, code, message) = match error {
++            error @ (ProductStepError::CheckpointSnapshot(_)
++            | ProductStepError::CheckpointRestore(_)) => (
++                RuntimeDiagnosticCategory::Internal,
++                AwbcTrapCode::InternalInvariant,
++                error.to_string(),
++            ),
+             ProductStepError::CheckpointValue(error) => (
+                 RuntimeDiagnosticCategory::Internal,
+                 AwbcTrapCode::InternalInvariant,
+@@ -172,6 +178,10 @@ impl AwbcProductStepExecutor {
+ 
+     pub(super) fn record_error(&self, error: ProductStepError, output: &mut RuntimeStepOutput) {
+         let (category, message) = match error {
++            error @ (ProductStepError::CheckpointSnapshot(_)
++            | ProductStepError::CheckpointRestore(_)) => {
++                (RuntimeDiagnosticCategory::Internal, error.to_string())
++            }
+             ProductStepError::CheckpointValue(error) => {
+                 (RuntimeDiagnosticCategory::Internal, error.to_string())
+             }
+diff --git a/crates/arcweft-core/src/awbc/product_step/line.rs b/crates/arcweft-core/src/awbc/product_step/line.rs
+index 8dc87d1d250043f10f7dcef918cb227411fbbfce..6f5545dcb007697814229d6388fbd48a5e5766d8 100644
+--- a/crates/arcweft-core/src/awbc/product_step/line.rs
++++ b/crates/arcweft-core/src/awbc/product_step/line.rs
+@@ -54,10 +54,23 @@ pub(super) struct ProductActivationProgress {
+ 
+ pub(super) enum ProductPublicationProgress {
+     Pending,
+-    Ready {
+-        resume: crate::awbc::fiber::PreparedFiberResume,
+-        pattern: crate::awbc::vm::PreparedPatternBinding,
+-    },
++    Ready(PreparedDialoguePublication),
++}
++
++pub(super) struct PreparedDialoguePublication {
++    resume: crate::awbc::fiber::PreparedFiberResume,
++    pattern: crate::awbc::vm::PreparedPatternBinding,
++    presentation: ProductPresentationReceipt,
++}
++
++struct ProductPresentationReceipt {
++    kept: Vec<crate::runtime_id::RuntimePresentationHandleToken>,
++    discarded: Vec<crate::runtime_id::RuntimePresentationHandleToken>,
++}
++
++pub(super) enum ProductLineTaskCommit {
++    Commands,
++    Publication(PreparedDialoguePublication),
+ }
+ 
+ struct ProductLineSiteEvidence {
+@@ -132,6 +145,7 @@ struct PreparedExistingChildCancel {
+ }
+ 
+ pub(super) struct PreparedLineTaskCommands {
++    commit: ProductLineTaskCommit,
+     line_task: Option<LineTaskLiveState>,
+     scheduled: RuntimeScheduledCompletionStage,
+     commands: RuntimePreparedLineCommands,
+@@ -224,18 +238,12 @@ impl super::AwbcProductStepExecutor {
+         });
+         let result_handles = unique_line_handles(value)?;
+         for handle in &result_handles {
+-            let destinations = crate::awbc::vm::pattern_handle_destinations(
+-                &self.program,
+-                &self.fiber,
+-                frame.result.pattern,
+-                value,
+-                handle.token(),
+-            )
+-            .map_err(|_| LineRuntimeError::ResultPatternOrTypeMismatch)?;
+-            if destinations.len() > 1 {
+-                return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
+-            }
+-            if let Some(register) = destinations.into_iter().next() {
++            let destination = prepared_pattern
++                .resource_destination(&crate::value::ownership::RuntimeAffineResourceToken::Line(
++                    handle.token().clone(),
++                ))
++                .map_err(|_| LineRuntimeError::ResultPatternOrTypeMismatch)?;
++            if let Some(register) = destination {
+                 let owner = RuntimeOwnedSlotId::AwbcRegister {
+                     execution: self.facade_fiber.execution,
+                     fiber: self.fiber.instance,
+@@ -339,10 +347,43 @@ impl super::AwbcProductStepExecutor {
+         }) {
+             return Err(LineRuntimeError::UnownedLeaseAtPublish.into());
+         }
+-        Ok(ProductPublicationProgress::Ready {
+-            resume: prepared_resume,
+-            pattern: prepared_pattern,
+-        })
++        let mut presentation = ProductPresentationReceipt {
++            kept: Vec::new(),
++            discarded: Vec::new(),
++        };
++        for (token, destination) in prepared_pattern.resource_destinations() {
++            if let crate::value::ownership::RuntimeAffineResourceToken::Presentation(token) = token
++            {
++                if destination.is_some() {
++                    presentation.kept.push(token.clone());
++                } else {
++                    presentation.discarded.push(token.clone());
++                }
++            }
++        }
++        for register in prepared_pattern.registers() {
++            for value in self.fiber.active_frame()?.registers[register.index()].values() {
++                for handle in value
++                    .affine_handles()
++                    .map_err(|error| ProductStepError::Internal(error.to_string()))?
++                {
++                    if let crate::value::ownership::RuntimeAffineHandle::Presentation {
++                        token,
++                        ..
++                    } = handle
++                    {
++                        presentation.discarded.push(token);
++                    }
++                }
++            }
++        }
++        Ok(ProductPublicationProgress::Ready(
++            PreparedDialoguePublication {
++                resume: prepared_resume,
++                pattern: prepared_pattern,
++                presentation,
++            },
++        ))
+     }
+ 
+     pub(super) fn prepare_line_task_commands(
+@@ -388,6 +429,7 @@ impl super::AwbcProductStepExecutor {
+             Some(&baseline),
+             &batch.line_task_reserved_runs,
+             true,
++            ProductLineTaskCommit::Commands,
+         )?;
+         if preview.runs.len() < batch.line_task_reserved_runs.len() {
+             return Err(ProductStepError::Internal(
+@@ -492,6 +534,7 @@ impl super::AwbcProductStepExecutor {
+         &self,
+         transaction: &mut ProductDialogueTransaction,
+         batch: &super::ProductLineTaskExecutionBatch,
++        commit: ProductLineTaskCommit,
+     ) -> Result<PreparedLineTaskCommands, ProductStepError> {
+         let mut activation = LineTaskActivation::default();
+         for staged in &batch.line_task_activations {
+@@ -504,6 +547,7 @@ impl super::AwbcProductStepExecutor {
+             batch.line_task_baseline.as_ref(),
+             &batch.line_task_reserved_runs,
+             false,
++            commit,
+         )?;
+         if prepared.runs.len() != batch.line_task_reserved_runs.len() {
+             return Err(ProductStepError::Internal(
+@@ -521,6 +565,7 @@ impl super::AwbcProductStepExecutor {
+         baseline: Option<&Option<LineTaskLiveState>>,
+         reserved_runs: &[ReservedLineRunIdentity],
+         allow_new_runs: bool,
++        commit: ProductLineTaskCommit,
+     ) -> Result<PreparedLineTaskCommands, ProductStepError> {
+         let content = transaction.frame().content;
+         let mut line_task = baseline
+@@ -850,9 +895,55 @@ impl super::AwbcProductStepExecutor {
+             .map(|child| &child.fiber)
+             .collect::<Vec<_>>();
+         cancelled.sort_by_key(|fiber| order.get(&fiber.instance).copied().unwrap_or(order.len()));
+-        self.program
+-            .preflight_fiber_unwinds(self.presentation.as_ref(), cancelled)?;
++        if let ProductLineTaskCommit::Publication(publication) = &commit {
++            let mut targets = Vec::new();
++            for fiber in cancelled {
++                if matches!(
++                    fiber.status,
++                    crate::awbc::fiber::FiberStatus::Running
++                        | crate::awbc::fiber::FiberStatus::Suspended
++                ) {
++                    fiber.validate_cleanup_inputs(&self.program)?;
++                    targets.extend(fiber.presentation_unwind_scopes().map_err(|error| {
++                        crate::awbc::fiber::FiberStateError::Snapshot(error.into())
++                    })?);
++                }
++            }
++            let receipt = &publication.presentation;
++            let instance = self.fiber.instance;
++            if let Some(banks) = &self.presentation {
++                banks
++                    .preflight_scope_transition(
++                        &crate::task::RuntimeProgramOwner::Awbc(self.program.program_arc()),
++                        targets,
++                        Some(crate::presentation::resources::PresentationScopeExit {
++                            execution: crate::runtime_id::ExecutionInstanceId::from_allocated(
++                                instance.get(),
++                            ),
++                            fiber: crate::runtime_id::RuntimePersistentFiberId::from_allocated(
++                                instance.get().get(),
++                            ),
++                            scope: self.fiber.active_frame()?.presentation_scope_ref(),
++                        }),
++                        &receipt.kept,
++                        &receipt.discarded,
++                    )
++                    .map_err(|error| crate::awbc::fiber::FiberStateError::Snapshot(error.into()))?;
++            } else if !targets.is_empty()
++                || !receipt.kept.is_empty()
++                || !receipt.discarded.is_empty()
++            {
++                return Err(crate::awbc::fiber::FiberStateError::Snapshot(
++                    crate::presentation::RuntimePresentationError::MissingLedger.into(),
++                )
++                .into());
++            }
++        } else {
++            self.program
++                .preflight_fiber_unwinds(self.presentation.as_ref(), cancelled)?;
++        }
+         Ok(PreparedLineTaskCommands {
++            commit,
+             line_task,
+             scheduled,
+             commands,
+@@ -893,9 +984,55 @@ impl super::AwbcProductStepExecutor {
+         // Stable ordering also preserves the later commit queue's order for
+         // actions already staged before this command sequence.
+         cancelled.sort_by_key(|fiber| order.get(&fiber.instance).copied().unwrap_or(order.len()));
+-        self.program
+-            .retire_fiber_scopes(&mut self.presentation, cancelled)
+-            .expect("final command preflight retains the complete cancellation contour");
++        if let ProductLineTaskCommit::Publication(publication) = &prepared.commit {
++            let mut targets = Vec::new();
++            for fiber in cancelled {
++                if matches!(
++                    fiber.status,
++                    crate::awbc::fiber::FiberStatus::Running
++                        | crate::awbc::fiber::FiberStatus::Suspended
++                ) {
++                    targets.extend(
++                        fiber
++                            .presentation_unwind_scopes_mut()
++                            .expect("preflighted actual cancellation contour"),
++                    );
++                }
++            }
++            let instance = self.fiber.instance;
++            let receipt = &publication.presentation;
++            if let Some(banks) = self.presentation.as_mut() {
++                banks
++                    .transition_scope_contour(
++                        &crate::task::RuntimeProgramOwner::Awbc(self.program.program_arc()),
++                        targets,
++                        Some(crate::presentation::resources::PresentationScopeExit {
++                            execution: crate::runtime_id::ExecutionInstanceId::from_allocated(
++                                instance.get(),
++                            ),
++                            fiber: crate::runtime_id::RuntimePersistentFiberId::from_allocated(
++                                instance.get().get(),
++                            ),
++                            scope: self
++                                .fiber
++                                .active_frame_mut()
++                                .expect("preflighted publication receiver")
++                                .presentation_scope_target(),
++                        }),
++                        &receipt.kept,
++                        &receipt.discarded,
++                    )
++                    .expect("complete cancellation and receipt transition was admitted together");
++            } else {
++                assert!(
++                    targets.is_empty() && receipt.kept.is_empty() && receipt.discarded.is_empty()
++                );
++            }
++        } else {
++            self.program
++                .retire_fiber_scopes(&mut self.presentation, cancelled)
++                .expect("final command preflight retains the complete cancellation contour");
++        }
+         batch.line_task_activations.clear();
+         transaction
+             .line_mut()
+@@ -1014,6 +1151,23 @@ impl super::AwbcProductStepExecutor {
+             "preflighted batch actions name existing staged children"
+         );
+         batch.existing_child_actions = prepared.executor_actions;
++        if let ProductLineTaskCommit::Publication(publication) = prepared.commit {
++            transaction
++                .line_mut()
++                .release_frame()
++                .expect("published dialogue release was preflighted");
++            let (_, value) = transaction
++                .line_mut()
++                .finish_result_publication()
++                .expect("published result owner was preflighted");
++            crate::awbc::vm::bind_pattern_owned_prepared(
++                &self.program,
++                &mut self.fiber,
++                publication.pattern,
++                value,
++            );
++            self.fiber.resume_at_prepared(publication.resume);
++        }
+     }
+ 
+     pub(super) fn prepare_next_deferred_child(
+@@ -4279,16 +4433,8 @@ pub(super) fn unique_line_handles_view(
+ ) -> Result<Vec<crate::value::ownership::RuntimeAffineLineHandle>, ProductStepError> {
+     let handles = value
+         .inspect()
+-        .affine_handles()
+-        .map_err(|_| LineRuntimeError::InvalidHandlePayload)?
+-        .into_iter()
+-        .filter_map(|handle| match handle {
+-            crate::value::ownership::RuntimeAffineHandle::Line(handle) => Some(handle),
+-            // The complete Product contour admits these under its original
+-            // presentation banks; a line lease never decodes their tokens.
+-            crate::value::ownership::RuntimeAffineHandle::Presentation { .. } => None,
+-        })
+-        .collect::<Vec<_>>();
++        .line_handle_projection()
++        .map_err(|_| LineRuntimeError::InvalidHandlePayload)?;
+     let mut unique = BTreeSet::new();
+     for handle in &handles {
+         if !unique.insert(handle.token().clone()) {
+diff --git a/crates/arcweft-core/src/awbc/product_step/suspension.rs b/crates/arcweft-core/src/awbc/product_step/suspension.rs
+index a379a04278a26a7bf2f0c4f22801730e9e145b8c..1d0fd119f39b5de7fa5074bfc3d3368a4f8ab841 100644
+--- a/crates/arcweft-core/src/awbc/product_step/suspension.rs
++++ b/crates/arcweft-core/src/awbc/product_step/suspension.rs
+@@ -1137,18 +1137,17 @@ impl AwbcProductStepExecutor {
+                     self.fiber.instance,
+                     state.plan,
+                 );
+-                if let Some(pattern) = state.binding {
++                if let Some(prepared_pattern) = binding.as_ref() {
+                     for handle in super::line::unique_line_handles_view(value)? {
+                         let token = handle.token().clone();
+-                        let destinations = crate::awbc::vm::pattern_handle_destinations_view(
+-                            &self.program,
+-                            &self.fiber,
+-                            pattern,
+-                            value,
+-                            &token,
+-                        )
+-                        .map_err(|error| ProductStepError::Internal(error.to_string()))?;
+-                        if let Some(register) = destinations.first().copied() {
++                        let destination = prepared_pattern
++                            .resource_destination(
++                                &crate::value::ownership::RuntimeAffineResourceToken::Line(
++                                    token.clone(),
++                                ),
++                            )
++                            .map_err(|error| ProductStepError::Internal(error.to_string()))?;
++                        if let Some(register) = destination {
+                             after.insert(
+                                 token,
+                                 crate::value::ownership::RuntimeOwnedSlotId::AwbcRegister {
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs b/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
+index a6d2ffc61058509c0f3bfdaf50ff63aa866a2b3e..bce0329a660c8ba9a093f01c103a4ae24e88f990 100644
+--- a/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
++++ b/crates/arcweft-core/src/awbc/product_step/tests/presentation.rs
+@@ -6,6 +6,7 @@ use crate::runtime_id::{RuntimePresentationBankId, RuntimePresentationHandleToke
+ use arcweft_interaction_model::presentation::PresentationResourceKind;
+ 
+ mod cancellation_resume;
++mod receipt;
+ mod terminal_requests;
+ mod transfers;
+ mod trap_lifecycle;
+@@ -213,7 +214,11 @@ mod cancellation {
+             .prepare_line_task_commands_from(&mut transaction, commands(tags), &mut batch)
+             .unwrap();
+         let prepared = executor
+-            .preflight_line_task_commands(&mut transaction, &batch)
++            .preflight_line_task_commands(
++                &mut transaction,
++                &batch,
++                crate::awbc::product_step::line::ProductLineTaskCommit::Commands,
++            )
+             .unwrap();
+         let proof = executor.dialogues.inspect_commit(&transaction).unwrap();
+         executor.realize_line_task_commands(&mut transaction, &mut batch, prepared);
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests/presentation/receipt.rs b/crates/arcweft-core/src/awbc/product_step/tests/presentation/receipt.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..f357623c4bcc1b673a353b4aabdd975086bd2f48
+--- /dev/null
++++ b/crates/arcweft-core/src/awbc/product_step/tests/presentation/receipt.rs
+@@ -0,0 +1,411 @@
++use super::*;
++use crate::awbc::schema::*;
++use crate::awbc::vm::{VmError, VmExecutionContext, VmExit, VmHost, VmStepOptions};
++use crate::pattern::{RuntimeCheckedType, RuntimeOpaqueTypeAdmission};
++use crate::value::{RuntimeOpaquePersistence, RuntimeOpaqueValue, RuntimeOpaqueValueClass};
++
++struct IssuedHandleHost(Option<RuntimeValue>);
++
++impl VmHost for IssuedHandleHost {
++    fn call_intrinsic(
++        &mut self,
++        _: &AwbcProgram,
++        _: AwbcIntrinsicId,
++        args: Vec<RuntimeValue>,
++    ) -> Result<Option<RuntimeValue>, VmError> {
++        assert!(args.is_empty());
++        Ok(self.0.take())
++    }
++
++    fn try_call_pure_helper(
++        &mut self,
++        _: &AwbcProgram,
++        _: AwbcPureHelperId,
++        _: &[RuntimeValue],
++    ) -> Result<Option<RuntimeValue>, VmError> {
++        Ok(None)
++    }
++}
++
++fn one_op() -> RuntimeStepOptions {
++    RuntimeStepOptions {
++        budget: crate::step::RuntimeStepBudget { max_ops: 1 },
++        ..Default::default()
++    }
++}
++
++fn advance(executor: &mut AwbcProductStepExecutor) {
++    let output = executor.step(Default::default(), one_op());
++    assert!(
++        output.output.diagnostics.is_empty(),
++        "{:?}",
++        output.output.diagnostics
++    );
++}
++
++fn program(discard: bool) -> AwbcProgram {
++    let mut program = mark_selector_program(
++        arcweft_interaction_model::input::InputActionId::new("receipt.cancel").unwrap(),
++    );
++    let producer = AwbcStringId(program.strings.len().try_into().unwrap());
++    program.strings.push("fixture.presentation.handle".into());
++    program.content_units[0].public_id = AwbcStringId(program.strings.len().try_into().unwrap());
++    program.strings.push("line.receipt".into());
++    let handle = AwbcTypeId(3);
++    program.runtime_types.push(AwbcRuntimeType::new(
++        RuntimeSemanticTypeId::from_bytes([0xad; 32]),
++        AwbcRuntimeTypeShape::Opaque {
++            producer,
++            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
++            value_class: RuntimeOpaqueValueClass::PresentationHandle,
++            persistence: RuntimeOpaquePersistence::SnapshotOnly,
++            arguments: vec![],
++        },
++    ));
++    program.runtime_types.push(AwbcRuntimeType::new(
++        RuntimeCheckedType::Bool.semantic_identity_digest(),
++        AwbcRuntimeTypeShape::Bool,
++    ));
++    program.frame_layouts.push(AwbcFrameLayout {
++        scopes: vec![AwbcScopeDefinition {
++            kind: crate::scope::RuntimeScopeFrameKind::EmittedLexical,
++            parent: None,
++            identity: crate::scope::RuntimeScopeIdentity::Anonymous,
++        }],
++        slots: [AwbcTypeId(2), handle]
++            .into_iter()
++            .map(|ty| AwbcFrameSlot {
++                name: None,
++                ty,
++                role: AwbcFrameSlotRole::Temporary,
++                scope_depth: 1,
++            })
++            .collect(),
++        max_scope_depth: 1,
++    });
++    program.frame_layouts[1].slots[0].ty = handle;
++    program.functions[0].frame_layout = AwbcFrameLayoutId(2);
++    program.functions[0].blocks = AwbcTableRange::new(0, 2);
++    for function in program.functions.iter_mut().skip(1) {
++        function.blocks.start += 1;
++        function.entry_block.0 += 1;
++    }
++    program.line_task_groups[0].result_type = handle;
++    program.patterns = vec![if discard {
++        AwbcPattern::Discard
++    } else {
++        AwbcPattern::Bind {
++            target: AwbcRegisterId(1),
++            mutable: false,
++            expected: Some(handle),
++        }
++    }];
++    program.signatures.push(AwbcSignature {
++        params: vec![],
++        result: Some(handle),
++        effects: AwbcEffectSetId(0),
++    });
++    program.intrinsics.push(AwbcIntrinsic {
++        identity: crate::value::RuntimeCallTarget::try_from_label("fixture.presentation.produce")
++            .unwrap(),
++        signature: AwbcSignatureId(1),
++        revision: 1,
++    });
++    program.constants.push(AwbcConstant::Unit);
++    program.constants.push(AwbcConstant::Opaque {
++        ty: AwbcTypeId(2),
++        payload: AwbcConstantId(1),
++    });
++    program.instructions = vec![
++        AwbcInstruction::EnterScope {
++            scope: AwbcScopeId(0),
++        },
++        AwbcInstruction::LoadConst {
++            dst: AwbcRegisterId(0),
++            constant: AwbcConstantId(2),
++        },
++        AwbcInstruction::ExitScope {
++            scope: AwbcScopeId(0),
++        },
++        AwbcInstruction::CallIntrinsic {
++            dst: Some(AwbcRegisterId(0)),
++            intrinsic: AwbcIntrinsicId(0),
++            args: vec![],
++        },
++    ];
++    program.blocks = vec![
++        AwbcBlock {
++            owner: AwbcFunctionId(0),
++            instructions: AwbcTableRange::new(0, 2),
++            terminator: AwbcTerminator::Dialogue {
++                target: AwbcRegisterId(0),
++                content: AwbcContentUnitId(0),
++                values: vec![],
++                effects: vec![],
++                line_task_captures: vec![],
++                result: AwbcDialogueResultTarget {
++                    ty: handle,
++                    pattern: AwbcPatternId(0),
++                    destination: AwbcRegisterId(1),
++                },
++                resume: AwbcResumePointId(0),
++            },
++            safe_point: AwbcSafePointKind::FlowEntry,
++            source_map: None,
++        },
++        AwbcBlock {
++            owner: AwbcFunctionId(0),
++            instructions: AwbcTableRange::new(2, 1),
++            terminator: AwbcTerminator::Return { value: None },
++            safe_point: AwbcSafePointKind::Dialogue,
++            source_map: None,
++        },
++        AwbcBlock {
++            owner: AwbcFunctionId(1),
++            instructions: AwbcTableRange::new(4, 0),
++            terminator: AwbcTerminator::Return { value: None },
++            safe_point: AwbcSafePointKind::CallableBoundary,
++            source_map: None,
++        },
++        AwbcBlock {
++            owner: AwbcFunctionId(2),
++            instructions: AwbcTableRange::new(3, 1),
++            terminator: AwbcTerminator::SelectDialogueResult {
++                value: AwbcRegisterId(0),
++            },
++            safe_point: AwbcSafePointKind::CallableBoundary,
++            source_map: None,
++        },
++        AwbcBlock {
++            owner: AwbcFunctionId(3),
++            instructions: AwbcTableRange::new(4, 0),
++            terminator: AwbcTerminator::Return { value: None },
++            safe_point: AwbcSafePointKind::CallableBoundary,
++            source_map: None,
++        },
++    ];
++    program.resume_points = vec![AwbcResumePoint {
++        function: AwbcFunctionId(0),
++        block: AwbcBlockId(1),
++        frame_layout: AwbcFrameLayoutId(2),
++        kind: AwbcSafePointKind::Dialogue,
++    }];
++    program.canonicalize_string_table();
++    program
++}
++
++fn fixture(
++    discard: bool,
++    queued: bool,
++) -> (AwbcProductStepExecutor, RuntimePresentationHandleToken) {
++    let mut executor =
++        AwbcProductStepExecutor::for_entry(program(discard), AwbcEntryId(0), 64).unwrap();
++    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
++    executor.presentation = Some(PresentationBanks::new(
++        owner.clone(),
++        executor.artifact_fingerprint,
++        if queued {
++            PresentationLedgerLimits {
++                handles: 1,
++                scopes: 4,
++            }
++        } else {
++            PresentationLedgerLimits::for_schema(crate::entry::RuntimeSchemaLimits::engine_default())
++        },
++    ));
++    if queued {
++        let banks = executor.presentation.as_mut().unwrap();
++        let ledger = banks.ledger_mut(RuntimePresentationBankId::Root).unwrap();
++        let scope = executor
++            .fiber
++            .bind_presentation_scope(&owner, ledger)
++            .unwrap();
++        ledger
++            .register(
++                &owner,
++                scope,
++                PresentationRegistrationSite::Independent(PresentationResourceKind::Image),
++                PresentationBody {
++                    expected: RuntimeCheckedType::Bool.semantic_identity_digest(),
++                    binding: None,
++                    value: RuntimePayload(RuntimeValue::Bool(false)),
++                },
++            )
++            .unwrap();
++        executor
++            .fiber
++            .retire_presentation_scope(&owner, banks)
++            .unwrap();
++    }
++    for _ in 0..16 {
++        if executor
++            .dialogues
++            .active_frame()
++            .is_some_and(|frame| matches!(frame.phase, ProductDialoguePhase::Reducing { .. }))
++        {
++            break;
++        }
++        advance(&mut executor);
++    }
++    let activation = executor.dialogues.active_activation().unwrap();
++    let mut transaction = executor.dialogues.begin_transaction(&activation).unwrap();
++    let view = executor.line_task_view(AwbcContentUnitId(0)).unwrap();
++    let state = transaction.frame_mut().line_task_mut().unwrap();
++    let mark = crate::runtime_id::RuntimeDialogueMarkId::from_zero_based(0).unwrap();
++    let accepted = state
++        .accept_content_event_kinds(
++            &[crate::step::RuntimeDialogueContentEventKind::Mark(mark)],
++            |_| true,
++        )
++        .unwrap();
++    let commands = crate::line_task::progress_live_line_task_group(
++        &view,
++        crate::time::LogicalDuration::default(),
++        accepted.ready(),
++        state,
++    )
++    .unwrap();
++    let mut batch = executor
++        .prepare_line_task_commands(&mut transaction, commands)
++        .unwrap();
++    let prepared = executor
++        .preflight_line_task_commands(
++            &mut transaction,
++            &batch,
++            crate::awbc::product_step::line::ProductLineTaskCommit::Commands,
++        )
++        .unwrap();
++    let proof = executor.dialogues.inspect_commit(&transaction).unwrap();
++    executor.realize_line_task_commands(&mut transaction, &mut batch, prepared);
++    executor.dialogues.commit_prepared(transaction, proof);
++    executor.commit_line_task_commands(batch, &mut crate::step::RuntimeStepOutput::default());
++    let index = executor
++        .child_fibers
++        .iter()
++        .position(|child| {
++            matches!(&child.owner,
++        ProductChildFiberOwner::LineTask { tag, .. } if tag.activation_id() == &activation)
++        })
++        .unwrap();
++    let banks = executor.presentation.as_mut().unwrap();
++    let ledger = banks
++        .ledger_mut(RuntimePresentationBankId::Dialogue { activation })
++        .unwrap();
++    let scope = executor.child_fibers[index]
++        .fiber
++        .bind_presentation_scope(&owner, ledger)
++        .unwrap();
++    let token = ledger
++        .register(
++            &owner,
++            scope,
++            PresentationRegistrationSite::Independent(PresentationResourceKind::Image),
++            PresentationBody {
++                expected: RuntimeCheckedType::Bool.semantic_identity_digest(),
++                binding: None,
++                value: RuntimePayload(RuntimeValue::Bool(true)),
++            },
++        )
++        .unwrap()
++        .0;
++    let opaque = executor
++        .program
++        .opaque_owner(AwbcTypeId(3))
++        .unwrap()
++        .unwrap();
++    let mut host = IssuedHandleHost(Some(RuntimeValue::Opaque(RuntimeOpaqueValue::new_exact(
++        &opaque,
++        token.encode_payload(),
++    ))));
++    let context =
++        VmExecutionContext::for_program(executor.artifact_fingerprint, executor.program.clone());
++    let output = crate::awbc::vm::step_with_presentation(
++        &executor.program,
++        &mut executor.child_fibers[index].fiber,
++        VmStepOptions {
++            max_instructions: 1,
++        },
++        &context,
++        &mut executor.presentation,
++        &mut host,
++    )
++    .unwrap();
++    assert_eq!(output.exit, VmExit::Running);
++    assert!(host.0.is_none());
++    executor.snapshot().unwrap();
++    advance(&mut executor); // Production child VM selects the actual issued D handle.
++    assert!(matches!(
++        executor.dialogues.active_line().unwrap().result(),
++        crate::line_task::RuntimeDialogueResultState::Selected { .. }
++    ));
++    let activation = executor.dialogues.active_activation().unwrap();
++    let diagnostics = executor
++        .latch_dialogue_step_input(&mut RuntimeStepInput {
++            dialogue_advances: vec![activation],
++            ..Default::default()
++        })
++        .unwrap();
++    assert!(diagnostics.is_empty());
++    executor.snapshot().unwrap();
++    (executor, token)
++}
++
++#[test]
++fn actual_dialogue_handle_receives_root_scope_and_lexical_exit_retires_it_once() {
++    let (mut executor, token) = fixture(false, false);
++    advance(&mut executor);
++    assert_eq!(executor.fiber.status, FiberStatus::Running);
++    assert!(
++        executor.fiber.frames[0].scopes[0]
++            .presentation_scope
++            .is_some()
++    );
++    assert!(
++        matches!(&executor.fiber.frames[0].registers[1].as_ref().unwrap().view().affine_handles().unwrap()[..],
++        [crate::value::ownership::RuntimeAffineHandle::Presentation { token: received, .. }] if received == &token)
++    );
++    executor.snapshot().unwrap();
++    advance(&mut executor); // Actual Root ExitScope.
++    assert_eq!(
++        executor.presentation.as_ref().unwrap().retirements()[0].token,
++        token
++    );
++    assert!(executor.fiber.frames[0].registers[1].is_vacant());
++    executor
++        .presentation
++        .as_mut()
++        .unwrap()
++        .retirements_mut()
++        .clear();
++    executor.snapshot().unwrap();
++}
++
++#[test]
++fn discarded_dialogue_handle_refuses_without_losing_result_and_retries_after_ack() {
++    let (mut executor, token) = fixture(true, true);
++    let before = executor.snapshot().unwrap();
++    for _ in 0..2 {
++        let result = executor.step(Default::default(), one_op());
++        assert_eq!(result.output.diagnostics.len(), 1);
++        assert_eq!(executor.snapshot().unwrap(), before);
++    }
++    executor
++        .presentation
++        .as_mut()
++        .unwrap()
++        .retirements_mut()
++        .clear();
++    advance(&mut executor);
++    assert_eq!(
++        executor.presentation.as_ref().unwrap().retirements()[0].token,
++        token
++    );
++    assert!(executor.fiber.frames[0].registers[1].is_vacant());
++    executor
++        .presentation
++        .as_mut()
++        .unwrap()
++        .retirements_mut()
++        .clear();
++    executor.snapshot().unwrap();
++}
+diff --git a/crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs b/crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs
+index 323954e228820b9dce65c88dbeedc7fe5ff13c42..ffca1308798222325b355d6efe1b34e52187b678 100644
+--- a/crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs
++++ b/crates/arcweft-core/src/awbc/product_step/tests/presentation/terminal_requests.rs
+@@ -520,7 +520,11 @@ fn actual_activation_host_failure_retains_receipt_and_custody_until_unwind_is_ad
+                     .unwrap(),
+             };
+             let prepared = executor
+-                .preflight_line_task_commands(&mut transaction, &batch)
++                .preflight_line_task_commands(
++                    &mut transaction,
++                    &batch,
++                    crate::awbc::product_step::line::ProductLineTaskCommit::Commands,
++                )
+                 .unwrap();
+             let proof = executor.dialogues.inspect_commit(&transaction).unwrap();
+             executor.commit_activation_host_result(&mut transaction, &mut host_results, ticket);
+diff --git a/crates/arcweft-core/src/awbc/vm.rs b/crates/arcweft-core/src/awbc/vm.rs
+index 66a82fdfb12220627b516e7b72f7a522b60807b5..d32e9a1279803ff730798c505c6b1845f62f37b6 100644
+--- a/crates/arcweft-core/src/awbc/vm.rs
++++ b/crates/arcweft-core/src/awbc/vm.rs
+@@ -4804,12 +4804,40 @@ pub(crate) struct PreparedPatternBinding {
+     layout: crate::awbc::schema::AwbcFrameLayoutId,
+     cursor: FiberCursor,
+     registers: Box<[AwbcRegisterId]>,
++    resources: std::collections::BTreeMap<
++        crate::value::ownership::RuntimeAffineResourceToken,
++        Option<AwbcRegisterId>,
++    >,
+ }
+ 
+ impl PreparedPatternBinding {
+     pub(crate) fn registers(&self) -> &[AwbcRegisterId] {
+         &self.registers
+     }
++
++    pub(crate) fn resource_destination(
++        &self,
++        token: &crate::value::ownership::RuntimeAffineResourceToken,
++    ) -> Result<Option<AwbcRegisterId>, VmError> {
++        self.resources.get(token).copied().ok_or_else(|| {
++            VmError::Runtime(
++                "pattern resource was not present in its admitted source value".to_owned(),
++            )
++        })
++    }
++
++    pub(crate) fn resource_destinations(
++        &self,
++    ) -> impl Iterator<
++        Item = (
++            &crate::value::ownership::RuntimeAffineResourceToken,
++            Option<AwbcRegisterId>,
++        ),
++    > {
++        self.resources
++            .iter()
++            .map(|(token, destination)| (token, *destination))
++    }
+ }
+ 
+ pub(crate) fn prepare_pattern_binding(
+@@ -4843,6 +4871,18 @@ pub(crate) fn prepare_pattern_binding_view(
+         .frame_layouts
+         .get(frame.layout.index())
+         .ok_or(FiberStateError::UnknownFrameLayout(frame.layout.0))?;
++    let mut resources = std::collections::BTreeMap::new();
++    for handle in value
++        .inspect()
++        .affine_handles()
++        .map_err(|error| VmError::Runtime(error.to_string()))?
++    {
++        if resources.insert(handle.resource_token(), None).is_some() {
++            return Err(VmError::Runtime(
++                "pattern source repeats an affine resource".to_owned(),
++            ));
++        }
++    }
+     let mut registers = Vec::new();
+     visit_pattern_bindings_view(
+         program,
+@@ -4866,6 +4906,22 @@ pub(crate) fn prepare_pattern_binding_view(
+                 )));
+             }
+             registers.push(register);
++            for handle in view
++                .inspect()
++                .affine_handles()
++                .map_err(|error| VmError::Runtime(error.to_string()))?
++            {
++                let destination = resources.get_mut(&handle.resource_token()).ok_or_else(|| {
++                    VmError::Runtime(
++                        "pattern projection manufactured an affine resource".to_owned(),
++                    )
++                })?;
++                if destination.replace(register).is_some() {
++                    return Err(VmError::Runtime(
++                        "pattern duplicates an affine resource into multiple bindings".to_owned(),
++                    ));
++                }
++            }
+             Ok(())
+         },
+     )?;
+@@ -4883,6 +4939,7 @@ pub(crate) fn prepare_pattern_binding_view(
+         layout: frame.layout,
+         cursor: fiber.cursor,
+         registers: registers.into_boxed_slice(),
++        resources,
+     })
+ }
+ 
+@@ -5093,64 +5150,6 @@ fn pattern_has_binding(
+     }
+ }
+ 
+-/// Maps each affine handle token in a borrowed value to the one register that
+-/// the already-tested pattern will bind it into. This is used by Product's
+-/// ownership preflight before the source value leaves line custody.
+-pub(crate) fn pattern_handle_destinations(
+-    program: &AwbcProgram,
+-    fiber: &FiberState,
+-    pattern: AwbcPatternId,
+-    value: &RuntimeValue,
+-    token: &crate::runtime_id::RuntimeLineHandleToken,
+-) -> Result<Vec<AwbcRegisterId>, VmError> {
+-    pattern_handle_destinations_view(program, fiber, pattern, value.live_view(), token)
+-}
+-
+-pub(crate) fn pattern_handle_destinations_view(
+-    program: &AwbcProgram,
+-    fiber: &FiberState,
+-    pattern: AwbcPatternId,
+-    value: LiveRuntimeValueView<'_>,
+-    token: &crate::runtime_id::RuntimeLineHandleToken,
+-) -> Result<Vec<AwbcRegisterId>, VmError> {
+-    let prepared = prepare_pattern_binding_view(program, fiber, pattern, value)?;
+-    let mut destinations = Vec::new();
+-    visit_pattern_bindings_view(
+-        program,
+-        Some(fiber.active_frame()?),
+-        pattern,
+-        value,
+-        0,
+-        &mut |register, view| {
+-            if view
+-                .contains_line_handle(token)
+-                .map_err(|error| VmError::Runtime(error.to_string()))?
+-            {
+-                destinations.push(register);
+-            }
+-            Ok(())
+-        },
+-    )?;
+-    let admitted = prepared.registers.iter().copied().collect::<BTreeSet<_>>();
+-    if destinations
+-        .iter()
+-        .any(|destination| !admitted.contains(destination))
+-    {
+-        return Err(VmError::Runtime(
+-            "pattern handle preview referenced an unbound register".to_owned(),
+-        ));
+-    }
+-    destinations.sort_unstable();
+-    destinations.dedup();
+-    if destinations.len() > 1 {
+-        return Err(VmError::Runtime(
+-            "AWBC result pattern duplicates one affine line handle into multiple registers"
+-                .to_owned(),
+-        ));
+-    }
+-    Ok(destinations)
+-}
+-
+ /// Preflights every register that `bind_pattern_owned` will write, including
+ /// target-slot type admission and duplication constraints, without moving any
+ /// part of the borrowed result value.
+diff --git a/crates/arcweft-core/src/line_task/handle.rs b/crates/arcweft-core/src/line_task/handle.rs
+index 4e17a2ecfb14735ccd5fa98fa1980b02c888fc5c..84675171b7a6ecad12946709232e6fcefc15156c 100644
+--- a/crates/arcweft-core/src/line_task/handle.rs
++++ b/crates/arcweft-core/src/line_task/handle.rs
+@@ -862,7 +862,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
+         let mut tokens = std::collections::BTreeSet::new();
+         for capture in captures {
+             for handle in capture
+-                .affine_line_handles()
++                .line_handle_projection()
+                 .map_err(|_| LineRuntimeError::InvalidDeferredTransition)?
+             {
+                 if !tokens.insert(handle.token().clone()) {
+@@ -1112,7 +1112,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
+         let mut tokens = std::collections::BTreeSet::new();
+         for capture in captures {
+             for handle in capture
+-                .affine_line_handles()
++                .line_handle_projection()
+                 .map_err(|_| LineRuntimeError::InvalidDeferredTransition)?
+             {
+                 if handle.token().activation() != activation
+@@ -2300,7 +2300,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
+         let mut old_tokens = std::collections::BTreeSet::new();
+         if let Some(pending_value) = pending_value {
+             for handle in pending_value
+-                .affine_line_handles()
++                .line_handle_projection()
+                 .map_err(|_| LineRuntimeError::InvalidHandlePayload)?
+             {
+                 if !old_tokens.insert(handle.token().clone()) {
+@@ -2318,7 +2318,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
+         }
+         let mut selected_tokens = std::collections::BTreeSet::new();
+         for handle in value
+-            .affine_line_handles()
++            .line_handle_projection()
+             .map_err(|_| LineRuntimeError::InvalidHandlePayload)?
+         {
+             if !selected_tokens.insert(handle.token().clone()) {
+@@ -3973,7 +3973,7 @@ fn stage_scheduled_capture_completion<'a>(
+     let mut tokens = std::collections::BTreeSet::new();
+     for capture in captures {
+         for handle in capture
+-            .affine_line_handles()
++            .line_handle_projection()
+             .map_err(|_| LineRuntimeError::InvalidScheduledCaptureGraph)?
+         {
+             if !tokens.insert(handle.token().clone()) {
+@@ -5092,7 +5092,7 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
+                 for capture in scheduled.custody.values() {
+                     for handle in capture
+                         .borrowed_view()
+-                        .affine_line_handles()
++                        .line_handle_projection()
+                         .map_err(|_| LineRuntimeError::InvalidRestoredScheduledState)?
+                     {
+                         if handle.token().activation() != activation
+@@ -5159,7 +5159,7 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
+             for capture in registration.captures() {
+                 for handle in capture
+                     .borrowed_view()
+-                    .affine_line_handles()
++                    .line_handle_projection()
+                     .map_err(|_| LineRuntimeError::InvalidRestoredDeferredState)?
+                 {
+                     if handle.token().activation() != activation
+@@ -5196,7 +5196,7 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
+             | RuntimeDialogueResultState::Publishing { value, .. } => {
+                 for handle in value
+                     .borrowed_view()
+-                    .affine_line_handles()
++                    .line_handle_projection()
+                     .map_err(|_| LineRuntimeError::InvalidRestoredResultState)?
+                 {
+                     if handle.token().activation() != activation {
+diff --git a/crates/arcweft-core/src/presentation/resources/banks/transition.rs b/crates/arcweft-core/src/presentation/resources/banks/transition.rs
+index 332e190786cfe4292fde7ed128760834856e26b5..6b70b6c1f3e8480ce79df17748de61f1ccbafde8 100644
+--- a/crates/arcweft-core/src/presentation/resources/banks/transition.rs
++++ b/crates/arcweft-core/src/presentation/resources/banks/transition.rs
+@@ -3,6 +3,19 @@
+ use super::*;
+ use std::collections::{BTreeMap, BTreeSet};
+ 
++struct PreparedPresentationTransition {
++    owners: BTreeSet<PresentationScopeOwner>,
++    moves: Vec<(
++        RuntimePresentationHandleToken,
++        Option<PresentationScopeOwner>,
++    )>,
++    receiving: BTreeMap<RuntimePresentationBankId, PresentationScopeOwner>,
++    discard_owners: Vec<(
++        RuntimePresentationHandleToken,
++        Option<PresentationScopeOwner>,
++    )>,
++}
++
+ impl<V> PresentationBanks<V> {
+     /// The source and receiver are actual borrowed storage anchors. All grant,
+     /// token, queue and destination cursor admission precedes the first move.
+@@ -15,6 +28,113 @@ impl<V> PresentationBanks<V> {
+         escaping: &[RuntimePresentationHandleToken],
+         discarding: &[RuntimePresentationHandleToken],
+     ) -> Result<(), RuntimePresentationError> {
++        let PreparedPresentationTransition {
++            owners,
++            moves,
++            receiving,
++            discard_owners,
++        } = self.prepare_scope_transition(
++            program,
++            targets
++                .iter()
++                .map(|target| PresentationScopeExit {
++                    execution: target.execution,
++                    fiber: target.fiber,
++                    scope: target.scope.as_ref(),
++                })
++                .collect(),
++            destination.as_ref().map(|receiver| PresentationScopeExit {
++                execution: receiver.execution,
++                fiber: receiver.fiber,
++                scope: receiver.scope.as_ref(),
++            }),
++            escaping,
++            discarding,
++        )?;
++        // Detachment is internal to this exclusive transaction. The actual
++        // value stays in its original storage until the VM commits its move.
++        for (token, owner) in &moves {
++            self.ledgers
++                .get_mut(&token.bank())
++                .expect("issuing ledger admitted")
++                .transfer(program, token, *owner, None)
++                .expect("original token owner admitted");
++        }
++        self.retire_scope_contour(program, targets)
++            .expect("exclusive contour remains admitted after escaping leases detach");
++        // Discards in the exiting contour already followed its deterministic
++        // scope/bank/issuance order. The remaining packet values follow their
++        // original source order, under the same aggregate capacity admission.
++        for (token, owner) in discard_owners {
++            if owner.is_some_and(|owner| owners.contains(&owner)) {
++                continue;
++            }
++            let ledger = self
++                .ledgers
++                .get_mut(&token.bank())
++                .expect("discarding ledger admitted");
++            if let Some(body) = ledger
++                .release(program, &token, owner)
++                .expect("discarding token and original owner admitted")
++            {
++                self.retirements.push(PresentationRetirement {
++                    token: token.clone(),
++                    body,
++                });
++            }
++        }
++        if let Some(receiver) = destination.as_mut() {
++            for (bank, expected) in &receiving {
++                let actual = self
++                    .ledgers
++                    .get_mut(bank)
++                    .expect("receiving ledger admitted")
++                    .bind_scope(
++                        program,
++                        receiver.execution,
++                        receiver.fiber,
++                        receiver.scope.reborrow(),
++                    )
++                    .expect("destination cursor and post-exit scope capacity admitted");
++                assert_eq!(
++                    actual, *expected,
++                    "destination scope grant matches its preflight"
++                );
++            }
++        }
++        for (token, _) in moves {
++            if let Some(owner) = receiving.get(&token.bank()) {
++                self.ledgers
++                    .get_mut(&token.bank())
++                    .expect("receiving ledger admitted")
++                    .transfer(program, &token, None, Some(*owner))
++                    .expect("actual receiving grant was installed");
++            }
++        }
++        Ok(())
++    }
++    /// The same complete transition admission used by the exclusive commit.
++    /// Borrowed scope references come from the actual execution contour.
++    pub(crate) fn preflight_scope_transition(
++        &self,
++        program: &RuntimeProgramOwner,
++        targets: Vec<PresentationScopeExit<PresentationScopeRef<'_>>>,
++        destination: Option<PresentationScopeExit<PresentationScopeRef<'_>>>,
++        escaping: &[RuntimePresentationHandleToken],
++        discarding: &[RuntimePresentationHandleToken],
++    ) -> Result<(), RuntimePresentationError> {
++        self.prepare_scope_transition(program, targets, destination, escaping, discarding)
++            .map(|_| ())
++    }
++
++    fn prepare_scope_transition(
++        &self,
++        program: &RuntimeProgramOwner,
++        targets: Vec<PresentationScopeExit<PresentationScopeRef<'_>>>,
++        destination: Option<PresentationScopeExit<PresentationScopeRef<'_>>>,
++        escaping: &[RuntimePresentationHandleToken],
++        discarding: &[RuntimePresentationHandleToken],
++    ) -> Result<PreparedPresentationTransition, RuntimePresentationError> {
+         let root = self
+             .ledgers
+             .get(&RuntimePresentationBankId::Root)
+@@ -49,16 +169,10 @@ impl<V> PresentationBanks<V> {
+                 .get(&token.issuance())
+                 .ok_or(RuntimePresentationError::UnknownHandle)?;
+             ledger.validate_handle(program, token, lease.owner)?;
+-            discard_owners.push((token, lease.owner));
++            discard_owners.push((token.clone(), lease.owner));
+         }
+-        let owners = self.inspect_scope_contour(
+-            program,
+-            targets.iter().map(|target| PresentationScopeExit {
+-                execution: target.execution,
+-                fiber: target.fiber,
+-                scope: target.scope.as_ref(),
+-            }),
+-        )?;
++        let owners = self.inspect_scope_contour(program, targets)?;
++
+         self.preflight_scope_retirements(&owners, &selected, &discarded)?;
+         let receiving_owners = if let Some(receiver) = &destination {
+             let receiving = self.inspect_scope_contour(
+@@ -66,7 +180,10 @@ impl<V> PresentationBanks<V> {
+                 std::iter::once(PresentationScopeExit {
+                     execution: receiver.execution,
+                     fiber: receiver.fiber,
+-                    scope: receiver.scope.as_ref(),
++                    scope: PresentationScopeRef {
++                        binding: receiver.scope.binding,
++                        anchor: receiver.scope.anchor,
++                    },
+                 }),
+             )?;
+             if !owners.is_disjoint(&receiving) {
+@@ -106,73 +223,21 @@ impl<V> PresentationBanks<V> {
+                     program,
+                     receiver.execution,
+                     receiver.fiber,
+-                    receiver.scope.as_ref(),
++                    PresentationScopeRef {
++                        binding: receiver.scope.binding,
++                        anchor: receiver.scope.anchor,
++                    },
+                     released,
+                 )?;
+                 receiving.insert(token.bank(), owner);
+             }
+             moves.push((token.clone(), lease.owner));
+         }
+-        // Detachment is internal to this exclusive transaction. The actual
+-        // value stays in its original storage until the VM commits its move.
+-        for (token, owner) in &moves {
+-            self.ledgers
+-                .get_mut(&token.bank())
+-                .expect("issuing ledger admitted")
+-                .transfer(program, token, *owner, None)
+-                .expect("original token owner admitted");
+-        }
+-        self.retire_scope_contour(program, targets)
+-            .expect("exclusive contour remains admitted after escaping leases detach");
+-        // Discards in the exiting contour already followed its deterministic
+-        // scope/bank/issuance order. The remaining packet values follow their
+-        // original source order, under the same aggregate capacity admission.
+-        for (token, owner) in discard_owners {
+-            if owner.is_some_and(|owner| owners.contains(&owner)) {
+-                continue;
+-            }
+-            let ledger = self
+-                .ledgers
+-                .get_mut(&token.bank())
+-                .expect("discarding ledger admitted");
+-            if let Some(body) = ledger
+-                .release(program, token, owner)
+-                .expect("discarding token and original owner admitted")
+-            {
+-                self.retirements.push(PresentationRetirement {
+-                    token: token.clone(),
+-                    body,
+-                });
+-            }
+-        }
+-        if let Some(receiver) = destination.as_mut() {
+-            for (bank, expected) in &receiving {
+-                let actual = self
+-                    .ledgers
+-                    .get_mut(bank)
+-                    .expect("receiving ledger admitted")
+-                    .bind_scope(
+-                        program,
+-                        receiver.execution,
+-                        receiver.fiber,
+-                        receiver.scope.reborrow(),
+-                    )
+-                    .expect("destination cursor and post-exit scope capacity admitted");
+-                assert_eq!(
+-                    actual, *expected,
+-                    "destination scope grant matches its preflight"
+-                );
+-            }
+-        }
+-        for (token, _) in moves {
+-            if let Some(owner) = receiving.get(&token.bank()) {
+-                self.ledgers
+-                    .get_mut(&token.bank())
+-                    .expect("receiving ledger admitted")
+-                    .transfer(program, &token, None, Some(*owner))
+-                    .expect("actual receiving grant was installed");
+-            }
+-        }
+-        Ok(())
++        Ok(PreparedPresentationTransition {
++            owners,
++            moves,
++            receiving,
++            discard_owners,
++        })
+     }
+ }
+diff --git a/crates/arcweft-core/src/value/ownership.rs b/crates/arcweft-core/src/value/ownership.rs
+index bcb0aa4b1327c9de4063fc30ad51bf7c4972b53e..6c13983b9428bf9c66a895f6d3459dc46df857cc 100644
+--- a/crates/arcweft-core/src/value/ownership.rs
++++ b/crates/arcweft-core/src/value/ownership.rs
+@@ -142,6 +142,24 @@ pub(crate) enum RuntimeAffineHandle {
+     },
+ }
+ 
++/// Identity of a resource, separate from its occurrence path in a value.
++#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
++pub(crate) enum RuntimeAffineResourceToken {
++    Line(crate::runtime_id::RuntimeLineHandleToken),
++    Presentation(crate::runtime_id::RuntimePresentationHandleToken),
++}
++
++impl RuntimeAffineHandle {
++    pub(crate) fn resource_token(&self) -> RuntimeAffineResourceToken {
++        match self {
++            Self::Line(handle) => RuntimeAffineResourceToken::Line(handle.token().clone()),
++            Self::Presentation { token, .. } => {
++                RuntimeAffineResourceToken::Presentation(token.clone())
++            }
++        }
++    }
++}
++
+ #[derive(Clone, Debug, Eq, Error, PartialEq)]
+ pub enum RuntimeAffineHandleError {
+     #[error(transparent)]
+@@ -320,6 +338,12 @@ impl RuntimeValue {
+         handles.into_line_handles()
+     }
+ 
++    pub(crate) fn line_handle_projection(
++        &self,
++    ) -> Result<Vec<RuntimeAffineLineHandle>, RuntimeAffineHandleError> {
++        self.view().line_handle_projection()
++    }
++
+     pub(crate) fn affine_handles(
+         &self,
+     ) -> Result<Vec<RuntimeAffineHandle>, RuntimeAffineHandleError> {
+diff --git a/crates/arcweft-core/src/value/ownership/resources.rs b/crates/arcweft-core/src/value/ownership/resources.rs
+index ff8c7ef6efea2ba4ef568ad271b9c2fbf34de7af..b41ea287eecd434c1e1a44677aa30d0bb9c40a77 100644
+--- a/crates/arcweft-core/src/value/ownership/resources.rs
++++ b/crates/arcweft-core/src/value/ownership/resources.rs
+@@ -11,6 +11,22 @@ use crate::value::{
+ };
+ 
+ impl RuntimeValueView<'_> {
++    /// Projects the line ledger's family from the shared resource grammar.
++    /// Other resource families remain under their enclosing execution owner;
++    /// this does not admit a detached value or replace complete custody checks.
++    pub(crate) fn line_handle_projection(
++        self,
++    ) -> Result<Vec<RuntimeAffineLineHandle>, RuntimeAffineHandleError> {
++        Ok(self
++            .affine_handles()?
++            .into_iter()
++            .filter_map(|handle| match handle {
++                RuntimeAffineHandle::Line(handle) => Some(handle),
++                RuntimeAffineHandle::Presentation { .. } => None,
++            })
++            .collect())
++    }
++
+     /// The enclosing owner admits resources before collecting this metadata.
+     /// This traversal constructs no live value or executable capability.
+     pub(crate) fn affine_line_handles(

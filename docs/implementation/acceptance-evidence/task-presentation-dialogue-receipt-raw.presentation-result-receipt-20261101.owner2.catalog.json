@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "9b2915863eb5f37b44ec1d421b48f1980f683789",
+  "command": [
+    "nextest",
+    "list",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked",
+    "--message-format",
+    "json"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-result-receipt-20261101.owner2.catalog.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-31T16:41:10.6843232Z",
+  "finishedAt": "2026-10-31T16:42:30.9115312Z"
+}

@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "base": "7b5092403a8d4d28f703aec869a1d1b9055e5ec9",
+  "command": [
+    "nextest",
+    "run",
+    "-p",
+    "arcweft-core",
+    "--all-features",
+    "--locked",
+    "--lib",
+    "-E",
+    "test(presentation::resources::banks::tests::transition::) | test(awbc::product_step::tests::presentation::transfers::)",
+    "--no-tests",
+    "fail",
+    "--no-fail-fast",
+    "--status-level",
+    "all",
+    "--final-status-level",
+    "all"
+  ],
+  "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-result-receipt-20261101.focus1.runtime.log",
+  "exitCode": 0,
+  "startedAt": "2026-10-31T15:41:50.6058657Z",
+  "finishedAt": "2026-10-31T15:41:52.9605715Z"
+}

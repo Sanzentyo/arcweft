@@ -13661,3 +13661,21 @@ Supersedes: 受け取り先に単一bankしか持てないという前提を削�
 途中のcompile 101、fixture metadataの失敗、実Presentation Handleをline-only projectionが拒否した4件、最初の全owner 2,202 PASS／9 FAILも原本とそのsourceを保持した。terminalの旧Transferred markerは実結果保持へ同期し、receiver更新・nominal sequence・完全／部分placeと復元のassertionはroot終了前に保持した。VM slice総量8／4／16、1-op条件と上限policyを弱めず、終了後のstorage vacancyも検証した。Wasm初回は存在しないpackage名でコンパイル前に終了101、実package名に修正した同入力の再実行は終了0。異なるepochの結果は合算しない。
 
 [基盤の全SHA・原本](acceptance-evidence/task-presentation-scope-exit-owner-validation.json)、[frame終了の全SHA・失敗source・最終原本](acceptance-evidence/task-presentation-frame-exit-owner-validation.json)。Generic Matchと既受入cutの判定は維持した。Source ViewValue ABI／実driver、typed Dialogue結果のRoot受取・破棄・回収ACK、Native親contour、最終runtime matrixの受入はこの記録から推定しない。現在の判定は[現状一覧](current-status.md)に集約する。
+
+## 2026-11-01 — 実Dialogue結果のRoot受領・破棄と完全session復元
+
+元bankのscope終了・保持・明示破棄を一括で準備する基盤をd2134c4eac4223729a7d6b3b69f7f2f9bcc51273、実D→Rootの受取接続を9b2915863eb5f37b44ec1d421b48f1980f683789、公開save往復と完全session復元の追加を7be26409c08475e16b398611dc6861e0cd3b0bb4で通常commit／pushした。元14 tracked／6実untracked WIPを保持し、各検証は凍結checkoutの入力に限る。
+
+PreparedPatternBindingがLine／Presentationの共通resource→任意register inventoryを所有する。DialogueとAwaitManyの二つの旧destination walkerは削除した。scope終了・受け取る元token・破棄結果・上書きregisterの資源・実取消contourを同じbank transactionで検査し、移動前に総回収容量と実Root grantを認める。publicationにはstaged childと結果の所有もあるため、拒否時は一部metadataの書戻しでなく、元のadmitted program／Sourceと完全session snapshot・admission・format contextを既存checkpoint所有者で復元する。共有line ledgerは同じclosed resource walkから自familyだけを投影し、Presentation bankの検査は全実行admissionが所有する。strictなstandalone line-only extractorの拒否契約は保持した。
+
+新fixtureは実Root Dialogueからproduction factoryでD actionを開始し、その実子bankに登録した元HandleをVM Select、Root publication、lexical ExitScopeへ通す。producer intrinsicだけはtrusted VmHost、回収ACKはqueue解放を模している。元tokenと受け取り先grant、公開inert saveのserde／owned restore、完全private session checkpointの復元を確認した。元Root queueと破棄結果が同じhandles=1の上限を超える2回の拒否で全snapshotと進行入力を保持し、command／flow出力0。同policyの再試行で元tokenを一度だけ退役させる。これは実Source十一callable・mount・六methodや実表示driverの受入ではなく、checkpointの捕捉前を含むouter step全体の証明でもない。
+
+focus1は16 PASS／4,031入力。focus2は未移行test caller引数でcompile101。owner1の全2,214 PASSは完全session／共有line移行前の別epochである。focus3はDiscard spelling・error exhaustiveness・fixture borrow orderでcompile101。focus4はfixtureのline ID、focus5は共有lineのstrict extractor、focus6はfixtureの進行入力欠落により各0／2。focus5の実不具合は上記family投影へ修復し、他は正規のcontent／実activationの進行入力へfixtureを同期した。各不成功epochの正確な変更sourceと凍結hashを保持する。focus7は2 PASS／4,032入力。最終owner2は別の全件実行で2,216／2,216 PASS・失敗0・除外0。異なる入力・限定runは合算しない。
+
+最終ownerと同じ4,032入力でworkspace全97 package・全target・全feature check／Clippy、Core default全target check、doctest78、fmt55、Wasm Core／Player Web default compile、構造gateは各終了0。変更17 sourceの実bytes／physical LOC・base比と構造reportの依存／package metricsを原本へ記録し、bank transaction、pattern proof、完全session checkpointという既存の所有境界を維持した。新しい永続ledger、fallback、body複製、token再発行、Cargo edge、version fork、I/O境界は加えていない。警告と元WIPは保持した。
+
+[全公開SHA・失敗source・最終実行／品質検査の原本](acceptance-evidence/task-presentation-dialogue-receipt-owner-validation.json)。Cargo生成物の移動・コピー・退避と追加cleanは行っていない。
+
+Supersedes: 実typed Dialogue結果のRoot受取・破棄が未接続という現状説明を、上記の実実行と拒否／再試行・save／rollbackの根拠により削除する。実driver ACK、Source ABI、outer step全体、Native親contour、active-bank置換・画像parity・最終runtime matrixは別境界として[現状一覧](current-status.md)一か所に置く。全体goal未完了を理由にGeneric Matchと先行受入を戻さず、公開済み履歴prefixとraw原本を変更しない。
+
+同じ訂正で、DialogueView／Await行の「現入力」は「当該入力」へ改めた。既受入の55逆依存結果は各原本の凍結入力に属し、今回のmain全体を再実行したとの誤読を防ぐためであり、判定・件数・SHAは変更しない。

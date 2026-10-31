@@ -1,0 +1,5 @@
+Verify Dialogue receipt save and complete session rollback
+
+Exercise public save roundtrip and exact session checkpoint restoration around actual Dialogue result publication. Assert repeated retirement refusal produces no command or flow output and preserves the original selected result.
+
+Validation: arcweft-core all-features nextest, 2216 passed, zero skipped; 4032 frozen inputs with zero source drift.

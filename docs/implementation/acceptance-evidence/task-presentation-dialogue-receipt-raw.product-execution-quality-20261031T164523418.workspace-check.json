@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "base": "7be26409c08475e16b398611dc6861e0cd3b0bb4",
+  "command": [
+    "check",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked"
+  ],
+  "exitCode": 0,
+  "sourceInputs": 4032,
+  "sourceDrift": 0,
+  "startedAt": "2026-10-31T16:45:26.7505390Z",
+  "finishedAt": "2026-10-31T16:48:17.6905610Z"
+}

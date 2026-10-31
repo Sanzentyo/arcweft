@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "base": "7b5092403a8d4d28f703aec869a1d1b9055e5ec9",
+  "run": "presentation-result-receipt-20261101.focus1.runtime",
+  "actualExitCode": 0,
+  "summary": "Summary [   0.158s] 16 tests run: 16 passed, 2145 skipped",
+  "caseRowSource": "final-status-after-summary",
+  "executed": 16,
+  "passed": 16,
+  "failed": 0,
+  "skipped": 2145,
+  "selectedPackages": 1,
+  "matchedPackages": 1,
+  "noMatchingSelectedTests": [],
+  "catalogCaseDrift": 0,
+  "sourceInputs": 4031,
+  "sourceDrift": 0,
+  "held": 14,
+  "failureSet": [],
+  "isPassingRun": true,
+  "recordedAt": "2026-10-31T15:41:53.8273955Z"
+}
