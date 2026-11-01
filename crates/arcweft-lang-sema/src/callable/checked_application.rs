@@ -8,6 +8,7 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use arcweft_id::dialogue::{DialogueLineId, DialogueTextKey};
+use arcweft_interaction_model::presentation::PresentationArgumentKey;
 use arcweft_lang_hir::{
     dialogue_application::HirDialogueContentId, expr::HirCallArgumentOrdinal, identity::ExprId,
     scope::CaptureAccess,
@@ -1724,6 +1725,39 @@ pub enum CheckedCallOperandDestination {
     Open(OpenArgumentId),
 }
 
+impl CheckedCallOperandDestination {
+    fn presentation_argument(
+        &self,
+        selected: &ResolvedCallable,
+    ) -> Result<Option<PresentationArgumentKey>, CallConstraintInvariant> {
+        let CallableCandidateId::Presentation(callable) = selected.id() else {
+            return Ok(None);
+        };
+        match self {
+            Self::Parameter(coordinate) => {
+                let Some(CallableParameterConsumer::Presentation(role)) = selected
+                    .schema()
+                    .group(coordinate.group())
+                    .and_then(|group| group.parameter(coordinate.parameter()))
+                    .map(|parameter| parameter.consumer())
+                else {
+                    return Err(CallConstraintInvariant::MalformedSchemaInventory);
+                };
+                if !callable.accepts_argument_role(*role) {
+                    return Err(CallConstraintInvariant::MalformedSchemaInventory);
+                }
+                PresentationArgumentKey::try_new(*role, None)
+                    .map(Some)
+                    .map_err(|_| CallConstraintInvariant::MalformedSchemaInventory)
+            }
+            // Open supply is also used for options outside the executable
+            // grammar. They remain unclassified rather than acquiring a
+            // guessed role; an executable consumer must require a key.
+            Self::Open(open) => Ok(callable.argument_key(open.binding().as_str())),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CallableParameterAlternativeIndex(u32);
 
@@ -1767,6 +1801,7 @@ pub struct CheckedCallExecutionSlot {
     source: CheckedCallExecutionSource,
     abi_position: u32,
     destination: CheckedCallOperandDestination,
+    presentation_argument: Option<PresentationArgumentKey>,
     request_role_identity: CheckedCallRequestRoleIdentity,
     source_projection: CheckedConstraintSourceProjection,
     selection: CheckedCallSemanticSelection,
@@ -1850,6 +1885,11 @@ impl CheckedCallExecutionSlot {
     }
     pub const fn destination(&self) -> &CheckedCallOperandDestination {
         &self.destination
+    }
+    /// Exact source-selected presentation destination, including metadata keys.
+    /// Arguments outside the shared executable grammar have no such authority.
+    pub const fn presentation_argument(&self) -> Option<&PresentationArgumentKey> {
+        self.presentation_argument.as_ref()
     }
     pub const fn source_projection(&self) -> &CheckedConstraintSourceProjection {
         &self.source_projection
@@ -2118,6 +2158,7 @@ impl CheckedCallExecutionProjection {
                         .base()
                         .authority()
                         .request_role_identity(&slot.destination)?,
+                    presentation_argument: slot.destination.presentation_argument(selected)?,
                     destination: slot.destination,
                     source_projection: slot.source_projection,
                     selection: slot.selection,
@@ -4426,6 +4467,20 @@ impl CheckedCallCanonicalEncoder {
             }
         }
         self.u32(slot.abi_position());
+        match slot.presentation_argument() {
+            Some(key) => {
+                self.tag(1);
+                self.tag(key.role().semantic_tag());
+                match key.parameter() {
+                    Some(parameter) => {
+                        self.tag(1);
+                        self.bytes(parameter.as_bytes())?;
+                    }
+                    None => self.tag(0),
+                }
+            }
+            None => self.tag(0),
+        }
         self.operand_projection(
             slot.destination(),
             slot.source_projection(),

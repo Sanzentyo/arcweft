@@ -1,121 +1,174 @@
 //! Semantic argument coordinates shared by checking and executable commands.
 
+use arcweft_id::{DeclarationName, DeclarationNameError};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
-/// Semantic destination of a presentation argument. The selected schema owns
-/// the role independently of a parameter's source label or ordinal.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PresentationArgumentRole {
-    View,
-    Asset,
-    Lifetime,
-    TargetEntity,
-    TargetPublicId,
-    LayerPublicId,
-    Slot,
-    Scope,
-    Fade,
-    Fit,
-    Opacity,
-    Id,
-    Handle,
-    Key,
-    Mount,
-    Depth,
-    Enabled,
-    Visible,
-    Action,
-    Actions,
-    X,
-    Y,
-    Width,
-    Height,
-    Focus,
-    InputCapture,
-    Owner,
-    Drop,
-    AlignmentX,
-    AlignmentY,
-    PlaybackStart,
-    PlaybackPausedAt,
-    PlaybackLocalTime,
-    PlaybackRate,
-    TransformTx,
-    TransformTy,
-    TransformM11,
-    TransformM12,
-    TransformM21,
-    TransformM22,
-    ProxyId,
-    ProxyType,
-    ProxyRole,
-    ProxyLayer,
-    ProxyDepth,
-    ProxyHitTest,
-    Parameter,
-    ProxyParameter,
-    Look,
-    Source,
-    Character,
-    ViewValue,
+macro_rules! argument_roles {
+    ($($role:ident = $tag:literal => $source:literal),+ $(,)?) => {
+        /// Destination selected by the callable grammar, independently of the
+        /// argument's source position. Metadata roles also require a key.
+        #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+        #[serde(rename_all = "snake_case")]
+        pub enum PresentationArgumentRole { $($role),+ }
+
+        impl PresentationArgumentRole {
+            pub const ALL: &'static [Self] = &[$(Self::$role),+];
+
+            pub const fn semantic_tag(self) -> u8 {
+                match self { $(Self::$role => $tag),+ }
+            }
+
+            pub const fn from_semantic_tag(tag: u8) -> Option<Self> {
+                match tag { $($tag => Some(Self::$role)),+, _ => None }
+            }
+
+            /// Fixed spelling, or the prefix for a metadata argument.
+            pub const fn source_name(self) -> &'static str {
+                match self { $(Self::$role => $source),+ }
+            }
+        }
+    };
+}
+
+argument_roles! {
+    View = 0 => "view",
+    Asset = 1 => "asset",
+    Lifetime = 2 => "lifetime",
+    TargetEntity = 3 => "target",
+    TargetPublicId = 4 => "target",
+    LayerPublicId = 5 => "layer",
+    Slot = 6 => "slot",
+    Scope = 7 => "scope",
+    Fade = 8 => "fade",
+    Fit = 9 => "fit",
+    Opacity = 10 => "opacity",
+    Id = 11 => "id",
+    Handle = 12 => "handle",
+    Key = 13 => "key",
+    Mount = 14 => "mount",
+    Depth = 15 => "depth",
+    Enabled = 16 => "enabled",
+    Visible = 17 => "visible",
+    Action = 18 => "action",
+    Actions = 19 => "actions",
+    X = 20 => "x",
+    Y = 21 => "y",
+    Width = 22 => "width",
+    Height = 23 => "height",
+    Focus = 24 => "focus",
+    InputCapture = 25 => "input_capture",
+    Owner = 26 => "owner",
+    Drop = 27 => "drop",
+    AlignmentX = 28 => "alignment.x",
+    AlignmentY = 29 => "alignment.y",
+    PlaybackStart = 30 => "playback.start",
+    PlaybackPausedAt = 31 => "playback.paused_at",
+    PlaybackLocalTime = 32 => "playback.local_time",
+    PlaybackRate = 33 => "playback.rate",
+    TransformTx = 34 => "transform.tx",
+    TransformTy = 35 => "transform.ty",
+    TransformM11 = 36 => "transform.m11",
+    TransformM12 = 37 => "transform.m12",
+    TransformM21 = 38 => "transform.m21",
+    TransformM22 = 39 => "transform.m22",
+    ProxyId = 40 => "proxy.id",
+    ProxyType = 41 => "proxy.type",
+    ProxyRole = 42 => "proxy.role",
+    ProxyLayer = 43 => "proxy.layer",
+    ProxyDepth = 44 => "proxy.depth",
+    ProxyHitTest = 45 => "proxy.hit_test",
+    Parameter = 46 => "param.",
+    ProxyParameter = 47 => "proxy.param.",
+    Look = 48 => "look",
+    Source = 49 => "source",
+    Character = 50 => "character",
+    ViewValue = 51 => "view",
 }
 
 impl PresentationArgumentRole {
-    pub const fn semantic_tag(self) -> u8 {
-        match self {
-            Self::View => 0,
-            Self::Asset => 1,
-            Self::Lifetime => 2,
-            Self::TargetEntity => 3,
-            Self::TargetPublicId => 4,
-            Self::LayerPublicId => 5,
-            Self::Slot => 6,
-            Self::Scope => 7,
-            Self::Fade => 8,
-            Self::Fit => 9,
-            Self::Opacity => 10,
-            Self::Id => 11,
-            Self::Handle => 12,
-            Self::Key => 13,
-            Self::Mount => 14,
-            Self::Depth => 15,
-            Self::Enabled => 16,
-            Self::Visible => 17,
-            Self::Action => 18,
-            Self::Actions => 19,
-            Self::X => 20,
-            Self::Y => 21,
-            Self::Width => 22,
-            Self::Height => 23,
-            Self::Focus => 24,
-            Self::InputCapture => 25,
-            Self::Owner => 26,
-            Self::Drop => 27,
-            Self::AlignmentX => 28,
-            Self::AlignmentY => 29,
-            Self::PlaybackStart => 30,
-            Self::PlaybackPausedAt => 31,
-            Self::PlaybackLocalTime => 32,
-            Self::PlaybackRate => 33,
-            Self::TransformTx => 34,
-            Self::TransformTy => 35,
-            Self::TransformM11 => 36,
-            Self::TransformM12 => 37,
-            Self::TransformM21 => 38,
-            Self::TransformM22 => 39,
-            Self::ProxyId => 40,
-            Self::ProxyType => 41,
-            Self::ProxyRole => 42,
-            Self::ProxyLayer => 43,
-            Self::ProxyDepth => 44,
-            Self::ProxyHitTest => 45,
-            Self::Parameter => 46,
-            Self::ProxyParameter => 47,
-            Self::Look => 48,
-            Self::Source => 49,
-            Self::Character => 50,
-            Self::ViewValue => 51,
+    pub const fn requires_parameter(self) -> bool {
+        matches!(self, Self::Parameter | Self::ProxyParameter)
+    }
+
+    pub(super) fn matches_source_name(self, name: &str) -> bool {
+        if self.requires_parameter() {
+            name.strip_prefix(self.source_name())
+                .is_some_and(|key| PresentationArgumentKey::validate_parameter(key).is_ok())
+        } else {
+            name == self.source_name()
+        }
+    }
+}
+
+/// One exact input destination. Two metadata fields of the same role retain
+/// distinct keys; fixed fields cannot smuggle a metadata key into the ABI.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(try_from = "ArgumentKeyWire", into = "ArgumentKeyWire")]
+pub struct PresentationArgumentKey {
+    role: PresentationArgumentRole,
+    parameter: Option<String>,
+}
+
+impl PresentationArgumentKey {
+    pub fn try_new(
+        role: PresentationArgumentRole,
+        parameter: Option<String>,
+    ) -> Result<Self, PresentationArgumentKeyError> {
+        if role.requires_parameter() != parameter.is_some() {
+            return Err(PresentationArgumentKeyError::ParameterPresence { role });
+        }
+        if let Some(key) = &parameter {
+            Self::validate_parameter(key)?;
+        }
+        Ok(Self { role, parameter })
+    }
+
+    /// Checks a borrowed key before a bounded consumer copies it.
+    pub fn validate_parameter(key: &str) -> Result<(), PresentationArgumentKeyError> {
+        for segment in key.split('.') {
+            DeclarationName::validate_source(segment)?;
+        }
+        Ok(())
+    }
+
+    pub const fn role(&self) -> PresentationArgumentRole {
+        self.role
+    }
+
+    pub fn parameter(&self) -> Option<&str> {
+        self.parameter.as_deref()
+    }
+}
+
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum PresentationArgumentKeyError {
+    #[error("presentation argument {role:?} has an invalid metadata-key presence")]
+    ParameterPresence { role: PresentationArgumentRole },
+    #[error("invalid presentation metadata key: {0}")]
+    Parameter(#[from] DeclarationNameError),
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ArgumentKeyWire {
+    role: PresentationArgumentRole,
+    parameter: Option<String>,
+}
+
+impl TryFrom<ArgumentKeyWire> for PresentationArgumentKey {
+    type Error = PresentationArgumentKeyError;
+
+    fn try_from(value: ArgumentKeyWire) -> Result<Self, Self::Error> {
+        Self::try_new(value.role, value.parameter)
+    }
+}
+
+impl From<PresentationArgumentKey> for ArgumentKeyWire {
+    fn from(value: PresentationArgumentKey) -> Self {
+        Self {
+            role: value.role,
+            parameter: value.parameter,
         }
     }
 }

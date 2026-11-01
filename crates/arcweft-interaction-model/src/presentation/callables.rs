@@ -1,6 +1,6 @@
 //! Executable presentation operation identities and their authored argument roles.
 
-use super::{PresentationArgumentRole, PresentationResourceKind};
+use super::{PresentationArgumentKey, PresentationArgumentRole, PresentationResourceKind};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -87,30 +87,118 @@ impl PresentationCallableId {
     }
 
     pub fn argument_role(self, name: &str) -> Option<PresentationArgumentRole> {
-        let role = match self {
-            Self::View | Self::Menu | Self::Overlay => view_argument(name),
-            Self::Mount => match view_argument(name)? {
-                PresentationArgumentRole::View => Some(PresentationArgumentRole::ViewValue),
-                argument => Some(argument),
-            },
-            Self::Background => background_argument(name),
-            Self::Image => image_argument(name),
-            Self::PlayerViewport => viewport_argument(name),
-            Self::Show => character_argument(name, true),
-            Self::RefShow | Self::Hide => character_argument(name, false),
-            Self::RefBackground | Self::ClearBackground => background_reference_argument(name),
-        }?;
-        // An inert address has no lifetime or occupant custody. Scope selection
-        // belongs to operations that register or remove the occupant instead.
-        if role == PresentationArgumentRole::Scope
-            && matches!(self.result(), PresentationCallableResult::SlotRef(_))
-        {
-            None
-        } else {
-            Some(role)
-        }
+        PresentationArgumentRole::ALL
+            .iter()
+            .copied()
+            .find(|role| self.accepts_argument_role(*role) && role.matches_source_name(name))
     }
 
+    /// Selects an exact typed destination at the source/schema boundary.
+    pub fn argument_key(self, name: &str) -> Option<PresentationArgumentKey> {
+        let role = self.argument_role(name)?;
+        let parameter = role
+            .requires_parameter()
+            .then(|| name[role.source_name().len()..].to_owned());
+        PresentationArgumentKey::try_new(role, parameter).ok()
+    }
+
+    /// Closed semantic grammar used by source selection and executable ABI
+    /// admission. Public-id targets and entity targets remain distinct roles.
+    pub const fn accepts_argument_role(self, role: PresentationArgumentRole) -> bool {
+        use PresentationArgumentRole as A;
+        match self {
+            Self::View | Self::Menu | Self::Overlay | Self::Mount => {
+                matches!((self, role), (Self::Mount, A::ViewValue))
+                    || (!matches!(self, Self::Mount) && matches!(role, A::View))
+                    || matches!(
+                        role,
+                        A::Lifetime
+                            | A::TargetPublicId
+                            | A::LayerPublicId
+                            | A::Id
+                            | A::Handle
+                            | A::Key
+                            | A::Mount
+                            | A::Depth
+                            | A::Visible
+                            | A::Enabled
+                            | A::Focus
+                            | A::InputCapture
+                            | A::Owner
+                            | A::Drop
+                    )
+            }
+            Self::Background => matches!(
+                role,
+                A::Asset
+                    | A::TargetEntity
+                    | A::Slot
+                    | A::Scope
+                    | A::Fade
+                    | A::Fit
+                    | A::Opacity
+                    | A::AlignmentX
+                    | A::AlignmentY
+                    | A::PlaybackStart
+                    | A::PlaybackPausedAt
+                    | A::PlaybackLocalTime
+                    | A::PlaybackRate
+            ),
+            Self::Image => matches!(
+                role,
+                A::Source
+                    | A::Asset
+                    | A::Lifetime
+                    | A::TargetPublicId
+                    | A::LayerPublicId
+                    | A::Depth
+                    | A::Enabled
+                    | A::Visible
+                    | A::Id
+                    | A::Action
+                    | A::Actions
+                    | A::Fit
+                    | A::Opacity
+                    | A::X
+                    | A::Y
+                    | A::Width
+                    | A::Height
+                    | A::Focus
+                    | A::InputCapture
+                    | A::Owner
+                    | A::Drop
+                    | A::AlignmentX
+                    | A::AlignmentY
+                    | A::PlaybackStart
+                    | A::PlaybackPausedAt
+                    | A::PlaybackLocalTime
+                    | A::PlaybackRate
+                    | A::TransformTx
+                    | A::TransformTy
+                    | A::TransformM11
+                    | A::TransformM12
+                    | A::TransformM21
+                    | A::TransformM22
+                    | A::ProxyId
+                    | A::ProxyType
+                    | A::ProxyRole
+                    | A::ProxyLayer
+                    | A::ProxyDepth
+                    | A::ProxyHitTest
+                    | A::Parameter
+                    | A::ProxyParameter
+            ),
+            Self::PlayerViewport => matches!(role, A::Width | A::Height | A::Fit),
+            Self::Show => matches!(
+                role,
+                A::Character | A::Look | A::TargetEntity | A::Slot | A::Scope
+            ),
+            Self::Hide => matches!(role, A::Character | A::TargetEntity | A::Slot | A::Scope),
+            Self::RefShow => matches!(role, A::Character | A::TargetEntity | A::Slot),
+            Self::RefBackground => matches!(role, A::TargetEntity | A::Slot),
+            Self::ClearBackground => matches!(role, A::TargetEntity | A::Slot | A::Scope),
+        }
+    }
     pub const fn semantic_tag(self) -> u8 {
         match self {
             Self::View => 0,
@@ -127,134 +215,6 @@ impl PresentationCallableId {
             Self::Mount => 11,
         }
     }
-}
-
-fn view_argument(name: &str) -> Option<PresentationArgumentRole> {
-    use PresentationArgumentRole as Argument;
-
-    Some(match name {
-        "view" => Argument::View,
-        "lifetime" => Argument::Lifetime,
-        "target" => Argument::TargetPublicId,
-        "layer" => Argument::LayerPublicId,
-        "id" => Argument::Id,
-        "handle" => Argument::Handle,
-        "key" => Argument::Key,
-        "mount" => Argument::Mount,
-        "depth" => Argument::Depth,
-        "visible" => Argument::Visible,
-        "enabled" => Argument::Enabled,
-        "focus" => Argument::Focus,
-        "input_capture" => Argument::InputCapture,
-        "owner" => Argument::Owner,
-        "drop" => Argument::Drop,
-        _ => return None,
-    })
-}
-
-fn background_argument(name: &str) -> Option<PresentationArgumentRole> {
-    use PresentationArgumentRole as Argument;
-
-    Some(match name {
-        "asset" => Argument::Asset,
-        "target" => Argument::TargetEntity,
-        "slot" => Argument::Slot,
-        "scope" => Argument::Scope,
-        "fade" => Argument::Fade,
-        "fit" => Argument::Fit,
-        "opacity" => Argument::Opacity,
-        "alignment.x" => Argument::AlignmentX,
-        "alignment.y" => Argument::AlignmentY,
-        "playback.start" => Argument::PlaybackStart,
-        "playback.paused_at" => Argument::PlaybackPausedAt,
-        "playback.local_time" => Argument::PlaybackLocalTime,
-        "playback.rate" => Argument::PlaybackRate,
-        _ => return None,
-    })
-}
-
-fn image_argument(name: &str) -> Option<PresentationArgumentRole> {
-    use PresentationArgumentRole as Argument;
-
-    Some(match name {
-        "source" => Argument::Source,
-        "asset" => Argument::Asset,
-        "lifetime" => Argument::Lifetime,
-        "target" => Argument::TargetPublicId,
-        "layer" => Argument::LayerPublicId,
-        "depth" => Argument::Depth,
-        "enabled" => Argument::Enabled,
-        "visible" => Argument::Visible,
-        "id" => Argument::Id,
-        "action" => Argument::Action,
-        "actions" => Argument::Actions,
-        "fit" => Argument::Fit,
-        "opacity" => Argument::Opacity,
-        "x" => Argument::X,
-        "y" => Argument::Y,
-        "width" => Argument::Width,
-        "height" => Argument::Height,
-        "focus" => Argument::Focus,
-        "input_capture" => Argument::InputCapture,
-        "owner" => Argument::Owner,
-        "drop" => Argument::Drop,
-        "alignment.x" => Argument::AlignmentX,
-        "alignment.y" => Argument::AlignmentY,
-        "playback.start" => Argument::PlaybackStart,
-        "playback.paused_at" => Argument::PlaybackPausedAt,
-        "playback.local_time" => Argument::PlaybackLocalTime,
-        "playback.rate" => Argument::PlaybackRate,
-        "transform.tx" => Argument::TransformTx,
-        "transform.ty" => Argument::TransformTy,
-        "transform.m11" => Argument::TransformM11,
-        "transform.m12" => Argument::TransformM12,
-        "transform.m21" => Argument::TransformM21,
-        "transform.m22" => Argument::TransformM22,
-        "proxy.id" => Argument::ProxyId,
-        "proxy.type" => Argument::ProxyType,
-        "proxy.role" => Argument::ProxyRole,
-        "proxy.layer" => Argument::ProxyLayer,
-        "proxy.depth" => Argument::ProxyDepth,
-        "proxy.hit_test" => Argument::ProxyHitTest,
-        _ if name.starts_with("param.") => Argument::Parameter,
-        _ if name.starts_with("proxy.param.") => Argument::ProxyParameter,
-        _ => return None,
-    })
-}
-
-fn viewport_argument(name: &str) -> Option<PresentationArgumentRole> {
-    use PresentationArgumentRole as Argument;
-
-    Some(match name {
-        "width" => Argument::Width,
-        "height" => Argument::Height,
-        "fit" => Argument::Fit,
-        _ => return None,
-    })
-}
-
-fn character_argument(name: &str, include_look: bool) -> Option<PresentationArgumentRole> {
-    use PresentationArgumentRole as Argument;
-
-    Some(match name {
-        "character" => Argument::Character,
-        "look" if include_look => Argument::Look,
-        "target" => Argument::TargetEntity,
-        "slot" => Argument::Slot,
-        "scope" => Argument::Scope,
-        _ => return None,
-    })
-}
-
-fn background_reference_argument(name: &str) -> Option<PresentationArgumentRole> {
-    use PresentationArgumentRole as Argument;
-
-    Some(match name {
-        "target" => Argument::TargetEntity,
-        "slot" => Argument::Slot,
-        "scope" => Argument::Scope,
-        _ => return None,
-    })
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]

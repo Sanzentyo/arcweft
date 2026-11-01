@@ -9712,9 +9712,7 @@ fn runtime_call_target(
             use arcweft_core::presentation::{
                 RuntimePresentationSlotRefCall, RuntimePresentationSlotRefInput,
             };
-            use arcweft_lang_sema::callable::{
-                CallableParameterConsumer, CheckedCallOperandDestination, CheckedCallRuntimeOperand,
-            };
+            use arcweft_lang_sema::callable::CheckedCallRuntimeOperand;
             let mut inputs = application
                 .core()
                 .runtime_operands()
@@ -9726,19 +9724,7 @@ fn runtime_call_target(
                             reason: "slot reference requires checked parameter operands".to_owned(),
                         });
                     };
-                    let CheckedCallOperandDestination::Parameter(coordinate) = slot.destination()
-                    else {
-                        return Err(RuntimeSemanticProjectionError::Call {
-                            owner,
-                            reason: "slot reference has no open argument ABI".to_owned(),
-                        });
-                    };
-                    let Some(CallableParameterConsumer::Presentation(role)) = selected
-                        .schema()
-                        .group(coordinate.group())
-                        .and_then(|group| group.parameter(coordinate.parameter()))
-                        .map(|parameter| parameter.consumer())
-                    else {
+                    let Some(key) = slot.presentation_argument() else {
                         return Err(RuntimeSemanticProjectionError::Call {
                             owner,
                             reason: "slot reference operand has no selected presentation role"
@@ -9746,7 +9732,7 @@ fn runtime_call_target(
                         });
                     };
                     let role =
-                        RuntimePresentationSlotRefInput::try_from(*role).map_err(|error| {
+                        RuntimePresentationSlotRefInput::try_from(key.role()).map_err(|error| {
                             RuntimeSemanticProjectionError::Call {
                                 owner,
                                 reason: error.to_string(),

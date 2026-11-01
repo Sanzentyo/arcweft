@@ -9,6 +9,100 @@ use crate::types::TypeKind;
 use arcweft_interaction_model::presentation::PresentationResourceKind;
 
 #[test]
+fn image_execution_slots_retain_typed_metadata_keys_and_source_order() {
+    use crate::callable::CheckedCallRuntimeOperand;
+
+    let source = r#"fn draw() -> Handle<ImageSurface> {
+        image(param.色 = "red", proxy.param.user.role = "button", opacity = 0.5,
+            param.channel = 7i32)
+    }"#;
+    let world = fixture(source, None);
+    let report = analyze(&world).expect("metadata source analysis");
+    let calls = report
+        .calls()
+        .filter_map(|(_, call)| call.selected_application())
+        .collect::<Vec<_>>();
+    let [application] = calls.as_slice() else {
+        panic!(
+            "one selected image call: {:?}",
+            report
+                .calls()
+                .map(|(_, call)| call.diagnostics())
+                .collect::<Vec<_>>()
+        )
+    };
+    assert_eq!(
+        application.core().candidates().selected().id(),
+        &CallableCandidateId::Presentation(PresentationCallableId::Image)
+    );
+    let slots = application
+        .core()
+        .execution()
+        .arguments()
+        .iter()
+        .flat_map(|argument| argument.slots())
+        .collect::<Vec<_>>();
+    let destinations = slots
+        .iter()
+        .map(|slot| {
+            let key = slot
+                .presentation_argument()
+                .expect("source-selected typed destination");
+            (
+                key.role(),
+                key.parameter(),
+                slot.abi_position(),
+                slot.inferred(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        destinations,
+        vec![
+            (
+                PresentationArgumentRole::Parameter,
+                Some("色"),
+                1,
+                &TypeKind::String
+            ),
+            (
+                PresentationArgumentRole::ProxyParameter,
+                Some("user.role"),
+                2,
+                &TypeKind::String
+            ),
+            (PresentationArgumentRole::Opacity, None, 0, &TypeKind::F64),
+            (
+                PresentationArgumentRole::Parameter,
+                Some("channel"),
+                3,
+                &TypeKind::I32
+            ),
+        ]
+    );
+    let operands = application.core().runtime_operands();
+    let mut keys = operands
+        .iter()
+        .map(|operand| {
+            let CheckedCallRuntimeOperand::Argument { slot, .. } = operand else {
+                panic!("image uses argument operands")
+            };
+            (slot.abi_position(), slot.presentation_argument().unwrap())
+        })
+        .collect::<Vec<_>>();
+    keys.sort_unstable_by_key(|(position, _)| *position);
+    assert_eq!(
+        keys.iter().map(|(_, key)| key.role()).collect::<Vec<_>>(),
+        vec![
+            PresentationArgumentRole::Opacity,
+            PresentationArgumentRole::Parameter,
+            PresentationArgumentRole::ProxyParameter,
+            PresentationArgumentRole::Parameter,
+        ]
+    );
+}
+
+#[test]
 fn inert_slot_reference_calls_reject_scope_and_occupant_configuration() {
     for call in ["ref.bg", "ref.show"] {
         for name in ["scope", "fade", "look", "param.extra"] {

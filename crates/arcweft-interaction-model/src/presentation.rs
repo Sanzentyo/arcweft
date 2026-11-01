@@ -13,7 +13,9 @@ mod slot;
 pub use address_identity::{PresentationAddressIdentity, PresentationAddressIdentityKind};
 pub use slot::{PresentationSlotAddress, PresentationSlotAddressError};
 
-pub use arguments::PresentationArgumentRole;
+pub use arguments::{
+    PresentationArgumentKey, PresentationArgumentKeyError, PresentationArgumentRole,
+};
 pub use callables::{
     PresentationCallableId, PresentationCallableResult, PresentationHandleMethodId,
 };
