@@ -13943,3 +13943,15 @@ Sourceは新たなレコード回帰を含む36件で30 PASS／6 FAILとなり�
 対象5 crateの全target／全feature／locked Clippyは警告あり・終了0。初回fmtはif-let chainの整形差分を検出して終了1。その後のrustfmtはindentと等価なclosure表記だけを修正し、全差分を確認して32 path checkが終了0となった。runtime／Clippyの証拠はこの最終formatter修正より前であり、入力差分を原本へ残す。全62 packageの推移的reverse graphはmetadata／cargo tree --target allで確認したが、その範囲のruntime matrix、workspace全体のcheck／Clippy、Wasm、doctest、Tier 2、最終Native/Web画像parityを今回実行したとはしない。
 
 現状一覧の訂正理由: Coreの旧「Source command／method未接続」と、factory行等の重複したmethod残作業を、今回実行済みのHandle専用行と未接続の削除commandへ分けて置き換えた。SlotRefのnominal格納は既存SlotRef行へ追加し、独立した重複現状行を作らなかった。Source削除command、完全な構築前資源検査、computed receiverを含む式全体の失敗原子性、明示scope capability、ViewValue／Removed生成、driverと統合受入は引き続き未達である。Generic Matchの受入・公開行と過去の検証・full SHAは保持し、全体goalの未達を理由に受入済み機能へ戻していない。
+
+## Source slot削除の実行・占有resource返却 — 2026-11-02
+
+公開Sourceは 599570169d00773afc790a46ea4f002197a971cd、親は d562395be8a790b7199ee63d04a00d11762a5e6d。37 pathを通常commit／non-forced pushし、tree 6d9c860870bbd2a543eec2f37ebacf5cae9668f0、patch SHA256 4e5178ae883d0da89204c94c1e4ca6a1bfb3f85f5eb69f9d029f5d09b1ea13d2、公開blob差分0を確認した。元14 tracked／6 actual untracked WIPを保持した。[実測と公開記録](acceptance-evidence/task-presentation-slot-removal.json)・[原本ZIP](acceptance-evidence/task-presentation-slot-removal.raw.zip)を保持する。ZIPは23 entries／998355 bytes、SHA256 b70017940164e71b208ca1c78da7a71f1c2d45e926a86a98359c57b524610f04、entry差分0。
+
+初回は4,060入力の48件で42 PASS／6 FAIL。新規6件はbgの必須assetを省略し、bg／showへimage専用param.channelを渡したfixture誤りだった。最初に実装の不足と説明した判断を、schemaと診断から訂正した。実装の受入条件を緩めず、実asset／characterと異なる置換layoutを持つ入力へ直した。後続は新bank回帰を含む4,061入力で51／51 PASS、case／Source／EXE差分0。異なる入力の結果を一つのrunとして合算しない。過去の32 PASS／4 FAILの空削除4 IDも成功している。
+
+Source command 29（Handle 19・空削除4・占有／selector 6）、factory 12、SlotRef 3、slot-call／codec owner 4、bank owner 3を選択した。実BG／Characterの返却、元captureと置換layout、古いHandleのrelease、target／slot、評価順12とNoneを検査した。OneOp／max_ops 1・256 step、canonical decode、AWBC各step公開save／owned restoreを保持した。private bankではBool bodyを用い、Root／Dialogueを含む共通のnode上限exact／one-over、live／inert、元expected型の追加検査、別program lease拒否、空bank非発行を確認した。このprimitiveを全Source／全fiber条件の受入へ拡張しない。
+
+設計理由: 住所と削除は同じbounded selector ABIを共有する。削除結果のcanonical Optionを実bodyから借用で検査し、元の保持型／bindingを追加obligationとして残す。全検査の後にだけbodyを移動し、元Handleの義務を別に維持する。public addressからscope grantは作らない。version 1のままSource／semantic transcript／AWBC／verifier／実行consumerを置換した。unfrozen checkの終了0は、実行中に後続編集があったため正確な入力の受入証拠とせず、原本観測に限定した。
+
+現状一覧の訂正理由: clear.bg／free hideの「未接続」とRemoved生成の列挙を、今回成功した範囲について削除し、専用の一行へ集約した。元の失敗とfull SHAは履歴に保持した。全62逆依存・workspace quality、完全contour／式全体の失敗原子性、明示Scope、ViewValue、driver・画像parityの現在の未達は現状一覧で判定する。Generic Matchの受入・公開行は一字も変更していない。

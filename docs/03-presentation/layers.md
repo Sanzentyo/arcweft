@@ -249,6 +249,13 @@ respectively. An older handle cannot clear a replacement occupant.
 changing ownership; `clear.bg(...)` / `hide(...)` remove the occupant and return
 `Option<BackgroundSurface>` / `Option<CharacterSurface>`.
 
+Removal transfers the actual stored resource, including its original Source,
+capture layout, and invocation binding. Its scope-owned handle remains a separate
+release obligation. The bank admits the prospective canonical Option together
+with the other retained values, then rechecks the body's original stored type
+before moving it. An empty query returns None without creating a bank or advancing
+an issuance cursor. Public target/slot identities do not issue scope authority.
+
 `handle.show()` and `handle.hide()` borrow the checked receiver. They override
 the visibility of its original registration while retaining the authored body,
 token, and scope. `unmount()`, `release()`, and `destroy()` consume the handle

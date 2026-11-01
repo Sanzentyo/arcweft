@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "source": "599570169d00773afc790a46ea4f002197a971cd",
+  "inspectedHead": "599570169d00773afc790a46ea4f002197a971cd",
+  "documents": [
+    "docs/implementation/current-status.md",
+    "docs/implementation/convergence-evidence-history.md",
+    "docs/03-presentation/layers.md"
+  ],
+  "localLinks": 805,
+  "brokenLinks": 0,
+  "fencesBalanced": true,
+  "historicalPrefixBytes": 1713020,
+  "historicalPrefixDrift": 0,
+  "acceptedGenericMatchRowUnchanged": true,
+  "rawEntryCount": 23,
+  "rawZipSha256": "b70017940164e71b208ca1c78da7a71f1c2d45e926a86a98359c57b524610f04",
+  "rawEntryDrift": 0,
+  "recordedAt": "2026-11-01T16:43:06.9494078Z"
+}

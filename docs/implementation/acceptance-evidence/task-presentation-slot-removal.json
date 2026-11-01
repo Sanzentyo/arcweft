@@ -1,0 +1,399 @@
+{
+  "version": 1,
+  "source": "599570169d00773afc790a46ea4f002197a971cd",
+  "recordedAt": "2026-11-01T16:42:50.7560179Z",
+  "publication": {
+    "version": 1,
+    "commit": "599570169d00773afc790a46ea4f002197a971cd",
+    "parent": "d562395be8a790b7199ee63d04a00d11762a5e6d",
+    "tree": "6d9c860870bbd2a543eec2f37ebacf5cae9668f0",
+    "remote": "599570169d00773afc790a46ea4f002197a971cd",
+    "paths": [
+      {
+        "path": "crates/arcweft-compiler/src/lower.rs",
+        "blob": "686ca0e8a539c919044b844087b0df549ee6678c"
+      },
+      {
+        "path": "crates/arcweft-compiler/tests/callable_cases/presentation_commands.rs",
+        "blob": "7f150a4de5b08451cdd3035a9e86f2393e232991"
+      },
+      {
+        "path": "crates/arcweft-compiler/tests/callable_cases/presentation_slot_refs.rs",
+        "blob": "c5cd172c87e4a5780ae008e6172ac9f2fcfaccea"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/codec/runtime.rs",
+        "blob": "c1cf7553ab498857ecfc1c011042d4407b837925"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/codec/runtime/slot_reference_tests.rs",
+        "blob": "52347112ab32b2600efbf146ad43d12131b79600"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/fiber/tests/presentation.rs",
+        "blob": "38885a2dd610b464e83bb53715df406e4930324e"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/verify/code.rs",
+        "blob": "84220df5ce5c68896ad3ad3e197812bc0f559c4f"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/vm.rs",
+        "blob": "c08be902bffd1b2b88b0b4f0dcfa63440891b173"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/vm/resources.rs",
+        "blob": "29b7940e6d1410bde8b305f18b5c6f44959c4e20"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/eval.rs",
+        "blob": "3a5f44e4d69718c5a4ec987853f21c9496d4d633"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/eval/calls.rs",
+        "blob": "d49f1bdc679635135abdf3da6162d97a5910f32b"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/presentation.rs",
+        "blob": "f9b5809a761bc3df4f53f6ed1358385478810027"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/rollback.rs",
+        "blob": "f2bcde25bfd50171ef8ab23590ef6d83b9c916e0"
+      },
+      {
+        "path": "crates/arcweft-core/src/pattern/presentation_slot.rs",
+        "blob": "c04c713391becffea4af2b81969adbc568476b89"
+      },
+      {
+        "path": "crates/arcweft-core/src/plan/construction/lower.rs",
+        "blob": "c68cdfcf8857da32a56e8c3cf672ab8b032aaf3d"
+      },
+      {
+        "path": "crates/arcweft-core/src/plan/construction/source/expression/cursor.rs",
+        "blob": "7428763d2f53ffe46982b6dc9250805031a65399"
+      },
+      {
+        "path": "crates/arcweft-core/src/plan/construction/source/expression/decoding.rs",
+        "blob": "5b355e27c0a68ffd0c56409eed65101d9412a03d"
+      },
+      {
+        "path": "crates/arcweft-core/src/plan/construction/source/expression/encoding.rs",
+        "blob": "95b93427951807c5e3057e76bfc96de31eddb675"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation.rs",
+        "blob": "1fcce1670302e782cb16400fe3b81ad3f851202b"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/factory.rs",
+        "blob": "354e56e8d37062a0edd83142e7791ca33376b81d"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources.rs",
+        "blob": "557db2692e4b07ca8067d47921309ce1d2c8f20e"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/banks.rs",
+        "blob": "883b281e52f18160eb82a2410104a7a31df0dc15"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/banks/tests.rs",
+        "blob": "37d17acc675f5376ad3c0fd0dae7bfccb1f6f341"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/banks/tests/slot_removal.rs",
+        "blob": "379f5604ede771fcbbe09a3f7495c308c8243067"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/storage.rs",
+        "blob": "936eaacc0e35ee2999ff58ad4c48412b69f31c39"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/selectors.rs",
+        "blob": "21fe357232e9cf60e651d8e3ef3387485a117228"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/slot_reference.rs",
+        "blob": "42de8c676f328dffb9172e9d2673be439f3cf037"
+      },
+      {
+        "path": "crates/arcweft-core/src/pure.rs",
+        "blob": "9403ea1fc3f55c79fc8cae897d9d49c400d2d987"
+      },
+      {
+        "path": "crates/arcweft-core/src/pure/program.rs",
+        "blob": "527bce8bcaa63f2ecc26e54b9c006e223df313b3"
+      },
+      {
+        "path": "crates/arcweft-core/src/value.rs",
+        "blob": "5a978654b57b7df7bf569c9853f97c47c603d382"
+      },
+      {
+        "path": "crates/arcweft-core/src/value/awbc_save/retained_admission/presentation.rs",
+        "blob": "b234adef5a1cba887e5f9d2c0553d20ce4298e41"
+      },
+      {
+        "path": "crates/arcweft-core/src/value/expression_semantic.rs",
+        "blob": "6aa320bb0c7a1fde1d10e6a5a5e2be9ea0e86cc3"
+      },
+      {
+        "path": "crates/arcweft-core/src/value/opaque.rs",
+        "blob": "7a3a9c2e4f675f6c41fc91f2ae7592b7ea11859f"
+      },
+      {
+        "path": "crates/arcweft-core/src/value/option_value.rs",
+        "blob": "efc5b6fa942ee832f61764a2a0917206701f169f"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_expr.rs",
+        "blob": "71984de3965d5594e4562b4241ba10123edcaa22"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+        "blob": "a01a3d8e21e62cc0ea2b0a77a8ff366be1040f41"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts/type_dependencies.rs",
+        "blob": "e1cd4be697d9bfdcb8f0ccf595f6eec75a2bb238"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "4e5178ae883d0da89204c94c1e4ca6a1bfb3f85f5eb69f9d029f5d09b1ea13d2",
+    "heldPatchSha256": "53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-01T16:40:28.0977595Z"
+  },
+  "boundary": "Native and canonical decoded AWBC clear.bg/hide move the actual occupied resource into a canonical Option on the original execution bank; source handle obligations stay separate.",
+  "initial": {
+    "version": 1,
+    "base": "d562395be8a790b7199ee63d04a00d11762a5e6d",
+    "run": "presentation-slot-removal-owner1-20261102.runtime",
+    "actualExitCode": 100,
+    "summary": "Summary [   2.814s] 48 tests run: 42 passed, 6 failed, 2579 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 48,
+    "passed": 42,
+    "failed": 6,
+    "skipped": 2579,
+    "selectedPackages": 2,
+    "matchedPackages": 2,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4060,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [
+      {
+        "status": "FAIL",
+        "binary": "arcweft-compiler::callable_execution",
+        "test": "presentation_commands::source_presentation_clear_moves_the_occupied_background_in_native"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-compiler::callable_execution",
+        "test": "presentation_commands::source_presentation_clear_moves_the_occupied_background_in_decoded_awbc"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-compiler::callable_execution",
+        "test": "presentation_commands::source_presentation_hide_moves_the_occupied_character_in_decoded_awbc"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-compiler::callable_execution",
+        "test": "presentation_commands::source_presentation_hide_moves_the_occupied_character_in_native"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-compiler::callable_execution",
+        "test": "presentation_commands::source_presentation_removal_selects_target_slot_in_authored_order_in_decoded_awbc"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-compiler::callable_execution",
+        "test": "presentation_commands::source_presentation_removal_selects_target_slot_in_authored_order_in_native"
+      }
+    ],
+    "isPassingRun": false,
+    "recordedAt": "2026-11-01T16:35:25.6804587Z"
+  },
+  "final": {
+    "version": 1,
+    "base": "d562395be8a790b7199ee63d04a00d11762a5e6d",
+    "run": "presentation-slot-removal-owner2-20261102.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [   3.107s] 51 tests run: 51 passed, 2579 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 51,
+    "passed": 51,
+    "failed": 0,
+    "skipped": 2579,
+    "selectedPackages": 2,
+    "matchedPackages": 2,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4061,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-11-01T16:39:22.1495391Z"
+  },
+  "coverage": [
+    "29 source command cases: 19 previously connected handle conditions, 4 empty removal cases, 6 occupied/selector conditions.",
+    "12 existing factory conditions and 3 SlotRef conditions, including nominal copies.",
+    "4 slot-call/codec owner tests plus 3 bank admission regressions.",
+    "The source fixture keeps OneOp/max_ops 1, 256-step completion, canonical decoding, and AWBC public save/owned restore after every step.",
+    "Bank regressions inspect actual Root/Dialogue storage, exact/one-over shared node limits for live and inert bodies, original stored type failure, foreign executable lease, and no empty-bank/cursor issuance."
+  ],
+  "correction": "The first six added occupied/selector cases were invalid fixtures: bg omitted its required asset, and bg/show were supplied image-only param.channel. Corrected fixtures retain the actual asset/character and different replacement layouts; no production acceptance rule was weakened.",
+  "observationalCheck": {
+    "log": "presentation-slot-removal-check2-20261102.log",
+    "exitCode": 0,
+    "limitation": "Unfrozen check while further edits occurred; not exact-input acceptance. The final nextest catalog/run compiles the frozen source."
+  },
+  "implementation": [
+    "One bounded slot-call operation/role ABI replaces the address-only call metadata in source codec, semantic transcript, AWBC codec, verifier, Native and VM. All version markers remain 1.",
+    "Prospective Option admission borrows the selected actual body, counts it once with every other retained body, and preserves its original expected type/binding as an additional obligation.",
+    "Only successful owning admission permits the slot body move. A typed VM presentation admission refusal retains the cursor/budget instead of trapping.",
+    "An empty query does not create a ledger or advance a cursor. Public address identities grant no executable or lexical scope authority."
+  ],
+  "limits": [
+    "Workspace check/Clippy and the complete 62-package reverse runtime matrix have not yet run at this implementation.",
+    "No claim for complete multi-fiber/parent retained contours, whole-expression/computed-operand atomicity, explicit Scope capabilities, ViewValue/mount, driver rendering or final Native/Web image parity.",
+    "The bank quota regression is a generic private owner test with typed Bool bodies; source resource execution is separately established by the compiled fixtures.",
+    "Generic Match remains accepted and published. This cut introduces no concrete counterexample to its accepted boundary."
+  ],
+  "wip": {
+    "tracked": 14,
+    "actualUntracked": 6,
+    "patchSha256": "53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6",
+    "preserved": true
+  },
+  "raw": {
+    "path": "docs/implementation/acceptance-evidence/task-presentation-slot-removal.raw.zip",
+    "entries": [
+      {
+        "name": "checkpoint-presentation-slot-removal-source.message.txt",
+        "bytes": 994,
+        "sha256": "e68fc34d0e229b9ddeda06fd06ab48af5106f3257be54dceefb90908313374a1"
+      },
+      {
+        "name": "checkpoint-presentation-slot-removal-source.other.txt",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "checkpoint-presentation-slot-removal-source.owned.txt",
+        "bytes": 1978,
+        "sha256": "ed901c485fc432ecf5674158131a7070d2fd8f99e2b69d815506b9ea8e529202"
+      },
+      {
+        "name": "checkpoint-presentation-slot-removal-source.prepared.json",
+        "bytes": 6554,
+        "sha256": "76666f6ab153bd0445661015dbafd41995540407efdccfe4d8bcce0538cac99f"
+      },
+      {
+        "name": "checkpoint-presentation-slot-removal-source.reviewed.patch",
+        "bytes": 102120,
+        "sha256": "4e5178ae883d0da89204c94c1e4ca6a1bfb3f85f5eb69f9d029f5d09b1ea13d2"
+      },
+      {
+        "name": "checkpoint-presentation-slot-removal-source.verified.json",
+        "bytes": 5859,
+        "sha256": "e3a5355a6e472c60c11f784202aa04731c912b806f6dda294ecdf81af9a7af1a"
+      },
+      {
+        "name": "presentation-slot-removal-check2-20261102.log",
+        "bytes": 100032,
+        "sha256": "a1b16eb0babf48f6bdb0b57c6a5f696b52f16cbafae85647e215283599df3442"
+      },
+      {
+        "name": "presentation-slot-removal-owner1-20261102.binaries-before.json",
+        "bytes": 682,
+        "sha256": "11b81d59e8562d5b9b1b17d8750ebab6f96716bfb3ffa9e84c116d9d3a8477d6"
+      },
+      {
+        "name": "presentation-slot-removal-owner1-20261102.catalog.inventory.json",
+        "bytes": 667805,
+        "sha256": "6827c3a344bbe860bc40fdceab5711d7c23ab549167c97bb9dff195594fafd90"
+      },
+      {
+        "name": "presentation-slot-removal-owner1-20261102.catalog.json",
+        "bytes": 826,
+        "sha256": "3ead46345ffb562e7c1266e703e9e6e1c1c5eff3c9def45bfcb1ab853c0828b8"
+      },
+      {
+        "name": "presentation-slot-removal-owner1-20261102.catalog.log",
+        "bytes": 599168,
+        "sha256": "76c1cc0dd3110d98a937056abe1d99ef1241ce6fbf9247818388d1f87b754d90"
+      },
+      {
+        "name": "presentation-slot-removal-owner1-20261102.runtime.json",
+        "bytes": 920,
+        "sha256": "d66d97e2a1192e4a0320ba344d08fee0f1fe3c4d23dc43cc601cc836160a17de"
+      },
+      {
+        "name": "presentation-slot-removal-owner1-20261102.runtime.log",
+        "bytes": 931550,
+        "sha256": "b22a734766ccfecc2a85a5409a939900ba1a88b2eb88b50088d29db8c677e01c"
+      },
+      {
+        "name": "presentation-slot-removal-owner1-20261102.runtime.terminal-audit.json",
+        "bytes": 1896,
+        "sha256": "6a9088976b857366ee3b700258a4bc8e05d116849a70380fb0305b6886954ae3"
+      },
+      {
+        "name": "presentation-slot-removal-owner1-20261102.source-freeze.json",
+        "bytes": 793852,
+        "sha256": "1ce10d9c77bcec5a137736cd1dabf912beb2d3829dd8b4238fb41b10bb828401"
+      },
+      {
+        "name": "presentation-slot-removal-owner2-20261102.binaries-before.json",
+        "bytes": 682,
+        "sha256": "724241a0d8580767832cec88dcd0be10caf8964f1b9a671046d53dd61a682302"
+      },
+      {
+        "name": "presentation-slot-removal-owner2-20261102.catalog.inventory.json",
+        "bytes": 668623,
+        "sha256": "d485d63377ce93cc06d0b0509cfa4bf22df51d5f269bdfab39b4965380f462a9"
+      },
+      {
+        "name": "presentation-slot-removal-owner2-20261102.catalog.json",
+        "bytes": 863,
+        "sha256": "742353a510f1ccc238156b9aac59f1d6174bc859b2213c264497145f3b7f0368"
+      },
+      {
+        "name": "presentation-slot-removal-owner2-20261102.catalog.log",
+        "bytes": 599740,
+        "sha256": "7feaa699afc9da743645a98cd9b05ace93f21322aaa610f1d94d977987ff61e2"
+      },
+      {
+        "name": "presentation-slot-removal-owner2-20261102.runtime.json",
+        "bytes": 955,
+        "sha256": "c7ae5015c9f9f8ee3d8fd413d4d1ea2482cf3a6d84da4b93c53f8a9475ba2f79"
+      },
+      {
+        "name": "presentation-slot-removal-owner2-20261102.runtime.log",
+        "bytes": 922866,
+        "sha256": "deaf5f927a6b36e9ada3d6e11f7c55a1be8ea8fae8f688a1d845bb1862459d53"
+      },
+      {
+        "name": "presentation-slot-removal-owner2-20261102.runtime.terminal-audit.json",
+        "bytes": 628,
+        "sha256": "11d57ec32ca7202329a8c2aacaa5fdd9b86386ad61dd4e26a260b62995e9f8fa"
+      },
+      {
+        "name": "presentation-slot-removal-owner2-20261102.source-freeze.json",
+        "bytes": 794067,
+        "sha256": "62055da49d5bc856e2463fe6c9c98b99cefd68b1defb1fdd95afad8739740e6e"
+      }
+    ],
+    "entryCount": 23,
+    "bytes": 998355,
+    "sha256": "b70017940164e71b208ca1c78da7a71f1c2d45e926a86a98359c57b524610f04",
+    "entryDrift": 0
+  }
+}
