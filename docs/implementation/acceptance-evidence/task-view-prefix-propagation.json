@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "source": "8337b5867bcfd1f7aece65b08bd444a3a8ccb857",
+  "implementation": "150bceb149d35a159fc4235c67edc728d4c0f938",
+  "publication": {
+    "version": 1,
+    "commit": "8337b5867bcfd1f7aece65b08bd444a3a8ccb857",
+    "parent": "f7d76e29651dfb9102b7a2aef191564bcd863ad6",
+    "tree": "9304921352e9becc8c21523c2b52f75f0e2ebf0a",
+    "remote": "8337b5867bcfd1f7aece65b08bd444a3a8ccb857",
+    "paths": [
+      {
+        "path": "crates/arcweft-compiler/tests/callable_cases/presentation_view_values.rs",
+        "blob": "f8594779c7f37d24510aced398969105fe271aed"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "c290d6f0833ae37f6b2514df900baa6ff474a3e35d58412741599eb458c46eb7",
+    "heldPatchSha256": "53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-01T21:03:42.5061882Z"
+  },
+  "recordedAt": "2026-11-01T21:05:47.7163480Z",
+  "boundary": "Try success/residual and construction-scope escape for semantic View prefixes in original Flow",
+  "runtime": {
+    "version": 1,
+    "base": "f7d76e29651dfb9102b7a2aef191564bcd863ad6",
+    "run": "presentation-view-prefix-propagation-repro1-20261102.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [   0.732s] 28 tests run: 28 passed, 242 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 28,
+    "passed": 28,
+    "failed": 0,
+    "skipped": 242,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4066,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-11-01T21:01:34.7336409Z"
+  },
+  "clippy": {
+    "version": 1,
+    "base": "f7d76e29651dfb9102b7a2aef191564bcd863ad6",
+    "command": [
+      "clippy",
+      "-p",
+      "arcweft-compiler",
+      "--test",
+      "callable_execution",
+      "--all-features",
+      "--locked"
+    ],
+    "exitCode": 0,
+    "sourceInputs": 4066,
+    "sourceDrift": 0,
+    "startedAt": "2026-11-01T21:02:13.0801365Z",
+    "finishedAt": "2026-11-01T21:03:33.4394284Z"
+  },
+  "format": {
+    "command": "rustfmt --edition 2024 --config skip_children=true --check crates/arcweft-compiler/tests/callable_cases/presentation_view_values.rs",
+    "exitCode": 0,
+    "log": "presentation-view-prefix-propagation-format-20261102.log"
+  },
+  "conditions": {
+    "programInvocation": 12,
+    "originalFlow": 16,
+    "total": 28,
+    "newConditions": [
+      "Alias prefix: Option Try success and residual, Native and decoded AWBC",
+      "Computed callee prefix: Option Try success and residual, Native and decoded AWBC",
+      "Construct an affine View in a lexical scope, leave the scope, then mount/unmount the value, Native and decoded AWBC"
+    ],
+    "successOrder": 123,
+    "residualOrder": 1,
+    "stepMode": "OneOp",
+    "maxOps": 1,
+    "maxTicks": 256,
+    "awbcPublicSaveOwnedRestore": "every step"
+  },
+  "reuse": {
+    "version": 1,
+    "implementation": "150bceb149d35a159fc4235c67edc728d4c0f938",
+    "testSource": "8337b5867bcfd1f7aece65b08bd444a3a8ccb857",
+    "oldInputs": 4066,
+    "newInputs": 4066,
+    "changedInputPaths": [
+      "crates/arcweft-compiler/tests/callable_cases/presentation_view_values.rs"
+    ],
+    "productionInputDrift": 0
+  },
+  "reusedEvidence": "task-view-flow-semantic-projection.json retains actual 2621 library and 292 integration passes plus workspace quality for implementation Source 150bceb149d35a159fc4235c67edc728d4c0f938; they were not rerun by this test-only cut",
+  "ownership": "Only one integration-test file changed; the ten new executions verify externally observable control/ownership boundaries. No production, Cargo, source fixtures, instruction or contract change.",
+  "limits": [
+    "These exact Try/scope escape cases do not establish every carrier/capture/rendering condition. The fixture verifies ownership through successful mount/unmount and save/restore; it does not render or compare caption pixels.",
+    "A separate full 71-package reverse matrix is running at source 8337b5867bcfd1f7aece65b08bd444a3a8ccb857; this local pass is not its terminal result."
+  ],
+  "wip": {
+    "heldTracked": 14,
+    "heldPatchSha256": "53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6",
+    "actualUntrackedHeld": 6
+  },
+  "raw": {
+    "path": "task-view-prefix-propagation.raw.zip",
+    "entryCount": 20,
+    "payloadEntries": 19,
+    "bytes": 762791,
+    "sha256": "c6747be95b575f48f1f6715f051ab1620c8d6ebeb22d6ecf7b48b615600750ae",
+    "entryDrift": 0
+  }
+}

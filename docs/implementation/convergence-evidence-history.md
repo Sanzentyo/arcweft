@@ -14025,3 +14025,11 @@ Source 150bceb149d35a159fc4235c67edc728d4c0f938（親d2da4f4044f2880006e33953585
 compile-onlyの1 caseをNative／decoded AWBCの実行6条件へ置き換え、通常Flowのalias、scope付き初期化、複合calleeで実際のmount／unmountと評価順12を確認した。Program invocation 12条件と合わせて18件PASS。AWBCは各stepで公開保存・owned restoreを行い、OneOp・max_ops=1・256 ticks上限を維持する。初回test helperのplan所有APIとFnMut内のconsuming restoreの3回のcompiler拒否、および旧private tableを直接変更するlibrary fixtureとtest importの拒否を保持し、すべて修復した。最終4 libraryは2,621／2,621 PASS・8 ignored（HIR上限境界1 slow）、5 integration targetは292／292 PASS・除外0。workspace全97 package・全target／全feature／locked check・Clippy、変更21 Rust pathのfmtと構造gateは終了0。警告は残る。
 
 訂正理由は、旧Flow failureに対する型投影・束縛・継続の修復と実Native／AWBC実行結果である。現状一覧の「通常Flowのaliasは未達」をこの根拠で削除・更新した。過去のFAILや公開SHAは上の履歴・原本に残し、Generic Match等の受入済み項目は変更しない。すべてのsemantic-prefix伝播／capture、reactive default、描画driver、全71逆依存runtimeと全体goalを、この局所実行だけで完了とはしない。
+
+## semantic View prefixのOption伝播・構築scope退出 — 2026-11-02
+
+Source 8337b5867bcfd1f7aece65b08bd444a3a8ccb857（親f7d76e29651dfb9102b7a2aef191564bcd863ad6）で実行回帰テスト1 path・90行を通常commit／non-forced pushした。公開tree／patch／blob差分0、元14 trackedのpatch SHA256 53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6と元6 actual untrackedを保持する。[検証原本](acceptance-evidence/task-view-prefix-propagation.json)と[全原本ZIP](acceptance-evidence/task-view-prefix-propagation.raw.zip)へ、実行、4,066入力・case・EXE pin、fmt・Clippyと公開照合を残す。
+
+aliasと複合calleeのscope付きprefixでOption Tryの成功／残差をNative／decoded AWBCの8条件として実行し、成功時123、残差時1を確認した。残差では後続の引数・mountへ進まない。別の2条件で、scope内のStringとaliasからView値を構築し、scopeを退出した後にmount／unmountした。描画やcaption画像の検証ではない。既存18条件と合わせて28／28 PASS。元のOneOp・max_ops=1・256 ticks上限、各step AWBC公開保存／owned restoreを維持する。新しい本番修正は不要で、既存の型付き継続で成立したことを証拠にした。
+
+変更はintegration test1 pathだけで、実装150bceb149d35a159fc4235c67edc728d4c0f938からの4,066入力差分は当該test pathのみ、本番入力差分0。当該test targetの全feature／locked Clippyとfmtは終了0。Source150bceb149d35a159fc4235c67edc728d4c0f938の2,621 library／292 integration・workspace gateはその入力の既存原本として再利用し、今回再実行したとはしない。現状一覧は28条件へ更新した。全体の未検証条件を理由に個別完了を未完了へ戻さず、Generic Matchの受入も維持する。全71逆依存matrixはこのSourceで別途進行中であり、この局所passを終端結果へ拡張しない。
