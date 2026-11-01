@@ -13985,3 +13985,13 @@ Coreの元VM loopにopt-inの関数境界を置き、別関数の最初のoperat
 全CLIは12 target・692 unique実行・649 PASS／43 FAIL／23 ignored、重複0。以前のSource 68eeb22a426300562ab8c7eababb99bad0e9877eから共通失敗ID 43・新規0・解消0・未選択0。ID一致を原因同一とは扱わず、原診断を保持する。
 
 現状一覧の訂正理由: 最新の公開Sourceと今回実際に影響するCore全53逆依存の終端へ横断行を置換した。以前のinteraction-model全62の結果・失敗・full SHAは上の履歴と旧原本へそのまま保持し、scopeが異なる現在形を重複掲載しない。個別の受入済み機能は維持する。ViewValue／Scope／完全contour・式全体の失敗原子性／Native公開save／driver・最終画像parityの未達を、この修復の成功で完了とはしない。
+
+## View identityの共通owner — 2026-11-02
+
+Source 64e4afdf202afd97bc84d254fae681c5f12eaafa（親ef8120f840d9002300d63a1c82804263552dd921）を通常commit／non-forced pushし、tree／patch／公開blob差分0を確認した。[検証原本](acceptance-evidence/task-shared-view-identity.json)と[全原本ZIP](acceptance-evidence/task-shared-view-identity.raw.zip)を保持する。ZIPは30 entries／1460983 bytes、SHA256 3762986ffc0c4d5b1b0d1685d54eb89d5e879fcea003b03984347b758a67c7cf、entry差分0。元14 tracked／6 actual untracked WIPのpatch SHA256 53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6を維持した。
+
+ViewValueの元宣言をCoreと描画側で共有するため、ViewId・ViewIdError・ProjectedRuntimeViewIdの唯一の定義とfamily／Serde／v1 projectionをarcweft-id::viewへ移した。retained program、accepted revision、registry、mount occurrenceは元View ownerに残す。旧root／moduleの再exportは削除し、全consumerを直接参照へ移行した。67 Rust pathとcrate mapの68 path、360 insertions／304 deletions。最初のworkspace checkはView partに残った完全修飾crate::ViewId参照で停止した。修復後のworkspace全97 package・全target／全feature／locked checkとClippyは各終了0、警告は残る。
+
+最終4,062入力のnextest ownerは7／7 PASS・Source／case／EXE差分0、246は意図したfilter外。移した3件とViewId codecを共通ownerで4件、retained program／revision ownerで3件とし、混在していたcodec testのassertionを落とさず分けた。構造gate終了0、3,298 files／3,168 Rust files・1,788,649 physical Rust LOC・385 review trigger・blocking0。新ownerは7,133 bytes／221 LOC、ID facadeは34,019 bytes／1,073 LOC（module追加のみ）、旧identity ownerは8,360 bytes／260 LOC。共有の文法・hashは低層、retained executionとregistry stateは上層へ保ち、import-only consumerの状態責務とCargo edgeは変えない。各path metricと依存fan-in/outをowner review／CSVへ保持した。
+
+実metadata／target-all treeによるIDの全逆依存は71 package。全71のruntimeはViewValue public switch後の統合runで検証し、今回の7件やconsumer compileを全runtime受入へ置換しない。Source ViewValueの生成・mount実行、driver、全体の受入は引き続き実装中である。Generic Matchの受入・公開行と以前のSourceごとの実行結果は維持し、所有移行を理由に完了項目を未完了へ戻さない。現状一覧にはこの所有移行の行だけを追加した。
