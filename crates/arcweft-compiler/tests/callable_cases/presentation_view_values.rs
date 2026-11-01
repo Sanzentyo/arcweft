@@ -146,6 +146,10 @@ fn source_view_computed_callee_keeps_prefix_effects_in_decoded_awbc() {
 }
 
 fn run_flow(native: bool, body: &str, expected: &str) {
+    run_flow_with_declarations(native, "", body, expected);
+}
+
+fn run_flow_with_declarations(native: bool, declarations: &str, body: &str, expected: &str) {
     use arcweft_core::{
         awbc::{
             codec::AwbcDecodeBudget,
@@ -160,6 +164,7 @@ fn run_flow(native: bool, body: &str, expected: &str) {
     let source = format!(
         r#"
 pub view Card(caption: String) {{ Text(caption) }}
+{declarations}
 flow main() -> i64 {{ {body} }}
 entry cli @entry.main {{ goto @flow.main }}
 "#
@@ -468,4 +473,49 @@ fn source_view_alias_is_semantic_capture_for_nested_native_closures() {
 #[test]
 fn source_view_alias_is_semantic_capture_for_nested_decoded_awbc_closures() {
     run_flow(false, FLOW_NESTED_CAPTURED_ALIAS, "42");
+}
+
+const FLOW_CONTEXTUAL_CAPTURE: &str = r#"
+    let selected = Card;
+    let builder: (String -> i64 effects {}) = |caption| {
+        let handle = mount(selected(caption));
+        handle.unmount();
+        42i64
+    };
+    return builder("owned")
+"#;
+
+#[test]
+fn source_view_alias_capture_uses_the_expected_native_closure_type() {
+    run_flow(true, FLOW_CONTEXTUAL_CAPTURE, "42");
+}
+
+#[test]
+fn source_view_alias_capture_uses_the_expected_decoded_awbc_closure_type() {
+    run_flow(false, FLOW_CONTEXTUAL_CAPTURE, "42");
+}
+
+fn run_generic_view_callback(native: bool) {
+    run_flow_with_declarations(
+        native,
+        r#"fn apply<T>(make: (String -> T effects {})) -> T { make("owned") }"#,
+        r#"
+        let selected = Card;
+        let value = apply(|caption| selected(caption));
+        let handle = mount(value);
+        handle.unmount();
+        return 42i64
+        "#,
+        "42",
+    );
+}
+
+#[test]
+fn source_view_alias_capture_returns_through_a_generic_native_callback() {
+    run_generic_view_callback(true);
+}
+
+#[test]
+fn source_view_alias_capture_returns_through_a_generic_decoded_awbc_callback() {
+    run_generic_view_callback(false);
 }
