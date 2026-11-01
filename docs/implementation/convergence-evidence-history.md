@@ -13735,3 +13735,15 @@ LSPのpresentation-type-argument-tooling-before-20261101は0 PASS／2 FAIL・219
 元tracked WIP14／untracked実ファイル6を保持した。CLIの元system-info 8→32 user hunkはstageせず、新canonical blobへimmutable元patchをalternate indexで適用するとactual working blobを再現する。ほか13 held blobは不変。残WIP patch SHA256は53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6となり、前の5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920aと元6dd4dd235aedbe9a22634d6faeb23754dba0763abf7fcf15f6c0916f43f2e6efを保全証明とともに保持する。
 
 Supersedes: 現状一覧のc4365e40c7e1b6050b4ba3162b367c954b7f07ff・4,036入力の横断表と「型投影の横断検証中」は、後続の実終端・具体的なテスト修復を根拠として置き換えた。以前の8,987 PASS／0 FAIL／24 ignored、CLI check415 PASS／43 FAIL、全CLI692／649 PASS／43 FAIL、構造3,272 files／3,142 Rust files・1,777,137 LOC／382 reviewは[旧原本](acceptance-evidence/task-presentation-shared-identities-validation.json)へ保持し、今回の再実行に転用しない。現状一覧は一か所を維持する。Generic Matchを含む既受入を未完了へ戻さず、Source ViewValue生成・Presentation command／method実行・driver接続やCLI既知43件を別の未達として区別する。[全実行・失敗・公開・保全の原本](acceptance-evidence/task-presentation-handle-projection-validation.json)。
+
+## Presentation slot住所の共有ownerへの移行 — 2026-11-01
+
+Source c3d2b2d35761382c59d87e81618bef51d3398a5c（親05b763093877a313f4e0cfd2fc8469a09cfec400、tree 2593848aa87aa54aa117f44967b0807400e91335、patch SHA256 2eea996d4dc8726879361e4a98b330d4cec07d4956327753c910097f3a45693d）を既存mainへnon-forced pushし、全13 pathのblob・差分・remoteを照合した。住所はinteraction-modelのPresentationSlotAddressが一つの型で所有し、target／slotのpublic IDと8 resource familyの対応を構築・借用検査・厳密なSerdeで共通に検査する。Coreの重複定義、表示側の重複keyと別validationを削除し、retainedな参照・handle・slot値・clear・registryも同じ住所を保持する。表示側の既存Background contextは画像identityだけを担当する。Rust surface bodyの閉じた関連は既存resource kindを選択し、不明なTや別familyを無検査で通さない。
+
+最初のowner1 checkは、hide_characterのtestがPublicIdへ直接移行したgetterに古いid()を呼んだため終了101。4,039入力差分0で、catalog／runtimeは未実行だった。移行漏れを修正し、target.だけの空suffixも共通住所で拒否するowner2の4 package全target／全feature／locked checkは終了0。続く全library 2,420／2,420 PASS・除外0、Clippyの全target／全feature／lockedと11 Rust path fmtは各終了0。各4,039入力、catalogと実行case、EXEの差分0。初回を成功runへ書き換えず、[全command・入力・原診断・公開照合](acceptance-evidence/task-presentation-slot-address-owner-validation.json)へ保持する。
+
+旧手動slot.bankは既存Background resourceに一致しないためslot.background.bankへ移行した。上限・予算・op数は変更していない。旧invalid-target fixtureは共通Serdeで早期拒否し、別途、形式上正しいCharacter住所を元Background tokenへ流用した候補は実行admissionでInvalidStateとなる。後続のmetadata要求にも最初の失敗を保持し、元live bodyの一回の退役を確認した。検査の消去や、異なる入力での成功への読み替えはしていない。
+
+責務はshared addressへ集約し、Coreのbank・token・scope grant・元programとbody custodyを移さない。新moduleは164 physical LOC、11 Rust pathの現在byte数・physical LOC・embedded test LOC・baselineとの差分と依存fan-in／fan-outを原本へ記録した。Cargo manifest／lockの全pinが不変のため元の97 package metadataを再利用し、changed owner 4の推移的reverse closureは62 packageと確認した。依存やfeatureの変更、新しいI/O・backend依存、別reader／代替registryはない。全62の実行とworkspace gateを今回のowner検証へ合算しない。
+
+元tracked WIP14／untracked実ファイル6を保持し、残WIP patch SHA256は53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6のままである。今回の住所はinertなcell identityであり、実occupantへの権限を発行しない。Source SlotRefのCore値codec・Sema snapshot owner・Compilerのclosed型投影、Presentation callable／method実行・driver接続はこのcutでは未接続であり、型付き住所の成功をその受入へ拡張しない。Generic Matchと先行Handle／Core custody等の受入は維持し、現状一覧の一か所に新境界を追加した。
