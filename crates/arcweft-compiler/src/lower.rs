@@ -9688,12 +9688,24 @@ fn runtime_call_target(
     if let arcweft_lang_sema::callable::CallableCandidateId::Presentation(presentation) =
         selected_id
     {
-        if let arcweft_interaction_model::presentation::PresentationCallableResult::SlotRef(
-            resource,
-        ) = presentation.result()
-        {
+        let slot_operation = match presentation.result() {
+            arcweft_interaction_model::presentation::PresentationCallableResult::SlotRef(
+                resource,
+            ) => Some((
+                arcweft_core::presentation::RuntimePresentationSlotOperation::Reference,
+                resource,
+            )),
+            arcweft_interaction_model::presentation::PresentationCallableResult::Removed(
+                resource,
+            ) => Some((
+                arcweft_core::presentation::RuntimePresentationSlotOperation::Remove,
+                resource,
+            )),
+            _ => None,
+        };
+        if let Some((operation, resource)) = slot_operation {
             use arcweft_core::presentation::{
-                RuntimePresentationSlotRefCall, RuntimePresentationSlotRefInput,
+                RuntimePresentationSlotCall, RuntimePresentationSlotInput,
             };
             use arcweft_lang_sema::callable::CheckedCallRuntimeOperand;
             let mut inputs = application
@@ -9715,7 +9727,7 @@ fn runtime_call_target(
                         });
                     };
                     let role =
-                        RuntimePresentationSlotRefInput::try_from(key.role()).map_err(|error| {
+                        RuntimePresentationSlotInput::try_from(key.role()).map_err(|error| {
                             RuntimeSemanticProjectionError::Call {
                                 owner,
                                 reason: error.to_string(),
@@ -9725,7 +9737,8 @@ fn runtime_call_target(
                 })
                 .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
             inputs.sort_unstable_by_key(|(position, _)| *position);
-            let call = RuntimePresentationSlotRefCall::try_new(
+            let call = RuntimePresentationSlotCall::try_new(
+                operation,
                 resource,
                 inputs.into_iter().map(|(_, role)| role),
             )
@@ -9733,7 +9746,7 @@ fn runtime_call_target(
                 owner,
                 reason: error.to_string(),
             })?;
-            return Ok(RuntimeResolvedStaticCallTarget::PresentationSlotRef(call));
+            return Ok(RuntimeResolvedStaticCallTarget::PresentationSlot(call));
         }
         if let arcweft_interaction_model::presentation::PresentationCallableResult::Handle(
             resource,

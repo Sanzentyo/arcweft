@@ -574,22 +574,27 @@ impl<'a> Cursor<'a> {
                 .map_err(|_| self.invalid("presentation factory ABI"))?;
             }
             3 => {
+                let operation =
+                    crate::presentation::RuntimePresentationSlotOperation::from_semantic_tag(
+                        self.byte()?,
+                    )
+                    .ok_or_else(|| self.invalid("slot operation"))?;
                 let resource = arcweft_interaction_model::presentation::PresentationResourceKind::from_semantic_tag(self.byte()?)
                     .ok_or_else(|| self.invalid("slot reference resource"))?;
                 let count = self.count()?;
-                if count > 3 {
+                if count > 4 {
                     return Err(self.invalid("slot reference input count"));
                 }
                 counts.array(count, 0)?;
-                let mut roles = [crate::presentation::RuntimePresentationSlotRefInput::Target; 3];
+                let mut roles = [crate::presentation::RuntimePresentationSlotInput::Target; 4];
                 for role in &mut roles[..count] {
-                    *role =
-                        crate::presentation::RuntimePresentationSlotRefInput::from_semantic_tag(
-                            self.byte()?,
-                        )
-                        .ok_or_else(|| self.invalid("slot reference input role"))?;
+                    *role = crate::presentation::RuntimePresentationSlotInput::from_semantic_tag(
+                        self.byte()?,
+                    )
+                    .ok_or_else(|| self.invalid("slot reference input role"))?;
                 }
-                crate::presentation::RuntimePresentationSlotRefCall::try_new(
+                crate::presentation::RuntimePresentationSlotCall::try_new(
+                    operation,
                     resource,
                     roles[..count].iter().copied(),
                 )

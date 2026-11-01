@@ -62,6 +62,16 @@ pub(crate) struct PresentationBody<V> {
     pub value: V,
 }
 
+/// A borrowed prospective transfer from one actual bank into a typed Option.
+/// It carries no grant and cannot select a bank from a public address alone.
+#[derive(Clone, Copy)]
+pub(crate) struct PresentationSlotRemovalAdmission<'a> {
+    pub bank: RuntimePresentationBankId,
+    pub address: &'a PresentationSlotAddress,
+    pub result: RuntimeSemanticTypeId,
+    pub binding: Option<&'a crate::program_types::RuntimeFunctionEffectInstantiation>,
+}
+
 impl<V: RuntimeStoredValue> PresentationBody<V> {
     pub(crate) fn admit_retained(
         &self,
@@ -341,13 +351,38 @@ impl<V: RuntimeStoredValue> PresentationLedger<PresentationBody<V>> {
     pub(crate) fn admit_bodies(
         &self,
         admission: &mut RuntimeRetainedValueAdmission,
-    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        removal: Option<PresentationSlotRemovalAdmission<'_>>,
+    ) -> Result<bool, AwbcRuntimeValueSnapshotError> {
+        let mut selected = false;
         for lease in self.state.leases.values() {
             if let Some(body) = &lease.body {
-                body.admit_retained(admission)?;
+                if let Some(removal) = removal.filter(|removal| {
+                    self.bank == removal.bank
+                        && matches!(&lease.site,
+                        PresentationRegistrationSite::Slot(address) if address == removal.address)
+                }) {
+                    if selected {
+                        return Err(RuntimePresentationError::InvalidState.into());
+                    }
+                    selected = true;
+                    admission.validate_owned_option_preview(
+                        Some(body.value.borrowed_value()),
+                        removal.result,
+                        removal.binding,
+                    )?;
+                    // The payload has been counted once as the future result.
+                    // Its original stored type/binding remains an obligation.
+                    admission.validate_admitted_typed_borrowed_in_invocation(
+                        body.value.borrowed_value(),
+                        body.expected,
+                        body.binding.as_deref(),
+                    )?;
+                } else {
+                    body.admit_retained(admission)?;
+                }
             }
         }
-        Ok(())
+        Ok(selected)
     }
 }
 

@@ -108,7 +108,7 @@ mod tests {
             fields[index] = value;
             assert_eq!(
                 owner.try_wrap(RuntimeValue::Tuple(fields)),
-                Err(RuntimeOpaqueValueError::PresentationSlotRef(error))
+                Err(RuntimeOpaqueValueError::PresentationSlot(error))
             );
         }
         for extra in [false, true] {
@@ -122,7 +122,7 @@ mod tests {
             }
             assert_eq!(
                 owner.try_wrap(RuntimeValue::Tuple(fields)),
-                Err(RuntimeOpaqueValueError::PresentationSlotRef(Error::Shape))
+                Err(RuntimeOpaqueValueError::PresentationSlot(Error::Shape))
             );
         }
         let good = owner.try_wrap(payload(resource)).unwrap();

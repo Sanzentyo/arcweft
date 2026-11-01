@@ -113,12 +113,13 @@ flow main() -> String { return "unused" }
     let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default()).unwrap();
     assert_eq!(decoded, lowered);
     let mut invalid = decoded.clone();
-    let row = invalid.intrinsics.iter_mut().find(|row| matches!(&row.identity, RuntimeCallTarget::PresentationSlotRef(call) if call.resource() == PresentationResourceKind::Background)).expect("a Source background address constructor is retained");
-    let RuntimeCallTarget::PresentationSlotRef(call) = &row.identity else {
+    let row = invalid.intrinsics.iter_mut().find(|row| matches!(&row.identity, RuntimeCallTarget::PresentationSlot(call) if call.resource() == PresentationResourceKind::Background)).expect("a Source background address constructor is retained");
+    let RuntimeCallTarget::PresentationSlot(call) = &row.identity else {
         unreachable!()
     };
-    row.identity = RuntimeCallTarget::PresentationSlotRef(
-        arcweft_core::presentation::RuntimePresentationSlotRefCall::try_new(
+    row.identity = RuntimeCallTarget::PresentationSlot(
+        arcweft_core::presentation::RuntimePresentationSlotCall::try_new(
+            arcweft_core::presentation::RuntimePresentationSlotOperation::Reference,
             PresentationResourceKind::Character,
             call.inputs().iter().copied(),
         )

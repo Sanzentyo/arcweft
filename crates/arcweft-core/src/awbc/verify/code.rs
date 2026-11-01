@@ -1809,8 +1809,7 @@ fn apply_instruction(
         } => {
             check_index(program.intrinsics.len(), intrinsic.0, "intrinsics", &at)?;
             let intrinsic = &program.intrinsics[intrinsic.index()];
-            if let crate::value::RuntimeCallTarget::PresentationSlotRef(call) = &intrinsic.identity
-            {
+            if let crate::value::RuntimeCallTarget::PresentationSlot(call) = &intrinsic.identity {
                 let Some(signature) = program.signatures.get(intrinsic.signature.index()) else {
                     return invalid_type(&at, "slot reference has no signature");
                 };

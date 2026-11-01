@@ -12,19 +12,145 @@ impl<N, P: RuntimeStoredValue, R, F, D> Engine<N, P, R, F, D> {
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+        self.admit_presentation_state_for_slot_removal(admission, None)
+    }
+
+    pub(super) fn admit_presentation_state_for_slot_removal(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        removal: Option<crate::presentation::resources::PresentationSlotRemovalAdmission<'_>>,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
         let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&self.plan));
         if let Some(banks) = &self.presentation {
             let artifact = self
                 .plan
                 .artifact()
                 .ok_or(RuntimePresentationError::MissingArtifact)?;
-            banks.admit_retained(&owner, artifact, admission)?;
+            banks.admit_retained_for_slot_removal(&owner, artifact, admission, removal)?;
+        } else if let Some(removal) = removal {
+            admission.validate_owned_option_preview(None, removal.result, removal.binding)?;
         }
         Ok(())
     }
 }
 
 impl Engine {
+    pub(super) fn evaluate_presentation_slot_removal(
+        &mut self,
+        call: &crate::presentation::RuntimePresentationSlotCall,
+        args: &[crate::value::RuntimeCallArgument],
+        result: crate::runtime_id::RuntimePlanTypeId,
+        backend: &mut impl crate::pure::RuntimeCallBackend,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        use crate::{
+            plan::RuntimePlanTypeProjection,
+            presentation::resources::PresentationSlotRemovalAdmission,
+            value::{RuntimeCallArgumentMode, RuntimeRetainedValueAdmission},
+        };
+        call.validate_execution(args.len())?;
+        let artifact = self.presentation_context_artifact()?;
+        if !self
+            .fiber
+            .frame
+            .presentation_bank
+            .matches_artifact(artifact)
+        {
+            return Err(RuntimePresentationError::Program.into());
+        }
+        let row = self
+            .plan
+            .type_table()
+            .get(result)
+            .ok_or(RuntimeEvalError::InvalidExpressionType(result))?;
+        if call.is_reference()
+            || !call.accepts_plan_result(row.projection(), |item| {
+                self.plan
+                    .type_table()
+                    .get(*item)
+                    .and_then(|row| match row.projection() {
+                        RuntimePlanTypeProjection::PresentationResource(kind) => Some(*kind),
+                        _ => None,
+                    })
+            })
+        {
+            return Err(RuntimePresentationError::SlotReferenceArguments.into());
+        }
+        let result = row.semantic_identity();
+        let mut positions = 0u8;
+        for argument in args {
+            let position = usize::try_from(argument.abi_position())
+                .map_err(|_| RuntimePresentationError::SlotReferenceArguments)?;
+            if position >= args.len()
+                || positions & (1 << position) != 0
+                || argument.mode() != RuntimeCallArgumentMode::Value
+                || !self
+                    .plan
+                    .type_table()
+                    .get(argument.value().ty())
+                    .is_some_and(|row| {
+                        matches!(row.projection(), RuntimePlanTypeProjection::EntityReference)
+                    })
+            {
+                return Err(RuntimePresentationError::SlotReferenceArguments.into());
+            }
+            positions |= 1 << position;
+        }
+        let mut values = Vec::with_capacity(args.len());
+        // Keep authored evaluation order; select roles only after evaluation.
+        for argument in args {
+            values.push((
+                argument.abi_position(),
+                self.evaluate_expr_with_backend(argument.value(), backend)?,
+            ));
+        }
+        values.sort_unstable_by_key(|(position, _)| *position);
+        let mut admission = RuntimeRetainedValueAdmission::for_program(
+            self.fiber.frame.program.clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        let admitted = (|| {
+            for (_, value) in &values {
+                admission.validate_borrowed(value.into())?;
+            }
+            let address = crate::presentation::RuntimePresentationSlotSelectors::from_values(
+                call.inputs()
+                    .iter()
+                    .copied()
+                    .zip(values.iter().map(|(_, value)| value)),
+            )?
+            .construct_address(call.resource(), &mut admission)?;
+            self.admit_live_retained_values_for_slot_removal(
+                &mut admission,
+                Some(PresentationSlotRemovalAdmission {
+                    bank: self.fiber.frame.presentation_bank,
+                    address: &address,
+                    result,
+                    binding: self.fiber.frame.env.function_instantiation(),
+                }),
+            )?;
+            admission.finish_presentation_custody()?;
+            Ok::<_, crate::value::AwbcRuntimeValueSnapshotError>(address)
+        })()
+        .map_err(|source| RuntimeEvalError::NativeWorkAdmission {
+            source: Box::new(source),
+        })?;
+        let removed = self
+            .presentation
+            .as_mut()
+            .map(|banks| {
+                banks.clear_slot(
+                    &self.fiber.frame.program,
+                    self.fiber.frame.presentation_bank,
+                    &admitted,
+                )
+            })
+            .transpose()?
+            .flatten();
+        Ok(removed.map_or_else(RuntimeValue::option_none, |body| {
+            RuntimeValue::option_some(body.value.into_value())
+        }))
+    }
+
     pub(crate) fn register_presentation_body(
         &mut self,
         site: PresentationRegistrationSite,

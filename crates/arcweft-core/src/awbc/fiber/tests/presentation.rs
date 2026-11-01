@@ -215,7 +215,7 @@ impl Fixture {
             .admit_ownership(&self.owner, self.artifact, &mut admission)
             .unwrap();
         admission.bind_presentation_custody(proof).unwrap();
-        self.ledger.admit_bodies(&mut admission).unwrap();
+        self.ledger.admit_bodies(&mut admission, None).unwrap();
         admission
     }
 
@@ -479,7 +479,7 @@ fn live_and_inert_scope_headers_observe_identical_metadata_quota_boundaries() {
                 .ledger
                 .admit_ownership(&fixture.owner, fixture.artifact, &mut admission)?;
         admission.bind_presentation_custody(proof)?;
-        fixture.ledger.admit_bodies(&mut admission)?;
+        fixture.ledger.admit_bodies(&mut admission, None)?;
         if inert {
             snapshot.admit_awbc_scope(
                 &mut admission,
@@ -555,7 +555,7 @@ fn inert_presentation_bank_roundtrips_before_restoring_its_original_scope() {
         .admit_ownership(&fixture.owner, fixture.artifact, &mut admission)
         .unwrap();
     admission.bind_presentation_custody(proof).unwrap();
-    decoded.admit_bodies(&mut admission).unwrap();
+    decoded.admit_bodies(&mut admission, None).unwrap();
     image.admit_retained(&mut admission).unwrap();
     admission.finish_presentation_custody().unwrap();
 

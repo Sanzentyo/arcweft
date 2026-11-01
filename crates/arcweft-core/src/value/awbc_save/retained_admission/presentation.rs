@@ -115,7 +115,7 @@ impl RuntimeRetainedValueAdmission {
                 );
             }
             PresentationSlotAddress::validate_text(target, slot, resource).map_err(|error| {
-                crate::value::RuntimeOpaqueValueError::PresentationSlotRef(
+                crate::value::RuntimeOpaqueValueError::PresentationSlot(
                     RuntimePresentationSlotRefDecodeError::Address(error),
                 )
             })?;

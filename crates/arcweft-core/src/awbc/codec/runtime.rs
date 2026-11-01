@@ -64,8 +64,9 @@ impl Wire for RuntimeCallTarget {
                 2_u8.write_wire(writer)?;
                 callable.write_wire(writer)
             }
-            Self::PresentationSlotRef(call) => {
+            Self::PresentationSlot(call) => {
                 3_u8.write_wire(writer)?;
+                call.operation().semantic_tag().write_wire(writer)?;
                 call.resource().semantic_tag().write_wire(writer)?;
                 writer.write_table(call.inputs())
             }
@@ -105,6 +106,15 @@ impl Wire for RuntimeCallTarget {
                 .read_presentation_factory()
                 .map(|call| Self::PresentationFactory(std::sync::Arc::new(call))),
             3 => {
+                let operation =
+                    crate::presentation::RuntimePresentationSlotOperation::from_semantic_tag(
+                        u8::read_wire(reader)?,
+                    )
+                    .ok_or_else(|| AwbcCodecError::InvalidMetadata {
+                        kind: "slot operation",
+                        message: "unknown slot operation".into(),
+                        offset,
+                    })?;
                 let resource = arcweft_interaction_model::presentation::PresentationResourceKind::from_semantic_tag(u8::read_wire(reader)?)
                     .ok_or_else(|| AwbcCodecError::InvalidMetadata {
                         kind: "slot reference resource",
@@ -112,17 +122,19 @@ impl Wire for RuntimeCallTarget {
                         offset,
                     })?;
                 let inputs = reader
-                    .read_table::<crate::presentation::RuntimePresentationSlotRefInput>(
+                    .read_table::<crate::presentation::RuntimePresentationSlotInput>(
                         "slot reference inputs",
-                        3,
+                        4,
                     )?;
-                crate::presentation::RuntimePresentationSlotRefCall::try_new(resource, inputs)
-                    .map(Self::PresentationSlotRef)
-                    .map_err(|error| AwbcCodecError::InvalidMetadata {
-                        kind: "slot reference input ABI",
-                        message: error.to_string(),
-                        offset,
-                    })
+                crate::presentation::RuntimePresentationSlotCall::try_new(
+                    operation, resource, inputs,
+                )
+                .map(Self::PresentationSlot)
+                .map_err(|error| AwbcCodecError::InvalidMetadata {
+                    kind: "slot reference input ABI",
+                    message: error.to_string(),
+                    offset,
+                })
             }
             tag => Err(AwbcCodecError::UnknownTag {
                 kind: "runtime call target",
@@ -133,7 +145,7 @@ impl Wire for RuntimeCallTarget {
     }
 }
 
-impl Wire for crate::presentation::RuntimePresentationSlotRefInput {
+impl Wire for crate::presentation::RuntimePresentationSlotInput {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.semantic_tag().write_wire(writer)
     }

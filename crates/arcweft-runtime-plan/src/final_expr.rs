@@ -2198,9 +2198,9 @@ impl<'hir> FinalExprLowerer<'hir> {
                 args: arguments.into_boxed_slice(),
             }),
             RuntimeResolvedCallDispatch::Static(
-                RuntimeResolvedStaticCallTarget::PresentationSlotRef(call),
+                RuntimeResolvedStaticCallTarget::PresentationSlot(call),
             ) => Ok(RuntimeExprSeedKind::Call {
-                callee: RuntimeCallTarget::PresentationSlotRef(*call),
+                callee: RuntimeCallTarget::PresentationSlot(*call),
                 args: arguments.into_boxed_slice(),
             }),
             RuntimeResolvedCallDispatch::Static(

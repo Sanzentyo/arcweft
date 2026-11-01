@@ -340,6 +340,8 @@ pub enum VmError {
     #[error(transparent)]
     Presentation(#[from] crate::presentation::RuntimePresentationError),
     #[error(transparent)]
+    PresentationAdmission(Box<crate::value::AwbcRuntimeValueSnapshotError>),
+    #[error(transparent)]
     EffectMaterialization(#[from] crate::effect::RuntimeEffectMaterializeError),
     #[error(transparent)]
     Evaluation(#[from] crate::value::RuntimeEvalError),
@@ -1730,11 +1732,69 @@ fn execute_instruction(
                     .set_register(dst.expect("factory result destination checked"), value)?;
                 return Ok(InstructionControl::Continue);
             }
+            if let crate::value::RuntimeCallTarget::PresentationSlot(call) = &intrinsic_row.identity
+                && !call.is_reference()
+            {
+                use crate::presentation::RuntimePresentationError;
+                call.validate_execution(args.len())?;
+                let signature = program
+                    .signatures
+                    .get(intrinsic_row.signature.index())
+                    .ok_or(RuntimePresentationError::SlotReferenceArguments)?;
+                let result = signature
+                    .result
+                    .ok_or(RuntimePresentationError::SlotReferenceArguments)?;
+                let destination = dst.ok_or(RuntimePresentationError::SlotReferenceArguments)?;
+                let frame = fiber.active_frame()?;
+                let layout = program
+                    .frame_layouts
+                    .get(frame.layout.index())
+                    .ok_or(FiberStateError::InvalidFrame)?;
+                if signature.params.len() != args.len()
+                    || !call.accepts_awbc_result(program, result)
+                    || !signature.params.iter().zip(args).all(|(ty, register)| {
+                        program.runtime_types.get(ty.index()).is_some_and(|row| {
+                            matches!(
+                                row.shape(),
+                                crate::awbc::schema::AwbcRuntimeTypeShape::EntityRef
+                            )
+                        }) && layout
+                            .slots
+                            .get(register.index())
+                            .is_some_and(|slot| slot.ty == *ty)
+                    })
+                    || !layout
+                        .slots
+                        .get(destination.index())
+                        .is_some_and(|slot| slot.ty == result)
+                    || destination.index() >= frame.registers.len()
+                {
+                    return Err(RuntimePresentationError::SlotReferenceArguments.into());
+                }
+                let result = program
+                    .runtime_types
+                    .get(result.index())
+                    .ok_or(VmError::MissingType(result))?
+                    .semantic_identity();
+                let value =
+                    execution.remove_presentation_slot(program, fiber, call, args, result)?;
+                // Borrow through preflight, then perform the instruction's
+                // normal final register moves without cloning public identities.
+                let frame = fiber.active_frame_mut()?;
+                for register in args {
+                    frame
+                        .clear_register(*register)
+                        .expect("preflight checked every selector register");
+                }
+                frame
+                    .set_register(destination, value)
+                    .expect("preflight checked the typed destination");
+                return Ok(InstructionControl::Continue);
+            }
             let mut args = fiber
                 .active_frame_mut()?
                 .take_register_values(program, args)?;
-            if let crate::value::RuntimeCallTarget::PresentationSlotRef(call) =
-                &intrinsic_row.identity
+            if let crate::value::RuntimeCallTarget::PresentationSlot(call) = &intrinsic_row.identity
             {
                 let signature = program
                     .signatures
@@ -5737,6 +5797,7 @@ impl VmError {
         matches!(
             self,
             Self::Presentation(_)
+                | Self::PresentationAdmission(_)
                 | Self::Fiber(FiberStateError::Snapshot(
                     crate::value::AwbcRuntimeValueSnapshotError::Presentation(_)
                 ))
@@ -5779,6 +5840,7 @@ impl VmError {
             Self::MissingIntrinsic(_) => Some(AwbcTrapCode::HostAbiMismatch),
             Self::MissingExecutionContext | Self::Fiber(_) => Some(AwbcTrapCode::InternalInvariant),
             Self::Presentation(_)
+            | Self::PresentationAdmission(_)
             | Self::MissingFunction(_)
             | Self::MissingBlock(_)
             | Self::MissingInstruction(_)

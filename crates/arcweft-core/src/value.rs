@@ -743,8 +743,8 @@ pub enum RuntimeCallTarget {
     Intrinsic(RuntimeIntrinsic),
     Callable(RuntimeCallableId),
     External(RuntimeExternalCallable),
-    /// A Core-owned pure address constructor with its exact compact role ABI.
-    PresentationSlotRef(crate::presentation::RuntimePresentationSlotRefCall),
+    /// A Core-owned slot operation with its exact compact selector ABI.
+    PresentationSlot(crate::presentation::RuntimePresentationSlotCall),
     /// Stateful construction owned by the execution's presentation bank.
     PresentationFactory(Arc<crate::presentation::RuntimePresentationFactoryCall>),
 }
@@ -770,7 +770,7 @@ impl RuntimeCallTarget {
             Self::Intrinsic(intrinsic) => Some(*intrinsic),
             Self::Callable(_)
             | Self::External(_)
-            | Self::PresentationSlotRef(_)
+            | Self::PresentationSlot(_)
             | Self::PresentationFactory(_) => None,
         }
     }
@@ -780,7 +780,14 @@ impl RuntimeCallTarget {
             Self::Intrinsic(intrinsic) => intrinsic.as_label(),
             Self::Callable(callable) => callable.as_str(),
             Self::External(callable) => callable.identity().as_str(),
-            Self::PresentationSlotRef(_) => "core.presentation.slot_ref",
+            Self::PresentationSlot(call) => match call.operation() {
+                crate::presentation::RuntimePresentationSlotOperation::Reference => {
+                    "core.presentation.slot_ref"
+                }
+                crate::presentation::RuntimePresentationSlotOperation::Remove => {
+                    "core.presentation.remove"
+                }
+            },
             Self::PresentationFactory(_) => "core.presentation.factory",
         }
     }
@@ -790,9 +797,7 @@ impl RuntimeCallTarget {
         match self {
             Self::Callable(identity) => Some(identity),
             Self::External(callable) => Some(callable.identity()),
-            Self::Intrinsic(_) | Self::PresentationSlotRef(_) | Self::PresentationFactory(_) => {
-                None
-            }
+            Self::Intrinsic(_) | Self::PresentationSlot(_) | Self::PresentationFactory(_) => None,
         }
     }
 }

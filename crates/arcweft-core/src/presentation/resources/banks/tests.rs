@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 mod handle_methods;
 mod scope_grants;
+mod slot_removal;
 mod transition;
 
 #[test]

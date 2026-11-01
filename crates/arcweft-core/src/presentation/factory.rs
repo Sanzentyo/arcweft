@@ -435,7 +435,7 @@ impl RuntimePresentationFactoryCall {
         crate::value::AwbcRuntimeValueSnapshotError,
     > {
         use super::{
-            RuntimePresentationError, RuntimePresentationSlotRefInput,
+            RuntimePresentationError, RuntimePresentationSlotInput,
             RuntimePresentationSlotSelectors,
         };
         use arcweft_interaction_model::presentation::{
@@ -463,7 +463,7 @@ impl RuntimePresentationFactoryCall {
             .body_inputs()
             .enumerate()
             .filter_map(|(ordinal, (_, key))| {
-                RuntimePresentationSlotRefInput::try_from(key.role())
+                RuntimePresentationSlotInput::try_from(key.role())
                     .ok()
                     .map(|role| (role, &values[ordinal]))
             });

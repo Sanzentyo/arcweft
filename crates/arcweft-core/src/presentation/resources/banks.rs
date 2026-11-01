@@ -36,6 +36,40 @@ impl<V, L> PresentationBanks<V, L> {
 }
 
 impl<V> PresentationBanks<V> {
+    /// A read/removal never creates a ledger or advances an identity frontier.
+    pub(crate) fn validate_slot_bank(
+        &self,
+        program: &RuntimeProgramOwner,
+        bank: RuntimePresentationBankId,
+    ) -> Result<(), RuntimePresentationError> {
+        let root = self
+            .ledgers
+            .get(&RuntimePresentationBankId::Root)
+            .ok_or(RuntimePresentationError::InvalidState)?;
+        root.validate_program(program)?;
+        if !bank.matches_artifact(root.state.artifact) {
+            return Err(RuntimePresentationError::Program);
+        }
+        if let Some(ledger) = self.ledgers.get(&bank) {
+            ledger.validate_program(program)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn clear_slot(
+        &mut self,
+        program: &RuntimeProgramOwner,
+        bank: RuntimePresentationBankId,
+        address: &PresentationSlotAddress,
+    ) -> Result<Option<V>, RuntimePresentationError> {
+        self.validate_slot_bank(program, bank)?;
+        self.ledgers
+            .get_mut(&bank)
+            .map(|ledger| ledger.clear(program, address))
+            .transpose()
+            .map(Option::flatten)
+    }
+
     /// Read-only admission precedes minting a grant in the caller's real scope.
     /// A not-yet-created bank has no occupant to displace.
     pub(crate) fn preflight_registration_site(
@@ -408,7 +442,24 @@ impl<V: RuntimeStoredValue> PresentationBanks<PresentationBody<V>> {
         artifact: RuntimeArtifactFingerprint,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.admit_retained_for_slot_removal(program, artifact, admission, None)
+    }
+
+    pub(crate) fn admit_retained_for_slot_removal(
+        &self,
+        program: &RuntimeProgramOwner,
+        artifact: RuntimeArtifactFingerprint,
+        admission: &mut RuntimeRetainedValueAdmission,
+        removal: Option<PresentationSlotRemovalAdmission<'_>>,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         let result = (|| {
+            if let Some(removal) = removal {
+                self.validate_slot_bank(program, removal.bank)?;
+                removal
+                    .address
+                    .validate()
+                    .map_err(|_| RuntimePresentationError::InvalidState)?;
+            }
             let root = self
                 .ledgers
                 .get(&RuntimePresentationBankId::Root)
@@ -455,8 +506,12 @@ impl<V: RuntimeStoredValue> PresentationBanks<PresentationBody<V>> {
                 proof.include_retirement(&retired.token);
             }
             admission.bind_presentation_custody(proof)?;
+            let mut selected = false;
             for ledger in self.ledgers.values() {
-                ledger.admit_bodies(admission)?;
+                selected |= ledger.admit_bodies(admission, removal)?;
+            }
+            if let Some(removal) = removal.filter(|_| !selected) {
+                admission.validate_owned_option_preview(None, removal.result, removal.binding)?;
             }
             for retired in &self.retirements {
                 retired.body.admit_retained(admission)?;

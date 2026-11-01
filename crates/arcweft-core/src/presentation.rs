@@ -12,7 +12,9 @@ mod slot_reference;
 pub use factory::{RuntimePresentationFactoryCall, RuntimePresentationFactoryCallError};
 pub(crate) use resource_value::RuntimePresentationResourceView;
 pub use resource_value::{RuntimePresentationResourceSnapshot, RuntimePresentationResourceValue};
-pub use slot_reference::{RuntimePresentationSlotRefCall, RuntimePresentationSlotRefInput};
+pub use slot_reference::{
+    RuntimePresentationSlotCall, RuntimePresentationSlotInput, RuntimePresentationSlotOperation,
+};
 
 pub use resources::{RuntimePresentationScopeBinding, RuntimePresentationScopeSnapshot};
 
@@ -436,12 +438,12 @@ pub enum RuntimeCommandQueueError {
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimePresentationError {
+    #[error("an explicit presentation scope requires its actual lexical capability")]
+    ScopeCapabilityRequired,
     #[error("slot reference call has invalid or duplicate argument roles")]
     SlotReferenceArguments,
     #[error("slot reference call received an invalid {role:?} value")]
-    SlotReferenceInput {
-        role: RuntimePresentationSlotRefInput,
-    },
+    SlotReferenceInput { role: RuntimePresentationSlotInput },
     #[error("presentation argument {role:?} is not a slot reference input")]
     SlotReferenceRole {
         role: arcweft_interaction_model::presentation::PresentationArgumentRole,

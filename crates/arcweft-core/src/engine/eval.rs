@@ -1445,7 +1445,7 @@ pub(crate) fn evaluate_runtime_call(
     external_context: &RuntimeExternalCallContext,
     pure_backend: &mut impl RuntimeCallBackend,
 ) -> Result<RuntimeValue, RuntimeEvalError> {
-    if let RuntimeCallTarget::PresentationSlotRef(call) = callee {
+    if let RuntimeCallTarget::PresentationSlot(call) = callee {
         return call.evaluate_in_context(external_context, &args);
     }
     if let Some(intrinsic) = callee.as_intrinsic()

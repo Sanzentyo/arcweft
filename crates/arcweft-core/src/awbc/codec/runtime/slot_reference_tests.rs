@@ -1,17 +1,27 @@
 use super::*;
 use crate::awbc::codec::AwbcDecodeBudget;
-use crate::presentation::{RuntimePresentationSlotRefCall, RuntimePresentationSlotRefInput};
+use crate::presentation::{RuntimePresentationSlotCall, RuntimePresentationSlotInput};
 use arcweft_interaction_model::presentation::PresentationResourceKind;
 
 #[test]
 fn slot_reference_wire_preserves_the_selected_role_abi_for_every_resource() {
-    for resource in PresentationResourceKind::ALL {
-        let call = RuntimeCallTarget::PresentationSlotRef(
-            RuntimePresentationSlotRefCall::try_new(
+    for (resource, operation) in PresentationResourceKind::ALL
+        .into_iter()
+        .flat_map(|resource| {
+            [
+                crate::presentation::RuntimePresentationSlotOperation::Reference,
+                crate::presentation::RuntimePresentationSlotOperation::Remove,
+            ]
+            .map(|operation| (resource, operation))
+        })
+    {
+        let call = RuntimeCallTarget::PresentationSlot(
+            RuntimePresentationSlotCall::try_new(
+                operation,
                 resource,
                 [
-                    RuntimePresentationSlotRefInput::Slot,
-                    RuntimePresentationSlotRefInput::Target,
+                    RuntimePresentationSlotInput::Slot,
+                    RuntimePresentationSlotInput::Target,
                 ],
             )
             .unwrap(),
@@ -29,7 +39,7 @@ fn slot_reference_wire_preserves_the_selected_role_abi_for_every_resource() {
 #[test]
 fn slot_reference_wire_rejects_overlong_metadata_before_reading_its_members() {
     let resource = PresentationResourceKind::Background.semantic_tag();
-    let bytes = [3, resource, 4];
+    let bytes = [3, 1, resource, 5];
     let budget = AwbcDecodeBudget::default();
     let mut reader = Reader::new(&bytes, &budget);
     assert!(matches!(
@@ -40,15 +50,17 @@ fn slot_reference_wire_rejects_overlong_metadata_before_reading_its_members() {
         })
     ));
     for bytes in [
-        vec![3, 255, 0],
-        vec![3, resource, 1, 255],
-        vec![3, resource, 1, 3],
-        vec![3, resource, 2, 0, 0],
+        vec![3, 255, resource, 0],
+        vec![3, 0, 255, 0],
+        vec![3, 0, resource, 1, 255],
+        vec![3, 0, resource, 1, 3],
+        vec![3, 1, resource, 2, 0, 0],
         vec![
             3,
+            1,
             resource,
             1,
-            RuntimePresentationSlotRefInput::Character.semantic_tag(),
+            RuntimePresentationSlotInput::Character.semantic_tag(),
         ],
     ] {
         let mut reader = Reader::new(&bytes, &budget);

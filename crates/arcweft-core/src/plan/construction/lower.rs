@@ -1057,11 +1057,14 @@ impl RuntimePlanBodyConstruction<'_> {
                     self.validate_ownership_intrinsic_signature(intrinsic, &args, ty)?;
                     self.validate_collection_intrinsic_signature(intrinsic, &args, ty)?;
                 }
-                if let crate::value::RuntimeCallTarget::PresentationSlotRef(call) = &callee {
+                if let crate::value::RuntimeCallTarget::PresentationSlot(call) = &callee {
                     if args.len() != call.inputs().len() {
                         return Err(RuntimePlanBuildError::CallableAbiArity { context: "slot reference", expected: call.inputs().len(), actual: args.len() });
                     }
-                    if !call.accepts_plan_result(self.projection(ty)?) {
+                    if !call.accepts_plan_result(self.projection(ty)?, |item|
+                        self.types.get(*item).and_then(|row| match row.projection() {
+                            RuntimePlanTypeProjection::PresentationResource(kind) => Some(*kind), _ => None,
+                        })) {
                         return invalid_projection("slot reference result", ty);
                     }
                     for argument in &args {

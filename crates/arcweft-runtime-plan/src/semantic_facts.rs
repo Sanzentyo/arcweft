@@ -4524,7 +4524,7 @@ impl RuntimeResolvedCallDispatch {
             },
             Self::Static(
                 RuntimeResolvedStaticCallTarget::Intrinsic(_)
-                | RuntimeResolvedStaticCallTarget::PresentationSlotRef(_)
+                | RuntimeResolvedStaticCallTarget::PresentationSlot(_)
                 | RuntimeResolvedStaticCallTarget::PresentationFactory { .. }
                 | RuntimeResolvedStaticCallTarget::PresentationHandleMethod { .. }
                 | RuntimeResolvedStaticCallTarget::Format(_)
@@ -4577,8 +4577,8 @@ pub enum RuntimeLineCallable {
 )]
 pub enum RuntimeResolvedStaticCallTarget {
     Intrinsic(RuntimeIntrinsic),
-    /// Core-owned inert address construction with the selected compact role ABI.
-    PresentationSlotRef(arcweft_core::presentation::RuntimePresentationSlotRefCall),
+    /// Core-owned address/removal operation with its selected compact role ABI.
+    PresentationSlot(arcweft_core::presentation::RuntimePresentationSlotCall),
     PresentationFactory {
         call: Arc<arcweft_core::presentation::RuntimePresentationFactoryCall>,
         resource_type: RuntimeNormalizedType,
@@ -8610,7 +8610,7 @@ impl RuntimePlanSemanticFacts {
                 ) => Some(HirRuntimeExecutableOwner::ImplMethod(method.clone())),
                 RuntimeResolvedCallDispatch::Static(
                     RuntimeResolvedStaticCallTarget::Intrinsic(_)
-                    | RuntimeResolvedStaticCallTarget::PresentationSlotRef(_)
+                    | RuntimeResolvedStaticCallTarget::PresentationSlot(_)
                     | RuntimeResolvedStaticCallTarget::PresentationFactory { .. }
                     | RuntimeResolvedStaticCallTarget::PresentationHandleMethod { .. }
                     | RuntimeResolvedStaticCallTarget::Format(_)
@@ -12630,7 +12630,7 @@ fn validate_call(
             | RuntimeResolvedStaticCallTarget::VecPop
             | RuntimeResolvedStaticCallTarget::VecPush
             | RuntimeResolvedStaticCallTarget::Intrinsic(_)
-            | RuntimeResolvedStaticCallTarget::PresentationSlotRef(_)
+            | RuntimeResolvedStaticCallTarget::PresentationSlot(_)
             | RuntimeResolvedStaticCallTarget::Format(_)
             | RuntimeResolvedStaticCallTarget::TraitMethod { .. }
             | RuntimeResolvedStaticCallTarget::Registered(_),
@@ -13614,7 +13614,7 @@ fn validate_project_function_instance(
             }) => Some(HirRuntimeExecutableOwner::ImplMethod(method.clone())),
             RuntimeResolvedCallDispatch::Static(
                 RuntimeResolvedStaticCallTarget::Intrinsic(_)
-                | RuntimeResolvedStaticCallTarget::PresentationSlotRef(_)
+                | RuntimeResolvedStaticCallTarget::PresentationSlot(_)
                 | RuntimeResolvedStaticCallTarget::PresentationFactory { .. }
                 | RuntimeResolvedStaticCallTarget::PresentationHandleMethod { .. }
                 | RuntimeResolvedStaticCallTarget::Format(_)

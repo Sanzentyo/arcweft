@@ -1097,8 +1097,16 @@ impl Engine {
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+        self.admit_live_retained_values_for_slot_removal(admission, None)
+    }
+
+    pub(super) fn admit_live_retained_values_for_slot_removal(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        removal: Option<crate::presentation::resources::PresentationSlotRemovalAdmission<'_>>,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
         use crate::value::AwbcRuntimeValueSnapshotError;
-        self.admit_presentation_state(admission)?;
+        self.admit_presentation_state_for_slot_removal(admission, removal)?;
         self.admit_metadata(admission)?;
         self.need_producers.admit_retained(admission)?;
         self.admit_publications(admission)?;

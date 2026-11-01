@@ -1,6 +1,6 @@
 //! Borrowed slot selectors shared by address reads and occupant writes.
 
-use super::{RuntimePresentationError, RuntimePresentationSlotRefInput};
+use super::{RuntimePresentationError, RuntimePresentationSlotInput};
 use crate::value::{
     AwbcRuntimeValueSnapshotError, RuntimeEntityReference, RuntimeRetainedValueAdmission,
     RuntimeValue,
@@ -15,8 +15,32 @@ pub(crate) struct RuntimePresentationSlotSelectors<'a> {
 }
 
 impl<'a> RuntimePresentationSlotSelectors<'a> {
+    pub(crate) fn construct_address(
+        self,
+        resource: PresentationResourceKind,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<
+        arcweft_interaction_model::presentation::PresentationSlotAddress,
+        AwbcRuntimeValueSnapshotError,
+    > {
+        use arcweft_id::PublicId;
+        use arcweft_interaction_model::presentation::PresentationSlotAddress;
+        self.with_parts(resource, admission, |admission, target, slot| {
+            PresentationSlotAddress::validate_text(target, slot, resource)
+                .map_err(RuntimePresentationError::from)?;
+            admission.validate_metadata_string(target)?;
+            admission.validate_metadata_string(slot)?;
+            let target =
+                PublicId::try_new(target).map_err(|_| RuntimePresentationError::InvalidState)?;
+            let slot =
+                PublicId::try_new(slot).map_err(|_| RuntimePresentationError::InvalidState)?;
+            Ok(PresentationSlotAddress::try_new(target, slot, resource)
+                .map_err(RuntimePresentationError::from)?)
+        })
+    }
+
     pub(crate) fn from_values(
-        values: impl IntoIterator<Item = (RuntimePresentationSlotRefInput, &'a RuntimeValue)>,
+        values: impl IntoIterator<Item = (RuntimePresentationSlotInput, &'a RuntimeValue)>,
     ) -> Result<Self, RuntimePresentationError> {
         let mut selected = Self {
             target: None,
@@ -42,17 +66,17 @@ impl<'a> RuntimePresentationSlotSelectors<'a> {
                 _ => return Err(invalid()),
             };
             let destination = match role {
-                RuntimePresentationSlotRefInput::Target
+                RuntimePresentationSlotInput::Target
                     if family == ProjectEntityReferenceFamily::Target =>
                 {
                     &mut selected.target
                 }
-                RuntimePresentationSlotRefInput::Slot
+                RuntimePresentationSlotInput::Slot
                     if family == ProjectEntityReferenceFamily::Slot =>
                 {
                     &mut selected.slot
                 }
-                RuntimePresentationSlotRefInput::Character
+                RuntimePresentationSlotInput::Character
                     if family == ProjectEntityReferenceFamily::Character =>
                 {
                     &mut selected.character
@@ -87,7 +111,7 @@ impl<'a> RuntimePresentationSlotSelectors<'a> {
                         .and_then(|identity| identity.strip_prefix("character."))
                         .filter(|name| !name.is_empty())
                         .ok_or(RuntimePresentationError::SlotReferenceInput {
-                            role: RuntimePresentationSlotRefInput::Character,
+                            role: RuntimePresentationSlotInput::Character,
                         })?;
                     admission.construct_metadata_string(&[
                         "slot.character.",

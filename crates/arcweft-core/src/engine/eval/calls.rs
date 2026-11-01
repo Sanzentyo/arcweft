@@ -39,6 +39,11 @@ impl Engine {
         result_type: RuntimePlanTypeId,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
+        if let RuntimeCallTarget::PresentationSlot(call) = callee
+            && !call.is_reference()
+        {
+            return self.evaluate_presentation_slot_removal(call, args, result_type, pure_backend);
+        }
         if let RuntimeCallTarget::PresentationFactory(call) = callee {
             let authority = crate::plan::PlanValueAuthority::Inventory(&self.plan.inventory);
             call.validate_plan_call(

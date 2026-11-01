@@ -13,6 +13,77 @@ pub(super) struct VmExecutionResources<'execution> {
 }
 
 impl VmExecutionResources<'_> {
+    pub(super) fn remove_presentation_slot(
+        &mut self,
+        program: &AwbcProgram,
+        fiber: &FiberState,
+        call: &crate::presentation::RuntimePresentationSlotCall,
+        args: &[AwbcRegisterId],
+        result: crate::pattern::RuntimeSemanticTypeId,
+    ) -> Result<crate::value::RuntimeValue, VmError> {
+        use crate::{
+            presentation::resources::PresentationSlotRemovalAdmission,
+            presentation::{RuntimePresentationError, RuntimePresentationSlotSelectors},
+            value::RuntimeValue,
+        };
+        call.validate_execution(args.len())?;
+        let context = self.context.ok_or(VmError::MissingExecutionContext)?;
+        let admitted = context.admitted_program(program)?;
+        if admitted.original_task_source().is_none() {
+            return Err(VmError::MissingExecutionContext);
+        }
+        let owner = context.program_owner(program)?;
+        let bank = fiber.presentation_bank();
+        if !bank.matches_artifact(context.artifact()) {
+            return Err(RuntimePresentationError::Program.into());
+        }
+        let storage = self
+            .presentation
+            .as_deref_mut()
+            .ok_or(VmError::MissingExecutionContext)?;
+        let frame = fiber.active_frame()?;
+        let mut values = Vec::with_capacity(args.len());
+        for register in args {
+            values.push(frame.register(*register)?);
+        }
+        let mut admission =
+            admitted.retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default());
+        let address = (|| {
+            let address = RuntimePresentationSlotSelectors::from_values(
+                call.inputs().iter().copied().zip(values.iter().copied()),
+            )?
+            .construct_address(call.resource(), &mut admission)?;
+            let removal = PresentationSlotRemovalAdmission {
+                bank,
+                address: &address,
+                result,
+                binding: frame.type_instantiation.as_deref(),
+            };
+            if let Some(banks) = storage.as_ref() {
+                banks.admit_retained_for_slot_removal(
+                    &owner,
+                    context.artifact(),
+                    &mut admission,
+                    Some(removal),
+                )?;
+            } else {
+                admission.validate_owned_option_preview(None, result, removal.binding)?;
+            }
+            fiber.admit_retained(&mut admission)?;
+            admission.finish_presentation_custody()?;
+            Ok::<_, crate::value::AwbcRuntimeValueSnapshotError>(address)
+        })()
+        .map_err(|cause| VmError::PresentationAdmission(Box::new(cause)))?;
+        let removed = storage
+            .as_mut()
+            .map(|banks| banks.clear_slot(&owner, bank, &address))
+            .transpose()?
+            .flatten();
+        Ok(removed.map_or_else(RuntimeValue::option_none, |body| {
+            RuntimeValue::option_some(body.value.into_value())
+        }))
+    }
+
     pub(super) fn apply_presentation_handle_method(
         &mut self,
         program: &AwbcProgram,

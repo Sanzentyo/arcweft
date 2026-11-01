@@ -1907,7 +1907,7 @@ impl<'a> PureEvaluator<'a> {
                 }
                 RuntimeExprKind::Call { callee, .. }
                     if callee.as_intrinsic().is_none()
-                        && !matches!(callee, RuntimeCallTarget::PresentationSlotRef(_)) =>
+                        && !matches!(callee, RuntimeCallTarget::PresentationSlot(call) if call.is_reference()) =>
                 {
                     return Self::unsupported_pure_trait_operation(
                         "host calls require the flow runtime",
@@ -2014,7 +2014,7 @@ impl<'a> PureEvaluator<'a> {
             RuntimeExprKind::Call { callee, args }
                 if callee.as_intrinsic().is_none()
                     && (self.external.is_some()
-                        || matches!(callee, RuntimeCallTarget::PresentationSlotRef(_))) =>
+                        || matches!(callee, RuntimeCallTarget::PresentationSlot(call) if call.is_reference())) =>
             {
                 self.evaluate_external_call_expr(callee, args, expr.ty())
             }

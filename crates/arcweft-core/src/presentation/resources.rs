@@ -32,7 +32,9 @@ pub(crate) use scope::{
     PresentationScopeStorage, PresentationScopeTarget,
 };
 pub use scope::{RuntimePresentationScopeBinding, RuntimePresentationScopeSnapshot};
-pub(crate) use storage::{PresentationAdmission, PresentationBody};
+pub(crate) use storage::{
+    PresentationAdmission, PresentationBody, PresentationSlotRemovalAdmission,
+};
 
 /// Slot replacement is meaningful only for a slot-bound registration. An
 /// independent object or controller has its own issuance and never displaces
