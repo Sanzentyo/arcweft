@@ -13969,3 +13969,19 @@ Source command 29（Handle 19・空削除4・占有／selector 6）、factory 12
 CLI unit 191／191、通常integration 29／29を含め、実際の全12 targetを4 commandで照合した。692 unique実行・649 PASS／43 FAIL・23 ignored、重複0。以前のSource a87ae7c2a8a80d44f13209f548670833ded74feeから共通失敗ID 43・新規0・解消0・未選択0。ID一致は原因一致の証明としない。失敗の原診断をそのまま保持し、未実行／失敗をPASSへ置換しない。
 
 現状一覧の訂正理由: 旧Source a87ae7c2a8a80d44f13209f548670833ded74feeに限った横断一覧を、今回の完全な62-package／全CLI targetの終端へ置換した。古い件数・失敗・full SHAは既存履歴と元ZIPへ保持し、重複したCLI部分群の現在形は全target行へ集約した。全62の実行未達は削除したが、残るCLI統合失敗やSource全体の未接続境界を受入済みとはしない。Generic Matchの受入・公開行は一字も変更せず、全体goalの未達で完了項目を戻さない。Wasm、doctest、Tier 2と最終Native/Web画像parityを今回新たに検証したとはしない。
+
+## Baseline regionの関数境界 — 2026-11-02
+
+Source 762a72a7baf6b30a12a1c7f5b41bb844d8be249f（親3881d56c65f1dad3a89cbd8b914125ab175e8bfc）を通常commit／non-forced pushし、tree／patch／公開blob差分0を確認した。[再現・修復・終端](acceptance-evidence/task-presentation-region-boundary.json)と[全原本ZIP](acceptance-evidence/task-presentation-region-boundary.raw.zip)を保持する。ZIPは98 entries／3439293 bytes、SHA256 e33542cf6e23ce685ac6b3d8da13385515f241157b61ee95ba30172818e71ae5、entry差分0。元14 tracked／6 actual untracked WIPを保持した。
+
+新たな不具合の根拠: regionの候補判定は一関数だけだったが、実VM sliceは呼出先まで進み、検証済みProjectCallでcallee entryを越えてcaller全体からReturnedした。最初のstatic-call fixtureはUnit戻り値のdestination欠落による検証拒否であり、実装不具合の再現には数えない。typed destinationを補った検証済みAWBCでも、CopyValueで候補から拒否されたcalleeをcaller regionが実行する失敗を再現した。全失敗原本を保持する。この具体的な未達はcompiled-regionの関数境界であり、Generic MatchやSource Handle／slot削除等の既受入を未完了へ戻す根拠にはしない。
+
+Coreの元VM loopにopt-inの関数境界を置き、別関数の最初のoperationの予算消費前で戻す。static／ProjectCall／helper／callback／tail transfer／returnを別catalogで要約せず、実cursorで判定する。元frame・評価済み入力・return continuation・admitted program leaseを同じfiberが保持し、移動先をdispatcherへ返す。通常／Productの入口は元の境界を保ち、codec・持続状態・bank grantは追加しない。予算・batch・fusion・assertionを弱めず、codegen全17／17 PASS、Core／codegen Clippyと変更3 Rust path fmtは終了0。owner runは横断件数と重複加算しない。
+
+同じ4,061入力でworkspace全97 package・全target／全feature／locked checkとClippy終了0、構造gate終了0。構造は3,297 files／3,167 Rust files・1,788,597 physical Rust LOC・385 review trigger・blocking0。Core VMは238,512 bytes／5,909 physical LOC（基点5,880）、region ownerは15,930 bytes／439 LOC、testは38,302 bytes／1,068 LOC。元VMのcontrol flow・cursor・予算が境界を所有する凝集性を維持し、増分のためにpublic分割や別authorityを作らない。依存CSVとowner reviewを原本へ保持した。
+
+実metadata／target-all treeのCore全53逆依存を選択した。library／integrationは6957 PASS／0 FAIL／16 ignored、実runtime 49 package、compile選択のみ3 package。通常3群は7177 PASS／0 FAIL／16 ignored。既受入Generic Matchの151 IDは151／151 PASS、前回scope内case削除0、Source／case／EXE差分0。
+
+全CLIは12 target・692 unique実行・649 PASS／43 FAIL／23 ignored、重複0。以前のSource 68eeb22a426300562ab8c7eababb99bad0e9877eから共通失敗ID 43・新規0・解消0・未選択0。ID一致を原因同一とは扱わず、原診断を保持する。
+
+現状一覧の訂正理由: 最新の公開Sourceと今回実際に影響するCore全53逆依存の終端へ横断行を置換した。以前のinteraction-model全62の結果・失敗・full SHAは上の履歴と旧原本へそのまま保持し、scopeが異なる現在形を重複掲載しない。個別の受入済み機能は維持する。ViewValue／Scope／完全contour・式全体の失敗原子性／Native公開save／driver・最終画像parityの未達を、この修復の成功で完了とはしない。

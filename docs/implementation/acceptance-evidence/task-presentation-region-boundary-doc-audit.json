@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "source": "762a72a7baf6b30a12a1c7f5b41bb844d8be249f",
+  "inspectedHead": "762a72a7baf6b30a12a1c7f5b41bb844d8be249f",
+  "documents": [
+    "docs/implementation/current-status.md",
+    "docs/implementation/convergence-evidence-history.md",
+    "docs/02-runtime/executable-runtime-core.md"
+  ],
+  "localLinks": 791,
+  "brokenLinks": 0,
+  "fencesBalanced": true,
+  "historicalPrefixBytes": 1720398,
+  "historicalPrefixDrift": 0,
+  "acceptedGenericMatchRowUnchanged": true,
+  "rawEntryCount": 98,
+  "rawZipSha256": "e33542cf6e23ce685ac6b3d8da13385515f241157b61ee95ba30172818e71ae5",
+  "rawEntryDrift": 0,
+  "recordedAt": "2026-11-01T18:35:34.8309269Z"
+}
