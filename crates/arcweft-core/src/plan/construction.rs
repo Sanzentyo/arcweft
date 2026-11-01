@@ -151,6 +151,8 @@ pub enum RuntimePlanTable {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimePlanBuildError {
+    #[error(transparent)]
+    PresentationFactory(Box<crate::presentation::RuntimePresentationFactoryCallError>),
     #[error("producer handle type is {actual:?}, expected {expected:?}")]
     ProducerHandleType {
         expected: crate::task::TaskHandleType,

@@ -40,6 +40,28 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         if let RuntimeCallTarget::PresentationFactory(call) = callee {
+            let authority = crate::plan::PlanValueAuthority::Inventory(&self.plan.inventory);
+            call.validate_plan_call(
+                authority,
+                args.len(),
+                |index| {
+                    args.get(index).and_then(|argument| {
+                        authority.get(argument.value().ty()).map(|row| {
+                            (
+                                argument.abi_position(),
+                                argument.mode(),
+                                row.semantic_identity(),
+                            )
+                        })
+                    })
+                },
+                self.external_call_semantic_type(callee, result_type)?,
+            )
+            .and_then(|count| call.validate_argument_count(count))
+            .map_err(|cause| RuntimeEvalError::UnsupportedPure {
+                name: callee.as_label().into(),
+                reason: cause.to_string(),
+            })?;
             let (values, types) = self.evaluate_external_call_args(callee, args, pure_backend)?;
             call.validate_input_types(
                 crate::program_types::RuntimeProgramTypes::Plan(&self.plan),

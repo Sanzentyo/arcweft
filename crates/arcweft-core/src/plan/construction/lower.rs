@@ -1015,6 +1015,23 @@ impl RuntimePlanBodyConstruction<'_> {
             }
             RuntimeExprSeedKind::Call { callee, args } => {
                 let args = self.lower_call_arguments(args)?;
+                if let crate::value::RuntimeCallTarget::PresentationFactory(call) = &callee {
+                    let authority = super::super::value_admission::PlanValueAuthority::Building {
+                        types: &self.types,
+                        records: &self.nominal_record_domains,
+                        variants: &self.variant_domains,
+                    };
+                    call.validate_plan_call(
+                        authority,
+                        args.len(),
+                        |index| args.get(index).and_then(|argument| {
+                            authority.get(argument.value().ty()).map(|row| (
+                                argument.abi_position(), argument.mode(), row.semantic_identity(),
+                            ))
+                        }),
+                        self.types.get(ty).expect("resolved expression type").semantic_identity(),
+                    ).map_err(|cause| RuntimePlanBuildError::PresentationFactory(Box::new(cause)))?;
+                }
                 if let Some(intrinsic) = callee.as_intrinsic() {
                     self.validate_ownership_intrinsic_signature(intrinsic, &args, ty)?;
                     self.validate_collection_intrinsic_signature(intrinsic, &args, ty)?;

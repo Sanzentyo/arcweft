@@ -198,8 +198,140 @@ impl RuntimePresentationFactoryCall {
         Ok(())
     }
 
-    /// Exact source-level type identities are part of this ABI even when two
-    /// rows admit the same physical scalar representation.
+    /// Resolves the already-admitted source dispositions before executing any
+    /// capture. The temporary type slots are bounded by this factory's complete
+    /// retained product; source order remains in the original operand vector.
+    pub(crate) fn validate_plan_call(
+        &self,
+        types: crate::plan::PlanValueAuthority<'_>,
+        physical_count: usize,
+        mut input: impl FnMut(
+            usize,
+        ) -> Option<(
+            u32,
+            crate::value::RuntimeCallArgumentMode,
+            RuntimeSemanticTypeId,
+        )>,
+        result: RuntimeSemanticTypeId,
+    ) -> Result<usize, RuntimePresentationFactoryCallError> {
+        use crate::{plan::RuntimePlanTypeProjection as P, value::RuntimeCallArgumentMode as M};
+        let invalid =
+            |index, reason| RuntimePresentationFactoryCallError::InputLayout { index, reason };
+        self.plan_body(types)?;
+        self.plan_result_owner(types, result)?;
+        // An admitted disposition has at most one final spread, whose empty
+        // tuple may add one physical operand without adding a logical field.
+        if physical_count > self.inputs.len().saturating_add(1) {
+            return Err(invalid(physical_count, "too many physical operands"));
+        }
+        let mut logical = vec![None; self.inputs.len()];
+        let mut written = 0;
+        for index in 0..physical_count {
+            let (start, mode, semantic) =
+                input(index).ok_or_else(|| invalid(index, "missing original input type"))?;
+            let row = types
+                .type_for_semantic(semantic)
+                .map_err(|cause| RuntimePresentationFactoryCallError::Type(Box::new(cause)))?;
+            let width = match mode {
+                M::Value => 1,
+                M::Spread => match row.projection() {
+                    P::Tuple(fields) => fields.len(),
+                    P::Array { length, .. } => length
+                        .constant()
+                        .and_then(|n| usize::try_from(n).ok())
+                        .ok_or_else(|| invalid(index, "spread array length is not closed"))?,
+                    _ => return Err(invalid(index, "spread requires an admitted tuple or array")),
+                },
+            };
+            let start = usize::try_from(start)
+                .map_err(|_| invalid(index, "position exceeds the host index domain"))?;
+            let end = start
+                .checked_add(width)
+                .filter(|end| *end <= logical.len())
+                .ok_or_else(|| invalid(index, "operand range is outside the factory product"))?;
+            for (offset, slot) in logical[start..end].iter_mut().enumerate() {
+                let semantic = match mode {
+                    M::Value => semantic,
+                    M::Spread => {
+                        let child = match row.projection() {
+                            P::Tuple(fields) => fields[offset],
+                            P::Array { item, .. } => *item,
+                            _ => unreachable!("spread shape checked"),
+                        };
+                        types
+                            .get(child)
+                            .ok_or_else(|| invalid(index, "spread child has no original type"))?
+                            .semantic_identity()
+                    }
+                };
+                if slot.replace(semantic).is_some() {
+                    return Err(invalid(index, "operand ranges overlap"));
+                }
+                written += 1;
+            }
+        }
+        if written != logical.len() {
+            return Err(RuntimePresentationFactoryCallError::Arguments {
+                expected: logical.len(),
+                actual: written,
+            });
+        }
+        self.validate_plan_input_types(types, logical.len(), |index| logical[index])?;
+        Ok(logical.len())
+    }
+
+    fn validate_plan_input_types(
+        &self,
+        types: crate::plan::PlanValueAuthority<'_>,
+        count: usize,
+        mut actual: impl FnMut(usize) -> Option<RuntimeSemanticTypeId>,
+    ) -> Result<(), RuntimePresentationFactoryCallError> {
+        self.validate_input_count(count)?;
+        let fields = self.plan_body(types)?;
+        for (ordinal, field) in fields.iter().enumerate() {
+            let expected = types
+                .get(*field)
+                .ok_or(RuntimePresentationFactoryCallError::BodyField { ordinal })?
+                .semantic_identity();
+            let index = self
+                .body_input_index(ordinal)
+                .expect("admitted body ordinal");
+            self.check_input_type(index, expected, actual(index))?;
+        }
+        Ok(())
+    }
+
+    fn validate_input_count(
+        &self,
+        count: usize,
+    ) -> Result<(), RuntimePresentationFactoryCallError> {
+        if count != self.inputs.len() {
+            return Err(RuntimePresentationFactoryCallError::Arguments {
+                expected: self.inputs.len(),
+                actual: count,
+            });
+        }
+        Ok(())
+    }
+
+    fn check_input_type(
+        &self,
+        index: usize,
+        expected: RuntimeSemanticTypeId,
+        actual: Option<RuntimeSemanticTypeId>,
+    ) -> Result<(), RuntimePresentationFactoryCallError> {
+        if actual != Some(expected) {
+            return Err(RuntimePresentationFactoryCallError::InputType {
+                index,
+                expected,
+                actual,
+            });
+        }
+        Ok(())
+    }
+
+    /// Exact source-level type identities remain distinct when their scalar
+    /// representations happen to be equal.
     pub(crate) fn validate_input_types(
         &self,
         types: crate::program_types::RuntimeProgramTypes<'_>,
@@ -207,54 +339,60 @@ impl RuntimePresentationFactoryCall {
         mut actual: impl FnMut(usize) -> Option<RuntimeSemanticTypeId>,
     ) -> Result<(), RuntimePresentationFactoryCallError> {
         use crate::{
-            awbc::schema::AwbcRuntimeTypeShape, plan::RuntimePlanTypeProjection,
-            program_types::RuntimeProgramValueType,
+            awbc::schema::AwbcRuntimeTypeShape,
+            program_types::{RuntimeProgramTypes, RuntimeProgramValueType},
         };
-        if count != self.inputs.len() {
-            return Err(RuntimePresentationFactoryCallError::Arguments {
-                expected: self.inputs.len(),
-                actual: count,
-            });
+        match types {
+            RuntimeProgramTypes::Plan(program) => self.validate_plan_input_types(
+                crate::plan::PlanValueAuthority::Inventory(program),
+                count,
+                actual,
+            ),
+            RuntimeProgramTypes::Awbc(program) => {
+                self.validate_input_count(count)?;
+                self.validate_body_type(types)?;
+                let RuntimeProgramValueType::Awbc { ty, .. } = types
+                    .value_type(self.body_type)
+                    .map_err(|cause| RuntimePresentationFactoryCallError::Type(Box::new(cause)))?
+                else {
+                    unreachable!("AWBC authority returns AWBC rows")
+                };
+                let AwbcRuntimeTypeShape::Tuple(fields) = program.runtime_types[ty.index()].shape()
+                else {
+                    unreachable!("body layout checked")
+                };
+                for (ordinal, field) in fields.iter().enumerate() {
+                    let expected = program
+                        .runtime_types
+                        .get(field.index())
+                        .ok_or(RuntimePresentationFactoryCallError::BodyField { ordinal })?
+                        .semantic_identity();
+                    let index = self
+                        .body_input_index(ordinal)
+                        .expect("admitted body ordinal");
+                    self.check_input_type(index, expected, actual(index))?;
+                }
+                Ok(())
+            }
         }
-        self.validate_body_type(types)?;
-        let body = types
-            .value_type(self.body_type)
+    }
+
+    fn plan_result_owner(
+        &self,
+        types: crate::plan::PlanValueAuthority<'_>,
+        result: RuntimeSemanticTypeId,
+    ) -> Result<crate::pattern::RuntimeOpaqueTypeOwner, RuntimePresentationFactoryCallError> {
+        use crate::{pattern::RuntimeOpaqueTypeOwner, plan::RuntimePlanTypeProjection as P};
+        let expected = RuntimeOpaqueTypeOwner::presentation_handle(self.resource(), result);
+        let row = types
+            .type_for_semantic(result)
             .map_err(|cause| RuntimePresentationFactoryCallError::Type(Box::new(cause)))?;
-        for ordinal in 0..self.body_len() {
-            let expected = match body {
-                RuntimeProgramValueType::Plan { program, ty } => {
-                    match program.type_table().get(ty).map(|row| row.projection()) {
-                        Some(RuntimePlanTypeProjection::Tuple(fields)) => fields
-                            .get(ordinal)
-                            .and_then(|ty| program.type_table().get(*ty))
-                            .map(|row| row.semantic_identity()),
-                        _ => None,
-                    }
-                }
-                RuntimeProgramValueType::Awbc { program, ty } => {
-                    match program.runtime_types.get(ty.index()).map(|row| row.shape()) {
-                        Some(AwbcRuntimeTypeShape::Tuple(fields)) => fields
-                            .get(ordinal)
-                            .and_then(|ty| program.runtime_types.get(ty.index()))
-                            .map(|row| row.semantic_identity()),
-                        _ => None,
-                    }
-                }
-            }
-            .ok_or(RuntimePresentationFactoryCallError::BodyField { ordinal })?;
-            let index = self
-                .body_input_index(ordinal)
-                .expect("admitted body ordinal");
-            let actual = actual(index);
-            if actual != Some(expected) {
-                return Err(RuntimePresentationFactoryCallError::InputType {
-                    index,
-                    expected,
-                    actual,
-                });
-            }
+        if !matches!(row.projection(), P::Opaque { producer, admission, value_class, persistence, arguments }
+            if producer == expected.producer() && *admission == expected.admission() && *value_class == expected.value_class() && *persistence == expected.persistence() && arguments.is_empty())
+        {
+            return Err(RuntimePresentationFactoryCallError::ResultType { result });
         }
-        Ok(())
+        Ok(expected)
     }
 
     pub(crate) fn result_owner(
@@ -263,35 +401,31 @@ impl RuntimePresentationFactoryCall {
         result: RuntimeSemanticTypeId,
     ) -> Result<crate::pattern::RuntimeOpaqueTypeOwner, RuntimePresentationFactoryCallError> {
         use crate::{
-            awbc::schema::AwbcRuntimeTypeShape, pattern::RuntimeOpaqueTypeOwner,
-            plan::RuntimePlanTypeProjection, program_types::RuntimeProgramValueType,
+            awbc::schema::AwbcRuntimeTypeShape as P,
+            pattern::RuntimeOpaqueTypeOwner,
+            program_types::{RuntimeProgramTypes, RuntimeProgramValueType},
         };
-        let expected = RuntimeOpaqueTypeOwner::presentation_handle(self.resource(), result);
-        let valid = match types
-            .value_type(result)
-            .map_err(|cause| RuntimePresentationFactoryCallError::Type(Box::new(cause)))?
-        {
-            RuntimeProgramValueType::Plan { program, ty } => matches!(
-                program.type_table().get(ty).map(|row| row.projection()),
-                Some(RuntimePlanTypeProjection::Opaque { producer, admission, value_class, persistence, arguments })
-                    if producer == expected.producer() && *admission == expected.admission()
-                        && *value_class == expected.value_class() && *persistence == expected.persistence()
-                        && arguments.is_empty()
-            ),
-            RuntimeProgramValueType::Awbc { program, ty } => matches!(
-                program.runtime_types.get(ty.index()).map(|row| row.shape()),
-                Some(AwbcRuntimeTypeShape::Opaque { producer, admission, value_class, persistence, arguments })
-                    if program.strings.get(producer.index()).is_some_and(|producer| producer == expected.producer().as_str())
-                        && *admission == expected.admission() && *value_class == expected.value_class()
-                        && *persistence == expected.persistence() && arguments.is_empty()
-            ),
-        };
-        if !valid {
-            return Err(RuntimePresentationFactoryCallError::ResultType { result });
+        match types {
+            RuntimeProgramTypes::Plan(program) => {
+                self.plan_result_owner(crate::plan::PlanValueAuthority::Inventory(program), result)
+            }
+            RuntimeProgramTypes::Awbc(program) => {
+                let expected = RuntimeOpaqueTypeOwner::presentation_handle(self.resource(), result);
+                let RuntimeProgramValueType::Awbc { ty, .. } = types
+                    .value_type(result)
+                    .map_err(|cause| RuntimePresentationFactoryCallError::Type(Box::new(cause)))?
+                else {
+                    unreachable!("AWBC authority returns AWBC rows")
+                };
+                if !matches!(program.runtime_types[ty.index()].shape(), P::Opaque { producer, admission, value_class, persistence, arguments }
+                    if program.strings.get(producer.index()).is_some_and(|producer| producer == expected.producer().as_str()) && *admission == expected.admission() && *value_class == expected.value_class() && *persistence == expected.persistence() && arguments.is_empty())
+                {
+                    return Err(RuntimePresentationFactoryCallError::ResultType { result });
+                }
+                Ok(expected)
+            }
         }
-        Ok(expected)
     }
-
     pub(crate) fn registration_site(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
@@ -356,116 +490,127 @@ impl RuntimePresentationFactoryCall {
         )
     }
 
+    fn check_resource_kind(
+        &self,
+        actual: Option<PresentationResourceKind>,
+    ) -> Result<(), RuntimePresentationFactoryCallError> {
+        if actual != Some(self.resource()) {
+            return Err(RuntimePresentationFactoryCallError::ResourceType {
+                expected: self.resource(),
+                actual,
+            });
+        }
+        Ok(())
+    }
+
+    fn check_body_layout(
+        &self,
+        scope: &crate::plan::RuntimeTypeScope,
+        count: usize,
+        field: impl FnMut(usize) -> Option<RuntimeSemanticTypeId>,
+    ) -> Result<(), RuntimePresentationFactoryCallError> {
+        if count != self.body_len() {
+            return Err(RuntimePresentationFactoryCallError::BodyLayout {
+                expected: self.body_len(),
+                actual: Some(count),
+            });
+        }
+        let actual = Self::retained_body_identity(
+            self.callable,
+            &self.inputs,
+            self.resource_type,
+            scope,
+            count,
+            field,
+        )?;
+        if actual != self.body_type {
+            return Err(RuntimePresentationFactoryCallError::BodyIdentity {
+                expected: self.body_type,
+                actual,
+            });
+        }
+        Ok(())
+    }
+
+    fn plan_body<'a>(
+        &self,
+        types: crate::plan::PlanValueAuthority<'a>,
+    ) -> Result<&'a [crate::runtime_id::RuntimePlanTypeId], RuntimePresentationFactoryCallError>
+    {
+        use crate::plan::RuntimePlanTypeProjection as P;
+        let resource = types
+            .type_for_semantic(self.resource_type)
+            .map_err(|cause| RuntimePresentationFactoryCallError::Type(Box::new(cause)))?;
+        self.check_resource_kind(match resource.projection() {
+            P::PresentationResource(kind) => Some(*kind),
+            _ => None,
+        })?;
+        let body = types
+            .type_for_semantic(self.body_type)
+            .map_err(|cause| RuntimePresentationFactoryCallError::Type(Box::new(cause)))?;
+        let P::Tuple(fields) = body.projection() else {
+            return Err(RuntimePresentationFactoryCallError::BodyLayout {
+                expected: self.body_len(),
+                actual: None,
+            });
+        };
+        self.check_body_layout(body.scope(), fields.len(), |ordinal| {
+            types
+                .get(fields[ordinal])
+                .map(|row| row.semantic_identity())
+        })?;
+        Ok(fields)
+    }
+
     pub(crate) fn validate_body_type(
         &self,
         types: crate::program_types::RuntimeProgramTypes<'_>,
     ) -> Result<(), RuntimePresentationFactoryCallError> {
         use crate::{
-            awbc::schema::AwbcRuntimeTypeShape, plan::RuntimePlanTypeProjection,
-            program_types::RuntimeProgramValueType,
+            awbc::schema::AwbcRuntimeTypeShape as P,
+            program_types::{RuntimeProgramTypes, RuntimeProgramValueType},
         };
-        let kind = match types
-            .value_type(self.resource_type)
-            .map_err(|cause| RuntimePresentationFactoryCallError::Type(Box::new(cause)))?
-        {
-            RuntimeProgramValueType::Plan { program, ty } => {
-                match program.type_table().get(ty).map(|row| row.projection()) {
-                    Some(RuntimePlanTypeProjection::PresentationResource(kind)) => Some(*kind),
+        match types {
+            RuntimeProgramTypes::Plan(program) => self
+                .plan_body(crate::plan::PlanValueAuthority::Inventory(program))
+                .map(|_| ()),
+            RuntimeProgramTypes::Awbc(program) => {
+                let lookup = |semantic| -> Result<_, RuntimePresentationFactoryCallError> {
+                    let RuntimeProgramValueType::Awbc { ty, .. } =
+                        types.value_type(semantic).map_err(|cause| {
+                            RuntimePresentationFactoryCallError::Type(Box::new(cause))
+                        })?
+                    else {
+                        unreachable!("AWBC authority returns AWBC rows")
+                    };
+                    Ok(ty)
+                };
+                let resource = &program.runtime_types[lookup(self.resource_type)?.index()];
+                self.check_resource_kind(match resource.shape() {
+                    P::PresentationResource(kind) => Some(*kind),
                     _ => None,
-                }
+                })?;
+                let body = &program.runtime_types[lookup(self.body_type)?.index()];
+                let P::Tuple(fields) = body.shape() else {
+                    return Err(RuntimePresentationFactoryCallError::BodyLayout {
+                        expected: self.body_len(),
+                        actual: None,
+                    });
+                };
+                self.check_body_layout(body.scope(), fields.len(), |ordinal| {
+                    program
+                        .runtime_types
+                        .get(fields[ordinal].index())
+                        .map(|row| row.semantic_identity())
+                })
             }
-            RuntimeProgramValueType::Awbc { program, ty } => {
-                match program.runtime_types.get(ty.index()).map(|row| row.shape()) {
-                    Some(AwbcRuntimeTypeShape::PresentationResource(kind)) => Some(*kind),
-                    _ => None,
-                }
-            }
-        };
-        if kind != Some(self.resource()) {
-            return Err(RuntimePresentationFactoryCallError::ResourceType {
-                expected: self.resource(),
-                actual: kind,
-            });
         }
-        let (length, identity) = match types
-            .value_type(self.body_type)
-            .map_err(|cause| RuntimePresentationFactoryCallError::Type(Box::new(cause)))?
-        {
-            RuntimeProgramValueType::Plan { program, ty } => {
-                match program.type_table().get(ty).map(|ty| ty.projection()) {
-                    Some(RuntimePlanTypeProjection::Tuple(items)) => {
-                        if items.len() != self.body_len() {
-                            return Err(RuntimePresentationFactoryCallError::BodyLayout {
-                                expected: self.body_len(),
-                                actual: Some(items.len()),
-                            });
-                        }
-                        let row = program.type_table().get(ty).expect("selected body row");
-                        let identity = Self::retained_body_identity(
-                            self.callable,
-                            &self.inputs,
-                            self.resource_type,
-                            row.scope(),
-                            items.len(),
-                            |ordinal| {
-                                program
-                                    .type_table()
-                                    .get(items[ordinal])
-                                    .map(|row| row.semantic_identity())
-                            },
-                        )?;
-                        (Some(items.len()), Some(identity))
-                    }
-                    _ => (None, None),
-                }
-            }
-            RuntimeProgramValueType::Awbc { program, ty } => {
-                match program.runtime_types.get(ty.index()).map(|ty| ty.shape()) {
-                    Some(AwbcRuntimeTypeShape::Tuple(items)) => {
-                        if items.len() != self.body_len() {
-                            return Err(RuntimePresentationFactoryCallError::BodyLayout {
-                                expected: self.body_len(),
-                                actual: Some(items.len()),
-                            });
-                        }
-                        let row = &program.runtime_types[ty.index()];
-                        let identity = Self::retained_body_identity(
-                            self.callable,
-                            &self.inputs,
-                            self.resource_type,
-                            row.scope(),
-                            items.len(),
-                            |ordinal| {
-                                program
-                                    .runtime_types
-                                    .get(items[ordinal].index())
-                                    .map(|row| row.semantic_identity())
-                            },
-                        )?;
-                        (Some(items.len()), Some(identity))
-                    }
-                    _ => (None, None),
-                }
-            }
-        };
-        if length != Some(self.body_len()) {
-            return Err(RuntimePresentationFactoryCallError::BodyLayout {
-                expected: self.body_len(),
-                actual: length,
-            });
-        }
-        if identity != Some(self.body_type) {
-            return Err(RuntimePresentationFactoryCallError::BodyIdentity {
-                expected: self.body_type,
-                actual: identity.expect("tuple arity checked"),
-            });
-        }
-        Ok(())
     }
 }
-
-#[derive(Debug, Error)]
+#[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimePresentationFactoryCallError {
+    #[error("presentation argument {index} has an invalid executable ABI: {reason}")]
+    InputLayout { index: usize, reason: &'static str },
     #[error("presentation input {index} requires type {expected:?}, found {actual:?}")]
     InputType {
         index: usize,

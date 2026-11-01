@@ -296,7 +296,7 @@ impl super::RuntimePlanInventory {
 
 /// Borrowed phase context; every lookup uses the original admitted tables.
 #[derive(Clone, Copy)]
-pub(super) enum PlanValueAuthority<'a> {
+pub(crate) enum PlanValueAuthority<'a> {
     Inventory(&'a super::RuntimePlanInventory),
     Building {
         types: &'a RuntimePlanTypeTableBuilder,
@@ -306,11 +306,20 @@ pub(super) enum PlanValueAuthority<'a> {
 }
 
 impl<'a> PlanValueAuthority<'a> {
-    fn get(&self, ty: RuntimePlanTypeId) -> Option<&'a RuntimePlanTypeDeclaration> {
+    pub(crate) fn get(&self, ty: RuntimePlanTypeId) -> Option<&'a RuntimePlanTypeDeclaration> {
         match self {
             Self::Inventory(plan) => plan.type_table().get(ty),
             Self::Building { types, .. } => types.get(ty),
         }
+    }
+
+    pub(crate) fn type_for_semantic(
+        self,
+        semantic_type: crate::pattern::RuntimeSemanticTypeId,
+    ) -> Result<&'a RuntimePlanTypeDeclaration, crate::program_types::RuntimeProgramTypeError> {
+        self.by_semantic(semantic_type)
+            .and_then(|ty| self.get(ty))
+            .ok_or(crate::program_types::RuntimeProgramTypeError::Missing { semantic_type })
     }
 
     fn declaration(&self, ty: RuntimePlanTypeId) -> &'a RuntimePlanTypeDeclaration {
