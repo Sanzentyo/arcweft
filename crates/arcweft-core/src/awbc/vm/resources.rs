@@ -78,7 +78,7 @@ impl VmExecutionResources<'_> {
             )
         });
         banks
-            .preflight_register(&owner)
+            .preflight_registration_site(&owner, fiber.presentation_bank(), &site)
             .map_err(|cause| error(&cause))?;
         let ledger = banks
             .ledger_mut(fiber.presentation_bank())

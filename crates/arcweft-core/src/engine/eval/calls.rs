@@ -40,7 +40,16 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         if let RuntimeCallTarget::PresentationFactory(call) = callee {
-            let (values, _) = self.evaluate_external_call_args(callee, args, pure_backend)?;
+            let (values, types) = self.evaluate_external_call_args(callee, args, pure_backend)?;
+            call.validate_input_types(
+                crate::program_types::RuntimeProgramTypes::Plan(&self.plan),
+                types.len(),
+                |index| types.get(index).copied(),
+            )
+            .map_err(|cause| RuntimeEvalError::UnsupportedPure {
+                name: callee.as_label().into(),
+                reason: cause.to_string(),
+            })?;
             return self.evaluate_presentation_factory(call, values, result_type);
         }
         if let Some(intrinsic) = callee.as_intrinsic()

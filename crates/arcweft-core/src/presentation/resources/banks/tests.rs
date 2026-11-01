@@ -110,6 +110,11 @@ fn full_retirement_queue_rejects_replacement_before_body_or_cursor_changes() {
     }
     assert_eq!(banks.retirements.len(), 2);
     let before = banks.snapshot_admitted().unwrap();
+    assert_eq!(
+        banks.preflight_registration_site(&program, bank, &site()),
+        Err(RuntimePresentationError::RetirementCapacity)
+    );
+    assert_eq!(banks.snapshot_admitted().unwrap(), before);
     let rejected = banks
         .register_and_retire(&program, scope, site(), body(expected, true))
         .unwrap_err();

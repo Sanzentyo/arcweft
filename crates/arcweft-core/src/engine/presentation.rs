@@ -177,6 +177,13 @@ impl Engine {
             .finish_presentation_custody()
             .map_err(|cause| error(cause.to_string()))?;
         let value = RuntimePayload::new(resource);
+        if let Some(banks) = &self.presentation {
+            banks.preflight_registration_site(
+                &self.fiber.frame.program,
+                self.fiber.frame.presentation_bank,
+                &site,
+            )?;
+        }
         let (program, scope) = self
             .prepare_presentation_registration(call.resource_type(), &value)
             .map_err(|cause| error(cause.to_string()))?;
@@ -215,23 +222,25 @@ impl Engine {
         values: impl IntoIterator<Item = &'value RuntimeValue>,
     ) -> Result<(), RuntimeEvalError> {
         use crate::presentation::resources::PresentationScopeExit;
-        let escaping = values
-            .into_iter()
-            .map(|value| value.view().affine_handles())
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|cause| RuntimeEvalError::UnsupportedPure {
-                name: "presentation return".into(),
-                reason: cause.to_string(),
-            })?
-            .into_iter()
-            .flatten()
-            .filter_map(|handle| match handle {
-                crate::value::ownership::RuntimeAffineHandle::Presentation { token, .. } => {
-                    Some(token)
-                }
-                crate::value::ownership::RuntimeAffineHandle::Line(_) => None,
-            })
-            .collect::<Vec<_>>();
+        let escaping =
+            values
+                .into_iter()
+                .try_fold(Vec::new(), |mut escaping, value| {
+                    escaping.extend(value.view().affine_handles()?.into_iter().filter_map(
+                        |handle| match handle {
+                            crate::value::ownership::RuntimeAffineHandle::Presentation {
+                                token,
+                                ..
+                            } => Some(token),
+                            crate::value::ownership::RuntimeAffineHandle::Line(_) => None,
+                        },
+                    ));
+                    Ok::<_, crate::value::ownership::RuntimeAffineHandleError>(escaping)
+                })
+                .map_err(|cause| RuntimeEvalError::UnsupportedPure {
+                    name: "presentation return".into(),
+                    reason: cause.to_string(),
+                })?;
         if self.presentation.is_none() && escaping.is_empty() {
             return Ok(());
         }

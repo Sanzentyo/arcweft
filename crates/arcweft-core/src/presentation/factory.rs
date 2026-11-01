@@ -180,6 +180,65 @@ impl RuntimePresentationFactoryCall {
         Ok(())
     }
 
+    /// Exact source-level type identities are part of this ABI even when two
+    /// rows admit the same physical scalar representation.
+    pub(crate) fn validate_input_types(
+        &self,
+        types: crate::program_types::RuntimeProgramTypes<'_>,
+        count: usize,
+        mut actual: impl FnMut(usize) -> Option<RuntimeSemanticTypeId>,
+    ) -> Result<(), RuntimePresentationFactoryCallError> {
+        use crate::{
+            awbc::schema::AwbcRuntimeTypeShape, plan::RuntimePlanTypeProjection,
+            program_types::RuntimeProgramValueType,
+        };
+        if count != self.inputs.len() {
+            return Err(RuntimePresentationFactoryCallError::Arguments {
+                expected: self.inputs.len(),
+                actual: count,
+            });
+        }
+        self.validate_body_type(types)?;
+        let body = types
+            .value_type(self.body_type)
+            .map_err(|cause| RuntimePresentationFactoryCallError::Type(Box::new(cause)))?;
+        for ordinal in 0..self.body_len() {
+            let expected = match body {
+                RuntimeProgramValueType::Plan { program, ty } => {
+                    match program.type_table().get(ty).map(|row| row.projection()) {
+                        Some(RuntimePlanTypeProjection::Tuple(fields)) => fields
+                            .get(ordinal)
+                            .and_then(|ty| program.type_table().get(*ty))
+                            .map(|row| row.semantic_identity()),
+                        _ => None,
+                    }
+                }
+                RuntimeProgramValueType::Awbc { program, ty } => {
+                    match program.runtime_types.get(ty.index()).map(|row| row.shape()) {
+                        Some(AwbcRuntimeTypeShape::Tuple(fields)) => fields
+                            .get(ordinal)
+                            .and_then(|ty| program.runtime_types.get(ty.index()))
+                            .map(|row| row.semantic_identity()),
+                        _ => None,
+                    }
+                }
+            }
+            .ok_or(RuntimePresentationFactoryCallError::BodyField { ordinal })?;
+            let index = self
+                .body_input_index(ordinal)
+                .expect("admitted body ordinal");
+            let actual = actual(index);
+            if actual != Some(expected) {
+                return Err(RuntimePresentationFactoryCallError::InputType {
+                    index,
+                    expected,
+                    actual,
+                });
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn result_owner(
         &self,
         types: crate::program_types::RuntimeProgramTypes<'_>,
@@ -389,6 +448,12 @@ impl RuntimePresentationFactoryCall {
 
 #[derive(Debug, Error)]
 pub enum RuntimePresentationFactoryCallError {
+    #[error("presentation input {index} requires type {expected:?}, found {actual:?}")]
+    InputType {
+        index: usize,
+        expected: RuntimeSemanticTypeId,
+        actual: Option<RuntimeSemanticTypeId>,
+    },
     #[error("presentation factory expected {expected} inputs, found {actual}")]
     Arguments { expected: usize, actual: usize },
     #[error(

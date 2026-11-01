@@ -1609,6 +1609,18 @@ fn execute_instruction(
                         "presentation factory has an invalid call signature".into(),
                     ));
                 }
+                call.validate_input_types(
+                    crate::program_types::RuntimeProgramTypes::Awbc(program),
+                    signature.params.len(),
+                    |index| {
+                        signature
+                            .params
+                            .get(index)
+                            .and_then(|ty| program.runtime_types.get(ty.index()))
+                            .map(|row| row.semantic_identity())
+                    },
+                )
+                .map_err(|cause| VmError::Runtime(cause.to_string()))?;
                 let result = program
                     .runtime_types
                     .get(result.index())

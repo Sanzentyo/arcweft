@@ -21,6 +21,7 @@ use arcweft_interaction_model::presentation::{
 };
 
 const BOOL: RuntimeSemanticTypeId = RuntimeSemanticTypeId::from_bytes([81; 32]);
+const BOOL_ALIAS: RuntimeSemanticTypeId = RuntimeSemanticTypeId::from_bytes([84; 32]);
 const RESOURCE: RuntimeSemanticTypeId = RuntimeSemanticTypeId::from_bytes([83; 32]);
 
 fn keys() -> Box<[PresentationArgumentKey]> {
@@ -49,6 +50,7 @@ fn sources() -> [RuntimeTaskSourceProgram; 2] {
         .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(BOOL, RuntimePlanTypeProjection::Bool),
+                RuntimePlanTypeSeed::new(BOOL_ALIAS, RuntimePlanTypeProjection::Bool),
                 RuntimePlanTypeSeed::new(
                     body_type(),
                     RuntimePlanTypeProjection::Tuple(Box::new([BOOL])),
@@ -79,6 +81,7 @@ fn sources() -> [RuntimeTaskSourceProgram; 2] {
                 RESOURCE,
                 AwbcRuntimeTypeShape::PresentationResource(PresentationResourceKind::Image),
             ),
+            AwbcRuntimeType::new(BOOL_ALIAS, AwbcRuntimeTypeShape::Bool),
         ],
         original_source: Some(original_source),
         ..AwbcProgram::default()
@@ -113,6 +116,44 @@ fn layout() -> Arc<RuntimePresentationFactoryCall> {
         )
         .unwrap(),
     )
+}
+
+#[test]
+fn presentation_factory_input_abi_rejects_a_distinct_identity_with_the_same_physical_shape() {
+    for source in sources() {
+        let owner = source.program_owner();
+        let call = layout();
+        call.validate_input_types(owner.types(), 1, |_| Some(BOOL))
+            .unwrap();
+        let error = call
+            .validate_input_types(owner.types(), 1, |_| Some(BOOL_ALIAS))
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            crate::presentation::RuntimePresentationFactoryCallError::InputType {
+                index: 0,
+                expected: BOOL,
+                actual: Some(BOOL_ALIAS)
+            }
+        ));
+        assert!(matches!(
+            call.validate_input_types(owner.types(), 0, |_| None)
+                .unwrap_err(),
+            crate::presentation::RuntimePresentationFactoryCallError::Arguments {
+                expected: 1,
+                actual: 0
+            }
+        ));
+        assert!(matches!(
+            call.validate_input_types(owner.types(), 1, |_| None)
+                .unwrap_err(),
+            crate::presentation::RuntimePresentationFactoryCallError::InputType {
+                index: 0,
+                expected: BOOL,
+                actual: None
+            }
+        ));
+    }
 }
 
 fn construct(

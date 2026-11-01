@@ -36,6 +36,43 @@ impl<V, L> PresentationBanks<V, L> {
 }
 
 impl<V> PresentationBanks<V> {
+    /// Read-only admission precedes minting a grant in the caller's real scope.
+    /// A not-yet-created bank has no occupant to displace.
+    pub(crate) fn preflight_registration_site(
+        &self,
+        program: &RuntimeProgramOwner,
+        bank: RuntimePresentationBankId,
+        site: &PresentationRegistrationSite,
+    ) -> Result<(), RuntimePresentationError> {
+        self.preflight_register(program)?;
+        let root = self
+            .ledgers
+            .get(&RuntimePresentationBankId::Root)
+            .ok_or(RuntimePresentationError::InvalidState)?;
+        if !bank.matches_artifact(root.state.artifact) {
+            return Err(RuntimePresentationError::Program);
+        }
+        let Some(ledger) = self.ledgers.get(&bank) else {
+            return if self.ledgers.len() >= root.limits.scopes {
+                Err(RuntimePresentationError::ScopeCapacity)
+            } else {
+                Ok(())
+            };
+        };
+        ledger.preflight_register(program)?;
+        let displaced = match site {
+            PresentationRegistrationSite::Independent(_) => false,
+            PresentationRegistrationSite::Slot(address) => ledger.state.leases.values().any(
+                |lease| matches!(&lease.site, PresentationRegistrationSite::Slot(actual) if actual == address)
+                    && lease.body.is_some(),
+            ),
+        };
+        if displaced && self.retirements.len() >= ledger.limits.handles {
+            return Err(RuntimePresentationError::RetirementCapacity);
+        }
+        Ok(())
+    }
+
     /// Registers one occupant and retains the displaced body's original token.
     /// Queue capacity and every ledger check precede displacement or issuance.
     pub(crate) fn register_and_retire(
@@ -46,23 +83,12 @@ impl<V> PresentationBanks<V> {
         body: V,
     ) -> Result<RuntimePresentationHandleToken, PresentationRegisterError<V>> {
         let prepared = (|| {
-            self.preflight_register(program)?;
+            self.preflight_registration_site(program, scope.bank, &site)?;
             let ledger = self
                 .ledgers
                 .get(&scope.bank)
                 .ok_or(RuntimePresentationError::Owner)?;
-            ledger.preflight_register(program)?;
             ledger.validate_scope(scope)?;
-            let displaced = match &site {
-                PresentationRegistrationSite::Independent(_) => false,
-                PresentationRegistrationSite::Slot(address) => ledger.state.leases.values().any(
-                    |lease| matches!(&lease.site, PresentationRegistrationSite::Slot(actual) if actual == address)
-                        && lease.body.is_some(),
-                ),
-            };
-            if displaced && self.retirements.len() >= ledger.limits.handles {
-                return Err(RuntimePresentationError::RetirementCapacity);
-            }
             Ok(())
         })();
         if let Err(cause) = prepared {
