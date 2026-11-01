@@ -117,6 +117,11 @@ impl RuntimeResolvedStaticCallTarget {
                 resource_type,
                 body_type,
                 ..
+            }
+            | Self::PresentationView {
+                resource_type,
+                body_type,
+                ..
             } => roots.extend([resource_type, body_type]),
             Self::StandardMapPrefix(map) => {
                 if let Some(collection) = map.collection() {

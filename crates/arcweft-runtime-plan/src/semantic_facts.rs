@@ -4526,6 +4526,7 @@ impl RuntimeResolvedCallDispatch {
                 RuntimeResolvedStaticCallTarget::Intrinsic(_)
                 | RuntimeResolvedStaticCallTarget::PresentationSlot(_)
                 | RuntimeResolvedStaticCallTarget::PresentationFactory { .. }
+                | RuntimeResolvedStaticCallTarget::PresentationView { .. }
                 | RuntimeResolvedStaticCallTarget::PresentationHandleMethod { .. }
                 | RuntimeResolvedStaticCallTarget::Format(_)
                 | RuntimeResolvedStaticCallTarget::VecPopFront
@@ -4581,6 +4582,11 @@ pub enum RuntimeResolvedStaticCallTarget {
     PresentationSlot(arcweft_core::presentation::RuntimePresentationSlotCall),
     PresentationFactory {
         call: Arc<arcweft_core::presentation::RuntimePresentationFactoryCall>,
+        resource_type: RuntimeNormalizedType,
+        body_type: RuntimeNormalizedType,
+    },
+    PresentationView {
+        call: Arc<arcweft_core::presentation::RuntimePresentationViewCall>,
         resource_type: RuntimeNormalizedType,
         body_type: RuntimeNormalizedType,
     },
@@ -8612,6 +8618,7 @@ impl RuntimePlanSemanticFacts {
                     RuntimeResolvedStaticCallTarget::Intrinsic(_)
                     | RuntimeResolvedStaticCallTarget::PresentationSlot(_)
                     | RuntimeResolvedStaticCallTarget::PresentationFactory { .. }
+                    | RuntimeResolvedStaticCallTarget::PresentationView { .. }
                     | RuntimeResolvedStaticCallTarget::PresentationHandleMethod { .. }
                     | RuntimeResolvedStaticCallTarget::Format(_)
                     | RuntimeResolvedStaticCallTarget::VecPopFront
@@ -12564,6 +12571,59 @@ fn validate_call(
             }
         }
         RuntimeResolvedCallDispatch::Static(
+            RuntimeResolvedStaticCallTarget::PresentationView {
+                call: view,
+                resource_type,
+                body_type,
+            },
+        ) => {
+            let invalid =
+                || RuntimeSemanticFactsError::InvalidRuntimeCallDisposition { expression };
+            if expression_source_type != Some(resource_type)
+                || resource_type.identity() != view.resource_type()
+                || body_type.identity() != view.body_type()
+                || !matches!(
+                    resource_type.shape(),
+                    RuntimeTypeShape::PresentationResource(
+                        arcweft_interaction_model::presentation::PresentationResourceKind::View
+                    )
+                )
+            {
+                return Err(invalid());
+            }
+            validate_normalized_type(modules, resource_type)?;
+            validate_normalized_type(modules, body_type)?;
+            let RuntimeTypeShape::Tuple(fields) = body_type.shape() else {
+                return Err(invalid());
+            };
+            let identity =
+                arcweft_core::presentation::RuntimePresentationViewCall::retained_body_identity(
+                    view.view(),
+                    view.definition(),
+                    view.parameters(),
+                    view.supplied(),
+                    view.resource_type(),
+                    body_type.scope(),
+                    fields.len(),
+                    |index| fields.get(index).map(RuntimeNormalizedType::identity),
+                )
+                .map_err(|_| invalid())?;
+            if identity != body_type.identity()
+                || fields.len() != view.supplied().len()
+                || fields.len() != call.operands().len()
+            {
+                return Err(invalid());
+            }
+            let mut operands = call.operands().iter().collect::<Vec<_>>();
+            operands.sort_unstable_by_key(|operand| operand.abi_position());
+            if operands.iter().enumerate().any(|(index, operand)| {
+                usize::try_from(operand.abi_position()).ok() != Some(index)
+                    || operand.ty() != &fields[index]
+            }) {
+                return Err(invalid());
+            }
+        }
+        RuntimeResolvedCallDispatch::Static(
             RuntimeResolvedStaticCallTarget::PresentationFactory {
                 call: factory,
                 resource_type,
@@ -13616,6 +13676,7 @@ fn validate_project_function_instance(
                 RuntimeResolvedStaticCallTarget::Intrinsic(_)
                 | RuntimeResolvedStaticCallTarget::PresentationSlot(_)
                 | RuntimeResolvedStaticCallTarget::PresentationFactory { .. }
+                | RuntimeResolvedStaticCallTarget::PresentationView { .. }
                 | RuntimeResolvedStaticCallTarget::PresentationHandleMethod { .. }
                 | RuntimeResolvedStaticCallTarget::Format(_)
                 | RuntimeResolvedStaticCallTarget::VecPopFront

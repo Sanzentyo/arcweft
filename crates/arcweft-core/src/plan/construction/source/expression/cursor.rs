@@ -505,6 +505,41 @@ impl<'a> Cursor<'a> {
                 }
             }
             1 => self.text(counts)?,
+            5 => {
+                let view = self.string()?;
+                counts.storage(view.len().checked_mul(2).ok_or(Error::Arithmetic)?)?;
+                let definition =
+                    crate::presentation::RuntimePresentationViewIdentity::from_checked_declaration(
+                        self.slice(32)?
+                            .try_into()
+                            .expect("definition identity width"),
+                    )
+                    .map_err(|_| self.invalid("View definition"))?;
+                let parameters = self.u32()?;
+                let resource = crate::pattern::RuntimeSemanticTypeId::from_bytes(
+                    self.slice(32)?.try_into().expect("semantic identity width"),
+                );
+                let body = crate::pattern::RuntimeSemanticTypeId::from_bytes(
+                    self.slice(32)?.try_into().expect("semantic identity width"),
+                );
+                let count = self.count()?;
+                counts.array(count, size_of::<u32>())?;
+                let bytes = self.slice(count.checked_mul(4).ok_or(Error::Arithmetic)?)?;
+                let supplied = bytes
+                    .chunks_exact(4)
+                    .map(|bytes| u32::from_le_bytes(bytes.try_into().expect("parameter width")));
+                crate::presentation::RuntimePresentationViewCall::preflight(
+                    view,
+                    definition,
+                    parameters,
+                    count,
+                    supplied,
+                    resource,
+                    body,
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                )
+                .map_err(|_| self.invalid("presentation View ABI"))?;
+            }
             4 => {
                 use arcweft_interaction_model::presentation::{
                     PresentationArgumentKey, PresentationArgumentKeyRef, PresentationArgumentRole,

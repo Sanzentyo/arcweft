@@ -719,6 +719,38 @@ impl Decoder<'_, '_> {
             1 => {
                 RuntimeCallTarget::Callable(crate::entry::RuntimeCallableId::try_new(r.string()?)?)
             }
+            5 => {
+                let view = arcweft_id::view::ViewId::parse_public(r.string()?)
+                    .map_err(|_| r.invalid("View identity"))?;
+                let definition =
+                    crate::presentation::RuntimePresentationViewIdentity::from_checked_declaration(
+                        r.slice(32)?.try_into().expect("definition identity width"),
+                    )
+                    .map_err(|_| r.invalid("View definition"))?;
+                let parameters = r.u32()?;
+                let resource = crate::pattern::RuntimeSemanticTypeId::from_bytes(
+                    r.slice(32)?.try_into().expect("semantic identity width"),
+                );
+                let body = crate::pattern::RuntimeSemanticTypeId::from_bytes(
+                    r.slice(32)?.try_into().expect("semantic identity width"),
+                );
+                let count = r.count()?;
+                let supplied = (0..count)
+                    .map(|_| r.u32())
+                    .collect::<Result<Box<[_]>, _>>()?;
+                RuntimeCallTarget::PresentationView(std::sync::Arc::new(
+                    crate::presentation::RuntimePresentationViewCall::try_new(
+                        view,
+                        definition,
+                        parameters,
+                        supplied,
+                        resource,
+                        body,
+                        crate::entry::RuntimeSchemaLimits::engine_default(),
+                    )
+                    .map_err(|_| r.invalid("presentation View ABI"))?,
+                ))
+            }
             4 => {
                 use arcweft_interaction_model::presentation::{
                     PresentationArgumentKey, PresentationArgumentRole, PresentationCallableId,

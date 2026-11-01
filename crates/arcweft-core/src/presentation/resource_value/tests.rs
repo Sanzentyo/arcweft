@@ -46,6 +46,13 @@ fn body_type() -> RuntimeSemanticTypeId {
 }
 
 fn sources() -> [RuntimeTaskSourceProgram; 2] {
+    sources_for(PresentationResourceKind::Image, body_type())
+}
+
+fn sources_for(
+    resource: PresentationResourceKind,
+    body_type: RuntimeSemanticTypeId,
+) -> [RuntimeTaskSourceProgram; 2] {
     let mut builder = RuntimePlanBuilder::new();
     builder
         .admit_type_batch(
@@ -53,14 +60,12 @@ fn sources() -> [RuntimeTaskSourceProgram; 2] {
                 RuntimePlanTypeSeed::new(BOOL, RuntimePlanTypeProjection::Bool),
                 RuntimePlanTypeSeed::new(BOOL_ALIAS, RuntimePlanTypeProjection::Bool),
                 RuntimePlanTypeSeed::new(
-                    body_type(),
+                    body_type,
                     RuntimePlanTypeProjection::Tuple(Box::new([BOOL])),
                 ),
                 RuntimePlanTypeSeed::new(
                     RESOURCE,
-                    RuntimePlanTypeProjection::PresentationResource(
-                        PresentationResourceKind::Image,
-                    ),
+                    RuntimePlanTypeProjection::PresentationResource(resource),
                 ),
             ],
             std::iter::empty::<crate::plan::RuntimeLocalDeclarationSeed>(),
@@ -74,13 +79,10 @@ fn sources() -> [RuntimeTaskSourceProgram; 2] {
     let program = AwbcProgram {
         runtime_types: vec![
             AwbcRuntimeType::new(BOOL, AwbcRuntimeTypeShape::Bool),
-            AwbcRuntimeType::new(
-                body_type(),
-                AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(0)]),
-            ),
+            AwbcRuntimeType::new(body_type, AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(0)])),
             AwbcRuntimeType::new(
                 RESOURCE,
-                AwbcRuntimeTypeShape::PresentationResource(PresentationResourceKind::Image),
+                AwbcRuntimeTypeShape::PresentationResource(resource),
             ),
             AwbcRuntimeType::new(BOOL_ALIAS, AwbcRuntimeTypeShape::Bool),
         ],
@@ -117,6 +119,158 @@ fn layout() -> Arc<RuntimePresentationFactoryCall> {
         )
         .unwrap(),
     )
+}
+
+fn view_layout() -> Arc<crate::presentation::RuntimePresentationViewCall> {
+    use crate::presentation::{RuntimePresentationViewCall, RuntimePresentationViewIdentity};
+    let view = arcweft_id::view::ViewId::try_new("view.card").unwrap();
+    let definition = RuntimePresentationViewIdentity::from_checked_declaration([77; 32]).unwrap();
+    let body = RuntimePresentationViewCall::retained_body_identity(
+        &view,
+        definition,
+        3,
+        &[2],
+        RESOURCE,
+        &crate::plan::RuntimeTypeScope::root(),
+        1,
+        |_| Some(BOOL),
+    )
+    .unwrap();
+    Arc::new(
+        RuntimePresentationViewCall::try_new(
+            view,
+            definition,
+            3,
+            Box::new([2]),
+            RESOURCE,
+            body,
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap(),
+    )
+}
+
+#[test]
+fn unmounted_view_retains_supplied_capture_and_omission_across_native_and_decoded_awbc_save() {
+    let call = view_layout();
+    for source in sources_for(PresentationResourceKind::View, call.body_type()) {
+        let owner = source.program_owner();
+        let value = RuntimeRetainedValueAdmission::for_task_source(
+            &source,
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .construct_presentation_resource(
+            source.clone(),
+            crate::presentation::RuntimePresentationResourceLayout::View(Arc::clone(&call)),
+            None,
+            RuntimePayload(RuntimeValue::Tuple(vec![RuntimeValue::Bool(true)])),
+        )
+        .unwrap();
+        assert_eq!(value.ownership(), RuntimeValueOwnership::Affine);
+        assert!(value.live_view().copy_unrestricted().is_none());
+        let snapshot =
+            AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner).unwrap();
+        let decoded: AwbcRuntimeValueSnapshot =
+            serde_json::from_slice(&serde_json::to_vec(&snapshot).unwrap()).unwrap();
+        let mut admission = RuntimeRetainedValueAdmission::for_task_source(
+            &source,
+            RuntimeSchemaLimits::engine_default(),
+        );
+        admission
+            .validate_owned_borrowed(decoded.borrowed_value())
+            .unwrap();
+        let context = crate::value::RuntimeValueRestoreContext::new(
+            &owner,
+            Some(crate::task::TaskSourceRestore {
+                program: &source,
+                admission: &admission,
+            }),
+        );
+        let restored = decoded.into_admitted_runtime_value(context).unwrap();
+        assert_eq!(restored, value);
+        let RuntimeValue::PresentationResource(resource) = restored else {
+            panic!("retained View")
+        };
+        let view = resource.layout().view().unwrap();
+        assert_eq!(view.parameters(), 3);
+        assert_eq!(view.supplied(), &[2]);
+        assert_eq!(
+            resource.body(),
+            &RuntimeValue::Tuple(vec![RuntimeValue::Bool(true)])
+        );
+        assert!(resource.source.program_owner().same_program(&owner));
+    }
+}
+
+#[test]
+fn unmounted_view_rejects_changed_definition_destinations_and_resource_under_original_type_graph() {
+    use crate::presentation::{
+        RuntimePresentationResourceLayout, RuntimePresentationViewCall,
+        RuntimePresentationViewIdentity,
+    };
+    let call = view_layout();
+    for source in sources_for(PresentationResourceKind::View, call.body_type()) {
+        let owner = source.program_owner();
+        let value = RuntimeRetainedValueAdmission::for_task_source(
+            &source,
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .construct_presentation_resource(
+            source.clone(),
+            RuntimePresentationResourceLayout::View(Arc::clone(&call)),
+            None,
+            RuntimePayload(RuntimeValue::Tuple(vec![RuntimeValue::Bool(true)])),
+        )
+        .unwrap();
+        let snapshot =
+            AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner).unwrap();
+        for mutation in 0..6 {
+            let mut forged = snapshot.clone();
+            let AwbcRuntimeValueSnapshot::PresentationResource(resource) = &mut forged else {
+                panic!("snapshot View")
+            };
+            resource.layout = RuntimePresentationResourceLayout::View(Arc::new(
+                RuntimePresentationViewCall::try_new(
+                    if mutation == 0 {
+                        arcweft_id::view::ViewId::try_new("view.other").unwrap()
+                    } else {
+                        call.view().clone()
+                    },
+                    if mutation == 1 {
+                        RuntimePresentationViewIdentity::from_checked_declaration([78; 32]).unwrap()
+                    } else {
+                        call.definition()
+                    },
+                    if mutation == 2 { 4 } else { 3 },
+                    if mutation == 3 {
+                        Box::new([1])
+                    } else {
+                        Box::new([2])
+                    },
+                    if mutation == 4 { BOOL } else { RESOURCE },
+                    call.body_type(),
+                    RuntimeSchemaLimits::engine_default(),
+                )
+                .unwrap(),
+            ));
+            if mutation == 5 {
+                resource.body = Box::new(AwbcRuntimeValueSnapshot::Tuple(vec![
+                    AwbcRuntimeValueSnapshot::Bool(false),
+                    AwbcRuntimeValueSnapshot::Bool(true),
+                ]));
+            }
+            let mut admission = RuntimeRetainedValueAdmission::for_task_source(
+                &source,
+                RuntimeSchemaLimits::engine_default(),
+            );
+            assert!(
+                admission
+                    .validate_owned_borrowed(forged.borrowed_value())
+                    .is_err(),
+                "mutation {mutation}"
+            );
+        }
+    }
 }
 
 #[test]

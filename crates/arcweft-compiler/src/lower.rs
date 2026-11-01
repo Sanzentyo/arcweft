@@ -9989,6 +9989,132 @@ fn runtime_call_target(
                 owner,
                 reason: format!("project call has no accepted checked callable facts: {error:?}"),
             })?;
+        if matches!(checked.execution(), CheckedCallableExecution::RetainedView) {
+            use arcweft_core::presentation::{
+                RuntimePresentationViewCall, RuntimePresentationViewIdentity,
+            };
+            use arcweft_lang_sema::callable::{
+                CallableGroupIndex, CheckedCallOperandDestination, CheckedCallRuntimeOperand,
+            };
+            let error = |reason: String| RuntimeSemanticProjectionError::Call { owner, reason };
+            let symbol = symbols
+                .callable(declaration)
+                .ok_or_else(|| error("selected View has no accepted symbol".into()))?;
+            let item = symbol.source_item();
+            let module = project
+                .modules()
+                .find_map(|(_, module)| (module.module_id() == item.module()).then_some(module))
+                .ok_or_else(|| error("selected View has no original HIR module".into()))?;
+            let hir_item = module
+                .resolve_item(item)
+                .map_err(|cause| error(cause.to_string()))?;
+            let arcweft_lang_hir::item::HirItemKind::View(view) = hir_item.kind() else {
+                return Err(error(
+                    "selected retained View is not a View declaration".into(),
+                ));
+            };
+            let view = arcweft_id::view::ViewId::try_from(
+                view.header()
+                    .public_id()
+                    .resolved()
+                    .ok_or_else(|| error("selected View has no accepted public identity".into()))?
+                    .clone(),
+            )
+            .map_err(|cause| error(cause.to_string()))?;
+            let definition = RuntimePresentationViewIdentity::from_checked_declaration(
+                checked.id().semantic_digest().into_bytes(),
+            )
+            .map_err(|cause| error(cause.to_string()))?;
+            let group = CallableGroupIndex::try_from_usize(0).expect("initial parameter group");
+            let contract = checked
+                .parameter_contract(group)
+                .map_err(|cause| error(cause.to_string()))?;
+            let parameters = u32::try_from(contract.parameters().len())
+                .map_err(|cause| error(cause.to_string()))?;
+            let resource_type =
+                lexical.runtime_type(&TypeKind::ViewValue, symbols, world, analysis)?;
+            let mut fields = application
+                .core()
+                .runtime_operands()
+                .into_iter()
+                .map(|operand| {
+                    let CheckedCallRuntimeOperand::Argument { slot, .. } = operand else {
+                        return Err(error(
+                            "retained View requires checked parameter operands".into(),
+                        ));
+                    };
+                    let CheckedCallOperandDestination::Parameter(coordinate) = slot.destination()
+                    else {
+                        return Err(error(
+                            "retained View cannot capture an open destination".into(),
+                        ));
+                    };
+                    if coordinate.group() != group {
+                        return Err(error(
+                            "retained View operand belongs to another parameter group".into(),
+                        ));
+                    }
+                    Ok((
+                        slot.abi_position(),
+                        u32::try_from(coordinate.parameter().get())
+                            .map_err(|cause| error(cause.to_string()))?,
+                        lexical.runtime_type(slot.inferred(), symbols, world, analysis)?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
+            fields.sort_unstable_by_key(|(position, ..)| *position);
+            if fields
+                .iter()
+                .enumerate()
+                .any(|(ordinal, (position, ..))| usize::try_from(*position).ok() != Some(ordinal))
+            {
+                return Err(error(
+                    "retained View supplied input ABI is not contiguous".into(),
+                ));
+            }
+            let supplied = fields
+                .iter()
+                .map(|(_, parameter, _)| *parameter)
+                .collect::<Box<[_]>>();
+            let retained = fields.into_iter().map(|(_, _, ty)| ty).collect::<Vec<_>>();
+            let scope = retained
+                .iter()
+                .map(RuntimeNormalizedType::scope)
+                .max_by_key(|scope| scope.binders().len())
+                .cloned()
+                .unwrap_or_else(arcweft_core::plan::RuntimeTypeScope::root);
+            let identity = RuntimePresentationViewCall::retained_body_identity(
+                &view,
+                definition,
+                parameters,
+                &supplied,
+                resource_type.identity(),
+                &scope,
+                retained.len(),
+                |ordinal| retained.get(ordinal).map(RuntimeNormalizedType::identity),
+            )
+            .map_err(|cause| error(cause.to_string()))?;
+            let body_type = RuntimeNormalizedType::new(
+                identity,
+                RuntimeTypeShape::Tuple(retained.into_boxed_slice()),
+            )
+            .with_scope(scope);
+            let call = RuntimePresentationViewCall::try_new(
+                view,
+                definition,
+                parameters,
+                supplied,
+                resource_type.identity(),
+                identity,
+                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+            )
+            .map_err(|cause| error(cause.to_string()))?;
+            return Ok(RuntimeResolvedStaticCallTarget::PresentationView {
+                call: Arc::new(call),
+                resource_type,
+                body_type,
+            });
+        }
         let runtime = runtime_project_callable(declaration, symbols, world, analysis)
             .map_err(|reason| RuntimeSemanticProjectionError::Call { owner, reason })?;
         if declaration.owner()
