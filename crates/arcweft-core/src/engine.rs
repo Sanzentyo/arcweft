@@ -1053,6 +1053,7 @@ impl FlowControlStackEntry {
                 )
             }
             FlowControlStackEntryKind::FunctionCall(frame) => {
+                let continuation = frame.continuation.snapshot_with_admitted_packet(owner)?;
                 FlowControlStackEntryRollbackImage::FunctionCall(FunctionCallFrameRollbackImage {
                     site: frame.site,
                     type_instantiation: frame.type_instantiation.clone(),
@@ -1062,7 +1063,7 @@ impl FlowControlStackEntry {
                         .iter()
                         .map(|op| NativePendingWorkRollbackImage::from_admitted_live(op, owner))
                         .collect::<Result<_, String>>()?,
-                    continuation: frame.continuation.snapshot_with_admitted_packet(owner)?,
+                    continuation,
                 })
             }
             FlowControlStackEntryKind::Scope {
@@ -1132,19 +1133,22 @@ impl FlowControlStackEntry {
                 function_scope,
                 caller_pending_ops,
                 continuation,
-            }) => FlowControlStackEntryKind::FunctionCall(FunctionCallFrame {
-                site,
-                type_instantiation,
-                function_scope,
-                caller_pending_ops: caller_pending_ops
-                    .into_iter()
-                    .map(|op| op.into_admitted_live(owner))
-                    .collect::<Result<_, String>>()?,
-                continuation: FunctionReturnContinuation::from_image_with_admitted_packet(
+            }) => {
+                let continuation = FunctionReturnContinuation::from_image_with_admitted_packet(
                     continuation,
                     owner,
-                )?,
-            }),
+                )?;
+                FlowControlStackEntryKind::FunctionCall(FunctionCallFrame {
+                    site,
+                    type_instantiation,
+                    function_scope,
+                    caller_pending_ops: caller_pending_ops
+                        .into_iter()
+                        .map(|op| op.into_admitted_live(owner))
+                        .collect::<Result<_, String>>()?,
+                    continuation,
+                })
+            }
         };
         Ok(Self { kind })
     }
@@ -1169,6 +1173,9 @@ impl FunctionCallFrame {
 /// resumes its materialization plan without reevaluating source operands.
 #[derive(Debug, PartialEq)]
 pub(crate) enum FunctionReturnContinuation<P = crate::value::RuntimeCallablePendingGroup> {
+    /// A synchronous expression body returns to its live evaluator. The
+    /// original site and caller queue still belong to the same call frame.
+    Expression,
     RootInitializer {
         entry: EntryRuntimeId,
     },
@@ -1196,13 +1203,17 @@ type FunctionReturnContinuationRollbackImage =
 impl<P> FunctionReturnContinuation<P> {
     /// A nested invocation resumes the same task instead of ending its work.
     const fn returns_to_caller(&self) -> bool {
-        matches!(self, Self::CallableDefault { .. } | Self::Bind { .. })
+        matches!(
+            self,
+            Self::Expression | Self::CallableDefault { .. } | Self::Bind { .. }
+        )
     }
 }
 
 impl Clone for FunctionReturnContinuationRollbackImage {
     fn clone(&self) -> Self {
         match self {
+            Self::Expression => Self::Expression,
             Self::RootInitializer { entry } => Self::RootInitializer {
                 entry: entry.clone(),
             },
@@ -1228,6 +1239,12 @@ impl FunctionReturnContinuation {
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<FunctionReturnContinuationRollbackImage, String> {
         Ok(match self {
+            Self::Expression => {
+                return Err(
+                    "a synchronous expression invocation has no suspended return continuation"
+                        .into(),
+                );
+            }
             Self::RootInitializer { entry } => {
                 FunctionReturnContinuationRollbackImage::RootInitializer {
                     entry: entry.clone(),
@@ -1280,6 +1297,12 @@ impl FunctionReturnContinuation {
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<Self, String> {
         Ok(match image {
+            FunctionReturnContinuationRollbackImage::Expression => {
+                return Err(
+                    "a synchronous expression invocation cannot resume without its live evaluator"
+                        .into(),
+                );
+            }
             FunctionReturnContinuationRollbackImage::RootInitializer { entry } => {
                 Self::RootInitializer { entry }
             }

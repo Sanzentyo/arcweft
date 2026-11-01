@@ -6,7 +6,9 @@ mod tests;
 
 use std::sync::Arc;
 
-use crate::pattern::match_runtime_pattern_owned;
+use crate::engine::{
+    FlowControlStackEntry, FlowControlStackEntryKind, FunctionCallFrame, FunctionReturnContinuation,
+};
 use crate::plan::{RuntimeFunctionInputSource, RuntimeFunctionSiteBody};
 use crate::plan::{RuntimePureInputType, RuntimePureOutputType};
 use crate::pure::{RuntimeFixedArgs, RuntimePureFunctionRef};
@@ -196,44 +198,12 @@ impl Engine {
                     .to_owned(),
             });
         };
-        let mut captures = captures.into_iter().map(Some).collect::<Vec<_>>();
-        let mut arguments = arguments.into_iter().map(Some).collect::<Vec<_>>();
-        let mut staged = Vec::new();
-        for input in declaration.inputs() {
-            let (values, position) = match input.source() {
-                RuntimeFunctionInputSource::Capture { position }
-                | RuntimeFunctionInputSource::CapturedParameter { position, .. } => {
-                    (&mut captures, position)
-                }
-                RuntimeFunctionInputSource::Parameter { position, .. } => {
-                    (&mut arguments, position)
-                }
-            };
-            let value = values
-                .get_mut(position as usize)
-                .and_then(Option::take)
-                .ok_or(
-                    crate::value::RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site },
-                )?;
-            let bindings = match_runtime_pattern_owned(
-                &plan,
-                input.pattern(),
-                value,
-                type_instantiation.as_deref(),
-            )?
-            .ok_or_else(|| {
-                RuntimeEvalError::PatternMismatch(format!(
-                    "function site {site} input {:?}",
-                    input.source()
-                ))
-            })?;
-            staged.extend(bindings);
-        }
-        self.fiber
-            .frame
-            .env
-            .push_function_scope(site, staged.len(), type_instantiation.clone());
-        self.fiber.frame.env.bind_all(staged);
+        let staged = declaration.stage_owned_inputs(captures, arguments)?;
+        let frame_depth = self.fiber.frame.control_stack.len();
+        let scope_depth = self.fiber.frame.env.scope_depth();
+        let mut frame = FunctionCallFrame::new(site, FunctionReturnContinuation::Expression);
+        frame.type_instantiation = type_instantiation.clone();
+        self.enter_function_call_frame(frame, staged);
         let value = self.evaluate_expr_with_backend(body, backend);
         let value = value.and_then(|value| {
             let matches = match &type_instantiation {
@@ -248,7 +218,34 @@ impl Engine {
                 ))
             }
         });
-        self.finish_runtime_value_scope(value)
+        if self.fiber.frame.control_stack.len() != frame_depth + 1
+            || self.fiber.frame.env.scope_depth() != scope_depth + 1
+        {
+            // A nested call whose scope could not unwind still owns its real
+            // frame and environment. Preserve it for the failure owner.
+            assert!(
+                value.is_err(),
+                "an expression cannot leave pending child work"
+            );
+            return value;
+        }
+        if let Ok(value) = &value {
+            self.transition_presentation_return(1, false, std::iter::once(value))?;
+        }
+        self.pop_runtime_scope()?;
+        let Some(FlowControlStackEntry {
+            kind: FlowControlStackEntryKind::FunctionCall(frame),
+        }) = self.fiber.frame.control_stack.pop()
+        else {
+            unreachable!("synchronous evaluator retains its actual call frame")
+        };
+        assert_eq!(frame.site, site, "synchronous invocation owner");
+        assert!(matches!(
+            frame.continuation,
+            FunctionReturnContinuation::Expression
+        ));
+        self.fiber.frame.pending_ops = frame.caller_pending_ops;
+        value
     }
 
     /// The normal function ingress has already validated the complete packet.

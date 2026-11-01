@@ -89,8 +89,20 @@ impl Engine {
         let staged = declaration.stage_owned_inputs(captures, args)?;
         self.advance_if_needed(next_op_index);
         frame.type_instantiation = declaration.type_instantiation;
+        self.enter_function_call_frame(frame, staged);
+        self.fiber.frame.pending_ops = pending_ops;
+        Ok(())
+    }
+
+    /// Every invocation owns the same physical function scope and caller queue,
+    /// whether its body runs synchronously or through scheduled source work.
+    pub(in crate::engine) fn enter_function_call_frame(
+        &mut self,
+        mut frame: FunctionCallFrame,
+        staged: Vec<crate::value::RuntimeLocalBinding>,
+    ) {
         self.fiber.frame.env.push_function_scope(
-            site,
+            frame.site,
             staged.len(),
             frame.type_instantiation.clone(),
         );
@@ -100,8 +112,6 @@ impl Engine {
         self.fiber.frame.control_stack.push(FlowControlStackEntry {
             kind: FlowControlStackEntryKind::FunctionCall(frame),
         });
-        self.fiber.frame.pending_ops = pending_ops;
-        Ok(())
     }
 
     fn complete_function_call_return(
@@ -142,6 +152,9 @@ impl Engine {
             }
         }
         match frame.continuation {
+            FunctionReturnContinuation::Expression => {
+                unreachable!("synchronous expressions return through their owning evaluator")
+            }
             FunctionReturnContinuation::RootInitializer { entry } => {
                 if let Err(error) = self.complete_root_initializer(&entry, value, output) {
                     self.fail_eval(error, output);

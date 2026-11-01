@@ -238,6 +238,10 @@ impl RuntimeEnvRollbackImage {
 }
 
 impl<V> RuntimeEnv<V> {
+    pub(crate) fn scope_depth(&self) -> usize {
+        self.scopes.len()
+    }
+
     fn slot(&self, local: RuntimeLocalDeclarationId) -> Option<&RuntimeLocalSlot<V>> {
         self.scopes
             .iter()

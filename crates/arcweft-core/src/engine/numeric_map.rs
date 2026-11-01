@@ -473,7 +473,8 @@ impl Engine {
                 } => cleanups.is_empty() && match_guard.is_none(),
                 Control::FunctionCall(frame) => {
                     let continuation_avoids = match &frame.continuation {
-                        Return::Program { .. }
+                        Return::Expression
+                        | Return::Program { .. }
                         | Return::Function { .. }
                         | Return::RootReducer { .. }
                         | Return::RootInitializer { .. } => true,

@@ -1283,6 +1283,56 @@ fn aot_exhausted_executable_frame_retains_native_fallthrough_rejection_and_clean
 #[cfg(test)]
 mod synchronous_executable_boundary_tests {
     use super::*;
+
+    #[test]
+    fn synchronous_expression_continuation_never_becomes_a_suspended_packet() {
+        use crate::engine::{
+            FlowControlStackEntry, FlowControlStackEntryKind, FunctionCallFrame,
+            FunctionReturnContinuation, FunctionReturnContinuationRollbackImage,
+        };
+        let plan = Arc::new(returning_function_plan(
+            RuntimeFunctionSiteBodyKind::Expression,
+        ));
+        let site = plan.function_sites().iter_with_ids().next().unwrap().0;
+        let owner = crate::task::RuntimeProgramOwner::Plan(plan);
+        let admission = || {
+            crate::value::RuntimeRetainedValueAdmission::for_program(
+                owner.clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            )
+        };
+        FunctionReturnContinuation::<crate::value::RuntimeCallablePendingGroup>::Expression
+            .admit_header_and_packet(site, &mut admission())
+            .expect("a live expression invocation keeps its original function owner");
+        let suspended = FunctionReturnContinuationRollbackImage::Expression;
+        let expected =
+            "a synchronous expression invocation cannot resume without its live evaluator";
+        assert_eq!(
+            suspended
+                .admit_header_and_packet(site, &mut admission())
+                .unwrap_err()
+                .to_string(),
+            expected,
+            "the inert header is rejected before projecting a caller packet"
+        );
+        assert!(
+            FunctionReturnContinuation::Expression
+                .snapshot_with_admitted_packet(&owner)
+                .is_err()
+        );
+        assert_eq!(
+            FunctionReturnContinuation::from_image_with_admitted_packet(suspended, &owner)
+                .unwrap_err(),
+            expected
+        );
+        let frame = FlowControlStackEntry {
+            kind: FlowControlStackEntryKind::FunctionCall(FunctionCallFrame::new(
+                site,
+                FunctionReturnContinuation::Expression,
+            )),
+        };
+        assert!(frame.inert_rollback_image(&owner).is_err());
+    }
     use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
     use crate::pure::{
         RuntimeExternalCallContext, RuntimeI32Args, RuntimeI64Args, RuntimePureFunctionRef,

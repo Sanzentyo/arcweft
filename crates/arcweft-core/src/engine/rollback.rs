@@ -55,6 +55,8 @@ fn admit_default_packet(
 }
 
 pub(super) trait PendingStorage {
+    const ORIGIN: crate::entry::schema::value_encoding::ValueAdmissionOrigin;
+
     fn admit_default(
         &self,
         site: crate::runtime_id::RuntimeFunctionSiteId,
@@ -63,6 +65,9 @@ pub(super) trait PendingStorage {
 }
 
 impl PendingStorage for crate::value::RuntimeCallablePendingGroup {
+    const ORIGIN: crate::entry::schema::value_encoding::ValueAdmissionOrigin =
+        crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live;
+
     fn admit_default(
         &self,
         site: crate::runtime_id::RuntimeFunctionSiteId,
@@ -72,13 +77,16 @@ impl PendingStorage for crate::value::RuntimeCallablePendingGroup {
             self.state(),
             site,
             admission,
-            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
+            Self::ORIGIN,
             |owner, resources| self.validate_snapshot_inputs(owner, resources),
         )
     }
 }
 
 impl PendingStorage for crate::value::RuntimeCallablePendingSnapshot {
+    const ORIGIN: crate::entry::schema::value_encoding::ValueAdmissionOrigin =
+        crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot;
+
     fn admit_default(
         &self,
         site: crate::runtime_id::RuntimeFunctionSiteId,
@@ -88,7 +96,7 @@ impl PendingStorage for crate::value::RuntimeCallablePendingSnapshot {
             self.state,
             site,
             admission,
-            crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
+            Self::ORIGIN,
             |owner, resources| self.validate_inputs(owner, resources),
         )
     }
@@ -107,6 +115,32 @@ impl<P> FunctionReturnContinuation<P> {
             message: message.into(),
         };
         match self {
+            Self::Expression => {
+                if matches!(
+                    P::ORIGIN,
+                    crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot
+                ) {
+                    return Err(invalid(
+                        "a synchronous expression invocation cannot resume without its live evaluator",
+                    ));
+                }
+                let Some(crate::task::RuntimeProgramOwner::Plan(plan)) = admission.program_owner()
+                else {
+                    return Err(invalid(
+                        "native expression invocation requires its plan owner",
+                    ));
+                };
+                if !plan.function_sites().get(site).is_some_and(|site| {
+                    matches!(
+                        site.body(),
+                        crate::plan::RuntimeFunctionSiteBody::Expression(_)
+                    )
+                }) {
+                    return Err(invalid(
+                        "native expression invocation differs from its original body",
+                    ));
+                }
+            }
             Self::RootInitializer { entry } | Self::RootReducer { entry } => {
                 admission.validate_metadata(entry)?;
                 let Some(crate::task::RuntimeProgramOwner::Plan(plan)) = admission.program_owner()
@@ -523,7 +557,12 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
         let mut contexts = self.env.function_contexts().rev().peekable();
         for entry in self.control_stack.iter().rev() {
             if let Some(frame) = entry.function_context() {
-                if root != Some(crate::plan::code::RuntimeCodeOwner::Function(frame.site)) {
+                let expected_root = if frame.expression {
+                    None
+                } else {
+                    Some(crate::plan::code::RuntimeCodeOwner::Function(frame.site))
+                };
+                if root != expected_root {
                     return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
                         message: "active function differs from its original code owner".into(),
                     });
@@ -610,6 +649,7 @@ pub(super) enum ScopeState<'a, O> {
 pub(super) struct FunctionContext<'a> {
     site: crate::runtime_id::RuntimeFunctionSiteId,
     entered: bool,
+    expression: bool,
     instantiation: Option<&'a crate::program_types::RuntimeFunctionEffectInstantiation>,
     root: Option<RootInvocation<'a>>,
 }
@@ -679,10 +719,10 @@ where
             Self::FormatAttempt(frame) => frame.admit_owned_values(admission, binding),
             Self::FunctionCall(frame) => {
                 frame.admit_code_position(admission)?;
-                O::admit_queue(&frame.caller_pending_ops, admission, binding)?;
                 frame
                     .continuation
-                    .admit_header_and_packet(frame.site, admission)
+                    .admit_header_and_packet(frame.site, admission)?;
+                O::admit_queue(&frame.caller_pending_ops, admission, binding)
             }
         }
     }
@@ -692,6 +732,7 @@ where
             Self::FunctionCall(frame) => Some(FunctionContext {
                 site: frame.site,
                 entered: frame.function_scope,
+                expression: matches!(frame.continuation, FunctionReturnContinuation::Expression),
                 instantiation: frame.type_instantiation.as_deref(),
                 root: match &frame.continuation {
                     FunctionReturnContinuation::RootInitializer { entry } => {

@@ -127,7 +127,7 @@ enum PureTryContinuation {
         outer: Box<Self>,
     },
     LetBlock {
-        binding: RuntimeLocalSeedId,
+        pattern: arcweft_lang_hir::identity::PatternId,
         statements: Box<[StmtId]>,
         tail: ExprId,
         outer: Box<Self>,
@@ -1148,7 +1148,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             } => self.lower_with_try_continuation(
                 *initializer,
                 PureTryContinuation::LetBlock {
-                    binding: self.simple_binding(*pattern)?,
+                    pattern: *pattern,
                     statements: remaining.into(),
                     tail,
                     outer: Box::new(continuation),
@@ -1410,20 +1410,31 @@ impl<'hir> FinalExprLowerer<'hir> {
                 self.lower_try_continuation(owner, value, *outer)
             }
             PureTryContinuation::LetBlock {
-                binding,
+                pattern,
                 statements,
                 tail,
                 outer,
             } => {
                 let body = self.lower_function_block(&statements, tail, *outer)?;
-                Ok(RuntimeExprSeed::new(
-                    body.ty(),
+                let result_type = body.ty();
+                let kind = if let Some(binding) = self.simple_binding(pattern)? {
                     RuntimeExprSeedKind::Let {
                         binding,
                         expr: Box::new(value),
                         body: Box::new(body),
-                    },
-                ))
+                    }
+                } else {
+                    RuntimeExprSeedKind::Match {
+                        scrutinee: Box::new(value),
+                        arms: vec![RuntimeExprMatchArmSeed::new(
+                            self.pattern().lower(pattern)?,
+                            None,
+                            body,
+                        )]
+                        .into_boxed_slice(),
+                    }
+                };
+                Ok(RuntimeExprSeed::new(result_type, kind))
             }
             PureTryContinuation::AssignBlock {
                 statement,
@@ -3551,7 +3562,7 @@ impl<'hir> FinalExprLowerer<'hir> {
     fn simple_binding(
         &self,
         id: arcweft_lang_hir::identity::PatternId,
-    ) -> Result<RuntimeLocalSeedId, String> {
+    ) -> Result<Option<RuntimeLocalSeedId>, String> {
         let pattern = self
             .module
             .resolve_pattern(id)
@@ -3567,9 +3578,9 @@ impl<'hir> FinalExprLowerer<'hir> {
                 binding: arcweft_lang_hir::pattern::HirPatternBinding::Bound { local, .. },
                 ..
             } => *local,
-            _ => return Err(format!("pattern {id:?} is not a single runtime binding")),
+            _ => return Ok(None),
         };
-        self.local(local)
+        self.local(local).map(Some)
     }
 
     fn expression_type(
