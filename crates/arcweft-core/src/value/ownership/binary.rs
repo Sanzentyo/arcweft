@@ -649,6 +649,7 @@ mod tests {
             ),
             (r#"[{"kind":"iterator_witness_state"}]"#, "0100000009"),
             (r#"[{"kind":"opaque_payload"}]"#, "010000000a"),
+            (r#"[{"kind":"presentation_body"}]"#, "0100000011"),
         ];
         for (json, expected) in goldens {
             let path: RuntimeValuePath = self::json(json);
@@ -674,8 +675,8 @@ mod tests {
         ));
         assert!(decode_owned_slot(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0]).is_err());
         assert!(matches!(
-            decode_value_path(&[1, 0, 0, 0, 17]),
-            Err(RuntimeOwnershipBinaryError::UnknownPathSegmentTag { tag: 17 })
+            decode_value_path(&[1, 0, 0, 0, u8::MAX]),
+            Err(RuntimeOwnershipBinaryError::UnknownPathSegmentTag { tag: u8::MAX })
         ));
         assert!(matches!(
             decode_value_path(&[1, 0, 0, 0, 6]),
