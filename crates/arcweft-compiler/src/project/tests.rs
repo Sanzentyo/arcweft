@@ -1,4 +1,5 @@
 use super::*;
+use arcweft_lang_hir::identity::HirValueTypeOwner;
 
 mod analysis_lease;
 mod producer_slots;
@@ -422,7 +423,7 @@ flow main() -> i64 {
     assert_ne!(instances[0].key(), instances[1].key());
     use arcweft_runtime_plan::semantic_facts::{
         RuntimeProjectFunctionFactError, RuntimeProjectFunctionInstanceSemanticFacts,
-        RuntimeProjectFunctionTypeOwner, RuntimeProjectFunctionTypeProjection,
+        RuntimeProjectFunctionTypeProjection,
     };
     let analysis = compiled.analysis_lease().final_analysis();
     for (owner, _) in analysis.expressions() {
@@ -504,7 +505,7 @@ flow main() -> i64 {
             .semantics()
             .type_projection()
             .iter()
-            .find(|row| row.owner() == RuntimeProjectFunctionTypeOwner::Local(parameter_local))
+            .find(|row| row.owner() == HirValueTypeOwner::Local(parameter_local))
             .unwrap();
         let RuntimeProjectFunctionTypeProjection::Local { origin, .. } = local else {
             panic!("local type projection retains accepted origin evidence")
@@ -515,7 +516,7 @@ flow main() -> i64 {
     let mut missing_origin = semantics.type_projection().to_vec();
     let local = missing_origin
         .iter_mut()
-        .find(|row| row.owner() == RuntimeProjectFunctionTypeOwner::Local(parameter_local))
+        .find(|row| row.owner() == HirValueTypeOwner::Local(parameter_local))
         .unwrap();
     *local =
         RuntimeProjectFunctionTypeProjection::value(local.owner(), local.ty().unwrap().clone());
@@ -554,7 +555,7 @@ flow main() -> i64 {
     let mut foreign_generation = semantics.type_projection().to_vec();
     let RuntimeProjectFunctionTypeProjection::Local { origin, .. } = foreign_generation
         .iter_mut()
-        .find(|row| row.owner() == RuntimeProjectFunctionTypeOwner::Local(parameter_local))
+        .find(|row| row.owner() == HirValueTypeOwner::Local(parameter_local))
         .unwrap()
     else {
         panic!("local projection")
@@ -729,11 +730,9 @@ flow main() -> i64 {
             Err(arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionFactError::InvalidClosureInstance)
         ), "an otherwise valid instance cannot omit an accepted capture row");
         assert_eq!(
-            closure.semantics().ty(
-                arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionTypeOwner::Local(
-                    capture.source()
-                )
-            ),
+            closure
+                .semantics()
+                .ty(HirValueTypeOwner::Local(capture.source())),
             None,
             "the captured source is not a local declaration of the closure body",
         );
@@ -1460,6 +1459,9 @@ flow main(number: Route<i32>, word: Route<String>) {
         for row in semantics.type_projection() {
             use arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionTypeProjection;
             match row {
+                RuntimeProjectFunctionTypeProjection::SemanticValue { owner, ty } => {
+                    assert_eq!(semantics.partition().semantic_value_type(*owner), Some(ty));
+                }
                 RuntimeProjectFunctionTypeProjection::SemanticOnlyType { owner, purpose } => {
                     let expected = semantics
                         .partition()

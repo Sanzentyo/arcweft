@@ -1,6 +1,7 @@
 //! Closed trait-method reservation and body definition.
 
 use super::*;
+use arcweft_lang_hir::identity::HirValueTypeOwner;
 
 #[derive(Clone)]
 pub(super) struct ReservedTraitMethodDefinition {
@@ -127,9 +128,7 @@ fn trait_method_declaration(
                     ));
                 }
                 let ty = match checked.closed_semantics() {
-                    Some(semantics) => {
-                        semantics.ty(RuntimeProjectFunctionTypeOwner::Type(parameter.ty()))
-                    }
+                    Some(semantics) => semantics.ty(HirValueTypeOwner::Type(parameter.ty())),
                     None => facts.ty(parameter.ty()),
                 }
                 .ok_or_else(|| {
@@ -174,7 +173,7 @@ fn trait_method_declaration(
     let output_abi = function
         .return_type()
         .and_then(|ty| match checked.closed_semantics() {
-            Some(semantics) => semantics.ty(RuntimeProjectFunctionTypeOwner::Type(ty)),
+            Some(semantics) => semantics.ty(HirValueTypeOwner::Type(ty)),
             None => facts.ty(ty),
         })
         .map_or(RuntimePureOutputType::Value, |ty| {

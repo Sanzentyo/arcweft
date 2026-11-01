@@ -1443,7 +1443,14 @@ impl CheckedCandidateInventory {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedCallCalleeExecution {
     Direct,
-    Value { source: CheckedCallExecutionSource },
+    /// Evaluate the source prefix while retaining its callable only as
+    /// semantic selection data, without a runtime callable operand.
+    SemanticValue {
+        source: CheckedCallExecutionSource,
+    },
+    Value {
+        source: CheckedCallExecutionSource,
+    },
 }
 
 /// C1-issued stable identity paired with the generation-local application
@@ -3425,6 +3432,12 @@ fn validate_callee(
     match (value_dispatch, callee) {
         (false, CheckedCallCalleeExecution::Direct)
         | (true, CheckedCallCalleeExecution::Value { .. }) => Ok(()),
+        (false, CheckedCallCalleeExecution::SemanticValue { .. })
+            if matches!(selected.id(), CallableCandidateId::Project(declaration)
+                if declaration.owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::View) =>
+        {
+            Ok(())
+        }
         _ => Err(CallConstraintInvariant::PreparedBaseMismatch),
     }
 }
@@ -4391,6 +4404,7 @@ impl CheckedCallCanonicalEncoder {
         self.tag(match callee {
             CheckedCallCalleeExecution::Direct => 0,
             CheckedCallCalleeExecution::Value { .. } => 1,
+            CheckedCallCalleeExecution::SemanticValue { .. } => 2,
         });
     }
     fn receiver(

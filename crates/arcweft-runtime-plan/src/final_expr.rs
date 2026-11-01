@@ -2,6 +2,7 @@
 
 mod scopes;
 
+use arcweft_lang_hir::identity::HirValueTypeOwner;
 use std::{collections::BTreeMap, sync::Arc};
 
 use arcweft_core::plan::{
@@ -116,6 +117,10 @@ pub(crate) const fn runtime_local_read_mode(mode: CheckedLocalReadMode) -> Runti
 #[derive(Clone)]
 enum PureTryContinuation {
     Return,
+    DiscardValue {
+        body: Box<RuntimeExprSeed>,
+        outer: Box<Self>,
+    },
     Try {
         owner: ExprId,
         outer: Box<Self>,
@@ -183,6 +188,7 @@ impl PureTryContinuation {
             | Self::LetBlock { outer, .. }
             | Self::AssignBlock { outer, .. }
             | Self::DiscardBlock { outer, .. }
+            | Self::DiscardValue { outer, .. }
             | Self::WrapCarrier { outer, .. }
             | Self::IfCondition { outer, .. }
             | Self::MatchScrutinee { outer, .. }
@@ -753,7 +759,25 @@ impl<'hir> FinalExprLowerer<'hir> {
                 value: Box::new(self.lower(repeat.value())?),
                 len: self.lower_constant_length(repeat.length())?,
             },
-            HirExprKind::Call(call) => self.lower_call(id, call)?,
+            HirExprKind::Call(call) => {
+                let kind = self.lower_call(id, call)?;
+                if let arcweft_lang_hir::expr::HirCallCallee::Value { value } = call.callee()
+                    && self
+                        .semantic_facts
+                        .semantic_value_type(HirValueTypeOwner::Expression(*value))
+                        .is_some()
+                {
+                    let body = RuntimeExprSeed::new(self.expression_source_type(id)?, kind);
+                    return self.lower_with_try_continuation(
+                        *value,
+                        PureTryContinuation::DiscardValue {
+                            body: Box::new(body),
+                            outer: Box::new(PureTryContinuation::Return),
+                        },
+                    );
+                }
+                kind
+            }
             HirExprKind::Select(select) => self.lower_select(id, select.target())?,
             HirExprKind::Range(range) => RuntimeExprSeedKind::Range {
                 start: range
@@ -1145,6 +1169,24 @@ impl<'hir> FinalExprLowerer<'hir> {
                 pattern,
                 initializer,
                 ..
+            } if self
+                .semantic_facts
+                .semantic_value_type(HirValueTypeOwner::Expression(*initializer))
+                .is_some() =>
+            {
+                let body = self.lower_function_block(remaining, tail, continuation.clone())?;
+                self.lower_with_try_continuation(
+                    *initializer,
+                    PureTryContinuation::DiscardValue {
+                        body: Box::new(body),
+                        outer: Box::new(continuation),
+                    },
+                )
+            }
+            HirStmtKind::Let {
+                pattern,
+                initializer,
+                ..
             } => self.lower_with_try_continuation(
                 *initializer,
                 PureTryContinuation::LetBlock {
@@ -1326,6 +1368,18 @@ impl<'hir> FinalExprLowerer<'hir> {
                 );
             }
         }
+        if self
+            .semantic_facts
+            .semantic_value_type(HirValueTypeOwner::Expression(owner))
+            .is_some()
+        {
+            return match continuation {
+                PureTryContinuation::DiscardValue { body, .. } => Ok(*body),
+                _ => Err(format!(
+                    "semantic callee {owner:?} cannot produce a runtime value"
+                )),
+            };
+        }
         self.apply_try_continuation(self.lower(owner)?, continuation)
     }
 
@@ -1395,6 +1449,24 @@ impl<'hir> FinalExprLowerer<'hir> {
         continuation: PureTryContinuation,
     ) -> Result<RuntimeExprSeed, String> {
         match continuation {
+            PureTryContinuation::DiscardValue { body, .. } => {
+                let value_type = value.ty();
+                Ok(RuntimeExprSeed::new(
+                    body.ty(),
+                    RuntimeExprSeedKind::Match {
+                        scrutinee: Box::new(value),
+                        arms: vec![RuntimeExprMatchArmSeed::new(
+                            arcweft_core::plan::RuntimePatternSeed::new(
+                                value_type,
+                                arcweft_core::plan::RuntimePatternSeedKind::Discard,
+                            ),
+                            None,
+                            *body,
+                        )]
+                        .into_boxed_slice(),
+                    },
+                ))
+            }
             PureTryContinuation::Return => Ok(value),
             PureTryContinuation::Compose {
                 owner,

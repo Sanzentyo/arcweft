@@ -319,6 +319,17 @@ fn checked_callee_execution(
         ));
     }
     if !requires_value_callee {
+        if matches!(selected.id(), crate::callable::CallableCandidateId::Project(declaration)
+            if declaration.owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::View)
+            && let Some(expression) = record.callee_expression.semantic_expression()
+        {
+            let source = checked_execution_source(
+                location,
+                crate::callable::CheckedCallArgumentSlotSource::Expression(expression),
+                coordinates,
+            )?;
+            return Ok(CheckedCallCalleeExecution::SemanticValue { source });
+        }
         return Ok(CheckedCallCalleeExecution::Direct);
     }
     let source = record

@@ -454,6 +454,10 @@ fn execution_plan_for_expression_with_roles(
         )
     });
     let value = if checked.result().value_type().is_some()
+        && !matches!(
+            checked.result().value_type(),
+            Some(crate::types::TypeKind::CompileTimeCallable(_))
+        )
         && (effect_roles.is_empty() || dialogue_call_site)
     {
         CheckedRuntimeValueDisposition::Retain
@@ -486,19 +490,27 @@ fn execution_plan_for_expression_with_roles(
                     crate::callable::CheckedCallCalleeExecution::Value { source } => {
                         Some(source.owner())
                     }
-                    crate::callable::CheckedCallCalleeExecution::Direct => None,
+                    crate::callable::CheckedCallCalleeExecution::Direct
+                    | crate::callable::CheckedCallCalleeExecution::SemanticValue { .. } => None,
                 },
             };
-            let callee = if let Some(expression) = value_callee {
-                CheckedExpressionCallCallee::RuntimeValue { expression }
-            } else if matches!(
-                application.core().execution().receiver(),
-                crate::callable::CheckedCallReceiverProjection::Operand { .. }
-            ) {
-                CheckedExpressionCallCallee::RuntimeReceiver
-            } else {
-                CheckedExpressionCallCallee::Static
-            };
+            let callee =
+                if let crate::callable::CheckedCallCalleeExecution::SemanticValue { source } =
+                    application.core().callee()
+                {
+                    CheckedExpressionCallCallee::SemanticValue {
+                        expression: source.owner(),
+                    }
+                } else if let Some(expression) = value_callee {
+                    CheckedExpressionCallCallee::RuntimeValue { expression }
+                } else if matches!(
+                    application.core().execution().receiver(),
+                    crate::callable::CheckedCallReceiverProjection::Operand { .. }
+                ) {
+                    CheckedExpressionCallCallee::RuntimeReceiver
+                } else {
+                    CheckedExpressionCallCallee::Static
+                };
             Ok(super::CheckedExpressionExecutionPlan::call(
                 application.digest(),
                 value,

@@ -2273,6 +2273,9 @@ pub enum CheckedStructuralExecutionReason {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CheckedExpressionCallCallee {
     Static,
+    SemanticValue {
+        expression: ExprId,
+    },
     RuntimeReceiver,
     /// Evaluates the exact checked callee, including a selected field.
     RuntimeValue {

@@ -744,6 +744,9 @@ pub(super) fn runtime_expression_projection_for_owner(
         CheckedExpressionExecution::Call { result, callee } => {
             let callee = match callee {
                 CheckedCallExecutionCallee::Static => HirRuntimeCallCalleeDisposition::Static,
+                CheckedCallExecutionCallee::SemanticValue { expression } => {
+                    HirRuntimeCallCalleeDisposition::SemanticValue { expression }
+                }
                 CheckedCallExecutionCallee::RuntimeReceiver => {
                     HirRuntimeCallCalleeDisposition::RuntimeReceiver
                 }

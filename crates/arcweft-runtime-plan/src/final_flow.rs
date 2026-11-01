@@ -5,6 +5,7 @@ mod callable_states;
 
 #[path = "final_flow/environment_callables.rs"]
 mod environment_callables;
+use arcweft_lang_hir::identity::HirValueTypeOwner;
 pub(crate) use environment_callables::{ExternalCallableKey, ExternalCallableStates};
 
 #[path = "final_flow/control_locals.rs"]
@@ -125,15 +126,14 @@ use crate::semantic_facts::{
     RuntimeLineCallable, RuntimeNormalizedType, RuntimePlanSemanticFacts, RuntimeProjectCallable,
     RuntimeProjectFunctionExpressionPayload, RuntimeProjectFunctionInstanceFact,
     RuntimeProjectFunctionInstanceKey, RuntimeProjectFunctionInstanceSemanticFacts,
-    RuntimeProjectFunctionParameterSource, RuntimeProjectFunctionTypeOwner,
-    RuntimeProjectFunctionTypeProjection, RuntimeResolvedAttachedContent, RuntimeResolvedCall,
-    RuntimeResolvedCallDispatch, RuntimeResolvedCallOperandOrigin,
-    RuntimeResolvedCallOperandProjection, RuntimeResolvedCallOperandSource,
-    RuntimeResolvedStaticCallTarget, RuntimeResolvedValue, RuntimeScopeContinuation,
-    RuntimeScopeFact, RuntimeScopeOwner, RuntimeScopedExecutableSemanticFactView,
-    RuntimeSemanticFactsError, RuntimeTraitIdentity, RuntimeTraitMethodFact,
-    RuntimeTraitMethodInstanceKey, RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact,
-    RuntimeTypeShape,
+    RuntimeProjectFunctionParameterSource, RuntimeProjectFunctionTypeProjection,
+    RuntimeResolvedAttachedContent, RuntimeResolvedCall, RuntimeResolvedCallDispatch,
+    RuntimeResolvedCallOperandOrigin, RuntimeResolvedCallOperandProjection,
+    RuntimeResolvedCallOperandSource, RuntimeResolvedStaticCallTarget, RuntimeResolvedValue,
+    RuntimeScopeContinuation, RuntimeScopeFact, RuntimeScopeOwner,
+    RuntimeScopedExecutableSemanticFactView, RuntimeSemanticFactsError, RuntimeTraitIdentity,
+    RuntimeTraitMethodFact, RuntimeTraitMethodInstanceKey, RuntimeTryBoundaryOwner,
+    RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeShape,
 };
 
 /// Final-HIR owner and checked runtime Entry metadata admitted by semantic analysis.
@@ -975,17 +975,14 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
         .project_function_instances()
         .flat_map(|instance| instance.semantics().type_projection().iter())
         .filter_map(|projection| {
-            matches!(
-                projection.owner(),
-                RuntimeProjectFunctionTypeOwner::Expression(_)
-            )
-            .then_some(projection.owner())
+            matches!(projection.owner(), HirValueTypeOwner::Expression(_))
+                .then_some(projection.owner())
         })
         .filter_map(|owner| match owner {
-            RuntimeProjectFunctionTypeOwner::Expression(expression) => Some(expression),
-            RuntimeProjectFunctionTypeOwner::Pattern(_)
-            | RuntimeProjectFunctionTypeOwner::Local(_)
-            | RuntimeProjectFunctionTypeOwner::Type(_) => None,
+            HirValueTypeOwner::Expression(expression) => Some(expression),
+            HirValueTypeOwner::Pattern(_)
+            | HirValueTypeOwner::Local(_)
+            | HirValueTypeOwner::Type(_) => None,
         })
         .collect::<BTreeSet<_>>();
     project_instance_expression_owners.extend(
@@ -1048,7 +1045,7 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
                     } => Some(origin.runtime_local_declaration_source().map(|origin| (ProjectFunctionFrameLocal::Hir(*local), RuntimeLocalDeclarationSeed::new(origin, ty.identity()))).map_err(|error| RuntimePlanLowerError::new(error.to_string()))),
                     RuntimeProjectFunctionTypeProjection::Value { .. }
                     | RuntimeProjectFunctionTypeProjection::SemanticOnlyExpression { .. }
-                    | RuntimeProjectFunctionTypeProjection::SemanticOnlyType { .. } => None,
+                    | RuntimeProjectFunctionTypeProjection::SemanticOnlyType { .. } | RuntimeProjectFunctionTypeProjection::SemanticValue { .. } => None,
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let mut locals = locals;
@@ -1181,7 +1178,7 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
                     RuntimeProjectFunctionTypeProjection::Local { .. }
                     | RuntimeProjectFunctionTypeProjection::Value { .. }
                     | RuntimeProjectFunctionTypeProjection::SemanticOnlyExpression { .. }
-                    | RuntimeProjectFunctionTypeProjection::SemanticOnlyType { .. } => None,
+                    | RuntimeProjectFunctionTypeProjection::SemanticOnlyType { .. } | RuntimeProjectFunctionTypeProjection::SemanticValue { .. } => None,
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             rows.extend(closure.parameters().iter().map(|parameter| {
@@ -9986,7 +9983,7 @@ mod tests {
             )
             .unwrap();
         let projected_types = partition.expressions().iter().map(|row| {
-            let owner = crate::semantic_facts::RuntimeProjectFunctionTypeOwner::Expression(row.owner());
+            let owner = arcweft_lang_hir::identity::HirValueTypeOwner::Expression(row.owner());
             if row.has_runtime_type() {
                 crate::semantic_facts::RuntimeProjectFunctionTypeProjection::Value {
                     owner,

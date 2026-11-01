@@ -86,3 +86,78 @@ fn source_view_value_named_captures_evaluate_once_in_source_order_in_native() {
 fn source_view_value_named_captures_evaluate_once_in_source_order_in_decoded_awbc() {
     supplied_arguments_follow_source_order(false);
 }
+
+fn semantic_callee_prefix(native: bool, statements: &str) {
+    let source = format!(
+        r#"
+pub view Card(caption: String, enabled: bool = true) {{ Text(caption) }}
+pub fn root() -> i64 {{
+    let mut order = 0i64;
+    {statements}
+    let handle = mount(value);
+    handle.unmount();
+    order
+}}
+flow main() -> i64 {{ return 0i64 }}
+"#
+    );
+    run_selected(program_from_source(&source), native, |value| {
+        assert_eq!(
+            value,
+            &RuntimeValue::Int(arcweft_core::value::RuntimeInt::I64(12))
+        )
+    });
+}
+
+#[test]
+fn source_view_alias_keeps_initializer_prefix_effects_in_native() {
+    semantic_callee_prefix(
+        true,
+        r#"let selected = { let digit = 1i64; order = order * 10i64 + digit; Card };
+        let value = selected(caption = scope { order = order * 10i64 + 2i64; "owned" });"#,
+    );
+}
+
+#[test]
+fn source_view_alias_keeps_initializer_prefix_effects_in_decoded_awbc() {
+    semantic_callee_prefix(
+        false,
+        r#"let selected = { let digit = 1i64; order = order * 10i64 + digit; Card };
+        let value = selected(caption = scope { order = order * 10i64 + 2i64; "owned" });"#,
+    );
+}
+
+#[test]
+fn source_view_computed_callee_keeps_prefix_effects_in_native() {
+    semantic_callee_prefix(
+        true,
+        r#"let value = ({ let digit = 1i64; order = order * 10i64 + digit; Card })(
+        caption = scope { order = order * 10i64 + 2i64; "owned" });"#,
+    );
+}
+
+#[test]
+fn source_view_computed_callee_keeps_prefix_effects_in_decoded_awbc() {
+    semantic_callee_prefix(
+        false,
+        r#"let value = ({ let digit = 1i64; order = order * 10i64 + digit; Card })(
+        caption = scope { order = order * 10i64 + 2i64; "owned" });"#,
+    );
+}
+
+#[test]
+fn source_view_alias_can_enter_the_original_flow_plan() {
+    super::compile_source(
+        r#"
+pub view Card(caption: String) { Text(caption) }
+flow main() -> i64 {
+    let selected = Card;
+    let handle = mount(selected("owned"));
+    handle.unmount();
+    return 42i64
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    )
+    .expect("semantic View aliases have no runtime storage in a Flow either");
+}

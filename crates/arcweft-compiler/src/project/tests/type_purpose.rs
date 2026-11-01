@@ -1,10 +1,11 @@
 use super::*;
+use arcweft_lang_hir::identity::HirValueTypeOwner;
 
 use arcweft_lang_sema::nominal::ResolvedTypeNodePurpose;
 use arcweft_lang_sema::types::{EntityKind, TypeKind};
 use arcweft_runtime_plan::semantic_facts::{
     RuntimeProjectFunctionFactError, RuntimeProjectFunctionInstanceSemanticFacts,
-    RuntimeProjectFunctionTypeOwner, RuntimeProjectFunctionTypeProjection, RuntimeTypeShape,
+    RuntimeProjectFunctionTypeProjection, RuntimeTypeShape,
 };
 
 #[test]
@@ -99,15 +100,12 @@ fn assert_entity_family_type_partition(source: &str, family: EntityKind) {
     assert!(!marker.has_runtime_type());
     assert!(matches!(
         semantics
-            .ty(RuntimeProjectFunctionTypeOwner::Type(reference.owner()))
+            .ty(HirValueTypeOwner::Type(reference.owner()))
             .unwrap()
             .shape(),
         RuntimeTypeShape::EntityReference,
     ));
-    assert_eq!(
-        semantics.ty(RuntimeProjectFunctionTypeOwner::Type(marker.owner())),
-        None
-    );
+    assert_eq!(semantics.ty(HirValueTypeOwner::Type(marker.owner())), None);
     assert_eq!(analysis.ty(marker.owner()), None);
     assert_strict_type_projection(semantics, family, marker.owner(), reference.owner());
 }
@@ -119,8 +117,8 @@ fn assert_strict_type_projection(
     reference: arcweft_lang_hir::identity::TypeId,
 ) {
     let partition = semantics.partition();
-    let marker_owner = RuntimeProjectFunctionTypeOwner::Type(marker);
-    let reference_owner = RuntimeProjectFunctionTypeOwner::Type(reference);
+    let marker_owner = HirValueTypeOwner::Type(marker);
+    let reference_owner = HirValueTypeOwner::Type(reference);
     let marker_index = semantics
         .type_projection()
         .iter()

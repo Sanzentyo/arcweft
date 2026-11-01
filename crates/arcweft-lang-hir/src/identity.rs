@@ -6,6 +6,27 @@ use thiserror::Error;
 
 static NEXT_HIR_DATABASE_ID: AtomicU64 = AtomicU64::new(1);
 
+/// Generation-local owner of a checked value type. The address does not assert
+/// that the semantic value has a runtime representation.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirValueTypeOwner {
+    Expression(ExprId),
+    Pattern(PatternId),
+    Local(LocalId),
+    Type(TypeId),
+}
+
+impl HirValueTypeOwner {
+    pub const fn module(self) -> HirModuleId {
+        match self {
+            Self::Expression(owner) => owner.module(),
+            Self::Pattern(owner) => owner.module(),
+            Self::Local(owner) => owner.module(),
+            Self::Type(owner) => owner.module(),
+        }
+    }
+}
+
 /// Process-local identity of one in-memory HIR database.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct HirDatabaseId(NonZeroU64);

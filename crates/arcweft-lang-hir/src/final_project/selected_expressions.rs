@@ -608,6 +608,9 @@ pub enum HirRuntimeCallCalleeDisposition {
     /// The accepted target is selected statically, so the callee subtree is
     /// not a runtime value operand.
     Static,
+    /// The callee's eager prefix executes; its semantic callable itself has
+    /// no runtime data representation.
+    SemanticValue { expression: ExprId },
     /// The accepted call arguments include the call's value receiver.
     RuntimeReceiver,
     /// The whole checked callee is an evaluated value. A selected field is
@@ -1798,7 +1801,8 @@ fn append_runtime_call_callee_operand(
     )?;
     let receiver = match callee {
         HirRuntimeCallCalleeDisposition::Static => unreachable!("static callee returned above"),
-        HirRuntimeCallCalleeDisposition::RuntimeValue { expression } => {
+        HirRuntimeCallCalleeDisposition::RuntimeValue { expression }
+        | HirRuntimeCallCalleeDisposition::SemanticValue { expression } => {
             if expression != callee_owner {
                 return Err(
                     HirSelectedExpressionInventoryError::InvalidRuntimeCallDisposition {

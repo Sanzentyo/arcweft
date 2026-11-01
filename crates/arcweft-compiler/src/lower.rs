@@ -8,6 +8,7 @@
 mod callable_sources;
 mod callable_values;
 mod character_dialogue;
+use arcweft_lang_hir::identity::HirValueTypeOwner;
 pub(crate) use character_dialogue::project_character_catalog;
 mod closure_instances;
 mod display_text;
@@ -226,13 +227,13 @@ use arcweft_runtime_plan::{
         RuntimeProjectFunctionPatternPayload, RuntimeProjectFunctionPatternSemanticFact,
         RuntimeProjectFunctionRootFact, RuntimeProjectFunctionRootRole,
         RuntimeProjectFunctionStatementPayload, RuntimeProjectFunctionStatementSemanticFact,
-        RuntimeProjectFunctionTypeOwner, RuntimeProjectItem, RuntimePureProgramFact,
-        RuntimeRecordExpressionFact, RuntimeRecordExpressionField, RuntimeRecordExpressionSource,
-        RuntimeRecordPatternFact, RuntimeRecordPatternField, RuntimeRecordPatternRest,
-        RuntimeRecordPatternSource, RuntimeRecordPlanError, RuntimeRecordTypeField,
-        RuntimeReductionConstructor, RuntimeRegisteredValueId, RuntimeResidualValue,
-        RuntimeResolvedAttachedContent, RuntimeResolvedCall, RuntimeResolvedCallDispatch,
-        RuntimeResolvedCallMutation, RuntimeResolvedCallOperand, RuntimeResolvedCallOperandBinding,
+        RuntimeProjectItem, RuntimePureProgramFact, RuntimeRecordExpressionFact,
+        RuntimeRecordExpressionField, RuntimeRecordExpressionSource, RuntimeRecordPatternFact,
+        RuntimeRecordPatternField, RuntimeRecordPatternRest, RuntimeRecordPatternSource,
+        RuntimeRecordPlanError, RuntimeRecordTypeField, RuntimeReductionConstructor,
+        RuntimeRegisteredValueId, RuntimeResidualValue, RuntimeResolvedAttachedContent,
+        RuntimeResolvedCall, RuntimeResolvedCallDispatch, RuntimeResolvedCallMutation,
+        RuntimeResolvedCallOperand, RuntimeResolvedCallOperandBinding,
         RuntimeResolvedCallOperandOrigin, RuntimeResolvedCallOperandProjection,
         RuntimeResolvedCallOperandSource, RuntimeResolvedFormatCall, RuntimeResolvedHostCall,
         RuntimeResolvedNeedProducer, RuntimeResolvedNominal, RuntimeResolvedNominalRecord,
@@ -804,17 +805,13 @@ fn project_runtime_semantic_fact_inventories(
     for (_, semantics) in &program_semantics {
         semantics.visit_type_projections(&mut |projection| {
             let ordinary = match projection.owner() {
-                RuntimeProjectFunctionTypeOwner::Expression(owner) => {
-                    runtime_owners.contains_expression(owner)
-                }
-                RuntimeProjectFunctionTypeOwner::Pattern(owner) => {
-                    runtime_owners.contains_pattern(owner)
-                }
-                RuntimeProjectFunctionTypeOwner::Local(owner) => {
+                HirValueTypeOwner::Expression(owner) => runtime_owners.contains_expression(owner),
+                HirValueTypeOwner::Pattern(owner) => runtime_owners.contains_pattern(owner),
+                HirValueTypeOwner::Local(owner) => {
                     runtime_owners.contains_local(owner)
                         || semantics.partition().input_locals().contains(&owner)
                 }
-                RuntimeProjectFunctionTypeOwner::Type(owner) => runtime_owners.contains_type(owner),
+                HirValueTypeOwner::Type(owner) => runtime_owners.contains_type(owner),
             };
             if !ordinary {
                 closed_instance_type_owners.insert(projection.owner());
@@ -886,7 +883,7 @@ fn project_runtime_semantic_fact_inventories(
         )?;
     }
     runtime_calls.retain(|owner, _| {
-        !closed_instance_type_owners.contains(&RuntimeProjectFunctionTypeOwner::Expression(*owner))
+        !closed_instance_type_owners.contains(&HirValueTypeOwner::Expression(*owner))
     });
     let format_templates = project_runtime_format_templates(
         project,
@@ -934,7 +931,7 @@ fn project_runtime_semantic_fact_inventories(
         }))
         .collect::<BTreeSet<_>>();
     for owner in runtime_locals {
-        if closed_instance_type_owners.contains(&RuntimeProjectFunctionTypeOwner::Local(owner)) {
+        if closed_instance_type_owners.contains(&HirValueTypeOwner::Local(owner)) {
             continue;
         }
         let local = analysis
@@ -1058,7 +1055,7 @@ fn project_runtime_semantic_fact_inventories(
         if runtime_owners.contains_type(owner)
             || program_owners.is_some_and(|owners| owners.contains_type(owner))
         {
-            if closed_instance_type_owners.contains(&RuntimeProjectFunctionTypeOwner::Type(owner)) {
+            if closed_instance_type_owners.contains(&HirValueTypeOwner::Type(owner)) {
                 continue;
             }
             input.push_type(
@@ -1121,8 +1118,7 @@ fn project_runtime_semantic_fact_inventories(
         {
             continue;
         }
-        if closed_instance_type_owners.contains(&RuntimeProjectFunctionTypeOwner::Expression(owner))
-        {
+        if closed_instance_type_owners.contains(&HirValueTypeOwner::Expression(owner)) {
             continue;
         }
         if matches!(
@@ -1526,7 +1522,7 @@ fn project_runtime_semantic_fact_inventories(
         {
             continue;
         }
-        if closed_instance_type_owners.contains(&RuntimeProjectFunctionTypeOwner::Pattern(owner)) {
+        if closed_instance_type_owners.contains(&HirValueTypeOwner::Pattern(owner)) {
             continue;
         }
         input.push_pattern_type(
@@ -1756,12 +1752,11 @@ fn validate_executable_record_projections(
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
-    closed_instance_type_owners: &BTreeSet<RuntimeProjectFunctionTypeOwner>,
+    closed_instance_type_owners: &BTreeSet<HirValueTypeOwner>,
 ) -> Result<(), RuntimeSemanticProjectionError> {
     for (owner, expression) in analysis.expressions() {
         if !runtime_owners.contains_expression(owner)
-            || closed_instance_type_owners
-                .contains(&RuntimeProjectFunctionTypeOwner::Expression(owner))
+            || closed_instance_type_owners.contains(&HirValueTypeOwner::Expression(owner))
         {
             continue;
         }
@@ -1799,8 +1794,7 @@ fn validate_executable_record_projections(
     }
     for (owner, pattern) in analysis.patterns() {
         if !runtime_owners.contains_pattern(owner)
-            || closed_instance_type_owners
-                .contains(&RuntimeProjectFunctionTypeOwner::Pattern(owner))
+            || closed_instance_type_owners.contains(&HirValueTypeOwner::Pattern(owner))
         {
             continue;
         }
@@ -2682,21 +2676,18 @@ fn attach_dialogue_and_trigger_semantic_facts(
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
     program_owners: Option<&HirRuntimeSemanticReachability<'_>>,
     instance_statement_owners: &BTreeSet<StmtId>,
-    instance_type_owners: &BTreeSet<RuntimeProjectFunctionTypeOwner>,
+    instance_type_owners: &BTreeSet<HirValueTypeOwner>,
     input: &mut RuntimePlanSemanticFactInput,
     catalog: &RuntimeDialogueProjectionCatalog,
 ) -> Result<(), RuntimeSemanticProjectionError> {
     let mut applications = catalog.global_applications();
-    applications.retain(|owner, _| {
-        !instance_type_owners.contains(&RuntimeProjectFunctionTypeOwner::Expression(*owner))
-    });
+    applications
+        .retain(|owner, _| !instance_type_owners.contains(&HirValueTypeOwner::Expression(*owner)));
     let fragments = catalog
         .global_fragments()
         .into_iter()
         .filter(|fragment| {
-            !instance_type_owners.contains(&RuntimeProjectFunctionTypeOwner::Expression(
-                fragment.source(),
-            ))
+            !instance_type_owners.contains(&HirValueTypeOwner::Expression(fragment.source()))
         })
         .collect();
     input.attach_dialogue_projection(
@@ -6790,7 +6781,8 @@ fn runtime_call(
         }
     } else {
         match application.core().callee() {
-            CheckedCallCalleeExecution::Direct => {
+            CheckedCallCalleeExecution::Direct
+            | CheckedCallCalleeExecution::SemanticValue { .. } => {
                 RuntimeResolvedCallDispatch::Static(runtime_call_target(
                     owner,
                     application,
@@ -7284,6 +7276,13 @@ fn runtime_project_function_projection(
     let input = match selection.input() {
         CheckedProjectFunctionRuntimeInput::Direct => match application.core().callee() {
             CheckedCallCalleeExecution::Direct => RuntimeProjectFunctionCallInput::Direct,
+            CheckedCallCalleeExecution::SemanticValue { .. } => {
+                return Err(RuntimeSemanticProjectionError::Call {
+                    owner,
+                    reason: "a semantic callee cannot enter an ordinary project-function frame"
+                        .into(),
+                });
+            }
             CheckedCallCalleeExecution::Value { source } => {
                 let arcweft_lang_sema::callable::CheckedCallArgumentSlotSource::Expression(callee) =
                     source.raw()
@@ -8134,7 +8133,7 @@ fn runtime_executable_semantic_facts<'abi>(
                     || selected.core().candidates().selected().id()
                         != &CallableCandidateId::Builtin(BuiltinCallableId::Rgb)
                     || projected_types
-                        .get(&RuntimeProjectFunctionTypeOwner::Expression(owner))
+                        .get(&HirValueTypeOwner::Expression(owner))
                         .is_none_or(|ty| !matches!(ty.shape(), RuntimeTypeShape::Color))
                 {
                     return Err(error(
@@ -8231,7 +8230,7 @@ fn runtime_executable_semantic_facts<'abi>(
                         .transpose()?,
                     _ => expected.children().first().and_then(|target| {
                         projected_types
-                            .get(&RuntimeProjectFunctionTypeOwner::Expression(*target))
+                            .get(&HirValueTypeOwner::Expression(*target))
                             .map(|ty| ty.identity())
                     }),
                 };
@@ -8271,7 +8270,7 @@ fn runtime_executable_semantic_facts<'abi>(
                     .collect::<Vec<_>>()
                     .into_boxed_slice();
                 let ty = projected_types
-                    .get(&RuntimeProjectFunctionTypeOwner::Expression(owner))
+                    .get(&HirValueTypeOwner::Expression(owner))
                     .ok_or_else(|| {
                         error(owner, "nominal record has no executable type projection")
                     })?;
@@ -8308,7 +8307,7 @@ fn runtime_executable_semantic_facts<'abi>(
                         ) =>
                     {
                         let ty = projected_types
-                            .get(&RuntimeProjectFunctionTypeOwner::Expression(owner))
+                            .get(&HirValueTypeOwner::Expression(owner))
                             .ok_or_else(|| {
                                 error(owner, "nominal variant has no executable type projection")
                             })?;

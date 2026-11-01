@@ -13,6 +13,7 @@ use std::{
 };
 
 use arcweft_lang_hir::{
+    identity::HirValueTypeOwner,
     item::{HirItemKind, HirVisibility},
     project::{
         HirProjectEvaluationTopology, HirRuntimeExecutableOwner,
@@ -137,6 +138,7 @@ pub enum CheckedExpressionExecution {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CheckedCallExecutionCallee {
     Static,
+    SemanticValue { expression: ExprId },
     RuntimeReceiver,
     RuntimeValue { expression: ExprId },
 }
@@ -497,9 +499,18 @@ pub struct CheckedExecutableRuntimeFactPartition {
     input_locals: Box<[LocalId]>,
     types: Box<[CheckedExecutableRuntimeTypeFactOwner]>,
     captures: Box<[CaptureId]>,
+    semantic_values: BTreeMap<HirValueTypeOwner, crate::types::CompileTimeCallableType>,
 }
 
 impl CheckedExecutableRuntimeFactPartition {
+    /// The accepted semantic classification is distinct from an omitted
+    /// effect result. It proves which values may be erased from runtime data.
+    pub fn semantic_value_type(
+        &self,
+        owner: HirValueTypeOwner,
+    ) -> Option<&crate::types::CompileTimeCallableType> {
+        self.semantic_values.get(&owner)
+    }
     pub const fn reachability(&self) -> &HirRuntimeReachabilityIdentity {
         &self.reachability
     }
@@ -722,6 +733,35 @@ impl FinalAnalysisExecutionProjection<'_> {
                 .find_map(|(_, module)| (module.module_id() == owner.module()).then_some(module))
         };
         let mut expressions = Vec::new();
+        let mut semantic_values = BTreeMap::new();
+        for owner in owners.expressions() {
+            if let Some(TypeKind::CompileTimeCallable(ty)) = self
+                .analysis
+                .expression(owner)
+                .and_then(|expression| expression.value_type())
+            {
+                semantic_values.insert(HirValueTypeOwner::Expression(owner), ty.clone());
+            }
+        }
+        for owner in owners.patterns() {
+            if let Some(pattern) = self.analysis.pattern(owner)
+                && let TypeKind::CompileTimeCallable(ty) = pattern.ty()
+            {
+                semantic_values.insert(HirValueTypeOwner::Pattern(owner), ty.clone());
+            }
+        }
+        for owner in owners.locals() {
+            if let Some(local) = self.analysis.local(owner)
+                && let TypeKind::CompileTimeCallable(ty) = local.ty()
+            {
+                semantic_values.insert(HirValueTypeOwner::Local(owner), ty.clone());
+            }
+        }
+        for owner in owners.types() {
+            if let Some(TypeKind::CompileTimeCallable(ty)) = self.analysis.ty(owner) {
+                semantic_values.insert(HirValueTypeOwner::Type(owner), ty.clone());
+            }
+        }
         let runtime_type_owners = owners.expression_type_owners().collect::<BTreeSet<_>>();
         for owner in owners.expressions() {
             let expression = self
@@ -732,7 +772,11 @@ impl FinalAnalysisExecutionProjection<'_> {
                 .and_then(|module| module.resolve_expr(owner).ok())
                 .ok_or(FinalAnalysisExecutionProjectionError::MissingExpression { owner })?;
             let plan = self.plan(owner)?;
-            let family = if expression.evaluated_effect().is_some() {
+            let semantic_value =
+                semantic_values.contains_key(&HirValueTypeOwner::Expression(owner));
+            let family = if semantic_value {
+                CheckedExecutableRuntimeExpressionFactFamily::Consumed
+            } else if expression.evaluated_effect().is_some() {
                 if !plan.is_evaluated_effect_carrier() {
                     return Err(FinalAnalysisExecutionProjectionError::WrongExpressionKind {
                         owner,
@@ -882,7 +926,7 @@ impl FinalAnalysisExecutionProjection<'_> {
                 )
                 .then_some(crate::CheckedExpressionProducerKind::Thread),
                 family,
-                has_runtime_type: runtime_type_owners.contains(&owner),
+                has_runtime_type: runtime_type_owners.contains(&owner) && !semantic_value,
                 children: owners.expression_children(owner).into(),
             });
         }
@@ -987,6 +1031,7 @@ impl FinalAnalysisExecutionProjection<'_> {
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(CheckedExecutableRuntimeFactPartition {
+            semantic_values,
             reachability: reachability.clone(),
             executable: executable.clone(),
             expressions: expressions.into_boxed_slice(),
@@ -1037,6 +1082,11 @@ impl FinalAnalysisExecutionProjection<'_> {
                     result: *result,
                     callee: match callee {
                         CheckedExpressionCallCallee::Static => CheckedCallExecutionCallee::Static,
+                        CheckedExpressionCallCallee::SemanticValue { expression } => {
+                            CheckedCallExecutionCallee::SemanticValue {
+                                expression: *expression,
+                            }
+                        }
                         CheckedExpressionCallCallee::RuntimeReceiver => {
                             CheckedCallExecutionCallee::RuntimeReceiver
                         }

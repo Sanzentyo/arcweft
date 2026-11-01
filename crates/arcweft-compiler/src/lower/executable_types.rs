@@ -1,5 +1,6 @@
 //! Complete type projection from the selected executable's sealed partition.
 
+use arcweft_lang_hir::identity::HirValueTypeOwner;
 use std::collections::BTreeMap;
 
 use arcweft_lang_hir::{identity::TypeId, symbol::ProjectSymbolTable};
@@ -8,7 +9,7 @@ use arcweft_lang_sema::{
     registration::RegisteredSemanticWorld,
 };
 use arcweft_runtime_plan::semantic_facts::{
-    RuntimeNormalizedType, RuntimeProjectFunctionTypeOwner, RuntimeProjectFunctionTypeProjection,
+    RuntimeNormalizedType, RuntimeProjectFunctionTypeProjection,
 };
 
 use super::{
@@ -54,6 +55,13 @@ impl RuntimeExecutableInstantiation<'_> {
         let mut projection = Vec::new();
         for expected in partition.expressions() {
             let owner = expected.owner();
+            if let Some(ty) = partition.semantic_value_type(HirValueTypeOwner::Expression(owner)) {
+                projection.push(RuntimeProjectFunctionTypeProjection::semantic_value(
+                    HirValueTypeOwner::Expression(owner),
+                    ty.clone(),
+                ));
+                continue;
+            }
             if !expected.has_runtime_type() {
                 projection
                     .push(RuntimeProjectFunctionTypeProjection::semantic_only_expression(owner));
@@ -64,21 +72,35 @@ impl RuntimeExecutableInstantiation<'_> {
                 .and_then(|checked| checked.value_type())
                 .ok_or_else(|| origin.error("runtime expression has no checked value type"))?;
             projection.push(RuntimeProjectFunctionTypeProjection::value(
-                RuntimeProjectFunctionTypeOwner::Expression(owner),
+                HirValueTypeOwner::Expression(owner),
                 self.runtime_type(ty, symbols, world, analysis)?,
             ));
         }
         for expected in partition.patterns() {
             let owner = expected.owner();
+            if let Some(ty) = partition.semantic_value_type(HirValueTypeOwner::Pattern(owner)) {
+                projection.push(RuntimeProjectFunctionTypeProjection::semantic_value(
+                    HirValueTypeOwner::Pattern(owner),
+                    ty.clone(),
+                ));
+                continue;
+            }
             let checked = analysis
                 .pattern(owner)
                 .ok_or_else(|| origin.error("runtime pattern has no checked semantic fact"))?;
             projection.push(RuntimeProjectFunctionTypeProjection::value(
-                RuntimeProjectFunctionTypeOwner::Pattern(owner),
+                HirValueTypeOwner::Pattern(owner),
                 self.runtime_type(checked.ty(), symbols, world, analysis)?,
             ));
         }
         for owner in partition.locals().iter().chain(partition.input_locals()) {
+            if let Some(ty) = partition.semantic_value_type(HirValueTypeOwner::Local(*owner)) {
+                projection.push(RuntimeProjectFunctionTypeProjection::semantic_value(
+                    HirValueTypeOwner::Local(*owner),
+                    ty.clone(),
+                ));
+                continue;
+            }
             let checked = analysis
                 .local(*owner)
                 .ok_or_else(|| origin.error("runtime local has no checked semantic fact"))?;
@@ -92,6 +114,13 @@ impl RuntimeExecutableInstantiation<'_> {
         }
         for expected in partition.types() {
             let owner = expected.owner();
+            if let Some(ty) = partition.semantic_value_type(HirValueTypeOwner::Type(owner)) {
+                projection.push(RuntimeProjectFunctionTypeProjection::semantic_value(
+                    HirValueTypeOwner::Type(owner),
+                    ty.clone(),
+                ));
+                continue;
+            }
             if !expected.has_runtime_type() {
                 projection.push(RuntimeProjectFunctionTypeProjection::semantic_only_type(
                     owner,
@@ -108,7 +137,7 @@ impl RuntimeExecutableInstantiation<'_> {
                 self.runtime_type(checked, symbols, world, analysis)?
             };
             projection.push(RuntimeProjectFunctionTypeProjection::value(
-                RuntimeProjectFunctionTypeOwner::Type(owner),
+                HirValueTypeOwner::Type(owner),
                 ty,
             ));
         }

@@ -1,4 +1,5 @@
 use super::RuntimeFlowFact;
+use arcweft_lang_hir::identity::HirValueTypeOwner;
 #[path = "tests/call_operand_sources.rs"]
 mod call_operand_sources;
 #[path = "tests/character_dialogue.rs"]
@@ -4145,7 +4146,7 @@ fn closed_entity_value_constructor_rejects_foreign_owner_and_type_before_publica
     use super::project_function::{
         RuntimeProjectFunctionExpressionPayload, RuntimeProjectFunctionExpressionSemanticFact,
         RuntimeProjectFunctionFactError, RuntimeProjectFunctionInstanceSemanticFacts,
-        RuntimeProjectFunctionTypeOwner, RuntimeProjectFunctionTypeProjection,
+        RuntimeProjectFunctionTypeProjection,
     };
     use arcweft_lang_sema::final_analysis::{
         CheckedExecutableRuntimeExpressionFactFamily, CheckedLocalUseAuthority,
@@ -4190,14 +4191,14 @@ fn closed_entity_value_constructor_rejects_foreign_owner_and_type_before_publica
             .expressions()
             .iter()
             .map(|row| RuntimeProjectFunctionTypeProjection::Value {
-                owner: RuntimeProjectFunctionTypeOwner::Expression(row.owner()),
+                owner: HirValueTypeOwner::Expression(row.owner()),
                 ty: normalized(identity),
             })
             .collect::<Vec<_>>();
         types.extend(partition.types().iter().map(|row| {
             if row.has_runtime_type() {
                 RuntimeProjectFunctionTypeProjection::Value {
-                    owner: RuntimeProjectFunctionTypeOwner::Type(row.owner()),
+                    owner: HirValueTypeOwner::Type(row.owner()),
                     ty: normalized(
                         *analysis
                             .ty(row.owner())

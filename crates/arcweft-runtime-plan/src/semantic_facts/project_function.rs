@@ -6,6 +6,7 @@
 //! selects an instantiation from a callee value or from the first observed
 //! call.
 
+use arcweft_lang_hir::identity::HirValueTypeOwner;
 use std::collections::BTreeSet;
 
 use arcweft_core::entry::RuntimeCallableId;
@@ -884,40 +885,26 @@ impl RuntimeProjectFunctionBody {
     }
 }
 
-/// Generation-local HIR owner of one frozen instantiated type projection.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum RuntimeProjectFunctionTypeOwner {
-    Expression(ExprId),
-    Pattern(PatternId),
-    Local(LocalId),
-    Type(TypeId),
-}
-
-impl RuntimeProjectFunctionTypeOwner {
-    pub const fn module(self) -> arcweft_lang_hir::identity::HirModuleId {
-        match self {
-            Self::Expression(owner) => owner.module(),
-            Self::Pattern(owner) => owner.module(),
-            Self::Local(owner) => owner.module(),
-            Self::Type(owner) => owner.module(),
-        }
-    }
-}
-
 /// Complete substitution-backed semantic disposition used while lowering one
 /// closed instance body. Every callable-scope expression owns a row even when
-/// its semantic result is not a runtime value. Patterns and locals always own
-/// a normalized value type; source type nodes retain the exact purpose issued
+/// its semantic result is not a runtime value. Patterns and locals retain either
+/// a normalized runtime type or their checked semantic-only callable type;
+/// source type nodes retain the exact purpose issued
 /// by accepted nominal resolution, including non-value arguments and predicates.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeProjectFunctionTypeProjection {
+    /// Checked semantic callee data has no runtime storage representation.
+    SemanticValue {
+        owner: HirValueTypeOwner,
+        ty: arcweft_lang_sema::types::CompileTimeCallableType,
+    },
     Local {
         owner: LocalId,
         ty: RuntimeNormalizedType,
         origin: arcweft_lang_sema::semantic_coordinate::CheckedLocalBindingOrigin,
     },
     Value {
-        owner: RuntimeProjectFunctionTypeOwner,
+        owner: HirValueTypeOwner,
         ty: RuntimeNormalizedType,
     },
     SemanticOnlyExpression {
@@ -1203,6 +1190,20 @@ impl RuntimeProjectFunctionStatementSemanticFact {
 }
 
 impl RuntimeProjectFunctionTypeProjection {
+    pub fn semantic_value_type(
+        &self,
+    ) -> Option<&arcweft_lang_sema::types::CompileTimeCallableType> {
+        match self {
+            Self::SemanticValue { ty, .. } => Some(ty),
+            _ => None,
+        }
+    }
+    pub fn semantic_value(
+        owner: HirValueTypeOwner,
+        ty: arcweft_lang_sema::types::CompileTimeCallableType,
+    ) -> Self {
+        Self::SemanticValue { owner, ty }
+    }
     pub const fn local(
         owner: LocalId,
         ty: RuntimeNormalizedType,
@@ -1211,7 +1212,7 @@ impl RuntimeProjectFunctionTypeProjection {
         Self::Local { owner, ty, origin }
     }
 
-    pub const fn value(owner: RuntimeProjectFunctionTypeOwner, ty: RuntimeNormalizedType) -> Self {
+    pub const fn value(owner: HirValueTypeOwner, ty: RuntimeNormalizedType) -> Self {
         Self::Value { owner, ty }
     }
 
@@ -1223,21 +1224,22 @@ impl RuntimeProjectFunctionTypeProjection {
         Self::SemanticOnlyType { owner, purpose }
     }
 
-    pub const fn owner(&self) -> RuntimeProjectFunctionTypeOwner {
+    pub const fn owner(&self) -> HirValueTypeOwner {
         match self {
-            Self::Local { owner, .. } => RuntimeProjectFunctionTypeOwner::Local(*owner),
+            Self::SemanticValue { owner, .. } => *owner,
+            Self::Local { owner, .. } => HirValueTypeOwner::Local(*owner),
             Self::Value { owner, .. } => *owner,
-            Self::SemanticOnlyExpression { owner } => {
-                RuntimeProjectFunctionTypeOwner::Expression(*owner)
-            }
-            Self::SemanticOnlyType { owner, .. } => RuntimeProjectFunctionTypeOwner::Type(*owner),
+            Self::SemanticOnlyExpression { owner } => HirValueTypeOwner::Expression(*owner),
+            Self::SemanticOnlyType { owner, .. } => HirValueTypeOwner::Type(*owner),
         }
     }
 
     pub const fn ty(&self) -> Option<&RuntimeNormalizedType> {
         match self {
             Self::Local { ty, .. } | Self::Value { ty, .. } => Some(ty),
-            Self::SemanticOnlyExpression { .. } | Self::SemanticOnlyType { .. } => None,
+            Self::SemanticOnlyExpression { .. }
+            | Self::SemanticOnlyType { .. }
+            | Self::SemanticValue { .. } => None,
         }
     }
 }
@@ -1627,7 +1629,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                 !origin.validate_authority(&local_uses, *owner)
             }
             RuntimeProjectFunctionTypeProjection::Value {
-                owner: RuntimeProjectFunctionTypeOwner::Local(_),
+                owner: HirValueTypeOwner::Local(_),
                 ..
             } => true,
             _ => false,
@@ -1765,12 +1767,12 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
         let expected_type_owners = partition
             .expressions()
             .iter()
-            .map(|row| RuntimeProjectFunctionTypeOwner::Expression(row.owner()))
+            .map(|row| HirValueTypeOwner::Expression(row.owner()))
             .chain(
                 partition
                     .patterns()
                     .iter()
-                    .map(|row| RuntimeProjectFunctionTypeOwner::Pattern(row.owner())),
+                    .map(|row| HirValueTypeOwner::Pattern(row.owner())),
             )
             .chain(
                 partition
@@ -1778,13 +1780,13 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                     .iter()
                     .chain(partition.input_locals())
                     .copied()
-                    .map(RuntimeProjectFunctionTypeOwner::Local),
+                    .map(HirValueTypeOwner::Local),
             )
             .chain(
                 partition
                     .types()
                     .iter()
-                    .map(|row| RuntimeProjectFunctionTypeOwner::Type(row.owner())),
+                    .map(|row| HirValueTypeOwner::Type(row.owner())),
             )
             .collect::<BTreeSet<_>>();
         let actual_type_owners = type_projection
@@ -1792,10 +1794,13 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
             .map(RuntimeProjectFunctionTypeProjection::owner)
             .collect::<BTreeSet<_>>();
         if expected_type_owners != actual_type_owners
+            || type_projection
+                .iter()
+                .any(|row| row.semantic_value_type() != partition.semantic_value_type(row.owner()))
             || partition.expressions().iter().any(|expected| {
                 type_projection
                     .binary_search_by_key(
-                        &RuntimeProjectFunctionTypeOwner::Expression(expected.owner()),
+                        &HirValueTypeOwner::Expression(expected.owner()),
                         RuntimeProjectFunctionTypeProjection::owner,
                     )
                     .ok()
@@ -1806,29 +1811,36 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
             || partition.patterns().iter().any(|expected| {
                 type_projection
                     .binary_search_by_key(
-                        &RuntimeProjectFunctionTypeOwner::Pattern(expected.owner()),
+                        &HirValueTypeOwner::Pattern(expected.owner()),
                         RuntimeProjectFunctionTypeProjection::owner,
                     )
                     .ok()
-                    .is_none_or(|index| type_projection[index].ty().is_none())
+                    .is_none_or(|index| {
+                        type_projection[index].ty().is_none()
+                            && type_projection[index].semantic_value_type().is_none()
+                    })
             })
             || partition.locals().iter().any(|owner| {
                 type_projection
                     .binary_search_by_key(
-                        &RuntimeProjectFunctionTypeOwner::Local(*owner),
+                        &HirValueTypeOwner::Local(*owner),
                         RuntimeProjectFunctionTypeProjection::owner,
                     )
                     .ok()
-                    .is_none_or(|index| type_projection[index].ty().is_none())
+                    .is_none_or(|index| {
+                        type_projection[index].ty().is_none()
+                            && type_projection[index].semantic_value_type().is_none()
+                    })
             })
             || partition.types().iter().any(|expected| {
                 type_projection
                     .binary_search_by_key(
-                        &RuntimeProjectFunctionTypeOwner::Type(expected.owner()),
+                        &HirValueTypeOwner::Type(expected.owner()),
                         RuntimeProjectFunctionTypeProjection::owner,
                     )
                     .ok()
                     .is_none_or(|index| match &type_projection[index] {
+                        RuntimeProjectFunctionTypeProjection::SemanticValue { .. } => false,
                         RuntimeProjectFunctionTypeProjection::Value { .. } => {
                             !expected.has_runtime_type()
                         }
@@ -1854,7 +1866,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                 }
                 let ty = type_projection
                     .binary_search_by_key(
-                        &RuntimeProjectFunctionTypeOwner::Expression(row.owner()),
+                        &HirValueTypeOwner::Expression(row.owner()),
                         RuntimeProjectFunctionTypeProjection::owner,
                     )
                     .ok()
@@ -1881,7 +1893,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                 }
                 let ty = type_projection
                     .binary_search_by_key(
-                        &RuntimeProjectFunctionTypeOwner::Pattern(row.owner()),
+                        &HirValueTypeOwner::Pattern(row.owner()),
                         RuntimeProjectFunctionTypeProjection::owner,
                     )
                     .ok()
@@ -1971,15 +1983,25 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
             .map(|index| &self.statements[index])
     }
 
-    pub fn ty(&self, owner: RuntimeProjectFunctionTypeOwner) -> Option<&RuntimeNormalizedType> {
+    pub fn ty(&self, owner: HirValueTypeOwner) -> Option<&RuntimeNormalizedType> {
         self.type_projection
             .binary_search_by_key(&owner, RuntimeProjectFunctionTypeProjection::owner)
             .ok()
             .and_then(|index| self.type_projection[index].ty())
     }
 
+    pub fn semantic_value_type(
+        &self,
+        owner: HirValueTypeOwner,
+    ) -> Option<&arcweft_lang_sema::types::CompileTimeCallableType> {
+        self.type_projection
+            .binary_search_by_key(&owner, RuntimeProjectFunctionTypeProjection::owner)
+            .ok()
+            .and_then(|index| self.type_projection[index].semantic_value_type())
+    }
+
     pub fn expression_type(&self, owner: ExprId) -> Option<&RuntimeNormalizedType> {
-        self.ty(RuntimeProjectFunctionTypeOwner::Expression(owner))
+        self.ty(HirValueTypeOwner::Expression(owner))
     }
 
     pub fn expression_coordinate(
@@ -2016,14 +2038,14 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
     }
 
     pub fn pattern_type(&self, owner: PatternId) -> Option<&RuntimeNormalizedType> {
-        self.ty(RuntimeProjectFunctionTypeOwner::Pattern(owner))
+        self.ty(HirValueTypeOwner::Pattern(owner))
     }
 
     pub fn local_type(&self, owner: LocalId) -> Option<&RuntimeNormalizedType> {
         if self.partition.locals().binary_search(&owner).is_ok()
             || self.partition.input_locals().binary_search(&owner).is_ok()
         {
-            self.ty(RuntimeProjectFunctionTypeOwner::Local(owner))
+            self.ty(HirValueTypeOwner::Local(owner))
         } else {
             self.captures
                 .iter()
@@ -2042,7 +2064,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
             let index = self
                 .type_projection
                 .binary_search_by_key(
-                    &RuntimeProjectFunctionTypeOwner::Local(owner),
+                    &HirValueTypeOwner::Local(owner),
                     RuntimeProjectFunctionTypeProjection::owner,
                 )
                 .ok()?;
@@ -2059,7 +2081,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
     }
 
     pub fn source_type(&self, owner: TypeId) -> Option<&RuntimeNormalizedType> {
-        self.ty(RuntimeProjectFunctionTypeOwner::Type(owner))
+        self.ty(HirValueTypeOwner::Type(owner))
     }
 
     pub fn expression_children(&self, owner: ExprId) -> Option<&[ExprId]> {
@@ -2924,19 +2946,16 @@ impl RuntimeProjectFunctionInstanceFact {
             .iter()
             .map(RuntimeProjectFunctionTypeProjection::owner)
             .collect::<BTreeSet<_>>();
-        if !projected_owners.contains(&RuntimeProjectFunctionTypeOwner::Expression(body.tail()))
+        if !projected_owners.contains(&HirValueTypeOwner::Expression(body.tail()))
             || semantics.expressions().iter().any(|fact| {
-                !projected_owners
-                    .contains(&RuntimeProjectFunctionTypeOwner::Expression(fact.owner()))
+                !projected_owners.contains(&HirValueTypeOwner::Expression(fact.owner()))
             })
             || parameters.iter().any(|parameter| {
-                !projected_owners.contains(&RuntimeProjectFunctionTypeOwner::Pattern(
-                    parameter.pattern(),
-                )) || !projected_owners.contains(&RuntimeProjectFunctionTypeOwner::Type(
-                    parameter.source_type(),
-                )) || parameter.bindings().iter().any(|binding| {
-                    !projected_owners.contains(&RuntimeProjectFunctionTypeOwner::Local(*binding))
-                })
+                !projected_owners.contains(&HirValueTypeOwner::Pattern(parameter.pattern()))
+                    || !projected_owners.contains(&HirValueTypeOwner::Type(parameter.source_type()))
+                    || parameter.bindings().iter().any(|binding| {
+                        !projected_owners.contains(&HirValueTypeOwner::Local(*binding))
+                    })
             })
         {
             return Err(RuntimeProjectFunctionFactError::IncompleteTypeProjection);

@@ -83,6 +83,9 @@ fn caller(value: i64) -> i64 {
         let dispatch = match application.core().callee() {
             CheckedCallCalleeExecution::Direct => CatalogCallableDispatch::Direct,
             CheckedCallCalleeExecution::Value { .. } => CatalogCallableDispatch::Value,
+            CheckedCallCalleeExecution::SemanticValue { .. } => {
+                panic!("environment callable dispatch cannot be a retained View callee")
+            }
         };
         assert_eq!(
             selected.base().authority().stable(),

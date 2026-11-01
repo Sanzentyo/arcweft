@@ -12,6 +12,7 @@
 //! duplicated here; only runtime-plan validation and storage stay in this
 //! module.
 
+use arcweft_lang_hir::identity::HirValueTypeOwner;
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
@@ -146,7 +147,7 @@ pub use project_function::{
     RuntimeProjectFunctionPatternPayload, RuntimeProjectFunctionPatternSemanticFact,
     RuntimeProjectFunctionRootFact, RuntimeProjectFunctionRootRole,
     RuntimeProjectFunctionStatementPayload, RuntimeProjectFunctionStatementSemanticFact,
-    RuntimeProjectFunctionTypeOwner, RuntimeProjectFunctionTypeProjection, RuntimeResidualValue,
+    RuntimeProjectFunctionTypeProjection, RuntimeResidualValue,
 };
 
 /// Stable semantic identity for a registered callable or value that is not
@@ -6526,6 +6527,17 @@ pub struct RuntimeScopedExecutableSemanticFactView<'facts> {
 }
 
 impl<'facts> RuntimeScopedExecutableSemanticFactView<'facts> {
+    pub fn semantic_value_type(
+        self,
+        owner: HirValueTypeOwner,
+    ) -> Option<&'facts arcweft_lang_sema::types::CompileTimeCallableType> {
+        match self.facts {
+            RuntimeExecutableSemanticFactView::ProjectInstance(facts) => {
+                facts.semantic_value_type(owner)
+            }
+            RuntimeExecutableSemanticFactView::Global(_) => None,
+        }
+    }
     pub const fn program(
         program: RuntimePureProgramId,
         facts: &'facts RuntimeProjectFunctionInstanceSemanticFacts,
@@ -6930,7 +6942,7 @@ impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
             Self::ProjectInstance(facts) => {
                 for projection in facts.type_projection() {
                     if let RuntimeProjectFunctionTypeProjection::Value {
-                        owner: RuntimeProjectFunctionTypeOwner::Expression(owner),
+                        owner: HirValueTypeOwner::Expression(owner),
                         ty,
                     } = projection
                     {
@@ -7806,17 +7818,17 @@ impl RuntimePlanSemanticFacts {
         ) {
             let program_scope = matches!(scope.scope(), RuntimeExecutableSemanticScope::Program(_));
             semantics.visit_type_projections(&mut |projection| match projection.owner() {
-                RuntimeProjectFunctionTypeOwner::Expression(owner) => {
+                HirValueTypeOwner::Expression(owner) => {
                     if !program_scope || !runtime_owners.runtime.contains_expression(owner) {
                         instance_expression_owners.insert(owner);
                     }
                 }
-                RuntimeProjectFunctionTypeOwner::Pattern(owner) => {
+                HirValueTypeOwner::Pattern(owner) => {
                     if !program_scope || !runtime_owners.runtime.contains_pattern(owner) {
                         instance_pattern_owners.insert(owner);
                     }
                 }
-                RuntimeProjectFunctionTypeOwner::Local(owner) => {
+                HirValueTypeOwner::Local(owner) => {
                     if !program_scope
                         || (!runtime_owners.runtime.contains_local(owner)
                             && !semantics.partition().input_locals().contains(&owner))
@@ -7824,7 +7836,7 @@ impl RuntimePlanSemanticFacts {
                         instance_local_owners.insert(owner);
                     }
                 }
-                RuntimeProjectFunctionTypeOwner::Type(owner) => {
+                HirValueTypeOwner::Type(owner) => {
                     if !program_scope || !runtime_owners.runtime.contains_type(owner) {
                         instance_type_owners.insert(owner);
                     }
@@ -8656,7 +8668,7 @@ impl RuntimePlanSemanticFacts {
         ) {
             let mut expression_types = BTreeMap::new();
             semantics.visit_type_projections(&mut |projection| {
-                if let (RuntimeProjectFunctionTypeOwner::Expression(owner), Some(ty)) =
+                if let (HirValueTypeOwner::Expression(owner), Some(ty)) =
                     (projection.owner(), projection.ty())
                 {
                     expression_types.insert(owner, ty);
@@ -13597,22 +13609,10 @@ fn validate_project_function_instance(
     }
     let expected_type_owners = exact_owners
         .expressions()
-        .map(RuntimeProjectFunctionTypeOwner::Expression)
-        .chain(
-            exact_owners
-                .patterns()
-                .map(RuntimeProjectFunctionTypeOwner::Pattern),
-        )
-        .chain(
-            exact_owners
-                .locals()
-                .map(RuntimeProjectFunctionTypeOwner::Local),
-        )
-        .chain(
-            exact_owners
-                .types()
-                .map(RuntimeProjectFunctionTypeOwner::Type),
-        )
+        .map(HirValueTypeOwner::Expression)
+        .chain(exact_owners.patterns().map(HirValueTypeOwner::Pattern))
+        .chain(exact_owners.locals().map(HirValueTypeOwner::Local))
+        .chain(exact_owners.types().map(HirValueTypeOwner::Type))
         .collect::<BTreeSet<_>>();
     let actual_type_owners = instance
         .type_projection()
@@ -13631,11 +13631,11 @@ fn validate_project_function_instance(
         .type_projection()
         .iter()
         .filter_map(|projection| match (projection.owner(), projection.ty()) {
-            (RuntimeProjectFunctionTypeOwner::Expression(owner), Some(ty)) => Some((owner, ty)),
-            (RuntimeProjectFunctionTypeOwner::Expression(_), None)
-            | (RuntimeProjectFunctionTypeOwner::Pattern(_), _)
-            | (RuntimeProjectFunctionTypeOwner::Local(_), _)
-            | (RuntimeProjectFunctionTypeOwner::Type(_), _) => None,
+            (HirValueTypeOwner::Expression(owner), Some(ty)) => Some((owner, ty)),
+            (HirValueTypeOwner::Expression(_), None)
+            | (HirValueTypeOwner::Pattern(_), _)
+            | (HirValueTypeOwner::Local(_), _)
+            | (HirValueTypeOwner::Type(_), _) => None,
         })
         .collect::<RuntimeExpressionTypeView<'_>>();
     for projection in instance.semantics().expressions() {
@@ -13707,12 +13707,12 @@ fn validate_project_function_instance(
     // The authored TypeId remains a checked source projection, while the
     // selected instance's pattern binding owns the closed parameter ABI.
     // An inferred callback row can make those two normalized types differ.
-    let tail_has_type = projected_types.contains_key(&RuntimeProjectFunctionTypeOwner::Expression(
-        instance.body().tail(),
-    )) || instance
-        .semantics()
-        .evaluated_effect(instance.body().tail())
-        .is_some();
+    let tail_has_type = projected_types
+        .contains_key(&HirValueTypeOwner::Expression(instance.body().tail()))
+        || instance
+            .semantics()
+            .evaluated_effect(instance.body().tail())
+            .is_some();
     if !tail_has_type
         || instance.parameters().iter().any(|parameter| {
             let binding_matches_abi = match parameter.kind() {
@@ -13730,27 +13730,22 @@ fn validate_project_function_instance(
                     )
                 }
             };
-            projected_types.get(&RuntimeProjectFunctionTypeOwner::Pattern(
-                parameter.pattern(),
-            )) != Some(&parameter.binding_ty())
-                || !projected_types.contains_key(&RuntimeProjectFunctionTypeOwner::Type(
-                    parameter.source_type(),
-                ))
+            projected_types.get(&HirValueTypeOwner::Pattern(parameter.pattern()))
+                != Some(&parameter.binding_ty())
+                || !projected_types.contains_key(&HirValueTypeOwner::Type(parameter.source_type()))
                 || !binding_matches_abi
         })
     {
         return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
     }
     if let Some(default) = instance.attached_default()
-        && (projected_types.get(&RuntimeProjectFunctionTypeOwner::Expression(
-            default.source(),
-        )) != Some(&default.result())
+        && (projected_types.get(&HirValueTypeOwner::Expression(default.source()))
+            != Some(&default.result())
             || default.captures().iter().any(|capture| {
-                projected_types.get(&RuntimeProjectFunctionTypeOwner::Pattern(capture.pattern()))
+                projected_types.get(&HirValueTypeOwner::Pattern(capture.pattern()))
                     != Some(&capture.binding_ty())
                     || capture.used_locals().iter().any(|local| {
-                        !projected_types
-                            .contains_key(&RuntimeProjectFunctionTypeOwner::Local(*local))
+                        !projected_types.contains_key(&HirValueTypeOwner::Local(*local))
                     })
             }))
     {
@@ -13896,7 +13891,7 @@ fn validate_project_function_semantic_catalog(
         .type_projection()
         .iter()
         .filter_map(|projection| match (projection.owner(), projection.ty()) {
-            (RuntimeProjectFunctionTypeOwner::Expression(owner), Some(ty)) => Some((owner, ty)),
+            (HirValueTypeOwner::Expression(owner), Some(ty)) => Some((owner, ty)),
             _ => None,
         })
         .collect::<RuntimeExpressionTypeView<'_>>();
@@ -13904,9 +13899,7 @@ fn validate_project_function_semantic_catalog(
         .type_projection()
         .iter()
         .filter_map(|projection| match (projection.owner(), projection.ty()) {
-            (RuntimeProjectFunctionTypeOwner::Pattern(owner), Some(ty)) => {
-                Some((owner, ty.clone()))
-            }
+            (HirValueTypeOwner::Pattern(owner), Some(ty)) => Some((owner, ty.clone())),
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
@@ -13914,7 +13907,7 @@ fn validate_project_function_semantic_catalog(
         .type_projection()
         .iter()
         .filter_map(|projection| match (projection.owner(), projection.ty()) {
-            (RuntimeProjectFunctionTypeOwner::Local(owner), Some(ty)) => Some((owner, ty.clone())),
+            (HirValueTypeOwner::Local(owner), Some(ty)) => Some((owner, ty.clone())),
             _ => None,
         })
         .collect::<BTreeMap<_, _>>();
