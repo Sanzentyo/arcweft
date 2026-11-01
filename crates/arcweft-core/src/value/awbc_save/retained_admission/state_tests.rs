@@ -2,6 +2,43 @@ use super::*;
 use crate::value::RuntimeStoredValue;
 
 #[test]
+fn constructed_metadata_string_preflights_the_complete_utf8_and_original_byte_bank() {
+    let limits = RuntimeSchemaLimits {
+        max_string_bytes: 5,
+        max_metadata_bytes: 6,
+        ..RuntimeSchemaLimits::engine_default()
+    };
+    let mut admission = RuntimeRetainedValueAdmission::standalone(limits);
+    assert_eq!(
+        admission.construct_metadata_string(&["あ", "β"]).unwrap(),
+        "あβ"
+    );
+    let error = admission.validate_metadata_string("").unwrap_err();
+    assert_eq!(
+        error,
+        AwbcRuntimeValueSnapshotError::Resource(crate::entry::RuntimeSchemaError::BudgetExceeded {
+            budget: "metadata_bytes",
+        })
+    );
+    assert_eq!(admission.construct_metadata_string(&[]), Err(error));
+
+    let mut admission = RuntimeRetainedValueAdmission::standalone(RuntimeSchemaLimits {
+        max_string_bytes: 4,
+        ..limits
+    });
+    let error = admission
+        .construct_metadata_string(&["あ", "β"])
+        .unwrap_err();
+    assert_eq!(
+        error,
+        AwbcRuntimeValueSnapshotError::Resource(crate::entry::RuntimeSchemaError::BudgetExceeded {
+            budget: "string_bytes",
+        })
+    );
+    assert_eq!(admission.construct_metadata_string(&[""]), Err(error));
+}
+
+#[test]
 fn retained_additional_type_obligations_do_not_refresh_or_recharge_value_nodes() {
     let value = RuntimeValue::Bool(true);
     let boolean = RuntimeSemanticTypeId::from_bytes([2; 32]);

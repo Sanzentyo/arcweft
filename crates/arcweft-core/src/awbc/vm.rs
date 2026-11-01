@@ -1589,6 +1589,32 @@ fn execute_instruction(
             let mut args = fiber
                 .active_frame_mut()?
                 .take_register_values(program, args)?;
+            let intrinsic_row = &program.intrinsics[intrinsic.index()];
+            if let crate::value::RuntimeCallTarget::PresentationSlotRef(call) =
+                &intrinsic_row.identity
+            {
+                let signature = &program.signatures[intrinsic_row.signature.index()];
+                let result = signature.result.ok_or_else(|| {
+                    VmError::Runtime("slot reference has no result type".to_owned())
+                })?;
+                let context = crate::pure::RuntimeExternalCallContext::for_program(
+                    context
+                        .ok_or(VmError::MissingExecutionContext)?
+                        .execution_context(program)?,
+                    signature
+                        .params
+                        .iter()
+                        .map(|ty| program.runtime_types[ty.index()].semantic_identity()),
+                    program.runtime_types[result.index()].semantic_identity(),
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                )
+                .map_err(|error| VmError::Runtime(error.to_string()))?;
+                let value = call.evaluate_in_context(&context, &args)?;
+                if let Some(dst) = dst {
+                    fiber.active_frame_mut()?.set_register(*dst, value)?;
+                }
+                return Ok(InstructionControl::Continue);
+            }
             if let Some(
                 identity @ (crate::value::RuntimeIntrinsic::CoreRequireUnrestricted
                 | crate::value::RuntimeIntrinsic::CoreFanoutInputs),

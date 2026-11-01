@@ -176,6 +176,14 @@ impl ValidationWork {
         self.encode_bytes(kind, |writer| writer.string(text))
     }
 
+    pub(crate) fn encoded_string_parts(
+        &mut self,
+        kind: ResourceByteKind,
+        parts: &[&str],
+    ) -> Result<(), RuntimeSchemaError> {
+        self.encode_bytes(kind, |writer| writer.string_parts(parts))
+    }
+
     fn encode_bytes(
         &mut self,
         kind: ResourceByteKind,
@@ -309,7 +317,7 @@ impl ValueBudget {
         self.string_length(text.len())
     }
 
-    fn string_length(&self, length: usize) -> Result<(), RuntimeSchemaError> {
+    pub(crate) fn string_length(&self, length: usize) -> Result<(), RuntimeSchemaError> {
         if !self.limits.permits_string_bytes(length) {
             return Err(RuntimeSchemaError::BudgetExceeded {
                 budget: "string_bytes",

@@ -450,6 +450,28 @@ impl<'a> Cursor<'a> {
                 }
             }
             1 => self.text(counts)?,
+            3 => {
+                let resource = arcweft_interaction_model::presentation::PresentationResourceKind::from_semantic_tag(self.byte()?)
+                    .ok_or_else(|| self.invalid("slot reference resource"))?;
+                let count = self.count()?;
+                if count > 4 {
+                    return Err(self.invalid("slot reference input count"));
+                }
+                counts.array(count, 0)?;
+                let mut roles = [crate::presentation::RuntimePresentationSlotRefInput::Target; 4];
+                for role in &mut roles[..count] {
+                    *role =
+                        crate::presentation::RuntimePresentationSlotRefInput::from_semantic_tag(
+                            self.byte()?,
+                        )
+                        .ok_or_else(|| self.invalid("slot reference input role"))?;
+                }
+                crate::presentation::RuntimePresentationSlotRefCall::try_new(
+                    resource,
+                    roles[..count].iter().copied(),
+                )
+                .map_err(|_| self.invalid("slot reference input ABI"))?;
+            }
             2 => {
                 self.text(counts)?;
                 match self.byte()? {

@@ -740,6 +740,8 @@ pub enum RuntimeCallTarget {
     Intrinsic(RuntimeIntrinsic),
     Callable(RuntimeCallableId),
     External(RuntimeExternalCallable),
+    /// A Core-owned pure address constructor with its exact compact role ABI.
+    PresentationSlotRef(crate::presentation::RuntimePresentationSlotRefCall),
 }
 
 impl RuntimeCallTarget {
@@ -761,7 +763,7 @@ impl RuntimeCallTarget {
     pub const fn as_intrinsic(&self) -> Option<RuntimeIntrinsic> {
         match self {
             Self::Intrinsic(intrinsic) => Some(*intrinsic),
-            Self::Callable(_) | Self::External(_) => None,
+            Self::Callable(_) | Self::External(_) | Self::PresentationSlotRef(_) => None,
         }
     }
 
@@ -770,6 +772,7 @@ impl RuntimeCallTarget {
             Self::Intrinsic(intrinsic) => intrinsic.as_label(),
             Self::Callable(callable) => callable.as_str(),
             Self::External(callable) => callable.identity().as_str(),
+            Self::PresentationSlotRef(_) => "core.presentation.slot_ref",
         }
     }
 
@@ -778,7 +781,7 @@ impl RuntimeCallTarget {
         match self {
             Self::Callable(identity) => Some(identity),
             Self::External(callable) => Some(callable.identity()),
-            Self::Intrinsic(_) => None,
+            Self::Intrinsic(_) | Self::PresentationSlotRef(_) => None,
         }
     }
 }

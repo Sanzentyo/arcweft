@@ -1,6 +1,9 @@
 //! Typed Sans-I/O presentation ownership and dialogue stage/voice commands.
 
 pub(crate) mod resources;
+mod slot_reference;
+
+pub use slot_reference::{RuntimePresentationSlotRefCall, RuntimePresentationSlotRefInput};
 
 pub use resources::{RuntimePresentationScopeBinding, RuntimePresentationScopeSnapshot};
 
@@ -424,6 +427,16 @@ pub enum RuntimeCommandQueueError {
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimePresentationError {
+    #[error("slot reference call has invalid or duplicate argument roles")]
+    SlotReferenceArguments,
+    #[error("slot reference call received an invalid {role:?} value")]
+    SlotReferenceInput {
+        role: RuntimePresentationSlotRefInput,
+    },
+    #[error("presentation argument {role:?} is not a slot reference input")]
+    SlotReferenceRole {
+        role: arcweft_interaction_model::presentation::PresentationArgumentRole,
+    },
     #[error("presentation operation belongs to another executable lease")]
     Program,
     #[error("presentation handle belongs to another execution or artifact")]

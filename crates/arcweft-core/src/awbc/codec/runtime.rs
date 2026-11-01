@@ -60,6 +60,11 @@ impl Wire for RuntimeCallTarget {
                 2_u8.write_wire(writer)?;
                 callable.write_wire(writer)
             }
+            Self::PresentationSlotRef(call) => {
+                3_u8.write_wire(writer)?;
+                call.resource().semantic_tag().write_wire(writer)?;
+                writer.write_table(call.inputs())
+            }
         }
     }
 
@@ -78,12 +83,48 @@ impl Wire for RuntimeCallTarget {
             }
             1 => crate::entry::RuntimeCallableId::read_wire(reader).map(Self::Callable),
             2 => crate::value::RuntimeExternalCallable::read_wire(reader).map(Self::External),
+            3 => {
+                let resource = arcweft_interaction_model::presentation::PresentationResourceKind::from_semantic_tag(u8::read_wire(reader)?)
+                    .ok_or_else(|| AwbcCodecError::InvalidMetadata {
+                        kind: "slot reference resource",
+                        message: "unknown resource family".to_owned(),
+                        offset,
+                    })?;
+                let inputs = reader
+                    .read_table::<crate::presentation::RuntimePresentationSlotRefInput>(
+                        "slot reference inputs",
+                        4,
+                    )?;
+                crate::presentation::RuntimePresentationSlotRefCall::try_new(resource, inputs)
+                    .map(Self::PresentationSlotRef)
+                    .map_err(|error| AwbcCodecError::InvalidMetadata {
+                        kind: "slot reference input ABI",
+                        message: error.to_string(),
+                        offset,
+                    })
+            }
             tag => Err(AwbcCodecError::UnknownTag {
                 kind: "runtime call target",
                 tag,
                 offset,
             }),
         }
+    }
+}
+
+impl Wire for crate::presentation::RuntimePresentationSlotRefInput {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.semantic_tag().write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = u8::read_wire(reader)?;
+        Self::from_semantic_tag(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "slot reference input",
+            tag,
+            offset,
+        })
     }
 }
 

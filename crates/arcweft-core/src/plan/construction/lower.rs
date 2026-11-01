@@ -1017,6 +1017,19 @@ impl RuntimePlanBodyConstruction<'_> {
                     self.validate_ownership_intrinsic_signature(intrinsic, &args, ty)?;
                     self.validate_collection_intrinsic_signature(intrinsic, &args, ty)?;
                 }
+                if let crate::value::RuntimeCallTarget::PresentationSlotRef(call) = &callee {
+                    if args.len() != call.inputs().len() {
+                        return Err(RuntimePlanBuildError::CallableAbiArity { context: "slot reference", expected: call.inputs().len(), actual: args.len() });
+                    }
+                    if !call.accepts_plan_result(self.projection(ty)?) {
+                        return invalid_projection("slot reference result", ty);
+                    }
+                    for argument in &args {
+                        if argument.mode() != RuntimeCallArgumentMode::Value || !matches!(self.projection(argument.value().ty())?, RuntimePlanTypeProjection::EntityReference) {
+                            return invalid_projection("slot reference input", argument.value().ty());
+                        }
+                    }
+                }
                 RuntimeExprKind::Call { callee, args }
             }
             RuntimeExprSeedKind::Function { site, captures } => {

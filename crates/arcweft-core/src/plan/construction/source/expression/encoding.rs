@@ -508,6 +508,15 @@ impl Sink<'_, '_> {
                 self.byte(1)?;
                 self.text(callable.as_str())?;
             }
+            RuntimeCallTarget::PresentationSlotRef(call) => {
+                self.byte(3)?;
+                self.byte(call.resource().semantic_tag())?;
+                self.counts.array(call.inputs().len(), 0)?;
+                self.count(call.inputs().len())?;
+                for input in call.inputs() {
+                    self.byte(input.semantic_tag())?;
+                }
+            }
             RuntimeCallTarget::External(callable) => {
                 self.byte(2)?;
                 self.text(callable.identity().as_str())?;

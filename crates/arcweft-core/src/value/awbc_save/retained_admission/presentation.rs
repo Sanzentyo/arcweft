@@ -1,12 +1,12 @@
 //! Slot address construction/copy uses the original retained resource allowance.
 
 use super::*;
-use crate::pattern::RuntimeOpaqueTypeOwner;
+use crate::pattern::{RuntimeOpaqueTypeOwner, RuntimePresentationSlotRefDecodeError};
 use crate::value::{
     RuntimeBorrowedValue, RuntimeOpaqueView, RuntimeScalarView, RuntimeTupleView, RuntimeUInt,
 };
 use arcweft_id::PublicId;
-use arcweft_interaction_model::presentation::PresentationSlotAddress;
+use arcweft_interaction_model::presentation::{PresentationResourceKind, PresentationSlotAddress};
 
 impl RuntimeRetainedValueAdmission {
     /// Admits the complete typed opaque graph before allocating its header,
@@ -16,27 +16,49 @@ impl RuntimeRetainedValueAdmission {
         owner: &RuntimeOpaqueTypeOwner,
         address: &PresentationSlotAddress,
     ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
+        self.construct_presentation_slot_ref_parts(
+            owner,
+            address.resource(),
+            address.target().as_str(),
+            address.slot().as_str(),
+        )
+    }
+
+    /// Admits borrowed identities directly. A caller does not need to allocate
+    /// an intermediate owned address before the complete value-graph preflight.
+    pub fn construct_presentation_slot_ref_parts(
+        &mut self,
+        owner: &RuntimeOpaqueTypeOwner,
+        resource: PresentationResourceKind,
+        target: &str,
+        slot: &str,
+    ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
         let result: Result<_, AwbcRuntimeValueSnapshotError> = (|| {
             self.status()?;
             let expected = owner.presentation_slot_ref_resource()?;
-            if address.resource() != expected {
+            if resource != expected {
                 return Err(
                     crate::value::RuntimeOpaqueValueError::PresentationResource {
                         expected,
-                        actual: address.resource(),
+                        actual: resource,
                     }
                     .into(),
                 );
             }
+            PresentationSlotAddress::validate_text(target, slot, resource).map_err(|error| {
+                crate::value::RuntimeOpaqueValueError::PresentationSlotRef(
+                    RuntimePresentationSlotRefDecodeError::Address(error),
+                )
+            })?;
             let fields = [
                 RuntimeValueView::Scalar(RuntimeScalarView::UInt(RuntimeUInt::U8(
                     RuntimeOpaqueTypeOwner::PRESENTATION_SLOT_REF_VALUE_VERSION,
                 ))),
                 RuntimeValueView::Scalar(RuntimeScalarView::UInt(RuntimeUInt::U8(
-                    address.resource().semantic_tag(),
+                    resource.semantic_tag(),
                 ))),
-                RuntimeValueView::Scalar(RuntimeScalarView::String(address.target().as_str())),
-                RuntimeValueView::Scalar(RuntimeScalarView::String(address.slot().as_str())),
+                RuntimeValueView::Scalar(RuntimeScalarView::String(target)),
+                RuntimeValueView::Scalar(RuntimeScalarView::String(slot)),
             ];
             let payload = RuntimeValueView::Tuple(RuntimeTupleView::Views(&fields));
             self.validate_view(
@@ -51,9 +73,9 @@ impl RuntimeRetainedValueAdmission {
                 RuntimeValue::UInt(RuntimeUInt::U8(
                     RuntimeOpaqueTypeOwner::PRESENTATION_SLOT_REF_VALUE_VERSION,
                 )),
-                RuntimeValue::UInt(RuntimeUInt::U8(address.resource().semantic_tag())),
-                RuntimeValue::String(address.target().as_str().to_owned()),
-                RuntimeValue::String(address.slot().as_str().to_owned()),
+                RuntimeValue::UInt(RuntimeUInt::U8(resource.semantic_tag())),
+                RuntimeValue::String(target.to_owned()),
+                RuntimeValue::String(slot.to_owned()),
             ]))?)
         })();
         result.inspect_err(|error| self.retain_failure(error.clone()))

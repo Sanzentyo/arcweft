@@ -862,16 +862,32 @@ impl<S: CanonicalSink + ?Sized> CanonicalWriter<'_, S> {
     }
 
     fn string(&mut self, value: &str) -> Result<(), RuntimeSchemaError> {
+        self.string_parts(&[value])
+    }
+
+    /// Writes one logical UTF-8 string from borrowed pieces. Both its complete
+    /// length and the canonical prefix are checked before emitting any piece.
+    fn string_parts(&mut self, parts: &[&str]) -> Result<(), RuntimeSchemaError> {
+        let length = parts.iter().try_fold(0usize, |length, part| {
+            length
+                .checked_add(part.len())
+                .ok_or(RuntimeSchemaError::BudgetExceeded {
+                    budget: "string_bytes",
+                })
+        })?;
         if self
             .max_string_bytes
-            .is_some_and(|limit| u64::try_from(value.len()).map_or(true, |length| length > limit))
+            .is_some_and(|limit| u64::try_from(length).map_or(true, |length| length > limit))
         {
             return Err(RuntimeSchemaError::BudgetExceeded {
                 budget: "string_bytes",
             });
         }
-        self.len(value.len())?;
-        self.extend(value.as_bytes())
+        self.len(length)?;
+        for part in parts {
+            self.extend(part.as_bytes())?;
+        }
+        Ok(())
     }
 
     fn entity_reference(

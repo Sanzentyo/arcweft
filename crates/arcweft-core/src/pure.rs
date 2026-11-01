@@ -1905,7 +1905,10 @@ impl<'a> PureEvaluator<'a> {
                         "mutation or dialogue construction requires the flow runtime",
                     );
                 }
-                RuntimeExprKind::Call { callee, .. } if callee.as_intrinsic().is_none() => {
+                RuntimeExprKind::Call { callee, .. }
+                    if callee.as_intrinsic().is_none()
+                        && !matches!(callee, RuntimeCallTarget::PresentationSlotRef(_)) =>
+                {
                     return Self::unsupported_pure_trait_operation(
                         "host calls require the flow runtime",
                     );
@@ -2003,7 +2006,9 @@ impl<'a> PureEvaluator<'a> {
                 self.evaluate_assign_expr(place, expr, body)
             }
             RuntimeExprKind::Call { callee, args }
-                if callee.as_intrinsic().is_none() && self.external.is_some() =>
+                if callee.as_intrinsic().is_none()
+                    && (self.external.is_some()
+                        || matches!(callee, RuntimeCallTarget::PresentationSlotRef(_))) =>
             {
                 self.evaluate_external_call_expr(callee, args, expr.ty())
             }

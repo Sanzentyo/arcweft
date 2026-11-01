@@ -793,6 +793,31 @@ impl ValueResourceAdmission {
         self.resource_string(ResourceByteKind::Metadata, text)
     }
 
+    /// Bounds a prospective metadata string as one complete string before its
+    /// pieces are joined. It consumes this original byte/work bank once.
+    pub(crate) fn metadata_string_parts(
+        &mut self,
+        parts: &[&str],
+    ) -> Result<(), RuntimeSchemaError> {
+        let result = (|| {
+            self.work.charge(0)?;
+            let length = parts.iter().try_fold(0usize, |length, part| {
+                length
+                    .checked_add(part.len())
+                    .ok_or(RuntimeSchemaError::BudgetExceeded {
+                        budget: "string_bytes",
+                    })
+            })?;
+            self.budget.string_length(length)?;
+            self.work
+                .encoded_string_parts(ResourceByteKind::Metadata, parts)
+        })();
+        if let Err(error) = &result {
+            self.work.retain_failure(error.clone());
+        }
+        result
+    }
+
     fn resource_string(
         &mut self,
         kind: ResourceByteKind,

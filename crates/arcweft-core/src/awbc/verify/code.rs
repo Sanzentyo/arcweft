@@ -1766,6 +1766,29 @@ fn apply_instruction(
         } => {
             check_index(program.intrinsics.len(), intrinsic.0, "intrinsics", &at)?;
             let intrinsic = &program.intrinsics[intrinsic.index()];
+            if let crate::value::RuntimeCallTarget::PresentationSlotRef(call) = &intrinsic.identity
+            {
+                let Some(signature) = program.signatures.get(intrinsic.signature.index()) else {
+                    return invalid_type(&at, "slot reference has no signature");
+                };
+                if signature.params.len() != call.inputs().len()
+                    || !signature.params.iter().all(|ty| {
+                        matches!(
+                            runtime_shape(program, *ty),
+                            Some(AwbcRuntimeTypeShape::EntityRef)
+                        )
+                    })
+                    || !signature
+                        .result
+                        .is_some_and(|ty| call.accepts_awbc_result(program, ty))
+                    || !program
+                        .effect_sets
+                        .get(signature.effects.index())
+                        .is_some_and(|effects| effects.effects.is_empty())
+                {
+                    return invalid_type(&at, "slot reference has an invalid typed signature");
+                }
+            }
             if let crate::value::RuntimeCallTarget::Intrinsic(identity) = &intrinsic.identity {
                 verify_ownership_intrinsic_signature(program, *identity, intrinsic.signature, &at)?;
                 verify_capacity_intrinsic_signature(program, *identity, intrinsic.signature, &at)?;

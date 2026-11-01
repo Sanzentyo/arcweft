@@ -188,7 +188,9 @@ impl RuntimeOpaqueTypeOwner {
         )
     }
 
-    const fn presentation_slot_ref_producer(resource: PresentationResourceKind) -> &'static str {
+    pub(crate) const fn presentation_slot_ref_producer(
+        resource: PresentationResourceKind,
+    ) -> &'static str {
         match resource {
             PresentationResourceKind::Image => "std.presentation.slot_ref.image",
             PresentationResourceKind::View => "std.presentation.slot_ref.view",

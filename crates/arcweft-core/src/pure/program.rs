@@ -242,6 +242,9 @@ impl PureEvaluator<'_> {
             RuntimeSchemaLimits::engine_default(),
         )
         .map_err(|failure| error(&failure.to_string()))?;
+        if let RuntimeCallTarget::PresentationSlotRef(call) = callee {
+            return call.evaluate_in_context(&context, &values);
+        }
         self.external
             .as_mut()
             .and_then(|backend| backend.call_external(&context, callee, &values))

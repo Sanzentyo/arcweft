@@ -511,6 +511,24 @@ impl RuntimeRetainedValueAdmission {
         result
     }
 
+    /// Constructs one metadata identity only after its complete UTF-8 length,
+    /// encoded bytes and work fit this original retained allowance.
+    pub fn construct_metadata_string(
+        &mut self,
+        parts: &[&str],
+    ) -> Result<String, AwbcRuntimeValueSnapshotError> {
+        self.status()?;
+        let result = self
+            .resources
+            .metadata_string_parts(parts)
+            .map_err(AwbcRuntimeValueSnapshotError::from);
+        if let Err(failure) = &result {
+            self.retain_failure(failure.clone());
+        }
+        result?;
+        Ok(parts.concat())
+    }
+
     /// Bounds a retained table and its complete metadata work before allocating
     /// or copying members. Empty payloads do not grant an unmetered table.
     pub fn validate_metadata_collection(

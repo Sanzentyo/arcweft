@@ -707,6 +707,29 @@ impl Decoder<'_, '_> {
             1 => {
                 RuntimeCallTarget::Callable(crate::entry::RuntimeCallableId::try_new(r.string()?)?)
             }
+            3 => {
+                let resource = arcweft_interaction_model::presentation::PresentationResourceKind::from_semantic_tag(r.byte()?)
+                    .ok_or_else(|| r.invalid("slot reference resource"))?;
+                let count = r.count()?;
+                if count > 4 {
+                    return Err(r.invalid("slot reference input count"));
+                }
+                let mut roles = [crate::presentation::RuntimePresentationSlotRefInput::Target; 4];
+                for role in &mut roles[..count] {
+                    *role =
+                        crate::presentation::RuntimePresentationSlotRefInput::from_semantic_tag(
+                            r.byte()?,
+                        )
+                        .ok_or_else(|| r.invalid("slot reference input role"))?;
+                }
+                RuntimeCallTarget::PresentationSlotRef(
+                    crate::presentation::RuntimePresentationSlotRefCall::try_new(
+                        resource,
+                        roles[..count].iter().copied(),
+                    )
+                    .map_err(|_| r.invalid("slot reference input ABI"))?,
+                )
+            }
             2 => {
                 let identity = crate::entry::RuntimeCallableId::try_new(r.string()?)?;
                 let provider = match r.byte()? {

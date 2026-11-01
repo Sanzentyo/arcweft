@@ -104,6 +104,14 @@ impl RuntimeExpr {
                         encoder.tag(2);
                         callable.encode_body_metadata(encoder);
                     }
+                    RuntimeCallTarget::PresentationSlotRef(call) => {
+                        encoder.tag(3);
+                        encoder.tag(call.resource().semantic_tag());
+                        encoder.count(call.inputs().len());
+                        for input in call.inputs() {
+                            encoder.tag(input.semantic_tag());
+                        }
+                    }
                 }
                 context.write_call_arguments(encoder, args)?;
             }
