@@ -107,6 +107,13 @@ fn runtime_value_to_json_at(
                 detail: "affine runtime Need values cannot be serialized as Agent JSON".to_owned(),
             })
         }
+        RuntimeValue::PresentationResource(_) => {
+            Err(AgentRuntimeValueSerializationError::InvalidRuntimeState {
+                path: path.to_owned(),
+                detail: "affine presentation resources require an original-program snapshot"
+                    .to_owned(),
+            })
+        }
         RuntimeValue::Callable(callable) => callable
             .remaining_arity()
             .map(|arity| {
@@ -227,6 +234,9 @@ fn ensure_finite_runtime_value(
         }
         RuntimeValue::Opaque(value) => {
             ensure_finite_runtime_value(value.payload(), &format!("{path}.payload"))
+        }
+        RuntimeValue::PresentationResource(value) => {
+            ensure_finite_runtime_value(value.body(), &format!("{path}.body"))
         }
         RuntimeValue::Agent(RuntimeAgentValue::Predicate(predicate)) => {
             ensure_finite_runtime_predicate(predicate, path)

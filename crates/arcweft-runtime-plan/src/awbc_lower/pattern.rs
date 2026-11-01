@@ -720,6 +720,9 @@ pub(crate) fn intern_runtime_type(
     ty: &RuntimeCheckedType,
 ) -> AwbcTypeId {
     let projected = match ty {
+        RuntimeCheckedType::PresentationResource(kind) => {
+            AwbcRuntimeTypeShape::PresentationResource(*kind)
+        }
         RuntimeCheckedType::ExecutableRef(identity) => {
             return inventory
                 .semantic_type(*identity)

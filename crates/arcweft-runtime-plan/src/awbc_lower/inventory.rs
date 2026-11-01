@@ -1053,6 +1053,9 @@ impl AwbcInventory {
             RuntimeValue::NeedHandle(_) => {
                 panic!("runtime Need handle cannot be encoded as an AWBC constant")
             }
+            RuntimeValue::PresentationResource(_) => {
+                panic!("runtime presentation resource cannot be encoded as an AWBC constant")
+            }
             RuntimeValue::Progress(_) => {
                 panic!("runtime Progress publications cannot be encoded as AWBC constants")
             }

@@ -60,6 +60,7 @@ pub(super) fn runtime_value_kind(value: &RuntimeValue) -> String {
         RuntimeValue::Record(_) => "record",
         RuntimeValue::NominalRecord(_) => "nominal_record",
         RuntimeValue::Opaque(_) => "opaque",
+        RuntimeValue::PresentationResource(_) => "presentation_resource",
         RuntimeValue::Agent(value) => value.label(),
         RuntimeValue::Reduction(_) => "reduction",
         RuntimeValue::Callable(_) => "function",

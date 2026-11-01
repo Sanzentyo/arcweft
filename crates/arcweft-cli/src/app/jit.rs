@@ -388,6 +388,9 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
             record.fields().len()
         ),
         RuntimeValue::Opaque(value) => format!("opaque/{}", value.producer().as_str()),
+        RuntimeValue::PresentationResource(value) => {
+            format!("presentation/{}", value.resource().as_str())
+        }
         RuntimeValue::Reduction(value) => {
             format!("reduction/{}", value.owner().producer().as_str())
         }

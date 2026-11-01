@@ -116,6 +116,7 @@ fn runtime_value_label_for_data(value: &RuntimeValue) -> String {
         | RuntimeValue::Progress(_)
         | RuntimeValue::EntityRef(_)
         | RuntimeValue::Opaque(_)
+        | RuntimeValue::PresentationResource(_)
         | RuntimeValue::Reduction(_)
         | RuntimeValue::Callable(_)
         | RuntimeValue::Iterator(_)
