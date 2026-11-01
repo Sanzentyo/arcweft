@@ -234,6 +234,20 @@ impl Sink<'_, '_> {
         }
         Ok(())
     }
+    fn value_target(&mut self, target: &RuntimeValueTarget) -> Result<(), Error> {
+        match target {
+            RuntimeValueTarget::Value(_) => self.byte(0),
+            RuntimeValueTarget::Inspect { place, .. } => {
+                self.byte(1)?;
+                self.place(place)
+            }
+            RuntimeValueTarget::Take { place, .. } => {
+                self.byte(2)?;
+                self.place(place)
+            }
+        }
+    }
+
     fn place(&mut self, place: &RuntimeMutablePlace) -> Result<(), Error> {
         self.id("local", place.local().get().get(), self.limits.local_count)?;
         self.fields(place.fields())
@@ -377,16 +391,10 @@ impl Sink<'_, '_> {
             }
             K::PresentationHandleMethod { method, target } => {
                 self.byte(method.semantic_tag())?;
-                self.boolean(matches!(target, RuntimeValueTarget::Inspect { .. }))?;
-                if let RuntimeValueTarget::Inspect { place, .. } = target {
-                    self.place(place)?;
-                }
+                self.value_target(target)?;
             }
             K::Field { target, field } => {
-                self.boolean(matches!(target, RuntimeValueTarget::Inspect { .. }))?;
-                if let RuntimeValueTarget::Inspect { place, .. } = target {
-                    self.place(place)?;
-                }
+                self.value_target(target)?;
                 match field {
                     RuntimeFieldProjection::Nominal(field) => {
                         self.byte(0)?;

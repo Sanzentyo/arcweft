@@ -3121,6 +3121,7 @@ impl<'a> PureEvaluator<'a> {
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let value = match target {
             crate::value::RuntimeValueTarget::Value(value) => self.evaluate_expr(value)?,
+            crate::value::RuntimeValueTarget::Take { place, .. } => self.env.take_place(place)?,
             crate::value::RuntimeValueTarget::Inspect { place, .. } => {
                 return self.env.inspect_field(place, field);
             }

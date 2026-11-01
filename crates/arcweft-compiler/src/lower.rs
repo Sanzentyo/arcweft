@@ -5250,6 +5250,7 @@ fn runtime_type_scoped_at(
         runtime_type_scoped_at(ty, symbols, world, analysis, &path.pushed(step), scope)
             .map(Box::new)
     };
+    let presentation_owner = ty.presentation_opaque_owner(identity);
     let shape = match ty {
         TypeKind::GenericParam(arcweft_lang_sema::types::GenericTypeReference::Bound(
             reference,
@@ -5667,34 +5668,8 @@ fn runtime_type_scoped_at(
                 arguments: Box::new([]),
             }
         }
-        TypeKind::Handle {
-            item,
-            state:
-                arcweft_lang_sema::types::HandleState::Live
-                | arcweft_lang_sema::types::HandleState::Detached,
-            ..
-        } if matches!(item.as_ref(), TypeKind::PresentationResource(_)) => {
-            let TypeKind::PresentationResource(resource) = item.as_ref() else {
-                unreachable!("guard proves a presentation resource type")
-            };
-            let owner = arcweft_core::pattern::RuntimeOpaqueTypeOwner::presentation_handle(
-                *resource, identity,
-            );
-            RuntimeTypeShape::Opaque {
-                producer: owner.producer().clone(),
-                admission: owner.admission(),
-                value_class: owner.value_class(),
-                persistence: owner.persistence(),
-                arguments: Box::new([]),
-            }
-        }
-        TypeKind::SlotRef(item) if matches!(item.as_ref(), TypeKind::PresentationResource(_)) => {
-            let TypeKind::PresentationResource(resource) = item.as_ref() else {
-                unreachable!("guard selects a presentation resource")
-            };
-            let owner = arcweft_core::pattern::RuntimeOpaqueTypeOwner::presentation_slot_ref(
-                *resource, identity,
-            );
+        _ if presentation_owner.is_some() => {
+            let owner = presentation_owner.expect("matched a closed standard presentation carrier");
             RuntimeTypeShape::Opaque {
                 producer: owner.producer().clone(),
                 admission: owner.admission(),
@@ -9653,6 +9628,12 @@ fn runtime_call_target(
     let selected = application.core().candidates().selected();
     let selected_id = selected.id();
     let selected_family = selected.family();
+    if let CallableCandidateId::PresentationHandleMethod(method) = selected_id {
+        return Ok(RuntimeResolvedStaticCallTarget::PresentationHandleMethod {
+            method: *method,
+            receiver: checked_call_receiver_expression(owner, application)?,
+        });
+    }
     if matches!(
         selected_id,
         CallableCandidateId::Builtin(BuiltinCallableId::InlineFailureFallback)

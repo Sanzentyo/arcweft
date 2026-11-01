@@ -767,7 +767,7 @@ struct LocalUseChecker<'a> {
     effect_capture_sites: &'a BTreeMap<ExprId, Box<[LocalId]>>,
     scheduled_callback_roots: &'a BTreeSet<ExprId>,
     in_place_receivers: &'a BTreeSet<ExprId>,
-    borrowed_receivers: &'a BTreeSet<ExprId>,
+    borrowed_receivers: &'a BTreeMap<ExprId, SelectedReceiverBorrow>,
     active_receiver_loans: Vec<(CheckedPlace, ExprId)>,
     callback_local_uses: Vec<BTreeSet<LocalId>>,
     instance: Option<CheckedLocalUseInstantiation<'a>>,
@@ -799,7 +799,7 @@ impl<'a> LocalUseChecker<'a> {
         effect_capture_sites: &'a BTreeMap<ExprId, Box<[LocalId]>>,
         scheduled_callback_roots: &'a BTreeSet<ExprId>,
         in_place_receivers: &'a BTreeSet<ExprId>,
-        borrowed_receivers: &'a BTreeSet<ExprId>,
+        borrowed_receivers: &'a BTreeMap<ExprId, SelectedReceiverBorrow>,
         instance: Option<CheckedLocalUseInstantiation<'a>>,
     ) -> Self {
         Self {
@@ -1919,7 +1919,7 @@ impl<'a> LocalUseChecker<'a> {
         if self.in_place_receivers.contains(&owner) {
             return self.emit_in_place_receiver_expression(owner, state);
         }
-        if self.borrowed_receivers.contains(&owner) {
+        if self.borrowed_receivers.contains_key(&owner) {
             return self.emit_borrowed_receiver_expression(owner, state);
         }
         if let Some(CheckedExpressionResolution::ImplicitCallable(_)) = self
@@ -1966,6 +1966,14 @@ impl<'a> LocalUseChecker<'a> {
         owner: ExprId,
         state: &mut Availability,
     ) -> Result<(), CheckedLocalUseError> {
+        if self.borrowed_receivers.get(&owner) == Some(&SelectedReceiverBorrow::Place) {
+            let place = self
+                .analysis
+                .expression(owner)
+                .and_then(super::CheckedExpression::mutable_place)
+                .ok_or(CheckedLocalUseError::InvalidTopology)?;
+            return self.access_place(owner, place, CheckedLocalPlaceMode::Inspect, state);
+        }
         let inputs = self
             .analysis
             .checked_capture_inputs(owner)
@@ -2633,7 +2641,7 @@ impl<'a> LocalUseChecker<'a> {
             let loans_before = self.active_receiver_loans.len();
             let receiver = self.selected_receiver_source(owner);
             if let Some(receiver) = receiver
-                && (self.borrowed_receivers.contains(&receiver)
+                && (self.borrowed_receivers.contains_key(&receiver)
                     || self.in_place_receivers.contains(&receiver))
             {
                 let checked = self
@@ -3288,14 +3296,20 @@ fn selected_in_place_receivers(
     Ok(receivers)
 }
 
-/// Look borrows its exact StageActor receiver for the duration of the line
-/// operation. Only a direct local can be projected as a stable runtime place;
-/// other receiver expressions retain ordinary value-transfer semantics.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SelectedReceiverBorrow {
+    LocalValue,
+    Place,
+}
+
+/// The selected operation owns receiver access policy. Stage Look retains its
+/// local line capability; presentation visibility inspects a checked stored
+/// place. Computed receivers retain ordinary value-transfer semantics.
 fn selected_borrowed_receivers(
     analysis: &FinalSemanticAnalysis,
     owners: impl Iterator<Item = ExprId>,
-) -> Result<BTreeSet<ExprId>, CheckedLocalUseError> {
-    let mut receivers = BTreeSet::new();
+) -> Result<BTreeMap<ExprId, SelectedReceiverBorrow>, CheckedLocalUseError> {
+    let mut receivers = BTreeMap::new();
     for owner in owners {
         let Some(call) = analysis.call(owner) else {
             continue;
@@ -3303,11 +3317,12 @@ fn selected_borrowed_receivers(
         let Some(application) = call.selected_application() else {
             continue;
         };
-        if application.core().candidates().selected().id()
-            != &CallableCandidateId::StageMethod(StageMethodId::Look)
-        {
-            continue;
-        }
+        let borrow = match application.core().candidates().selected().id() {
+            CallableCandidateId::StageMethod(StageMethodId::Look) => SelectedReceiverBorrow::LocalValue,
+            CallableCandidateId::PresentationHandleMethod(method)
+                if matches!(method.operation(), arcweft_interaction_model::presentation::PresentationHandleOperation::SetVisibility(_)) => SelectedReceiverBorrow::Place,
+            _ => continue,
+        };
         let CheckedCallReceiverProjection::Operand { source, .. } =
             application.core().execution().receiver()
         else {
@@ -3316,12 +3331,15 @@ fn selected_borrowed_receivers(
         let CheckedCallArgumentSlotSource::Expression(receiver) = source.raw() else {
             return Err(CheckedLocalUseError::InvalidTopology);
         };
-        if analysis
+        let checked = analysis
             .expression(receiver)
-            .and_then(super::CheckedExpression::execution_local_use)
-            .is_some()
-        {
-            receivers.insert(receiver);
+            .ok_or(CheckedLocalUseError::InvalidTopology)?;
+        let stored = match borrow {
+            SelectedReceiverBorrow::LocalValue => checked.execution_local_use().is_some(),
+            SelectedReceiverBorrow::Place => checked.mutable_place().is_some(),
+        };
+        if stored {
+            receivers.insert(receiver, borrow);
         }
     }
     Ok(receivers)

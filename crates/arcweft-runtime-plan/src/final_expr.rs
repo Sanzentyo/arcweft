@@ -2050,6 +2050,58 @@ impl<'hir> FinalExprLowerer<'hir> {
     ) -> Result<RuntimeExprSeedKind, String> {
         let selected = self.call(id)?;
         if let RuntimeResolvedCallDispatch::Static(
+            RuntimeResolvedStaticCallTarget::PresentationHandleMethod { method, receiver },
+        ) = selected.dispatch()
+        {
+            let target =
+                if let Some(access) = self.semantic_facts.checked_local_place_access(*receiver)
+                    && access.mode() == CheckedLocalPlaceMode::Inspect
+                {
+                    let place = RuntimeResolvedPlace::try_from_checked(access.place()).ok_or_else(
+                        || format!("handle receiver {receiver:?} has no storage coordinate"),
+                    )?;
+                    arcweft_core::plan::RuntimeValueTargetSeed::Inspect(self.checked_place_seed(
+                        *receiver,
+                        &place,
+                        CheckedLocalPlaceMode::Inspect,
+                    )?)
+                } else if let Some(transfer) = self
+                    .semantic_facts
+                    .checked_local_value_transfer(CheckedLocalUseSite::Expression(*receiver))
+                    && transfer.mode() == CheckedLocalReadMode::Move
+                {
+                    let fields = transfer
+                        .fields()
+                        .iter()
+                        .map(|field| {
+                            field
+                            .runtime_field()
+                            .map(|field| {
+                                RuntimeRecordFieldSeedId::from_zero_based(field.zero_based())
+                            })
+                            .ok_or_else(|| {
+                                format!(
+                                    "handle receiver {receiver:?} lacks a stored field coordinate"
+                                )
+                            })
+                        })
+                        .collect::<Result<Box<[_]>, _>>()?;
+                    let base = self.local(transfer.local())?;
+                    let place = if fields.is_empty() {
+                        RuntimeMutablePlaceSeed::Local(base)
+                    } else {
+                        RuntimeMutablePlaceSeed::Fields { base, fields }
+                    };
+                    arcweft_core::plan::RuntimeValueTargetSeed::Take(place)
+                } else {
+                    Box::new(self.lower_source(*receiver)?).into()
+                };
+            return Ok(RuntimeExprSeedKind::PresentationHandleMethod {
+                method: *method,
+                target,
+            });
+        }
+        if let RuntimeResolvedCallDispatch::Static(
             RuntimeResolvedStaticCallTarget::StandardMapPrefix(map),
         ) = selected.dispatch()
         {
@@ -2177,6 +2229,11 @@ impl<'hir> FinalExprLowerer<'hir> {
             | RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Reduction(_))
             | RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Traverse) => {
                 unreachable!("specialized dispatch was handled by source-row ANF")
+            }
+            RuntimeResolvedCallDispatch::Static(
+                RuntimeResolvedStaticCallTarget::PresentationHandleMethod { .. },
+            ) => {
+                unreachable!("presentation handle receiver is lowered before call operands")
             }
             RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Declaration(
                 _,

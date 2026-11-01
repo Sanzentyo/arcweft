@@ -230,6 +230,11 @@ impl super::RuntimeValueTarget {
                 context.write_place(encoder, place)?;
                 context.write_type(encoder, *ty)?;
             }
+            Self::Take { place, ty } => {
+                encoder.tag(2);
+                context.write_place(encoder, place)?;
+                context.write_type(encoder, *ty)?;
+            }
         }
         Ok(())
     }

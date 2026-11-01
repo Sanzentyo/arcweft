@@ -1021,6 +1021,9 @@ impl Engine {
             crate::value::RuntimeValueTarget::Value(value) => {
                 self.evaluate_expr_with_backend(value, pure_backend)?
             }
+            crate::value::RuntimeValueTarget::Take { place, .. } => {
+                self.fiber.frame.env.take_place(place)?
+            }
             crate::value::RuntimeValueTarget::Inspect { place, .. } => {
                 return self.fiber.frame.env.inspect_field(place, field);
             }

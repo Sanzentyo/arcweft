@@ -13,6 +13,41 @@ use arcweft_lang_sema::{
     types::TypeKind,
 };
 
+fn nominal_address_fields(native: bool) {
+    super::presentation_factories::run_selected(
+        super::presentation_factories::program_from_source(
+            r#"
+struct Addresses { slot: SlotRef<BackgroundSurface>, marker: i32 }
+pub fn root() -> (SlotRef<BackgroundSurface>, SlotRef<BackgroundSurface>, i32) {
+    let addresses = Addresses { slot: ref.bg(), marker: 42i32 };
+    (addresses.slot, addresses.slot, addresses.marker)
+}
+flow main() -> i64 { return 0i64 }
+"#,
+        ),
+        native,
+        |value| {
+            let RuntimeValue::Tuple(fields) = value else {
+                panic!("copied address results");
+            };
+            assert_eq!(fields.len(), 3);
+            assert_eq!(fields[0], fields[1]);
+            assert!(fields[0].ownership().permits_copy());
+            assert_eq!(fields[2], RuntimeValue::i32(42));
+        },
+    );
+}
+
+#[test]
+fn source_slot_reference_nominal_fields_copy_in_native() {
+    nominal_address_fields(true);
+}
+
+#[test]
+fn source_slot_reference_nominal_fields_copy_in_decoded_awbc() {
+    nominal_address_fields(false);
+}
+
 #[test]
 fn source_slot_references_execute_as_inert_copied_addresses_in_native_and_decoded_awbc() {
     let compiled = compile_source(r#"

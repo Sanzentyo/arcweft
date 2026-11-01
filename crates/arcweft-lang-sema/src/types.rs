@@ -1525,6 +1525,37 @@ impl TypeKind {
         }
     }
 
+    /// Selects the exact standard carrier without granting executable custody.
+    pub fn presentation_opaque_owner(
+        &self,
+        semantic: arcweft_core::pattern::RuntimeSemanticTypeId,
+    ) -> Option<arcweft_core::pattern::RuntimeOpaqueTypeOwner> {
+        use arcweft_core::pattern::RuntimeOpaqueTypeOwner;
+        match self {
+            Self::Handle {
+                item,
+                state: HandleState::Live | HandleState::Detached,
+                ..
+            } => {
+                let Self::PresentationResource(resource) = item.as_ref() else {
+                    return None;
+                };
+                Some(RuntimeOpaqueTypeOwner::presentation_handle(
+                    *resource, semantic,
+                ))
+            }
+            Self::SlotRef(item) => {
+                let Self::PresentationResource(resource) = item.as_ref() else {
+                    return None;
+                };
+                Some(RuntimeOpaqueTypeOwner::presentation_slot_ref(
+                    *resource, semantic,
+                ))
+            }
+            _ => None,
+        }
+    }
+
     #[must_use]
     pub fn is_entity_ref_kind(&self, kind: &EntityKind) -> bool {
         matches!(self, Self::Ref(entity) if entity.kind() == kind)

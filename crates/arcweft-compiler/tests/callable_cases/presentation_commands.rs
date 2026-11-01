@@ -125,3 +125,112 @@ fn source_presentation_overlay_pop_in_native() {
 fn source_presentation_overlay_pop_in_decoded_awbc() {
     handle_method("pop", false);
 }
+
+fn visibility_then_retire(native: bool) {
+    run_selected(
+        program_from_source(
+            r#"
+pub fn root() {
+    let handle = image(param.channel = 7i32);
+    handle.hide();
+    handle.show();
+    handle.hide();
+    handle.release()
+}
+flow main() -> i64 { return 0i64 }
+"#,
+        ),
+        native,
+        assert_unit,
+    );
+}
+
+#[test]
+fn source_presentation_visibility_keeps_handle_for_retirement_in_native() {
+    visibility_then_retire(true);
+}
+
+#[test]
+fn source_presentation_visibility_keeps_handle_for_retirement_in_decoded_awbc() {
+    visibility_then_retire(false);
+}
+
+fn stored_fields(native: bool) {
+    run_selected(
+        program_from_source(
+            r#"
+struct Pair { first: Handle<ImageSurface>, second: Handle<ImageSurface>, marker: i32 }
+pub fn root() -> i32 {
+    let pair = Pair { first: image(param.channel = 1i32), second: image(param.channel = 2i32), marker: 42i32 };
+    pair.first.hide();
+    pair.first.show();
+    pair.first.release();
+    pair.second.hide();
+    pair.second.destroy();
+    pair.marker
+}
+flow main() -> i64 { return 0i64 }
+"#,
+        ),
+        native,
+        |value| assert_eq!(value, &RuntimeValue::i32(42)),
+    );
+}
+
+#[test]
+fn source_presentation_handle_fields_keep_siblings_in_native() {
+    stored_fields(true);
+}
+
+#[test]
+fn source_presentation_handle_fields_keep_siblings_in_decoded_awbc() {
+    stored_fields(false);
+}
+
+fn computed_receiver(native: bool) {
+    run_selected(
+        program_from_source(
+            r#"
+pub fn root() -> i32 {
+    let mut count = 0i32;
+    image(param.channel = scope { count = count + 1i32; 7i32 }).release();
+    count
+}
+flow main() -> i64 { return 0i64 }
+"#,
+        ),
+        native,
+        |value| assert_eq!(value, &RuntimeValue::i32(1)),
+    );
+}
+
+#[test]
+fn source_presentation_computed_handle_evaluates_once_in_native() {
+    computed_receiver(true);
+}
+
+#[test]
+fn source_presentation_computed_handle_evaluates_once_in_decoded_awbc() {
+    computed_receiver(false);
+}
+
+#[test]
+fn source_presentation_retired_handle_cannot_be_reused() {
+    let error = super::compile_source(
+        r#"
+pub fn root() { let handle = image(); handle.release(); handle.show() }
+flow main() -> i64 { return 0i64 }
+"#,
+    )
+    .expect_err("retirement transfers the affine handle");
+    assert!(
+        error.project().diagnostics().iter().any(|diagnostic| {
+            diagnostic
+                .diagnostic()
+                .code()
+                .is_some_and(|code| code.as_str() == "sema.final_analysis")
+                && diagnostic.diagnostic().message().contains("unavailable")
+        }),
+        "{error:?}"
+    );
+}

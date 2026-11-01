@@ -228,6 +228,15 @@ impl Decoder<'_, '_> {
             })
             .collect())
     }
+    fn value_target(&mut self, cursor: &mut Cursor<'_>) -> Result<RuntimeValueTargetSeed, Error> {
+        Ok(match cursor.byte()? {
+            0 => RuntimeValueTargetSeed::Value(self.boxed()),
+            1 => RuntimeValueTargetSeed::Inspect(self.place(cursor)?),
+            2 => RuntimeValueTargetSeed::Take(self.place(cursor)?),
+            _ => unreachable!("admitted value target tag"),
+        })
+    }
+
     fn place(&self, cursor: &mut Cursor<'_>) -> Result<RuntimeMutablePlaceSeed, Error> {
         let local = self.local(cursor.u32()?);
         let fields = self.fields(cursor)?;
@@ -500,19 +509,11 @@ impl Decoder<'_, '_> {
                 let tag = r.byte()?;
                 let method = arcweft_interaction_model::presentation::PresentationHandleMethodId::from_semantic_tag(tag)
                     .expect("admitted handle method tag");
-                let target = if r.boolean()? {
-                    RuntimeValueTargetSeed::Inspect(self.place(&mut r)?)
-                } else {
-                    RuntimeValueTargetSeed::Value(self.boxed())
-                };
+                let target = self.value_target(&mut r)?;
                 K::PresentationHandleMethod { method, target }
             }
             18 => {
-                let target = if r.boolean()? {
-                    RuntimeValueTargetSeed::Inspect(self.place(&mut r)?)
-                } else {
-                    RuntimeValueTargetSeed::Value(self.boxed())
-                };
+                let target = self.value_target(&mut r)?;
                 let field = match r.byte()? {
                     0 => RuntimeFieldProjectionSeed::Nominal {
                         owner: self.semantic(r.ty()?),

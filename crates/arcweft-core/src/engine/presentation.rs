@@ -247,11 +247,11 @@ impl Engine {
             RuntimeValueTarget::Value(value) => {
                 Some(self.evaluate_expr_with_backend(value, backend)?)
             }
-            RuntimeValueTarget::Inspect { .. } => None,
+            RuntimeValueTarget::Inspect { .. } | RuntimeValueTarget::Take { .. } => None,
         };
         let value = match target {
             RuntimeValueTarget::Value(_) => owned.as_ref().expect("evaluated owned receiver"),
-            RuntimeValueTarget::Inspect { place, .. } => {
+            RuntimeValueTarget::Inspect { place, .. } | RuntimeValueTarget::Take { place, .. } => {
                 self.fiber.frame.env.inspect_place(place)?
             }
         };
@@ -271,7 +271,7 @@ impl Engine {
             })?;
         let binding = self.fiber.frame.env.function_instantiation();
         let admitted = if owned.is_some() {
-            admission.validate_typed_borrowed_in_invocation(value.into(), semantic, binding)
+            admission.validate_owned_typed_borrowed_in_invocation(value.into(), semantic, binding)
         } else {
             admission.validate_admitted_typed_borrowed_in_invocation(
                 value.into(),
@@ -306,6 +306,13 @@ impl Engine {
             self.fiber.frame.env.presentation_scope_bindings(),
         )?;
         banks.apply_handle_method(&self.fiber.frame.program, &token, scope, method)?;
+        if let RuntimeValueTarget::Take { place, .. } = target {
+            self.fiber
+                .frame
+                .env
+                .take_place(place)
+                .expect("exclusive method preflight retains the initialized receiver");
+        }
         Ok(RuntimeValue::Unit)
     }
 

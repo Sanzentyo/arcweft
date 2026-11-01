@@ -564,6 +564,29 @@ impl<'a> NominalGraphProjection<'a> {
             TypeKind::Need(_) if self.project_budget.is_some() => {
                 Schema::ExecutableRef(self.semantic_identity(ty)?.into())
             }
+            TypeKind::Handle { .. } | TypeKind::SlotRef(_) => {
+                let semantic = self.semantic_identity(ty)?;
+                let owner = ty
+                    .presentation_opaque_owner(semantic.into())
+                    .ok_or_else(|| {
+                        Error::from(super::NominalSchemaProjectionError::UnsupportedLeaf {
+                            path: super::NominalSchemaPath::default(),
+                            ty: Box::new(ty.clone()),
+                        })
+                    })?;
+                if owner.value_class() == RuntimeOpaqueValueClass::Plain {
+                    Schema::ExactOpaque {
+                        owner,
+                        arguments: Box::new([]),
+                    }
+                } else if self.project_budget.is_some() {
+                    Schema::ExecutableRef(semantic.into())
+                } else {
+                    return Err(Error::UnsupportedType {
+                        semantic_type: semantic,
+                    });
+                }
+            }
             TypeKind::AcceptedNominal(nominal) => self.nominal(ty, nominal, depth)?,
             TypeKind::ProjectNominal(nominal) => self.project_nominal(ty, nominal, depth)?,
             TypeKind::GenericParam(parameter) => {

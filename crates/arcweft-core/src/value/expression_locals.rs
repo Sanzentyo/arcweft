@@ -154,7 +154,8 @@ impl RuntimeExpr {
                 super::RuntimeValueTarget::Value(value) => {
                     value.collect_evaluation_free_locals(plan, bound, locals)?
                 }
-                super::RuntimeValueTarget::Inspect { place, .. } => {
+                super::RuntimeValueTarget::Inspect { place, .. }
+                | super::RuntimeValueTarget::Take { place, .. } => {
                     push_free_local(place.local(), bound, locals)
                 }
             },

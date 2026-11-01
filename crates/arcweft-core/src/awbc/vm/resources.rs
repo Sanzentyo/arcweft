@@ -44,7 +44,8 @@ impl VmExecutionResources<'_> {
         let frame = fiber.active_frame()?;
         let value = match target {
             crate::awbc::schema::AwbcValueTarget::Value(register) => frame.register(*register)?,
-            crate::awbc::schema::AwbcValueTarget::Inspect(place) => frame
+            crate::awbc::schema::AwbcValueTarget::Inspect(place)
+            | crate::awbc::schema::AwbcValueTarget::Take(place) => frame
                 .registers
                 .get(place.base().index())
                 .and_then(|storage| storage.field(place.fields()))
@@ -63,12 +64,9 @@ impl VmExecutionResources<'_> {
         let token =
             crate::runtime_id::RuntimePresentationHandleToken::try_decode_payload(handle.payload())
                 .map_err(|cause| error(&cause))?;
-        let scope = banks
-            .handle_scope(&owner, &token, fiber.presentation_scope_bindings())
-            .map_err(|cause| error(&cause))?;
-        banks
-            .apply_handle_method(&owner, &token, scope, method)
-            .map_err(|cause| error(&cause))
+        let scope = banks.handle_scope(&owner, &token, fiber.presentation_scope_bindings())?;
+        banks.apply_handle_method(&owner, &token, scope, method)?;
+        Ok(())
     }
 
     /// Check the original execution authority before any operand is moved or

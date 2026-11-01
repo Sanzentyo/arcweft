@@ -1894,6 +1894,11 @@ impl RuntimeProgressField {
 #[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeValueTarget {
     Value(Box<RuntimeExpr>),
+    /// Move this initialized owner only after the operation's preflight.
+    Take {
+        place: RuntimeMutablePlace,
+        ty: RuntimePlanTypeId,
+    },
     Inspect {
         place: RuntimeMutablePlace,
         ty: RuntimePlanTypeId,
@@ -1910,13 +1915,13 @@ impl RuntimeValueTarget {
     pub fn value(&self) -> Option<&RuntimeExpr> {
         match self {
             Self::Value(value) => Some(value),
-            Self::Inspect { .. } => None,
+            Self::Inspect { .. } | Self::Take { .. } => None,
         }
     }
     pub fn ty(&self) -> RuntimePlanTypeId {
         match self {
             Self::Value(value) => value.ty(),
-            Self::Inspect { ty, .. } => *ty,
+            Self::Inspect { ty, .. } | Self::Take { ty, .. } => *ty,
         }
     }
 }

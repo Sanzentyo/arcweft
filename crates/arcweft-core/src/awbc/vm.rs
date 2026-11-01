@@ -336,6 +336,9 @@ pub enum VmExit {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum VmError {
+    /// Custody refusals preserve their continuation and are never executable traps.
+    #[error(transparent)]
+    Presentation(#[from] crate::presentation::RuntimePresentationError),
     #[error(transparent)]
     EffectMaterialization(#[from] crate::effect::RuntimeEffectMaterializeError),
     #[error(transparent)]
@@ -598,6 +601,7 @@ fn step_with_host_context_optional(
     let mut observations = Vec::new();
     let mut executed = 0_u64;
     while fiber.status == FiberStatus::Running && executed < options.max_instructions {
+        let budget_before = fiber.budget;
         if !fiber.consume_budget(1) {
             let safe_point = fiber.safe_point(None)?;
             fiber.suspend(FiberSuspension {
@@ -645,6 +649,10 @@ fn step_with_host_context_optional(
             ) {
                 Ok(control) => control,
                 Err(error) => {
+                    if error.is_presentation_refusal() {
+                        fiber.budget = budget_before;
+                        return Err(error);
+                    }
                     if let VmError::Evaluation(evaluation) = &error
                         && let Some(failure) = evaluation.recoverable_expression()
                         && fiber.recover_format_operand(program, failure.to_string())?
@@ -734,6 +742,10 @@ fn step_with_host_context_optional(
         ) {
             Ok(exit) => exit,
             Err(error) => {
+                if error.is_presentation_refusal() {
+                    fiber.budget = budget_before;
+                    return Err(error);
+                }
                 if let VmError::Evaluation(evaluation) = &error
                     && let Some(failure) = evaluation.recoverable_expression()
                     && fiber.recover_format_operand(program, failure.to_string())?
@@ -1379,6 +1391,11 @@ fn execute_instruction(
             if let super::schema::AwbcValueTarget::Value(value) = target {
                 fiber.active_frame_mut()?.take_register(*value)?;
             }
+            if let super::schema::AwbcValueTarget::Take(place) = target {
+                fiber.active_frame_mut()?.registers[place.base().index()]
+                    .take_field(place.fields())
+                    .expect("exclusive method preflight retains the initialized receiver");
+            }
             fiber
                 .active_frame_mut()?
                 .set_register(*dst, RuntimeValue::Unit)?;
@@ -1388,6 +1405,12 @@ fn execute_instruction(
                 super::schema::AwbcValueTarget::Value(value) => {
                     fiber.active_frame_mut()?.take_register(*value)?
                 }
+                super::schema::AwbcValueTarget::Take(place) => fiber
+                    .active_frame_mut()?
+                    .registers
+                    .get_mut(place.base().index())
+                    .and_then(|storage| storage.take_field(place.fields()))
+                    .ok_or(FiberStateError::InvalidFrame)?,
                 super::schema::AwbcValueTarget::Inspect(place) => {
                     let frame = fiber.active_frame()?;
                     let value = frame
@@ -5710,6 +5733,16 @@ fn format_primary_kind_for_type(
 }
 
 impl VmError {
+    pub(crate) fn is_presentation_refusal(&self) -> bool {
+        matches!(
+            self,
+            Self::Presentation(_)
+                | Self::Fiber(FiberStateError::Snapshot(
+                    crate::value::AwbcRuntimeValueSnapshotError::Presentation(_)
+                ))
+        )
+    }
+
     fn runtime_trap_code(&self) -> Option<AwbcTrapCode> {
         match self {
             Self::NestedCallExit(exit) => Some(match exit.as_ref() {
@@ -5745,7 +5778,8 @@ impl VmError {
             | Self::FunctionArgumentCount { .. } => Some(AwbcTrapCode::TypeMismatch),
             Self::MissingIntrinsic(_) => Some(AwbcTrapCode::HostAbiMismatch),
             Self::MissingExecutionContext | Self::Fiber(_) => Some(AwbcTrapCode::InternalInvariant),
-            Self::MissingFunction(_)
+            Self::Presentation(_)
+            | Self::MissingFunction(_)
             | Self::MissingBlock(_)
             | Self::MissingInstruction(_)
             | Self::MissingConstant(_)

@@ -1728,6 +1728,7 @@ impl AwbcMutablePlace {
 pub enum AwbcValueTarget {
     Value(AwbcRegisterId),
     Inspect(AwbcMutablePlace),
+    Take(AwbcMutablePlace),
 }
 impl From<AwbcRegisterId> for AwbcValueTarget {
     fn from(value: AwbcRegisterId) -> Self {
@@ -1738,7 +1739,7 @@ impl AwbcValueTarget {
     pub const fn base(&self) -> AwbcRegisterId {
         match self {
             Self::Value(value) => *value,
-            Self::Inspect(place) => place.base(),
+            Self::Inspect(place) | Self::Take(place) => place.base(),
         }
     }
 }
@@ -1875,7 +1876,6 @@ impl AwbcOpcode {
         Self::ProjectTuple,
         Self::ProjectRecord,
         Self::ProjectField,
-        Self::PresentationHandleMethod,
         Self::Assign,
         Self::TestPattern,
         Self::Unary,
@@ -1900,6 +1900,7 @@ impl AwbcOpcode {
         Self::FormatOperandAttempt,
         Self::CompleteFormatOperand,
         Self::AbandonFormatAttempt,
+        Self::PresentationHandleMethod,
         Self::StreamYield,
         Self::StreamClose,
         Self::ExecuteLineOperation,

@@ -1964,6 +1964,10 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
                 let (place, ty) = self.lower_mutable_place(place, "stored value inspection")?;
                 crate::value::RuntimeValueTarget::Inspect { place, ty }
             }
+            super::RuntimeValueTargetSeed::Take(place) => {
+                let (place, ty) = self.lower_mutable_place(place, "stored value transfer")?;
+                crate::value::RuntimeValueTarget::Take { place, ty }
+            }
         })
     }
 
@@ -3019,7 +3023,8 @@ impl RuntimePlanBodyConstruction<'_> {
                 crate::value::RuntimeValueTarget::Value(value) => {
                     self.validate_expression_locals(value, scope, used)
                 }
-                crate::value::RuntimeValueTarget::Inspect { place, .. } => {
+                crate::value::RuntimeValueTarget::Inspect { place, .. }
+                | crate::value::RuntimeValueTarget::Take { place, .. } => {
                     require_local_in_scope(place.local(), scope)?;
                     used.insert(place.local());
                     Ok(())

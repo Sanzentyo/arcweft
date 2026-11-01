@@ -41,6 +41,10 @@ impl Wire for crate::awbc::schema::AwbcValueTarget {
                 writer.write_u8(1);
                 place.write_wire(writer)?;
             }
+            Self::Take(place) => {
+                writer.write_u8(2);
+                place.write_wire(writer)?;
+            }
         }
         Ok(())
     }
@@ -49,6 +53,7 @@ impl Wire for crate::awbc::schema::AwbcValueTarget {
         match reader.read_u8()? {
             0 => Ok(Self::Value(AwbcRegisterId::read_wire(reader)?)),
             1 => Ok(Self::Inspect(AwbcMutablePlace::read_wire(reader)?)),
+            2 => Ok(Self::Take(AwbcMutablePlace::read_wire(reader)?)),
             tag => Err(AwbcCodecError::UnknownTag {
                 kind: "value target",
                 tag,

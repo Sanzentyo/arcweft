@@ -4526,6 +4526,7 @@ impl RuntimeResolvedCallDispatch {
                 RuntimeResolvedStaticCallTarget::Intrinsic(_)
                 | RuntimeResolvedStaticCallTarget::PresentationSlotRef(_)
                 | RuntimeResolvedStaticCallTarget::PresentationFactory { .. }
+                | RuntimeResolvedStaticCallTarget::PresentationHandleMethod { .. }
                 | RuntimeResolvedStaticCallTarget::Format(_)
                 | RuntimeResolvedStaticCallTarget::VecPopFront
                 | RuntimeResolvedStaticCallTarget::VecPop
@@ -4582,6 +4583,10 @@ pub enum RuntimeResolvedStaticCallTarget {
         call: Arc<arcweft_core::presentation::RuntimePresentationFactoryCall>,
         resource_type: RuntimeNormalizedType,
         body_type: RuntimeNormalizedType,
+    },
+    PresentationHandleMethod {
+        method: arcweft_interaction_model::presentation::PresentationHandleMethodId,
+        receiver: ExprId,
     },
     Format(RuntimeResolvedFormatCall),
     /// Checked in-place Vec operations consumed by expression lowering.
@@ -8607,6 +8612,7 @@ impl RuntimePlanSemanticFacts {
                     RuntimeResolvedStaticCallTarget::Intrinsic(_)
                     | RuntimeResolvedStaticCallTarget::PresentationSlotRef(_)
                     | RuntimeResolvedStaticCallTarget::PresentationFactory { .. }
+                    | RuntimeResolvedStaticCallTarget::PresentationHandleMethod { .. }
                     | RuntimeResolvedStaticCallTarget::Format(_)
                     | RuntimeResolvedStaticCallTarget::VecPopFront
                     | RuntimeResolvedStaticCallTarget::VecPop
@@ -12481,6 +12487,45 @@ fn validate_call(
                 return Err(RuntimeSemanticFactsError::InvalidNeedProducerFact { expression });
             }
         }
+        RuntimeResolvedCallDispatch::Static(
+            RuntimeResolvedStaticCallTarget::PresentationHandleMethod { method, receiver },
+        ) => {
+            let invalid =
+                || RuntimeSemanticFactsError::InvalidRuntimeCallDisposition { expression };
+            let [operand] = call.operands() else {
+                return Err(invalid());
+            };
+            let resource = match operand.ty().shape() {
+                RuntimeTypeShape::Opaque {
+                    producer,
+                    admission,
+                    value_class,
+                    persistence,
+                    ..
+                } => RuntimeOpaqueTypeOwner::with_admission(
+                    producer.clone(),
+                    operand.ty().identity(),
+                    *admission,
+                    *value_class,
+                    *persistence,
+                )
+                .presentation_handle_resource(),
+                _ => None,
+            };
+            if *operand.origin() != RuntimeResolvedCallOperandOrigin::Receiver
+                || operand.source() != RuntimeResolvedCallOperandSource::Expression(*receiver)
+                || operand.abi_position() != 0
+                || resource.is_none()
+                || !method.accepts_resource(resource)
+                || !matches!(
+                    expression_source_type.map(RuntimeNormalizedType::shape),
+                    Some(RuntimeTypeShape::Unit)
+                )
+                || call.attached_content().is_some()
+            {
+                return Err(invalid());
+            }
+        }
         RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Traverse) => {
             if !call.accepts_traversal_type(expression_source_type) {
                 return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition {
@@ -13571,6 +13616,7 @@ fn validate_project_function_instance(
                 RuntimeResolvedStaticCallTarget::Intrinsic(_)
                 | RuntimeResolvedStaticCallTarget::PresentationSlotRef(_)
                 | RuntimeResolvedStaticCallTarget::PresentationFactory { .. }
+                | RuntimeResolvedStaticCallTarget::PresentationHandleMethod { .. }
                 | RuntimeResolvedStaticCallTarget::Format(_)
                 | RuntimeResolvedStaticCallTarget::VecPopFront
                 | RuntimeResolvedStaticCallTarget::VecPop

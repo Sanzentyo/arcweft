@@ -763,6 +763,16 @@ impl RuntimeEnv {
             .ok_or(RuntimeEvalError::UninitializedLocal(place.local()))
     }
 
+    /// Transfers an initialized owner after its caller has admitted the effect.
+    pub(crate) fn take_place(
+        &mut self,
+        place: &RuntimeMutablePlace,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        self.slot_mut(place.local())
+            .and_then(|slot| slot.value.take_field(place.fields()))
+            .ok_or(RuntimeEvalError::UninitializedLocal(place.local()))
+    }
+
     /// Executes the already-selected local-use transfer and checks live value
     /// ownership before any copy. A moved binding is absent for later reads.
     pub(crate) fn read(

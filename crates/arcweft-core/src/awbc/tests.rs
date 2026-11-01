@@ -3178,6 +3178,7 @@ fn opcode_owner_exhaustively_seals_every_v1_byte_and_family() {
         (AwbcOpcode::FormatOperandAttempt, 0x2b, CallTask),
         (AwbcOpcode::CompleteFormatOperand, 0x2c, CallTask),
         (AwbcOpcode::AbandonFormatAttempt, 0x2d, CallTask),
+        (AwbcOpcode::PresentationHandleMethod, 0x2e, CallTask),
         (AwbcOpcode::StreamYield, 0x32, StreamLine),
         (AwbcOpcode::StreamClose, 0x34, StreamLine),
         (AwbcOpcode::ExecuteLineOperation, 0x35, StreamLine),

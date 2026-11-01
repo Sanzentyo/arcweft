@@ -1478,7 +1478,8 @@ fn apply_instruction(
                     crate::awbc::schema::AwbcValueTarget::Value(value) => {
                         read_register(verifier, function, block, *value, state)?
                     }
-                    crate::awbc::schema::AwbcValueTarget::Inspect(place) => read_place_type(
+                    crate::awbc::schema::AwbcValueTarget::Inspect(place)
+                    | crate::awbc::schema::AwbcValueTarget::Take(place) => read_place_type(
                         verifier,
                         function,
                         block,
@@ -1618,7 +1619,8 @@ fn apply_instruction(
                     crate::awbc::schema::AwbcValueTarget::Value(value) => {
                         read_register(verifier, function, block, *value, state)?
                     }
-                    crate::awbc::schema::AwbcValueTarget::Inspect(place) => read_place_type(
+                    crate::awbc::schema::AwbcValueTarget::Inspect(place)
+                    | crate::awbc::schema::AwbcValueTarget::Take(place) => read_place_type(
                         verifier,
                         function,
                         block,
@@ -1666,7 +1668,7 @@ fn apply_instruction(
                 AwbcValueTarget::Value(value) => {
                     read_register(verifier, function, block, *value, state)?
                 }
-                AwbcValueTarget::Inspect(place) => read_place_type(
+                AwbcValueTarget::Inspect(place) | AwbcValueTarget::Take(place) => read_place_type(
                     verifier,
                     function,
                     block,
@@ -2490,6 +2492,28 @@ fn apply_instruction(
     Ok(())
 }
 
+fn consume_value_target(
+    target: &crate::awbc::schema::AwbcValueTarget,
+    state: &mut FlowState,
+    consumed: &mut Vec<crate::awbc::schema::AwbcRegisterId>,
+) {
+    use crate::awbc::schema::AwbcValueTarget;
+    match target {
+        AwbcValueTarget::Value(value) => consumed.push(*value),
+        AwbcValueTarget::Take(place) if place.fields().is_empty() => consumed.push(place.base()),
+        AwbcValueTarget::Take(place) => {
+            state.moved_fields.retain(|(register, fields), _| {
+                *register != place.base() || !fields.starts_with(place.fields())
+            });
+            state.moved_fields.insert(
+                (place.base(), place.fields().to_vec()),
+                RuntimePlaceInitialization::Uninitialized,
+            );
+        }
+        AwbcValueTarget::Inspect(_) => {}
+    }
+}
+
 fn apply_instruction_copy_and_move_effects(
     verifier: &Verifier<'_, '_>,
     function: usize,
@@ -2766,10 +2790,17 @@ fn apply_instruction_copy_and_move_effects(
             output_proof = Some(proof);
         }
         AwbcInstruction::ProjectField { dst, target, field } => {
-            if let crate::awbc::schema::AwbcValueTarget::Value(value) = target {
-                consumed.push(*value);
-            }
             let target_register = target.base();
+            let mut target_ty = register_type(verifier, function, block, target_register)?;
+            let mut target_proof = state.copy_proofs[target_register.index()].clone();
+            if let crate::awbc::schema::AwbcValueTarget::Take(place) = target {
+                for field in place.fields() {
+                    target_ty = record_child_type(program, target_ty, *field, at)?;
+                    target_proof = target_proof
+                        .element(field.zero_based() as usize)
+                        .unwrap_or_else(|| base_copy_proof(program, target_ty));
+                }
+            }
             outputs.push(*dst);
             let dst_ty = register_type(verifier, function, block, *dst)?;
             output_proof = Some(
@@ -2778,8 +2809,6 @@ fn apply_instruction_copy_and_move_effects(
                 } else {
                     match field {
                         crate::awbc::schema::AwbcFieldProjection::Named(field) => {
-                            let target_ty =
-                                register_type(verifier, function, block, target_register)?;
                             let named_index = match runtime_shape(program, target_ty) {
                                 Some(AwbcRuntimeTypeShape::Record { fields, .. }) => fields
                                     .iter()
@@ -2787,9 +2816,7 @@ fn apply_instruction_copy_and_move_effects(
                                 _ => None,
                             };
                             named_index
-                                .and_then(|ordinal| {
-                                    state.copy_proofs[target_register.index()].element(ordinal)
-                                })
+                                .and_then(|ordinal| target_proof.element(ordinal))
                                 .unwrap_or_else(|| base_copy_proof(program, dst_ty))
                         }
                         crate::awbc::schema::AwbcFieldProjection::OpaqueRecord {
@@ -2799,11 +2826,10 @@ fn apply_instruction_copy_and_move_effects(
                     }
                 },
             );
+            consume_value_target(target, state, &mut consumed);
         }
         AwbcInstruction::PresentationHandleMethod { dst, target, .. } => {
-            if let crate::awbc::schema::AwbcValueTarget::Value(value) = target {
-                consumed.push(*value);
-            }
+            consume_value_target(target, state, &mut consumed);
             outputs.push(*dst);
         }
         AwbcInstruction::Unary { dst, src, .. } => {

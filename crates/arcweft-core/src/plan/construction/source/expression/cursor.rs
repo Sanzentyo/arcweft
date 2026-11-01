@@ -152,6 +152,17 @@ impl<'a> Cursor<'a> {
         let fields = self.fields()?;
         counts.array(fields.len() / 4, Array::Fields.width())
     }
+    fn value_target(&mut self, counts: &mut Counts) -> Result<usize, Error> {
+        match self.byte()? {
+            0 => Ok(1),
+            1 | 2 => {
+                self.place(counts)?;
+                Ok(0)
+            }
+            _ => Err(self.invalid("value target")),
+        }
+    }
+
     fn place(&mut self, counts: &mut Counts) -> Result<(), Error> {
         self.id("local", self.limits.local_count)?;
         self.field_array(counts)
@@ -358,17 +369,10 @@ impl<'a> Cursor<'a> {
                 if arcweft_interaction_model::presentation::PresentationHandleMethodId::from_semantic_tag(self.byte()?).is_none() {
                     return Err(self.invalid("presentation handle method"));
                 }
-                let inspect = self.boolean()?;
-                if inspect {
-                    self.place(counts)?;
-                }
-                usize::from(!inspect)
+                self.value_target(counts)?
             }
             18 => {
-                let inspect = self.boolean()?;
-                if inspect {
-                    self.place(counts)?;
-                }
+                let children = self.value_target(counts)?;
                 match self.byte()? {
                     0 => {
                         self.ty()?;
@@ -400,7 +404,7 @@ impl<'a> Cursor<'a> {
                     }
                     _ => return Err(self.invalid("field projection")),
                 }
-                usize::from(!inspect)
+                children
             }
             19 | 20 => {
                 self.u32()?;

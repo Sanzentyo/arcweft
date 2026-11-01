@@ -138,6 +138,7 @@ impl RuntimeResolvedStaticCallTarget {
             },
             Self::Intrinsic(_)
             | Self::PresentationSlotRef(_)
+            | Self::PresentationHandleMethod { .. }
             | Self::Format(_)
             | Self::VecPopFront
             | Self::VecPop

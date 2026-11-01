@@ -2090,6 +2090,7 @@ impl RuntimeMutablePlaceSeed {
 #[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeValueTargetSeed {
     Value(Box<RuntimeExprSeed>),
+    Take(RuntimeMutablePlaceSeed),
     Inspect(RuntimeMutablePlaceSeed),
 }
 
@@ -2812,7 +2813,7 @@ impl RuntimeExprSeed {
             RuntimeExprSeedKind::Field { target, .. }
             | RuntimeExprSeedKind::PresentationHandleMethod { target, .. } => match target {
                 RuntimeValueTargetSeed::Value(value) => value.collect_free_locals(bound, locals),
-                RuntimeValueTargetSeed::Inspect(place) => {
+                RuntimeValueTargetSeed::Inspect(place) | RuntimeValueTargetSeed::Take(place) => {
                     push_free_local(place.local(), bound, locals)
                 }
             },

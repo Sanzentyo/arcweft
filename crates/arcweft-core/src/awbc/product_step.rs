@@ -316,13 +316,12 @@ impl From<crate::presentation::RuntimeCommandQueueError> for ProductStepError {
 impl ProductStepError {
     /// A refused custody transition must retain its continuation for retry.
     fn is_presentation_refusal(&self) -> bool {
+        if let Self::Vm(error) = self {
+            return error.is_presentation_refusal();
+        }
         matches!(
             self,
-            Self::Vm(crate::awbc::vm::VmError::Fiber(
-                crate::awbc::fiber::FiberStateError::Snapshot(
-                    crate::value::AwbcRuntimeValueSnapshotError::Presentation(_)
-                )
-            )) | Self::Fiber(crate::awbc::fiber::FiberStateError::Snapshot(
+            Self::Fiber(crate::awbc::fiber::FiberStateError::Snapshot(
                 crate::value::AwbcRuntimeValueSnapshotError::Presentation(_)
             )) | Self::CheckpointValue(crate::value::AwbcRuntimeValueSnapshotError::Presentation(
                 _

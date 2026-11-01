@@ -534,6 +534,11 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                             self.lower_mutable_place(place, "presentation handle receiver"),
                         )
                     }
+                    arcweft_core::value::RuntimeValueTarget::Take { place, .. } => {
+                        arcweft_core::awbc::schema::AwbcValueTarget::Take(
+                            self.lower_mutable_place(place, "presentation handle transfer"),
+                        )
+                    }
                 };
                 let dst = self
                     .frame
@@ -557,6 +562,11 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                             self.lower_mutable_place(place, "field inspection"),
                         )
                     }
+                    arcweft_core::value::RuntimeValueTarget::Take { place, .. } => {
+                        arcweft_core::awbc::schema::AwbcValueTarget::Take(
+                            self.lower_mutable_place(place, "field receiver transfer"),
+                        )
+                    }
                 };
                 let field_type = admitted_plan_type(self.inventory, self.plan, expr.ty());
                 let dst = self.frame.temp(field_type);
@@ -578,6 +588,28 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                                     root: place.base(),
                                     fields,
                                     mode: arcweft_core::awbc::schema::AwbcPlaceReadMode::Copy,
+                                }
+                            }
+                            arcweft_core::awbc::schema::AwbcValueTarget::Take(place) => {
+                                let target = self.frame.temp(target_ty);
+                                let transfer = if place.fields().is_empty() {
+                                    AwbcInstruction::Move {
+                                        dst: target,
+                                        src: place.base(),
+                                    }
+                                } else {
+                                    AwbcInstruction::ReadPlace {
+                                        dst: target,
+                                        root: place.base(),
+                                        fields: place.fields().to_vec(),
+                                        mode: arcweft_core::awbc::schema::AwbcPlaceReadMode::Move,
+                                    }
+                                };
+                                self.inventory.push_instruction(transfer);
+                                AwbcInstruction::ProjectRecord {
+                                    dst,
+                                    target,
+                                    ordinal: field.zero_based(),
                                 }
                             }
                         };

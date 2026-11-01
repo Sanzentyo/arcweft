@@ -248,6 +248,147 @@ fn one_op() -> RuntimeStepOptions {
     }
 }
 
+fn handle_method_program(
+    method: arcweft_interaction_model::presentation::PresentationHandleMethodId,
+    inspect: bool,
+) -> (AwbcProgram, AwbcTypeId) {
+    let (mut program, handle) = handle_program(false);
+    let unit = AwbcTypeId(
+        program
+            .runtime_types
+            .iter()
+            .position(|ty| matches!(ty.shape(), AwbcRuntimeTypeShape::Unit))
+            .unwrap()
+            .try_into()
+            .unwrap(),
+    );
+    program.frame_layouts[0].slots.push(AwbcFrameSlot {
+        name: None,
+        ty: unit,
+        role: AwbcFrameSlotRole::Temporary,
+        scope_depth: 0,
+    });
+    let place = AwbcMutablePlace::Local(AwbcRegisterId(0));
+    let target = if inspect {
+        AwbcValueTarget::Inspect(place)
+    } else {
+        AwbcValueTarget::Take(place)
+    };
+    program.instructions = vec![AwbcInstruction::PresentationHandleMethod {
+        dst: AwbcRegisterId(2),
+        target,
+        method,
+    }];
+    program.blocks[0].instructions = AwbcTableRange::new(0, 1);
+    program.blocks[0].terminator = AwbcTerminator::Return {
+        value: Some(AwbcRegisterId(1)),
+    };
+    (program, handle)
+}
+
+#[test]
+fn awbc_handle_retirement_capacity_rejects_before_moving_its_register_or_bank() {
+    use arcweft_interaction_model::presentation::PresentationHandleMethodId;
+    for method in [
+        PresentationHandleMethodId::Unmount,
+        PresentationHandleMethodId::Release,
+        PresentationHandleMethodId::Destroy,
+    ] {
+        let (program, handle) = handle_method_program(method, false);
+        let (mut executor, tokens) = fixture_with_program(program, handle, true);
+        let before = executor.snapshot().unwrap();
+        let context = crate::awbc::vm::VmExecutionContext::for_program(
+            executor.artifact_fingerprint,
+            executor.program.clone(),
+        );
+        let error = crate::awbc::vm::step_with_presentation(
+            &executor.program,
+            &mut executor.fiber,
+            crate::awbc::vm::VmStepOptions {
+                max_instructions: 1,
+            },
+            &context,
+            &mut executor.presentation,
+            &mut crate::awbc::vm::RejectingVmHost,
+        )
+        .unwrap_err();
+        assert_eq!(
+            error,
+            crate::awbc::vm::VmError::Presentation(
+                crate::presentation::RuntimePresentationError::RetirementCapacity
+            )
+        );
+        assert_eq!(executor.snapshot().unwrap(), before);
+        executor
+            .presentation
+            .as_mut()
+            .unwrap()
+            .retirements_mut()
+            .clear();
+        step(&mut executor);
+        assert!(
+            executor
+                .fiber
+                .active_frame()
+                .unwrap()
+                .register(AwbcRegisterId(0))
+                .is_err()
+        );
+        assert!(
+            executor
+                .fiber
+                .active_frame()
+                .unwrap()
+                .register(AwbcRegisterId(1))
+                .is_ok()
+        );
+        assert_eq!(
+            executor.presentation.as_ref().unwrap().retirements()[0].token,
+            tokens[0]
+        );
+    }
+}
+
+#[test]
+fn awbc_handle_visibility_changes_its_original_lease_without_consuming_the_register() {
+    let (program, handle) = handle_method_program(
+        arcweft_interaction_model::presentation::PresentationHandleMethodId::Hide,
+        true,
+    );
+    let (mut executor, tokens) = fixture_with_program(program, handle, false);
+    let before = executor
+        .presentation
+        .as_ref()
+        .unwrap()
+        .snapshot_admitted()
+        .unwrap();
+    step(&mut executor);
+    assert_ne!(
+        executor
+            .presentation
+            .as_ref()
+            .unwrap()
+            .snapshot_admitted()
+            .unwrap(),
+        before
+    );
+    let value = executor
+        .fiber
+        .active_frame()
+        .unwrap()
+        .register(AwbcRegisterId(0))
+        .unwrap();
+    let handles = value.view().affine_handles().unwrap();
+    assert!(
+        matches!(&handles[..], [crate::value::ownership::RuntimeAffineHandle::Presentation { token, .. }] if token == &tokens[0])
+    );
+    let image = executor.snapshot().unwrap();
+    executor = executor
+        .restore_snapshot_owned(image.clone())
+        .unwrap_or_else(|(_, error)| panic!("{error}"));
+    assert_eq!(executor.snapshot().unwrap(), image);
+}
+
 #[test]
 fn root_return_retains_the_original_handle_and_drops_exited_storage_before_snapshot() {
     let (mut executor, tokens) = fixture(false, false);
