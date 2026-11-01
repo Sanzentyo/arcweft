@@ -13839,3 +13839,13 @@ Supersedes: current-status.mdの最新Source見出しだけを今回のprivate o
 - 現状一覧の更新理由は新しい実装・検証入力への集約。前回の共有matrix 3b1bd1a110c34a04f70ca38a680b000147e9b751・4,045入力の9019 PASS／0 FAIL／24 ignored、CLI 43 FAIL、Core default／Wasm成功、およびprivate Native body返却df73dc174657216a20c5c42317ad1205758b5316・Core 2,181 PASSは元の入力の履歴・原本として保持する。完了済み機能を全体goalの未完了だけで戻さない。
 - Source staging factory・ViewValue/Handle/Removed生成・command/method・driverの接続を今回の引数投影から受入へ広げない。現状はcurrent-status.md一か所で判定する。
 - 原本: [checked引数keyの検証](acceptance-evidence/task-presentation-argument-key-validation.json)、raw archiveは118 entries／4591361 bytes、SHA-256 3dbfd858dc175eee1ff18aea8d82737ed8f748662cff4e397a90da8a73188858。全entryをTemp原本と照合し差分0。
+
+## 2026-11-01 — Presentation resource本体の実装checkpoint
+
+Source 0c65eb15235f16ff96232e4926e5bbd563e5a90c（親534742896a9450e8bff54ce4376730e27f086a00、54 path）、consumer修正 75a392071c72df1b96b2c675d641c2e7cf456171 を通常commit／non-forced pushし、全blob・patch・remoteを照合した。元14 tracked／6 actual untracked WIPの20 hashを保持した。新しいaffine resource値は、元のcomplete Source・実executable lease・引数key・retained tuple型・元invocationを保持する。共通型・保存・Copy／資源走査へ接続し、static literal／data／Agent JSON／scalarからの誤用を拒否する。
+
+初回catalogはテストのprivate importとCopy view APIの誤り2件でcompile失敗。修復後は4 PASS／1 FAILで、正のsnapshotテストがCopy用の受入APIを使ってAffineValueになった。Owned受入へ直し、偽造拒否も具体的なSource／型エラーへ強めた。同じ5 IDの最終focus3は5／5 PASS、4,050入力・catalog／case／EXE／入力差分0。これをSource factory実行・公開Native saveの受入へ広げない。
+
+段階的workspace checkで判明した共有enumの利用側を移行した。最終check11はworkspace全target／全feature／lockedで終了0。Clippy／構造gate／変更59 Rust path fmtも終了0。初回失敗・全診断・元入力はrawへ保持し、警告なしとはしない。新入力の全逆依存／全CLI・default／Wasm・doctest・Tier 2・画像parityは未再実行。完了したGeneric Matchや個別ownerの受入は維持し、以前の9024 PASS・CLI 43 FAIL・151／151 PASSを新入力の再実行へ読み替えない。Source factory ABIのlayout結合、生成・明示scope・command／method・driver・全live contour admissionは残る。
+
+現状の唯一の一覧はcurrent-status.mdに集約し、旧現在形から未達を重複転記しない。詳細とraw hashは[checkpoint原本](acceptance-evidence/task-presentation-resource-progress.json)。全体cargo cleanは既に実行済み（198,113 files／244.6 GiB・終了0）で、この実装中には繰り返していない。生成物の移動・コピー・退避も行っていない。

@@ -1,0 +1,250 @@
+{
+  "version": 1,
+  "date": "2026-11-01",
+  "status": "implementation checkpoint; Source staging is not accepted",
+  "source": "0c65eb15235f16ff96232e4926e5bbd563e5a90c",
+  "consumerPublication": {
+    "version": 1,
+    "commit": "75a392071c72df1b96b2c675d641c2e7cf456171",
+    "parent": "0c65eb15235f16ff96232e4926e5bbd563e5a90c",
+    "tree": "dc9c3319b7c7b04fe69eaf430cff8881e21d8132",
+    "remote": "75a392071c72df1b96b2c675d641c2e7cf456171",
+    "paths": [
+      {
+        "path": "crates/arcweft-agent-runner/src/runtime_value.rs",
+        "blob": "98db199a59dd930666c3ab9ab27cc223f8ebfab4"
+      },
+      {
+        "path": "crates/arcweft-cli/src/app/jit.rs",
+        "blob": "9b862d7b4b88972a61f586e01358ebcc0248bf49"
+      },
+      {
+        "path": "crates/arcweft-runtime-accelerator/src/compile.rs",
+        "blob": "5c245180d69a96d3c1147bd80c169c7bcfc58a5c"
+      },
+      {
+        "path": "crates/arcweft-runtime-accelerator/src/external.rs",
+        "blob": "15fa4a6bd44269c44af9b0b69269e793f2902a98"
+      },
+      {
+        "path": "crates/arcweft-runtime-driver/src/view_runtime/value.rs",
+        "blob": "0181f40eb6668ae62661a2404d569681fd2a45e1"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/awbc_lower/inventory.rs",
+        "blob": "9d4be93b1dd89f05de80ddd724fceed17411f8ae"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/awbc_lower/pattern.rs",
+        "blob": "5edd4d89cdcf8772d8f48ffc936ba38658720353"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "4d6b412281db43471eae5dca403f96105be38e0864d058433cf66802698ddac8",
+    "heldPatchSha256": "53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-01T07:33:53.2911522Z"
+  },
+  "workingTree": "main; original 14 tracked and 6 actual untracked WIP retained; checkpoint paths published separately",
+  "change": "First-class affine presentation resource values retain complete original Source, the actual executable lease, exact argument keys, resource/tuple semantic types and the original invocation binding. Native/AWBC type, save and ownership grammars share their existing typed authorities. Metadata keys serialize by borrow. Static literal/data/Agent/scalar consumers refuse the owning resource carrier.",
+  "focused": {
+    "initial": "focus1 catalogue failed to compile: private module import and use of the raw view rather than its live Copy capability",
+    "firstRuntime": "focus2: 4 PASS / 1 FAIL; the positive snapshot case incorrectly requested unrestricted rather than owned admission",
+    "correction": "Use owned admission and assert the concrete Source/type failure in each forged snapshot case; no production ownership guard weakened",
+    "final": "focus3: 5 PASS / 0 FAIL / 2181 filtered; 4050 inputs, case/source/executable drift 0",
+    "scope": "Core value construction and typed private snapshots under Native and canonical-decoded AWBC; not factory execution or public Native save"
+  },
+  "workspaceCheck": {
+    "sourceInputs": 4050,
+    "sourceDrift": 0,
+    "command": "cargo check --workspace --all-targets --all-features --locked --message-format=json",
+    "version": 1,
+    "base": "0c65eb15235f16ff96232e4926e5bbd563e5a90c",
+    "exitCode": 0
+  },
+  "quality": [
+    {
+      "version": 1,
+      "startedAt": "2026-11-01T07:30:46.8795485Z",
+      "sourceInputs": 4050,
+      "command": [
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "base": "0c65eb15235f16ff96232e4926e5bbd563e5a90c",
+      "finishedAt": "2026-11-01T07:33:03.3323313Z",
+      "exitCode": 0,
+      "sourceDrift": 0
+    },
+    {
+      "version": 1,
+      "startedAt": "2026-11-01T07:33:03.858016Z",
+      "sourceInputs": 4050,
+      "command": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking",
+        "--write",
+        "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-resource-value-quality-20261101.structure-report"
+      ],
+      "base": "0c65eb15235f16ff96232e4926e5bbd563e5a90c",
+      "finishedAt": "2026-11-01T07:33:08.4354679Z",
+      "exitCode": 0,
+      "sourceDrift": 0
+    },
+    {
+      "sourceDrift": 0,
+      "paths": [
+        "crates/arcweft-agent-runner/src/runtime_value.rs",
+        "crates/arcweft-bundle/src/resource_codec/runtime.rs",
+        "crates/arcweft-cli/src/app/jit.rs",
+        "crates/arcweft-compiler/src/lower.rs",
+        "crates/arcweft-core/src/awbc/codec/types.rs",
+        "crates/arcweft-core/src/awbc/fiber.rs",
+        "crates/arcweft-core/src/awbc/schema.rs",
+        "crates/arcweft-core/src/awbc/type_projection.rs",
+        "crates/arcweft-core/src/awbc/value_admission.rs",
+        "crates/arcweft-core/src/awbc/verify/callable_specialization.rs",
+        "crates/arcweft-core/src/awbc/verify/code.rs",
+        "crates/arcweft-core/src/awbc/verify/structure.rs",
+        "crates/arcweft-core/src/engine/suspend.rs",
+        "crates/arcweft-core/src/entry/schema/value_budget.rs",
+        "crates/arcweft-core/src/entry/schema/value_encoding.rs",
+        "crates/arcweft-core/src/pattern.rs",
+        "crates/arcweft-core/src/pattern/descriptor.rs",
+        "crates/arcweft-core/src/plan/construction/lower.rs",
+        "crates/arcweft-core/src/plan/inventory.rs",
+        "crates/arcweft-core/src/plan/task_source/program.rs",
+        "crates/arcweft-core/src/plan/task_source/program/types.rs",
+        "crates/arcweft-core/src/plan/task_source/program/types/tests.rs",
+        "crates/arcweft-core/src/plan/type_kind.rs",
+        "crates/arcweft-core/src/plan/type_kind/semantic.rs",
+        "crates/arcweft-core/src/plan/type_table.rs",
+        "crates/arcweft-core/src/plan/type_table/source_codec/projection.rs",
+        "crates/arcweft-core/src/plan/value_admission.rs",
+        "crates/arcweft-core/src/presentation.rs",
+        "crates/arcweft-core/src/presentation/factory.rs",
+        "crates/arcweft-core/src/presentation/resource_value.rs",
+        "crates/arcweft-core/src/presentation/resource_value/tests.rs",
+        "crates/arcweft-core/src/value.rs",
+        "crates/arcweft-core/src/value/agent.rs",
+        "crates/arcweft-core/src/value/awbc_save.rs",
+        "crates/arcweft-core/src/value/awbc_save/admission.rs",
+        "crates/arcweft-core/src/value/awbc_save/projection.rs",
+        "crates/arcweft-core/src/value/awbc_save/retained_admission/presentation.rs",
+        "crates/arcweft-core/src/value/awbc_save/source_codec/value.rs",
+        "crates/arcweft-core/src/value/literal_semantic.rs",
+        "crates/arcweft-core/src/value/literal_semantic/traversal.rs",
+        "crates/arcweft-core/src/value/nesting.rs",
+        "crates/arcweft-core/src/value/ownership.rs",
+        "crates/arcweft-core/src/value/ownership/binary.rs",
+        "crates/arcweft-core/src/value/ownership/path.rs",
+        "crates/arcweft-core/src/value/ownership/resources.rs",
+        "crates/arcweft-core/src/value/runtime_value_visit.rs",
+        "crates/arcweft-core/src/value/shape.rs",
+        "crates/arcweft-core/src/value/view.rs",
+        "crates/arcweft-core/src/value/view/label.rs",
+        "crates/arcweft-dialogue/src/character_dialogue/typed_value.rs",
+        "crates/arcweft-host-adapter/src/lib.rs",
+        "crates/arcweft-interaction-model/src/presentation/arguments.rs",
+        "crates/arcweft-lang-sema/src/ownership.rs",
+        "crates/arcweft-runtime-accelerator/src/compile.rs",
+        "crates/arcweft-runtime-accelerator/src/external.rs",
+        "crates/arcweft-runtime-driver/src/view_runtime/value.rs",
+        "crates/arcweft-runtime-plan/src/awbc_lower/inventory.rs",
+        "crates/arcweft-runtime-plan/src/awbc_lower/pattern.rs",
+        "crates/arcweft-runtime-plan/src/semantic_facts.rs"
+      ],
+      "sourceInputs": 4050,
+      "version": 1,
+      "exitCode": 0
+    }
+  ],
+  "sourceInputs": 4050,
+  "sourceDrift": 0,
+  "heldFiles": 20,
+  "heldDrift": 0,
+  "heldBaseline": {
+    "ordinaryHashes": 19,
+    "originalBaseline": "arcweft-docs-reconcile-20261027/before.json",
+    "reconciledCliProof": {
+      "version": 1,
+      "base": "a08206261463c06c905ebdfa1c551da8d89d7f2f",
+      "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+      "priorProof": "task-dialogue-prefix.cli-preservation-proof.json",
+      "priorProofSha256": "82c11f1676f1d8a1c6f80cdbcaecc9e9f86f6ecfe430be25b27b534da36472cb",
+      "originalWipPatchSha256": "5a4f4c1d643645333b459e6b4be6f05b9e2c6d8f4a5f8ad3272ce7660860920a",
+      "expectedResidualWipPatchSha256": "53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6",
+      "originalUserPatchPreserved": true,
+      "heldCanonicalBlobDrift": 0,
+      "stagedCodeBlob": "33a533b7d160c079baf4370daff0a8807e8b5cd5",
+      "workingBlob": "4df23c4afc860ca51ff3255befe87b69a16de39b",
+      "expectedHeldBlobs": {
+        "crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs": "54a77e26e4e7b66941f5c575c24647d53bf3e688",
+        "crates/arcweft-cli/tests/check/agent_script_debug.rs": "39e4c8cc33b1cfcfa5c7869b36501fea4518def7",
+        "crates/arcweft-cli/tests/check/cli_runtime_bench.rs": "4df23c4afc860ca51ff3255befe87b69a16de39b",
+        "crates/arcweft-cli/tests/check/profile_entry_selection.rs": "d7109fcbd25177b244ff2e626536a2247a6ef158",
+        "crates/arcweft-runtime-host/src/native_task.rs": "b06ac4c9450d7a97aeecce989435b2957ff9dbd1",
+        "samples/agent-script/cli-read-resource-metadata-smoke.awfagent": "b64dfa16bbc56601d4c70397a29b9a0832d8aaa0",
+        "samples/agent-script/cli-read-resource-smoke.awfagent": "b151b67feedfe4f42c63949cc334bd62b96693e3",
+        "samples/agent-script/cli-read-resource-value-smoke.awfagent": "313aa453b9abd75d6085296bba07ba86ed718b0d",
+        "samples/agent-script/native-choice-dispatch.arcw": "ab0d14a956551c627ee0e585f3ffa5b9965b3c0d",
+        "samples/agent-script/native-project-graph-relations.arcw": "c9b7335f70859a44a82c42b2fc347ab0443be8ec",
+        "samples/agent-script/native-visual-regression.arcw": "68e938de7dad9e13f1ece2316bce9bc4bd1426cb",
+        "samples/image-animation.arcw": "c7f8b6fcf8c4d23b1fc70412dbab1b488a6bd20e",
+        "samples/rich-text-full-grammar.arcw": "63e369ec7b2e2767f1b1eb2553e0a71f0ebcdd89",
+        "samples/rich-text-windows-fonts.arcw": "469421620e54d3e0dec5a6b408523b1f4762aa3e"
+      },
+      "codeFile": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-handle-contract.cli-head-after.rs",
+      "oracleIndex": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-handle-contract.oracle-c3d16a1494314b8da7a7785d9d35547a.index",
+      "originalUserPatch": "The immutable original system-info 8-to-32 user patch applied to the new canonical test source in an alternate Git index reconstructs the actual working blob. All other 13 held blobs are unchanged.",
+      "at": "2026-10-31T23:33:21.3774837Z"
+    },
+    "proofSha256": "5ee0e350de6e7f461f7eef7377e5c2826c42810eaa8b8b152209de850b13fb3b",
+    "reason": "The previously published canonical CLI change was already reconciled with the original user 8-to-32 patch; compare its retained working blob rather than the obsolete pre-migration whole-file hash."
+  },
+  "ownerReview": [
+    {
+      "path": "crates/arcweft-core/src/presentation/factory.rs",
+      "bytes": 9166,
+      "physicalLOC": 248,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resource_value.rs",
+      "bytes": 5290,
+      "physicalLOC": 154,
+      "classification": "production"
+    },
+    {
+      "path": "crates/arcweft-core/src/presentation/resource_value/tests.rs",
+      "bytes": 12735,
+      "physicalLOC": 332,
+      "classification": "test"
+    }
+  ],
+  "ownership": "The factory layout owns exact destinations and derived scope/body positions. The resource owns original Source and captures; the existing ledger owns custody. Original/AWBC type comparison reuses one metered relation. Value traversal, Copy rejection and inert projection remain in Core; no I/O, unsafe, Cargo edge, fake Task family or ordinary-function View execution introduced.",
+  "pending": [
+    "Source factory/removal/method execution and layout sealing against the executable call ABI",
+    "execution-owned explicit staging scope producer",
+    "typed command and actual Native/Web driver integration",
+    "whole-live-contour construction admission",
+    "full reverse-dependency/CLI acceptance for these new inputs; current 43 CLI failures remain from prior inputs",
+    "public Native save, final default/Wasm/doctest/Tier 2/capture parity as required by the complete milestone"
+  ],
+  "acceptedFeatures": "Generic Match acceptance 850534b9e9bc8c8872f6528dd00050a5e6e7699e / publication f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2 and all independently accepted boundaries remain accepted. No fresh 151-case run is claimed for this checkpoint.",
+  "raw": {
+    "path": "docs/implementation/acceptance-evidence/task-presentation-resource-progress-raw.zip",
+    "entries": 81,
+    "bytes": 3177599,
+    "sha256": "3f5a91c8783d6f6a49abb8fdf0f3bb0eb025cdd1c1feaf6e3560adf9d6452e21",
+    "entryDrift": 0
+  }
+}
