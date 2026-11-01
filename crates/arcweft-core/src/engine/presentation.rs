@@ -79,6 +79,40 @@ impl Engine {
         Ok((token, previous))
     }
 
+    /// The actual frame owns the execution origin. Check it before capture
+    /// evaluation and again before registration; this issues no grant or bank.
+    pub(super) fn presentation_context_artifact(
+        &self,
+    ) -> Result<crate::effect::RuntimeArtifactFingerprint, RuntimePresentationError> {
+        if !matches!(&self.fiber.frame.program, crate::task::RuntimeProgramOwner::Plan(program)
+            if Arc::ptr_eq(program, &self.plan))
+        {
+            return Err(RuntimePresentationError::Program);
+        }
+        if self.fiber.execution.get().get() != self.fiber.persistent_id.get() {
+            return Err(RuntimePresentationError::Execution);
+        }
+        self.fiber.frame.env.validate_presentation_context(
+            &self.fiber.frame.program,
+            self.fiber.execution,
+            self.fiber.persistent_id,
+        )?;
+        if self.presentation.is_none()
+            && self
+                .fiber
+                .frame
+                .env
+                .presentation_scope_bindings()
+                .next()
+                .is_some()
+        {
+            return Err(RuntimePresentationError::Owner);
+        }
+        self.plan
+            .artifact()
+            .ok_or(RuntimePresentationError::MissingArtifact)
+    }
+
     fn prepare_presentation_registration(
         &mut self,
         expected: crate::pattern::RuntimeSemanticTypeId,
@@ -90,25 +124,9 @@ impl Engine {
         ),
         crate::value::AwbcRuntimeValueSnapshotError,
     > {
+        let artifact = self.presentation_context_artifact()?;
         let owner = self.fiber.frame.program.clone();
         let limits = crate::entry::RuntimeSchemaLimits::engine_default();
-        if !owner.same_program(&crate::task::RuntimeProgramOwner::Plan(Arc::clone(
-            &self.plan,
-        ))) {
-            return Err(RuntimePresentationError::Program.into());
-        }
-        if self.fiber.execution.get().get() != self.fiber.persistent_id.get() {
-            return Err(RuntimePresentationError::Execution.into());
-        }
-        if self.presentation.is_none()
-            && self.fiber.frame.env.presentation_scope_binding().is_some()
-        {
-            return Err(RuntimePresentationError::Owner.into());
-        }
-        let artifact = self
-            .plan
-            .artifact()
-            .ok_or(RuntimePresentationError::MissingArtifact)?;
         let mut admission =
             crate::value::RuntimeRetainedValueAdmission::for_program(owner.clone(), limits);
         self.admit_live_retained_values(&mut admission)?;

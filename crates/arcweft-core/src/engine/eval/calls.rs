@@ -62,6 +62,12 @@ impl Engine {
                 name: callee.as_label().into(),
                 reason: cause.to_string(),
             })?;
+            self.presentation_context_artifact().map_err(|cause| {
+                RuntimeEvalError::UnsupportedPure {
+                    name: callee.as_label().into(),
+                    reason: cause.to_string(),
+                }
+            })?;
             let (values, types) = self.evaluate_external_call_args(callee, args, pure_backend)?;
             call.validate_input_types(
                 crate::program_types::RuntimeProgramTypes::Plan(&self.plan),
