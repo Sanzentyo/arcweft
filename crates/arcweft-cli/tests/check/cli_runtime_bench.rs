@@ -1382,6 +1382,44 @@ flow profile_io() -> String effects { fs.read(save), fs.write(save) } {
     )
     .expect("write native profile fixture");
 
+    let prefix = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("profile")
+        .arg(&source_path)
+        .args([
+            "--entry",
+            "entry.profile_io",
+            "--mode",
+            "drain",
+            "--steps",
+            "5",
+            "--max-ops",
+            "1",
+            "--json",
+        ])
+        .output()
+        .expect("arcw profile observes its original five-operation prefix");
+    assert!(
+        prefix.status.success(),
+        "{}",
+        String::from_utf8_lossy(&prefix.stderr)
+    );
+    let prefix: serde_json::Value = serde_json::from_slice(&prefix.stdout).unwrap();
+    let prefix_steps = prefix["runtime"]["steps"].as_array().unwrap();
+    assert_eq!(prefix_steps.len(), 5);
+    assert!(
+        prefix_steps
+            .iter()
+            .all(|step| step["stats"]["executed_ops"] == 1)
+    );
+    assert_eq!(prefix["runtime"]["final_status"], "running");
+    assert_eq!(prefix["runtime"]["native_io"]["completed_tasks"], 2);
+    assert_eq!(prefix["runtime"]["native_io"]["completed_host_calls"], 1);
+    assert_eq!(prefix["runtime"]["native_io"]["read_ops"], 1);
+    assert_eq!(prefix["runtime"]["native_io"]["write_ops"], 0);
+    assert_eq!(prefix["runtime"]["native_io"]["bytes_read"], 17);
+    assert_eq!(prefix["runtime"]["native_io"]["bytes_written"], 0);
+    assert!(!save_dir.join("output.txt").exists());
+
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("profile")
         .arg(&source_path)
@@ -1390,7 +1428,8 @@ flow profile_io() -> String effects { fs.read(save), fs.write(save) } {
         .arg("--mode")
         .arg("drain")
         .arg("--steps")
-        .arg("5")
+        .arg("32")
+        .args(["--max-ops", "1"])
         .arg("--json")
         .output()
         .expect("arcw profile runs native file task");
@@ -1401,22 +1440,39 @@ flow profile_io() -> String effects { fs.read(save), fs.write(save) } {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("\"task_events_in\": 1")
-            && stdout.contains("\"source\": \"profile.arcw\"")
-            && stdout.contains("\"native_io\"")
-            && stdout.contains("\"completed_tasks\": 2")
-            && stdout.contains("\"failed_tasks\": 0")
-            && stdout.contains("\"scheduler\"")
-            && stdout.contains("\"submitted\": 2")
-            && stdout.contains("\"dispatched\": 2")
-            && stdout.contains("\"max_in_flight\": 1")
-            && stdout.contains("\"read_ops\": 1")
-            && stdout.contains("\"write_ops\": 1")
-            && stdout.contains("\"bytes_read\": 17")
-            && stdout.contains("\"bytes_written\": 17"),
-        "profile JSON should include native task event and I/O counters without absolute source: {stdout}"
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(json["source"], "profile.arcw");
+    let runtime = &json["runtime"];
+    assert_eq!(
+        runtime["final_status"],
+        "done Return(\"profile-native-ok\")"
     );
+    let steps = runtime["steps"].as_array().unwrap();
+    assert!(steps.len() <= 32);
+    assert!(
+        steps
+            .iter()
+            .all(|step| step["stats"]["executed_ops"].as_u64().unwrap() <= 1)
+    );
+    assert_eq!(
+        steps
+            .iter()
+            .map(|step| step["stats"]["task_events_in"].as_u64().unwrap())
+            .sum::<u64>(),
+        2
+    );
+    let native_io = &runtime["native_io"];
+    assert_eq!(native_io["completed_tasks"], 4);
+    assert_eq!(native_io["completed_host_calls"], 2);
+    assert_eq!(native_io["failed_tasks"], 0);
+    assert_eq!(native_io["scheduler"]["submitted"], 2);
+    assert_eq!(native_io["scheduler"]["dispatched"], 2);
+    assert_eq!(native_io["scheduler"]["completed"], 2);
+    assert_eq!(native_io["scheduler"]["max_in_flight"], 1);
+    assert_eq!(native_io["read_ops"], 1);
+    assert_eq!(native_io["write_ops"], 1);
+    assert_eq!(native_io["bytes_read"], 17);
+    assert_eq!(native_io["bytes_written"], 17);
     assert!(
         !stdout.contains(&dir.display().to_string()),
         "profile JSON must not record absolute temp paths: {stdout}"
@@ -2190,52 +2246,109 @@ flow main() -> String effects { fs.read(save), log.write } {
     let paths = [path.save("a.txt"), path.save("b.txt"), path.save("c.txt")]
     let values = match (await paths.traverse(fs.read_text).parallel(limit = 2)) { .Ok(values) => values, .Err(_) => [] }
     log.info("parallel done")
-    return "done"
+    return match values { ["A", "B", "C"] => "done", _ => "wrong" }
 }
 "#,
     )
     .expect("write traverse parallel task fixture");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+    let prefix = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&source_path)
         .args(["--entry", "entry.main"])
-        .arg("--mode")
-        .arg("drain")
-        .arg("--steps")
-        .arg("12")
-        .arg("--json")
+        .args([
+            "--mode",
+            "drain",
+            "--steps",
+            "12",
+            "--max-ops",
+            "1",
+            "--json",
+        ])
         .output()
-        .expect("arcw run executes traverse parallel file tasks");
+        .expect("arcw run observes the original twelve-operation prefix");
+    assert!(
+        prefix.status.success(),
+        "{}",
+        String::from_utf8_lossy(&prefix.stderr)
+    );
+    let prefix: serde_json::Value = serde_json::from_slice(&prefix.stdout).unwrap();
+    let prefix_steps = prefix["steps"].as_array().unwrap();
+    assert_eq!(prefix_steps.len(), 12);
+    assert!(
+        prefix_steps
+            .iter()
+            .all(|step| step["stats"]["executed_ops"] == 1)
+    );
+    assert_eq!(prefix["final_status"], "running");
+    assert_eq!(prefix["native_io"]["completed_tasks"], 3);
+    assert_eq!(prefix["native_io"]["completed_host_calls"], 3);
+    assert_eq!(prefix["native_io"]["read_ops"], 0);
+    assert_eq!(prefix["native_io"]["scheduler"]["submitted"], 0);
 
-    assert!(
-        output.status.success(),
-        "traverse parallel run should succeed, stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("file.read_text save:a.txt")
-            && stdout.contains("file.read_text save:b.txt")
-            && stdout.contains("file.read_text save:c.txt")
-            && stdout.contains("\"completed_tasks\": 6")
-            && stdout.contains("\"submitted\": 3")
-            && stdout.contains("\"dispatched\": 3")
-            && stdout.contains("\"max_in_flight\": 2")
-            && stdout.contains("\"read_ops\": 3")
-            && stdout.contains("\"parallel_batches\": 1")
-            && stdout.contains("\"parallel_tasks\": 2")
-            && stdout.contains("\"parallel_io_tasks\": 2")
-            && stdout.contains("\"parallel_system_info_tasks\": 0")
-            && stdout.contains("\"program_task_terminals\": 0")
-            && stdout.contains("return done"),
-        "run JSON should show bounded traverse fanout and native reads: {stdout}"
-    );
-    let json: serde_json::Value = serde_json::from_str(&stdout).expect("parallel output is JSON");
-    let native_io = &json["native_io"];
-    assert_eq!(native_io["completed_tasks"], 6);
-    assert_eq!(native_io["completed_host_calls"], 3);
-    assert_eq!(native_io["scheduler"]["completed"], 3);
+    // One-op stepping retains the original callback schedule. A larger drain
+    // budget also exercises the physical two-request native batch.
+    for (executor, max_ops, step_limit, batched) in [
+        ("bytecode-vm", 1_u64, 64_usize, false),
+        ("awbc-product", 1, 256, false),
+        ("bytecode-vm", 64, 12, true),
+        ("awbc-product", 64, 12, true),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+            .arg("run")
+            .arg(&source_path)
+            .args([
+                "--entry",
+                "entry.main",
+                "--executor",
+                executor,
+                "--mode",
+                "drain",
+            ])
+            .arg("--steps")
+            .arg(step_limit.to_string())
+            .arg("--max-ops")
+            .arg(max_ops.to_string())
+            .arg("--json")
+            .output()
+            .expect("arcw run executes traverse parallel file tasks");
+
+        assert!(
+            output.status.success(),
+            "traverse parallel run should succeed, stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let json: serde_json::Value =
+            serde_json::from_str(&stdout).expect("parallel output is JSON");
+        let native_io = &json["native_io"];
+        assert_eq!(native_io["completed_tasks"], 6);
+        assert_eq!(native_io["completed_host_calls"], 3);
+        assert_eq!(native_io["failed_tasks"], 0);
+        assert_eq!(native_io["read_ops"], 3);
+        assert_eq!(native_io["bytes_read"], 3);
+        assert_eq!(native_io["write_ops"], 0);
+        assert_eq!(native_io["parallel_system_info_tasks"], 0);
+        assert_eq!(native_io["program_task_terminals"], 0);
+        assert_eq!(native_io["scheduler"]["submitted"], 3);
+        assert_eq!(native_io["scheduler"]["dispatched"], 3);
+        assert_eq!(native_io["scheduler"]["completed"], 3);
+        assert_eq!(native_io["parallel_batches"], u64::from(batched));
+        assert_eq!(native_io["parallel_tasks"], if batched { 2 } else { 0 });
+        assert_eq!(native_io["parallel_io_tasks"], if batched { 2 } else { 0 });
+        assert_eq!(
+            native_io["scheduler"]["max_in_flight"],
+            if batched { 2 } else { 1 }
+        );
+        assert_eq!(json["final_status"], "done Return(\"done\")");
+        let steps = json["steps"].as_array().unwrap();
+        assert!(steps.len() <= step_limit, "{executor}, max_ops={max_ops}");
+        assert!(
+            steps
+                .iter()
+                .all(|step| step["stats"]["executed_ops"].as_u64().unwrap() <= max_ops)
+        );
+    }
 }
 
 #[test]
@@ -2261,6 +2374,40 @@ flow main() -> String effects { system.read, log.write } {
 "#,
     );
 
+    let prefix = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run")
+        .arg(&path)
+        .args([
+            "--entry",
+            "entry.main",
+            "--mode",
+            "drain",
+            "--steps",
+            "8",
+            "--max-ops",
+            "1",
+            "--json",
+        ])
+        .output()
+        .expect("arcw run observes the original eight-operation system-info prefix");
+    assert!(
+        prefix.status.success(),
+        "{}",
+        String::from_utf8_lossy(&prefix.stderr)
+    );
+    let prefix: serde_json::Value = serde_json::from_slice(&prefix.stdout).unwrap();
+    let prefix_steps = prefix["steps"].as_array().unwrap();
+    assert_eq!(prefix_steps.len(), 8);
+    assert!(
+        prefix_steps
+            .iter()
+            .all(|step| step["stats"]["executed_ops"] == 1)
+    );
+    assert_eq!(prefix["final_status"], "running");
+    assert_eq!(prefix["native_io"]["completed_tasks"], 2);
+    assert_eq!(prefix["native_io"]["system_info_ops"], 2);
+    assert_eq!(prefix["native_io"]["scheduler"]["submitted"], 2);
+
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&path)
@@ -2268,7 +2415,8 @@ flow main() -> String effects { system.read, log.write } {
         .arg("--mode")
         .arg("drain")
         .arg("--steps")
-        .arg("8")
+        .arg("32")
+        .args(["--max-ops", "1"])
         .arg("--json")
         .output()
         .expect("arcw run executes system info tasks");
