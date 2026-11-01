@@ -136,6 +136,22 @@ fn eligible_function(
                 .instructions
                 .get(id as usize)
                 .ok_or(CompiledFallbackReason::ArtifactRejected)?;
+            if let arcweft_core::awbc::schema::AwbcInstruction::CallIntrinsic {
+                intrinsic, ..
+            } = instruction
+            {
+                let call = program
+                    .intrinsics
+                    .get(intrinsic.index())
+                    .ok_or(CompiledFallbackReason::ArtifactRejected)?;
+                if call.identity.requires_presentation_bank() {
+                    // This region has no presentation owner to lend to the VM.
+                    // Keep the call at its owning Product execution boundary.
+                    return Err(CompiledFallbackReason::UnsupportedOpcode(
+                        instruction.opcode(),
+                    ));
+                }
+            }
             if !opcode_eligible(instruction.opcode(), options) {
                 return Err(CompiledFallbackReason::UnsupportedOpcode(
                     instruction.opcode(),
@@ -191,6 +207,7 @@ fn opcode_eligible(opcode: AwbcOpcode, options: &AwbcRegionLowerOptions) -> bool
         | AwbcOpcode::StreamYield
         | AwbcOpcode::StreamClose => options.allow_host_boundaries,
         AwbcOpcode::MakeCallable
+        | AwbcOpcode::PresentationHandleMethod
         | AwbcOpcode::SpecializeCallable
         | AwbcOpcode::MakeReductionUnchanged
         | AwbcOpcode::Assign

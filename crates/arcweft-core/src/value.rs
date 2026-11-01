@@ -775,6 +775,16 @@ impl RuntimeCallTarget {
         }
     }
 
+    /// Whether execution must borrow the actual presentation custody owner.
+    /// Inert slot addresses do not acquire this execution requirement.
+    pub const fn requires_presentation_bank(&self) -> bool {
+        match self {
+            Self::PresentationFactory(_) => true,
+            Self::PresentationSlot(call) => !call.is_reference(),
+            Self::Intrinsic(_) | Self::Callable(_) | Self::External(_) => false,
+        }
+    }
+
     pub fn as_label(&self) -> &str {
         match self {
             Self::Intrinsic(intrinsic) => intrinsic.as_label(),

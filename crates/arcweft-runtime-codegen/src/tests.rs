@@ -756,6 +756,120 @@ fn awbc_region_lowering_rejects_host_boundary_without_opt_in() {
 }
 
 #[test]
+fn awbc_region_lowering_keeps_presentation_bank_calls_in_the_owning_vm() {
+    use arcweft_core::presentation::{
+        RuntimePresentationFactoryCall, RuntimePresentationSlotCall,
+        RuntimePresentationSlotOperation,
+    };
+    use arcweft_core::value::RuntimeCallTarget;
+    use arcweft_interaction_model::presentation::{
+        PresentationCallableId, PresentationResourceKind,
+    };
+    let resource = RuntimeSemanticTypeId::from_bytes([0x81; 32]);
+    let body = RuntimePresentationFactoryCall::retained_body_identity(
+        PresentationCallableId::Image,
+        &[],
+        resource,
+        &Default::default(),
+        0,
+        |_| None,
+    )
+    .unwrap();
+    let factory = RuntimeCallTarget::PresentationFactory(Arc::new(
+        RuntimePresentationFactoryCall::try_new(
+            PresentationCallableId::Image,
+            Box::new([]),
+            resource,
+            body,
+            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap(),
+    ));
+    let reference = RuntimeCallTarget::PresentationSlot(
+        RuntimePresentationSlotCall::try_new(
+            RuntimePresentationSlotOperation::Reference,
+            PresentationResourceKind::Background,
+            [],
+        )
+        .unwrap(),
+    );
+    let removal = RuntimeCallTarget::PresentationSlot(
+        RuntimePresentationSlotCall::try_new(
+            RuntimePresentationSlotOperation::Remove,
+            PresentationResourceKind::Background,
+            [],
+        )
+        .unwrap(),
+    );
+    // Region selection inspects the checked call metadata. Execution/type
+    // admission is exercised by Core/Compiler's source resource fixtures.
+    for (identity, eligible) in [(factory, false), (reference, true), (removal, false)] {
+        for allow_host_boundaries in [false, true] {
+            let mut program = program();
+            program.intrinsics.push(AwbcIntrinsic {
+                identity: identity.clone(),
+                signature: AwbcSignatureId(0),
+                revision: 1,
+            });
+            program.instructions.push(AwbcInstruction::CallIntrinsic {
+                dst: None,
+                intrinsic: AwbcIntrinsicId(0),
+                args: vec![],
+            });
+            program.blocks[0].instructions = AwbcTableRange::new(0, 1);
+            let report = lower_awbc_regions(
+                &program,
+                &AwbcRegionLowerOptions {
+                    allow_host_boundaries,
+                    ..Default::default()
+                },
+            );
+            assert_eq!(report.regions.len(), usize::from(eligible));
+            if eligible {
+                assert!(report.rejected.is_empty());
+            } else {
+                assert_eq!(report.rejected.len(), 1);
+                assert_eq!(
+                    report.rejected[0].reason,
+                    CompiledFallbackReason::UnsupportedOpcode(AwbcOpcode::CallIntrinsic)
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn awbc_region_lowering_rejects_handle_methods_without_an_execution_bank() {
+    use arcweft_interaction_model::presentation::PresentationHandleMethodId;
+    for method in PresentationHandleMethodId::ALL {
+        for allow_host_boundaries in [false, true] {
+            let mut program = program();
+            program
+                .instructions
+                .push(AwbcInstruction::PresentationHandleMethod {
+                    dst: AwbcRegisterId(0),
+                    target: AwbcValueTarget::Value(AwbcRegisterId(1)),
+                    method,
+                });
+            program.blocks[0].instructions = AwbcTableRange::new(0, 1);
+            let report = lower_awbc_regions(
+                &program,
+                &AwbcRegionLowerOptions {
+                    allow_host_boundaries,
+                    ..Default::default()
+                },
+            );
+            assert!(report.regions.is_empty());
+            assert_eq!(report.rejected.len(), 1);
+            assert_eq!(
+                report.rejected[0].reason,
+                CompiledFallbackReason::UnsupportedOpcode(AwbcOpcode::PresentationHandleMethod)
+            );
+        }
+    }
+}
+
+#[test]
 fn awbc_region_baseline_executes_through_compact_vm() {
     let program = admit(program());
     let report = lower_awbc_regions(

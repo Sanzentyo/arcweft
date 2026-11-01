@@ -1498,6 +1498,7 @@ name = "arcweft-runtime-codegen"
 version = "0.1.0"
 dependencies = [
  "arcweft-core",
+ "arcweft-interaction-model",
  "blake3",
 ]
 
