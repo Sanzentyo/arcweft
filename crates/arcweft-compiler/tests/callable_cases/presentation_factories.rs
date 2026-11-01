@@ -26,7 +26,9 @@ flow main() -> i64 { return 0i64 }
     )
 }
 
-fn program_from_source(source: &str) -> arcweft_compiler::lower::CompiledDeterministicProgram {
+pub(super) fn program_from_source(
+    source: &str,
+) -> arcweft_compiler::lower::CompiledDeterministicProgram {
     let compiled = compile_source(source).expect("Source image factory compiles");
     let declaration = compiled
         .analysis
@@ -273,7 +275,7 @@ fn run_siblings(product: Product, native: bool) {
     run_selected(sibling_factories(product), native, assert_siblings);
 }
 
-fn run_selected(
+pub(super) fn run_selected(
     selected: arcweft_compiler::lower::CompiledDeterministicProgram,
     native: bool,
     expected: fn(&RuntimeValue),
