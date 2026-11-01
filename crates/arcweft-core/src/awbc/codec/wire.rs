@@ -195,8 +195,8 @@ impl<'a> Reader<'a> {
         &mut self,
     ) -> Result<crate::presentation::RuntimePresentationFactoryCall, AwbcCodecError> {
         use arcweft_interaction_model::presentation::{
-            PresentationArgumentKey, PresentationArgumentRole, PresentationCallableId,
-            PresentationCallableResult,
+            PresentationArgumentKey, PresentationArgumentKeyRef, PresentationArgumentRole,
+            PresentationCallableId, PresentationCallableResult,
         };
         let offset = self.offset();
         let invalid = |message: &str| AwbcCodecError::InvalidMetadata {
@@ -248,6 +248,38 @@ impl<'a> Reader<'a> {
             Ok(())
         })?;
         let end = self.offset();
+        // Wire quotas and the selected Source metadata policy are independent.
+        // Replay only the already-validated borrowed bytes through the owner's
+        // serialization grammar before allocating a vector or copying a name.
+        let bytes = self.bytes;
+        let budget = self.budget;
+        let inputs = (0..count).scan(start, move |offset, _| {
+            let mut reader = Reader::new(bytes, &budget);
+            reader.offset = *offset;
+            let role = PresentationArgumentRole::from_semantic_tag(
+                u8::read_wire(&mut reader).expect("preflighted role"),
+            )
+            .expect("preflighted role");
+            let parameter = if role.requires_parameter() {
+                let length = reader.read_len().expect("preflighted key length");
+                Some(reader.read_utf8(length).expect("preflighted key text"))
+            } else {
+                None
+            };
+            *offset = reader.offset;
+            Some(
+                PresentationArgumentKeyRef::try_new(role, parameter)
+                    .expect("preflighted destination"),
+            )
+        });
+        crate::presentation::RuntimePresentationFactoryCall::preflight_inputs(
+            callable,
+            inputs,
+            resource_type,
+            body_type,
+            budget.original_source.values,
+        )
+        .map_err(|cause| invalid(&cause.to_string()))?;
         self.offset = start;
         let mut keys = Vec::with_capacity(count);
         for _ in 0..count {

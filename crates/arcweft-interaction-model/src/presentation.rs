@@ -14,7 +14,8 @@ pub use address_identity::{PresentationAddressIdentity, PresentationAddressIdent
 pub use slot::{PresentationSlotAddress, PresentationSlotAddressError};
 
 pub use arguments::{
-    PresentationArgumentKey, PresentationArgumentKeyError, PresentationArgumentRole,
+    PresentationArgumentKey, PresentationArgumentKeyError, PresentationArgumentKeyRef,
+    PresentationArgumentRole,
 };
 pub use callables::{
     PresentationCallableId, PresentationCallableOperation, PresentationCallableResult,

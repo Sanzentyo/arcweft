@@ -1588,9 +1588,6 @@ fn execute_instruction(
                     "owned Core intrinsic has no result destination".to_owned(),
                 ));
             }
-            let mut args = fiber
-                .active_frame_mut()?
-                .take_register_values(program, args)?;
             let intrinsic_row = &program.intrinsics[intrinsic.index()];
             if let crate::value::RuntimeCallTarget::PresentationFactory(call) =
                 &intrinsic_row.identity
@@ -1604,7 +1601,10 @@ fn execute_instruction(
                 let result = signature.result.ok_or_else(|| {
                     VmError::Runtime("presentation factory has no result type".into())
                 })?;
-                if signature.params.len() != call.inputs().len() || dst.is_none() {
+                if signature.params.len() != call.inputs().len()
+                    || signature.params.len() != args.len()
+                    || dst.is_none()
+                {
                     return Err(VmError::Runtime(
                         "presentation factory has an invalid call signature".into(),
                     ));
@@ -1626,6 +1626,43 @@ fn execute_instruction(
                     .get(result.index())
                     .ok_or(VmError::MissingType(result))?
                     .semantic_identity();
+                let frame = fiber.active_frame()?;
+                let destination = dst.expect("factory result destination checked");
+                let layout = program
+                    .frame_layouts
+                    .get(frame.layout.index())
+                    .ok_or(FiberStateError::InvalidFrame)?;
+                call.validate_input_types(
+                    crate::program_types::RuntimeProgramTypes::Awbc(program),
+                    args.len(),
+                    |index| {
+                        args.get(index)
+                            .and_then(|register| layout.slots.get(register.index()))
+                            .and_then(|slot| program.runtime_types.get(slot.ty.index()))
+                            .map(|row| row.semantic_identity())
+                    },
+                )
+                .map_err(|cause| VmError::Runtime(cause.to_string()))?;
+                let slot = layout.slots.get(destination.index()).ok_or(
+                    FiberStateError::RegisterOutOfBounds {
+                        register: destination.0,
+                        layout: frame.layout.0,
+                    },
+                )?;
+                if program
+                    .runtime_types
+                    .get(slot.ty.index())
+                    .map(|row| row.semantic_identity())
+                    != Some(result)
+                {
+                    return Err(VmError::Runtime(
+                        "presentation factory result destination has a different type".into(),
+                    ));
+                }
+                execution.validate_presentation_factory(program, call, args.len(), result)?;
+                let args = fiber
+                    .active_frame_mut()?
+                    .take_register_values(program, args)?;
                 let value =
                     execution.construct_presentation_factory(program, fiber, call, args, result)?;
                 fiber
@@ -1633,6 +1670,9 @@ fn execute_instruction(
                     .set_register(dst.expect("factory result destination checked"), value)?;
                 return Ok(InstructionControl::Continue);
             }
+            let mut args = fiber
+                .active_frame_mut()?
+                .take_register_values(program, args)?;
             if let crate::value::RuntimeCallTarget::PresentationSlotRef(call) =
                 &intrinsic_row.identity
             {

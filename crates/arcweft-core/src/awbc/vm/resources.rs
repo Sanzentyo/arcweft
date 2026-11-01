@@ -13,6 +13,31 @@ pub(super) struct VmExecutionResources<'execution> {
 }
 
 impl VmExecutionResources<'_> {
+    /// Check the original execution authority before any operand is moved or
+    /// copied out of its register. A context for equal bytes is not its lease.
+    pub(super) fn validate_presentation_factory(
+        &self,
+        program: &AwbcProgram,
+        call: &crate::presentation::RuntimePresentationFactoryCall,
+        count: usize,
+        result: crate::pattern::RuntimeSemanticTypeId,
+    ) -> Result<(), VmError> {
+        let error = |cause: &dyn std::fmt::Display| VmError::Runtime(cause.to_string());
+        call.validate_argument_count(count)
+            .map_err(|cause| error(&cause))?;
+        call.result_owner(
+            crate::program_types::RuntimeProgramTypes::Awbc(program),
+            result,
+        )
+        .map_err(|cause| error(&cause))?;
+        let context = self.context.ok_or(VmError::MissingExecutionContext)?;
+        let admitted = context.admitted_program(program)?;
+        if admitted.original_task_source().is_none() || self.presentation.is_none() {
+            return Err(VmError::MissingExecutionContext);
+        }
+        Ok(())
+    }
+
     pub(super) fn banks_mut(
         &mut self,
     ) -> Option<&mut PresentationBanks<PresentationBody<RuntimePayload>>> {
@@ -32,8 +57,7 @@ impl VmExecutionResources<'_> {
             value::RuntimeValue,
         };
         let error = |cause: &dyn std::fmt::Display| VmError::Runtime(cause.to_string());
-        call.validate_arguments(&values)
-            .map_err(|cause| error(&cause))?;
+        self.validate_presentation_factory(program, call, values.len(), result)?;
         let context = self.context.ok_or(VmError::MissingExecutionContext)?;
         let admitted = context.admitted_program(program)?;
         let owner = context.program_owner(program)?;
@@ -252,3 +276,6 @@ impl VmExecutionResources<'_> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

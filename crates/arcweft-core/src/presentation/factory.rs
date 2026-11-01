@@ -5,8 +5,8 @@
 
 use crate::{entry::RuntimeSchemaLimits, pattern::RuntimeSemanticTypeId};
 use arcweft_interaction_model::presentation::{
-    PresentationArgumentKey, PresentationArgumentRole, PresentationCallableId,
-    PresentationCallableResult, PresentationResourceKind,
+    PresentationArgumentKey, PresentationArgumentKeyRef, PresentationArgumentRole,
+    PresentationCallableId, PresentationCallableResult, PresentationResourceKind,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -26,6 +26,45 @@ pub struct RuntimePresentationFactoryCall {
 }
 
 impl RuntimePresentationFactoryCall {
+    /// Apply the same metadata grammar as the owned row to a bounded borrowed
+    /// input stream. Decoders call this before copying keys or allocating rows.
+    pub(crate) fn preflight_inputs<'a>(
+        callable: PresentationCallableId,
+        inputs: impl Iterator<Item = PresentationArgumentKeyRef<'a>> + Clone,
+        resource_type: RuntimeSemanticTypeId,
+        body_type: RuntimeSemanticTypeId,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<Option<usize>, RuntimePresentationFactoryCallError> {
+        if !matches!(callable.result(), PresentationCallableResult::Handle(_)) {
+            return Err(RuntimePresentationFactoryCallError::NotFactory { callable });
+        }
+        crate::value::RuntimeRetainedValueAdmission::standalone(limits)
+            .validate_metadata(&FactoryCallRef {
+                callable,
+                inputs: FactoryInputs(inputs.clone()),
+                resource_type,
+                body_type,
+            })
+            .map_err(|cause| RuntimePresentationFactoryCallError::Resource(Box::new(cause)))?;
+        let mut seen = BTreeSet::new();
+        let mut scope_input = None;
+        for (index, key) in inputs.enumerate() {
+            if !callable.accepts_argument_role(key.role()) {
+                return Err(RuntimePresentationFactoryCallError::Role {
+                    callable,
+                    role: key.role(),
+                });
+            }
+            if !seen.insert(key) {
+                return Err(RuntimePresentationFactoryCallError::Duplicate { index });
+            }
+            if key.role() == PresentationArgumentRole::Scope {
+                scope_input = Some(index);
+            }
+        }
+        Ok(scope_input)
+    }
+
     /// Canonical identity of the retained product, including its destinations.
     /// Equal physical tuple shapes cannot exchange metadata roles or keys.
     /// Child lookup borrows the selected type graph and allocates no side table.
@@ -78,34 +117,13 @@ impl RuntimePresentationFactoryCall {
         body_type: RuntimeSemanticTypeId,
         limits: RuntimeSchemaLimits,
     ) -> Result<Self, RuntimePresentationFactoryCallError> {
-        if !matches!(callable.result(), PresentationCallableResult::Handle(_)) {
-            return Err(RuntimePresentationFactoryCallError::NotFactory { callable });
-        }
-        let wire = FactoryCallRef {
+        let scope_input = Self::preflight_inputs(
             callable,
-            inputs: &inputs,
+            inputs.iter().map(PresentationArgumentKey::as_borrowed),
             resource_type,
             body_type,
-        };
-        crate::value::RuntimeRetainedValueAdmission::standalone(limits)
-            .validate_metadata(&wire)
-            .map_err(|cause| RuntimePresentationFactoryCallError::Resource(Box::new(cause)))?;
-        let mut seen = BTreeSet::new();
-        let mut scope_input = None;
-        for (index, key) in inputs.iter().enumerate() {
-            if !callable.accepts_argument_role(key.role()) {
-                return Err(RuntimePresentationFactoryCallError::Role {
-                    callable,
-                    role: key.role(),
-                });
-            }
-            if !seen.insert(key) {
-                return Err(RuntimePresentationFactoryCallError::Duplicate { index });
-            }
-            if key.role() == PresentationArgumentRole::Scope {
-                scope_input = Some(index);
-            }
-        }
+            limits,
+        )?;
         Ok(Self {
             callable,
             inputs,
@@ -162,14 +180,14 @@ impl RuntimePresentationFactoryCall {
         Some(ordinal + usize::from(self.scope_input().is_some_and(|scope| scope <= ordinal)))
     }
 
-    pub(crate) fn validate_arguments(
+    pub(crate) fn validate_argument_count(
         &self,
-        values: &[crate::value::RuntimeValue],
+        count: usize,
     ) -> Result<(), RuntimePresentationFactoryCallError> {
-        if values.len() != self.inputs.len() {
+        if count != self.inputs.len() {
             return Err(RuntimePresentationFactoryCallError::Arguments {
                 expected: self.inputs.len(),
-                actual: values.len(),
+                actual: count,
             });
         }
         // A public scope name is not a dynamic lexical grant. Until the Source
@@ -497,11 +515,27 @@ pub enum RuntimePresentationFactoryCallError {
 }
 
 #[derive(Serialize)]
-struct FactoryCallRef<'a> {
+struct FactoryCallRef<I> {
     callable: PresentationCallableId,
-    inputs: &'a [PresentationArgumentKey],
+    inputs: I,
     resource_type: RuntimeSemanticTypeId,
     body_type: RuntimeSemanticTypeId,
+}
+
+struct FactoryInputs<I>(I);
+
+impl<'a, I> Serialize for FactoryInputs<I>
+where
+    I: Iterator<Item = PresentationArgumentKeyRef<'a>> + Clone,
+{
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let mut sequence = serializer.serialize_seq(self.0.size_hint().1)?;
+        for input in self.0.clone() {
+            sequence.serialize_element(&input)?;
+        }
+        sequence.end()
+    }
 }
 
 #[derive(Deserialize, Serialize)]

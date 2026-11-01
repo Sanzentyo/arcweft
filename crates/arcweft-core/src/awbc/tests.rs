@@ -124,7 +124,7 @@ fn test_flow_executable(label: &str, function: u32) -> AwbcFlowExecutable {
     }
 }
 
-fn minimal_program() -> AwbcProgram {
+pub(super) fn minimal_program() -> AwbcProgram {
     AwbcProgram {
         strings: vec!["main".to_owned()],
         signatures: vec![AwbcSignature {

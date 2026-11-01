@@ -110,18 +110,46 @@ pub struct PresentationArgumentKey {
     parameter: Option<String>,
 }
 
+/// Borrowed, validated destination used before an owner allocates metadata.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct PresentationArgumentKeyRef<'a> {
+    role: PresentationArgumentRole,
+    parameter: Option<&'a str>,
+}
+
+impl<'a> PresentationArgumentKeyRef<'a> {
+    pub const fn role(self) -> PresentationArgumentRole {
+        self.role
+    }
+
+    pub fn try_new(
+        role: PresentationArgumentRole,
+        parameter: Option<&'a str>,
+    ) -> Result<Self, PresentationArgumentKeyError> {
+        if role.requires_parameter() != parameter.is_some() {
+            return Err(PresentationArgumentKeyError::ParameterPresence { role });
+        }
+        if let Some(key) = parameter {
+            PresentationArgumentKey::validate_parameter(key)?;
+        }
+        Ok(Self { role, parameter })
+    }
+}
+
 impl PresentationArgumentKey {
     pub fn try_new(
         role: PresentationArgumentRole,
         parameter: Option<String>,
     ) -> Result<Self, PresentationArgumentKeyError> {
-        if role.requires_parameter() != parameter.is_some() {
-            return Err(PresentationArgumentKeyError::ParameterPresence { role });
-        }
-        if let Some(key) = &parameter {
-            Self::validate_parameter(key)?;
-        }
+        PresentationArgumentKeyRef::try_new(role, parameter.as_deref())?;
         Ok(Self { role, parameter })
+    }
+
+    pub fn as_borrowed(&self) -> PresentationArgumentKeyRef<'_> {
+        PresentationArgumentKeyRef {
+            role: self.role,
+            parameter: self.parameter(),
+        }
     }
 
     /// Checks a borrowed key before a bounded consumer copies it.
@@ -165,6 +193,12 @@ impl TryFrom<ArgumentKeyWire> for PresentationArgumentKey {
 }
 
 impl Serialize for PresentationArgumentKey {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.as_borrowed().serialize(serializer)
+    }
+}
+
+impl Serialize for PresentationArgumentKeyRef<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut wire = serializer.serialize_struct("ArgumentKeyWire", 2)?;
         wire.serialize_field("role", &self.role)?;

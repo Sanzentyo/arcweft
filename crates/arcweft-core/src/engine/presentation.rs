@@ -144,7 +144,7 @@ impl Engine {
             name: "core.presentation.factory".into(),
             reason: cause,
         };
-        call.validate_arguments(&values)
+        call.validate_argument_count(values.len())
             .map_err(|cause| error(cause.to_string()))?;
         let row = self
             .plan

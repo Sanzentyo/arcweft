@@ -1,5 +1,6 @@
-//! Allocation-free row metadata views. Nested literal/pattern owners retain
-//! responsibility for their own complete framing and resource counts.
+//! Borrowed row metadata views. Factory metadata is admitted before its scratch
+//! index or owned keys. Nested literal/pattern owners retain responsibility for
+//! their own complete framing and resource counts.
 
 use super::{Array, Counts, DOMAIN, Error, RuntimeExpressionSourceLimits, limit, reference};
 use crate::entry::schema::value_encoding::ValueResourceAdmission;
@@ -19,6 +20,46 @@ pub(super) struct Cursor<'a> {
     pub bytes: &'a [u8],
     pub offset: usize,
     pub limits: RuntimeExpressionSourceLimits,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arcweft_interaction_model::presentation::{
+        PresentationArgumentRole, PresentationCallableId,
+    };
+
+    #[test]
+    fn factory_source_preflight_rejects_duplicate_borrowed_destinations() {
+        let plan = crate::plan::RuntimePlanBuilder::new().finish().unwrap();
+        let limits = super::super::tests::limits(&plan);
+        for duplicate in [false, true] {
+            let mut bytes = vec![4, PresentationCallableId::Image.semantic_tag()];
+            bytes.extend([1; 32]);
+            bytes.extend([2; 32]);
+            bytes.extend(2_u32.to_le_bytes());
+            for key in ["channel", if duplicate { "channel" } else { "user.role" }] {
+                bytes.push(PresentationArgumentRole::Parameter.semantic_tag());
+                bytes.extend((key.len() as u32).to_le_bytes());
+                bytes.extend(key.as_bytes());
+            }
+            let mut cursor = Cursor::new(&bytes, limits);
+            let mut counts = Counts::new(limits, 1).unwrap();
+            let result = cursor.call_target(&mut counts);
+            if duplicate {
+                assert!(matches!(
+                    result,
+                    Err(Error::Invalid {
+                        kind: "presentation factory ABI",
+                        ..
+                    })
+                ));
+            } else {
+                result.unwrap();
+                cursor.finish().unwrap();
+            }
+        }
+    }
 }
 impl<'a> Cursor<'a> {
     pub fn new(bytes: &'a [u8], limits: RuntimeExpressionSourceLimits) -> Self {
@@ -452,17 +493,23 @@ impl<'a> Cursor<'a> {
             1 => self.text(counts)?,
             4 => {
                 use arcweft_interaction_model::presentation::{
-                    PresentationArgumentKey, PresentationArgumentRole, PresentationCallableId,
-                    PresentationCallableResult,
+                    PresentationArgumentKey, PresentationArgumentKeyRef, PresentationArgumentRole,
+                    PresentationCallableId, PresentationCallableResult,
                 };
                 let callable = PresentationCallableId::from_semantic_tag(self.byte()?)
                     .ok_or_else(|| self.invalid("presentation factory"))?;
                 if !matches!(callable.result(), PresentationCallableResult::Handle(_)) {
                     return Err(self.invalid("presentation factory result"));
                 }
-                self.slice(64)?;
+                let resource_type = crate::pattern::RuntimeSemanticTypeId::from_bytes(
+                    self.slice(32)?.try_into().expect("semantic identity width"),
+                );
+                let body_type = crate::pattern::RuntimeSemanticTypeId::from_bytes(
+                    self.slice(32)?.try_into().expect("semantic identity width"),
+                );
                 let n = self.count()?;
                 counts.array(n, std::mem::size_of::<PresentationArgumentKey>())?;
+                let start = self.offset;
                 let mut fixed = 0_u64;
                 for _ in 0..n {
                     let role = PresentationArgumentRole::from_semantic_tag(self.byte()?)
@@ -483,6 +530,34 @@ impl<'a> Cursor<'a> {
                         fixed |= bit;
                     }
                 }
+                let bytes = self.bytes;
+                let limits = self.limits;
+                let inputs = (0..n).scan(start, move |offset, _| {
+                    let mut cursor = Cursor::new(bytes, limits);
+                    cursor.offset = *offset;
+                    let role = PresentationArgumentRole::from_semantic_tag(
+                        cursor.byte().expect("preflighted role"),
+                    )
+                    .expect("preflighted role");
+                    let parameter = if role.requires_parameter() {
+                        Some(cursor.string().expect("preflighted key text"))
+                    } else {
+                        None
+                    };
+                    *offset = cursor.offset;
+                    Some(
+                        PresentationArgumentKeyRef::try_new(role, parameter)
+                            .expect("preflighted destination"),
+                    )
+                });
+                crate::presentation::RuntimePresentationFactoryCall::preflight_inputs(
+                    callable,
+                    inputs,
+                    resource_type,
+                    body_type,
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                )
+                .map_err(|_| self.invalid("presentation factory ABI"))?;
             }
             3 => {
                 let resource = arcweft_interaction_model::presentation::PresentationResourceKind::from_semantic_tag(self.byte()?)
