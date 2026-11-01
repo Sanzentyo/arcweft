@@ -13860,3 +13860,14 @@ Source 0c65eb15235f16ff96232e4926e5bbd563e5a90c（親534742896a9450e8bff54ce4376
 - ユーザーの新しい明示指示によりcargo clean --lockedを再度実行した。検証済み出力先D:/git/arcweft/targetの201,467 files／227.2 GiBを削除・終了0。以前のclean記録と「当時は繰り返していない」という履歴は保持し、今回の指示が従前の再実行しない作業上の前提を更新したことを明記する。生成物の移動・コピー・退避は行っていない。
 
 初回失敗・中間公開・Source freeze・case／EXE pins・Cargo graph・全gate・clean実測は[今回原本](acceptance-evidence/task-presentation-factory-progress.json)と91 entryのraw ZIPに保持する（entry差分0、ZIP SHA256 569df43358132b1df177ae7d42f3cabddc16cfa23d84c39cdb4728ae4cc2d4ff）。
+
+## 2026-11-01 factory入力identity・全逆依存とcodec旧期待の修復
+
+- production Source 7f506204759703e3d7baaee79832f5c697a6188cは、元retained tupleから各入力semantic identityを照合し、同じBool表現でも別identityを拒否する。bank／siteの退役容量は実scope grant発行前に検査する。ownerは148／148 PASS・4,052入力・case／Source／EXE差分0。workspace全97 package・全target・全feature・locked check／Clippyと変更8 path fmtは終了0。構造は3288 files／3158 Rust files・1784044 physical Rust LOC・384 review trigger・blocking0。
+- 62 packageの最初のlibrary catalogは、Windows mmapのOS error 1455（仮想メモリ／commit容量）とBundleのgeneric assertion型診断で失敗した。同じpackage／feature／Sourceで再ビルドし、Source変更なしで両診断は再現しなかった。初回をruntime PASSへ読み替えず、失敗原本を残す。Cargo jobs・profile・assertion・test量・timeoutは変更していない。
+- 再試行のlibrary／integrationは8,814実行・8,813 PASS／1 FAIL／24 ignored。CLI unit 191 PASS、通常6 integration target 29 PASSと合わせ、通常3群は9,033 PASS／1 FAIL。この失敗はvalue pathの有効なPresentationBody tag 17を未知としていた旧fixture期待。後続adf0413bd40be9eb29b50e25fb45295f1ec8ade7はcfg(test)だけを変更し、17の正確なgolden／往復とu8::MAXの未知tag拒否へ修復した。予約tag・zero・truncated・trailing拒否は維持し、codec 3／3 PASS・Core全target／全feature・locked Clippy・1 path fmt終了0。入力bridgeは変更が当該test file一つだけと照合し、別runを新しい全8,814 PASSとはしない。
+- library選択61 package中、arcweft、arcweft-audio-device-cpal、arcweft-bundle-assets、arcweft-render-webは実行case 0のcompile選択。CLIを合わせた62 packageの選択と、実際にcaseを実行したpackage数を区別する。Generic Matchの受入済み151 IDは今回も151／151 PASSで、受入を維持する。
+- CLI checkは415 PASS／43 FAIL／23 ignored、追加3 integration targetは14 PASS。同じ4,052入力の全12 targetは692 unique実行・649 PASS／43 FAIL・23 ignored、case重複0。12180810c10ced738a2ad94f98dbb3b1cec831a1の保持43 IDとは同一43・新規0・解消0・未選択0であり、異なる入力の原因同一性はIDだけで推定しない。
+- 現状を新しい実測と公開SHAへ更新し、古い入力の件数はこの履歴と原本へ保持する。完了項目を全体goalの未達から戻さず、現状の一覧はcurrent-status.mdだけとする。明示scope／View生成・command／method・driver・全構築前admission、default／Wasm・doctest・Tier 2・最終画像parityの受入はこのrunから推定しない。
+
+[最新の全原本](acceptance-evidence/task-presentation-factory-validation.json)と106 entryのraw ZIPを保持する（entry差分0、SHA256 c429e9e1199c4b918d9a0069bc1cc4c76d40ea8c99a92da646473942932fd2ee）。

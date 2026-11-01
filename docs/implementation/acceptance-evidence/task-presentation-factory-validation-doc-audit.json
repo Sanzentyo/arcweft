@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "base": "adf0413bd40be9eb29b50e25fb45295f1ec8ade7",
+  "paths": [
+    "docs/implementation/current-status.md",
+    "docs/implementation/convergence-evidence-history.md",
+    "docs/implementation/acceptance-evidence/task-presentation-factory-validation.json",
+    "docs/implementation/acceptance-evidence/task-presentation-factory-validation-raw.zip"
+  ],
+  "historyBytePrefixUnchanged": true,
+  "historicalShaLoss": 0,
+  "genericMatchRowUnchanged": true,
+  "markdownLinks": 772,
+  "brokenLinks": 0,
+  "rawEntryDrift": 0,
+  "correctionReason": "Replace older input summaries with observed 62-package/CLI results, keep the stale fixture failure and its separate repair visible, retain unchanged accepted features and all historical evidence",
+  "recordedAt": "2026-11-01T09:56:47.7643226Z"
+}
