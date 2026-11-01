@@ -1,0 +1,28 @@
+{
+  "date": "2026-11-01",
+  "base": "3b1bd1a110c34a04f70ca38a680b000147e9b751",
+  "changed": [
+    "docs/implementation/convergence-evidence-history.md",
+    "docs/implementation/current-status.md"
+  ],
+  "checkedDocuments": 129,
+  "relativeLinks": 648,
+  "brokenLinks": [],
+  "unclosedFences": [],
+  "statusCommitIds": 58,
+  "unretainedIds": [],
+  "historicalRawChanges": [],
+  "historicalPrefixPreserved": true,
+  "heldFiles": 20,
+  "heldDrift": 0,
+  "partialCliOriginalWipProof": true,
+  "rustCargoRun": false,
+  "evidenceZipAudit": {
+    "path": "task-presentation-address-only-raw.zip",
+    "entries": 103,
+    "sha256": "a4bb15b71407c849c562ff9fd2443066bb6a4a7c4ad9f95c99c0382cdc53d980",
+    "duplicateEntries": 0,
+    "contentDrift": 0,
+    "verifiedAgainstOriginalFiles": true
+  }
+}

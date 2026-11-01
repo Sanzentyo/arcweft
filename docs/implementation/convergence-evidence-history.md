@@ -13786,3 +13786,25 @@ Supersedes: current-status.mdのSlotRef値／型行の「Source生成callは未�
 各commandのcatalog・case・EXE・入力の差分0と、旧43 IDとの比較、全target集合、tag修復前後を[原本](acceptance-evidence/task-presentation-slot-call-reverse-validation.json)へ保存した。原本73 entry・2,694,026 bytesのSHA256はa7526393008f903e5f3a3c06c5e1762e873c9c859291c898ce6423b4ea8f50ad。前項のowner原本145 entryも変更しない。Clippy／Wasm等の本体qualityは0b16aa4979720b101569d2a847a505279b25982bの閉じた実行であり、後続のtest期待列修復へ同じ全gateを再実行したとは主張しない。元14 tracked／6 untracked WIPを保持した。
 
 Supersedes: current-status.mdの774c6dc03d1cab6f3f1e6da70648cf6405e18a74・4,041入力を最新横断結果とする現在形は、今回の個別終端へ置き換えた。旧9009 PASS／0 FAIL、旧CLIの415 PASS／43 FAIL、以前の全SHAと根拠は履歴と原本へ保持する。新しいtag期待列の失敗と修復を曖昧に合算しない。Generic Matchの受入・公開、SlotRef値／型境界、Root/Dの結果受領・退出・破棄などの既受入は維持し、全体goalや保持CLI 43件の未達を理由に残作業へ戻していない。現状はcurrent-status.mdに一元化する。
+
+## 2026-11-01 — readonly SlotRefのscope契約修復と同一入力での全CLI照合
+
+Source/main 3b1bd1a110c34a04f70ca38a680b000147e9b751を確認した。parentは資料公開de5bb134fe6dcb3a9a2d0e024b505eec38866da1、treeはa87b399b558ce3243ceccd6be6e380dd9aca5e3a、full binary patchのSHA256は7af0bf893011ed15a9c63702372d1cf399462cbee07456b72af353d9841a275d。11 pathを明示stageして通常commit・non-forced pushし、remote・parent・tree・全blob・patch一致と空indexを確認した。元14 tracked／6 untracked WIPを保持した。
+
+Supersedes: current-status.mdの「Source SlotRef生成call（scope省略経路）」にあった「明示scopeの実行契約が未達」という列挙を削除した。旧Sema schemaはscopeを提示した一方、元のCore RuntimePresentationSlotRefCall::constructはScope入力を常に拒否した。共有PresentationSlotAddressはtarget・slot・resourceだけを持ち、SlotRefはoccupantのleaseやlifetimeを所有しないため、readonly住所へscope選択を足す契約を廃した。全体goalが未完了だから完了項目を戻したのではなく、未接続の擬似引数を削除した訂正である。staging／removalのscope roleと、実行scopeのcustodyは別契約として保持した。
+
+共有modelの戻り値所有形態からreadonly roleを決め、ref.bg／ref.showのschemaをtarget・slot・必須characterへ閉じた。scope・fade・look・param.extraは正確なSource spanで拒否する。Core input、Serde、AWBC wire、Source expression preflight／decoderから旧Scope roleを削除し、最大3 inputを構築前に検査する。旧readerは残さず、契約versionは1のままにした。維持する仕様はscenario-surface-syntax.mdとlayers.mdへ反映した。
+
+対象run presentation-address-only-focus1-20261101は15 PASS／0 FAIL／4,288対象外。base de5bb134fe6dcb3a9a2d0e024b505eec38866da1と、後で3b1bd1a110c34a04f70ca38a680b000147e9b751へ公開した正確な差分を4,045入力で凍結した。選択4 packageのうち実際に一致したのはCompiler・Core・Semaの3 ownerで、interaction-modelには当該filterの一致caseがなく、後述の全逆依存で検証した。Source実行caseは既定／targetのみ／slotのみ／両方の10住所、alias・明示／推論generic Copy、target／slot pattern、引数の一回・Source順評価、不正署名拒否、Nativeとcanonical decode後のAWBC、各step後の公開AWBC JSON save／restoreでPASSした。OneOpのmax_ops=1と256 stepの上限は維持した。
+
+公開Source 3b1bd1a110c34a04f70ca38a680b000147e9b751・4,045入力のqualityはworkspace全97 package・全target・全feature・lockedのcheck／Clippy、Core default／wasm32-unknown-unknown lib check、変更9 Rust pathのfmt、構造gateがすべて終了0だった。警告は保持し、warning-freeとはしない。構造は3,281 files／3,151 Rust files・1,780,629 physical Rust LOC・384 review trigger・blocking0。9 path／4 ownerのbyte／LOC・embedded test・依存と、共有role grammar／Sema schema／Core ABI・codec／Compiler実行回帰の責務を記録した。Cargo・feature・依存・unsafe・I/Oの変更はない。実行可能doc exampleを追加しておらず、今回doctestとTier 2は未実行だった。
+
+同Source・4,045入力の実Cargo resolveから求めたinteraction-modelの全62逆依存を通常3 commandで実行し、library／integration 8,799 PASS／0 FAIL／24 ignored、CLI lib／bin 191 PASS、通常6 CLI integration target 29 PASS、合計9,019 PASS／0 FAIL／24 ignoredだった。以前の0b16aa4979720b101569d2a847a505279b25982bの9,016 PASS／1 FAILと、5f6cfabe3e18edbfd4c08fb7b15f02e1354a4695のtag期待列対象修復1／1 PASSは上記履歴・元の原本へそのまま保持する。旧runをgreenへ書き換えたのではなく、今回の新しい全matrix終端を現状へ採用した。
+
+Generic Matchは既受入850534b9e9bc8c8872f6528dd00050a5e6e7699e・既公開f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2を維持した。115 transcript／24 coverage／5公開query／7 Native・decoded-AWBC継続保存の151 IDを新しい8,799件の終端と照合し、151選択・151 PASS・除外0を確認した。全体goalやCLIの未達を理由に未完了へ戻していない。
+
+追加CLI checkは同Source・同じ4,045入力で415 PASS／43 FAIL／23 ignored、追加3 integration targetは14 PASSだった。前回5f6cfabe3e18edbfd4c08fb7b15f02e1354a4695の失敗43 IDは全件選択され、同じ43件が失敗し、新規・解消・未選択はすべて0だった。ID一致だけで原因同一性は推定しない。metadata上の現行lib／bin／integration全12 targetを通常2 commandと追加2 commandで照合し、重複なし692実行・649 PASS／43 FAIL・23 ignored、未選択target 0を確認した。今回は同じSource・入力集合であることをhashでも照合したが、異なるfeature unionとruntime commandは個別のまま保持する。条件付きzero-case targetのcompile選択を実行caseへ読み替えていない。
+
+各nextest commandのcatalog・case・EXE・入力差分0、失敗ID比較、全target、owner reviewと公開proofを[今回の検証原本](acceptance-evidence/task-presentation-address-only-validation.json)へ保存した。[raw原本](acceptance-evidence/task-presentation-address-only-raw.zip)は103 entry・4,046,760 bytes、SHA256 a4bb15b71407c849c562ff9fd2443066bb6a4a7c4ad9f95c99c0382cdc53d980。以前のowner／reverse原本、失敗・全SHAは変更しない。cargo cleanは既に一度実行済みで、今回繰り返さず、ビルド生成物も移動・コピー・退避していない。
+
+current-status.mdの旧入力を最新とする現在形、旧6住所と広域1 FAILの重複説明は、今回の閉じた終端へ置き換えた。上記と従来の原本を履歴として保持する。aggregate live construction admission、Source ViewValue／Handle／Removed生成・command／method・driver、staging callの明示scope選択、公開Native saveなどの別境界は引き続き未達であり、本cutの受入へ拡張していない。現状一覧はcurrent-status.mdの一か所とする。
