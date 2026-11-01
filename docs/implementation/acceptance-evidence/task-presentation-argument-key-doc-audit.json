@@ -1,0 +1,21 @@
+{
+  "date": "2026-11-01",
+  "base": "12180810c10ced738a2ad94f98dbb3b1cec831a1",
+  "changed": [
+    "docs/03-presentation/image-presentation-objects.md",
+    "docs/implementation/convergence-evidence-history.md",
+    "docs/implementation/current-status.md"
+  ],
+  "checkedDocuments": 129,
+  "relativeLinks": 650,
+  "brokenLinks": [],
+  "unclosedFences": [],
+  "statusCommitIds": 59,
+  "unretainedIds": [],
+  "historicalRawChanges": [],
+  "historicalPrefixPreserved": true,
+  "heldFiles": 20,
+  "heldDrift": 0,
+  "partialCliOriginalWipProof": true,
+  "rustCargoRun": false
+}

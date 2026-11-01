@@ -13827,3 +13827,15 @@ Source 3b1bd1a110c34a04f70ca38a680b000147e9b751の通常9,019 PASS、Generic Mat
 初回停止・失敗・修復、別入力ごとのlibrary実行、最終quality、53逆依存graph、private呼出し一覧、owner reviewと公開proofは[検証原本](acceptance-evidence/task-presentation-body-handoff-validation.json)へ保持した。[raw原本](acceptance-evidence/task-presentation-body-handoff-raw.zip)は91 entry・3,625,810 bytes、SHA256 a1fafa1dd626439f26d5cdac96620d295bce07a37822ec54ae9a457f44a182ae。
 
 Supersedes: current-status.mdの最新Source見出しだけを今回のprivate owner cutへ更新し、広域結果を3b1bd1a110c34a04f70ca38a680b000147e9b751のまま明示した。新しい返却境界の行を加え、旧validation結果・全SHA・歴史的rawは変更しない。現状一覧は引き続きcurrent-status.mdの一か所とする。
+
+## 2026-11-01 — Presentation checked引数key
+
+- Source公開: 12180810c10ced738a2ad94f98dbb3b1cec831a1。親39b540872e4b08f85e525ae97638d3f01c2fec96、7 pathのpatchと全blob・remote mainを照合。元14 tracked／6 actual untracked WIPは保持。
+- 共有role/tag/Source名の単一inventoryとsealed keyを導入し、コピーされたSource名switchを削除した。C-sealで各物理引数slotのfamily/keyを確定し、Source順とcompact ABI位置を別に保持、canonical version 1 digestへ含めた。既存SlotRef loweringは同slot authorityを消費する。
+- 初回focusは54 PASS／1 FAILで新規fixtureのimage callが未採用。次の1件は未定義のImage型でFAIL。正式なImageSurface戻り型へfixtureを修正し、元の型・key・順序assertionを維持して55／55 PASS。初回のbase・入力hash・全失敗結果を原本へ保持した。第2回はSema libのみでfeature unionも別。最終focusの入力hashは公開後の4,047入力とすべて一致する。
+- 当該Sourceの実Cargo graphは62逆依存。通常3 commandは9024 PASS／0 FAIL／24 ignored。既受入のGeneric Match 151 IDはすべて選択され151／151 PASS。accepted 850534b9e9bc8c8872f6528dd00050a5e6e7699e／published f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2は維持する。
+- CLI追加checkは415 PASS／43 FAIL／23 ignored。保持43 IDとの比較は同一43・新規0・解消0・未選択0。追加3 targetは14 PASS。全12 targetは692 unique実行、649 PASS／43 FAIL・23 ignored。4 command・feature unionは統合runへ読み替えない。
+- workspace check／Clippy・7 path fmt・構造gateは各終了0。構造は3283 files／3153 Rust files・1781106 physical Rust LOC、review trigger 384・blocking 0。Clippyには新規fixtureのredundant closure 1件も残り、warning-freeとはしない。Core default／Wasm・doctest・Tier 2は未再実行。
+- 現状一覧の更新理由は新しい実装・検証入力への集約。前回の共有matrix 3b1bd1a110c34a04f70ca38a680b000147e9b751・4,045入力の9019 PASS／0 FAIL／24 ignored、CLI 43 FAIL、Core default／Wasm成功、およびprivate Native body返却df73dc174657216a20c5c42317ad1205758b5316・Core 2,181 PASSは元の入力の履歴・原本として保持する。完了済み機能を全体goalの未完了だけで戻さない。
+- Source staging factory・ViewValue/Handle/Removed生成・command/method・driverの接続を今回の引数投影から受入へ広げない。現状はcurrent-status.md一か所で判定する。
+- 原本: [checked引数keyの検証](acceptance-evidence/task-presentation-argument-key-validation.json)、raw archiveは118 entries／4591361 bytes、SHA-256 3dbfd858dc175eee1ff18aea8d82737ed8f748662cff4e397a90da8a73188858。全entryをTemp原本と照合し差分0。

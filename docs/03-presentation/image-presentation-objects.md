@@ -77,6 +77,13 @@ object identity, target, layer, bounds, fit/alignment, opacity, depth,
 transform, playback policy, lifecycle flags, semantic actions, custom
 `param.*` metadata, and optional `proxy.*` hit-test metadata.
 
+Custom metadata keys are non-empty dotted identifier paths. For example,
+`param.user.role` selects the `user.role` object field, while
+`proxy.param.user.role` selects the distinct `user.role` proxy field. Their
+semantic destinations retain both the metadata family and the complete key.
+Argument expressions follow authored source order independently of the compact
+parameter order used by the executable call ABI.
+
 `image @image... { ... }` declares the same bounded image object metadata at
 module scope. `image(@image.id)` expands that declaration into the same
 `ImagePresentationObject` model used by inline bounded calls, so Agent observe,
