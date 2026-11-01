@@ -9,6 +9,120 @@ use std::sync::Arc;
 mod scope_grants;
 mod transition;
 
+#[test]
+fn replaced_body_retirement_keeps_original_token_while_its_handle_remains_live() {
+    let (program, artifact, expected, _) = fixture();
+    let bank = RuntimePresentationBankId::Root;
+    let mut banks = PresentationBanks::new(
+        program.clone(),
+        artifact,
+        PresentationLedgerLimits {
+            handles: 4,
+            scopes: 4,
+        },
+    );
+    let mut env = RuntimeEnv::default();
+    let scope = bind(&mut banks, bank, &program, &mut env);
+    let first = banks
+        .register_and_retire(&program, scope, site(), body(expected, true))
+        .unwrap();
+    let second = banks
+        .register_and_retire(&program, scope, site(), body(expected, false))
+        .unwrap();
+    assert_ne!(first, second);
+    assert_eq!(banks.retirements.len(), 1);
+    assert_eq!(banks.retirements[0].token, first);
+    assert_eq!(banks.retirements[0].body.expected, expected);
+    assert_eq!(
+        banks.retirements[0].body.value.value(),
+        &RuntimeValue::Bool(true)
+    );
+    let mut admission = RuntimeRetainedValueAdmission::for_program(
+        program.clone(),
+        RuntimeSchemaLimits::engine_default(),
+    );
+    banks
+        .admit_retained(&program, artifact, &mut admission)
+        .unwrap();
+    env.admit_retained(&mut admission).unwrap();
+    admission.finish_presentation_custody().unwrap();
+    let image = banks.snapshot_admitted().unwrap();
+    let mut restored = image.clone().into_admitted_live(&program).unwrap();
+    assert_eq!(restored.snapshot_admitted().unwrap(), image);
+    assert!(
+        restored
+            .ledger_mut(bank)
+            .unwrap()
+            .release(&program, &first, Some(scope))
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(restored.retirements[0].token, first);
+    assert_eq!(
+        restored
+            .ledger_mut(bank)
+            .unwrap()
+            .clear(
+                &program,
+                match &site() {
+                    PresentationRegistrationSite::Slot(address) => address,
+                    _ => unreachable!(),
+                }
+            )
+            .unwrap()
+            .unwrap()
+            .value
+            .value(),
+        &RuntimeValue::Bool(false)
+    );
+}
+
+#[test]
+fn full_retirement_queue_rejects_replacement_before_body_or_cursor_changes() {
+    let (program, artifact, expected, _) = fixture();
+    let bank = RuntimePresentationBankId::Root;
+    let mut banks = PresentationBanks::new(
+        program.clone(),
+        artifact,
+        PresentationLedgerLimits {
+            handles: 2,
+            scopes: 4,
+        },
+    );
+    let mut env = RuntimeEnv::default();
+    let scope = bind(&mut banks, bank, &program, &mut env);
+    let mut current = banks
+        .register_and_retire(&program, scope, site(), body(expected, false))
+        .unwrap();
+    for value in [true, false] {
+        let next = banks
+            .register_and_retire(&program, scope, site(), body(expected, value))
+            .unwrap();
+        assert!(
+            banks
+                .ledger_mut(bank)
+                .unwrap()
+                .release(&program, &current, Some(scope))
+                .unwrap()
+                .is_none()
+        );
+        current = next;
+    }
+    assert_eq!(banks.retirements.len(), 2);
+    let before = banks.snapshot_admitted().unwrap();
+    let rejected = banks
+        .register_and_retire(&program, scope, site(), body(expected, true))
+        .unwrap_err();
+    assert_eq!(rejected.cause, RuntimePresentationError::RetirementCapacity);
+    assert_eq!(rejected.body.value.value(), &RuntimeValue::Bool(true));
+    assert_eq!(banks.snapshot_admitted().unwrap(), before);
+    assert!(
+        banks.ledger_mut(bank).unwrap().state.leases[&current.issuance()]
+            .body
+            .is_some()
+    );
+}
+
 fn fixture() -> (
     RuntimeProgramOwner,
     RuntimeArtifactFingerprint,

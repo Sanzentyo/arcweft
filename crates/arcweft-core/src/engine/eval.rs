@@ -164,8 +164,7 @@ impl Engine {
                     .env
                     .push_scope_with_identity(identity.clone());
                 let result = self.evaluate_expr_with_backend(body, pure_backend);
-                self.pop_runtime_scope()?;
-                result
+                self.finish_runtime_value_scope(result)
             }
             RuntimeExprKind::Tuple(_)
             | RuntimeExprKind::BracketSeq(_)
@@ -1164,8 +1163,7 @@ impl Engine {
         self.fiber.frame.env.push_scope_with_capacity(1);
         self.fiber.frame.env.set(binding, value);
         let result = self.evaluate_expr_with_backend(body, pure_backend);
-        self.pop_runtime_scope()?;
-        result
+        self.finish_runtime_value_scope(result)
     }
 
     fn evaluate_assign_expr(
@@ -1239,7 +1237,9 @@ impl Engine {
             )?
             .expect("checked owned pattern remains matched");
             self.with_temp_bindings(bindings, |this| {
-                this.evaluate_expr_with_backend(then_expr, pure_backend)
+                let value = this.evaluate_expr_with_backend(then_expr, pure_backend)?;
+                this.transition_presentation_return(1, false, std::iter::once(&value))?;
+                Ok(value)
             })
         } else {
             self.evaluate_expr_with_backend(else_expr, pure_backend)
@@ -1284,7 +1284,9 @@ impl Engine {
             )?
             .expect("checked owned pattern remains matched");
             return self.with_temp_bindings(bindings, |this| {
-                this.evaluate_expr_with_backend(arm.value(), pure_backend)
+                let value = this.evaluate_expr_with_backend(arm.value(), pure_backend)?;
+                this.transition_presentation_return(1, false, std::iter::once(&value))?;
+                Ok(value)
             });
         }
         Err(RuntimeEvalError::PatternMismatch(runtime_value_label(

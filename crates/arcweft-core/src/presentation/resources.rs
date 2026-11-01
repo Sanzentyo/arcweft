@@ -154,7 +154,11 @@ impl<V> PresentationLedger<V> {
     ) -> Result<(), RuntimePresentationError> {
         if token.artifact() != &self.state.artifact
             || token.bank() != self.bank
-            || self.state.leases.contains_key(&token.issuance())
+            || self
+                .state
+                .leases
+                .get(&token.issuance())
+                .is_some_and(|lease| lease.token != *token || lease.body.is_some())
             || self
                 .state
                 .next
@@ -395,7 +399,13 @@ impl<V> PresentationLedger<V> {
         owner: PresentationScopeOwner,
         site: PresentationRegistrationSite,
         body: V,
-    ) -> Result<(RuntimePresentationHandleToken, Option<V>), PresentationRegisterError<V>> {
+    ) -> Result<
+        (
+            RuntimePresentationHandleToken,
+            Option<PresentationRetirement<V>>,
+        ),
+        PresentationRegisterError<V>,
+    > {
         let prepared = (|| {
             self.validate_program(program)?;
             self.validate_scope(owner)?;
@@ -441,16 +451,24 @@ impl<V> PresentationLedger<V> {
         address: &PresentationSlotAddress,
     ) -> Result<Option<V>, RuntimePresentationError> {
         self.validate_program(program)?;
-        Ok(self.take_slot_body(address))
+        Ok(self
+            .take_slot_body(address)
+            .map(PresentationRetirement::into_body))
     }
 
-    fn take_slot_body(&mut self, address: &PresentationSlotAddress) -> Option<V> {
+    fn take_slot_body(
+        &mut self,
+        address: &PresentationSlotAddress,
+    ) -> Option<PresentationRetirement<V>> {
         self.state
             .leases
             .values_mut()
             .find_map(|lease| match &lease.site {
                 PresentationRegistrationSite::Slot(actual) if actual == address => {
-                    lease.body.take()
+                    lease.body.take().map(|body| PresentationRetirement {
+                        token: lease.token.clone(),
+                        body,
+                    })
                 }
                 _ => None,
             })

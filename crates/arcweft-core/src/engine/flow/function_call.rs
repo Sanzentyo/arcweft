@@ -244,18 +244,35 @@ impl Engine {
 
     fn take_function_call_frame(
         &mut self,
+        result: &RuntimeValue,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<FunctionCallFrame>, RuntimeEvalError> {
-        if !self
-            .fiber
-            .frame
-            .control_stack
-            .iter()
-            .any(|entry| matches!(entry.kind, FlowControlStackEntryKind::FunctionCall(_)))
-        {
+        let Some(function_index) =
+            self.fiber.frame.control_stack.iter().rposition(|entry| {
+                matches!(entry.kind, FlowControlStackEntryKind::FunctionCall(_))
+            })
+        else {
             return Ok(None);
-        }
+        };
+        let detached = matches!(
+            &self.fiber.frame.control_stack[function_index].kind,
+            FlowControlStackEntryKind::FunctionCall(FunctionCallFrame {
+                continuation: FunctionReturnContinuation::Program { .. }
+                    | FunctionReturnContinuation::Function { .. },
+                ..
+            })
+        );
+        let count = self.fiber.frame.control_stack[function_index..]
+            .iter()
+            .filter(|entry| match &entry.kind {
+                FlowControlStackEntryKind::Scope { .. } => true,
+                FlowControlStackEntryKind::FunctionCall(frame) => frame.function_scope,
+                FlowControlStackEntryKind::FormatAttempt(frame) => frame.active.is_some(),
+                _ => false,
+            })
+            .count();
+        self.transition_presentation_return(count, detached, std::iter::once(result))?;
         while let Some(entry) = self.fiber.frame.control_stack.last() {
             let owns_scope = match &entry.kind {
                 FlowControlStackEntryKind::Scope { .. } => true,
@@ -294,7 +311,7 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Option<RuntimeValue> {
-        let frame = match self.take_function_call_frame(output, pure_backend) {
+        let frame = match self.take_function_call_frame(&value, output, pure_backend) {
             Ok(frame) => frame,
             Err(error) => {
                 self.fail_eval(error, output);
@@ -320,7 +337,7 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
-        let frame = match self.take_function_call_frame(output, pure_backend) {
+        let frame = match self.take_function_call_frame(&RuntimeValue::Unit, output, pure_backend) {
             Ok(frame) => frame,
             Err(error) => {
                 self.fail_eval(error, output);

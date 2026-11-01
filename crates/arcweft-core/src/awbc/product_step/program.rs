@@ -360,4 +360,14 @@ impl AwbcProductStepExecutor {
         }
         Ok(result.map(|value| (id, value)))
     }
+
+    /// Borrows the completed result while its original banks stay with this executor.
+    pub fn program_result(&self) -> Option<(RuntimePureProgramId, &RuntimeValue)> {
+        match (&self.fiber.root, &self.fiber.terminal) {
+            (AwbcFiberRoot::Program(id), Some(FiberTerminalValue::Returned(Some(value)))) => {
+                Some((*id, value))
+            }
+            _ => None,
+        }
+    }
 }

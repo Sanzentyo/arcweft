@@ -33,60 +33,19 @@ impl Engine {
     ) -> Result<
         (
             crate::runtime_id::RuntimePresentationHandleToken,
-            Option<PresentationBody<RuntimePayload>>,
+            Option<
+                crate::presentation::resources::PresentationRetirement<
+                    PresentationBody<RuntimePayload>,
+                >,
+            >,
         ),
         crate::presentation::resources::PresentationRegisterError<
             RuntimePayload,
             crate::value::AwbcRuntimeValueSnapshotError,
         >,
     > {
-        let owner = self.fiber.frame.program.clone();
-        let limits = crate::entry::RuntimeSchemaLimits::engine_default();
-        let prepared = (|| {
-            if !owner.same_program(&crate::task::RuntimeProgramOwner::Plan(Arc::clone(
-                &self.plan,
-            ))) {
-                return Err(RuntimePresentationError::Program.into());
-            }
-            if self.fiber.execution.get().get() != self.fiber.persistent_id.get() {
-                return Err(RuntimePresentationError::Execution.into());
-            }
-            if self.presentation.is_none()
-                && self.fiber.frame.env.presentation_scope_binding().is_some()
-            {
-                return Err(RuntimePresentationError::Owner.into());
-            }
-            let artifact = self
-                .plan
-                .artifact()
-                .ok_or(RuntimePresentationError::MissingArtifact)?;
-            let mut admission =
-                crate::value::RuntimeRetainedValueAdmission::for_program(owner.clone(), limits);
-            self.admit_live_retained_values(&mut admission)?;
-            let binding = self.fiber.frame.env.function_instantiation_lease();
-            admission.validate_metadata(&(expected, binding))?;
-            admission.validate_owned_typed_borrowed_in_invocation(
-                value.borrowed_value(),
-                expected,
-                binding.map(Arc::as_ref),
-            )?;
-            admission.finish_presentation_custody()?;
-            let banks = self.presentation.get_or_insert_with(|| {
-                PresentationBanks::new(
-                    owner.clone(),
-                    artifact,
-                    PresentationLedgerLimits::for_schema(limits),
-                )
-            });
-            banks.preflight_register(&owner)?;
-            let ledger = banks.ledger_mut(self.fiber.frame.presentation_bank)?;
-            ledger.preflight_register(&owner)?;
-            Ok::<_, crate::value::AwbcRuntimeValueSnapshotError>(
-                self.fiber.bind_presentation_scope(ledger)?,
-            )
-        })();
-        let scope = match prepared {
-            Ok(scope) => scope,
+        let (owner, scope) = match self.prepare_presentation_registration(expected, &value) {
+            Ok(prepared) => prepared,
             Err(cause) => {
                 return Err(crate::presentation::resources::PresentationRegisterError {
                     cause,
@@ -120,12 +79,203 @@ impl Engine {
         Ok((token, previous))
     }
 
+    fn prepare_presentation_registration(
+        &mut self,
+        expected: crate::pattern::RuntimeSemanticTypeId,
+        value: &RuntimePayload,
+    ) -> Result<
+        (
+            crate::task::RuntimeProgramOwner,
+            crate::presentation::resources::PresentationScopeOwner,
+        ),
+        crate::value::AwbcRuntimeValueSnapshotError,
+    > {
+        let owner = self.fiber.frame.program.clone();
+        let limits = crate::entry::RuntimeSchemaLimits::engine_default();
+        if !owner.same_program(&crate::task::RuntimeProgramOwner::Plan(Arc::clone(
+            &self.plan,
+        ))) {
+            return Err(RuntimePresentationError::Program.into());
+        }
+        if self.fiber.execution.get().get() != self.fiber.persistent_id.get() {
+            return Err(RuntimePresentationError::Execution.into());
+        }
+        if self.presentation.is_none()
+            && self.fiber.frame.env.presentation_scope_binding().is_some()
+        {
+            return Err(RuntimePresentationError::Owner.into());
+        }
+        let artifact = self
+            .plan
+            .artifact()
+            .ok_or(RuntimePresentationError::MissingArtifact)?;
+        let mut admission =
+            crate::value::RuntimeRetainedValueAdmission::for_program(owner.clone(), limits);
+        self.admit_live_retained_values(&mut admission)?;
+        let binding = self.fiber.frame.env.function_instantiation_lease();
+        admission.validate_metadata(&(expected, binding))?;
+        admission.validate_owned_typed_borrowed_in_invocation(
+            value.borrowed_value(),
+            expected,
+            binding.map(Arc::as_ref),
+        )?;
+        admission.finish_presentation_custody()?;
+        let banks = self.presentation.get_or_insert_with(|| {
+            PresentationBanks::new(
+                owner.clone(),
+                artifact,
+                PresentationLedgerLimits::for_schema(limits),
+            )
+        });
+        banks.preflight_register(&owner)?;
+        let ledger = banks.ledger_mut(self.fiber.frame.presentation_bank)?;
+        ledger.preflight_register(&owner)?;
+        let scope = self.fiber.bind_presentation_scope(ledger)?;
+        Ok((owner, scope))
+    }
+
+    pub(super) fn evaluate_presentation_factory(
+        &mut self,
+        call: &Arc<crate::presentation::RuntimePresentationFactoryCall>,
+        values: Vec<RuntimeValue>,
+        result: crate::runtime_id::RuntimePlanTypeId,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let error = |cause: String| RuntimeEvalError::UnsupportedPure {
+            name: "core.presentation.factory".into(),
+            reason: cause,
+        };
+        call.validate_arguments(&values)
+            .map_err(|cause| error(cause.to_string()))?;
+        let row = self
+            .plan
+            .type_table()
+            .get(result)
+            .ok_or(RuntimePresentationError::InvalidState)?;
+        let handle_owner = call
+            .result_owner(
+                crate::program_types::RuntimeProgramTypes::Plan(&self.plan),
+                row.semantic_identity(),
+            )
+            .map_err(|cause| error(cause.to_string()))?;
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            self.fiber.frame.program.clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        self.admit_live_retained_values(&mut admission)
+            .map_err(|cause| error(cause.to_string()))?;
+        let binding = self.fiber.frame.env.function_instantiation_lease().cloned();
+        let (site, resource) = admission
+            .construct_native_presentation_resource_with_metadata(
+                Arc::clone(&self.plan),
+                Arc::clone(call),
+                binding.clone(),
+                RuntimePayload::new(RuntimeValue::Tuple(values)),
+                |admission, call, body| call.registration_site(admission, body),
+            )
+            .map_err(|cause| error(cause.to_string()))?;
+        admission
+            .finish_presentation_custody()
+            .map_err(|cause| error(cause.to_string()))?;
+        let value = RuntimePayload::new(resource);
+        let (program, scope) = self
+            .prepare_presentation_registration(call.resource_type(), &value)
+            .map_err(|cause| error(cause.to_string()))?;
+        let token = self
+            .presentation
+            .as_mut()
+            .expect("prepared bank")
+            .register_and_retire(
+                &program,
+                scope,
+                site,
+                PresentationBody {
+                    expected: call.resource_type(),
+                    binding,
+                    value,
+                },
+            )
+            .map_err(|cause| RuntimeEvalError::from(cause.cause))?;
+        handle_owner
+            .try_wrap(token.encode_payload())
+            .map_err(|cause| error(cause.to_string()))
+    }
+
     /// Reconciles resources before removing the physical lexical frame. Bodies
     /// move to the engine's retirement owner, including across rollback.
     pub(super) fn pop_runtime_scope(&mut self) -> Result<(), RuntimeEvalError> {
         self.retire_current_presentation_scope()?;
         self.fiber.frame.env.pop_scope();
         Ok(())
+    }
+
+    pub(super) fn transition_presentation_return<'value>(
+        &mut self,
+        scopes: usize,
+        detached: bool,
+        values: impl IntoIterator<Item = &'value RuntimeValue>,
+    ) -> Result<(), RuntimeEvalError> {
+        use crate::presentation::resources::PresentationScopeExit;
+        let escaping = values
+            .into_iter()
+            .map(|value| value.view().affine_handles())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|cause| RuntimeEvalError::UnsupportedPure {
+                name: "presentation return".into(),
+                reason: cause.to_string(),
+            })?
+            .into_iter()
+            .flatten()
+            .filter_map(|handle| match handle {
+                crate::value::ownership::RuntimeAffineHandle::Presentation { token, .. } => {
+                    Some(token)
+                }
+                crate::value::ownership::RuntimeAffineHandle::Line(_) => None,
+            })
+            .collect::<Vec<_>>();
+        if self.presentation.is_none() && escaping.is_empty() {
+            return Ok(());
+        }
+        let banks = self
+            .presentation
+            .as_mut()
+            .ok_or(RuntimePresentationError::MissingLedger)?;
+        let execution = self.fiber.execution;
+        let fiber = self.fiber.persistent_id;
+        let (exiting, destination) = self
+            .fiber
+            .frame
+            .env
+            .presentation_scope_exit_targets(scopes, detached)?;
+        banks.transition_scope_contour(
+            &self.fiber.frame.program,
+            exiting
+                .into_iter()
+                .map(|scope| PresentationScopeExit {
+                    execution,
+                    fiber,
+                    scope,
+                })
+                .collect(),
+            destination.map(|scope| PresentationScopeExit {
+                execution,
+                fiber,
+                scope,
+            }),
+            &escaping,
+            &[],
+        )?;
+        Ok(())
+    }
+
+    pub(super) fn finish_runtime_value_scope(
+        &mut self,
+        result: Result<RuntimeValue, RuntimeEvalError>,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        if let Ok(value) = &result {
+            self.transition_presentation_return(1, false, std::iter::once(value))?;
+        }
+        self.pop_runtime_scope()?;
+        result
     }
 
     pub(super) fn retire_current_presentation_scope(&mut self) -> Result<(), RuntimeEvalError> {

@@ -95,13 +95,13 @@ fn options() -> RuntimeStepOptions {
     }
 }
 
-fn assert_result(value: RuntimeValue) {
-    let RuntimeValue::Tuple(mut fields) = value else {
+fn assert_result(value: &RuntimeValue) {
+    let RuntimeValue::Tuple(fields) = value else {
         panic!("owned result tuple")
     };
     assert_eq!(fields.len(), 2);
-    assert_eq!(fields.pop(), Some(RuntimeValue::i32(12)));
-    let RuntimeValue::Opaque(handle) = fields.pop().unwrap() else {
+    assert_eq!(fields[1], RuntimeValue::i32(12));
+    let RuntimeValue::Opaque(handle) = &fields[0] else {
         panic!("typed handle")
     };
     let token = RuntimePresentationHandleToken::try_decode_payload(handle.payload()).unwrap();
@@ -143,7 +143,9 @@ fn source_image_factory_executes_owned_captures_in_native() {
         }
     }
     assert!(done);
-    assert_result(native.take_program_result().unwrap().unwrap().1);
+    assert_result(native.program_result().unwrap().1);
+    assert!(matches!(native.take_program_result(), Err(arcweft_core::value::ownership::RuntimeDetachedValueError::PresentationHandleCustodyRequired { .. })));
+    assert_result(native.program_result().unwrap().1);
 }
 
 #[test]
@@ -170,11 +172,19 @@ fn source_image_factory_executes_owned_captures_in_decoded_awbc() {
         );
         assert!(step.output.requests.tasks.is_empty());
         assert!(!matches!(step.fiber_status, FlowFiberStatus::Failed(_)));
+        let snapshot = awbc
+            .snapshot()
+            .expect("whole executor retains the resource and its owning bank");
+        awbc = awbc
+            .restore_snapshot_owned(snapshot)
+            .unwrap_or_else(|(_, error)| panic!("owned restore: {error}"));
         if matches!(step.fiber_status, FlowFiberStatus::Done(_)) {
             done = true;
             break;
         }
     }
     assert!(done);
-    assert_result(awbc.take_program_result().unwrap().unwrap().1);
+    assert_result(awbc.program_result().unwrap().1);
+    assert!(matches!(awbc.take_program_result(), Err(arcweft_core::value::ownership::RuntimeDetachedValueError::PresentationHandleCustodyRequired { .. })));
+    assert_result(awbc.program_result().unwrap().1);
 }

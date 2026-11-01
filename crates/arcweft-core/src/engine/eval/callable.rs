@@ -248,8 +248,7 @@ impl Engine {
                 ))
             }
         });
-        self.pop_runtime_scope()?;
-        value
+        self.finish_runtime_value_scope(value)
     }
 
     /// The normal function ingress has already validated the complete packet.

@@ -576,7 +576,7 @@ pub(crate) fn step_with_presentation(
         fiber,
         options,
         Some(context),
-        presentation.as_mut(),
+        Some(presentation),
         host,
     )
 }
@@ -586,7 +586,9 @@ fn step_with_host_context_optional(
     fiber: &mut FiberState,
     options: VmStepOptions,
     context: Option<&VmExecutionContext>,
-    presentation: Option<&mut PresentationBanks<PresentationBody<crate::value::RuntimePayload>>>,
+    presentation: Option<
+        &mut Option<PresentationBanks<PresentationBody<crate::value::RuntimePayload>>>,
+    >,
     host: &mut impl VmHost,
 ) -> Result<VmStepOutput, VmError> {
     let mut execution = VmExecutionResources {
@@ -904,7 +906,7 @@ fn execute_instruction(
                 .ok_or(FiberStateError::UnknownFrameLayout(layout_id.0))?;
             fiber.validate_cleanup_inputs(program)?;
             if has_presentation {
-                let banks = execution.presentation.as_deref_mut().ok_or_else(|| {
+                let banks = execution.banks_mut().ok_or_else(|| {
                     FiberStateError::Snapshot(
                         crate::presentation::RuntimePresentationError::MissingLedger.into(),
                     )
@@ -1590,6 +1592,35 @@ fn execute_instruction(
                 .active_frame_mut()?
                 .take_register_values(program, args)?;
             let intrinsic_row = &program.intrinsics[intrinsic.index()];
+            if let crate::value::RuntimeCallTarget::PresentationFactory(call) =
+                &intrinsic_row.identity
+            {
+                let signature = program
+                    .signatures
+                    .get(intrinsic_row.signature.index())
+                    .ok_or_else(|| {
+                        VmError::Runtime("presentation factory has no signature".into())
+                    })?;
+                let result = signature.result.ok_or_else(|| {
+                    VmError::Runtime("presentation factory has no result type".into())
+                })?;
+                if signature.params.len() != call.inputs().len() || dst.is_none() {
+                    return Err(VmError::Runtime(
+                        "presentation factory has an invalid call signature".into(),
+                    ));
+                }
+                let result = program
+                    .runtime_types
+                    .get(result.index())
+                    .ok_or(VmError::MissingType(result))?
+                    .semantic_identity();
+                let value =
+                    execution.construct_presentation_factory(program, fiber, call, args, result)?;
+                fiber
+                    .active_frame_mut()?
+                    .set_register(dst.expect("factory result destination checked"), value)?;
+                return Ok(InstructionControl::Continue);
+            }
             if let crate::value::RuntimeCallTarget::PresentationSlotRef(call) =
                 &intrinsic_row.identity
             {

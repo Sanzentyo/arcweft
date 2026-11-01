@@ -2749,7 +2749,8 @@ fn unique_affine_line_handles(
     value: &RuntimeValue,
 ) -> Result<Vec<crate::value::ownership::RuntimeAffineLineHandle>, LineRuntimeError> {
     let handles = value
-        .affine_line_handles()
+        .view()
+        .line_handle_projection()
         .map_err(|_| LineRuntimeError::InvalidHandlePayload)?;
     let mut tokens = std::collections::BTreeSet::new();
     for handle in &handles {

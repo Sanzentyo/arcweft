@@ -198,6 +198,7 @@ impl Engine {
                 "format completion does not match its active operand".to_owned(),
             ));
         }
+        self.transition_presentation_return(1, false, std::iter::once(&evaluated))?;
         self.pop_runtime_scope()?;
         let Some(FlowControlStackEntry {
             kind: FlowControlStackEntryKind::FormatAttempt(frame),

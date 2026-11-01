@@ -163,7 +163,9 @@ fn replacement_and_clear_move_non_clone_bodies_without_old_handle_clearing_new_s
             CapturedBody(Box::new(22)),
         )
         .unwrap();
-    assert_eq!(previous, Some(CapturedBody(Box::new(11))));
+    let previous = previous.expect("occupied slot returns its original token and body");
+    assert_eq!(previous.token, first);
+    assert_eq!(previous.body, CapturedBody(Box::new(11)));
     assert_eq!(ledger.release(&program, &first, Some(outer)).unwrap(), None);
     assert_eq!(
         ledger.clear(&program, &address("main")).unwrap(),
@@ -658,7 +660,9 @@ fn one_program_slot_replaces_across_real_execution_owners() {
             20,
         )
         .unwrap();
-    assert_eq!(previous, Some(10));
+    let previous = previous.expect("occupied slot returns its original token and body");
+    assert_eq!(previous.token, old);
+    assert_eq!(previous.body, 10);
     assert_eq!(old.execution(), execution());
     assert_eq!(new.execution(), second_execution);
     assert_eq!(ledger.release(&program, &old, Some(first)).unwrap(), None);

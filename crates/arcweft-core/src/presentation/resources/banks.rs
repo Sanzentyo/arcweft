@@ -36,6 +36,47 @@ impl<V, L> PresentationBanks<V, L> {
 }
 
 impl<V> PresentationBanks<V> {
+    /// Registers one occupant and retains the displaced body's original token.
+    /// Queue capacity and every ledger check precede displacement or issuance.
+    pub(crate) fn register_and_retire(
+        &mut self,
+        program: &RuntimeProgramOwner,
+        scope: PresentationScopeOwner,
+        site: PresentationRegistrationSite,
+        body: V,
+    ) -> Result<RuntimePresentationHandleToken, PresentationRegisterError<V>> {
+        let prepared = (|| {
+            self.preflight_register(program)?;
+            let ledger = self
+                .ledgers
+                .get(&scope.bank)
+                .ok_or(RuntimePresentationError::Owner)?;
+            ledger.preflight_register(program)?;
+            ledger.validate_scope(scope)?;
+            let displaced = match &site {
+                PresentationRegistrationSite::Independent(_) => false,
+                PresentationRegistrationSite::Slot(address) => ledger.state.leases.values().any(
+                    |lease| matches!(&lease.site, PresentationRegistrationSite::Slot(actual) if actual == address)
+                        && lease.body.is_some(),
+                ),
+            };
+            if displaced && self.retirements.len() >= ledger.limits.handles {
+                return Err(RuntimePresentationError::RetirementCapacity);
+            }
+            Ok(())
+        })();
+        if let Err(cause) = prepared {
+            return Err(PresentationRegisterError { cause, body });
+        }
+        let (token, displaced) = self
+            .ledgers
+            .get_mut(&scope.bank)
+            .expect("exclusive preflight retains the issuing ledger")
+            .register(program, scope, site, body)?;
+        self.retirements.extend(displaced);
+        Ok(token)
+    }
+
     pub(crate) fn new(
         program: RuntimeProgramOwner,
         artifact: RuntimeArtifactFingerprint,

@@ -744,7 +744,8 @@ fn flow_fiber_line_handle_tokens(
         .collect::<BTreeSet<_>>();
     if let Some(selected) = &fiber.frame.selected_dialogue_result {
         for handle in selected
-            .affine_line_handles()
+            .view()
+            .line_handle_projection()
             .map_err(|_| crate::line_task::LineRuntimeError::InvalidHandlePayload)?
         {
             tokens.insert(handle.token().clone());
@@ -767,7 +768,8 @@ fn flow_fiber_line_handle_owners(
         let owner =
             crate::value::ownership::RuntimeOwnedSlotId::environment_local(fiber.execution, local);
         for handle in value
-            .affine_line_handles()
+            .view()
+            .line_handle_projection()
             .map_err(|_| crate::line_task::LineRuntimeError::InvalidHandlePayload)?
         {
             if owners.insert(handle.token().clone(), owner).is_some() {
@@ -795,7 +797,8 @@ fn flow_fiber_line_handle_owners(
                 ordinal,
             };
             for handle in value
-                .affine_line_handles()
+                .view()
+                .line_handle_projection()
                 .map_err(|_| crate::line_task::LineRuntimeError::InvalidHandlePayload)?
             {
                 if owners.insert(handle.token().clone(), owner).is_some() {
@@ -810,7 +813,8 @@ fn flow_fiber_line_handle_owners(
             fiber: fiber.persistent_id,
         };
         for handle in value
-            .affine_line_handles()
+            .view()
+            .line_handle_projection()
             .map_err(|_| crate::line_task::LineRuntimeError::InvalidHandlePayload)?
         {
             if owners.insert(handle.token().clone(), owner).is_some() {
@@ -2357,6 +2361,23 @@ impl Engine {
                 };
                 (program, value)
             }))
+    }
+
+    /// Borrows the completed result while this executor retains resource custody.
+    pub fn program_result(
+        &self,
+    ) -> Option<(
+        arcweft_id::runtime_program::RuntimePureProgramId,
+        &RuntimeValue,
+    )> {
+        self.fiber
+            .frame
+            .invocation_result
+            .as_ref()
+            .and_then(|(root, value)| match root {
+                NativeInvocationRoot::Program(id) => Some((*id, value)),
+                NativeInvocationRoot::Function(_) | NativeInvocationRoot::Task(_) => None,
+            })
     }
 
     #[must_use]

@@ -162,6 +162,59 @@ impl RuntimePresentationFactoryCall {
         Some(ordinal + usize::from(self.scope_input().is_some_and(|scope| scope <= ordinal)))
     }
 
+    pub(crate) fn validate_arguments(
+        &self,
+        values: &[crate::value::RuntimeValue],
+    ) -> Result<(), RuntimePresentationFactoryCallError> {
+        if values.len() != self.inputs.len() {
+            return Err(RuntimePresentationFactoryCallError::Arguments {
+                expected: self.inputs.len(),
+                actual: values.len(),
+            });
+        }
+        // A public scope name is not a dynamic lexical grant. Until the Source
+        // capability producer is connected, reject rather than minting custody.
+        if self.scope_input.is_some() {
+            return Err(RuntimePresentationFactoryCallError::ExplicitScope);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn result_owner(
+        &self,
+        types: crate::program_types::RuntimeProgramTypes<'_>,
+        result: RuntimeSemanticTypeId,
+    ) -> Result<crate::pattern::RuntimeOpaqueTypeOwner, RuntimePresentationFactoryCallError> {
+        use crate::{
+            awbc::schema::AwbcRuntimeTypeShape, pattern::RuntimeOpaqueTypeOwner,
+            plan::RuntimePlanTypeProjection, program_types::RuntimeProgramValueType,
+        };
+        let expected = RuntimeOpaqueTypeOwner::presentation_handle(self.resource(), result);
+        let valid = match types
+            .value_type(result)
+            .map_err(|cause| RuntimePresentationFactoryCallError::Type(Box::new(cause)))?
+        {
+            RuntimeProgramValueType::Plan { program, ty } => matches!(
+                program.type_table().get(ty).map(|row| row.projection()),
+                Some(RuntimePlanTypeProjection::Opaque { producer, admission, value_class, persistence, arguments })
+                    if producer == expected.producer() && *admission == expected.admission()
+                        && *value_class == expected.value_class() && *persistence == expected.persistence()
+                        && arguments.is_empty()
+            ),
+            RuntimeProgramValueType::Awbc { program, ty } => matches!(
+                program.runtime_types.get(ty.index()).map(|row| row.shape()),
+                Some(AwbcRuntimeTypeShape::Opaque { producer, admission, value_class, persistence, arguments })
+                    if program.strings.get(producer.index()).is_some_and(|producer| producer == expected.producer().as_str())
+                        && *admission == expected.admission() && *value_class == expected.value_class()
+                        && *persistence == expected.persistence() && arguments.is_empty()
+            ),
+        };
+        if !valid {
+            return Err(RuntimePresentationFactoryCallError::ResultType { result });
+        }
+        Ok(expected)
+    }
+
     pub(crate) fn registration_site(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
@@ -336,6 +389,14 @@ impl RuntimePresentationFactoryCall {
 
 #[derive(Debug, Error)]
 pub enum RuntimePresentationFactoryCallError {
+    #[error("presentation factory expected {expected} inputs, found {actual}")]
+    Arguments { expected: usize, actual: usize },
+    #[error(
+        "presentation factory requires an actual lexical scope capability for an explicit scope"
+    )]
+    ExplicitScope,
+    #[error("presentation factory has an invalid Handle result type {result:?}")]
+    ResultType { result: RuntimeSemanticTypeId },
     #[error("presentation retained product has no field type at ordinal {ordinal}")]
     BodyField { ordinal: usize },
     #[error(

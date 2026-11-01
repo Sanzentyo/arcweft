@@ -146,7 +146,7 @@ fn native_slot_replacement_returns_the_original_body_type_and_invocation() {
         PresentationResourceKind::Background,
     )
     .unwrap();
-    let (_, previous) = engine
+    let (original_token, previous) = engine
         .register_presentation_body(
             PresentationRegistrationSite::Slot(address.clone()),
             boolean,
@@ -174,7 +174,9 @@ fn native_slot_replacement_returns_the_original_body_type_and_invocation() {
             RuntimePayload(RuntimeValue::String("replacement".into())),
         )
         .unwrap();
-    let previous = previous.expect("the occupied slot moves its complete original body");
+    let retired = previous.expect("the occupied slot moves its complete original body");
+    assert_eq!(retired.token, original_token);
+    let previous = retired.body;
     assert_eq!(previous.expected, boolean);
     assert_eq!(previous.value.value(), &RuntimeValue::Bool(true));
     let original = previous.binding.as_ref().expect("original invocation");

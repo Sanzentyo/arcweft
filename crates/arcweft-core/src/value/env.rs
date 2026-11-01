@@ -298,6 +298,43 @@ impl<V> RuntimeEnv<V> {
         )
     }
 
+    /// Borrows the actual exiting lexical contour and its receiving scope.
+    /// The count comes from the interpreter's owning control frames.
+    pub(crate) fn presentation_scope_exit_targets(
+        &mut self,
+        count: usize,
+        detached: bool,
+    ) -> Result<
+        (
+            Vec<crate::presentation::resources::PresentationScopeTarget<'_>>,
+            Option<crate::presentation::resources::PresentationScopeTarget<'_>>,
+        ),
+        crate::presentation::RuntimePresentationError,
+    > {
+        use crate::presentation::{RuntimePresentationError, resources::PresentationScopeTarget};
+        let start = self
+            .scopes
+            .len()
+            .checked_sub(count)
+            .ok_or(RuntimePresentationError::MissingScope)?;
+        let (remaining, exiting) = self.scopes.split_at_mut(start);
+        let destination = if detached {
+            None
+        } else {
+            remaining
+                .last_mut()
+                .map(|scope| PresentationScopeTarget::native(&mut scope.presentation_scope))
+        };
+        Ok((
+            exiting
+                .iter_mut()
+                .rev()
+                .map(|scope| PresentationScopeTarget::native(&mut scope.presentation_scope))
+                .collect(),
+            destination,
+        ))
+    }
+
     pub(crate) fn source_function_context(&self) -> super::RuntimeScopeTypeContext {
         self.scopes
             .iter()

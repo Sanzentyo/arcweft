@@ -39,6 +39,10 @@ impl Engine {
         result_type: RuntimePlanTypeId,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
+        if let RuntimeCallTarget::PresentationFactory(call) = callee {
+            let (values, _) = self.evaluate_external_call_args(callee, args, pure_backend)?;
+            return self.evaluate_presentation_factory(call, values, result_type);
+        }
         if let Some(intrinsic) = callee.as_intrinsic()
             && is_context_intrinsic(intrinsic)
         {
@@ -361,6 +365,15 @@ impl Engine {
         } else {
             None
         };
+        self.transition_presentation_return(
+            1,
+            false,
+            value
+                .as_ref()
+                .ok()
+                .into_iter()
+                .chain(updated_receiver.as_ref()),
+        )?;
         self.pop_runtime_scope()?;
 
         let value = value?;

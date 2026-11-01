@@ -9,10 +9,103 @@ use crate::value::RuntimePayload;
 pub(super) struct VmExecutionResources<'execution> {
     pub(super) context: Option<&'execution VmExecutionContext>,
     pub(super) presentation:
-        Option<&'execution mut PresentationBanks<PresentationBody<RuntimePayload>>>,
+        Option<&'execution mut Option<PresentationBanks<PresentationBody<RuntimePayload>>>>,
 }
 
 impl VmExecutionResources<'_> {
+    pub(super) fn banks_mut(
+        &mut self,
+    ) -> Option<&mut PresentationBanks<PresentationBody<RuntimePayload>>> {
+        self.presentation.as_deref_mut().and_then(Option::as_mut)
+    }
+
+    pub(super) fn construct_presentation_factory(
+        &mut self,
+        program: &AwbcProgram,
+        fiber: &mut FiberState,
+        call: &std::sync::Arc<crate::presentation::RuntimePresentationFactoryCall>,
+        values: Vec<crate::value::RuntimeValue>,
+        result: crate::pattern::RuntimeSemanticTypeId,
+    ) -> Result<crate::value::RuntimeValue, VmError> {
+        use crate::{
+            entry::RuntimeSchemaLimits, presentation::resources::PresentationLedgerLimits,
+            value::RuntimeValue,
+        };
+        let error = |cause: &dyn std::fmt::Display| VmError::Runtime(cause.to_string());
+        call.validate_arguments(&values)
+            .map_err(|cause| error(&cause))?;
+        let context = self.context.ok_or(VmError::MissingExecutionContext)?;
+        let admitted = context.admitted_program(program)?;
+        let owner = context.program_owner(program)?;
+        let handle_owner = call
+            .result_owner(owner.types(), result)
+            .map_err(|cause| error(&cause))?;
+        let source = admitted
+            .original_task_source()
+            .ok_or(VmError::MissingExecutionContext)?;
+        let limits = RuntimeSchemaLimits::engine_default();
+        let storage = self
+            .presentation
+            .as_deref_mut()
+            .ok_or(VmError::MissingExecutionContext)?;
+        let mut admission = admitted.retained_value_admission(limits);
+        if let Some(banks) = storage.as_ref() {
+            banks
+                .admit_retained(&owner, context.artifact(), &mut admission)
+                .map_err(|cause| error(&cause))?;
+        }
+        fiber
+            .admit_retained(&mut admission)
+            .map_err(|cause| error(&cause))?;
+        let binding = fiber.active_frame()?.type_instantiation.clone();
+        let body = RuntimeValue::Tuple(values);
+        let site = call
+            .registration_site(&mut admission, &body)
+            .map_err(|cause| error(&cause))?;
+        let resource = admission
+            .construct_presentation_resource(
+                source.clone(),
+                std::sync::Arc::clone(call),
+                binding.clone(),
+                RuntimePayload::new(body),
+            )
+            .map_err(|cause| error(&cause))?;
+        let banks = storage.get_or_insert_with(|| {
+            PresentationBanks::new(
+                owner.clone(),
+                context.artifact(),
+                PresentationLedgerLimits::for_schema(limits),
+            )
+        });
+        banks
+            .preflight_register(&owner)
+            .map_err(|cause| error(&cause))?;
+        let ledger = banks
+            .ledger_mut(fiber.presentation_bank())
+            .map_err(|cause| error(&cause))?;
+        ledger
+            .preflight_register(&owner)
+            .map_err(|cause| error(&cause))?;
+        let scope = fiber
+            .bind_presentation_scope(&owner, ledger)
+            .map_err(|cause| error(&cause))?;
+        let token = banks
+            .register_and_retire(
+                &owner,
+                scope,
+                site,
+                PresentationBody {
+                    expected: call.resource_type(),
+                    binding,
+                    value: RuntimePayload::new(resource),
+                },
+            )
+            .map_err(|cause| error(&cause.cause))?;
+        handle_owner
+            .try_wrap(token.encode_payload())
+            .map_err(|cause| error(&cause))
+    }
+
     /// Admit every actual result resource while it still lives in its source
     /// register. A nested return receives it in the caller's current scope;
     /// a terminal result owns its detached original-bank lease.
@@ -46,13 +139,13 @@ impl VmExecutionResources<'_> {
         if targets.is_empty() && escaping.is_empty() {
             return Ok(());
         }
-        let banks = self.presentation.as_deref_mut().ok_or_else(|| {
+        let context = self.context;
+        let banks = self.banks_mut().ok_or_else(|| {
             FiberStateError::Snapshot(
                 crate::presentation::RuntimePresentationError::MissingLedger.into(),
             )
         })?;
-        let owner = self
-            .context
+        let owner = context
             .ok_or(VmError::MissingExecutionContext)?
             .program_owner(program)?;
         banks
@@ -77,13 +170,13 @@ impl VmExecutionResources<'_> {
         if targets.is_empty() && escaping.is_empty() {
             return Ok(());
         }
-        let banks = self.presentation.as_deref_mut().ok_or_else(|| {
+        let context = self.context;
+        let banks = self.banks_mut().ok_or_else(|| {
             FiberStateError::Snapshot(
                 crate::presentation::RuntimePresentationError::MissingLedger.into(),
             )
         })?;
-        let owner = self
-            .context
+        let owner = context
             .ok_or(VmError::MissingExecutionContext)?
             .program_owner(program)?;
         banks
@@ -144,13 +237,13 @@ impl VmExecutionResources<'_> {
         if targets.is_empty() {
             return Ok(());
         }
-        let banks = self.presentation.as_deref_mut().ok_or_else(|| {
+        let context = self.context;
+        let banks = self.banks_mut().ok_or_else(|| {
             FiberStateError::Snapshot(
                 crate::presentation::RuntimePresentationError::MissingLedger.into(),
             )
         })?;
-        let owner = self
-            .context
+        let owner = context
             .ok_or(VmError::MissingExecutionContext)?
             .program_owner(program)?;
         banks
