@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "source": "9c33b7de0ba05f0e764ecc2e17d593d20e68aaa3",
+  "inspectedHead": "9c33b7de0ba05f0e764ecc2e17d593d20e68aaa3",
+  "checkedDocuments": [
+    "docs/implementation/current-status.md",
+    "docs/implementation/convergence-evidence-history.md"
+  ],
+  "localLinks": 773,
+  "brokenLinks": 0,
+  "fencesBalanced": true,
+  "historicalPrefixBytes": 1695252,
+  "historicalPrefixDrift": 0,
+  "oldCommitShaLoss": 0,
+  "acceptedGenericMatchAcceptanceUnchanged": true,
+  "genericMatchLabelCorrection": "Old source 12180810c10ced738a2ad94f98dbb3b1cec831a1 is described as a post-acceptance run, not the current run. Acceptance/publication SHAs, case counts and evidence links are unchanged.",
+  "rawEntryCount": 119,
+  "rawEntryDrift": 0,
+  "rawZipSha256": "2fd0479b0ba9af42972b01eaf8401d36298102aea162c8e8e3588d4a50322497",
+  "diffCheckExit": 0,
+  "recordedAt": "2026-11-01T12:24:34.3199697Z",
+  "initialAudit": {
+    "version": 1,
+    "source": "9c33b7de0ba05f0e764ecc2e17d593d20e68aaa3",
+    "inspectedHead": "9c33b7de0ba05f0e764ecc2e17d593d20e68aaa3",
+    "checkedDocuments": [
+      "docs/implementation/current-status.md",
+      "docs/implementation/convergence-evidence-history.md"
+    ],
+    "localLinks": 773,
+    "brokenLinks": 0,
+    "fencesBalanced": true,
+    "historicalPrefixBytes": 1695252,
+    "historicalPrefixDrift": 0,
+    "oldCommitShaLoss": 0,
+    "acceptedGenericMatchAcceptanceUnchanged": true,
+    "genericMatchLabelCorrection": "Old source 12180810c10ced738a2ad94f98dbb3b1cec831a1 is described as a post-acceptance run, not the current run. Acceptance/publication SHAs, case counts and evidence links are unchanged.",
+    "rawEntryCount": 119,
+    "rawEntryDrift": 0,
+    "rawZipSha256": "2fd0479b0ba9af42972b01eaf8401d36298102aea162c8e8e3588d4a50322497",
+    "diffCheckExit": 0,
+    "recordedAt": "2026-11-01T12:23:16.4908743Z"
+  },
+  "postReviewCorrection": "The historical Generic Match evidence link label also uses post-acceptance instead of current-run wording. Initial audit results are retained above; raw ZIP entries and their scripts remain the exact first-run archive."
+}

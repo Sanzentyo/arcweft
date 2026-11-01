@@ -13882,3 +13882,16 @@ Source 0c65eb15235f16ff96232e4926e5bbd563e5a90c（親534742896a9450e8bff54ce4376
 - 現状一覧の旧Source・件数は新しい実測へ差し替え、以前の結果とfull SHAは履歴・原本から削除しない。今回の早期metadata拒否を、Nativeの引数評価前検査や全live候補・後段registrationの失敗原子性の完了へ拡張しない。default／Wasm・doctest・Tier 2・最終画像parityは今回未実行であり、既受入機能の取消根拠にはしない。
 
 [全原本](acceptance-evidence/task-presentation-factory-preflight.json)と116 entryのraw ZIPを保持する（entry差分0、SHA256 37305267ec765ef0f9e5a57d13ca37dcd07328ef2bffc266dabd6e1687b351a4）。
+
+
+## 2026-11-01 Native factoryの評価前metadata拒否・builder契約
+
+- 実装公開は9c33b7de0ba05f0e764ecc2e17d593d20e68aaa3。既存のPlanValueAuthorityから実inventory／builder型表を借用し、factoryのbody・resource・Handle結果owner、元semantic identity、ABI位置・範囲・重複・全入力充足とclosed tuple／array spreadを、CallExpr公開前およびNative capture評価前に検査する。物理引数vectorのSource順は変えず、v1 retained-product identityと既存AWBC検査を共用する。
+- 初回baseline catalogはplan側fixtureからprivateなEngine評価APIを呼んだためcompile失敗。fixtureを正当なengine／builder ownerへ分け、production visibilityを広げずに再実行した。次のbaselineは0 PASS／2 FAIL：Nativeのcapture probeが型拒否前に1回評価され、builderは同じBool表現の異なるsemantic identityをCallExprに受け入れた。これが今回の境界修復の具体的根拠であり、既受入のSource image実行やGeneric Matchを未完了へ戻す根拠にはしない。
+- ユーザーの中間非green commit許可に基づくtest-only公開は6584bb4019e4c8681e2f96072d3556be0f468d22。修正後の最初のownerは11／11 PASS、拡張したCore／Compiler ownerは180／180 PASS（2,392選択外）。builderの異順ABI・tuple／closed array spreadの3条件を追加し、実Source imageのNative／decoded AWBC・評価順12・Image／Root Handle・AWBC各step保存復元を維持した。baseline、初回owner、拡張ownerと最終matrixの入力を別々に記録する。
+- Coreの実resolved Cargo逆依存53 package・同一4,057入力matrixはlibrary／integration 6896 PASS／0 FAIL／16 ignored、CLI unit 191 PASS、通常6 integration 29 PASS。通常3群は7116 PASS／0 FAIL。3 packageは実行case 0のcompile選択。前Sourceの共有InteractionModel起点62 packageと範囲が違うため、件数増減を機能退行とはしない。同範囲の旧6,909 case ID（ignoredを含む）をすべて保持し、追加3・削除0も照合した。受入済みGeneric Matchの正確な151 IDは151／151 PASS、受入を維持する。
+- CLI全12 targetは692 unique実行・649 PASS／43 FAIL／23 ignored、重複0。checkは415 PASS／43 FAIL／23 ignored、追加3 targetは14 PASS。前Sourceとの失敗ID比較は同一43・新規0・解消0・未選択0であり、ID一致から原因同一とは推定しない。
+- workspace全97 package・全target・全feature・locked check／Clippy、7 owned Rust path fmtは終了0。構造は3293 files／3163 Rust files・1785181 physical Rust LOC・384 review trigger・blocking0、警告は残存。元14 tracked／6 untracked WIPと19旧hash・bench既知blob・14-path patch SHA256を保持した。
+- 現状一覧から「Native引数評価前は継続中」という旧記述を削除し、再現2失敗と本修正の検証に基づく到達範囲へ訂正した。Generic Match行で旧Source 12180810c10ced738a2ad94f98dbb3b1cec831a1を「今回」と呼ぶ表現は「受入後」に訂正し、受入・公開SHA、151件と根拠linkを保持した。旧Source・件数・失敗・full SHAは履歴と原本へ保持する。引数子式のloweringや、後段body・registration・全live候補の失敗原子性まで完了したとはしない。明示scope・View／Removed生成・command／method・driver、default／Wasm・doctest・Tier 2・最終画像parityの未実行は各境界で区別し、全体goalを理由に個別受入を取り消さない。
+
+[全原本](acceptance-evidence/task-presentation-factory-native-metadata.json)と119 entryのraw ZIPを保持する（entry差分0、SHA256 2fd0479b0ba9af42972b01eaf8401d36298102aea162c8e8e3588d4a50322497）。
