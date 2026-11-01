@@ -36,6 +36,19 @@ fn constructed_metadata_string_preflights_the_complete_utf8_and_original_byte_ba
         })
     );
     assert_eq!(admission.construct_metadata_string(&[""]), Err(error));
+
+    let mut admission = RuntimeRetainedValueAdmission::standalone(RuntimeSchemaLimits {
+        max_validation_work: 4,
+        ..limits
+    });
+    let error = admission.construct_metadata_string(&[""; 8]).unwrap_err();
+    assert!(matches!(
+        &error,
+        AwbcRuntimeValueSnapshotError::Resource(
+            crate::entry::RuntimeSchemaError::ValidationWork { .. }
+        )
+    ));
+    assert_eq!(admission.construct_metadata_string(&[]), Err(error));
 }
 
 #[test]

@@ -4,11 +4,13 @@
 //! Defaults are authoring conveniences; deserialization requires the encoded
 //! fields and never substitutes a default for an invalid value.
 
+mod address_identity;
 mod arguments;
 mod callables;
 mod image;
 mod slot;
 
+pub use address_identity::{PresentationAddressIdentity, PresentationAddressIdentityKind};
 pub use slot::{PresentationSlotAddress, PresentationSlotAddressError};
 
 pub use arguments::PresentationArgumentRole;

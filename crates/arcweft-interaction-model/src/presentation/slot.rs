@@ -18,6 +18,8 @@ pub struct PresentationSlotAddress {
 
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum PresentationSlotAddressError {
+    #[error("presentation address has an unknown identity family")]
+    Identity,
     #[error("presentation target must be a valid target.* public identity")]
     Target,
     #[error("presentation slot must belong to the {resource:?} resource family")]
@@ -44,19 +46,8 @@ impl PresentationSlotAddress {
         slot: &str,
         resource: PresentationResourceKind,
     ) -> Result<(), PresentationSlotAddressError> {
-        if PublicId::validate_text(target).is_err()
-            || target.strip_prefix("target.").is_none_or(str::is_empty)
-        {
-            return Err(PresentationSlotAddressError::Target);
-        }
-        let valid_slot = slot
-            .strip_prefix("slot.")
-            .and_then(|path| path.split_once('.'))
-            .is_some_and(|(family, name)| family == resource.as_str() && !name.is_empty());
-        if !valid_slot || PublicId::validate_text(slot).is_err() {
-            return Err(PresentationSlotAddressError::Slot { resource });
-        }
-        Ok(())
+        super::PresentationAddressIdentityKind::Target.validate_text(target)?;
+        super::PresentationAddressIdentityKind::Slot(resource).validate_text(slot)
     }
 
     pub fn validate(&self) -> Result<(), PresentationSlotAddressError> {

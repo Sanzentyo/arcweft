@@ -52,6 +52,9 @@ impl FinalSemanticAnalysis {
             }
             CheckedValueResolution::ProjectItem(item) => item.ty(),
             CheckedValueResolution::ImportedProjectEntity(entity) => entity.ty(),
+            CheckedValueResolution::PresentationAddress(identity) => {
+                TypeKind::presentation_address_reference(identity.kind())
+            }
             _ => return Err(CheckedEntityValueProjectionError::NotEntity { owner }),
         };
         if ty != &expected || !matches!(ty, TypeKind::Ref(_)) {
@@ -100,6 +103,9 @@ impl CheckedEntityValueProjection {
             CheckedValueResolution::ProjectItem(item) => project_item_runtime_reference(item),
             CheckedValueResolution::ImportedProjectEntity(entity) => {
                 entity.target().runtime_reference().into()
+            }
+            CheckedValueResolution::PresentationAddress(identity) => {
+                RuntimeEntityReference::PresentationAddress(identity.clone())
             }
             _ => unreachable!("the private issuer admits only checked entity resolutions"),
         }

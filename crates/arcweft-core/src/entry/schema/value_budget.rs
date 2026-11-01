@@ -356,6 +356,9 @@ impl ValueBudget {
                 }
             }
             RuntimeValueView::Scalar(RuntimeScalarView::EntityRef(reference)) => match reference {
+                RuntimeEntityReference::PresentationAddress(identity) => {
+                    self.string(identity.public_id().as_str())?
+                }
                 RuntimeEntityReference::StructuralFlow(flow) => {
                     self.runtime_path(flow.path())?;
                     self.string(flow.public_label_ref().as_str())?;

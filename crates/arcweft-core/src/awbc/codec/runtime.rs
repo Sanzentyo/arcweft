@@ -27,6 +27,8 @@ use std::num::NonZeroU32;
 #[cfg(test)]
 mod effect_tests;
 #[cfg(test)]
+mod slot_reference_tests;
+#[cfg(test)]
 mod task_tests;
 
 impl Wire for AwbcIntrinsic {

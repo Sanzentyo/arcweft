@@ -142,76 +142,83 @@ impl RuntimePresentationSlotRefCall {
         use crate::value::{RuntimeEntityReference, RuntimeValue};
         use arcweft_id::{DeclarationIdentityFamily, ProjectEntityReferenceFamily};
 
-        if values.len() != self.inputs().len() {
-            return Err(RuntimePresentationError::SlotReferenceArguments.into());
-        }
-        let mut target = None;
-        let mut slot = None;
-        let mut character = None;
-        for (&role, value) in self.inputs().iter().zip(values) {
-            let invalid = || RuntimePresentationError::SlotReferenceInput { role };
-            let RuntimeValue::EntityRef(reference) = value else {
-                return Err(invalid().into());
-            };
-            let (family, public_id) = match reference {
-                RuntimeEntityReference::ImportedProject(reference) => {
-                    (reference.family(), reference.public_id())
-                }
-                RuntimeEntityReference::Project {
-                    family: DeclarationIdentityFamily::Character,
-                    public_id,
-                } => (ProjectEntityReferenceFamily::Character, public_id),
-                _ => return Err(invalid().into()),
-            };
-            match role {
-                RuntimePresentationSlotRefInput::Target
-                    if family == ProjectEntityReferenceFamily::Target =>
-                {
-                    target = Some(public_id.as_str());
-                }
-                RuntimePresentationSlotRefInput::Slot
-                    if family == ProjectEntityReferenceFamily::Slot =>
-                {
-                    slot = Some(public_id.as_str());
-                }
-                RuntimePresentationSlotRefInput::Character
-                    if family == ProjectEntityReferenceFamily::Character =>
-                {
-                    character = Some(public_id.as_str());
-                }
-                // Scope is an execution-owned identity, not an arbitrary
-                // entity/string granting access to another lexical owner.
-                _ => return Err(invalid().into()),
+        let result = (|| {
+            admission.status()?;
+            if values.len() != self.inputs().len() {
+                return Err(RuntimePresentationError::SlotReferenceArguments.into());
             }
-        }
-        let target = target.unwrap_or("target.scene");
-        let default;
-        let slot = match slot {
-            Some(slot) => slot,
-            None => {
-                default = if self.resource == PresentationResourceKind::Character {
-                    let character = character
-                        .and_then(|id| id.strip_prefix("character."))
-                        .filter(|name| !name.is_empty())
-                        .ok_or(RuntimePresentationError::SlotReferenceInput {
-                            role: RuntimePresentationSlotRefInput::Character,
-                        })?;
-                    admission.construct_metadata_string(&[
-                        "slot.character.",
-                        character,
-                        ".default",
-                    ])?
-                } else {
-                    admission.construct_metadata_string(&[
-                        "slot.",
-                        self.resource.as_str(),
-                        ".default",
-                    ])?
+            let mut target = None;
+            let mut slot = None;
+            let mut character = None;
+            for (&role, value) in self.inputs().iter().zip(values) {
+                let invalid = || RuntimePresentationError::SlotReferenceInput { role };
+                let RuntimeValue::EntityRef(reference) = value else {
+                    return Err(invalid().into());
                 };
-                &default
+                let (family, public_id) = match reference {
+                    RuntimeEntityReference::PresentationAddress(identity) => {
+                        (identity.kind().family(), identity.public_id())
+                    }
+                    RuntimeEntityReference::ImportedProject(reference) => {
+                        (reference.family(), reference.public_id())
+                    }
+                    RuntimeEntityReference::Project {
+                        family: DeclarationIdentityFamily::Character,
+                        public_id,
+                    } => (ProjectEntityReferenceFamily::Character, public_id),
+                    _ => return Err(invalid().into()),
+                };
+                match role {
+                    RuntimePresentationSlotRefInput::Target
+                        if family == ProjectEntityReferenceFamily::Target =>
+                    {
+                        target = Some(public_id.as_str());
+                    }
+                    RuntimePresentationSlotRefInput::Slot
+                        if family == ProjectEntityReferenceFamily::Slot =>
+                    {
+                        slot = Some(public_id.as_str());
+                    }
+                    RuntimePresentationSlotRefInput::Character
+                        if family == ProjectEntityReferenceFamily::Character =>
+                    {
+                        character = Some(public_id.as_str());
+                    }
+                    // Scope is an execution-owned identity, not an arbitrary
+                    // entity/string granting access to another lexical owner.
+                    _ => return Err(invalid().into()),
+                }
             }
-        };
-        admission.construct_presentation_slot_ref_parts(owner, self.resource, target, slot)
+            let target = target.unwrap_or("target.scene");
+            let default;
+            let slot = match slot {
+                Some(slot) => slot,
+                None => {
+                    default = if self.resource == PresentationResourceKind::Character {
+                        let character = character
+                            .and_then(|id| id.strip_prefix("character."))
+                            .filter(|name| !name.is_empty())
+                            .ok_or(RuntimePresentationError::SlotReferenceInput {
+                                role: RuntimePresentationSlotRefInput::Character,
+                            })?;
+                        admission.construct_metadata_string(&[
+                            "slot.character.",
+                            character,
+                            ".default",
+                        ])?
+                    } else {
+                        admission.construct_metadata_string(&[
+                            "slot.",
+                            self.resource.as_str(),
+                            ".default",
+                        ])?
+                    };
+                    &default
+                }
+            };
+            admission.construct_presentation_slot_ref_parts(owner, self.resource, target, slot)
+        })();
+        result.inspect_err(|error| admission.retain_failure(error.clone()))
     }
 
     pub(crate) fn evaluate_in_context(
@@ -346,6 +353,38 @@ impl<'de> Deserialize<'de> for RuntimePresentationSlotRefCall {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn slot_reference_construction_rejects_foreign_inputs_and_retains_the_failure() {
+        use crate::{
+            entry::RuntimeSchemaLimits,
+            pattern::{RuntimeOpaqueTypeOwner, RuntimeSemanticTypeId},
+            value::{RuntimeRetainedValueAdmission, RuntimeValue},
+        };
+        let owner = RuntimeOpaqueTypeOwner::presentation_slot_ref(
+            PresentationResourceKind::Background,
+            RuntimeSemanticTypeId::from_bytes([73; 32]),
+        );
+        let mut admission =
+            RuntimeRetainedValueAdmission::standalone(RuntimeSchemaLimits::engine_default());
+        let call = RuntimePresentationSlotRefCall::try_new(
+            PresentationResourceKind::Background,
+            [RuntimePresentationSlotRefInput::Target],
+        )
+        .unwrap();
+        let error = call
+            .construct(
+                &mut admission,
+                &owner,
+                &[RuntimeValue::String("target.scene".to_owned())],
+            )
+            .unwrap_err();
+        assert_eq!(admission.status(), Err(error.clone()));
+        let empty =
+            RuntimePresentationSlotRefCall::try_new(PresentationResourceKind::Background, [])
+                .unwrap();
+        assert_eq!(empty.construct(&mut admission, &owner, &[]), Err(error));
+    }
 
     #[test]
     fn slot_reference_call_abi_rejects_duplicate_foreign_and_overlong_roles() {

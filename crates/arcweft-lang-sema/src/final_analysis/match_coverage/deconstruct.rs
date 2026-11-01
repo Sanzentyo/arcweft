@@ -245,6 +245,9 @@ impl MatchCoverageAnalyzer<'_, '_> {
         let identity = match resolution {
             CheckedPatternResolution::Entity(item) => item.semantic_id(),
             CheckedPatternResolution::ImportedProjectEntity(entity) => entity.semantic_id(),
+            CheckedPatternResolution::PresentationAddress(identity) => {
+                super::super::model::AcceptedProjectItemSemanticId::presentation_address(identity)
+            }
             _ => {
                 return Err(CheckedMatchBuildError::InvalidCheckedRow {
                     coordinate: site.semantic_coordinate(),

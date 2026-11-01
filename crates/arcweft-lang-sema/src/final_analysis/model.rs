@@ -111,6 +111,14 @@ const PROJECT_ITEM_SEMANTIC_DOMAIN: &[u8] = b"arcweft.lang.accepted-project-item
 pub(crate) struct AcceptedProjectItemSemanticId([u8; 32]);
 
 impl AcceptedProjectItemSemanticId {
+    pub(crate) fn presentation_address(
+        identity: &arcweft_interaction_model::presentation::PresentationAddressIdentity,
+    ) -> Self {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"arcweft.lang.presentation-address.v1\0");
+        hasher.update(identity.public_id().canonical_identity_bytes());
+        Self(*hasher.finalize().as_bytes())
+    }
     pub(crate) const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
@@ -564,6 +572,7 @@ pub enum CheckedValueResolution {
     EnvironmentCallable(CheckedCallableId),
     ProjectItem(CheckedProjectItem),
     ImportedProjectEntity(CheckedImportedProjectEntity),
+    PresentationAddress(arcweft_interaction_model::presentation::PresentationAddressIdentity),
     /// Catalog-owned resource identity. It is not a source declaration or a
     /// scalar String; bundle admission owns the final asset lookup.
     CatalogAsset(arcweft_id::AssetId),
@@ -582,6 +591,7 @@ impl CheckedValueResolution {
                 .then(|| CharacterId::try_new(entity.target().symbol().public_id().as_str()).ok())
                 .flatten(),
             Self::Local(_)
+            | Self::PresentationAddress(_)
             | Self::LineContext
             | Self::CharacterField { .. }
             | Self::ProjectCallable(_)
@@ -601,6 +611,9 @@ impl CheckedValueResolution {
             Self::CharacterField { receiver, .. } => receiver.visit_types(visitor),
             Self::ProjectItem(item) => item.visit_types(visitor),
             Self::ImportedProjectEntity(entity) => visitor(&entity.ty()),
+            Self::PresentationAddress(identity) => {
+                visitor(&TypeKind::presentation_address_reference(identity.kind()))
+            }
             Self::Local(_)
             | Self::LineContext
             | Self::ProjectCallable(_)
@@ -2944,6 +2957,7 @@ pub enum CheckedPatternResolution {
     Literal(HirLiteral),
     Entity(CheckedProjectItem),
     ImportedProjectEntity(CheckedImportedProjectEntity),
+    PresentationAddress(arcweft_interaction_model::presentation::PresentationAddressIdentity),
     Record(CheckedRecordPattern),
     Variant(CheckedVariantResolution),
     TypedBinding(CheckedTypedBinding),
@@ -2981,6 +2995,9 @@ impl CheckedPattern {
         match self.resolution() {
             CheckedPatternResolution::Entity(item) => item.visit_types(visitor),
             CheckedPatternResolution::ImportedProjectEntity(entity) => visitor(&entity.ty()),
+            CheckedPatternResolution::PresentationAddress(identity) => {
+                visitor(&TypeKind::presentation_address_reference(identity.kind()))
+            }
             CheckedPatternResolution::Record(record) => record.visit_types(visitor),
             CheckedPatternResolution::Variant(variant) => variant.visit_types(visitor),
             CheckedPatternResolution::TypedBinding(binding) => visitor(binding.annotation()),

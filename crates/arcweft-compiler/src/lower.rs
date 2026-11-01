@@ -1559,7 +1559,8 @@ fn project_runtime_semantic_fact_inventories(
                 );
             }
             CheckedPatternResolution::Entity(_)
-            | CheckedPatternResolution::ImportedProjectEntity(_) => {
+            | CheckedPatternResolution::ImportedProjectEntity(_)
+            | CheckedPatternResolution::PresentationAddress(_) => {
                 input.push_pattern_entity(
                     owner,
                     analysis
@@ -5927,6 +5928,7 @@ fn runtime_value_resolution(
         }
         CheckedValueResolution::CatalogAsset(_) | CheckedValueResolution::ProjectItem(_)
         | CheckedValueResolution::ImportedProjectEntity(_)
+        | CheckedValueResolution::PresentationAddress(_)
             if matches!(ty, TypeKind::Ref(_)) => {
             let entity = analysis.entity_value_projection(owner).map_err(|error| error.to_string())?;
             if entity.resolution() != value || entity.ty() != ty {
@@ -5944,6 +5946,7 @@ fn runtime_value_resolution(
         | CheckedValueResolution::ProjectItem(_)
         | CheckedValueResolution::CatalogAsset(_)
         | CheckedValueResolution::ImportedProjectEntity(_)
+        | CheckedValueResolution::PresentationAddress(_)
         | CheckedValueResolution::LineContext
         | CheckedValueResolution::CharacterField { .. }
         // Entry references are generation-bound tooling/selection identities;
@@ -8643,7 +8646,8 @@ fn runtime_executable_semantic_facts<'abi>(
             (
                 CheckedExecutableRuntimePatternFactFamily::Entity,
                 CheckedPatternResolution::Entity(_)
-                | CheckedPatternResolution::ImportedProjectEntity(_),
+                | CheckedPatternResolution::ImportedProjectEntity(_)
+                | CheckedPatternResolution::PresentationAddress(_),
             ) => RuntimeProjectFunctionPatternPayload::Entity(
                 analysis
                     .entity_pattern_projection(owner)
@@ -9701,6 +9705,67 @@ fn runtime_call_target(
     if let arcweft_lang_sema::callable::CallableCandidateId::Presentation(presentation) =
         selected_id
     {
+        if let arcweft_interaction_model::presentation::PresentationCallableResult::SlotRef(
+            resource,
+        ) = presentation.result()
+        {
+            use arcweft_core::presentation::{
+                RuntimePresentationSlotRefCall, RuntimePresentationSlotRefInput,
+            };
+            use arcweft_lang_sema::callable::{
+                CallableParameterConsumer, CheckedCallOperandDestination, CheckedCallRuntimeOperand,
+            };
+            let mut inputs = application
+                .core()
+                .runtime_operands()
+                .into_iter()
+                .map(|operand| {
+                    let CheckedCallRuntimeOperand::Argument { slot, .. } = operand else {
+                        return Err(RuntimeSemanticProjectionError::Call {
+                            owner,
+                            reason: "slot reference requires checked parameter operands".to_owned(),
+                        });
+                    };
+                    let CheckedCallOperandDestination::Parameter(coordinate) = slot.destination()
+                    else {
+                        return Err(RuntimeSemanticProjectionError::Call {
+                            owner,
+                            reason: "slot reference has no open argument ABI".to_owned(),
+                        });
+                    };
+                    let Some(CallableParameterConsumer::Presentation(role)) = selected
+                        .schema()
+                        .group(coordinate.group())
+                        .and_then(|group| group.parameter(coordinate.parameter()))
+                        .map(|parameter| parameter.consumer())
+                    else {
+                        return Err(RuntimeSemanticProjectionError::Call {
+                            owner,
+                            reason: "slot reference operand has no selected presentation role"
+                                .to_owned(),
+                        });
+                    };
+                    let role =
+                        RuntimePresentationSlotRefInput::try_from(*role).map_err(|error| {
+                            RuntimeSemanticProjectionError::Call {
+                                owner,
+                                reason: error.to_string(),
+                            }
+                        })?;
+                    Ok((slot.abi_position(), role))
+                })
+                .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
+            inputs.sort_unstable_by_key(|(position, _)| *position);
+            let call = RuntimePresentationSlotRefCall::try_new(
+                resource,
+                inputs.into_iter().map(|(_, role)| role),
+            )
+            .map_err(|error| RuntimeSemanticProjectionError::Call {
+                owner,
+                reason: error.to_string(),
+            })?;
+            return Ok(RuntimeResolvedStaticCallTarget::PresentationSlotRef(call));
+        }
         return Err(RuntimeSemanticProjectionError::Call {
             owner,
             reason: format!(

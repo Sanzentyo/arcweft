@@ -1593,18 +1593,38 @@ fn execute_instruction(
             if let crate::value::RuntimeCallTarget::PresentationSlotRef(call) =
                 &intrinsic_row.identity
             {
-                let signature = &program.signatures[intrinsic_row.signature.index()];
+                let signature = program
+                    .signatures
+                    .get(intrinsic_row.signature.index())
+                    .ok_or_else(|| {
+                        VmError::Runtime("slot reference has no signature".to_owned())
+                    })?;
                 let result = signature.result.ok_or_else(|| {
                     VmError::Runtime("slot reference has no result type".to_owned())
                 })?;
+                if signature.params.len() != call.inputs().len()
+                    || !call.accepts_awbc_result(program, result)
+                {
+                    return Err(VmError::Runtime(
+                        "slot reference has an invalid signature".to_owned(),
+                    ));
+                }
+                let argument_types = signature
+                    .params
+                    .iter()
+                    .map(|ty| {
+                        program
+                            .runtime_types
+                            .get(ty.index())
+                            .map(|ty| ty.semantic_identity())
+                            .ok_or(VmError::MissingType(*ty))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
                 let context = crate::pure::RuntimeExternalCallContext::for_program(
                     context
                         .ok_or(VmError::MissingExecutionContext)?
                         .execution_context(program)?,
-                    signature
-                        .params
-                        .iter()
-                        .map(|ty| program.runtime_types[ty.index()].semantic_identity()),
+                    argument_types,
                     program.runtime_types[result.index()].semantic_identity(),
                     crate::entry::RuntimeSchemaLimits::engine_default(),
                 )

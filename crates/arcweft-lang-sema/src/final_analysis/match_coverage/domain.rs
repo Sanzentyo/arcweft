@@ -542,6 +542,13 @@ impl MatchCoverageAnalyzer<'_, '_> {
                 CheckedPatternResolution::ImportedProjectEntity(entity) => {
                     entities.insert(entity.semantic_id());
                 }
+                CheckedPatternResolution::PresentationAddress(identity) => {
+                    entities.insert(
+                        super::super::model::AcceptedProjectItemSemanticId::presentation_address(
+                            identity,
+                        ),
+                    );
+                }
                 CheckedPatternResolution::Structural
                 | CheckedPatternResolution::Record(_)
                 | CheckedPatternResolution::Variant(_)

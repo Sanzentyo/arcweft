@@ -1286,6 +1286,23 @@ fn validate_expression_resolution(
         {
             Err(FinalSemanticAnalysisError::WrongPayloadFamily)
         }
+        CheckedExpressionResolution::Value(CheckedValueResolution::PresentationAddress(
+            identity,
+        )) => {
+            let expression = resolve_module(modules, owner.module())?
+                .resolve_expr(owner)
+                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+            let HirExprKind::EntityReference(reference) = expression.kind() else {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            };
+            let public_id = reference
+                .as_resolved()
+                .and_then(|reference| reference.project_entity_public_id(identity.kind().family()));
+            (public_id.as_ref() == Some(identity.public_id())
+                && *ty == TypeKind::presentation_address_reference(identity.kind()))
+            .then_some(())
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)
+        }
         CheckedExpressionResolution::Value(value) => validate_value(
             symbols,
             checked_callables,
@@ -2215,6 +2232,7 @@ fn validate_value(
             .validate_public_id(asset.as_public_id())
             .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily),
         CheckedValueResolution::LineContext
+        | CheckedValueResolution::PresentationAddress(_)
         | CheckedValueResolution::Registered(_)
         | CheckedValueResolution::Constant(_) => Ok(()),
     }
@@ -2267,6 +2285,19 @@ pub(super) fn validate_patterns(
                 CheckedPatternResolution::ImportedProjectEntity(entity),
             ) => {
                 entity.has_valid_analysis_binding(symbols, generation) && &entity.ty() == fact.ty()
+            }
+            (
+                HirPatternKind::EntityReference(reference),
+                CheckedPatternResolution::PresentationAddress(identity),
+            ) => {
+                reference
+                    .as_resolved()
+                    .and_then(|reference| {
+                        reference.project_entity_public_id(identity.kind().family())
+                    })
+                    .as_ref()
+                    == Some(identity.public_id())
+                    && fact.ty() == &TypeKind::presentation_address_reference(identity.kind())
             }
             (HirPatternKind::Variant(_), CheckedPatternResolution::Variant(variant)) => {
                 validate_variant(symbols, modules, variant).is_ok()

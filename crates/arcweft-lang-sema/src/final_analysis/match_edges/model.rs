@@ -46,11 +46,11 @@ const EXPRESSION_RESOLUTION_LIVE_TAGS: [u16; 35] = [
     0x021A, 0x021B, 0x021C, 0x021D, 0x021E, 0x021F, 0x0220, 0x0221, 0x0222, 0x0223, 0x0224,
 ];
 const VALUE_RESOLUTION_TAG_BASE: u16 = 0x0300;
-const VALUE_RESOLUTION_TAG_END: u16 = 0x030a;
-const VALUE_RESOLUTION_TAG_COUNT: u16 = 11;
+const VALUE_RESOLUTION_TAG_END: u16 = 0x030b;
+const VALUE_RESOLUTION_TAG_COUNT: u16 = 12;
 const PATTERN_RESOLUTION_TAG_BASE: u16 = 0x0600;
-const PATTERN_RESOLUTION_TAG_END: u16 = 0x0606;
-const PATTERN_RESOLUTION_TAG_COUNT: u16 = 7;
+const PATTERN_RESOLUTION_TAG_END: u16 = 0x0607;
+const PATTERN_RESOLUTION_TAG_COUNT: u16 = 8;
 const _: () = {
     assert!(EXPRESSION_RESOLUTION_TAG_END == 0x0224);
     assert!(EXPRESSION_RESOLUTION_LIVE_TAGS.len() == EXPRESSION_RESOLUTION_TAG_COUNT as usize);
@@ -444,7 +444,8 @@ impl CheckedValueResolution {
             Self::Constant(_) => VALUE_RESOLUTION_TAG_BASE + 7,
             Self::CatalogAsset(_) => VALUE_RESOLUTION_TAG_BASE + 8,
             Self::ImportedProjectEntity(_) => VALUE_RESOLUTION_TAG_BASE + 9,
-            Self::EnvironmentCallable(_) => VALUE_RESOLUTION_TAG_END,
+            Self::EnvironmentCallable(_) => VALUE_RESOLUTION_TAG_BASE + 10,
+            Self::PresentationAddress(_) => VALUE_RESOLUTION_TAG_END,
         }
     }
 }
@@ -472,7 +473,8 @@ impl CheckedPatternResolution {
             Self::Record(_) => PATTERN_RESOLUTION_TAG_BASE + 3,
             Self::Variant(_) => PATTERN_RESOLUTION_TAG_BASE + 4,
             Self::TypedBinding(_) => PATTERN_RESOLUTION_TAG_BASE + 5,
-            Self::ImportedProjectEntity(_) => PATTERN_RESOLUTION_TAG_END,
+            Self::ImportedProjectEntity(_) => PATTERN_RESOLUTION_TAG_BASE + 6,
+            Self::PresentationAddress(_) => PATTERN_RESOLUTION_TAG_END,
         }
     }
 }

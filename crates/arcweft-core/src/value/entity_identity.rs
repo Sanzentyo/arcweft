@@ -25,6 +25,14 @@ impl RuntimeEntityReference {
         visitor: &mut V,
     ) -> Result<(), V::Error> {
         match self {
+            Self::PresentationAddress(identity) => {
+                visitor.tag(5)?;
+                match identity.kind() {
+                    arcweft_interaction_model::presentation::PresentationAddressIdentityKind::Target => visitor.tag(0)?,
+                    arcweft_interaction_model::presentation::PresentationAddressIdentityKind::Slot(resource) => { visitor.tag(1)?; visitor.tag(resource.semantic_tag())?; },
+                }
+                visitor.text(identity.public_id().as_str())
+            }
             Self::Project { family, public_id } => {
                 visitor.tag(0)?;
                 visitor.tag(family.semantic_tag())?;

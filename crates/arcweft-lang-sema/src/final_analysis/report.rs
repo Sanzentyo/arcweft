@@ -780,6 +780,7 @@ impl FinalAnalysisExecutionProjection<'_> {
                             value,
                             super::CheckedValueResolution::ProjectItem(_)
                                 | super::CheckedValueResolution::ImportedProjectEntity(_)
+                                | super::CheckedValueResolution::PresentationAddress(_)
                         ) && matches!(
                             expression.value_type(),
                             Some(TypeKind::Ref(_))
@@ -901,7 +902,8 @@ impl FinalAnalysisExecutionProjection<'_> {
                         CheckedExecutableRuntimePatternFactFamily::Literal
                     }
                     super::CheckedPatternResolution::Entity(_)
-                    | super::CheckedPatternResolution::ImportedProjectEntity(_) => {
+                    | super::CheckedPatternResolution::ImportedProjectEntity(_)
+                    | super::CheckedPatternResolution::PresentationAddress(_) => {
                         CheckedExecutableRuntimePatternFactFamily::Entity
                     }
                     super::CheckedPatternResolution::Record(_) => {

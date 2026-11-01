@@ -54,6 +54,9 @@ impl TryFrom<&RuntimeEntityReference> for AgentValue {
         // The variant and its admitted owner determine this public observation
         // identity. A label never selects a runtime declaration or capability.
         let id = match value {
+            RuntimeEntityReference::PresentationAddress(identity) => {
+                identity.public_id().as_str().to_owned()
+            }
             RuntimeEntityReference::Project { public_id, .. } => public_id.as_str().to_owned(),
             RuntimeEntityReference::StructuralFlow(flow) => flow.public_label().as_str().to_owned(),
             RuntimeEntityReference::ImportedProject(entity) => {

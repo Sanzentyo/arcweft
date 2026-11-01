@@ -1815,6 +1815,8 @@ impl RuntimeMutablePlace {
 /// structural dialogue lines retain their typed runtime ID.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum RuntimeEntityReference {
+    /// Inert target or typed slot identity; no declaration or lease authority.
+    PresentationAddress(arcweft_interaction_model::presentation::PresentationAddressIdentity),
     StructuralFlow(crate::plan::FlowRuntimeId),
     ImportedProject(RuntimeImportedProjectEntityReference),
     Project {
@@ -2001,6 +2003,7 @@ impl RuntimeEntityReference {
     pub const fn project_family(&self) -> Option<DeclarationIdentityFamily> {
         match self {
             Self::Project { family, .. } => Some(*family),
+            Self::PresentationAddress(_) => None,
             Self::ImportedProject(value) => value.family().declaration_family(),
             Self::StructuralFlow(_) => Some(DeclarationIdentityFamily::Flow),
             Self::DialogueLine(_) | Self::CharacterLook { .. } => None,
@@ -2016,6 +2019,7 @@ impl RuntimeEntityReference {
     )> {
         match self {
             Self::CharacterLook { character, look } => Some((character, look)),
+            Self::PresentationAddress(_) => None,
             Self::Project { .. }
             | Self::ImportedProject(_)
             | Self::StructuralFlow(_)
@@ -2026,6 +2030,7 @@ impl RuntimeEntityReference {
     #[must_use]
     pub fn runtime_label(&self) -> String {
         match self {
+            Self::PresentationAddress(identity) => identity.public_id().as_str().to_owned(),
             Self::Project { public_id, .. } => public_id.as_str().to_owned(),
             Self::ImportedProject(value) => value.line().map_or_else(
                 || value.public_id().as_str().to_owned(),
@@ -4601,6 +4606,10 @@ impl RuntimeEntityReference {
     /// value/codec but is not mistaken for a second logical entity identity.
     fn logical_identity(&self) -> EntityReferenceLogicalIdentity<'_> {
         match self {
+            Self::PresentationAddress(identity) => EntityReferenceLogicalIdentity::Graph(
+                identity.kind().family(),
+                identity.public_id(),
+            ),
             Self::Project { family, public_id } => {
                 EntityReferenceLogicalIdentity::Project(*family, public_id)
             }
@@ -4632,6 +4641,7 @@ impl RuntimeEntityReference {
     /// remain host/UI selectors; they cannot recreate this owner.
     pub fn exact_flow_identity(&self) -> Option<&crate::plan::FlowRuntimeId> {
         match self {
+            Self::PresentationAddress(_) => None,
             Self::StructuralFlow(flow) => Some(flow),
             Self::ImportedProject(entity) => entity.flow(),
             Self::Project { .. } | Self::DialogueLine(_) | Self::CharacterLook { .. } => None,
@@ -4640,6 +4650,7 @@ impl RuntimeEntityReference {
 
     pub fn line_identity(&self) -> Option<&RuntimeLineId> {
         match self {
+            Self::PresentationAddress(_) => None,
             Self::DialogueLine(line) => Some(line),
             Self::ImportedProject(entity) => entity.line(),
             Self::Project { .. } | Self::StructuralFlow(_) | Self::CharacterLook { .. } => None,
@@ -4678,6 +4689,7 @@ impl RuntimeEntityReference {
             return None;
         }
         match self {
+            Self::PresentationAddress(_) => None,
             Self::Project { public_id, .. } => Some(public_id.as_str()),
             Self::StructuralFlow(flow) => Some(flow.public_label_ref().as_str()),
             Self::ImportedProject(entity) => Some(entity.public_id().as_str()),

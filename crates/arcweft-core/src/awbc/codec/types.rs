@@ -290,6 +290,52 @@ impl Wire for RuntimeEntityReference {
                 })
             }
             4 => crate::plan::FlowRuntimeId::read_wire(reader).map(Self::StructuralFlow),
+            5 => {
+                use arcweft_interaction_model::presentation::{
+                    PresentationAddressIdentity, PresentationAddressIdentityKind as Kind,
+                    PresentationResourceKind,
+                };
+                let kind = match reader.read_u8()? {
+                    0 => Kind::Target,
+                    1 => Kind::Slot(
+                        PresentationResourceKind::from_semantic_tag(reader.read_u8()?).ok_or_else(
+                            || AwbcCodecError::InvalidMetadata {
+                                kind: "presentation address resource",
+                                message: "unknown resource".to_owned(),
+                                offset,
+                            },
+                        )?,
+                    ),
+                    tag => {
+                        return Err(AwbcCodecError::UnknownTag {
+                            kind: "presentation address kind",
+                            tag,
+                            offset,
+                        });
+                    }
+                };
+                let text = reader.read_str()?;
+                kind.validate_text(text)
+                    .map_err(|error| AwbcCodecError::InvalidMetadata {
+                        kind: "presentation address identity",
+                        message: error.to_string(),
+                        offset,
+                    })?;
+                let id = PublicId::try_new_engine_owned(text).map_err(|error| {
+                    AwbcCodecError::InvalidMetadata {
+                        kind: "presentation address identity",
+                        message: error.to_string(),
+                        offset,
+                    }
+                })?;
+                PresentationAddressIdentity::try_new(kind, id)
+                    .map(Self::PresentationAddress)
+                    .map_err(|error| AwbcCodecError::InvalidMetadata {
+                        kind: "presentation address identity",
+                        message: error.to_string(),
+                        offset,
+                    })
+            }
             tag => Err(AwbcCodecError::UnknownTag {
                 kind: "entity reference",
                 tag,

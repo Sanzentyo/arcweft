@@ -1167,6 +1167,18 @@ impl EntityType {
 }
 
 impl TypeKind {
+    pub fn presentation_address_reference(
+        kind: arcweft_interaction_model::presentation::PresentationAddressIdentityKind,
+    ) -> Self {
+        Self::entity_ref(match kind {
+            arcweft_interaction_model::presentation::PresentationAddressIdentityKind::Target => {
+                EntityKind::Target
+            }
+            arcweft_interaction_model::presentation::PresentationAddressIdentityKind::Slot(_) => {
+                EntityKind::Slot
+            }
+        })
+    }
     /// Refers to a declaration-owned parameter without opening an inference
     /// variable or changing its lexical meaning.
     #[must_use]

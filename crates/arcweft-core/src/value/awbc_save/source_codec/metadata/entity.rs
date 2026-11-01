@@ -57,7 +57,8 @@ impl Writer<'_> {
                 // ID/local spelling through one additional owned string.
                 self.counts.scratch(character.as_str().len())?;
             }
-            RuntimeEntityReference::StructuralFlow(_)
+            RuntimeEntityReference::PresentationAddress(_)
+            | RuntimeEntityReference::StructuralFlow(_)
             | RuntimeEntityReference::DialogueLine(_)
             | RuntimeEntityReference::ImportedProject(_) => {}
         }
@@ -234,6 +235,45 @@ impl Reader<'_, '_> {
             4 => Ok(self
                 .flow(materialize)?
                 .map(RuntimeEntityReference::StructuralFlow)),
+            5 => {
+                use arcweft_interaction_model::presentation::{
+                    PresentationAddressIdentity, PresentationAddressIdentityKind as Kind,
+                    PresentationResourceKind,
+                };
+                let kind = match self.tag()? {
+                    0 => Kind::Target,
+                    1 => {
+                        let tag = self.tag()?;
+                        Kind::Slot(PresentationResourceKind::from_semantic_tag(tag).ok_or(
+                            Error::Tag {
+                                kind: "presentation address resource",
+                                tag,
+                                offset,
+                            },
+                        )?)
+                    }
+                    tag => {
+                        return Err(Error::Tag {
+                            kind: "presentation address kind",
+                            tag,
+                            offset,
+                        });
+                    }
+                };
+                let text = self.string()?;
+                kind.validate_text(text)
+                    .map_err(|source| Error::PresentationAddress { offset, source })?;
+                if materialize {
+                    let id = PublicId::try_new_engine_owned(text)
+                        .map_err(|source| Error::PublicId { offset, source })?;
+                    PresentationAddressIdentity::try_new(kind, id)
+                        .map(RuntimeEntityReference::PresentationAddress)
+                        .map(Some)
+                        .map_err(|source| Error::PresentationAddress { offset, source })
+                } else {
+                    Ok(None)
+                }
+            }
             tag => Err(Error::Tag {
                 kind: "entity reference",
                 tag,

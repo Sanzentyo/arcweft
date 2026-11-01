@@ -22,6 +22,70 @@ fn bytes<T: Wire>(value: &T) -> Vec<u8> {
 }
 
 #[test]
+fn presentation_address_entity_wire_and_serde_preserve_exact_components() {
+    use arcweft_interaction_model::presentation::{
+        PresentationAddressIdentity, PresentationAddressIdentityKind as Kind,
+        PresentationResourceKind,
+    };
+    let identities = std::iter::once((Kind::Target, "target.scene".to_owned())).chain(
+        PresentationResourceKind::ALL.into_iter().map(|resource| {
+            (
+                Kind::Slot(resource),
+                format!("slot.{}.main", resource.as_str()),
+            )
+        }),
+    );
+    for (kind, text) in identities {
+        let entity = RuntimeEntityReference::PresentationAddress(
+            PresentationAddressIdentity::try_new(kind, PublicId::try_new(&text).unwrap()).unwrap(),
+        );
+        let encoded = bytes(&entity);
+        let budget = AwbcDecodeBudget::default();
+        let mut reader = Reader::new(&encoded, &budget);
+        assert_eq!(
+            RuntimeEntityReference::read_wire(&mut reader).unwrap(),
+            entity
+        );
+        reader.finish().unwrap();
+        assert_eq!(
+            serde_json::from_slice::<RuntimeEntityReference>(&serde_json::to_vec(&entity).unwrap())
+                .unwrap(),
+            entity
+        );
+        let budget = AwbcDecodeBudget {
+            string_bytes: text.len() - 1,
+            ..budget
+        };
+        let mut reader = Reader::new(&encoded, &budget);
+        assert!(matches!(
+            RuntimeEntityReference::read_wire(&mut reader),
+            Err(AwbcCodecError::BudgetExceeded {
+                budget: "string_bytes",
+                ..
+            })
+        ));
+    }
+    let mut writer = Writer::default();
+    for tag in [5u8, 1, PresentationResourceKind::Character.semantic_tag()] {
+        tag.write_wire(&mut writer).unwrap();
+    }
+    "slot.background.main"
+        .to_owned()
+        .write_wire(&mut writer)
+        .unwrap();
+    let encoded = writer.into_bytes();
+    let budget = AwbcDecodeBudget::default();
+    let mut reader = Reader::new(&encoded, &budget);
+    assert!(matches!(
+        RuntimeEntityReference::read_wire(&mut reader),
+        Err(AwbcCodecError::InvalidMetadata {
+            kind: "presentation address identity",
+            ..
+        })
+    ));
+}
+
+#[test]
 fn awbc_entity_wire_retains_original_segment_boundaries_and_targets() {
     let flow = FlowRuntimeId::from_source_path(
         path(RuntimeIdFamily::Flow, &["one.two"]),

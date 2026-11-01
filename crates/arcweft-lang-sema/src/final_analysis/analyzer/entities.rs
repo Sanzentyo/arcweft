@@ -16,6 +16,7 @@ pub(super) enum EntityReferenceResolutionError {
 }
 
 pub(super) enum CheckedEntityReference {
+    PresentationAddress(arcweft_interaction_model::presentation::PresentationAddressIdentity),
     Item(CheckedProjectItem),
     Imported(crate::final_analysis::CheckedImportedProjectEntity),
 }
@@ -23,12 +24,18 @@ pub(super) enum CheckedEntityReference {
 impl CheckedEntityReference {
     pub(super) fn ty(&self) -> TypeKind {
         match self {
+            Self::PresentationAddress(identity) => {
+                TypeKind::presentation_address_reference(identity.kind())
+            }
             Self::Item(item) => item.ty(),
             Self::Imported(entity) => entity.ty(),
         }
     }
     pub(super) fn into_value(self) -> crate::final_analysis::CheckedValueResolution {
         match self {
+            Self::PresentationAddress(identity) => {
+                crate::final_analysis::CheckedValueResolution::PresentationAddress(identity)
+            }
             Self::Item(item) => crate::final_analysis::CheckedValueResolution::ProjectItem(item),
             Self::Imported(entity) => {
                 crate::final_analysis::CheckedValueResolution::ImportedProjectEntity(entity)
@@ -37,6 +44,9 @@ impl CheckedEntityReference {
     }
     pub(super) fn into_pattern(self) -> crate::final_analysis::CheckedPatternResolution {
         match self {
+            Self::PresentationAddress(identity) => {
+                crate::final_analysis::CheckedPatternResolution::PresentationAddress(identity)
+            }
             Self::Item(item) => crate::final_analysis::CheckedPatternResolution::Entity(item),
             Self::Imported(entity) => {
                 crate::final_analysis::CheckedPatternResolution::ImportedProjectEntity(entity)
@@ -52,6 +62,23 @@ impl Analyzer<'_, '_, '_> {
         reference: &HirIdRef,
         source: SourceSpan,
     ) -> Result<CheckedEntityReference, EntityReferenceResolutionError> {
+        use arcweft_interaction_model::presentation::{
+            PresentationAddressIdentity, PresentationAddressIdentityKind,
+        };
+        // These two identity domains address presentation cells. They are not
+        // declaration lookups and issue no callable or resource capability.
+        for family in [
+            arcweft_id::ProjectEntityReferenceFamily::Target,
+            arcweft_id::ProjectEntityReferenceFamily::Slot,
+        ] {
+            if let Some(public_id) = reference.project_entity_public_id(family) {
+                let kind = PresentationAddressIdentityKind::from_public_id_text(public_id.as_str())
+                    .map_err(|_| EntityReferenceResolutionError::WrongFamily)?;
+                return PresentationAddressIdentity::try_new(kind, public_id)
+                    .map(CheckedEntityReference::PresentationAddress)
+                    .map_err(|_| EntityReferenceResolutionError::WrongFamily);
+            }
+        }
         let target = self
             .symbols
             .resolve_entity_reference(module.key().path(), reference, source)

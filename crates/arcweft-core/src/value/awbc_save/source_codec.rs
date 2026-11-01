@@ -107,6 +107,11 @@ pub(crate) enum RuntimeLiteralSourceError {
         offset: usize,
         source: crate::value::RuntimeImportedProjectEntityError,
     },
+    #[error("invalid presentation address at byte {offset}: {source}")]
+    PresentationAddress {
+        offset: usize,
+        source: arcweft_interaction_model::presentation::PresentationSlotAddressError,
+    },
     #[error("literal source character identity at {offset} is invalid: {source}")]
     Character {
         offset: usize,

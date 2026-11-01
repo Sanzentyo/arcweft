@@ -36,6 +36,9 @@ impl FinalSemanticAnalysis {
         let expected = match row.resolution() {
             CheckedPatternResolution::Entity(item) => item.ty(),
             CheckedPatternResolution::ImportedProjectEntity(entity) => entity.ty(),
+            CheckedPatternResolution::PresentationAddress(identity) => {
+                TypeKind::presentation_address_reference(identity.kind())
+            }
             _ => return Err(CheckedEntityPatternProjectionError::MissingEntity { owner }),
         };
         if row.ty() != &expected || !matches!(row.ty(), TypeKind::Ref(_)) {
@@ -90,6 +93,9 @@ impl CheckedEntityPatternProjection {
             }
             CheckedPatternResolution::ImportedProjectEntity(entity) => {
                 entity.target().runtime_reference().into()
+            }
+            CheckedPatternResolution::PresentationAddress(identity) => {
+                arcweft_core::value::RuntimeEntityReference::PresentationAddress(identity.clone())
             }
             _ => unreachable!("private issuer retains only final entity-pattern payloads"),
         }

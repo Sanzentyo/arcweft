@@ -800,7 +800,13 @@ impl ValueResourceAdmission {
         parts: &[&str],
     ) -> Result<(), RuntimeSchemaError> {
         let result = (|| {
-            self.work.charge(0)?;
+            self.work.collection(parts.len())?;
+            self.work.charge_atoms(
+                u64::try_from(parts.len())
+                    .unwrap_or(u64::MAX)
+                    .saturating_add(1),
+                0,
+            )?;
             let length = parts.iter().try_fold(0usize, |length, part| {
                 length
                     .checked_add(part.len())

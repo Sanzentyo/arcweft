@@ -146,6 +146,9 @@ pub(super) fn value_resolution_type(
         | CheckedValueResolution::EnvironmentCallable(_) => None,
         CheckedValueResolution::ProjectItem(item) => Some(item.ty()),
         CheckedValueResolution::ImportedProjectEntity(entity) => Some(entity.ty()),
+        CheckedValueResolution::PresentationAddress(identity) => {
+            Some(TypeKind::presentation_address_reference(identity.kind()))
+        }
         CheckedValueResolution::CatalogAsset(_) => {
             Some(TypeKind::entity_ref(crate::types::EntityKind::Asset))
         }

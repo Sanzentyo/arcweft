@@ -4516,6 +4516,7 @@ impl RuntimeResolvedCallDispatch {
             },
             Self::Static(
                 RuntimeResolvedStaticCallTarget::Intrinsic(_)
+                | RuntimeResolvedStaticCallTarget::PresentationSlotRef(_)
                 | RuntimeResolvedStaticCallTarget::Format(_)
                 | RuntimeResolvedStaticCallTarget::VecPopFront
                 | RuntimeResolvedStaticCallTarget::VecPop
@@ -4566,6 +4567,8 @@ pub enum RuntimeLineCallable {
 )]
 pub enum RuntimeResolvedStaticCallTarget {
     Intrinsic(RuntimeIntrinsic),
+    /// Core-owned inert address construction with the selected compact role ABI.
+    PresentationSlotRef(arcweft_core::presentation::RuntimePresentationSlotRefCall),
     Format(RuntimeResolvedFormatCall),
     /// Checked in-place Vec operations consumed by expression lowering.
     VecPopFront,
@@ -8588,6 +8591,7 @@ impl RuntimePlanSemanticFacts {
                 ) => Some(HirRuntimeExecutableOwner::ImplMethod(method.clone())),
                 RuntimeResolvedCallDispatch::Static(
                     RuntimeResolvedStaticCallTarget::Intrinsic(_)
+                    | RuntimeResolvedStaticCallTarget::PresentationSlotRef(_)
                     | RuntimeResolvedStaticCallTarget::Format(_)
                     | RuntimeResolvedStaticCallTarget::VecPopFront
                     | RuntimeResolvedStaticCallTarget::VecPop
@@ -12507,6 +12511,7 @@ fn validate_call(
             | RuntimeResolvedStaticCallTarget::VecPop
             | RuntimeResolvedStaticCallTarget::VecPush
             | RuntimeResolvedStaticCallTarget::Intrinsic(_)
+            | RuntimeResolvedStaticCallTarget::PresentationSlotRef(_)
             | RuntimeResolvedStaticCallTarget::Format(_)
             | RuntimeResolvedStaticCallTarget::TraitMethod { .. }
             | RuntimeResolvedStaticCallTarget::Registered(_),
@@ -13490,6 +13495,7 @@ fn validate_project_function_instance(
             }) => Some(HirRuntimeExecutableOwner::ImplMethod(method.clone())),
             RuntimeResolvedCallDispatch::Static(
                 RuntimeResolvedStaticCallTarget::Intrinsic(_)
+                | RuntimeResolvedStaticCallTarget::PresentationSlotRef(_)
                 | RuntimeResolvedStaticCallTarget::Format(_)
                 | RuntimeResolvedStaticCallTarget::VecPopFront
                 | RuntimeResolvedStaticCallTarget::VecPop
