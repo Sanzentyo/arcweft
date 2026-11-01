@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "source": "a87ae7c2a8a80d44f13209f548670833ded74fee",
+  "inspectedHead": "a87ae7c2a8a80d44f13209f548670833ded74fee",
+  "checkedDocuments": [
+    "docs/implementation/current-status.md",
+    "docs/implementation/convergence-evidence-history.md"
+  ],
+  "localLinks": 775,
+  "brokenLinks": 0,
+  "fencesBalanced": true,
+  "historicalPrefixBytes": 1702667,
+  "historicalPrefixDrift": 0,
+  "oldCommitShaLoss": 0,
+  "acceptedGenericMatchRowUnchanged": true,
+  "rawEntryCount": 174,
+  "rawEntryDrift": 0,
+  "rawZipSha256": "c81ed3fb4784dcf99a5644229865f3cb17443a74e0272f7686d08a01ac6534b1",
+  "diffCheckExit": 0,
+  "recordedAt": "2026-11-01T14:48:05.1975079Z",
+  "initialAuditJson": "{\r\n  \"version\": 1,\r\n  \"source\": \"a87ae7c2a8a80d44f13209f548670833ded74fee\",\r\n  \"inspectedHead\": \"a87ae7c2a8a80d44f13209f548670833ded74fee\",\r\n  \"checkedDocuments\": [\r\n    \"docs/implementation/current-status.md\",\r\n    \"docs/implementation/convergence-evidence-history.md\"\r\n  ],\r\n  \"localLinks\": 775,\r\n  \"brokenLinks\": 0,\r\n  \"fencesBalanced\": true,\r\n  \"historicalPrefixBytes\": 1702667,\r\n  \"historicalPrefixDrift\": 0,\r\n  \"oldCommitShaLoss\": 0,\r\n  \"acceptedGenericMatchRowUnchanged\": true,\r\n  \"rawEntryCount\": 174,\r\n  \"rawEntryDrift\": 0,\r\n  \"rawZipSha256\": \"c81ed3fb4784dcf99a5644229865f3cb17443a74e0272f7686d08a01ac6534b1\",\r\n  \"diffCheckExit\": 0,\r\n  \"recordedAt\": \"2026-11-01T14:46:06.6997013Z\"\r\n}\r\n",
+  "initialAuditSha256": "065d1a276c8d33805a55eff56c69f19ed0c368421bf115d1eb2acbe7cdf89a53",
+  "ownershipReview": {
+    "newTrigger": "SIZE001",
+    "path": "crates/arcweft-core/src/engine/rollback.rs",
+    "physicalLines": 1219,
+    "owner": "Borrowed admission of actual Native frames before projection",
+    "disposition": "Keep code-position, environment context, continuation header and caller queue admission together under the same storage phase; no new context table or resolver; existing await-specific owner unchanged",
+    "blocking": 0
+  }
+}

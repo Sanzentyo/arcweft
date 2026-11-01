@@ -13907,3 +13907,21 @@ Source 0c65eb15235f16ff96232e4926e5bbd563e5a90c（親534742896a9450e8bff54ce4376
 - 現状一覧のfactory行を今回の実行元検査へ更新し、全逆依存・CLIの行は直近の実測Sourceを明示して保持した。Generic Matchの受入・公開SHA、151件と根拠linkは変更していない。全staging、完全な評価一時値／all-fiberの構築前admissionや後段登録失敗の原子性、最終Native/Web parityへこのcutを拡張しない。残る受入範囲は現状一覧の該当行に置く。Wasm・doctest・Tier 2・最終画像parityは今回未再実行。
 
 [全原本](acceptance-evidence/task-presentation-factory-native-context.json)と69 entryのraw ZIPを保持する（entry差分0、SHA256 20e26cd8abe6a622c52642df71b88fa7c19b8647245e19d9259bb52ab52f3113）。
+
+## Sourceの複合pattern／同期Native呼出しframeの修復 — 2026-11-01
+
+公開実装Source a87ae7c2a8a80d44f13209f548670833ded74fee、親はテストのみのcheckpoint 365b2d409c0d516d5e6f0f9aa45cd1318b60eb40。元14 tracked／6 actual untracked WIPとpatch SHA256 53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6 を保持した。詳細・全command・凍結入力・失敗・実行ファイルhashは[原本](acceptance-evidence/task-presentation-expression-boundary.json)と、そのraw ZIPへ保持する。
+
+訂正理由: 最初の「評価中temporaryのcustody」仮説は、実Sourceの再現で立証されなかった。direct callは両backendで通り、direct tupleはlet patternの単一binding制限、Nativeのnested／single wrapperは実env contextに対応するfunction frameの欠如で失敗した。仮説に合わせたtemporary bankは導入せず、既存pattern ownerと同じ実FunctionCallFrameへ修復した。Generic Matchの受入・公開を取り消す根拠ではなく、既受入の151 caseも維持する。
+
+再現と修復の実測を別入力のまま保持する。baseline1は2 PASS／2 FAIL、baseline2は6 PASS／4 FAIL、最終12 Source caseのbaseline3は7 PASS／5 FAILであり、テストのみのcheckpointも既知失敗を含めて公開した。pattern修復後は9 PASS／3 FAIL、frame修復後は12／12 PASS。frameの初回catalog終了101は相対importとnumeric-mapのexhaustive arm漏れ、Core owner初回の終了101はtest moduleのimport漏れであり、runtime失敗と混同しない。追加ownerは13／13 PASS。その後の品質gateも全て終了0だったが、保存境界レビューでinert Expression headerの拒否をcaller packetの検査・コピー・復元より前へ揃えたため、最終の同一4,057入力で対象13件と品質gateを再実行し、全件／全gateが正常終了した。
+
+実装は複合let patternを既存FinalPatternLowererとMatchへ下ろし、単純bindingのLet経路を維持する。同期Nativeもscheduledと同じ入力stager・実scope・元caller queue・type bindingを持つ関数frameへ統一し、コピーされた手動staging loopとenvだけの旧経路を除去した。live Rust evaluatorへのExpression継続を保存から再開可能とは扱わず、既存PendingStorageのlive／inert由来で事前拒否する。wire tag・契約version・Cargo入力、OneOp／max_ops 1・256回の上限、assertion・fusion条件は弱めていない。
+
+全53逆依存の通常3群は7132 PASS／0 FAIL／16 ignored。library／integration 6912 PASS、CLI unit 191 PASS、通常6 integration 29 PASS。旧6912 case IDを保持し、追加16・削除0。Generic Matchは既受入の正確な151 IDを選択・実行し、151／151 PASS。CLI checkは415 PASS／43 FAIL／23 ignored、追加3 integrationは14 PASS。全12 CLI targetは692 unique実行・649 PASS／43 FAIL／23 ignored・重複0。同一失敗ID 43・新規0・解消0・未選択0という比較は、原因の同一性まで示すものではない。
+
+現状一覧の整理理由: 古いSource 1e0b3f9d5eb86baa04e0359d656ba638cd0ffa3a のprivate owner 2,577件と、9c33b7de0ba05f0e764ecc2e17d593d20e68aaa3 の全逆依存／CLIを、今回の再実行結果へ更新した。旧private ownerの独立した現状行は、全Core／Compilerを含む今回の一覧と重複するため削除した。旧結果・full SHA・原本・履歴本文は変更せずに保持する。新Sourceで検証したpattern／frame境界以外のstaging、Source command／method・driver、全live候補の構築前制限、registration失敗原子性、公開Native save、Wasm／doctest／Tier 2・最終Native/Web画像parityの未確認を完了とはしない。
+
+ユーザーの追加指定によるcargo clean --lockedは、この途中の品質gateが終了してビルドがない状態で実行し、149,486 files／159.9 GiBを削除した。4,057入力・HEAD・git statusの変化0を記録し、最終検証はその後の再ビルドで行った。ソース・検証記録を退避・削除したものではない。
+
+構造review: engine/rollback.rs は 1219 physical LOCとなりSIZE001のreview対象へ入った。Native frameの元code位置・実env context・継続header・保留queueを、同じ借用admissionとlive／inertのstorage phaseで検査する責務として確認した。追加したExpressionの規則もこのownerに属し、別のcontext台帳・再構築resolverは導入していない。await固有の検査は既存await_state ownerに保たれ、blockingは0。LOCだけを理由とした分割は行わない。
