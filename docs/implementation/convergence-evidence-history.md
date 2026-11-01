@@ -13871,3 +13871,14 @@ Source 0c65eb15235f16ff96232e4926e5bbd563e5a90c（親534742896a9450e8bff54ce4376
 - 現状を新しい実測と公開SHAへ更新し、古い入力の件数はこの履歴と原本へ保持する。完了項目を全体goalの未達から戻さず、現状の一覧はcurrent-status.mdだけとする。明示scope／View生成・command／method・driver・全構築前admission、default／Wasm・doctest・Tier 2・最終画像parityの受入はこのrunから推定しない。
 
 [最新の全原本](acceptance-evidence/task-presentation-factory-validation.json)と106 entryのraw ZIPを保持する（entry差分0、SHA256 c429e9e1199c4b918d9a0069bc1cc4c76d40ea8c99a92da646473942932fd2ee）。
+
+## 2026-11-01 Factory metadataの借用preflightと入力移動前検査
+
+- 実装公開はe71871a2a2badc8d5346f5d7a7466f627b8de2fe。Source／AWBC private codecはowned rowと同じ借用destination grammarを用い、完全なmetadata policy検査をキーのコピーと重複index作成より前へ移した。AWBCは署名・実register型・結果格納先・Handle owner・元実行contextを入力移動前に確認する。型・保持本体・実行leaseを代替modelへ再構成せず、既存のversion 1とwire shapeを維持する。
+- 初回catalogはテストfixtureのBox配列／slice型違いで失敗。修正後の最初のownerは176／176 PASS。拡張した明示scope fixtureはImageに未許可のScopeを渡して160 PASS／1 FAILとなり、実際にScopeを許可するBackgroundへfixtureを修正して最終Core owner 161／161 PASS。productionのrole許可やassertionは緩めていない。10拒否条件の入力allocation・cursor・空の結果／ledgerと、5資源上限のowned serialization基準によるexact／一つ不足、両codecの重複key拒否を確認した。これらは異なる入力・選択の別runとして保持する。
+- 全62逆依存の同一4,054入力matrixは、library／integration 8818 PASS／0 FAIL／24 ignored、CLI unit 191 PASS、通常6 integration 29 PASS。通常3群合計は 9038 PASS／0 FAIL。前Sourceの旧tag 17失敗を修復した結果は、この新しい全library実行で直接確認した。以前の8,814 case IDをすべて維持し、追加4・削除0も照合した。4 packageはcompileのみ。受入済みGeneric Match 151 IDは151／151 PASSで受入を維持する。
+- CLI全12 targetは692 unique実行・649 PASS／43 FAIL／23 ignored、重複0。checkは415 PASS／43 FAIL／23 ignored、追加3 targetは14 PASS。前Sourceの43失敗IDとの比較は同一43・新規0・解消0・未選択0で、原因同一とは推定しない。
+- workspace全97 package・全target・全feature・locked check／Clippy、12 owned path fmtは終了0。構造は3290 files／3160 Rust files・1784665 physical Rust LOC・384 review trigger・blocking0。警告は残存。元14 tracked／6 untracked WIPは保持した。既存19 hashとbenchの既知blob、14-path patch SHA256を照合した。
+- 現状一覧の旧Source・件数は新しい実測へ差し替え、以前の結果とfull SHAは履歴・原本から削除しない。今回の早期metadata拒否を、Nativeの引数評価前検査や全live候補・後段registrationの失敗原子性の完了へ拡張しない。default／Wasm・doctest・Tier 2・最終画像parityは今回未実行であり、既受入機能の取消根拠にはしない。
+
+[全原本](acceptance-evidence/task-presentation-factory-preflight.json)と116 entryのraw ZIPを保持する（entry差分0、SHA256 37305267ec765ef0f9e5a57d13ca37dcd07328ef2bffc266dabd6e1687b351a4）。
