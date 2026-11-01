@@ -13955,3 +13955,17 @@ Source command 29（Handle 19・空削除4・占有／selector 6）、factory 12
 設計理由: 住所と削除は同じbounded selector ABIを共有する。削除結果のcanonical Optionを実bodyから借用で検査し、元の保持型／bindingを追加obligationとして残す。全検査の後にだけbodyを移動し、元Handleの義務を別に維持する。public addressからscope grantは作らない。version 1のままSource／semantic transcript／AWBC／verifier／実行consumerを置換した。unfrozen checkの終了0は、実行中に後続編集があったため正確な入力の受入証拠とせず、原本観測に限定した。
 
 現状一覧の訂正理由: clear.bg／free hideの「未接続」とRemoved生成の列挙を、今回成功した範囲について削除し、専用の一行へ集約した。元の失敗とfull SHAは履歴に保持した。全62逆依存・workspace quality、完全contour／式全体の失敗原子性、明示Scope、ViewValue、driver・画像parityの現在の未達は現状一覧で判定する。Generic Matchの受入・公開行は一字も変更していない。
+
+## Presentation consumer移行・全62逆依存の終端 — 2026-11-02
+
+最終Sourceは 68eeb22a426300562ab8c7eababb99bad0e9877e。codegenの公開24aaa7acb40356ef25db2fbf4a13ff6ceda819aa（親85215cfed3b0b3734be4ea89ca9607e925512ea6）とacceleratorの公開68eeb22a426300562ab8c7eababb99bad0e9877e（親24aaa7acb40356ef25db2fbf4a13ff6ceda819aa）を通常commit／non-forced pushし、tree／patch／公開blob差分0を確認した。[失敗・修復・全原本](acceptance-evidence/task-presentation-consumer-integration.json)と[原本ZIP](acceptance-evidence/task-presentation-consumer-integration.raw.zip)を保持する。ZIPは107 entries／4314290 bytes、SHA256 3ba55fe564bd6315e69856780c93603d80825b57187b4d933604c45f6e7de2b1、entry差分0。元14 tracked／6 actual untracked WIPのpatch SHA256は53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6で不変。
+
+初回workspace checkは新Handle opcodeのcodegen分類漏れ、次はacceleratorの式cost fold漏れで各101だった。Coreのcall targetがpresentation bank要否を所有し、bankを借りないbaseline regionの候補選択でHandle命令とfactory／削除intrinsicを拒否し、inert referenceは維持する。receiverの式costは元foldへ追加した。codegenの最初のcatalogはdev依存追加に伴うlock更新で停止、次は新fixtureのlimits／revision初期化ミスで停止した。Cargoがofflineでlockの一つのdev依存edgeだけを更新し、versionを変更せず、fixtureはengine_default／revision 1へ修正した。最終codegen全16／16 PASS・4,061入力・差分0、accelerator全target／全feature check終了0。これらを後続runと重複加算しない。
+
+最終workspace全97 package・全target／全feature／lockedのcheckとClippyは各終了0、警告は残る。同じ4,061入力の構造gate終了0、3,297 files／3,167 Rust files・1,788,466 physical Rust LOC・385 review trigger・blocking0。変更Rust 40 pathのfmt終了0。Coreのclosed call／value algebra、Wireとverifier、VMのcursor／予算、Nativeの元retained contour、Compilerのchecked projection、RuntimePlanのfact ownerを確認した。新たな別catalog・仮owner・Source再構築を作らず、codegenのdev依存は既存の推移的interaction-modelをtyped境界テストに用いる。既存の大きいownerはこの責務のまま維持し、無関係な385 triggerを一律のblockingへしない。各fileのbyte／physical LOC・分類・依存fan-in/out・理由は原本のowner-reviewとCSVに保持した。
+
+実際のmetadataとtarget-all cargo treeからinteraction-modelの全62逆依存を選択した。library／integrationは8,881／8,881 PASS（11 slow）／24 ignored、case／Source／EXE差分0。選択61 package中57がruntimeを持ち、arcweft／audio-device-cpal／bundle-assets／render-webの4はcompile選択でありruntime PASSに数えない。Generic Matchの既受入151 IDは151／151 PASS。最初の集計はreceiptのlog path欠落で停止したが、元JSONを保存して実際の不変なlog pathを補い、実行を繰り返さず全8881 ID・Source・EXEを照合した。metadata訂正と元の記録もZIPに保持した。
+
+CLI unit 191／191、通常integration 29／29を含め、実際の全12 targetを4 commandで照合した。692 unique実行・649 PASS／43 FAIL・23 ignored、重複0。以前のSource a87ae7c2a8a80d44f13209f548670833ded74feeから共通失敗ID 43・新規0・解消0・未選択0。ID一致は原因一致の証明としない。失敗の原診断をそのまま保持し、未実行／失敗をPASSへ置換しない。
+
+現状一覧の訂正理由: 旧Source a87ae7c2a8a80d44f13209f548670833ded74feeに限った横断一覧を、今回の完全な62-package／全CLI targetの終端へ置換した。古い件数・失敗・full SHAは既存履歴と元ZIPへ保持し、重複したCLI部分群の現在形は全target行へ集約した。全62の実行未達は削除したが、残るCLI統合失敗やSource全体の未接続境界を受入済みとはしない。Generic Matchの受入・公開行は一字も変更せず、全体goalの未達で完了項目を戻さない。Wasm、doctest、Tier 2と最終Native/Web画像parityを今回新たに検証したとはしない。
