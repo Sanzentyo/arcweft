@@ -33,7 +33,7 @@ impl Engine {
     ) -> Result<
         (
             crate::runtime_id::RuntimePresentationHandleToken,
-            Option<RuntimePayload>,
+            Option<PresentationBody<RuntimePayload>>,
         ),
         crate::presentation::resources::PresentationRegisterError<
             RuntimePayload,
@@ -117,7 +117,7 @@ impl Engine {
                     body: error.body.value,
                 },
             )?;
-        Ok((token, previous.map(|body| body.value)))
+        Ok((token, previous))
     }
 
     /// Reconciles resources before removing the physical lexical frame. Bodies
