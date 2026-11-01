@@ -60,6 +60,7 @@ pub(crate) enum RuntimeValueView<'a> {
     Sequence(RuntimeSequenceView<'a>),
     NominalRecord(RuntimeNominalRecordView<'a>),
     Opaque(RuntimeOpaqueView<'a>),
+    PresentationResource(crate::presentation::RuntimePresentationResourceView<'a>),
     Reduction(RuntimeReductionView<'a>),
     Agent(RuntimeAgentView<'a>),
     Variant(RuntimeVariantView<'a>),
@@ -99,6 +100,7 @@ impl<'a> LiveRuntimeValueView<'a> {
             RuntimeValueView::Sequence(values) => values.value_view(index)?,
             RuntimeValueView::NominalRecord(record) => record.fields().get(index)?,
             RuntimeValueView::Variant(variant) if index == 0 => variant.payload()?,
+            RuntimeValueView::PresentationResource(value) if index == 0 => value.body(),
             _ => return None,
         };
         Some(self.child(value))
@@ -214,6 +216,7 @@ impl<'a> LiveRuntimeValueView<'a> {
                     .expect("live capability retains its original storage")
                     .clone(),
             ),
+            RuntimeValueView::PresentationResource(_) => return None,
         })
     }
 
@@ -279,6 +282,9 @@ impl<'a> LiveRuntimeValueView<'a> {
                     self.child(value.payload()).contains_line_handle(token)
                 }
             },
+            RuntimeValueView::PresentationResource(value) => {
+                self.child(value.body()).contains_line_handle(token)
+            }
             RuntimeValueView::Reduction(value) => {
                 if self.child(value.state()).contains_line_handle(token)? {
                     return Ok(true);
@@ -372,6 +378,9 @@ impl<'a> LiveRuntimeValueView<'a> {
                 .0
                 .intrinsic_ownership()
                 .join(self.child(value.payload()).ownership()),
+            RuntimeValueView::PresentationResource(value) => {
+                RuntimeValueOwnership::Affine.join(self.child(value.body()).ownership())
+            }
             RuntimeValueView::Reduction(value) => value
                 .commands()
                 .iter()
@@ -404,7 +413,10 @@ impl<'a> RuntimeValueView<'a> {
     /// admission accumulates this fact over the complete borrowed graph.
     pub(crate) fn requires_program_storage_admission(self) -> bool {
         match self {
-            Self::NominalRecord(_) | Self::Callable(_) | Self::Need(_) => true,
+            Self::NominalRecord(_)
+            | Self::Callable(_)
+            | Self::Need(_)
+            | Self::PresentationResource(_) => true,
             Self::Variant(value) => matches!(value.owner(), RuntimeVariantIdentity::Nominal { .. }),
             Self::Iterator(value) => matches!(value.kind(), RuntimeIteratorKind::Witness(_)),
             Self::Agent(value) => matches!(value.kind(), RuntimeAgentKind::DataShape(_)),
@@ -436,7 +448,7 @@ impl<'a> RuntimeValueView<'a> {
     /// The graph visitor joins descendants for both live and inert values.
     pub(crate) fn intrinsic_ownership(self) -> RuntimeValueOwnership {
         match self {
-            Self::Need(_) => RuntimeValueOwnership::Affine,
+            Self::Need(_) | Self::PresentationResource(_) => RuntimeValueOwnership::Affine,
             Self::Opaque(value) => value.value_class().intrinsic_ownership(),
             Self::Scalar(_)
             | Self::DenseNumeric(_)
@@ -515,6 +527,7 @@ impl<'a> RuntimeValueView<'a> {
             Self::Sequence(_) => "sequence",
             Self::NominalRecord(_) => "nominal record",
             Self::Opaque(_) => "opaque value",
+            Self::PresentationResource(_) => "presentation resource",
             Self::Reduction(_) => "Reduction value",
             Self::Agent(_) => "Agent value",
             Self::Variant(_) => "variant",
@@ -566,7 +579,8 @@ impl<'a> RuntimeValueView<'a> {
             | Self::Range(_)
             | Self::Iterator(_)
             | Self::Need(_)
-            | Self::Callable(_) => false,
+            | Self::Callable(_)
+            | Self::PresentationResource(_) => false,
         }
     }
 }
@@ -667,6 +681,9 @@ impl RuntimeValue {
                 View::NominalRecord(RuntimeNominalRecordView::Live(value))
             }
             Self::Opaque(value) => View::Opaque(RuntimeOpaqueView::Live(value)),
+            Self::PresentationResource(value) => View::PresentationResource(
+                crate::presentation::RuntimePresentationResourceView::Live(value),
+            ),
             Self::Reduction(value) => View::Reduction(RuntimeReductionView::Live(value)),
             Self::Agent(value) => View::Agent(RuntimeAgentView::Live(value)),
             Self::Variant(variant) => View::Variant(RuntimeVariantView::live(variant)),
@@ -709,6 +726,9 @@ impl super::AwbcRuntimeValueSnapshot {
             Self::Seq(v) => View::Sequence(RuntimeSequenceView::Snapshot(v)),
             Self::NominalRecord(v) => View::NominalRecord(RuntimeNominalRecordView::Snapshot(v)),
             Self::Opaque(v) => View::Opaque(RuntimeOpaqueView::Snapshot(v)),
+            Self::PresentationResource(v) => View::PresentationResource(
+                crate::presentation::RuntimePresentationResourceView::Snapshot(v),
+            ),
             Self::Reduction(v) => View::Reduction(RuntimeReductionView::Snapshot(v)),
             Self::Agent(v) => View::Agent(RuntimeAgentView::Snapshot(v)),
             Self::Callable(v) => View::Callable(RuntimeCallableView::Snapshot(v)),
@@ -920,6 +940,13 @@ pub(crate) fn runtime_value_views_equal(
                 _ => false,
             }
         }
+        (
+            RuntimeValueView::PresentationResource(left),
+            RuntimeValueView::PresentationResource(right),
+        ) => match (left.live_value(), right.live_value()) {
+            (Some(left), Some(right)) => left == right,
+            _ => false,
+        },
         (RuntimeValueView::Reduction(left), RuntimeValueView::Reduction(right)) => {
             match (left.live_value(), right.live_value()) {
                 (Some(left), Some(right)) => left == right,

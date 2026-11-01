@@ -1995,6 +1995,7 @@ fn validate_variant_cases(
             }
         }
         RuntimeCheckedType::Never
+        | RuntimeCheckedType::PresentationResource(_)
         | RuntimeCheckedType::ExecutableRef(_)
         | RuntimeCheckedType::Unit
         | RuntimeCheckedType::Bool

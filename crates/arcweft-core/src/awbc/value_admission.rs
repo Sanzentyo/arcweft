@@ -611,6 +611,12 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
                 Self::arity(state.retained.len(), callable.retained().len())?;
                 Ok(Children::Callable(&state.retained))
             }
+            (Type::PresentationResource(kind), View::PresentationResource(resource))
+                if resource.layout().resource() == *kind
+                    && resource.layout().resource_type() == self.row(ty)?.semantic_identity() =>
+            {
+                Ok(Children::Any)
+            }
             (Type::Iterator(item), View::Iterator(iterator)) => match iterator.kind() {
                 crate::value::RuntimeIteratorKind::Values(_) => {
                     Ok(Children::Repeated(Expected::Type(*item)))

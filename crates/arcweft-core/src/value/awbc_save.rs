@@ -168,6 +168,7 @@ pub enum AwbcRuntimeValueSnapshot {
     Record(Vec<AwbcRuntimeFieldSnapshot>),
     NominalRecord(AwbcRuntimeNominalRecordSnapshot),
     Opaque(AwbcRuntimeOpaqueSnapshot),
+    PresentationResource(Box<crate::presentation::RuntimePresentationResourceSnapshot>),
     Reduction(AwbcRuntimeReductionSnapshot),
     Agent(AwbcRuntimeAgentSnapshot),
     Callable(AwbcRuntimeCallableSnapshot),
@@ -821,6 +822,53 @@ impl AwbcRuntimeValueSnapshot {
                     )
                 })?,
             )?),
+            Self::PresentationResource(value) => {
+                let expected = value.call.resource_type();
+                let restore = context
+                    .restore_context()
+                    .ok_or(AwbcRuntimeValueSnapshotError::ProgramOwnerRequired { expected });
+                let restore = restore?;
+                let source = match restore.owner() {
+                    RuntimeProgramOwner::Plan(plan) => {
+                        crate::plan::task_source::RuntimeTaskSourceProgram::native(
+                            std::sync::Arc::clone(plan),
+                        )
+                    }
+                    RuntimeProgramOwner::Awbc(_) => restore
+                        .source()
+                        .ok_or(AwbcRuntimeValueSnapshotError::ProgramOwnerRequired { expected })?
+                        .program
+                        .clone(),
+                };
+                if !source.program_owner().same_program(restore.owner())
+                    || source.original().executable_semantic_digest().as_bytes()
+                        != &value.original_executable
+                {
+                    return Err(AwbcRuntimeValueSnapshotError::ProgramOwnerMismatch { expected });
+                }
+                let admission = restore.source().map(|context| context.admission);
+                if let Some(admission) = admission {
+                    let limits = crate::plan::RuntimeTaskPlanSealLimits::default();
+                    let mut meter = admission.task_source_meter(limits)?;
+                    source
+                        .admit_original_value_types(
+                            [value.call.resource_type(), value.call.body_type()],
+                            limits,
+                            &mut meter,
+                        )
+                        .map_err(|error| AwbcRuntimeValueSnapshotError::Message {
+                            message: error.to_string(),
+                        })?;
+                }
+                RuntimeValue::PresentationResource(Box::new(
+                    crate::presentation::RuntimePresentationResourceValue {
+                        source,
+                        call: value.call,
+                        binding: value.binding,
+                        body: RuntimePayload(value.body.into_live_with_context(context)?),
+                    },
+                ))
+            }
             Self::Char(value) => RuntimeValue::Char(value),
             Self::Duration(value) => RuntimeValue::Duration(value),
             Self::Progress { ratio, label } => {

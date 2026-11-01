@@ -915,6 +915,8 @@ mod descriptor;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum RuntimeCheckedType {
+    /// Program storage admission additionally checks the retained Source and captures.
+    PresentationResource(arcweft_interaction_model::presentation::PresentationResourceKind),
     /// Diagnostic reference to the selected program's complete type row.
     /// It is not a standalone value-admission predicate.
     ExecutableRef(RuntimeSemanticTypeId),
@@ -1183,6 +1185,7 @@ impl RuntimeCheckedType {
             return false;
         }
         match (value, self) {
+            (RuntimeValueView::PresentationResource(value), Self::PresentationResource(kind)) => value.layout().resource() == *kind,
             (RuntimeValueView::DenseNumeric(value), Self::DenseNumeric(expected)) => value.ty() == *expected,
             (RuntimeValueView::Scalar(RuntimeScalarView::Unit), Self::Unit)
             | (RuntimeValueView::Scalar(RuntimeScalarView::Bool(_)), Self::Bool)
@@ -1338,6 +1341,10 @@ fn write_checked_type_identity(
     ty: &RuntimeCheckedType,
 ) {
     match ty {
+        RuntimeCheckedType::PresentationResource(kind) => {
+            encoder.write_tag(28);
+            encoder.write_u8(kind.semantic_tag());
+        }
         RuntimeCheckedType::ExecutableRef(identity) => {
             encoder.write_tag(27);
             encoder.write_bytes(identity.as_bytes());
@@ -2575,6 +2582,7 @@ fn runtime_record_pattern_domain(
             .ok_or(RuntimePatternMatchError::MissingRecordDomain { ty }),
         RuntimePlanTypeProjection::Record(fields) => Ok(RuntimeRecordPatternDomain::Record(fields)),
         RuntimePlanTypeProjection::BoundType(_)
+        | RuntimePlanTypeProjection::PresentationResource(_)
         | RuntimePlanTypeProjection::Never
         | RuntimePlanTypeProjection::Unit
         | RuntimePlanTypeProjection::Bool

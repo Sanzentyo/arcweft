@@ -5738,19 +5738,21 @@ fn runtime_type_scoped_at(
                 arguments: Box::new([]),
             }
         }
+        TypeKind::PresentationResource(kind) => RuntimeTypeShape::PresentationResource(*kind),
+        TypeKind::ViewValue => RuntimeTypeShape::PresentationResource(
+            arcweft_interaction_model::presentation::PresentationResourceKind::View,
+        ),
         TypeKind::TextCluster
         | TypeKind::StageApi(_)
         | TypeKind::LineContext
         | TypeKind::StatementIngress(_)
         | TypeKind::Handle { .. }
         | TypeKind::SlotRef(_)
-        | TypeKind::PresentationResource(_)
         | TypeKind::GenericParam(_)
         | TypeKind::OpenNominal(_)
         | TypeKind::Projection { .. }
         | TypeKind::CharacterPatch(_)
-        | TypeKind::FocusPatch
-        | TypeKind::ViewValue => {
+        | TypeKind::FocusPatch => {
             return Err(RuntimeSemanticProjectionError::Type {
                 reason: format!(
                     "checked type `{}` has no closed runtime representation",

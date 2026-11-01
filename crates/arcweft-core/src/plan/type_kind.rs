@@ -237,6 +237,8 @@ pub enum RuntimePlanTypeProjection<R> {
     DenseNumeric(crate::math::RuntimeDenseNumericType),
     EntityReference,
     AgentValue,
+    /// Owned, program-bound presentation body. Custody belongs to its handle.
+    PresentationResource(arcweft_interaction_model::presentation::PresentationResourceKind),
     Range(R),
     Iterator(R),
     Sequence {
@@ -477,6 +479,7 @@ impl<R> RuntimePlanTypeProjection<R> {
             | Self::DenseNumeric(_)
             | Self::EntityReference
             | Self::AgentValue
+            | Self::PresentationResource(_)
             | Self::Agent(_) => 0,
         })
     }
@@ -544,6 +547,7 @@ impl<R> RuntimePlanTypeProjection<R> {
             | Self::DenseNumeric(_)
             | Self::EntityReference
             | Self::AgentValue
+            | Self::PresentationResource(_)
             | Self::Agent(_) => Box::new([]),
         }
     }
@@ -554,6 +558,9 @@ impl<R> RuntimePlanTypeProjection<R> {
         mut map: impl FnMut(R) -> Result<T, E>,
     ) -> Result<RuntimePlanTypeProjection<T>, E> {
         Ok(match self {
+            Self::PresentationResource(kind) => {
+                RuntimePlanTypeProjection::PresentationResource(kind)
+            }
             Self::BoundType(reference) => RuntimePlanTypeProjection::BoundType(reference),
             Self::Never => RuntimePlanTypeProjection::Never,
             Self::Unit => RuntimePlanTypeProjection::Unit,
@@ -703,6 +710,7 @@ impl<R> RuntimePlanTypeProjection<R> {
             | Self::DenseNumeric(_)
             | Self::EntityReference
             | Self::AgentValue
+            | Self::PresentationResource(_)
             | Self::BuiltinVariant { .. }
             | Self::Nominal { .. }
             | Self::Opaque { .. } => None,

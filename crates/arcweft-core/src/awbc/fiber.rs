@@ -4454,6 +4454,9 @@ fn validate_nested_runtime_value(
         RuntimeValue::Opaque(value) => {
             validate_nested_runtime_value(program, value.payload(), depth + 1)
         }
+        RuntimeValue::PresentationResource(value) => {
+            validate_nested_runtime_value(program, value.body(), depth + 1)
+        }
         // Reduction is a typed producer-owned carrier, but AWBC has not yet
         // admitted a runtime type that retains its owner and generic state
         // projection. Reject it at the durable fiber boundary instead of
@@ -5816,6 +5819,7 @@ fn runtime_value_type_label(value: &RuntimeValue) -> String {
         RuntimeValue::Record(_) => "record",
         RuntimeValue::NominalRecord(record) => record.type_id().as_str(),
         RuntimeValue::Opaque(_) => "opaque value",
+        RuntimeValue::PresentationResource(_) => "presentation resource",
         RuntimeValue::Reduction(_) => "reduction",
         RuntimeValue::Agent(value) => value.label(),
         RuntimeValue::Callable(_) => "callable",

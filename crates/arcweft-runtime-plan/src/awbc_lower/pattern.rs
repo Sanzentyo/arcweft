@@ -404,6 +404,9 @@ fn plan_type_shape(
         RuntimePlanTypeProjection::DenseNumeric(dense) => (*dense).into(),
         RuntimePlanTypeProjection::EntityReference => AwbcRuntimeTypeShape::EntityRef,
         RuntimePlanTypeProjection::AgentValue => AwbcRuntimeTypeShape::AgentValue,
+        RuntimePlanTypeProjection::PresentationResource(kind) => {
+            AwbcRuntimeTypeShape::PresentationResource(*kind)
+        }
         RuntimePlanTypeProjection::Range(item) => {
             AwbcRuntimeTypeShape::Range(reserved_plan_type(inventory, *item)?)
         }

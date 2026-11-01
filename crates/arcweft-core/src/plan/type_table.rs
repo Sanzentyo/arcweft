@@ -252,6 +252,7 @@ impl RuntimePlanTypeTable {
             | RuntimePlanTypeProjection::DenseNumeric(_)
             | RuntimePlanTypeProjection::EntityReference
             | RuntimePlanTypeProjection::AgentValue
+            | RuntimePlanTypeProjection::PresentationResource(_)
             | RuntimePlanTypeProjection::Nominal { .. }
             | RuntimePlanTypeProjection::Opaque { .. } => true,
             RuntimePlanTypeProjection::Sequence { item, .. } => {

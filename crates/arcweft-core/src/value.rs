@@ -353,6 +353,7 @@ pub enum RuntimeValue {
     Record(RuntimeRecordValue),
     NominalRecord(RuntimeNominalRecordValue),
     Opaque(RuntimeOpaqueValue),
+    PresentationResource(Box<crate::presentation::RuntimePresentationResourceValue>),
     Reduction(RuntimeReductionValue),
     Agent(RuntimeAgentValue),
     Callable(RuntimeCallableValue),
@@ -593,6 +594,7 @@ impl RuntimeValue {
     #[must_use]
     pub fn contains_nonconstant_opaque(&self) -> bool {
         match self {
+            Self::PresentationResource(_) => true,
             Self::Opaque(value) => {
                 value.persistence() == RuntimeOpaquePersistence::SnapshotOnly
                     || matches!(
@@ -669,6 +671,7 @@ impl RuntimeValue {
     #[must_use]
     pub fn contains_function(&self) -> bool {
         match self {
+            Self::PresentationResource(value) => value.body().contains_function(),
             Self::Callable(_) => true,
             Self::NeedHandle(handle) => handle.request_values().any(Self::contains_function),
             Self::Tuple(values) => values.iter().any(Self::contains_function),

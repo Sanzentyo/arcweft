@@ -38,6 +38,7 @@ impl Writer<'_> {
         self.counts.scope_admission(scope.binders().len())?;
         self.tag(projection.executable_semantic_kind())?;
         match projection {
+            P::PresentationResource(kind) => self.tag(kind.semantic_tag())?,
             P::BoundType(reference) => {
                 scope.validate_type(*reference)?;
                 self.bytes(&reference.depth().to_le_bytes())?;
@@ -487,6 +488,12 @@ impl Reader<'_, '_> {
                 let source = self.reference()?;
                 let mapping = self.reference()?;
                 materialize.then_some(P::Traversal { source, mapping })
+            }
+            38 => {
+                let tag = self.tag()?;
+                let kind = arcweft_interaction_model::presentation::PresentationResourceKind::from_semantic_tag(tag)
+                    .ok_or(RuntimeTypeSourceError::Tag { kind: "presentation resource", tag })?;
+                materialize.then_some(P::PresentationResource(kind))
             }
             tag => {
                 return Err(RuntimeTypeSourceError::Tag {

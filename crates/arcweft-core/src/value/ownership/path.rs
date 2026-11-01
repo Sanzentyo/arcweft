@@ -23,6 +23,7 @@ pub enum RuntimeValuePathSegment {
     IteratorRemainder(u64),
     IteratorWitnessState,
     OpaquePayload,
+    PresentationBody,
     ReductionState,
     ReductionCommandPayload(u32),
     AgentEmbeddedValue(u32),
@@ -101,6 +102,7 @@ impl RuntimeValuePathSegment {
             Self::IteratorRemainder(_) => 8,
             Self::IteratorWitnessState => 9,
             Self::OpaquePayload => 10,
+            Self::PresentationBody => 17,
             Self::ReductionState => 11,
             Self::ReductionCommandPayload(_) => 12,
             Self::AgentEmbeddedValue(_) => 13,
@@ -175,6 +177,7 @@ enum HumanPathSegmentRef {
     IteratorRemainder { index: String },
     IteratorWitnessState,
     OpaquePayload {},
+    PresentationBody {},
     ReductionState,
     ReductionCommandPayload { index: u32 },
     AgentEmbeddedValue { index: u32 },
@@ -195,6 +198,7 @@ enum HumanPathSegment {
     IteratorRemainder { index: String },
     IteratorWitnessState,
     OpaquePayload {},
+    PresentationBody {},
     ReductionState,
     ReductionCommandPayload { index: u32 },
     AgentEmbeddedValue { index: u32 },
@@ -215,6 +219,7 @@ enum NonHumanPathSegmentRef {
     IteratorRemainder { index: u64 },
     IteratorWitnessState,
     OpaquePayload {},
+    PresentationBody {},
     ReductionState,
     ReductionCommandPayload { index: u32 },
     AgentEmbeddedValue { index: u32 },
@@ -235,6 +240,7 @@ enum NonHumanPathSegment {
     IteratorRemainder { index: u64 },
     IteratorWitnessState,
     OpaquePayload {},
+    PresentationBody {},
     ReductionState,
     ReductionCommandPayload { index: u32 },
     AgentEmbeddedValue { index: u32 },
@@ -277,6 +283,7 @@ impl Serialize for RuntimeValuePathSegment {
                 }
                 Self::IteratorWitnessState => NonHumanPathSegmentRef::IteratorWitnessState,
                 Self::OpaquePayload => NonHumanPathSegmentRef::OpaquePayload {},
+                Self::PresentationBody => NonHumanPathSegmentRef::PresentationBody {},
                 Self::ReductionState => NonHumanPathSegmentRef::ReductionState,
                 Self::ReductionCommandPayload(index) => {
                     NonHumanPathSegmentRef::ReductionCommandPayload { index }
@@ -304,6 +311,7 @@ impl Serialize for RuntimeValuePathSegment {
             },
             Self::IteratorWitnessState => HumanPathSegmentRef::IteratorWitnessState,
             Self::OpaquePayload => HumanPathSegmentRef::OpaquePayload {},
+            Self::PresentationBody => HumanPathSegmentRef::PresentationBody {},
             Self::ReductionState => HumanPathSegmentRef::ReductionState,
             Self::ReductionCommandPayload(index) => {
                 HumanPathSegmentRef::ReductionCommandPayload { index }
@@ -337,6 +345,7 @@ impl<'de> Deserialize<'de> for RuntimeValuePathSegment {
                 NonHumanPathSegment::IteratorRemainder { index } => Self::IteratorRemainder(index),
                 NonHumanPathSegment::IteratorWitnessState => Self::IteratorWitnessState,
                 NonHumanPathSegment::OpaquePayload {} => Self::OpaquePayload,
+                NonHumanPathSegment::PresentationBody {} => Self::PresentationBody,
                 NonHumanPathSegment::ReductionState => Self::ReductionState,
                 NonHumanPathSegment::ReductionCommandPayload { index } => {
                     Self::ReductionCommandPayload(index)
@@ -363,6 +372,7 @@ impl<'de> Deserialize<'de> for RuntimeValuePathSegment {
             }
             HumanPathSegment::IteratorWitnessState => Self::IteratorWitnessState,
             HumanPathSegment::OpaquePayload {} => Self::OpaquePayload,
+            HumanPathSegment::PresentationBody {} => Self::PresentationBody,
             HumanPathSegment::ReductionState => Self::ReductionState,
             HumanPathSegment::ReductionCommandPayload { index } => {
                 Self::ReductionCommandPayload(index)

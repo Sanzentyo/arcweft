@@ -68,6 +68,10 @@ impl<'a> SnapshotStorageAdmission<'a> {
                 RuntimeVariantIdentity::Builtin(_) => None,
             },
             RuntimeValueView::Callable(callable) => Some(self.callable_type(callable)?),
+            RuntimeValueView::PresentationResource(resource) => {
+                self.presentation_resource(resource)?;
+                None
+            }
             RuntimeValueView::Need(need) => {
                 need.validate_admitted_storage(self.owner, self.resources)?;
                 None
@@ -127,6 +131,62 @@ impl<'a> SnapshotStorageAdmission<'a> {
                 self.resources.origin(),
             )?;
         }
+        Ok(())
+    }
+
+    /// Checks the body under its retained invocation and exact original lease.
+    fn presentation_resource(
+        &self,
+        resource: crate::presentation::RuntimePresentationResourceView<'_>,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        let owner = self.require_owner("presentation resource")?;
+        let expected = resource.layout().resource_type();
+        if resource
+            .source()
+            .is_some_and(|source| !source.program_owner().same_program(owner))
+        {
+            return Err(AwbcRuntimeValueSnapshotError::ProgramOwnerMismatch { expected });
+        }
+        let original = match owner {
+            RuntimeProgramOwner::Plan(plan) => *plan.executable_semantic_digest().as_bytes(),
+            RuntimeProgramOwner::Awbc(program) => *program
+                .original_source
+                .as_ref()
+                .ok_or(AwbcRuntimeValueSnapshotError::ProgramOwnerRequired { expected })?
+                .expected_executable(),
+        };
+        if original != resource.original_executable() {
+            return Err(AwbcRuntimeValueSnapshotError::ProgramOwnerMismatch { expected });
+        }
+        if let Some(source) = resource.source() {
+            let limits = crate::plan::RuntimeTaskPlanSealLimits::default();
+            let mut meter = crate::task::semantic::TaskSemanticMeter::for_retained(
+                self.resources.work(),
+                limits,
+            );
+            source
+                .admit_original_value_types(
+                    [
+                        resource.layout().resource_type(),
+                        resource.layout().body_type(),
+                    ],
+                    limits,
+                    &mut meter,
+                )
+                .map_err(|error| AwbcRuntimeValueSnapshotError::Message {
+                    message: error.to_string(),
+                })?;
+        }
+        resource
+            .layout()
+            .validate_body_type(owner.types())
+            .map_err(|error| AwbcRuntimeValueSnapshotError::Message {
+                message: error.to_string(),
+            })?;
+        owner
+            .types()
+            .value_type(resource.layout().body_type())?
+            .validate_admitted_view(resource.body(), resource.binding(), self.resources)?;
         Ok(())
     }
 

@@ -216,6 +216,9 @@ impl AwbcProgram {
             return Err(AwbcTypeProjectionError::CheckedTypeCycle { index: ty.0 });
         }
         let result = match row.shape() {
+            AwbcRuntimeTypeShape::PresentationResource(kind) => {
+                Ok(RuntimeCheckedType::PresentationResource(*kind))
+            }
             AwbcRuntimeTypeShape::Function { .. } => {
                 Ok(RuntimeCheckedType::ExecutableRef(row.semantic_identity()))
             }

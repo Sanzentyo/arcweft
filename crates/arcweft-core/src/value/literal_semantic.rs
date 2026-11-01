@@ -32,6 +32,7 @@ impl RuntimeValue {
                     RuntimeValueView::Record(value) => visitor(value.len())?,
                     RuntimeValueView::NominalRecord(value) => visitor(value.fields().len())?,
                     RuntimeValueView::Opaque(_) | RuntimeValueView::Agent(_) => visitor(1)?,
+                    RuntimeValueView::PresentationResource(_) => visitor(1)?,
                     RuntimeValueView::Variant(variant) => {
                         visitor(usize::from(variant.payload().is_some()))?;
                     }
@@ -278,7 +279,9 @@ impl RuntimeValue {
                             return Err(RuntimeBodySemanticError::InvalidStaticLiteral);
                         }
                     },
-                    RuntimeValueView::Need(_) | RuntimeValueView::Callable(_) => {
+                    RuntimeValueView::Need(_)
+                    | RuntimeValueView::Callable(_)
+                    | RuntimeValueView::PresentationResource(_) => {
                         encoder.reject_owner();
                         return Err(RuntimeBodySemanticError::InvalidStaticLiteral);
                     }

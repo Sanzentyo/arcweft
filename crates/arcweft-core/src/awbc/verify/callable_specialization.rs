@@ -67,6 +67,9 @@ impl RuntimeCallableSpecializationContext for AwbcProgram {
     fn type_projection(&self, ty: Self::Type) -> Option<RuntimePlanTypeProjection<Self::Type>> {
         let row = self.runtime_types.get(ty.index())?;
         let projection = match row.shape() {
+            AwbcRuntimeTypeShape::PresentationResource(kind) => {
+                RuntimePlanTypeProjection::PresentationResource(*kind)
+            }
             AwbcRuntimeTypeShape::BoundType(reference) => {
                 RuntimePlanTypeProjection::BoundType(*reference)
             }

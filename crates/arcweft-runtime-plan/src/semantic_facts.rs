@@ -211,6 +211,7 @@ pub enum RuntimeAgentTypeShape {
     reason = "checked type facts preserve a direct exhaustive semantic shape; they are immutable generation-bound inputs rather than a hot runtime value representation"
 )]
 pub enum RuntimeTypeShape {
+    PresentationResource(arcweft_interaction_model::presentation::PresentationResourceKind),
     BoundType(arcweft_core::plan::RuntimeBoundTypeReference),
     Unit,
     Never,
@@ -699,6 +700,9 @@ impl RuntimeNormalizedType {
             }
             RuntimeTypeShape::EntityReference => RuntimePlanTypeProjection::EntityReference,
             RuntimeTypeShape::AgentValue => RuntimePlanTypeProjection::AgentValue,
+            RuntimeTypeShape::PresentationResource(kind) => {
+                RuntimePlanTypeProjection::PresentationResource(*kind)
+            }
             RuntimeTypeShape::Range(item) => RuntimePlanTypeProjection::Range(child(item)),
             RuntimeTypeShape::Iterator(item) => RuntimePlanTypeProjection::Iterator(child(item)),
             RuntimeTypeShape::Sequence { kind, item } => RuntimePlanTypeProjection::Sequence {
@@ -830,6 +834,7 @@ impl RuntimeNormalizedType {
 
     fn children(&self) -> Vec<&RuntimeNormalizedType> {
         match self.shape() {
+            RuntimeTypeShape::PresentationResource(_) => Vec::new(),
             RuntimeTypeShape::Range(item)
             | RuntimeTypeShape::Iterator(item)
             | RuntimeTypeShape::ThreadHandle(item)
@@ -913,6 +918,9 @@ impl RuntimeNormalizedType {
             return Err(self.unsupported(path, shape));
         }
         Ok(match self.shape() {
+            RuntimeTypeShape::PresentationResource(kind) => {
+                RuntimeCheckedType::PresentationResource(*kind)
+            }
             RuntimeTypeShape::Sequence { item, .. } => RuntimeCheckedType::Sequence(Box::new(
                 item.checked_type_at(&path.pushed(RuntimeTypeProjectionStep::SequenceItem))?,
             )),
@@ -12330,6 +12338,7 @@ fn validate_normalized_type(
                 .map_err(|_| RuntimeSemanticFactsError::WrongVariantIdentity)
         }
         RuntimeTypeShape::BoundType(_)
+        | RuntimeTypeShape::PresentationResource(_)
         | RuntimeTypeShape::Unit
         | RuntimeTypeShape::Never
         | RuntimeTypeShape::Bool

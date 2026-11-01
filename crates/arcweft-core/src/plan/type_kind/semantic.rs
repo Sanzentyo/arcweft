@@ -37,6 +37,7 @@ impl<R> RuntimePlanTypeProjection<R> {
             | Self::DenseNumeric(_)
             | Self::EntityReference
             | Self::AgentValue
+            | Self::PresentationResource(_)
             | Self::Range(..)
             | Self::Iterator(..)
             | Self::Sequence { .. }
@@ -100,6 +101,7 @@ impl<R> RuntimePlanTypeProjection<R> {
             Self::Agent(..) => 35,
             Self::DenseNumeric(_) => 36,
             Self::Traversal { .. } => 37,
+            Self::PresentationResource(_) => 38,
         }
     }
 }
@@ -111,6 +113,7 @@ impl RuntimePlanTypeProjection<RuntimePlanTypeId> {
     ) -> Result<(), TaskSemanticEncodingError> {
         encoder.status()?;
         match self {
+            Self::PresentationResource(kind) => encoder.tag(kind.semantic_tag()),
             Self::BoundType(reference) => {
                 encoder.ordinal(reference.depth());
                 encoder.ordinal(u32::from(reference.slot()));

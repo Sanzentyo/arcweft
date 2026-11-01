@@ -6573,6 +6573,7 @@ pub(super) fn runtime_type_permits_copy(
             }
             Some(
                 AwbcRuntimeTypeShape::Nominal { .. }
+                | AwbcRuntimeTypeShape::PresentationResource(_)
                 | AwbcRuntimeTypeShape::Opaque {
                     value_class:
                         crate::value::RuntimeOpaqueValueClass::AffineHandle(_)

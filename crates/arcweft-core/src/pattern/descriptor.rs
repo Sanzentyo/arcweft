@@ -19,6 +19,7 @@ impl RuntimeCheckedType {
             let next = depth + 1;
             match ty {
                 Self::ExecutableRef(_)
+                | Self::PresentationResource(_)
                 | Self::Nominal { .. }
                 | Self::Variant {
                     owner: RuntimeVariantIdentity::Nominal { .. },

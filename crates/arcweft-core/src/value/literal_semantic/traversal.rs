@@ -145,6 +145,9 @@ impl<'a> LiteralEvents<'a> {
             RuntimeValueView::Opaque(value) => {
                 self.work.push(Work::Value(value.payload()));
             }
+            RuntimeValueView::PresentationResource(value) => {
+                self.work.push(Work::Value(value.body()));
+            }
             RuntimeValueView::Variant(variant) => {
                 if let Some(payload) = variant.payload() {
                     self.work.push(Work::Value(payload));

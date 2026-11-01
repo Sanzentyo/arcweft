@@ -1,8 +1,13 @@
 //! Typed Sans-I/O presentation ownership and dialogue stage/voice commands.
 
+mod factory;
+mod resource_value;
 pub(crate) mod resources;
 mod slot_reference;
 
+pub use factory::{RuntimePresentationFactoryCall, RuntimePresentationFactoryCallError};
+pub(crate) use resource_value::RuntimePresentationResourceView;
+pub use resource_value::{RuntimePresentationResourceSnapshot, RuntimePresentationResourceValue};
 pub use slot_reference::{RuntimePresentationSlotRefCall, RuntimePresentationSlotRefInput};
 
 pub use resources::{RuntimePresentationScopeBinding, RuntimePresentationScopeSnapshot};

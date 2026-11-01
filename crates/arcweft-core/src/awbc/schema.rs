@@ -617,6 +617,7 @@ fn visit_runtime_type_strings(
         }
         AwbcRuntimeTypeShape::Opaque { producer, .. } => visit_string_id(producer, visitor),
         AwbcRuntimeTypeShape::BoundType(_)
+        | AwbcRuntimeTypeShape::PresentationResource(_)
         | AwbcRuntimeTypeShape::Unit
         | AwbcRuntimeTypeShape::Bool
         | AwbcRuntimeTypeShape::Int(_)
@@ -930,6 +931,7 @@ impl AwbcStructuralRuntimeTypeKind {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub enum AwbcRuntimeTypeShape {
+    PresentationResource(arcweft_interaction_model::presentation::PresentationResourceKind),
     BoundType(RuntimeBoundTypeReference),
     Unit,
     Bool,
@@ -1116,6 +1118,7 @@ impl AwbcRuntimeTypeShape {
             | Self::EntityRef
             | Self::Bytes
             | Self::AgentValue
+            | Self::PresentationResource(_)
             | Self::Agent(AwbcAgentTypeShape::Leaf(_))
             | Self::MatrixF32
             | Self::MatrixF64

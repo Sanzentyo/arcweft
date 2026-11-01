@@ -36,6 +36,9 @@ fn validate_value(
             .try_for_each(|field| validate_value(field.value(), depth + 1, maximum)),
         RuntimeValue::NominalRecord(record) => validate_values(record.fields(), depth + 1, maximum),
         RuntimeValue::Opaque(value) => validate_value(value.payload(), depth + 1, maximum),
+        RuntimeValue::PresentationResource(value) => {
+            validate_value(value.body(), depth + 1, maximum)
+        }
         RuntimeValue::Reduction(value) => {
             validate_value(value.state(), depth + 1, maximum)?;
             value

@@ -323,6 +323,7 @@ impl ValueValidation for NoSchemaValidation<'_> {
             let binding = match value {
                 RuntimeValueView::NominalRecord(record) => record.type_instantiation(),
                 RuntimeValueView::Variant(variant) => variant.type_instantiation(),
+                RuntimeValueView::PresentationResource(resource) => resource.binding(),
                 _ => None,
             };
             if let Some(binding) = binding {
@@ -335,6 +336,11 @@ impl ValueValidation for NoSchemaValidation<'_> {
             }
             if let RuntimeValueView::Sequence(sequence) = value {
                 sequence.validate_storage_metadata(self.depth, &policy, resources)?;
+            }
+            if let RuntimeValueView::PresentationResource(resource) = value {
+                for _ in resource.layout().inputs() {
+                    resources.charge(self.depth + 1)?;
+                }
             }
         }
         if let Some(observer) = &mut self.observer {
@@ -1630,6 +1636,45 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
                 budget.collection(callable.retained().len())?;
             }
             work.push(Work::Tuple(callable.retained(), 0, depth + 1, children));
+        }
+        RuntimeValueView::PresentationResource(value) => {
+            if matches!(encoding, ValueEncoding::Canonical | ValueEncoding::Literal) {
+                return Err(RuntimeSchemaError::Encoding {
+                    message: "presentation resource values require program-bound save encoding"
+                        .to_owned(),
+                });
+            }
+            writer.u8(27)?;
+            writer.extend(&value.original_executable())?;
+            let call = value.layout();
+            writer.u8(call.callable().semantic_tag())?;
+            writer.extend(call.resource_type().as_bytes())?;
+            writer.extend(call.body_type().as_bytes())?;
+            writer.len(call.inputs().len())?;
+            for key in call.inputs() {
+                writer.u8(key.role().semantic_tag())?;
+                writer.u8(u8::from(key.parameter().is_some()))?;
+                if let Some(parameter) = key.parameter() {
+                    writer.string(parameter)?;
+                }
+            }
+            writer.u8(u8::from(value.binding().is_some()))?;
+            if let Some(binding) = value.binding() {
+                writer.extend(binding.context().as_bytes())?;
+                writer.len(binding.source_rows().len())?;
+                for row in binding.source_rows() {
+                    writer.len(row.iter().count())?;
+                    for effect in row.iter() {
+                        writer.string(effect.as_str())?;
+                    }
+                }
+            }
+            work.push(Work::Value(
+                value.body(),
+                depth + 1,
+                validation.child(&children, 0)?,
+                None,
+            ));
         }
         RuntimeValueView::Range(range)
             if matches!(

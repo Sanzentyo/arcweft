@@ -1658,6 +1658,7 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
         memo.insert(ty, None);
         let projection = self.projection(ty)?;
         let children: Option<Vec<RuntimePlanTypeId>> = match projection {
+            RuntimePlanTypeProjection::PresentationResource(_) => None,
             RuntimePlanTypeProjection::Never
             | RuntimePlanTypeProjection::Unit
             | RuntimePlanTypeProjection::Bool

@@ -134,6 +134,10 @@ impl Writer<'_> {
                 kind: "callable",
                 offset: self.length,
             }),
+            RuntimeValueView::PresentationResource(_) => Err(Error::RuntimeCarrier {
+                kind: "presentation resource",
+                offset: self.length,
+            }),
         }
     }
 

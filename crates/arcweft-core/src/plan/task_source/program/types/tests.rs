@@ -132,6 +132,7 @@ fn executable(plan: &RuntimePlan) -> AwbcProgram {
             .try_map(|ty| Ok::<_, std::convert::Infallible>(id(plan, ty)))
             .unwrap();
         let shape = match projection {
+            P::PresentationResource(kind) => A::PresentationResource(kind),
             P::BoundType(reference) => A::BoundType(reference),
             P::Never => A::Never,
             P::Unit => A::Unit,

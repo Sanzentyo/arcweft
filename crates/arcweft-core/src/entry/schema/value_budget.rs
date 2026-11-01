@@ -404,6 +404,14 @@ impl ValueBudget {
                 self.collection(record.fields().len())?;
             }
             RuntimeValueView::Opaque(value) => self.string(value.producer().as_str())?,
+            RuntimeValueView::PresentationResource(value) => {
+                self.collection(value.layout().inputs().len())?;
+                for input in value.layout().inputs() {
+                    if let Some(parameter) = input.parameter() {
+                        self.string(parameter)?;
+                    }
+                }
+            }
             RuntimeValueView::Reduction(value) => {
                 self.string(value.owner().producer().as_str())?;
                 self.collection(value.commands().len())?;

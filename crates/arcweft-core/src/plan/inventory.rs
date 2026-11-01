@@ -285,6 +285,9 @@ impl RuntimePlanInventory {
             .get(ty)
             .ok_or(RuntimePlanTypeResolutionError::UnknownType { ty })?;
         let checked = match declaration.projection() {
+            RuntimePlanTypeProjection::PresentationResource(kind) => {
+                Some(RuntimeCheckedType::PresentationResource(*kind))
+            }
             RuntimePlanTypeProjection::Never => Some(RuntimeCheckedType::Never),
             RuntimePlanTypeProjection::Unit => Some(RuntimeCheckedType::Unit),
             RuntimePlanTypeProjection::Bool => Some(RuntimeCheckedType::Bool),

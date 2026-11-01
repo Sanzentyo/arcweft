@@ -156,6 +156,7 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
             });
         }
         match ty.shape() {
+            AwbcRuntimeTypeShape::PresentationResource(_) => {}
             AwbcRuntimeTypeShape::Tuple(items) => {
                 for item in items {
                     check_index(program.runtime_types.len(), item.0, "runtime_types", &at)?;

@@ -67,6 +67,25 @@ impl AwbcRuntimeValueSnapshot {
                 persistence: value.persistence(),
                 payload: Box::new(Self::from_admitted_view(value.payload(), owner)?),
             }),
+            View::PresentationResource(value) => {
+                let value = value
+                    .live_value()
+                    .ok_or_else(Self::inert_projection_error)?;
+                let expected = value.layout().resource_type();
+                let owner = owner
+                    .ok_or(AwbcRuntimeValueSnapshotError::ProgramOwnerRequired { expected })?;
+                if !value.source.program_owner().same_program(owner) {
+                    return Err(AwbcRuntimeValueSnapshotError::ProgramOwnerMismatch { expected });
+                }
+                Self::PresentationResource(Box::new(
+                    crate::presentation::RuntimePresentationResourceSnapshot {
+                        original_executable: value.original_executable(),
+                        call: std::sync::Arc::clone(&value.call),
+                        binding: value.binding.clone(),
+                        body: Box::new(Self::from_admitted_view(value.body().view(), Some(owner))?),
+                    },
+                ))
+            }
             View::Reduction(RuntimeReductionView::Live(value)) => {
                 Self::Reduction(Self::reduction_from_live(value, owner)?)
             }

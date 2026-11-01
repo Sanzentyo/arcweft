@@ -814,6 +814,7 @@ impl AwbcInventory {
                 );
             }
             AwbcRuntimeTypeShape::BoundType(_)
+            | AwbcRuntimeTypeShape::PresentationResource(_)
             | AwbcRuntimeTypeShape::Tuple(_)
             | AwbcRuntimeTypeShape::Sequence { .. }
             | AwbcRuntimeTypeShape::Variant { .. }

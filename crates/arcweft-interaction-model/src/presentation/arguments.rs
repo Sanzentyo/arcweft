@@ -1,7 +1,7 @@
 //! Semantic argument coordinates shared by checking and executable commands.
 
 use arcweft_id::{DeclarationName, DeclarationNameError};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, ser::SerializeStruct};
 use thiserror::Error;
 
 macro_rules! argument_roles {
@@ -103,8 +103,8 @@ impl PresentationArgumentRole {
 
 /// One exact input destination. Two metadata fields of the same role retain
 /// distinct keys; fixed fields cannot smuggle a metadata key into the ABI.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(try_from = "ArgumentKeyWire", into = "ArgumentKeyWire")]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[serde(try_from = "ArgumentKeyWire")]
 pub struct PresentationArgumentKey {
     role: PresentationArgumentRole,
     parameter: Option<String>,
@@ -164,11 +164,11 @@ impl TryFrom<ArgumentKeyWire> for PresentationArgumentKey {
     }
 }
 
-impl From<PresentationArgumentKey> for ArgumentKeyWire {
-    fn from(value: PresentationArgumentKey) -> Self {
-        Self {
-            role: value.role,
-            parameter: value.parameter,
-        }
+impl Serialize for PresentationArgumentKey {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut wire = serializer.serialize_struct("ArgumentKeyWire", 2)?;
+        wire.serialize_field("role", &self.role)?;
+        wire.serialize_field("parameter", &self.parameter)?;
+        wire.end()
     }
 }

@@ -21,6 +21,7 @@ pub fn visit_runtime_value_graph<E>(
             }
             RuntimeValue::NominalRecord(record) => pending.extend(record.fields()),
             RuntimeValue::Opaque(value) => pending.push(value.payload()),
+            RuntimeValue::PresentationResource(value) => pending.push(value.body()),
             RuntimeValue::Reduction(value) => {
                 pending.push(value.state());
                 pending.extend(value.commands().iter().map(|command| &command.payload().0));

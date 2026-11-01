@@ -771,6 +771,12 @@ impl Wire for AwbcRuntimeType {
                 source: AwbcTypeId::read_wire(reader)?,
                 mapping: AwbcTypeId::read_wire(reader)?,
             },
+            41 => {
+                let tag = u8::read_wire(reader)?;
+                let kind = arcweft_interaction_model::presentation::PresentationResourceKind::from_semantic_tag(tag)
+                    .ok_or(AwbcCodecError::UnknownTag { kind: "presentation resource", tag, offset })?;
+                AwbcRuntimeTypeShape::PresentationResource(kind)
+            }
             tag => {
                 return Err(AwbcCodecError::UnknownTag {
                     kind: "runtime type",
@@ -883,6 +889,9 @@ fn write_runtime_type_composite_shape(
     writer: &mut Writer,
 ) -> Result<(), AwbcCodecError> {
     match shape {
+        AwbcRuntimeTypeShape::PresentationResource(kind) => {
+            write_tagged(writer, 41, &kind.semantic_tag())
+        }
         AwbcRuntimeTypeShape::Tuple(items) => write_tagged(writer, 10, items),
         AwbcRuntimeTypeShape::Sequence { kind, item } => {
             write_tagged_fields(writer, 11, |writer| {

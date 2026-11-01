@@ -63,6 +63,39 @@ pub(crate) enum RuntimeTaskSourceProgramError {
 }
 
 impl RuntimeTaskSourceProgram {
+    /// Correlates retained value rows with this complete original Source using
+    /// the same relation and meter as task operands. An executable row alone
+    /// cannot assert what the original declaration meant.
+    pub(crate) fn admit_original_value_types(
+        &self,
+        identities: impl IntoIterator<Item = crate::pattern::RuntimeSemanticTypeId>,
+        limits: crate::plan::RuntimeTaskPlanSealLimits,
+        meter: &mut crate::task::semantic::TaskSemanticMeter,
+    ) -> Result<(), types::RuntimeAwbcSourceTypeError> {
+        match self.data.as_ref() {
+            RuntimeTaskSourceProgramData::Native(_) => {
+                for identity in identities {
+                    meter.charge_work(1)?;
+                    self.original()
+                        .type_table()
+                        .id_for_semantic(identity)
+                        .ok_or(types::RuntimeAwbcSourceTypeError::Missing { identity })?;
+                }
+            }
+            RuntimeTaskSourceProgramData::Awbc {
+                original,
+                executable,
+            } => {
+                let mut relation =
+                    types::RuntimeAwbcSourceTypeRelation::new(original, executable, limits, meter);
+                for identity in identities {
+                    relation.admit_semantic(identity)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn native(program: Arc<RuntimePlan>) -> Self {
         Self {
             data: Arc::new(RuntimeTaskSourceProgramData::Native(program)),

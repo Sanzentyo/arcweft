@@ -9,6 +9,34 @@ use arcweft_id::PublicId;
 use arcweft_interaction_model::presentation::{PresentationResourceKind, PresentationSlotAddress};
 
 impl RuntimeRetainedValueAdmission {
+    /// Publishes the affine body only after its complete borrowed graph,
+    /// original program, layout and invocation have used this owning bank.
+    pub(crate) fn construct_presentation_resource(
+        &mut self,
+        source: crate::plan::task_source::RuntimeTaskSourceProgram,
+        call: std::sync::Arc<crate::presentation::RuntimePresentationFactoryCall>,
+        binding: Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
+        body: crate::value::RuntimePayload,
+    ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
+        let candidate = crate::presentation::RuntimePresentationResourceValue {
+            source,
+            call,
+            binding,
+            body,
+        };
+        self.validate_view_with_requirement(
+            RuntimeValueView::PresentationResource(
+                crate::presentation::RuntimePresentationResourceView::Construction(&candidate),
+            ),
+            ValueAdmissionOrigin::Live,
+            Some(RetainedTypeObligation::Stored(
+                candidate.layout().resource_type(),
+            )),
+            RuntimeValueOwnershipRequirement::Owned,
+        )?;
+        Ok(RuntimeValue::PresentationResource(Box::new(candidate)))
+    }
+
     /// Admits the complete typed opaque graph before allocating its header,
     /// tuple or public identity strings. No resource lease is issued.
     pub fn construct_presentation_slot_ref(

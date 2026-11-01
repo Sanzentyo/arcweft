@@ -316,6 +316,9 @@ impl RuntimeValue {
                 .view()
                 .intrinsic_ownership()
                 .join(value.payload().ownership()),
+            Self::PresentationResource(value) => {
+                RuntimeValueOwnership::Affine.join(value.body().ownership())
+            }
             Self::Reduction(value) => value
                 .commands()
                 .iter()

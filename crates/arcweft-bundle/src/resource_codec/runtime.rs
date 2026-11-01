@@ -117,6 +117,7 @@ pub enum RuntimeValueKind {
     Dynamic,
     BoundType,
     Traversal,
+    PresentationResource,
 }
 
 /// Compatibility label emitted by the owning type registry or derived
@@ -977,6 +978,7 @@ impl RuntimeValueKind {
             Self::BoundType => 132,
             Self::Color => 133,
             Self::Traversal => 134,
+            Self::PresentationResource => 135,
         }
     }
 
@@ -1016,6 +1018,7 @@ impl RuntimeValueKind {
             132 => Some(Self::BoundType),
             133 => Some(Self::Color),
             134 => Some(Self::Traversal),
+            135 => Some(Self::PresentationResource),
             _ => None,
         }
     }
@@ -1141,6 +1144,10 @@ fn runtime_type_layout_digest(
     transcript.write_semantic_type(ty.semantic_identity());
     transcript.write_type_scope(ty.scope())?;
     match ty.shape() {
+        AwbcRuntimeTypeShape::PresentationResource(kind) => {
+            transcript.write_tag(41);
+            transcript.write_u8(kind.semantic_tag());
+        }
         AwbcRuntimeTypeShape::BoundType(reference) => {
             transcript.write_tag(38);
             transcript.write_u32(reference.depth());
@@ -1798,6 +1805,7 @@ const fn unsigned_int_kind_tag(kind: AwbcUnsignedIntKind) -> u8 {
 
 fn runtime_value_kind(ty: &AwbcRuntimeType) -> RuntimeValueKind {
     match ty.shape() {
+        AwbcRuntimeTypeShape::PresentationResource(_) => RuntimeValueKind::PresentationResource,
         AwbcRuntimeTypeShape::BoundType(_) => RuntimeValueKind::BoundType,
         AwbcRuntimeTypeShape::Unit => RuntimeValueKind::Unit,
         AwbcRuntimeTypeShape::Bool => RuntimeValueKind::Bool,
@@ -2033,6 +2041,7 @@ fn enum_symbol_specs() -> impl Iterator<Item = (u32, &'static str)> {
         (130, "function"),
         (131, "agent_value"),
         (132, "bound_type"),
+        (135, "presentation_resource"),
         (201, "flow"),
         (202, "pure_helper"),
         (203, "trait_method"),

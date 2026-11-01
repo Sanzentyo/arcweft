@@ -2088,6 +2088,7 @@ const fn value_kind(value: &RuntimeValue) -> &'static str {
         RuntimeValue::Record(_) => "record",
         RuntimeValue::NominalRecord(_) => "nominal record",
         RuntimeValue::Opaque(_) => "opaque",
+        RuntimeValue::PresentationResource(_) => "presentation resource",
         RuntimeValue::Reduction(_) => "Reduction",
         RuntimeValue::Agent(_) => "Agent value",
         RuntimeValue::Callable(_) => "function",

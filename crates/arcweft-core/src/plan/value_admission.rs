@@ -836,6 +836,14 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
                 Self::arity(state.retained.len(), callable.retained().len())?;
                 Ok(Children::Callable(&state.retained))
             }
+            (Type::PresentationResource(kind), View::PresentationResource(resource))
+                if resource.layout().resource() == *kind
+                    && resource.layout().resource_type() == declaration.semantic_identity() =>
+            {
+                // The storage owner validates the retained tuple with the
+                // resource's original invocation, rather than this caller's.
+                Ok(Children::Any)
+            }
             (Type::Range(item), View::Range(range)) if self.range(*item, range) => {
                 Ok(Children::None)
             }

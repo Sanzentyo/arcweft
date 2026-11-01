@@ -893,6 +893,7 @@ fn runtime_value_kind(value: &RuntimeValue) -> &'static str {
         RuntimeValue::Record(_) => "Record",
         RuntimeValue::NominalRecord(_) => "NominalRecord",
         RuntimeValue::Opaque(_) => "Opaque",
+        RuntimeValue::PresentationResource(_) => "PresentationResource",
         RuntimeValue::Agent(value) => value.label(),
         RuntimeValue::Reduction(_) => "Reduction",
         RuntimeValue::Callable(_) => "Function",

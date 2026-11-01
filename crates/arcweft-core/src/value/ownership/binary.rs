@@ -405,6 +405,7 @@ pub(super) fn encode_value_path(path: &RuntimeValuePath) -> Vec<u8> {
             RuntimeValuePathSegment::VariantPayload
             | RuntimeValuePathSegment::IteratorWitnessState
             | RuntimeValuePathSegment::OpaquePayload
+            | RuntimeValuePathSegment::PresentationBody
             | RuntimeValuePathSegment::ReductionState => {}
         }
     }
@@ -446,6 +447,7 @@ pub(super) fn decode_value_path(
             13 => RuntimeValuePathSegment::AgentEmbeddedValue(reader.u32()?),
             15 => RuntimeValuePathSegment::CallableRetained(reader.u32()?),
             16 => RuntimeValuePathSegment::NeedRequestArgument(reader.u32()?),
+            17 => RuntimeValuePathSegment::PresentationBody,
             tag => return Err(RuntimeOwnershipBinaryError::UnknownPathSegmentTag { tag }),
         };
         segments.push(segment);

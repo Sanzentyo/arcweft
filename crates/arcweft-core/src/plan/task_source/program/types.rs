@@ -34,6 +34,10 @@ pub(crate) enum RuntimeAwbcSourceTypeField {
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum RuntimeAwbcSourceTypeError {
+    #[error("original or executable Source has no semantic type {identity:?}")]
+    Missing {
+        identity: crate::pattern::RuntimeSemanticTypeId,
+    },
     #[error("original type {original:?} and AWBC type {executable:?} differ in {field:?}")]
     Mismatch {
         original: RuntimePlanTypeId,
@@ -210,6 +214,27 @@ impl<'program, 'work> RuntimeAwbcSourceTypeRelation<'program, 'work> {
         result
     }
 
+    pub(super) fn admit_semantic(
+        &mut self,
+        identity: crate::pattern::RuntimeSemanticTypeId,
+    ) -> Result<(), RuntimeAwbcSourceTypeError> {
+        self.meter.charge_work(1)?;
+        let original = self
+            .original
+            .type_table()
+            .id_for_semantic(identity)
+            .ok_or(RuntimeAwbcSourceTypeError::Missing { identity })?;
+        for (index, row) in self.executable.runtime_types.iter().enumerate() {
+            self.meter.charge_work(1)?;
+            if row.semantic_identity() == identity {
+                let index = u32::try_from(index)
+                    .map_err(|_| RuntimeAwbcSourceTypeError::Missing { identity })?;
+                return self.admit(original, AwbcTypeId(index));
+            }
+        }
+        Err(RuntimeAwbcSourceTypeError::Missing { identity })
+    }
+
     fn admit_type(
         &mut self,
         expected: RuntimePlanTypeId,
@@ -309,6 +334,9 @@ impl<'program, 'work> RuntimeAwbcSourceTypeRelation<'program, 'work> {
         use RuntimeAwbcSourceTypeField as Field;
         use RuntimePlanTypeProjection as P;
         let equal = match (source, code) {
+            (P::PresentationResource(expected), A::PresentationResource(actual)) => {
+                expected == actual
+            }
             (P::Never, A::Never)
             | (P::Unit, A::Unit)
             | (P::Bool, A::Bool)

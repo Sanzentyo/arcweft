@@ -2126,6 +2126,7 @@ fn runtime_value_to_string(value: &RuntimeValue) -> String {
         | RuntimeValue::Record(_)
         | RuntimeValue::NominalRecord(_)
         | RuntimeValue::Opaque(_)
+        | RuntimeValue::PresentationResource(_)
         | RuntimeValue::Agent(_)
         | RuntimeValue::Reduction(_)
         | RuntimeValue::Callable(_)

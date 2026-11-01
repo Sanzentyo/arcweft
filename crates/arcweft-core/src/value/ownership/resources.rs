@@ -66,6 +66,10 @@ impl RuntimeValueView<'_> {
                 Ok(())
             }
             Self::Sequence(sequence) => sequence.collect_resources(path, graph),
+            Self::PresentationResource(value) => value.body().collect_resources(
+                &path.child(RuntimeValuePathSegment::PresentationBody)?,
+                graph,
+            ),
             Self::NominalRecord(record) => {
                 for (index, value) in record.fields().iter().enumerate() {
                     let field =

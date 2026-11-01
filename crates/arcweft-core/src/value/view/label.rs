@@ -68,6 +68,10 @@ impl<'a> View<'a> {
                 value.fields().len()
             )),
             Self::Opaque(value) => owned(format!("opaque/{}", value.producer().as_str())),
+            Self::PresentationResource(value) => owned(format!(
+                "presentation/{}",
+                value.layout().resource().as_str()
+            )),
             Self::Reduction(value) => owned(format!("reduction/{}", value.commands().len())),
             Self::Agent(value) => Cow::Borrowed(value.label()),
             Self::Variant(value) => owned(if value.payload().is_some() {
