@@ -1,0 +1,376 @@
+{
+  "version": 1,
+  "date": "2026-11-01",
+  "source": "df73dc174657216a20c5c42317ad1205758b5316",
+  "workingTree": "main; original 14 tracked and 6 actual untracked WIP preserved; source cut published with empty index",
+  "defect": "The private Native register_presentation_body adapter projected a replaced PresentationBody to body.value, discarding the original expected semantic type and function instantiation retained by the ledger.",
+  "correction": "Return the existing complete PresentationBody directly. Replacement moves the old occupant with its original type/invocation while the new body retains the replacing invocation and is retired by its actual function return. No extra authority, wrapper, fallback or wire reader is introduced.",
+  "publication": {
+    "version": 1,
+    "commit": "df73dc174657216a20c5c42317ad1205758b5316",
+    "parent": "6a2fef16482acd05541528db1d9e0fa470a912ea",
+    "tree": "235aad8385aa9904f85c1b6ec4088baf77eddfb8",
+    "remote": "df73dc174657216a20c5c42317ad1205758b5316",
+    "paths": [
+      {
+        "path": "crates/arcweft-core/src/engine/presentation.rs",
+        "blob": "ef5b471a537d1c2bf18e65ac1e5c9fa530758bb2"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/presentation_tests.rs",
+        "blob": "ce97bf4faffe39bc445d4bd15f78ef075b8a4f6a"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/presentation_tests/replacement.rs",
+        "blob": "797612cc0cbf57303525affbd965a1772de2a090"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "6089b4644428a07013f2c75109b93598a5abc131bcf2845109e91193684f4aa0",
+    "heldPatchSha256": "53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-01T05:08:52.6165787Z"
+  },
+  "ownerReview": {
+    "version": 1,
+    "source": "df73dc174657216a20c5c42317ad1205758b5316",
+    "reversePackages": [
+      "arcweft",
+      "arcweft-adapter-desktop",
+      "arcweft-adapter-sema",
+      "arcweft-agent-mcp",
+      "arcweft-agent-mcp-client",
+      "arcweft-agent-policy",
+      "arcweft-agent-protocol",
+      "arcweft-agent-repl",
+      "arcweft-agent-runner",
+      "arcweft-browser-bench",
+      "arcweft-bundle",
+      "arcweft-bundle-assets",
+      "arcweft-character-view",
+      "arcweft-cli",
+      "arcweft-compiler",
+      "arcweft-core",
+      "arcweft-debug-model",
+      "arcweft-debug-sqlite",
+      "arcweft-dialogue",
+      "arcweft-glyphon",
+      "arcweft-host-adapter",
+      "arcweft-lang-jit-cranelift",
+      "arcweft-lang-sema",
+      "arcweft-launch",
+      "arcweft-lsp",
+      "arcweft-player-native",
+      "arcweft-player-scene",
+      "arcweft-player-text-input",
+      "arcweft-player-web",
+      "arcweft-project",
+      "arcweft-project-loader",
+      "arcweft-rag",
+      "arcweft-render-text",
+      "arcweft-render-web",
+      "arcweft-render-wgpu",
+      "arcweft-resource-manifest",
+      "arcweft-resource-model",
+      "arcweft-runtime-accelerator",
+      "arcweft-runtime-codegen",
+      "arcweft-runtime-driver",
+      "arcweft-runtime-host",
+      "arcweft-runtime-plan",
+      "arcweft-runtime-scheduler",
+      "arcweft-save",
+      "arcweft-test",
+      "arcweft-text-layout",
+      "arcweft-text-model",
+      "arcweft-tooling",
+      "arcweft-verify",
+      "arcweft-verify-lsp",
+      "arcweft-verify-oxiz",
+      "arcweft-verify-z3",
+      "arcweft-view"
+    ],
+    "reverseCount": 53,
+    "treeExit": 0,
+    "metadataExit": 0,
+    "files": [
+      {
+        "path": "crates/arcweft-core/src/engine/presentation.rs",
+        "owner": "arcweft-core",
+        "bytes": 5930,
+        "physicalLines": 154,
+        "classification": "production"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/presentation_tests.rs",
+        "owner": "arcweft-core",
+        "bytes": 13476,
+        "physicalLines": 394,
+        "classification": "test"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/presentation_tests/replacement.rs",
+        "owner": "arcweft-core",
+        "bytes": 8049,
+        "physicalLines": 221,
+        "classification": "test"
+      }
+    ],
+    "changedProductionLines": 2,
+    "productionCallersOutsideDefinition": 0,
+    "testCallers": 12,
+    "validationScope": "All Core library tests plus Core all-targets/all-features check and Clippy, default and Wasm checks, owned formatting. The changed pub(crate) return boundary is currently consumed only by these Core tests; external packages cannot call it. No public/serialized type, dependency, feature, unsafe or I/O change. The full resolved graph is retained, while prior shared-surface runs remain receipts for their original source and are not relabeled as a new reverse run.",
+    "structureDisposition": "Keep the existing Core presentation owner. Returning its existing PresentationBody directly preserves the original expected type and invocation without another wrapper or side table. The new 221-line regression module owns its function fixture and private rollback check; total growth is below the structural-review growth trigger and no ownership/public/dependency boundary moved."
+  },
+  "finalLibrary": {
+    "version": 1,
+    "base": "6a2fef16482acd05541528db1d9e0fa470a912ea",
+    "run": "presentation-body-owner-library3-20261101.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  16.912s] 2181 tests run: 2181 passed, 0 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2181,
+    "passed": 2181,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4046,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-11-01T05:07:14.1185373Z"
+  },
+  "finalQuality": [
+    {
+      "gate": "check",
+      "receipt": {
+        "version": 1,
+        "base": "6a2fef16482acd05541528db1d9e0fa470a912ea",
+        "command": [
+          "check",
+          "-p",
+          "arcweft-core",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4046,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-01T05:07:14.6080441Z",
+        "finishedAt": "2026-11-01T05:07:29.9235458Z"
+      }
+    },
+    {
+      "gate": "clippy",
+      "receipt": {
+        "version": 1,
+        "base": "6a2fef16482acd05541528db1d9e0fa470a912ea",
+        "command": [
+          "clippy",
+          "-p",
+          "arcweft-core",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4046,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-01T05:07:30.4824041Z",
+        "finishedAt": "2026-11-01T05:07:55.3747156Z"
+      }
+    },
+    {
+      "gate": "default",
+      "receipt": {
+        "version": 1,
+        "base": "6a2fef16482acd05541528db1d9e0fa470a912ea",
+        "command": [
+          "check",
+          "-p",
+          "arcweft-core",
+          "--lib",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4046,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-01T05:07:55.8947869Z",
+        "finishedAt": "2026-11-01T05:07:57.0823381Z"
+      }
+    },
+    {
+      "gate": "wasm",
+      "receipt": {
+        "version": 1,
+        "base": "6a2fef16482acd05541528db1d9e0fa470a912ea",
+        "command": [
+          "check",
+          "-p",
+          "arcweft-core",
+          "--lib",
+          "--target",
+          "wasm32-unknown-unknown",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4046,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-01T05:07:57.5548202Z",
+        "finishedAt": "2026-11-01T05:07:58.6105777Z"
+      }
+    },
+    {
+      "gate": "fmt",
+      "receipt": {
+        "version": 1,
+        "paths": [
+          "crates/arcweft-core/src/engine/presentation.rs",
+          "crates/arcweft-core/src/engine/presentation_tests.rs",
+          "crates/arcweft-core/src/engine/presentation_tests/replacement.rs"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4046,
+        "sourceDrift": 0
+      }
+    }
+  ],
+  "observedBehavior": "Two actual admitted function sites have different io.read/io.write effect instantiations. The first registers a Bool body and the nested second replaces the same Background slot with a String body. The returned old body retains its original Bool semantic identity and exact first instantiation, passes original-program typed admission, and the replacing String body is retired with its own instantiation by actual return. Private Native rollback roundtrips before and after return. No fake environment-only function scopes remain in the final fixture.",
+  "previousAttempts": {
+    "initialRunner": {
+      "version": 1,
+      "base": "6a2fef16482acd05541528db1d9e0fa470a912ea",
+      "run": "presentation-body-owner-focus1-20261101",
+      "actualExitCode": 1,
+      "cargoInvoked": false,
+      "sourceFreezeCreated": false,
+      "failure": "The wrapper passed the previous path array as one nested array element. PowerShell converted it into one overlong path before Cargo was invoked.",
+      "observedAt": "2026-11-01T04:53:29.0800376Z"
+    },
+    "rejectedFixture": {
+      "version": 1,
+      "base": "6a2fef16482acd05541528db1d9e0fa470a912ea",
+      "run": "presentation-body-owner-focus2-20261101.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [   0.159s] 14 tests run: 13 passed, 1 failed, 2167 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 14,
+      "passed": 13,
+      "failed": 1,
+      "skipped": 2167,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4046,
+      "sourceDrift": 0,
+      "held": 14,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "engine::presentation_tests::replacement::native_slot_replacement_returns_the_original_body_type_and_invocation"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-11-01T04:55:13.0484451Z"
+    },
+    "correctedFocused": {
+      "version": 1,
+      "base": "6a2fef16482acd05541528db1d9e0fa470a912ea",
+      "run": "presentation-body-owner-focus3-20261101.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   0.111s] 14 tests run: 14 passed, 2167 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 14,
+      "passed": 14,
+      "failed": 0,
+      "skipped": 2167,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4046,
+      "sourceDrift": 0,
+      "held": 14,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-01T04:57:38.0575419Z"
+    },
+    "firstLibrary": {
+      "version": 1,
+      "base": "6a2fef16482acd05541528db1d9e0fa470a912ea",
+      "run": "presentation-body-owner-library1-20261101.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [  16.886s] 2181 tests run: 2181 passed, 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2181,
+      "passed": 2181,
+      "failed": 0,
+      "skipped": 0,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4046,
+      "sourceDrift": 0,
+      "held": 14,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-01T04:59:30.0230956Z"
+    },
+    "secondLibrary": {
+      "version": 1,
+      "base": "6a2fef16482acd05541528db1d9e0fa470a912ea",
+      "run": "presentation-body-owner-library2-20261101.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [  16.737s] 2181 tests run: 2181 passed, 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2181,
+      "passed": 2181,
+      "failed": 0,
+      "skipped": 0,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4046,
+      "sourceDrift": 0,
+      "held": 14,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-01T05:04:00.7482581Z"
+    },
+    "secondWrapper": {
+      "version": 1,
+      "base": "6a2fef16482acd05541528db1d9e0fa470a912ea",
+      "run": "presentation-body-owner-library2-20261101",
+      "wrapperExitCode": 1,
+      "libraryRuntimeExitCode": 0,
+      "libraryPassed": 2181,
+      "librarySourceDrift": 0,
+      "qualityCargoInvoked": false,
+      "failure": "The follow-on quality wrapper still referenced focus3 source hashes from before fixture cleanup. The library run captured and audited its own correct 4046-input freeze; continue quality against that exact freeze without rerunning the passing library.",
+      "observedAt": "2026-11-01T05:04:44.2873999Z"
+    },
+    "explanation": "The first wrapper failed before Cargo due to nested path-array coercion. The first Rust fixture ran 13 PASS/1 FAIL because it pushed function environments without real matching frames; the unchanged frame/context guard rejected it. Actual function entry/return repaired the fixture (14/14 PASS). Later fixture-only cleanup removed new Clippy warnings. All three library runs passed 2181 cases on their distinct frozen inputs; they are separate runs, not a combined count. After library2, a stale focus3 pointer stopped only the follow-on quality wrapper; quality resumed against the exact audited library2 freeze. Final library3 and all final quality gates use the final 4046 inputs."
+  },
+  "limits": [
+    "This proves the private Native body return boundary. It does not connect Source staging factories, ViewValue/Handle/Removed construction, commands/methods, the driver, explicit staging scope or public Native saves.",
+    "The resolved Cargo graph has 53 Core reverse packages. Current consumers of this pub(crate) helper are twelve Core test calls and no other production caller. Only the affected private Core owner was rerun; workspace-wide and reverse/CLI runs were not rerun for this cut.",
+    "Prior shared-surface 9019 PASS, Generic Match 151/151 and CLI 43 failure IDs remain receipts for source 3b1bd1a110c34a04f70ca38a680b000147e9b751; they are not relabeled as new-source executions or reopened because the overall goal remains incomplete.",
+    "No public/serialized shape, Cargo dependency, feature, unsafe or I/O changed. Existing owner responsibilities remain; the 221-line regression module is below the structural growth trigger. No executable doc example was added; doctest, Tier 2 and the workspace structural scanner were not rerun.",
+    "Core Clippy exits zero with pre-existing warnings. The final changed replacement fixture has no Clippy warning. No assertion, budget, operation count, default filter or test concurrency was weakened."
+  ],
+  "raw": {
+    "path": "task-presentation-body-handoff-raw.zip",
+    "entries": 91,
+    "bytes": 3625810,
+    "sha256": "a1fafa1dd626439f26d5cdac96620d295bce07a37822ec54ae9a457f44a182ae"
+  }
+}

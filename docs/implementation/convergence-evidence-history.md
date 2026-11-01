@@ -13808,3 +13808,22 @@ Generic Matchは既受入850534b9e9bc8c8872f6528dd00050a5e6e7699e・既公開f0e
 各nextest commandのcatalog・case・EXE・入力差分0、失敗ID比較、全target、owner reviewと公開proofを[今回の検証原本](acceptance-evidence/task-presentation-address-only-validation.json)へ保存した。[raw原本](acceptance-evidence/task-presentation-address-only-raw.zip)は103 entry・4,046,760 bytes、SHA256 a4bb15b71407c849c562ff9fd2443066bb6a4a7c4ad9f95c99c0382cdc53d980。以前のowner／reverse原本、失敗・全SHAは変更しない。cargo cleanは既に一度実行済みで、今回繰り返さず、ビルド生成物も移動・コピー・退避していない。
 
 current-status.mdの旧入力を最新とする現在形、旧6住所と広域1 FAILの重複説明は、今回の閉じた終端へ置き換えた。上記と従来の原本を履歴として保持する。aggregate live construction admission、Source ViewValue／Handle／Removed生成・command／method・driver、staging callの明示scope選択、公開Native saveなどの別境界は引き続き未達であり、本cutの受入へ拡張していない。現状一覧はcurrent-status.mdの一か所とする。
+
+
+## 2026-11-01 — Native置換bodyの元型・invocationを返却境界で保持
+
+Source/main df73dc174657216a20c5c42317ad1205758b5316を公開した。parentは6a2fef16482acd05541528db1d9e0fa470a912ea、treeは235aad8385aa9904f85c1b6ec4088baf77eddfb8、full binary patch SHA256は6089b4644428a07013f2c75109b93598a5abc131bcf2845109e91193684f4aa0。実装3 pathの明示stage・通常commit・non-forced push後、remote／parent／tree／全blob／patch一致と空indexを照合した。元14 tracked／6 untracked WIPは保持した。
+
+Core ledgerは置換したPresentationBodyのexpected型・bindingを保持したが、Nativeのprivate register_presentation_bodyがprevious.map(|body| body.value)で返却時に両方を失っていた。既存PresentationBodyをそのまま移動して返す形へ直接置換した。別wrapper・side table・互換readerは追加しない。これはSource staging ABIの完了ではなく、その接続に必要な元bodyの型／invocation保全境界を修復したものとする。
+
+最初の検証wrapperは配列を一つのpathへ変換してしまい、Cargo起動前に終了1だった。修正後の対象runは13 PASS／1 FAIL。追加fixtureが関数環境だけを積んで実frameを作っておらず、「native function frames disagree with their retained environment contexts」という既存guardに拒否された。guardは維持し、実際の関数入場、nested call staging、returnとprivate rollbackへ修復した対象再実行は14／14 PASSだった。以後のfixture整理で追加Clippy警告を除去した。library2の後にはquality wrapperの旧focus3入力参照が停止したが、library2自身の正しい4,046入力・全2,181 PASS・差分0は保持し、その同じfreezeでqualityを再開した。これらの停止をRustの失敗や新runのPASSへ読み替えていない。
+
+最終run presentation-body-owner-library3-20261101はCore library全2,181 PASS／0 FAIL／0対象外、4,046入力・catalog／case／EXE／入力差分0だった。base 6a2fef16482acd05541528db1d9e0fa470a912eaと後でdf73dc174657216a20c5c42317ad1205758b5316へ公開した正確な差分を凍結した。異なるio.read／io.write effect instantiationを持つ実際の二つの関数frameで、先のBool bodyをnested側のString bodyで置換し、返却された旧bodyの元型・正確な元instantiation・元programでのtyped admissionを確認した。nested returnで新bodyがその元instantiationとともに破棄され、前後のprivate Native rollbackも一致した。
+
+同じ最終入力のCore全target・全feature・locked check／Clippy、Core default／wasm32-unknown-unknown lib check、変更3 Rust path fmtは終了0だった。既存の警告は残り、warning-freeとはしない。最終replacement fixtureのClippy警告は0だった。実Cargo tree／metadataからCoreの推移的逆依存53 packageを保持した。現在のprivate helperの参照は定義以外がCore内12テストだけであり、外部production callerはないため、変更したprivate Core ownerを検証対象とした。公開／serialized shape、Cargo・feature・依存・unsafe・I/Oは変更していない。既存3 pathのbyte／LOCと221行の回帰moduleの責務を記録し、構造の公開境界移動や300行超成長がないため新しいworkspace scannerは実行しなかった。doctest／Tier 2／全逆依存・CLIも本cutでは未実行とした。
+
+Source 3b1bd1a110c34a04f70ca38a680b000147e9b751の通常9,019 PASS、Generic Match 151／151、全12 CLI targetと既存43失敗の原本はその入力の証拠として保持した。今回の新Sourceで再実行したとは記載せず、Generic Match、SlotRef、Root/D token・custodyなどの受入を全体goalの未達で戻していない。Source ViewValue／Handle／Removed生成、command／method・driver、明示staging scope、公開Native save、全体のlive construction admissionは引き続き別境界である。
+
+初回停止・失敗・修復、別入力ごとのlibrary実行、最終quality、53逆依存graph、private呼出し一覧、owner reviewと公開proofは[検証原本](acceptance-evidence/task-presentation-body-handoff-validation.json)へ保持した。[raw原本](acceptance-evidence/task-presentation-body-handoff-raw.zip)は91 entry・3,625,810 bytes、SHA256 a1fafa1dd626439f26d5cdac96620d295bce07a37822ec54ae9a457f44a182ae。
+
+Supersedes: current-status.mdの最新Source見出しだけを今回のprivate owner cutへ更新し、広域結果を3b1bd1a110c34a04f70ca38a680b000147e9b751のまま明示した。新しい返却境界の行を加え、旧validation結果・全SHA・歴史的rawは変更しない。現状一覧は引き続きcurrent-status.mdの一か所とする。
