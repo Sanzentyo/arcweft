@@ -12,8 +12,9 @@ use crate::runtime_id::{
     RuntimeScopeInstanceId,
 };
 use crate::task::RuntimeProgramOwner;
+#[cfg(test)]
 use arcweft_id::PublicId;
-use arcweft_interaction_model::presentation::PresentationResourceKind;
+use arcweft_interaction_model::presentation::{PresentationResourceKind, PresentationSlotAddress};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::num::NonZeroU64;
@@ -33,40 +34,6 @@ pub(crate) use scope::{
 pub use scope::{RuntimePresentationScopeBinding, RuntimePresentationScopeSnapshot};
 pub(crate) use storage::{PresentationAdmission, PresentationBody};
 
-#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct PresentationSlotAddress {
-    #[serde(with = "crate::value::runtime_public_id")]
-    target: PublicId,
-    #[serde(with = "crate::value::runtime_public_id")]
-    slot: PublicId,
-    resource: PresentationResourceKind,
-}
-
-impl PresentationSlotAddress {
-    pub(crate) fn try_new(
-        target: PublicId,
-        slot: PublicId,
-        resource: PresentationResourceKind,
-    ) -> Result<Self, RuntimePresentationError> {
-        let address = Self {
-            target,
-            slot,
-            resource,
-        };
-        address.validate()?;
-        Ok(address)
-    }
-
-    fn validate(&self) -> Result<(), RuntimePresentationError> {
-        if !self.target.as_str().starts_with("target.") || !self.slot.as_str().starts_with("slot.")
-        {
-            return Err(RuntimePresentationError::InvalidAddress);
-        }
-        Ok(())
-    }
-}
-
 /// Slot replacement is meaningful only for a slot-bound registration. An
 /// independent object or controller has its own issuance and never displaces
 /// another resource merely because their resource families are equal.
@@ -79,7 +46,7 @@ pub(crate) enum PresentationRegistrationSite {
 impl PresentationRegistrationSite {
     fn resource(&self) -> PresentationResourceKind {
         match self {
-            Self::Slot(address) => address.resource,
+            Self::Slot(address) => address.resource(),
             Self::Independent(resource) => *resource,
         }
     }

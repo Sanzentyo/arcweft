@@ -434,8 +434,8 @@ pub enum RuntimePresentationError {
     Owner,
     #[error("presentation operation has no active lexical frame")]
     MissingScope,
-    #[error("presentation target/slot is outside its public identity family")]
-    InvalidAddress,
+    #[error(transparent)]
+    Address(#[from] arcweft_interaction_model::presentation::PresentationSlotAddressError),
     #[error("presentation live handle limit is exhausted")]
     Capacity,
     #[error("presentation active scope grant limit is exhausted")]

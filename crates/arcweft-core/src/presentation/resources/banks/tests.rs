@@ -62,7 +62,7 @@ fn site() -> PresentationRegistrationSite {
     PresentationRegistrationSite::Slot(
         PresentationSlotAddress::try_new(
             PublicId::try_new("target.bank").unwrap(),
-            PublicId::try_new("slot.bank").unwrap(),
+            PublicId::try_new("slot.background.bank").unwrap(),
             PresentationResourceKind::Background,
         )
         .unwrap(),

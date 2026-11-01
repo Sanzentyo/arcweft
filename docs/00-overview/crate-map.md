@@ -16,6 +16,9 @@ The current workspace member list is `[workspace].members` in [Cargo.toml](../..
   playback、fixed-point transformと `PresentationResourceKind` の共有domainを所有する。
   Presentation callable・handle method・引数roleの識別子、version 1のsemantic tag、
   callableの戻り値の所有形態とresource familyも同じ共有層が所有する。
+  `PresentationSlotAddress` もこの層が所有し、target／slotのpublic IDと
+  resource familyの対応を構築・Serde decode・借用検査で共通に検証する。
+  Coreのcustodyと表示側のslot registryは、この同じ住所を直接保持する。
   semaはこの語彙から型付きsignatureと値の検査方針を構築する。
   登録データは `arcweft-layout` の Sans I/O placement 値を直接保持する。
   resource familyはSemaの型constructorとdriverの保持recordが直接共有する。
@@ -29,7 +32,7 @@ The current workspace member list is `[workspace].members` in [Cargo.toml](../..
 - 広い application prelude は facade crate `arcweft` が提供する。低レイヤ crate に便利 re-export を置かない。
 - `arcweft-core::presentation` は実行中の presentation handle の発行、元programに
   結び付くledger、bodyのcustody、scope exitのcleanupを所有する。
-  `arcweft-presentation` は表示側のtyped target/slot address、layer、hit/focus等の
+  `arcweft-presentation` は共有住所に対する表示側のslot state、layer、hit/focus等の
   Sans I/O data/modelを所有し、Coreの実行grantを再発行しない。renderer、
   filesystem、asset loading、windowing、clockには依存しない。
 - Data-format crate は Sans I/O を保つ。manifest、schema、bytecode、bundle、save snapshot は構造体と bytes/string codec までを担当し、path read/write、network、clock、backend resource 確保は CLI / build / player adapter に置く。

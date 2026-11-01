@@ -1140,7 +1140,7 @@ fn background_image_object(
         })?;
     let address = background_slot_address(call, "bg")?;
     let id = address.image_id().as_str().to_owned();
-    let target = address.target().id().as_str().to_owned();
+    let target = address.target().as_str().to_owned();
     let bounds = PresentationImageBounds::try_from_px(0, 0, 1280, 720)
         .expect("fixed image bounds fit milli-unit storage");
     Ok(PresentationImage {

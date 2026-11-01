@@ -1,8 +1,10 @@
 use self::character::CharacterRenderSpec;
 use arcweft_id::{IdError, PublicId};
+use arcweft_interaction_model::presentation::{
+    PresentationResourceKind, PresentationSlotAddress, PresentationSlotAddressError,
+};
 use core::marker::PhantomData;
 use std::collections::HashMap;
-use thiserror::Error;
 
 pub mod appearance;
 pub mod character;
@@ -53,49 +55,35 @@ pub struct PresentationTarget {
 /// Validated target/slot ownership key for one background presentation cell.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct BackgroundSlotAddress {
-    target: PresentationTarget,
-    slot: PresentationSlot,
-}
-
-/// Failure to construct a typed background target/slot address.
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
-pub enum BackgroundSlotAddressError {
-    #[error("background target `{0}` must belong to the `target.*` family")]
-    InvalidTarget(PublicId),
-    #[error("background slot `{0}` must belong to the `slot.background.*` family")]
-    InvalidSlot(PublicId),
+    address: PresentationSlotAddress,
 }
 
 /// Scope-bound handle returned by staging calls such as `bg(...)` and `show(...)`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PresentationHandle<T> {
     value: T,
-    target: PresentationTarget,
-    slot: PresentationSlot,
+    address: PresentationSlotAddress,
     scope: PresentationScope,
 }
 
 /// Typed reference to a presentation slot without changing the slot value.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SlotRef<T> {
-    target: PresentationTarget,
-    slot: PresentationSlot,
+    address: PresentationSlotAddress,
     _ty: PhantomData<T>,
 }
 
 /// Static-option-like slot value used by Sans I/O presentation state.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SlotValue<T> {
-    target: PresentationTarget,
-    slot: PresentationSlot,
+    address: PresentationSlotAddress,
     value: Option<T>,
 }
 
 /// Scope-bound clear operation for a presentation slot.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClearPresentation<T> {
-    target: PresentationTarget,
-    slot: PresentationSlot,
+    address: PresentationSlotAddress,
     scope: PresentationScope,
     _ty: PhantomData<T>,
 }
@@ -114,19 +102,31 @@ pub struct CharacterSurface {
     render: Option<CharacterRenderSpec>,
 }
 
+mod surface_seal {
+    pub trait Sealed {}
+}
+
+/// Closed Rust surface bodies supported by this retained slot registry.
+pub trait PresentationSurface: surface_seal::Sealed {
+    const RESOURCE: PresentationResourceKind;
+}
+
+impl surface_seal::Sealed for BackgroundSurface {}
+impl PresentationSurface for BackgroundSurface {
+    const RESOURCE: PresentationResourceKind = PresentationResourceKind::Background;
+}
+impl surface_seal::Sealed for CharacterSurface {}
+impl PresentationSurface for CharacterSurface {
+    const RESOURCE: PresentationResourceKind = PresentationResourceKind::Character;
+}
+
 /// Typed registry for one presentation surface family.
 ///
 /// The registry is Sans I/O: it records target/slot/scope ownership and returns
 /// values to the caller, but it does not perform rendering, loading, or timing.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PresentationRegistry<T> {
-    slots: HashMap<PresentationSlotKey, ScopedSlotValue<T>>,
-}
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-struct PresentationSlotKey {
-    target: PresentationTarget,
-    slot: PresentationSlot,
+    slots: HashMap<PresentationSlotAddress, ScopedSlotValue<T>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -152,12 +152,13 @@ pub fn asset(name: &str) -> PublicId {
 }
 
 pub fn bg(asset: PublicId, scope: PresentationScope) -> PresentationHandle<BackgroundSurface> {
-    PresentationHandle::new(
+    PresentationHandle::try_new(
         BackgroundSurface::new(asset),
         PresentationTarget::scene(),
         PresentationSlot::default_background(),
         scope,
     )
+    .expect("canonical background target and slot")
 }
 
 pub fn show_character(
@@ -165,12 +166,13 @@ pub fn show_character(
     expression_name: &str,
     scope: PresentationScope,
 ) -> PresentationHandle<CharacterSurface> {
-    PresentationHandle::new(
+    PresentationHandle::try_new(
         CharacterSurface::new(character.clone(), Some(expression_name)),
         PresentationTarget::scene(),
         PresentationSlot::character(character),
         scope,
     )
+    .expect("canonical character target and slot")
 }
 
 /// Stages a validated character composition resolved from an `.awchar` manifest.
@@ -179,45 +181,50 @@ pub fn show_character_rendered(
     scope: PresentationScope,
 ) -> PresentationHandle<CharacterSurface> {
     let character = render.character().as_public_id();
-    PresentationHandle::new(
+    PresentationHandle::try_new(
         CharacterSurface::from_render_spec(render),
         PresentationTarget::scene(),
         PresentationSlot::character(&character),
         scope,
     )
+    .expect("canonical character target and slot")
 }
 
 pub fn bg_ref() -> SlotRef<BackgroundSurface> {
-    SlotRef::new(
+    SlotRef::try_new(
         PresentationTarget::scene(),
         PresentationSlot::default_background(),
     )
+    .expect("canonical background target and slot")
 }
 
 pub fn character_ref(character: &PublicId) -> SlotRef<CharacterSurface> {
-    SlotRef::new(
+    SlotRef::try_new(
         PresentationTarget::scene(),
         PresentationSlot::character(character),
     )
+    .expect("canonical character target and slot")
 }
 
 pub fn clear_bg(scope: PresentationScope) -> ClearPresentation<BackgroundSurface> {
-    ClearPresentation::new(
+    ClearPresentation::try_new(
         PresentationTarget::scene(),
         PresentationSlot::default_background(),
         scope,
     )
+    .expect("canonical background target and slot")
 }
 
 pub fn hide_character(
     character: &PublicId,
     scope: PresentationScope,
 ) -> ClearPresentation<CharacterSurface> {
-    ClearPresentation::new(
+    ClearPresentation::try_new(
         PresentationTarget::scene(),
         PresentationSlot::character(character),
         scope,
     )
+    .expect("canonical character target and slot")
 }
 
 fn expression(name: &str) -> PublicId {
@@ -268,31 +275,29 @@ impl BackgroundSlotAddress {
     pub fn try_new(
         target: PresentationTarget,
         slot: PresentationSlot,
-    ) -> Result<Self, BackgroundSlotAddressError> {
-        if !target.id().as_str().starts_with("target.") {
-            return Err(BackgroundSlotAddressError::InvalidTarget(
-                target.id().clone(),
-            ));
-        }
-        if !slot.id().as_str().starts_with("slot.background.") {
-            return Err(BackgroundSlotAddressError::InvalidSlot(slot.id().clone()));
-        }
-        Ok(Self { target, slot })
+    ) -> Result<Self, PresentationSlotAddressError> {
+        let address = PresentationSlotAddress::try_new(
+            target.id,
+            slot.id,
+            PresentationResourceKind::Background,
+        )?;
+        Ok(Self { address })
     }
 
     pub fn default_scene() -> Self {
-        Self {
-            target: PresentationTarget::scene(),
-            slot: PresentationSlot::default_background(),
-        }
+        Self::try_new(
+            PresentationTarget::scene(),
+            PresentationSlot::default_background(),
+        )
+        .expect("canonical background address")
     }
 
-    pub const fn target(&self) -> &PresentationTarget {
-        &self.target
+    pub const fn target(&self) -> &PublicId {
+        self.address.target()
     }
 
-    pub const fn slot(&self) -> &PresentationSlot {
-        &self.slot
+    pub const fn slot(&self) -> &PublicId {
+        self.address.slot()
     }
 
     /// Stable semantic image owner for this exact target/slot pair.
@@ -307,14 +312,14 @@ impl BackgroundSlotAddress {
                 .expect("the canonical default background image ID is valid");
         }
         let target_suffix = self
-            .target
-            .id()
+            .address
+            .target()
             .as_str()
             .strip_prefix("target.")
             .expect("validated background target family");
         let slot_suffix = self
-            .slot
-            .id()
+            .address
+            .slot()
             .as_str()
             .strip_prefix("slot.")
             .expect("validated background slot family");
@@ -398,31 +403,31 @@ impl CharacterSurface {
     }
 }
 
-impl<T> PresentationHandle<T> {
-    pub const fn new(
+impl<T: PresentationSurface> PresentationHandle<T> {
+    pub fn try_new(
         value: T,
         target: PresentationTarget,
         slot: PresentationSlot,
         scope: PresentationScope,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, PresentationSlotAddressError> {
+        let address = PresentationSlotAddress::try_new(target.id, slot.id, T::RESOURCE)?;
+        Ok(Self {
             value,
-            target,
-            slot,
+            address,
             scope,
-        }
+        })
     }
 
     pub const fn value(&self) -> &T {
         &self.value
     }
 
-    pub const fn target(&self) -> &PresentationTarget {
-        &self.target
+    pub const fn target(&self) -> &PublicId {
+        self.address.target()
     }
 
-    pub const fn slot(&self) -> &PresentationSlot {
-        &self.slot
+    pub const fn slot(&self) -> &PublicId {
+        self.address.slot()
     }
 
     pub const fn scope(&self) -> &PresentationScope {
@@ -430,41 +435,53 @@ impl<T> PresentationHandle<T> {
     }
 
     pub fn slot_ref(&self) -> SlotRef<T> {
-        SlotRef::new(self.target.clone(), self.slot.clone())
-    }
-}
-
-impl<T> SlotRef<T> {
-    pub const fn new(target: PresentationTarget, slot: PresentationSlot) -> Self {
-        Self {
-            target,
-            slot,
+        SlotRef {
+            address: self.address.clone(),
             _ty: PhantomData,
         }
     }
+}
 
-    pub const fn target(&self) -> &PresentationTarget {
-        &self.target
+impl<T: PresentationSurface> SlotRef<T> {
+    pub fn try_new(
+        target: PresentationTarget,
+        slot: PresentationSlot,
+    ) -> Result<Self, PresentationSlotAddressError> {
+        let address = PresentationSlotAddress::try_new(target.id, slot.id, T::RESOURCE)?;
+        Ok(Self {
+            address,
+            _ty: PhantomData,
+        })
     }
 
-    pub const fn slot(&self) -> &PresentationSlot {
-        &self.slot
+    pub const fn target(&self) -> &PublicId {
+        self.address.target()
+    }
+
+    pub const fn slot(&self) -> &PublicId {
+        self.address.slot()
+    }
+
+    pub const fn address(&self) -> &PresentationSlotAddress {
+        &self.address
     }
 }
 
-impl<T> SlotValue<T> {
-    pub const fn empty(target: PresentationTarget, slot: PresentationSlot) -> Self {
-        Self {
-            target,
-            slot,
+impl<T: PresentationSurface> SlotValue<T> {
+    pub fn try_empty(
+        target: PresentationTarget,
+        slot: PresentationSlot,
+    ) -> Result<Self, PresentationSlotAddressError> {
+        let address = PresentationSlotAddress::try_new(target.id, slot.id, T::RESOURCE)?;
+        Ok(Self {
+            address,
             value: None,
-        }
+        })
     }
 
     pub fn set(&mut self, handle: PresentationHandle<T>) -> Option<T> {
         let previous = self.value.take();
-        self.target = handle.target;
-        self.slot = handle.slot;
+        self.address = handle.address;
         self.value = Some(handle.value);
         previous
     }
@@ -478,30 +495,33 @@ impl<T> SlotValue<T> {
     }
 
     pub fn slot_ref(&self) -> SlotRef<T> {
-        SlotRef::new(self.target.clone(), self.slot.clone())
-    }
-}
-
-impl<T> ClearPresentation<T> {
-    pub const fn new(
-        target: PresentationTarget,
-        slot: PresentationSlot,
-        scope: PresentationScope,
-    ) -> Self {
-        Self {
-            target,
-            slot,
-            scope,
+        SlotRef {
+            address: self.address.clone(),
             _ty: PhantomData,
         }
     }
+}
 
-    pub const fn target(&self) -> &PresentationTarget {
-        &self.target
+impl<T: PresentationSurface> ClearPresentation<T> {
+    pub fn try_new(
+        target: PresentationTarget,
+        slot: PresentationSlot,
+        scope: PresentationScope,
+    ) -> Result<Self, PresentationSlotAddressError> {
+        let address = PresentationSlotAddress::try_new(target.id, slot.id, T::RESOURCE)?;
+        Ok(Self {
+            address,
+            scope,
+            _ty: PhantomData,
+        })
     }
 
-    pub const fn slot(&self) -> &PresentationSlot {
-        &self.slot
+    pub const fn target(&self) -> &PublicId {
+        self.address.target()
+    }
+
+    pub const fn slot(&self) -> &PublicId {
+        self.address.slot()
     }
 
     pub const fn scope(&self) -> &PresentationScope {
@@ -511,13 +531,9 @@ impl<T> ClearPresentation<T> {
 
 impl<T> PresentationRegistry<T> {
     pub fn set(&mut self, handle: PresentationHandle<T>) -> Option<T> {
-        let key = PresentationSlotKey {
-            target: handle.target,
-            slot: handle.slot,
-        };
         self.slots
             .insert(
-                key,
+                handle.address,
                 ScopedSlotValue {
                     scope: handle.scope,
                     value: handle.value,
@@ -527,21 +543,11 @@ impl<T> PresentationRegistry<T> {
     }
 
     pub fn get(&self, slot: &SlotRef<T>) -> Option<&T> {
-        self.slots
-            .get(&PresentationSlotKey {
-                target: slot.target.clone(),
-                slot: slot.slot.clone(),
-            })
-            .map(|entry| &entry.value)
+        self.slots.get(&slot.address).map(|entry| &entry.value)
     }
 
     pub fn clear(&mut self, clear: &ClearPresentation<T>) -> Option<T> {
-        self.slots
-            .remove(&PresentationSlotKey {
-                target: clear.target.clone(),
-                slot: clear.slot.clone(),
-            })
-            .map(|entry| entry.value)
+        self.slots.remove(&clear.address).map(|entry| entry.value)
     }
 
     pub fn exit_scope(&mut self, scope: &PresentationScope) -> Vec<T> {

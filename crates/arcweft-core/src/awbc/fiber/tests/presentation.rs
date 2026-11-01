@@ -636,7 +636,8 @@ fn inert_presentation_bank_rejects_a_foreign_materialization_lease() {
 
 #[test]
 fn inert_presentation_slot_admission_uses_the_original_address_and_sticky_bank() {
-    use crate::presentation::resources::{PresentationLedgerState, PresentationSlotAddress};
+    use crate::presentation::resources::PresentationLedgerState;
+    use arcweft_interaction_model::presentation::PresentationSlotAddress;
     type InertBank = PresentationLedgerState<PresentationBody<AwbcRuntimeValueSnapshot>>;
 
     let mut fixture = Fixture::new(4);
@@ -672,6 +673,16 @@ fn inert_presentation_slot_admission_uses_the_original_address_and_sticky_bank()
         .next()
         .unwrap();
     row["site"]["Slot"]["target"] = serde_json::json!("asset.invalid");
+    assert!(serde_json::from_value::<InertBank>(value.clone()).is_err());
+    let row = value["leases"]
+        .as_object_mut()
+        .unwrap()
+        .values_mut()
+        .next()
+        .unwrap();
+    row["site"]["Slot"]["target"] = serde_json::json!("target.scene");
+    row["site"]["Slot"]["slot"] = serde_json::json!("slot.character.main");
+    row["site"]["Slot"]["resource"] = serde_json::json!("character");
     let decoded = serde_json::from_value::<InertBank>(value)
         .unwrap()
         .retain_program(
@@ -692,12 +703,12 @@ fn inert_presentation_slot_admission_uses_the_original_address_and_sticky_bank()
         .unwrap();
     assert!(matches!(
         error,
-        AwbcRuntimeValueSnapshotError::Presentation(RuntimePresentationError::InvalidAddress)
+        AwbcRuntimeValueSnapshotError::Presentation(RuntimePresentationError::InvalidState)
     ));
     assert!(matches!(
         admission.validate_metadata(&0_u8),
         Err(AwbcRuntimeValueSnapshotError::Presentation(
-            RuntimePresentationError::InvalidAddress
+            RuntimePresentationError::InvalidState
         ))
     ));
     assert_eq!(fixture.retire(), vec![RuntimeValue::Bool(true)]);
@@ -705,7 +716,7 @@ fn inert_presentation_slot_admission_uses_the_original_address_and_sticky_bank()
 
 #[test]
 fn cleared_presentation_slots_still_charge_their_retained_address_metadata() {
-    use crate::presentation::resources::PresentationSlotAddress;
+    use arcweft_interaction_model::presentation::PresentationSlotAddress;
 
     let build = |slot: &str| {
         let mut fixture = Fixture::new(4);

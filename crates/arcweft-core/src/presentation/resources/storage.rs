@@ -259,7 +259,7 @@ impl<V: RuntimeStoredValue> PresentationLedger<PresentationBody<V>> {
                 admission.validate_metadata(&(issuance, &lease.token))?;
                 admission.validate_metadata(&lease.site)?;
                 if let PresentationRegistrationSite::Slot(address) = &lease.site {
-                    address.validate()?;
+                    address.validate().map_err(RuntimePresentationError::from)?;
                 }
                 if let Some(owner) = lease.owner {
                     admission.validate_metadata(&(owner.execution, owner.fiber, owner.scope))?;

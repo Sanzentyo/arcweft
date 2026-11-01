@@ -31,12 +31,13 @@ fn registry_clears_values_when_scope_exits() {
     let flow_scope = PresentationScope::flow();
 
     let line_bg = bg(asset("bg.room"), line_scope.clone());
-    let flow_bg = PresentationHandle::new(
+    let flow_bg = PresentationHandle::try_new(
         BackgroundSurface::new(asset("bg.evening")),
         PresentationTarget::scene(),
         PresentationSlot::new(PublicId::try_new("slot.background.flow").unwrap()),
         flow_scope.clone(),
-    );
+    )
+    .unwrap();
     let line_ref = line_bg.slot_ref();
     let flow_ref = flow_bg.slot_ref();
 
@@ -73,12 +74,9 @@ fn handles_share_scope_lifetime_and_default_slots() {
 
     assert_eq!(background.scope(), &line_scope);
     assert_eq!(shown_alice.scope(), &line_scope);
-    assert_eq!(background.target().id().as_str(), "target.scene");
-    assert_eq!(background.slot().id().as_str(), "slot.background.default");
-    assert_eq!(
-        shown_alice.slot().id().as_str(),
-        "slot.character.alice.default"
-    );
+    assert_eq!(background.target().as_str(), "target.scene");
+    assert_eq!(background.slot().as_str(), "slot.background.default");
+    assert_eq!(shown_alice.slot().as_str(), "slot.character.alice.default");
     assert_eq!(shown_alice.value().character().as_str(), "character.alice");
     assert_eq!(
         shown_alice.value().expression().map(PublicId::as_str),
@@ -111,11 +109,68 @@ fn background_slot_addresses_have_stable_injective_image_owners() {
 }
 
 #[test]
+fn retained_slot_constructors_share_resource_family_admission() {
+    let target = PresentationTarget::scene();
+    let character_slot =
+        PresentationSlot::character(&PublicId::try_new("character.alice").unwrap());
+    let expected = PresentationSlotAddressError::Slot {
+        resource: PresentationResourceKind::Background,
+    };
+    assert_eq!(
+        SlotRef::<BackgroundSurface>::try_new(target.clone(), character_slot.clone()),
+        Err(expected)
+    );
+    assert_eq!(
+        SlotValue::<BackgroundSurface>::try_empty(target.clone(), character_slot.clone()),
+        Err(expected)
+    );
+    assert_eq!(
+        ClearPresentation::<BackgroundSurface>::try_new(
+            target.clone(),
+            character_slot.clone(),
+            PresentationScope::line()
+        ),
+        Err(expected)
+    );
+    assert_eq!(
+        PresentationHandle::try_new(
+            BackgroundSurface::new(asset("room")),
+            target.clone(),
+            character_slot.clone(),
+            PresentationScope::line()
+        ),
+        Err(expected)
+    );
+    assert_eq!(
+        BackgroundSlotAddress::try_new(target, character_slot),
+        Err(expected)
+    );
+    assert_eq!(
+        SlotRef::<BackgroundSurface>::try_new(
+            PresentationTarget::new(PublicId::try_new("asset.invalid").unwrap()),
+            PresentationSlot::default_background(),
+        ),
+        Err(PresentationSlotAddressError::Target)
+    );
+    assert_eq!(
+        bg_ref().address().resource(),
+        PresentationResourceKind::Background
+    );
+    assert_eq!(
+        character_ref(&PublicId::try_new("character.alice").unwrap())
+            .address()
+            .resource(),
+        PresentationResourceKind::Character
+    );
+}
+
+#[test]
 fn slot_value_behaves_like_static_option() {
-    let mut slot = SlotValue::empty(
+    let mut slot = SlotValue::try_empty(
         PresentationTarget::scene(),
         PresentationSlot::default_background(),
-    );
+    )
+    .unwrap();
     assert!(slot.get().is_none());
 
     let first = bg(asset("bg.room"), PresentationScope::flow());
@@ -141,7 +196,7 @@ fn slot_value_behaves_like_static_option() {
     assert_eq!(cleared.asset().as_str(), "asset.bg.evening");
     assert!(slot.get().is_none());
     assert_eq!(
-        clear_bg(PresentationScope::line()).slot().id().as_str(),
+        clear_bg(PresentationScope::line()).slot().as_str(),
         "slot.background.default"
     );
     assert_eq!(
@@ -150,7 +205,6 @@ fn slot_value_behaves_like_static_option() {
             PresentationScope::line()
         )
         .slot()
-        .id()
         .as_str(),
         "slot.character.alice.default"
     );

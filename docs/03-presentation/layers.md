@@ -249,6 +249,15 @@ respectively. An older handle cannot clear a replacement occupant.
 changing ownership; `clear.bg(...)` / `hide(...)` remove the occupant and return
 `Option<BackgroundSurface>` / `Option<CharacterSurface>`.
 
+The inert address is `PresentationSlotAddress` in the shared interaction model.
+It retains the exact target public ID, resource family, and slot public ID;
+the slot's `slot.<resource>.*` family must match that resource. Construction,
+borrowed validation, and Serde decoding use this one grammar. An invalid address
+is rejected during decoding, before executable custody admission. A valid address
+still grants no authority over an occupant: Core checks its original token,
+bank, program, and scope separately. Retained slot references and registries use
+the same address rather than reconstructing a second target/slot key.
+
 Sans-I/O Core owns runtime token issuance, scope custody, and release. The
 shared resource kinds and host-neutral image values belong to
 `arcweft-interaction-model::presentation`; `arcweft-presentation` owns retained

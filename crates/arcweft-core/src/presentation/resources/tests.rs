@@ -380,7 +380,7 @@ fn scope_cleanup_is_issuance_ordered_and_address_families_are_checked() {
             PublicId::try_new("slot.background.default").unwrap(),
             PresentationResourceKind::Background,
         ),
-        Err(RuntimePresentationError::InvalidAddress)
+        Err(arcweft_interaction_model::presentation::PresentationSlotAddressError::Target)
     );
 }
 

@@ -7,6 +7,9 @@
 mod arguments;
 mod callables;
 mod image;
+mod slot;
+
+pub use slot::{PresentationSlotAddress, PresentationSlotAddressError};
 
 pub use arguments::PresentationArgumentRole;
 pub use callables::{
