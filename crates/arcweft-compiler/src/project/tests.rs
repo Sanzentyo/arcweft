@@ -527,7 +527,6 @@ flow main() -> i64 {
             semantics.expressions().into(),
             semantics.patterns().into(),
             semantics.statements().into(),
-            semantics.captures().into(),
         )
     };
     assert!(matches!(
@@ -817,7 +816,11 @@ flow main() -> i64 {
         arcweft_runtime_plan::semantic_facts::RuntimeClosureCaptureFact::try_new(
             copy.definition().captures()[0].clone(),
             moved.captures()[0].transfer().clone(),
-            copy.captures()[0].ty().clone(),
+            std::sync::Arc::clone(
+                copy.semantics()
+                    .shared_capture(copy.captures()[0].capture())
+                    .unwrap(),
+            ),
         )
         .unwrap();
     assert!(matches!(arcweft_runtime_plan::semantic_facts::RuntimeClosureInstanceFact::try_new(
@@ -827,6 +830,24 @@ flow main() -> i64 {
         copy.semantics().clone(),
     ), Err(arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionFactError::InvalidClosureInstance)),
         "an equal lexical local cannot substitute another closed instance's transfer mode");
+    let copied_capture = arcweft_runtime_plan::semantic_facts::RuntimeClosureCaptureFact::try_new(
+        copy.definition().captures()[0].clone(),
+        copy.captures()[0].transfer().clone(),
+        std::sync::Arc::new(
+            copy.semantics()
+                .capture(copy.captures()[0].capture())
+                .unwrap()
+                .clone(),
+        ),
+    )
+    .unwrap();
+    assert!(matches!(arcweft_runtime_plan::semantic_facts::RuntimeClosureInstanceFact::try_new(
+        copy.key().clone(), copy.definition().clone(), copy.owner(), copy.function_type().clone(),
+        copy.suspension(), copy.control(), copy.execution(), copy.effects().into(),
+        copy.scope(), copy.body(), copy.parameters().into(), Box::new([copied_capture]),
+        copy.semantics().clone(),
+    ), Err(arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionFactError::InvalidClosureInstance)),
+        "an ABI capture must share its owning semantic projection's capture authority");
 }
 
 #[test]
@@ -875,7 +896,7 @@ fn closure_definition_and_capture_origins_survive_source_revisions() {
         arcweft_runtime_plan::semantic_facts::RuntimeClosureCaptureFact::try_new(
             original.definition().captures()[0].clone(),
             original.captures()[1].transfer().clone(),
-            original.captures()[0].ty().clone(),
+            std::sync::Arc::clone(original.semantics().shared_capture(original.captures()[0].capture()).unwrap()),
         ),
         Err(arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionFactError::InvalidClosureInstance)
     ));
@@ -1482,6 +1503,7 @@ flow main(number: Route<i32>, word: Route<String>) {
                 }
                 RuntimeExecutableTypeProjection::SemanticOnlyExpression { .. } => {}
                 RuntimeExecutableTypeProjection::Local { .. }
+                | RuntimeExecutableTypeProjection::Captured { .. }
                 | RuntimeExecutableTypeProjection::Value { .. } => {
                     assert!(row.ty().is_some());
                 }
@@ -3132,7 +3154,6 @@ fn closed_implicit_callable_definition_cannot_be_rebound_to_another_expression()
             rows.into_boxed_slice(),
             semantics.patterns().into(),
             semantics.statements().into(),
-            semantics.captures().into(),
         ),
         Err(RuntimeProjectFunctionFactError::NonCanonicalSemanticFacts)
     ));
@@ -3213,7 +3234,7 @@ fn implicit_capture_transfer_is_selected_per_closed_instance() {
             pipe: pipe.clone(),
         },
     );
-    assert!(matches!(arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionInstanceSemanticFacts::try_new(first_semantics.partition().clone(), first_semantics.local_uses().clone(), first_semantics.type_projection().into(), rows.into_boxed_slice(), first_semantics.patterns().into(), first_semantics.statements().into(), first_semantics.captures().into()), Err(arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionFactError::NonCanonicalSemanticFacts)));
+    assert!(matches!(arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionInstanceSemanticFacts::try_new(first_semantics.partition().clone(), first_semantics.local_uses().clone(), first_semantics.type_projection().into(), rows.into_boxed_slice(), first_semantics.patterns().into(), first_semantics.statements().into()), Err(arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionFactError::NonCanonicalSemanticFacts)));
 }
 
 #[test]
@@ -3978,7 +3999,6 @@ fn closed_dialogue_effect_captures_reject_foreign_transfer_authority() {
             first.expressions().into(),
             first.patterns().into(),
             first.statements().into(),
-            first.captures().into(),
         ),
         Err(RuntimeProjectFunctionFactError::NonCanonicalSemanticFacts)
     ));

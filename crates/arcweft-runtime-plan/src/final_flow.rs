@@ -982,6 +982,7 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
             HirValueTypeOwner::Expression(expression) => Some(expression),
             HirValueTypeOwner::Pattern(_)
             | HirValueTypeOwner::Local(_)
+            | HirValueTypeOwner::Capture(_)
             | HirValueTypeOwner::Type(_) => None,
         })
         .collect::<BTreeSet<_>>();
@@ -1043,7 +1044,8 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
                         owner: local,
                         ty, origin, ..
                     } => Some(origin.runtime_local_declaration_source().map(|origin| (ProjectFunctionFrameLocal::Hir(*local), RuntimeLocalDeclarationSeed::new(origin, ty.identity()))).map_err(|error| RuntimePlanLowerError::new(error.to_string()))),
-                    RuntimeExecutableTypeProjection::Value { .. }
+                    RuntimeExecutableTypeProjection::Captured { .. }
+                    | RuntimeExecutableTypeProjection::Value { .. }
                     | RuntimeExecutableTypeProjection::SemanticOnlyExpression { .. }
                     | RuntimeExecutableTypeProjection::SemanticOnlyType { .. } | RuntimeExecutableTypeProjection::SemanticValue { .. } => None,
                 })
@@ -1176,6 +1178,7 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
                         ty, origin, ..
                     } if !captured.contains(local) => Some(origin.runtime_local_declaration_source().map(|origin| (ClosureFrameLocal::Hir(*local), RuntimeLocalDeclarationSeed::new(origin, ty.identity()))).map_err(|error| RuntimePlanLowerError::new(error.to_string()))),
                     RuntimeExecutableTypeProjection::Local { .. }
+                    | RuntimeExecutableTypeProjection::Captured { .. }
                     | RuntimeExecutableTypeProjection::Value { .. }
                     | RuntimeExecutableTypeProjection::SemanticOnlyExpression { .. }
                     | RuntimeExecutableTypeProjection::SemanticOnlyType { .. } | RuntimeExecutableTypeProjection::SemanticValue { .. } => None,
@@ -10118,7 +10121,6 @@ mod tests {
                 rows.clone(),
                 Box::new([]),
                 statements.clone(),
-                Box::new([]),
             ),
             Err(crate::semantic_facts::RuntimeProjectFunctionFactError::NonCanonicalSemanticFacts)
         ));
@@ -10137,7 +10139,6 @@ mod tests {
             proved_rows,
             Box::new([]),
             statements,
-            Box::new([]),
         )
         .expect("the identical partition admits only after its required producers are restored");
         let report = lower_runtime_plan_with_stats(

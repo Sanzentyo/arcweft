@@ -378,3 +378,94 @@ fn source_view_value_leaves_its_construction_scope_before_mount_in_native_flow()
 fn source_view_value_leaves_its_construction_scope_before_mount_in_decoded_awbc_flow() {
     run_flow(false, FLOW_ESCAPING_VIEW, "42");
 }
+
+const FLOW_CAPTURED_ALIAS: &str = r#"
+    let selected = Card;
+    let builder = |caption: String| selected(caption);
+    let value = builder("owned");
+    let handle = mount(value);
+    handle.unmount();
+    return 42i64
+"#;
+
+#[test]
+fn source_view_alias_is_semantic_capture_for_an_invoked_native_closure() {
+    run_flow(true, FLOW_CAPTURED_ALIAS, "42");
+}
+
+#[test]
+fn source_view_alias_is_semantic_capture_for_an_invoked_decoded_awbc_closure() {
+    run_flow(false, FLOW_CAPTURED_ALIAS, "42");
+}
+
+fn run_mixed_capture(native: bool, semantic_first: bool) {
+    let body = if semantic_first {
+        r#"
+        let selected = Card;
+        let expected = 42i64;
+        let builder = |caption: String| {
+            let value = selected(caption);
+            let handle = mount(value);
+            handle.unmount();
+            expected
+        };
+        return builder("owned")
+        "#
+    } else {
+        r#"
+        let expected = 42i64;
+        let selected = Card;
+        let builder = |caption: String| {
+            let answer = expected;
+            let value = selected(caption);
+            let handle = mount(value);
+            handle.unmount();
+            answer
+        };
+        return builder("owned")
+        "#
+    };
+    run_flow(native, body, "42");
+}
+
+#[test]
+fn source_view_semantic_capture_before_data_runs_in_native_closure() {
+    run_mixed_capture(true, true);
+}
+
+#[test]
+fn source_view_semantic_capture_before_data_runs_in_decoded_awbc_closure() {
+    run_mixed_capture(false, true);
+}
+
+#[test]
+fn source_view_semantic_capture_after_data_runs_in_native_closure() {
+    run_mixed_capture(true, false);
+}
+
+#[test]
+fn source_view_semantic_capture_after_data_runs_in_decoded_awbc_closure() {
+    run_mixed_capture(false, false);
+}
+
+const FLOW_NESTED_CAPTURED_ALIAS: &str = r#"
+    let selected = Card;
+    let builder = |caption: String| {
+        let nested = |inner: String| selected(inner);
+        nested(caption)
+    };
+    let value = builder("owned");
+    let handle = mount(value);
+    handle.unmount();
+    return 42i64
+"#;
+
+#[test]
+fn source_view_alias_is_semantic_capture_for_nested_native_closures() {
+    run_flow(true, FLOW_NESTED_CAPTURED_ALIAS, "42");
+}
+
+#[test]
+fn source_view_alias_is_semantic_capture_for_nested_decoded_awbc_closures() {
+    run_flow(false, FLOW_NESTED_CAPTURED_ALIAS, "42");
+}

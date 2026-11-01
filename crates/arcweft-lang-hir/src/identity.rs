@@ -14,6 +14,7 @@ pub enum HirValueTypeOwner {
     Pattern(PatternId),
     Local(LocalId),
     Type(TypeId),
+    Capture(CaptureId),
 }
 
 impl HirValueTypeOwner {
@@ -23,6 +24,7 @@ impl HirValueTypeOwner {
             Self::Pattern(owner) => owner.module(),
             Self::Local(owner) => owner.module(),
             Self::Type(owner) => owner.module(),
+            Self::Capture(owner) => owner.module(),
         }
     }
 }

@@ -137,6 +137,13 @@ impl RuntimeExecutableInstantiation<'_> {
                 ty,
             ));
         }
+        for owner in partition.captures() {
+            if let Some(proof) =
+                partition.semantic_value_projection(HirValueTypeOwner::Capture(*owner))
+            {
+                projection.push(RuntimeExecutableTypeProjection::semantic_value(proof));
+            }
+        }
         projection.sort_by_key(RuntimeExecutableTypeProjection::owner);
         Ok(projection.into_boxed_slice())
     }

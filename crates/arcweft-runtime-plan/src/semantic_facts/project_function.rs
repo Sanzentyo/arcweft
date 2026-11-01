@@ -8,6 +8,7 @@
 
 use arcweft_lang_hir::identity::HirValueTypeOwner;
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
 use arcweft_core::entry::RuntimeCallableId;
 use arcweft_id::{EffectId, runtime_program::RuntimeProjectContinuationLineageId};
@@ -893,6 +894,10 @@ impl RuntimeProjectFunctionBody {
 /// by accepted nominal resolution, including non-value arguments and predicates.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeExecutableTypeProjection {
+    /// Runtime capture data and its source binding share this type authority.
+    Captured {
+        capture: Arc<RuntimeCheckedCapture>,
+    },
     /// Checked semantic callee data has no runtime storage representation.
     SemanticValue {
         projection: arcweft_lang_sema::final_analysis::CheckedSemanticValueProjection,
@@ -1190,6 +1195,25 @@ impl RuntimeProjectFunctionStatementSemanticFact {
 }
 
 impl RuntimeExecutableTypeProjection {
+    pub fn captured(capture: RuntimeCheckedCapture) -> Self {
+        Self::Captured {
+            capture: Arc::new(capture),
+        }
+    }
+
+    pub fn capture(&self) -> Option<&RuntimeCheckedCapture> {
+        match self {
+            Self::Captured { capture } => Some(capture),
+            _ => None,
+        }
+    }
+
+    pub fn shared_capture(&self) -> Option<&Arc<RuntimeCheckedCapture>> {
+        match self {
+            Self::Captured { capture } => Some(capture),
+            _ => None,
+        }
+    }
     pub fn semantic_value_type(
         &self,
     ) -> Option<&arcweft_lang_sema::types::CompileTimeCallableType> {
@@ -1256,8 +1280,9 @@ impl RuntimeExecutableTypeProjection {
         Self::SemanticOnlyType { owner, purpose }
     }
 
-    pub const fn owner(&self) -> HirValueTypeOwner {
+    pub fn owner(&self) -> HirValueTypeOwner {
         match self {
+            Self::Captured { capture } => HirValueTypeOwner::Capture(capture.capture()),
             Self::SemanticValue { projection } => projection.owner(),
             Self::Local { owner, .. } => HirValueTypeOwner::Local(*owner),
             Self::Value { owner, .. } => *owner,
@@ -1266,8 +1291,9 @@ impl RuntimeExecutableTypeProjection {
         }
     }
 
-    pub const fn ty(&self) -> Option<&RuntimeNormalizedType> {
+    pub fn ty(&self) -> Option<&RuntimeNormalizedType> {
         match self {
+            Self::Captured { capture } => Some(capture.ty()),
             Self::Local { ty, .. } | Self::Value { ty, .. } => Some(ty),
             Self::SemanticOnlyExpression { .. }
             | Self::SemanticOnlyType { .. }
@@ -1373,16 +1399,18 @@ impl RuntimeClosureParameterFact {
 pub struct RuntimeClosureCaptureFact {
     origin: arcweft_lang_sema::final_analysis::CheckedClosureCaptureOrigin,
     transfer: arcweft_lang_sema::final_analysis::CheckedLocalValueTransfer,
-    ty: RuntimeNormalizedType,
+    value: Arc<RuntimeCheckedCapture>,
 }
 
 impl RuntimeClosureCaptureFact {
     pub fn try_new(
         origin: arcweft_lang_sema::final_analysis::CheckedClosureCaptureOrigin,
         transfer: arcweft_lang_sema::final_analysis::CheckedLocalValueTransfer,
-        ty: RuntimeNormalizedType,
+        value: Arc<RuntimeCheckedCapture>,
     ) -> Result<Self, RuntimeProjectFunctionFactError> {
-        if transfer.local() != origin.source()
+        if value.capture() != origin.capture()
+            || value.source() != origin.source()
+            || transfer.local() != origin.source()
             || !transfer.fields().is_empty()
             || transfer.mode() == arcweft_lang_sema::final_analysis::CheckedLocalReadMode::Borrow
         {
@@ -1391,7 +1419,7 @@ impl RuntimeClosureCaptureFact {
         Ok(Self {
             origin,
             transfer,
-            ty,
+            value,
         })
     }
 
@@ -1423,8 +1451,8 @@ impl RuntimeClosureCaptureFact {
         self.origin.origin()
     }
 
-    pub const fn ty(&self) -> &RuntimeNormalizedType {
-        &self.ty
+    pub fn ty(&self) -> &RuntimeNormalizedType {
+        self.value.ty()
     }
 }
 
@@ -1517,8 +1545,8 @@ impl RuntimeClosureInstanceFact {
                         .as_ref()
                         != Some(capture.transfer())
                     || semantics
-                        .capture(capture.capture())
-                        .is_none_or(|checked| checked.ty() != capture.ty())
+                        .shared_capture(capture.capture())
+                        .is_none_or(|checked| !Arc::ptr_eq(checked, &capture.value))
             })
             || !effects.windows(2).all(|pair| pair[0] < pair[1])
         {
@@ -1637,7 +1665,6 @@ pub struct RuntimeProjectFunctionInstanceSemanticFacts {
     expressions: Box<[RuntimeProjectFunctionExpressionSemanticFact]>,
     patterns: Box<[RuntimeProjectFunctionPatternSemanticFact]>,
     statements: Box<[RuntimeProjectFunctionStatementSemanticFact]>,
-    captures: Box<[RuntimeCheckedCapture]>,
 }
 
 impl RuntimeProjectFunctionInstanceSemanticFacts {
@@ -1648,7 +1675,6 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
         expressions: Box<[RuntimeProjectFunctionExpressionSemanticFact]>,
         patterns: Box<[RuntimeProjectFunctionPatternSemanticFact]>,
         statements: Box<[RuntimeProjectFunctionStatementSemanticFact]>,
-        captures: Box<[RuntimeCheckedCapture]>,
     ) -> Result<Self, RuntimeProjectFunctionFactError> {
         if type_projection
             .windows(2)
@@ -1661,13 +1687,17 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                 !origin.validate_authority(&local_uses, *owner)
             }
             RuntimeExecutableTypeProjection::Value {
-                owner: HirValueTypeOwner::Local(_),
+                owner: HirValueTypeOwner::Local(_) | HirValueTypeOwner::Capture(_),
                 ..
             } => true,
             _ => false,
         }) {
             return Err(RuntimeProjectFunctionFactError::NonCanonicalTypeProjection);
         }
+        let captures = type_projection
+            .iter()
+            .filter_map(RuntimeExecutableTypeProjection::capture)
+            .collect::<Vec<_>>();
         if partition.expressions().len() != expressions.len()
             || partition
                 .expressions()
@@ -1701,10 +1731,24 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                     expected.owner() != actual.owner()
                         || expected.family() != actual.payload().family()
                 })
-            || partition.captures().len() != captures.len()
             || partition
                 .captures()
                 .iter()
+                .filter(|owner| {
+                    partition
+                        .semantic_value_type(HirValueTypeOwner::Capture(**owner))
+                        .is_none()
+                })
+                .count()
+                != captures.len()
+            || partition
+                .captures()
+                .iter()
+                .filter(|owner| {
+                    partition
+                        .semantic_value_type(HirValueTypeOwner::Capture(**owner))
+                        .is_none()
+                })
                 .zip(&captures)
                 .any(|(expected, actual)| *expected != actual.capture())
         {
@@ -1819,6 +1863,13 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                     .types()
                     .iter()
                     .map(|row| HirValueTypeOwner::Type(row.owner())),
+            )
+            .chain(
+                partition
+                    .captures()
+                    .iter()
+                    .copied()
+                    .map(HirValueTypeOwner::Capture),
             )
             .collect::<BTreeSet<_>>();
         let actual_type_owners = type_projection
@@ -1960,7 +2011,6 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
             expressions,
             patterns,
             statements,
-            captures,
         })
     }
 
@@ -1988,8 +2038,10 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
         &self.statements
     }
 
-    pub const fn captures(&self) -> &[RuntimeCheckedCapture] {
-        &self.captures
+    pub fn captures(&self) -> impl Iterator<Item = &RuntimeCheckedCapture> {
+        self.type_projection
+            .iter()
+            .filter_map(RuntimeExecutableTypeProjection::capture)
     }
 
     pub fn expression(
@@ -2080,8 +2132,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
         {
             self.ty(HirValueTypeOwner::Local(owner))
         } else {
-            self.captures
-                .iter()
+            self.captures()
                 .find(|capture| capture.source() == owner)
                 .map(RuntimeCheckedCapture::ty)
         }
@@ -2106,8 +2157,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                 _ => None,
             }
         } else {
-            self.captures
-                .iter()
+            self.captures()
                 .find(|capture| capture.source() == owner)
                 .map(RuntimeCheckedCapture::checked_origin)
         }
@@ -2375,10 +2425,17 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
         &self,
         owner: arcweft_lang_hir::identity::CaptureId,
     ) -> Option<&RuntimeCheckedCapture> {
-        self.captures
-            .binary_search_by_key(&owner, RuntimeCheckedCapture::capture)
+        self.shared_capture(owner).map(Arc::as_ref)
+    }
+
+    pub fn shared_capture(&self, owner: CaptureId) -> Option<&Arc<RuntimeCheckedCapture>> {
+        self.type_projection
+            .binary_search_by_key(
+                &HirValueTypeOwner::Capture(owner),
+                RuntimeExecutableTypeProjection::owner,
+            )
             .ok()
-            .map(|index| &self.captures[index])
+            .and_then(|index| self.type_projection[index].shared_capture())
     }
 
     /// Visits this catalog and its lexically nested closed closure catalogs.
@@ -2403,21 +2460,6 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
             if let RuntimeProjectFunctionExpressionPayload::Closure(closure) = expression.payload()
             {
                 closure.semantics().visit_type_projections(visitor);
-            }
-        }
-    }
-
-    pub fn visit_captures<'facts>(
-        &'facts self,
-        visitor: &mut impl FnMut(&'facts RuntimeCheckedCapture),
-    ) {
-        for capture in &self.captures {
-            visitor(capture);
-        }
-        for expression in &self.expressions {
-            if let RuntimeProjectFunctionExpressionPayload::Closure(closure) = expression.payload()
-            {
-                closure.semantics().visit_captures(visitor);
             }
         }
     }
@@ -2969,7 +3011,6 @@ impl RuntimeProjectFunctionInstanceFact {
                 .any(|fact| fact.owner().module() != module)
             || semantics
                 .captures()
-                .iter()
                 .any(|fact| fact.capture().module() != module)
         {
             return Err(RuntimeProjectFunctionFactError::ForeignHirOwner);
@@ -3085,13 +3126,6 @@ impl RuntimeProjectFunctionInstanceFact {
         visitor: &mut impl FnMut(&'facts RuntimeExecutableTypeProjection),
     ) {
         self.semantics.visit_type_projections(visitor);
-    }
-
-    pub fn visit_captures<'facts>(
-        &'facts self,
-        visitor: &mut impl FnMut(&'facts RuntimeCheckedCapture),
-    ) {
-        self.semantics.visit_captures(visitor);
     }
 
     pub fn visit_closure_instances<'facts>(

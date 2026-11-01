@@ -5888,7 +5888,6 @@ pub struct RuntimePlanSemanticFactInput {
     tries: Vec<(ExprId, RuntimeTryFact)>,
     implicit_callables: Vec<(ExprId, RuntimeImplicitCallableFact)>,
     pipes: Vec<(ExprId, RuntimePipeFact)>,
-    captures: Vec<RuntimeCheckedCapture>,
     pure_programs: Vec<RuntimePureProgramFact>,
     value_contract_types: Vec<RuntimeNormalizedType>,
     pure_program_semantics: Vec<(
@@ -5951,7 +5950,6 @@ impl RuntimePlanSemanticFactInput {
             tries: Vec::new(),
             implicit_callables: Vec::new(),
             pipes: Vec::new(),
-            captures: Vec::new(),
             pure_programs: Vec::new(),
             value_contract_types: Vec::new(),
             pure_program_semantics: Vec::new(),
@@ -6304,7 +6302,10 @@ impl RuntimePlanSemanticFactInput {
     }
 
     pub fn push_capture(&mut self, capture: RuntimeCheckedCapture) {
-        self.captures.push(capture);
+        self.type_projections.push((
+            HirValueTypeOwner::Capture(capture.capture()),
+            RuntimeExecutableTypeProjection::captured(capture),
+        ));
     }
 
     pub fn push_pure_program(&mut self, program: RuntimePureProgramFact) {
@@ -6441,7 +6442,6 @@ pub struct RuntimePlanSemanticFacts {
     tries: BTreeMap<ExprId, RuntimeTryFact>,
     implicit_callables: BTreeMap<ExprId, RuntimeImplicitCallableFact>,
     pipes: BTreeMap<ExprId, RuntimePipeFact>,
-    captures: BTreeMap<CaptureId, RuntimeCheckedCapture>,
     pure_programs: BTreeMap<RuntimePureProgramId, RuntimePureProgramFact>,
     value_contract_types: Vec<RuntimeNormalizedType>,
     pure_program_semantics:
@@ -7858,10 +7858,10 @@ impl RuntimePlanSemanticFacts {
                         instance_type_owners.insert(owner);
                     }
                 }
-            });
-            semantics.visit_captures(&mut |capture| {
-                if !program_scope || !runtime_owners.runtime.contains_capture(capture.capture()) {
-                    instance_capture_owners.insert(capture.capture());
+                HirValueTypeOwner::Capture(owner) => {
+                    if !program_scope || !runtime_owners.runtime.contains_capture(owner) {
+                        instance_capture_owners.insert(owner);
+                    }
                 }
             });
             semantics.visit_statement_owners(&mut |owner| {
@@ -7971,6 +7971,7 @@ impl RuntimePlanSemanticFacts {
                     HirValueTypeOwner::Pattern(_) => RuntimeSemanticFactFamily::PatternType,
                     HirValueTypeOwner::Local(_) => RuntimeSemanticFactFamily::LocalDeclaration,
                     HirValueTypeOwner::Type(_) => RuntimeSemanticFactFamily::Type,
+                    HirValueTypeOwner::Capture(_) => RuntimeSemanticFactFamily::Capture,
                 };
                 return Err(RuntimeSemanticFactsError::DuplicateFact { family });
             }
@@ -7991,6 +7992,10 @@ impl RuntimePlanSemanticFacts {
                 HirValueTypeOwner::Type(owner) => {
                     runtime_owners.contains_type(*owner) && !instance_type_owners.contains(owner)
                 }
+                HirValueTypeOwner::Capture(owner) => {
+                    runtime_owners.contains_capture(*owner)
+                        && !instance_capture_owners.contains(owner)
+                }
             };
             let semantic_admitted = match projection {
                 RuntimeExecutableTypeProjection::SemanticValue { projection } => {
@@ -8002,6 +8007,13 @@ impl RuntimePlanSemanticFacts {
                 _ => true,
             };
             if *owner != projection.owner()
+                || matches!(
+                    projection,
+                    RuntimeExecutableTypeProjection::Value {
+                        owner: HirValueTypeOwner::Local(_) | HirValueTypeOwner::Capture(_),
+                        ..
+                    }
+                )
                 || projection.semantic_value_type().is_some() && (!active || !semantic_admitted)
             {
                 return Err(RuntimeSemanticFactsError::InvalidTypeProjection { owner: *owner });
@@ -9622,9 +9634,17 @@ impl RuntimePlanSemanticFacts {
             write.validate(&modules, &expression_types, *owner)?;
         }
 
-        let mut captures = BTreeMap::new();
-        for checked in input.captures {
-            let id = checked.capture();
+        let captures = type_projections
+            .iter()
+            .filter_map(|(owner, projection)| match owner {
+                HirValueTypeOwner::Capture(owner) => {
+                    projection.capture().map(|capture| (*owner, capture))
+                }
+                _ => None,
+            })
+            .collect::<BTreeMap<_, _>>();
+        for (id, checked) in &captures {
+            let id = *id;
             if instance_capture_owners.contains(&id) {
                 return Err(RuntimeSemanticFactsError::InstanceOwnedGlobalFact {
                     family: RuntimeSemanticFactFamily::Capture,
@@ -9650,11 +9670,6 @@ impl RuntimePlanSemanticFacts {
                 return Err(RuntimeSemanticFactsError::InvalidCaptureProjection { capture: id });
             }
             validate_normalized_type(&modules, checked.ty())?;
-            if captures.insert(id, checked).is_some() {
-                return Err(RuntimeSemanticFactsError::DuplicateFact {
-                    family: RuntimeSemanticFactFamily::Capture,
-                });
-            }
         }
 
         let pure_programs =
@@ -9893,7 +9908,6 @@ impl RuntimePlanSemanticFacts {
             tries: try_facts,
             implicit_callables,
             pipes,
-            captures,
             pure_programs,
             value_contract_types: input.value_contract_types,
             pure_program_semantics,
@@ -10475,7 +10489,6 @@ impl RuntimePlanSemanticFacts {
         {
             scope.append_normalized_types(&mut roots);
         }
-        roots.extend(self.captures.values().map(RuntimeCheckedCapture::ty));
         for program in self.pure_programs.values() {
             roots.push(program.function_type());
             roots.extend(program.input_types());
@@ -10552,7 +10565,6 @@ impl RuntimePlanSemanticFacts {
                 semantics.visit_type_projections(&mut |projection| {
                     roots.extend(projection.ty());
                 });
-                semantics.visit_captures(&mut |capture| roots.push(capture.ty()));
             }
         }
         for iteration in self.iterations.values() {
@@ -10886,7 +10898,9 @@ impl RuntimePlanSemanticFacts {
     }
 
     pub fn capture(&self, capture: CaptureId) -> Option<&RuntimeCheckedCapture> {
-        self.captures.get(&capture)
+        self.type_projections
+            .get(&HirValueTypeOwner::Capture(capture))
+            .and_then(RuntimeExecutableTypeProjection::capture)
     }
 
     pub fn pure_programs(
@@ -13726,6 +13740,7 @@ fn validate_project_function_instance(
         .chain(exact_owners.patterns().map(HirValueTypeOwner::Pattern))
         .chain(exact_owners.locals().map(HirValueTypeOwner::Local))
         .chain(exact_owners.types().map(HirValueTypeOwner::Type))
+        .chain(exact_owners.captures().map(HirValueTypeOwner::Capture))
         .collect::<BTreeSet<_>>();
     let actual_type_owners = instance
         .type_projection()
@@ -13748,6 +13763,7 @@ fn validate_project_function_instance(
             (HirValueTypeOwner::Expression(_), None)
             | (HirValueTypeOwner::Pattern(_), _)
             | (HirValueTypeOwner::Local(_), _)
+            | (HirValueTypeOwner::Capture(_), _)
             | (HirValueTypeOwner::Type(_), _) => None,
         })
         .collect::<RuntimeExpressionTypeView<'_>>();
@@ -14594,7 +14610,6 @@ fn validate_project_function_semantic_catalog(
     if outer.is_some_and(|outer| {
         semantics
             .captures()
-            .iter()
             .any(|capture| outer.capture(capture.capture()).is_some())
     }) {
         return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
@@ -14904,6 +14919,16 @@ fn validate_closure_instance(
     } else {
         return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
     };
+    let expected_captures = expected_captures
+        .into_iter()
+        .filter(|(capture, _)| {
+            closure
+                .semantics()
+                .partition()
+                .semantic_value_type(HirValueTypeOwner::Capture(*capture))
+                .is_none()
+        })
+        .collect::<Vec<_>>();
     let source = module
         .source_site(
             module.provenance().source_identity(),

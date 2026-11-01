@@ -5,16 +5,16 @@
 //! must enter the same transaction type graph before any body is lowered.
 
 use super::{
-    RuntimeCheckedCapture, RuntimeClosureCaptureFact, RuntimeClosureInstanceFact,
-    RuntimeClosureParameterFact, RuntimeContentFragmentFact, RuntimeDialogueApplication,
-    RuntimeDialogueEffectTrigger, RuntimeDialogueValueExpression, RuntimeExecutableCaptureFact,
-    RuntimeExecutableTypeProjection, RuntimeIteratorFact, RuntimeNormalizedType,
-    RuntimeProjectAttachedDefaultCapture, RuntimeProjectCallable, RuntimeProjectContinuationAbi,
-    RuntimeProjectFunctionExpressionPayload, RuntimeProjectFunctionInstanceFact,
-    RuntimeProjectFunctionInstanceSemanticFacts, RuntimeProjectFunctionPatternPayload,
-    RuntimeProjectFunctionStatementPayload, RuntimeRecordExpressionFact, RuntimeRecordPatternFact,
-    RuntimeResolvedAttachedContent, RuntimeResolvedCall, RuntimeResolvedCallDispatch,
-    RuntimeResolvedCallOperand, RuntimeResolvedHostCallOwner, RuntimeResolvedNominalRecordField,
+    RuntimeClosureCaptureFact, RuntimeClosureInstanceFact, RuntimeClosureParameterFact,
+    RuntimeContentFragmentFact, RuntimeDialogueApplication, RuntimeDialogueEffectTrigger,
+    RuntimeDialogueValueExpression, RuntimeExecutableCaptureFact, RuntimeExecutableTypeProjection,
+    RuntimeIteratorFact, RuntimeNormalizedType, RuntimeProjectAttachedDefaultCapture,
+    RuntimeProjectCallable, RuntimeProjectContinuationAbi, RuntimeProjectFunctionExpressionPayload,
+    RuntimeProjectFunctionInstanceFact, RuntimeProjectFunctionInstanceSemanticFacts,
+    RuntimeProjectFunctionPatternPayload, RuntimeProjectFunctionStatementPayload,
+    RuntimeRecordExpressionFact, RuntimeRecordPatternFact, RuntimeResolvedAttachedContent,
+    RuntimeResolvedCall, RuntimeResolvedCallDispatch, RuntimeResolvedCallOperand,
+    RuntimeResolvedHostCallOwner, RuntimeResolvedNominalRecordField,
     RuntimeResolvedStaticCallTarget, RuntimeResolvedValue, RuntimeStandardMapCollection,
     RuntimeTryFact,
 };
@@ -320,7 +320,6 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                 .iter()
                 .filter_map(RuntimeExecutableTypeProjection::ty),
         );
-        roots.extend(self.captures().iter().map(RuntimeCheckedCapture::ty));
         for expression in self.expressions() {
             roots.extend(
                 expression

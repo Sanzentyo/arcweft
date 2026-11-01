@@ -46,6 +46,10 @@ pub view SettingsPanel(
 Core の通常関数値や実行 frame へ投影しない。`@view.*` は同じ retained owner の
 public identity を参照する entity reference として保持する。local/project の名前が
 builtin View head と同じ場合も、通常の shadowing と visibility に従う。
+通常の closure がこの別名を捕捉するときも、元の宣言を特定する semantic token として
+保持する。実行時の capture 値や slot は作らず、同時に捕捉する実データだけを
+source order の連続した capture ABI に束縛する。nested closure でも同じ規則に従い、
+別名の初期化時に行う通常の式評価と効果は一度だけ実行する。
 
 生成された `ViewValue` は affine な値であり、元の program・View 宣言の意味的な
 identity・供給した parameter の座標と正確な型付き capture を保持する。省略した

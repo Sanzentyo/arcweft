@@ -773,7 +773,6 @@ fn project_runtime_semantic_fact_inventories(
         &discovered_instances,
     )?;
     let mut closed_instance_type_owners = BTreeSet::new();
-    let mut closed_instance_capture_owners = BTreeSet::new();
     let mut closed_instance_statement_owners = BTreeSet::new();
     let program_semantics = if let Some(owners) = program_owners {
         programs::materialize(
@@ -812,14 +811,10 @@ fn project_runtime_semantic_fact_inventories(
                         || semantics.partition().input_locals().contains(&owner)
                 }
                 HirValueTypeOwner::Type(owner) => runtime_owners.contains_type(owner),
+                HirValueTypeOwner::Capture(owner) => runtime_owners.contains_capture(owner),
             };
             if !ordinary {
                 closed_instance_type_owners.insert(projection.owner());
-            }
-        });
-        semantics.visit_captures(&mut |capture| {
-            if !runtime_owners.contains_capture(capture.capture()) {
-                closed_instance_capture_owners.insert(capture.capture());
             }
         });
         semantics.visit_statement_owners(&mut |statement| {
@@ -832,9 +827,6 @@ fn project_runtime_semantic_fact_inventories(
         instance.visit_type_projections(&mut |projection| {
             closed_instance_type_owners.insert(projection.owner());
         });
-        instance.visit_captures(&mut |capture| {
-            closed_instance_capture_owners.insert(capture.capture());
-        });
         instance.visit_statement_owners(&mut |statement| {
             closed_instance_statement_owners.insert(statement);
         });
@@ -845,9 +837,6 @@ fn project_runtime_semantic_fact_inventories(
             .visit_type_projections(&mut |projection| {
                 closed_instance_type_owners.insert(projection.owner());
             });
-        closure.semantics().visit_captures(&mut |capture| {
-            closed_instance_capture_owners.insert(capture.capture());
-        });
         closure
             .semantics()
             .visit_statement_owners(&mut |statement| {
@@ -860,9 +849,6 @@ fn project_runtime_semantic_fact_inventories(
         };
         semantics.visit_type_projections(&mut |projection| {
             closed_instance_type_owners.insert(projection.owner());
-        });
-        semantics.visit_captures(&mut |capture| {
-            closed_instance_capture_owners.insert(capture.capture());
         });
         semantics.visit_statement_owners(&mut |statement| {
             closed_instance_statement_owners.insert(statement);
@@ -1708,7 +1694,11 @@ fn project_runtime_semantic_fact_inventories(
         {
             continue;
         }
-        if closed_instance_capture_owners.contains(&owner) {
+        if closed_instance_type_owners.contains(&HirValueTypeOwner::Capture(owner)) {
+            continue;
+        }
+        if let Some(proof) = semantic_values.remove(&HirValueTypeOwner::Capture(owner)) {
+            input.push_semantic_value_projection(proof);
             continue;
         }
         let selected = *analysis.selected_capture(owner).ok_or_else(|| {
@@ -8867,6 +8857,11 @@ fn runtime_executable_semantic_facts<'abi>(
     let captures = partition
         .captures()
         .iter()
+        .filter(|owner| {
+            partition
+                .semantic_value_type(HirValueTypeOwner::Capture(**owner))
+                .is_none()
+        })
         .map(|owner| {
             let checked = analysis
                 .capture(*owner)
@@ -8886,14 +8881,21 @@ fn runtime_executable_semantic_facts<'abi>(
         })
         .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
 
+    let mut type_projection = type_projection.into_vec();
+    type_projection.extend(
+        captures
+            .into_iter()
+            .map(arcweft_runtime_plan::semantic_facts::RuntimeExecutableTypeProjection::captured),
+    );
+    type_projection
+        .sort_by_key(arcweft_runtime_plan::semantic_facts::RuntimeExecutableTypeProjection::owner);
     RuntimeProjectFunctionInstanceSemanticFacts::try_new(
         partition,
         local_uses,
-        type_projection,
+        type_projection.into_boxed_slice(),
         expressions.into_boxed_slice(),
         patterns.into_boxed_slice(),
         statements.into_boxed_slice(),
-        captures.into_boxed_slice(),
     )
     .map_err(|reason| origin.error(reason.to_string()))
 }
@@ -9015,9 +9017,6 @@ fn runtime_closure_instance_fact(
         .captures()
         .iter()
         .map(|capture| {
-            let checked = analysis
-                .capture(capture.capture())
-                .ok_or_else(|| error("closure capture has no checked type"))?;
             RuntimeClosureCaptureFact::try_new(
                 capture.clone(),
                 semantics
@@ -9029,7 +9028,9 @@ fn runtime_closure_instance_fact(
                         },
                     )
                     .ok_or_else(|| error("closure capture has no closed transfer proof"))?,
-                lexical.runtime_type(checked.ty(), symbols, world, analysis)?,
+                Arc::clone(semantics.shared_capture(capture.capture()).ok_or_else(|| {
+                    error("closure capture has no accepted runtime value projection")
+                })?),
             )
             .map_err(|reason| error(&reason.to_string()))
         })

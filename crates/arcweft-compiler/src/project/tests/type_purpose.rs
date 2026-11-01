@@ -143,7 +143,6 @@ fn assert_strict_type_projection(
             semantics.expressions().into(),
             semantics.patterns().into(),
             semantics.statements().into(),
-            semantics.captures().into(),
         )
     };
     let assert_incomplete = |projection| {

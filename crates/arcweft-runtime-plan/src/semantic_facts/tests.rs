@@ -1864,6 +1864,35 @@ fn presentation_owned_facts_are_inactive_and_filtered_local_ids_remain_contiguou
 }
 
 #[test]
+fn capture_type_requires_its_checked_lexical_projection() {
+    let project = project_fixture(
+        "capture-type-authority",
+        "flow root() -> i64 { let captured = 42i64; let callback = || captured; return callback() }\n",
+    );
+    let capture = project
+        .analysis_view()
+        .unwrap()
+        .modules()
+        .flat_map(|(_, module)| module.captures().map(|(owner, _)| owner))
+        .next()
+        .expect("source captures its lexical local");
+    let owner = arcweft_lang_hir::identity::HirValueTypeOwner::Capture(capture);
+    let mut input = complete_type_input(&project);
+    input.type_projections.push((
+        owner,
+        super::RuntimeExecutableTypeProjection::Value {
+            owner,
+            ty: unit_type(),
+        },
+    ));
+    assert_eq!(
+        runtime_facts(&project, input)
+            .expect_err("a bare type cannot replace a capture and its lexical origin"),
+        RuntimeSemanticFactsError::InvalidTypeProjection { owner }
+    );
+}
+
+#[test]
 fn missing_extra_duplicate_and_reordered_local_projections_are_rejected() {
     let project = project_fixture(
         "invalid-local-declarations",
@@ -4287,7 +4316,6 @@ fn closed_entity_value_constructor_rejects_foreign_owner_and_type_before_publica
             CheckedLocalUseAuthority::Global(Arc::clone(analysis.checked_local_uses())),
             types.into_boxed_slice(),
             expressions,
-            Box::new([]),
             Box::new([]),
             Box::new([]),
         )

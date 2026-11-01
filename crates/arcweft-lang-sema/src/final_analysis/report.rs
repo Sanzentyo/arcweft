@@ -673,9 +673,23 @@ impl FinalAnalysisExecutionProjection<'_> {
             &super::CheckedExecutionCoordinate::CallableBody(path),
         )
         .map_err(|_| invalid())?;
-        let captures = closure
+        let runtime_captures = closure
             .captures()
             .iter()
+            .map(|capture| {
+                let checked = self
+                    .analysis
+                    .capture(capture.capture())
+                    .ok_or_else(invalid)?;
+                Ok((
+                    capture,
+                    !matches!(checked.ty(), TypeKind::CompileTimeCallable(_)),
+                ))
+            })
+            .collect::<Result<Vec<_>, FinalAnalysisExecutionProjectionError>>()?;
+        let captures = runtime_captures
+            .into_iter()
+            .filter_map(|(capture, runtime)| runtime.then_some(capture))
             .enumerate()
             .map(|(position, capture)| {
                 Ok(CheckedClosureCaptureOrigin {
@@ -802,6 +816,13 @@ impl FinalAnalysisExecutionProjection<'_> {
         for owner in owners.types() {
             if let Some(TypeKind::CompileTimeCallable(ty)) = self.analysis.ty(owner) {
                 semantic_values.insert(HirValueTypeOwner::Type(owner), ty.clone());
+            }
+        }
+        for owner in owners.captures() {
+            if let Some(capture) = self.analysis.capture(owner)
+                && let TypeKind::CompileTimeCallable(ty) = capture.ty()
+            {
+                semantic_values.insert(HirValueTypeOwner::Capture(owner), ty.clone());
             }
         }
         let runtime_type_owners = owners.expression_type_owners().collect::<BTreeSet<_>>();
