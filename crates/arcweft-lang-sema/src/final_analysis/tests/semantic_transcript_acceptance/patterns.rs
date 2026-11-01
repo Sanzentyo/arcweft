@@ -211,7 +211,8 @@ impl PatternResolutionFamily {
             CheckedPatternResolution::Structural => Self::Structural,
             CheckedPatternResolution::Literal(_) => Self::Literal,
             CheckedPatternResolution::Entity(_)
-            | CheckedPatternResolution::ImportedProjectEntity(_) => Self::Entity,
+            | CheckedPatternResolution::ImportedProjectEntity(_)
+            | CheckedPatternResolution::PresentationAddress(_) => Self::Entity,
             CheckedPatternResolution::Record(_) => Self::Record,
             CheckedPatternResolution::Variant(_) => Self::Variant,
             CheckedPatternResolution::TypedBinding(_) => Self::TypedBinding,
@@ -461,6 +462,31 @@ fn checked_match_pattern_transcript_commits_mutable_entity_and_whole_binding_own
         primary.semantic_digest, alternate.semantic_digest,
         "checked entity target meaning reaches the Match transcript",
     );
+    for (family, first, second) in [
+        ("Target", "target.scene", "target.preview"),
+        (
+            "Slot",
+            "slot.background.main",
+            "slot.character.alice.default",
+        ),
+    ] {
+        let observe = |identity| {
+            checked_match_pattern_observation(
+                &format!(
+                    "fn root(value: Ref<{family}>) -> i64 {{ match value {{ @{identity} => 1i64, _ => 0i64 }} }}"
+                ),
+                0,
+            )
+        };
+        let first = observe(first);
+        let second = observe(second);
+        assert!(first.facts.iter().any(|fact| matches!(
+            fact.checked.resolution(),
+            CheckedPatternResolution::PresentationAddress(_)
+        )));
+        assert_ne!(first.arm_pattern_digest, second.arm_pattern_digest);
+        assert_ne!(first.semantic_digest, second.semantic_digest);
+    }
 
     let whole = checked_match_pattern_observation(
         &whole_binding_pattern_source("whole .ChoiceSelected { id }"),

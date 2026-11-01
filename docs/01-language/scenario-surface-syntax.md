@@ -632,6 +632,14 @@ generic or its surface is owned by an affine handle: copying the reference
 neither copies that surface nor transfers its lease. Its exact resource family
 and address are checked by the runtime type owner when values are admitted.
 
+Target identities such as `@target.scene` are ordinary `Ref<Target>` values.
+Slot identities such as `@slot.background.main` are ordinary `Ref<Slot>` values;
+the slot's resource family remains part of its validated address. Both can pass
+through locals and generic functions and appear in entity-reference patterns.
+These identities require no declaration lookup and issue no occupant, handle,
+or lexical resource lease. A slot-reference constructor checks the selected
+argument roles and the slot's resource family against its exact result owner.
+
 ```arcw
 let room = bg(@asset:.bg.room, target = @target.scene, slot = @slot.background.main)
 let background_slot = ref.bg(target = @target.scene, slot = @slot.background.main)

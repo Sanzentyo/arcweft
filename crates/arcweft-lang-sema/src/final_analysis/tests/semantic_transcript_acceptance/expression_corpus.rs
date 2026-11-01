@@ -214,6 +214,7 @@ expression_family_inventory!(ValueResolutionFamily for CheckedValueResolution, {
     CheckedValueResolution::ProjectItem(_) => ProjectItem => Accepted,
     CheckedValueResolution::CatalogAsset(_) => CatalogAsset => Accepted,
     CheckedValueResolution::ImportedProjectEntity(_) => ImportedProjectEntity => Accepted,
+    CheckedValueResolution::PresentationAddress(_) => PresentationAddress => Accepted,
     CheckedValueResolution::Entry(_) => Entry => Accepted,
     CheckedValueResolution::Registered(_) => Registered => Accepted,
     CheckedValueResolution::Constant(_) => Constant => Accepted,
@@ -824,6 +825,26 @@ fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
 
 fn checked_owner_expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
     vec![
+        ExpressionCorpusRow {
+            name: "inert presentation target values",
+            exact_path_families: false,
+            source: "fn root(flag: bool) -> Ref<Target> { match flag { true => @target.scene, false => @target.preview } }".to_owned(),
+            fixture: ExpressionCorpusFixture::Standard,
+            shapes: &[ExprShapeFamily::Match, ExprShapeFamily::EntityReference],
+            resolutions: &[ExpressionResolutionFamily::Structural, ExpressionResolutionFamily::Value],
+            values: &[ValueResolutionFamily::PresentationAddress],
+            selects: &[],
+        },
+        ExpressionCorpusRow {
+            name: "inert presentation slot values",
+            exact_path_families: false,
+            source: "fn root(flag: bool) -> Ref<Slot> { match flag { true => @slot.background.main, false => @slot.character.alice.default } }".to_owned(),
+            fixture: ExpressionCorpusFixture::Standard,
+            shapes: &[ExprShapeFamily::Match, ExprShapeFamily::EntityReference],
+            resolutions: &[ExpressionResolutionFamily::Structural, ExpressionResolutionFamily::Value],
+            values: &[ValueResolutionFamily::PresentationAddress],
+            selects: &[],
+        },
         ExpressionCorpusRow {
             name: "checked catalog Asset references",
             exact_path_families: false,
