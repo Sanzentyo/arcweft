@@ -40,11 +40,10 @@ use arcweft_core::plan::{
 };
 use arcweft_core::value::RuntimeValue;
 use arcweft_id::runtime_program::RuntimePureProgramId;
+use arcweft_id::view::ViewId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_text_model::DialogueContentCatalog;
-use arcweft_view::{
-    ViewHandlerResult, ViewHandlerResultRole, ViewHandlerTransitionValueRole, ViewId,
-};
+use arcweft_view::{ViewHandlerResult, ViewHandlerResultRole, ViewHandlerTransitionValueRole};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -490,30 +489,46 @@ fn minimal_awbc_program() -> AwbcProgram {
         })
         .expect("fixture Flow metadata");
     builder
-        .push_flow_seed(RuntimeFlowSeed::new(flow.clone(), arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]), None, Box::new([]), unit, RuntimeEffectSet::try_from_effects([arcweft_id::EffectId::parse(
-                "presentation.handle.create",
-            )
-            .expect("fixture mount capability")])
-            .expect("fixture mount effect row")), arcweft_core::plan::RuntimeExecutableBodySeed { effects: RuntimeEffectSet::try_from_effects([arcweft_id::EffectId::parse(
-                "presentation.handle.create",
-            )
-            .expect("fixture mount capability")])
-            .expect("fixture mount effect row"), ops: (vec![
-                RuntimeFlowOpSeed::Effect(RuntimeLineEffectSeed::Static(LineEffectRequest::Call(
-                    RuntimeCall {
-                        callee: "presentation.handle.create".to_owned(),
-                        args: vec![
-                            "handle = @handle.web_ime_player_rendered".to_owned(),
-                            "kind = \"view\"".to_owned(),
-                            "resource = @view.root.web_ime_player_rendered".to_owned(),
-                        ],
-                    },
-                ))),
-                RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
-                    unit,
-                    RuntimeExprSeedKind::Value(RuntimeValue::Unit),
-                )),
-            ]).into_boxed_slice() }))
+        .push_flow_seed(RuntimeFlowSeed::new(
+            flow.clone(),
+            arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [61; 32],
+                ),
+                None,
+                Box::new([]),
+                unit,
+                RuntimeEffectSet::try_from_effects([arcweft_id::EffectId::parse(
+                    "presentation.handle.create",
+                )
+                .expect("fixture mount capability")])
+                .expect("fixture mount effect row"),
+            ),
+            arcweft_core::plan::RuntimeExecutableBodySeed {
+                effects: RuntimeEffectSet::try_from_effects([arcweft_id::EffectId::parse(
+                    "presentation.handle.create",
+                )
+                .expect("fixture mount capability")])
+                .expect("fixture mount effect row"),
+                ops: (vec![
+                    RuntimeFlowOpSeed::Effect(RuntimeLineEffectSeed::Static(
+                        LineEffectRequest::Call(RuntimeCall {
+                            callee: "presentation.handle.create".to_owned(),
+                            args: vec![
+                                "handle = @handle.web_ime_player_rendered".to_owned(),
+                                "kind = \"view\"".to_owned(),
+                                "resource = @view.root.web_ime_player_rendered".to_owned(),
+                            ],
+                        }),
+                    )),
+                    RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                        unit,
+                        RuntimeExprSeedKind::Value(RuntimeValue::Unit),
+                    )),
+                ])
+                .into_boxed_slice(),
+            },
+        ))
         .expect("fixture Flow body");
     builder
         .push_entry(RuntimeEntrySpec {
