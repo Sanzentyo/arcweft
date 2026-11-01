@@ -1680,9 +1680,15 @@ fn execute_instruction(
                 ));
             }
             let intrinsic_row = &program.intrinsics[intrinsic.index()];
-            if let crate::value::RuntimeCallTarget::PresentationFactory(call) =
-                &intrinsic_row.identity
-            {
+            if let Some(call) = match &intrinsic_row.identity {
+                crate::value::RuntimeCallTarget::PresentationFactory(call) => {
+                    Some(crate::presentation::RuntimePresentationResourceLayoutRef::Factory(call))
+                }
+                crate::value::RuntimeCallTarget::PresentationView(call) => {
+                    Some(crate::presentation::RuntimePresentationResourceLayoutRef::View(call))
+                }
+                _ => None,
+            } {
                 let signature = program
                     .signatures
                     .get(intrinsic_row.signature.index())
@@ -1692,7 +1698,7 @@ fn execute_instruction(
                 let result = signature.result.ok_or_else(|| {
                     VmError::Runtime("presentation factory has no result type".into())
                 })?;
-                if signature.params.len() != call.inputs().len()
+                if signature.params.len() != call.input_count()
                     || signature.params.len() != args.len()
                     || dst.is_none()
                 {
@@ -1750,12 +1756,25 @@ fn execute_instruction(
                         "presentation factory result destination has a different type".into(),
                     ));
                 }
-                execution.validate_presentation_factory(program, call, args.len(), result)?;
+                match &intrinsic_row.identity {
+                    crate::value::RuntimeCallTarget::PresentationFactory(call) => execution
+                        .validate_presentation_factory(program, call, args.len(), result)?,
+                    crate::value::RuntimeCallTarget::PresentationView(call) => {
+                        execution.validate_presentation_view(program, call, args.len(), result)?
+                    }
+                    _ => unreachable!("retained producer selected"),
+                }
                 let args = fiber
                     .active_frame_mut()?
                     .take_register_values(program, args)?;
-                let value =
-                    execution.construct_presentation_factory(program, fiber, call, args, result)?;
+                let value = match &intrinsic_row.identity {
+                    crate::value::RuntimeCallTarget::PresentationFactory(call) => execution
+                        .construct_presentation_factory(program, fiber, call, args, result)?,
+                    crate::value::RuntimeCallTarget::PresentationView(call) => {
+                        execution.construct_presentation_view(program, fiber, call, args, result)?
+                    }
+                    _ => unreachable!("retained producer selected"),
+                };
                 fiber
                     .active_frame_mut()?
                     .set_register(dst.expect("factory result destination checked"), value)?;

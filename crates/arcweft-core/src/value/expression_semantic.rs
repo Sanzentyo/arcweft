@@ -127,6 +127,19 @@ impl RuntimeExpr {
                             }
                         }
                     }
+                    RuntimeCallTarget::PresentationView(call) => {
+                        encoder.tag(5);
+                        encoder.string(call.view().as_str());
+                        encoder.digest(call.definition().as_bytes());
+                        encoder.ordinal(call.parameters());
+                        encoder.digest(call.resource_type().as_bytes());
+                        encoder.digest(call.body_type().as_bytes());
+                        encoder.count(call.supplied().len());
+                        for parameter in call.supplied() {
+                            encoder.enter_element();
+                            encoder.ordinal(*parameter);
+                        }
+                    }
                 }
                 context.write_call_arguments(encoder, args)?;
             }

@@ -338,7 +338,7 @@ impl ValueValidation for NoSchemaValidation<'_> {
                 sequence.validate_storage_metadata(self.depth, &policy, resources)?;
             }
             if let RuntimeValueView::PresentationResource(resource) = value {
-                for _ in resource.layout().inputs() {
+                for _ in 0..resource.layout().input_count() {
                     resources.charge(self.depth + 1)?;
                 }
             }
@@ -1646,16 +1646,32 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
             }
             writer.u8(27)?;
             writer.extend(&value.original_executable())?;
-            let call = value.layout();
-            writer.u8(call.callable().semantic_tag())?;
-            writer.extend(call.resource_type().as_bytes())?;
-            writer.extend(call.body_type().as_bytes())?;
-            writer.len(call.inputs().len())?;
-            for key in call.inputs() {
-                writer.u8(key.role().semantic_tag())?;
-                writer.u8(u8::from(key.parameter().is_some()))?;
-                if let Some(parameter) = key.parameter() {
-                    writer.string(parameter)?;
+            match value.layout() {
+                crate::presentation::RuntimePresentationResourceLayoutRef::Factory(call) => {
+                    writer.u8(0)?;
+                    writer.u8(call.callable().semantic_tag())?;
+                    writer.extend(call.resource_type().as_bytes())?;
+                    writer.extend(call.body_type().as_bytes())?;
+                    writer.len(call.inputs().len())?;
+                    for key in call.inputs() {
+                        writer.u8(key.role().semantic_tag())?;
+                        writer.u8(u8::from(key.parameter().is_some()))?;
+                        if let Some(parameter) = key.parameter() {
+                            writer.string(parameter)?;
+                        }
+                    }
+                }
+                crate::presentation::RuntimePresentationResourceLayoutRef::View(call) => {
+                    writer.u8(1)?;
+                    writer.string(call.view().as_str())?;
+                    writer.extend(call.definition().as_bytes())?;
+                    writer.var_u32(call.parameters())?;
+                    writer.extend(call.resource_type().as_bytes())?;
+                    writer.extend(call.body_type().as_bytes())?;
+                    writer.len(call.supplied().len())?;
+                    for parameter in call.supplied() {
+                        writer.var_u32(*parameter)?;
+                    }
                 }
             }
             writer.u8(u8::from(value.binding().is_some()))?;

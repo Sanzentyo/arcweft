@@ -2,6 +2,9 @@
 
 use super::*;
 use crate::pattern::{RuntimeOpaqueTypeOwner, RuntimePresentationSlotRefDecodeError};
+use crate::presentation::{
+    RuntimePresentationResourceLayout, RuntimePresentationResourceLayoutRef,
+};
 use crate::value::{
     RuntimeBorrowedValue, RuntimeOpaqueView, RuntimeScalarView, RuntimeTupleView, RuntimeUInt,
 };
@@ -23,24 +26,67 @@ impl RuntimeRetainedValueAdmission {
             &RuntimeValue,
         ) -> Result<T, AwbcRuntimeValueSnapshotError>,
     ) -> Result<(T, RuntimeValue), AwbcRuntimeValueSnapshotError> {
+        self.construct_native_presentation_resource_with_layout(
+            program,
+            RuntimePresentationResourceLayout::Factory(call),
+            binding,
+            body,
+            |admission, layout, body| {
+                let RuntimePresentationResourceLayoutRef::Factory(call) = layout else {
+                    unreachable!("the factory entry point supplies its own layout")
+                };
+                metadata(admission, call, body)
+            },
+        )
+    }
+
+    pub(crate) fn construct_native_presentation_view(
+        &mut self,
+        program: std::sync::Arc<crate::plan::RuntimePlan>,
+        call: std::sync::Arc<crate::presentation::RuntimePresentationViewCall>,
+        binding: Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
+        body: crate::value::RuntimePayload,
+    ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
+        self.construct_native_presentation_resource_with_layout(
+            program,
+            RuntimePresentationResourceLayout::View(call),
+            binding,
+            body,
+            |_, _, _| Ok(()),
+        )
+        .map(|(_, value)| value)
+    }
+
+    fn construct_native_presentation_resource_with_layout<T>(
+        &mut self,
+        program: std::sync::Arc<crate::plan::RuntimePlan>,
+        layout: RuntimePresentationResourceLayout,
+        binding: Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
+        body: crate::value::RuntimePayload,
+        metadata: impl FnOnce(
+            &mut Self,
+            RuntimePresentationResourceLayoutRef<'_>,
+            &RuntimeValue,
+        ) -> Result<T, AwbcRuntimeValueSnapshotError>,
+    ) -> Result<(T, RuntimeValue), AwbcRuntimeValueSnapshotError> {
         self.validate_view_with_requirement(
             RuntimeValueView::PresentationResource(
                 crate::presentation::RuntimePresentationResourceView::NativeConstruction {
                     program: &program,
-                    call: &call,
+                    layout: layout.borrowed(),
                     binding: binding.as_deref(),
                     body: body.value(),
                 },
             ),
             ValueAdmissionOrigin::Live,
-            Some(RetainedTypeObligation::Stored(call.resource_type())),
+            Some(RetainedTypeObligation::Stored(layout.resource_type())),
             RuntimeValueOwnershipRequirement::Owned,
         )?;
-        let metadata = metadata(self, &call, body.value())
+        let metadata = metadata(self, layout.borrowed(), body.value())
             .inspect_err(|error| self.retain_failure(error.clone()))?;
         let value = crate::presentation::RuntimePresentationResourceValue {
             source: crate::plan::task_source::RuntimeTaskSourceProgram::native(program),
-            call,
+            layout,
             binding,
             body,
         };
@@ -55,13 +101,13 @@ impl RuntimeRetainedValueAdmission {
     pub(crate) fn construct_presentation_resource(
         &mut self,
         source: crate::plan::task_source::RuntimeTaskSourceProgram,
-        call: std::sync::Arc<crate::presentation::RuntimePresentationFactoryCall>,
+        layout: RuntimePresentationResourceLayout,
         binding: Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
         body: crate::value::RuntimePayload,
     ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
         let candidate = crate::presentation::RuntimePresentationResourceValue {
             source,
-            call,
+            layout,
             binding,
             body,
         };

@@ -3,17 +3,26 @@
 mod factory;
 #[cfg(test)]
 pub(crate) mod factory_test_support;
+mod resource_layout;
 mod resource_value;
 mod selectors;
 pub(crate) use selectors::RuntimePresentationSlotSelectors;
 pub(crate) mod resources;
 mod slot_reference;
+mod view_value;
 
 pub use factory::{RuntimePresentationFactoryCall, RuntimePresentationFactoryCallError};
+pub(crate) use resource_layout::RuntimePresentationResourceLayoutRef;
+pub use resource_layout::{
+    RuntimePresentationResourceLayout, RuntimePresentationResourceLayoutError,
+};
 pub(crate) use resource_value::RuntimePresentationResourceView;
 pub use resource_value::{RuntimePresentationResourceSnapshot, RuntimePresentationResourceValue};
 pub use slot_reference::{
     RuntimePresentationSlotCall, RuntimePresentationSlotInput, RuntimePresentationSlotOperation,
+};
+pub use view_value::{
+    RuntimePresentationViewCall, RuntimePresentationViewCallError, RuntimePresentationViewIdentity,
 };
 
 pub use resources::{RuntimePresentationScopeBinding, RuntimePresentationScopeSnapshot};

@@ -88,6 +88,8 @@ flow main() -> i64 {{ return 0i64 }}
             };
             let identity_index = resource
                 .layout()
+                .factory()
+                .unwrap()
                 .inputs()
                 .iter()
                 .position(|key| key.role() == role)
@@ -111,6 +113,8 @@ flow main() -> i64 {{ return 0i64 }}
                 assert_eq!(
                     resource
                         .layout()
+                        .factory()
+                        .unwrap()
                         .inputs()
                         .iter()
                         .any(|key| key.role() == PresentationArgumentRole::TargetEntity),

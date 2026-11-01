@@ -171,6 +171,70 @@ impl VmExecutionResources<'_> {
         self.presentation.as_deref_mut().and_then(Option::as_mut)
     }
 
+    pub(super) fn validate_presentation_view(
+        &self,
+        program: &AwbcProgram,
+        call: &crate::presentation::RuntimePresentationViewCall,
+        count: usize,
+        result: crate::pattern::RuntimeSemanticTypeId,
+    ) -> Result<(), VmError> {
+        call.validate_argument_count(count)
+            .and_then(|()| {
+                call.validate_result(
+                    crate::program_types::RuntimeProgramTypes::Awbc(program),
+                    result,
+                )
+            })
+            .map_err(|cause| VmError::Runtime(cause.to_string()))?;
+        let admitted = self
+            .context
+            .ok_or(VmError::MissingExecutionContext)?
+            .admitted_program(program)?;
+        if admitted.original_task_source().is_none() || self.presentation.is_none() {
+            return Err(VmError::MissingExecutionContext);
+        }
+        Ok(())
+    }
+
+    pub(super) fn construct_presentation_view(
+        &mut self,
+        program: &AwbcProgram,
+        fiber: &FiberState,
+        call: &std::sync::Arc<crate::presentation::RuntimePresentationViewCall>,
+        values: Vec<crate::value::RuntimeValue>,
+        result: crate::pattern::RuntimeSemanticTypeId,
+    ) -> Result<crate::value::RuntimeValue, VmError> {
+        self.validate_presentation_view(program, call, values.len(), result)?;
+        let context = self.context.ok_or(VmError::MissingExecutionContext)?;
+        let admitted = context.admitted_program(program)?;
+        let owner = context.program_owner(program)?;
+        let source = admitted
+            .original_task_source()
+            .ok_or(VmError::MissingExecutionContext)?;
+        let mut admission =
+            admitted.retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default());
+        let error = |cause| VmError::PresentationAdmission(Box::new(cause));
+        if let Some(banks) = self.presentation.as_deref().and_then(Option::as_ref) {
+            banks
+                .admit_retained(&owner, context.artifact(), &mut admission)
+                .map_err(error)?;
+        }
+        fiber.admit_retained(&mut admission).map_err(error)?;
+        let binding = fiber.active_frame()?.type_instantiation.clone();
+        let value = admission
+            .construct_presentation_resource(
+                source.clone(),
+                crate::presentation::RuntimePresentationResourceLayout::View(
+                    std::sync::Arc::clone(call),
+                ),
+                binding,
+                RuntimePayload::new(crate::value::RuntimeValue::Tuple(values)),
+            )
+            .map_err(error)?;
+        admission.finish_presentation_custody().map_err(error)?;
+        Ok(value)
+    }
+
     pub(super) fn construct_presentation_factory(
         &mut self,
         program: &AwbcProgram,
@@ -216,7 +280,9 @@ impl VmExecutionResources<'_> {
         let resource = admission
             .construct_presentation_resource(
                 source.clone(),
-                std::sync::Arc::clone(call),
+                crate::presentation::RuntimePresentationResourceLayout::Factory(
+                    std::sync::Arc::clone(call),
+                ),
                 binding.clone(),
                 RuntimePayload::new(body),
             )

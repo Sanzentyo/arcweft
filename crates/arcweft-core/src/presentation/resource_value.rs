@@ -3,7 +3,7 @@
 //! The ledger's custody envelope may move this value between callers; it does
 //! not reinterpret captures in the replacing caller's function context.
 
-use super::RuntimePresentationFactoryCall;
+use super::{RuntimePresentationResourceLayout, RuntimePresentationResourceLayoutRef};
 use crate::{
     pattern::RuntimeSemanticTypeId,
     plan::task_source::RuntimeTaskSourceProgram,
@@ -22,22 +22,22 @@ mod tests;
 #[derive(Clone)]
 pub struct RuntimePresentationResourceValue {
     pub(crate) source: RuntimeTaskSourceProgram,
-    pub(crate) call: Arc<RuntimePresentationFactoryCall>,
+    pub(crate) layout: RuntimePresentationResourceLayout,
     pub(crate) binding: Option<Arc<RuntimeFunctionEffectInstantiation>>,
     pub(crate) body: RuntimePayload,
 }
 
 impl RuntimePresentationResourceValue {
     pub fn resource(&self) -> PresentationResourceKind {
-        self.call.resource()
+        self.layout.resource()
     }
 
-    pub fn layout(&self) -> &RuntimePresentationFactoryCall {
-        &self.call
+    pub fn layout(&self) -> &RuntimePresentationResourceLayout {
+        &self.layout
     }
 
     pub fn body_type(&self) -> RuntimeSemanticTypeId {
-        self.call.body_type()
+        self.layout.body_type()
     }
 
     pub fn body(&self) -> &RuntimeValue {
@@ -58,7 +58,7 @@ impl std::fmt::Debug for RuntimePresentationResourceValue {
         formatter
             .debug_struct("RuntimePresentationResourceValue")
             .field("original_executable", &self.original_executable())
-            .field("call", &self.call)
+            .field("layout", &self.layout)
             .field("binding", &self.binding)
             .field("body", &self.body)
             .finish()
@@ -70,7 +70,7 @@ impl PartialEq for RuntimePresentationResourceValue {
         self.source
             .program_owner()
             .same_program(&other.source.program_owner())
-            && self.call == other.call
+            && self.layout == other.layout
             && self.binding == other.binding
             && self.body == other.body
     }
@@ -98,7 +98,7 @@ impl<'de> Deserialize<'de> for RuntimePresentationResourceValue {
 #[serde(deny_unknown_fields)]
 pub struct RuntimePresentationResourceSnapshot {
     pub(crate) original_executable: [u8; 32],
-    pub(crate) call: Arc<RuntimePresentationFactoryCall>,
+    pub(crate) layout: RuntimePresentationResourceLayout,
     pub(crate) binding: Option<Arc<RuntimeFunctionEffectInstantiation>>,
     pub(crate) body: Box<AwbcRuntimeValueSnapshot>,
 }
@@ -107,7 +107,7 @@ pub struct RuntimePresentationResourceSnapshot {
 pub(crate) enum RuntimePresentationResourceView<'a> {
     NativeConstruction {
         program: &'a Arc<crate::plan::RuntimePlan>,
-        call: &'a RuntimePresentationFactoryCall,
+        layout: RuntimePresentationResourceLayoutRef<'a>,
         binding: Option<&'a RuntimeFunctionEffectInstantiation>,
         body: &'a RuntimeValue,
     },
@@ -124,11 +124,11 @@ impl<'a> RuntimePresentationResourceView<'a> {
             Self::Snapshot(_) => None,
         }
     }
-    pub(crate) fn layout(self) -> &'a RuntimePresentationFactoryCall {
+    pub(crate) fn layout(self) -> RuntimePresentationResourceLayoutRef<'a> {
         match self {
-            Self::NativeConstruction { call, .. } => call,
-            Self::Construction(value) | Self::Live(value) => value.layout(),
-            Self::Snapshot(value) => &value.call,
+            Self::NativeConstruction { layout, .. } => layout,
+            Self::Construction(value) | Self::Live(value) => value.layout().borrowed(),
+            Self::Snapshot(value) => value.layout.borrowed(),
         }
     }
 

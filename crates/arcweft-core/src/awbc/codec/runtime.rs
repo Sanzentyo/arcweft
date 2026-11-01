@@ -32,6 +32,8 @@ mod factory_tests;
 mod slot_reference_tests;
 #[cfg(test)]
 mod task_tests;
+#[cfg(test)]
+mod view_tests;
 
 impl Wire for AwbcIntrinsic {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -84,6 +86,15 @@ impl Wire for RuntimeCallTarget {
                 }
                 Ok(())
             }
+            Self::PresentationView(call) => {
+                5_u8.write_wire(writer)?;
+                writer.write_str(call.view().as_str())?;
+                call.definition().as_bytes().write_wire(writer)?;
+                call.parameters().write_wire(writer)?;
+                call.resource_type().as_bytes().write_wire(writer)?;
+                call.body_type().as_bytes().write_wire(writer)?;
+                writer.write_table(call.supplied())
+            }
         }
     }
 
@@ -105,6 +116,9 @@ impl Wire for RuntimeCallTarget {
             4 => reader
                 .read_presentation_factory()
                 .map(|call| Self::PresentationFactory(std::sync::Arc::new(call))),
+            5 => reader
+                .read_presentation_view()
+                .map(|call| Self::PresentationView(std::sync::Arc::new(call))),
             3 => {
                 let operation =
                     crate::presentation::RuntimePresentationSlotOperation::from_semantic_tag(

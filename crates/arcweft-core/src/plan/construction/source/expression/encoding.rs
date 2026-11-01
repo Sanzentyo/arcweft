@@ -552,6 +552,19 @@ impl Sink<'_, '_> {
                     }
                 }
             }
+            RuntimeCallTarget::PresentationView(call) => {
+                self.byte(5)?;
+                self.text(call.view().as_str())?;
+                self.raw(call.definition().as_bytes())?;
+                self.raw(&call.parameters().to_le_bytes())?;
+                self.raw(call.resource_type().as_bytes())?;
+                self.raw(call.body_type().as_bytes())?;
+                self.counts.array(call.supplied().len(), size_of::<u32>())?;
+                self.count(call.supplied().len())?;
+                for parameter in call.supplied() {
+                    self.raw(&parameter.to_le_bytes())?;
+                }
+            }
             RuntimeCallTarget::External(callable) => {
                 self.byte(2)?;
                 self.text(callable.identity().as_str())?;

@@ -154,6 +154,8 @@ pub enum RuntimePlanTable {
 pub enum RuntimePlanBuildError {
     #[error(transparent)]
     PresentationFactory(Box<crate::presentation::RuntimePresentationFactoryCallError>),
+    #[error("invalid retained View call: {0}")]
+    PresentationView(Box<crate::presentation::RuntimePresentationViewCallError>),
     #[error("producer handle type is {actual:?}, expected {expected:?}")]
     ProducerHandleType {
         expected: crate::task::TaskHandleType,

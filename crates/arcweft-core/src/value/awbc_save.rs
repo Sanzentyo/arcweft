@@ -823,7 +823,7 @@ impl AwbcRuntimeValueSnapshot {
                 })?,
             )?),
             Self::PresentationResource(value) => {
-                let expected = value.call.resource_type();
+                let expected = value.layout.resource_type();
                 let restore = context
                     .restore_context()
                     .ok_or(AwbcRuntimeValueSnapshotError::ProgramOwnerRequired { expected });
@@ -852,7 +852,7 @@ impl AwbcRuntimeValueSnapshot {
                     let mut meter = admission.task_source_meter(limits)?;
                     source
                         .admit_original_value_types(
-                            [value.call.resource_type(), value.call.body_type()],
+                            [value.layout.resource_type(), value.layout.body_type()],
                             limits,
                             &mut meter,
                         )
@@ -863,7 +863,7 @@ impl AwbcRuntimeValueSnapshot {
                 RuntimeValue::PresentationResource(Box::new(
                     crate::presentation::RuntimePresentationResourceValue {
                         source,
-                        call: value.call,
+                        layout: value.layout,
                         binding: value.binding,
                         body: RuntimePayload(value.body.into_live_with_context(context)?),
                     },

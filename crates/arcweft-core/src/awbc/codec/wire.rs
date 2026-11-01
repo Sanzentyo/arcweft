@@ -189,6 +189,82 @@ pub(super) struct Reader<'a> {
 }
 
 impl<'a> Reader<'a> {
+    /// Borrow and charge the complete View metadata before owning its public
+    /// identity or parameter destinations. Replay never grants another quota.
+    pub(super) fn read_presentation_view(
+        &mut self,
+    ) -> Result<crate::presentation::RuntimePresentationViewCall, AwbcCodecError> {
+        use crate::presentation::{RuntimePresentationViewCall, RuntimePresentationViewIdentity};
+        let offset = self.offset();
+        let invalid = |message: String| AwbcCodecError::InvalidMetadata {
+            kind: "presentation View ABI",
+            message,
+            offset,
+        };
+        let view = self.read_str()?;
+        let definition =
+            RuntimePresentationViewIdentity::from_checked_declaration(<[u8; 32]>::read_wire(self)?)
+                .map_err(|error| invalid(error.to_string()))?;
+        let parameters = u32::read_wire(self)?;
+        let resource =
+            crate::pattern::RuntimeSemanticTypeId::from_bytes(<[u8; 32]>::read_wire(self)?);
+        let body = crate::pattern::RuntimeSemanticTypeId::from_bytes(<[u8; 32]>::read_wire(self)?);
+        let count = self.read_len()?;
+        Self::check_limit(
+            "presentation View inputs",
+            count,
+            self.budget.collection_items,
+        )?;
+        self.add_collection_items(count)?;
+        count
+            .checked_mul(size_of::<u32>())
+            .filter(|bytes| isize::try_from(*bytes).is_ok())
+            .ok_or(AwbcCodecError::LengthOverflow)?;
+        let start = self.offset();
+        for _ in 0..count {
+            u32::read_wire(self)?;
+        }
+        let end = self.offset();
+        let bytes = self.bytes;
+        let budget = self.budget;
+        let inputs = (0..count).scan(start, move |offset, _| {
+            let mut reader = Reader::new(bytes, &budget);
+            reader.offset = *offset;
+            let parameter = u32::read_wire(&mut reader).expect("preflighted View parameter");
+            *offset = reader.offset;
+            Some(parameter)
+        });
+        RuntimePresentationViewCall::preflight(
+            view,
+            definition,
+            parameters,
+            count,
+            inputs,
+            resource,
+            body,
+            budget.original_source.values,
+        )
+        .map_err(|error| invalid(error.to_string()))?;
+        let view = arcweft_id::view::ViewId::parse_public(view)
+            .map_err(|error| invalid(error.to_string()))?;
+        self.offset = start;
+        let mut supplied = Vec::with_capacity(count);
+        for _ in 0..count {
+            supplied.push(u32::read_wire(self)?);
+        }
+        debug_assert_eq!(self.offset(), end);
+        RuntimePresentationViewCall::try_new(
+            view,
+            definition,
+            parameters,
+            supplied.into_boxed_slice(),
+            resource,
+            body,
+            budget.original_source.values,
+        )
+        .map_err(|error| invalid(error.to_string()))
+    }
+
     /// Precharges the complete borrowed factory metadata before allocating a
     /// key vector or copying its first name. Rereading spends no new quota.
     pub(super) fn read_presentation_factory(

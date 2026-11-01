@@ -1,4 +1,5 @@
 use super::*;
+use crate::presentation::RuntimePresentationFactoryCall;
 use crate::{
     awbc::{
         codec::AwbcDecodeBudget,
@@ -161,7 +162,12 @@ fn construct(
     body: RuntimeValue,
 ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
     RuntimeRetainedValueAdmission::for_task_source(source, RuntimeSchemaLimits::engine_default())
-        .construct_presentation_resource(source.clone(), layout(), None, RuntimePayload(body))
+        .construct_presentation_resource(
+            source.clone(),
+            crate::presentation::RuntimePresentationResourceLayout::Factory(layout()),
+            None,
+            RuntimePayload(body),
+        )
 }
 
 #[test]
@@ -203,7 +209,10 @@ fn presentation_resource_is_affine_and_roundtrips_under_its_original_native_and_
         };
         assert_eq!(resource.body(), &body);
         assert!(resource.source.program_owner().same_program(&owner));
-        assert_eq!(resource.layout().inputs()[0].parameter(), Some("channel"));
+        assert_eq!(
+            resource.layout().factory().unwrap().inputs()[0].parameter(),
+            Some("channel")
+        );
     }
 }
 
@@ -239,16 +248,17 @@ fn presentation_resource_rejects_foreign_lease_and_forged_source_body_and_resour
                     ]))
                 }
                 2 => {
-                    resource.call = Arc::new(
-                        RuntimePresentationFactoryCall::try_new(
-                            PresentationCallableId::Image,
-                            layout().inputs().into(),
-                            BOOL,
-                            body_type(),
-                            RuntimeSchemaLimits::engine_default(),
-                        )
-                        .unwrap(),
-                    )
+                    resource.layout =
+                        crate::presentation::RuntimePresentationResourceLayout::Factory(Arc::new(
+                            RuntimePresentationFactoryCall::try_new(
+                                PresentationCallableId::Image,
+                                layout().inputs().into(),
+                                BOOL,
+                                body_type(),
+                                RuntimeSchemaLimits::engine_default(),
+                            )
+                            .unwrap(),
+                        ))
                 }
                 3 => {
                     let changed = Box::new([PresentationArgumentKey::try_new(
@@ -256,16 +266,17 @@ fn presentation_resource_rejects_foreign_lease_and_forged_source_body_and_resour
                         Some("other".into()),
                     )
                     .unwrap()]);
-                    resource.call = Arc::new(
-                        RuntimePresentationFactoryCall::try_new(
-                            PresentationCallableId::Image,
-                            changed,
-                            RESOURCE,
-                            body_type(),
-                            RuntimeSchemaLimits::engine_default(),
-                        )
-                        .unwrap(),
-                    );
+                    resource.layout =
+                        crate::presentation::RuntimePresentationResourceLayout::Factory(Arc::new(
+                            RuntimePresentationFactoryCall::try_new(
+                                PresentationCallableId::Image,
+                                changed,
+                                RESOURCE,
+                                body_type(),
+                                RuntimeSchemaLimits::engine_default(),
+                            )
+                            .unwrap(),
+                        ));
                 }
                 _ => unreachable!(),
             }
@@ -326,7 +337,7 @@ fn presentation_resource_preflights_complete_capture_and_keeps_resource_failure_
             let error = admission
                 .construct_presentation_resource(
                     source.clone(),
-                    layout(),
+                    crate::presentation::RuntimePresentationResourceLayout::Factory(layout()),
                     None,
                     RuntimePayload(RuntimeValue::Tuple(vec![RuntimeValue::Bool(true)])),
                 )

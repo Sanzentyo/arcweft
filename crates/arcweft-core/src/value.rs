@@ -747,6 +747,8 @@ pub enum RuntimeCallTarget {
     PresentationSlot(crate::presentation::RuntimePresentationSlotCall),
     /// Stateful construction owned by the execution's presentation bank.
     PresentationFactory(Arc<crate::presentation::RuntimePresentationFactoryCall>),
+    /// Retains a View declaration and its supplied values without mounting it.
+    PresentationView(Arc<crate::presentation::RuntimePresentationViewCall>),
 }
 
 impl RuntimeCallTarget {
@@ -771,15 +773,16 @@ impl RuntimeCallTarget {
             Self::Callable(_)
             | Self::External(_)
             | Self::PresentationSlot(_)
-            | Self::PresentationFactory(_) => None,
+            | Self::PresentationFactory(_)
+            | Self::PresentationView(_) => None,
         }
     }
 
     /// Whether execution must borrow the actual presentation custody owner.
     /// Inert slot addresses do not acquire this execution requirement.
-    pub const fn requires_presentation_bank(&self) -> bool {
+    pub const fn requires_presentation_owner(&self) -> bool {
         match self {
-            Self::PresentationFactory(_) => true,
+            Self::PresentationFactory(_) | Self::PresentationView(_) => true,
             Self::PresentationSlot(call) => !call.is_reference(),
             Self::Intrinsic(_) | Self::Callable(_) | Self::External(_) => false,
         }
@@ -799,6 +802,7 @@ impl RuntimeCallTarget {
                 }
             },
             Self::PresentationFactory(_) => "core.presentation.factory",
+            Self::PresentationView(_) => "core.presentation.view_value",
         }
     }
 
@@ -807,7 +811,10 @@ impl RuntimeCallTarget {
         match self {
             Self::Callable(identity) => Some(identity),
             Self::External(callable) => Some(callable.identity()),
-            Self::Intrinsic(_) | Self::PresentationSlot(_) | Self::PresentationFactory(_) => None,
+            Self::Intrinsic(_)
+            | Self::PresentationSlot(_)
+            | Self::PresentationFactory(_)
+            | Self::PresentationView(_) => None,
         }
     }
 }

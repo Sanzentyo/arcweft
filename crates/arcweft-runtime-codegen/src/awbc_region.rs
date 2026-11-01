@@ -144,7 +144,7 @@ fn eligible_function(
                     .intrinsics
                     .get(intrinsic.index())
                     .ok_or(CompiledFallbackReason::ArtifactRejected)?;
-                if call.identity.requires_presentation_bank() {
+                if call.identity.requires_presentation_owner() {
                     // This region has no presentation owner to lend to the VM.
                     // Keep the call at its owning Product execution boundary.
                     return Err(CompiledFallbackReason::UnsupportedOpcode(

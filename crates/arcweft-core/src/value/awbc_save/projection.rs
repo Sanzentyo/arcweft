@@ -80,7 +80,7 @@ impl AwbcRuntimeValueSnapshot {
                 Self::PresentationResource(Box::new(
                     crate::presentation::RuntimePresentationResourceSnapshot {
                         original_executable: value.original_executable(),
-                        call: std::sync::Arc::clone(&value.call),
+                        layout: value.layout.clone(),
                         binding: value.binding.clone(),
                         body: Box::new(Self::from_admitted_view(value.body().view(), Some(owner))?),
                     },

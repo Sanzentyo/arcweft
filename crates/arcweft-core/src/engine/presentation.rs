@@ -278,6 +278,34 @@ impl Engine {
         Ok((owner, scope))
     }
 
+    pub(super) fn evaluate_presentation_view(
+        &mut self,
+        call: &Arc<crate::presentation::RuntimePresentationViewCall>,
+        values: Vec<RuntimeValue>,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        self.presentation_context_artifact()?;
+        let error = |source| RuntimeEvalError::NativeWorkAdmission {
+            source: Box::new(source),
+        };
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            self.fiber.frame.program.clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        self.admit_live_retained_values(&mut admission)
+            .map_err(error)?;
+        let binding = self.fiber.frame.env.function_instantiation_lease().cloned();
+        let value = admission
+            .construct_native_presentation_view(
+                Arc::clone(&self.plan),
+                Arc::clone(call),
+                binding,
+                RuntimePayload::new(RuntimeValue::Tuple(values)),
+            )
+            .map_err(error)?;
+        admission.finish_presentation_custody().map_err(error)?;
+        Ok(value)
+    }
+
     pub(super) fn evaluate_presentation_factory(
         &mut self,
         call: &Arc<crate::presentation::RuntimePresentationFactoryCall>,

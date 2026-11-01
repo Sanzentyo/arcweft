@@ -44,6 +44,40 @@ impl Engine {
         {
             return self.evaluate_presentation_slot_removal(call, args, result_type, pure_backend);
         }
+        if let RuntimeCallTarget::PresentationView(call) = callee {
+            let authority = crate::plan::PlanValueAuthority::Inventory(&self.plan.inventory);
+            let error = |cause: &dyn std::fmt::Display| RuntimeEvalError::UnsupportedPure {
+                name: callee.as_label().into(),
+                reason: cause.to_string(),
+            };
+            call.validate_plan_call(
+                authority,
+                args.len(),
+                |index| {
+                    args.get(index).and_then(|argument| {
+                        authority.get(argument.value().ty()).map(|row| {
+                            (
+                                argument.abi_position(),
+                                argument.mode(),
+                                row.semantic_identity(),
+                            )
+                        })
+                    })
+                },
+                self.external_call_semantic_type(callee, result_type)?,
+            )
+            .map_err(|cause| error(&cause))?;
+            self.presentation_context_artifact()
+                .map_err(|cause| error(&cause))?;
+            let (values, types) = self.evaluate_external_call_args(callee, args, pure_backend)?;
+            call.validate_input_types(
+                crate::program_types::RuntimeProgramTypes::Plan(&self.plan),
+                types.len(),
+                |index| types.get(index).copied(),
+            )
+            .map_err(|cause| error(&cause))?;
+            return self.evaluate_presentation_view(call, values);
+        }
         if let RuntimeCallTarget::PresentationFactory(call) = callee {
             let authority = crate::plan::PlanValueAuthority::Inventory(&self.plan.inventory);
             call.validate_plan_call(

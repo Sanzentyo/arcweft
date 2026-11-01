@@ -405,10 +405,19 @@ impl ValueBudget {
             }
             RuntimeValueView::Opaque(value) => self.string(value.producer().as_str())?,
             RuntimeValueView::PresentationResource(value) => {
-                self.collection(value.layout().inputs().len())?;
-                for input in value.layout().inputs() {
-                    if let Some(parameter) = input.parameter() {
-                        self.string(parameter)?;
+                let layout = value.layout();
+                self.collection(layout.input_count())?;
+                match layout {
+                    crate::presentation::RuntimePresentationResourceLayoutRef::Factory(call) => {
+                        for input in call.inputs() {
+                            if let Some(parameter) = input.parameter() {
+                                self.string(parameter)?;
+                            }
+                        }
+                    }
+                    crate::presentation::RuntimePresentationResourceLayoutRef::View(call) => {
+                        self.collection(call.parameters() as usize)?;
+                        self.string(call.view().as_str())?
                     }
                 }
             }
