@@ -551,7 +551,7 @@ pub fn step_with_host(
     options: VmStepOptions,
     host: &mut impl VmHost,
 ) -> Result<VmStepOutput, VmError> {
-    step_with_host_context_optional(program, fiber, options, None, None, host)
+    step_with_host_context_optional(program, fiber, options, None, None, None, host)
 }
 
 /// Executes a bounded AWBC slice with the exact artifact context used for
@@ -563,7 +563,31 @@ pub fn step_with_host_context(
     context: &VmExecutionContext,
     host: &mut impl VmHost,
 ) -> Result<VmStepOutput, VmError> {
-    step_with_host_context_optional(program, fiber, options, Some(context), None, host)
+    step_with_host_context_optional(program, fiber, options, Some(context), None, None, host)
+}
+
+/// Executes only the current function's slice. A call, tail transfer, callback,
+/// or return into another function retains its exact frame and cursor, then
+/// exits as [`VmExit::Running`] before executing that function's first operation.
+/// The caller can dispatch its new owner without lending capabilities to an
+/// unselected callee. The ordinary instruction budget and batching are retained.
+pub fn step_function_with_host_context(
+    program: &AwbcProgram,
+    fiber: &mut FiberState,
+    options: VmStepOptions,
+    context: &VmExecutionContext,
+    host: &mut impl VmHost,
+) -> Result<VmStepOutput, VmError> {
+    let function = fiber.cursor.function;
+    step_with_host_context_optional(
+        program,
+        fiber,
+        options,
+        Some(context),
+        None,
+        Some(function),
+        host,
+    )
 }
 
 /// Borrows the Product execution's actual resource owner for this VM slice.
@@ -582,6 +606,7 @@ pub(crate) fn step_with_presentation(
         options,
         Some(context),
         Some(presentation),
+        None,
         host,
     )
 }
@@ -594,6 +619,7 @@ fn step_with_host_context_optional(
     presentation: Option<
         &mut Option<PresentationBanks<PresentationBody<crate::value::RuntimePayload>>>,
     >,
+    function_boundary: Option<AwbcFunctionId>,
     host: &mut impl VmHost,
 ) -> Result<VmStepOutput, VmError> {
     let mut execution = VmExecutionResources {
@@ -603,6 +629,9 @@ fn step_with_host_context_optional(
     let mut observations = Vec::new();
     let mut executed = 0_u64;
     while fiber.status == FiberStatus::Running && executed < options.max_instructions {
+        if function_boundary.is_some_and(|function| fiber.cursor.function != function) {
+            break;
+        }
         let budget_before = fiber.budget;
         if !fiber.consume_budget(1) {
             let safe_point = fiber.safe_point(None)?;

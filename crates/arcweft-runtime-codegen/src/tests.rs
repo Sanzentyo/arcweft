@@ -948,11 +948,113 @@ fn awbc_region_project_call_uses_the_exact_program_lease() {
     )
     .expect("compiled ProjectCall executes with its exact program owner");
 
-    assert_eq!(transition, CompiledTransition::Returned(None));
-    assert_eq!(
-        fiber.status,
-        arcweft_core::awbc::fiber::FiberStatus::Returned
+    assert_eq!(transition, CompiledTransition::Continue);
+    assert_eq!(fiber.cursor.function, AwbcFunctionId(1));
+    assert_eq!(fiber.cursor.block, AwbcBlockId(2));
+    assert_eq!(fiber.cursor.instruction_offset, 0);
+    assert_eq!(fiber.frames.len(), 2);
+    assert_eq!(fiber.budget.remaining, 9);
+    // Dispatch the callee separately, retaining the caller's real leased
+    // callable and return continuation across the compiled-region boundary.
+    let context = arcweft_core::awbc::vm::VmExecutionContext::for_program(
+        arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x91; 32]).unwrap(),
+        program.clone(),
     );
+    let output = arcweft_core::awbc::vm::step_with_host_context(
+        &program,
+        &mut fiber,
+        arcweft_core::awbc::vm::VmStepOptions {
+            max_instructions: 10,
+        },
+        &context,
+        &mut arcweft_core::awbc::vm::RejectingVmHost,
+    )
+    .expect("the owning VM resumes the exact callee and caller");
+    assert_eq!(output.exit, arcweft_core::awbc::vm::VmExit::Returned(None));
+    assert_eq!(output.executed, 3);
+    assert_eq!(fiber.budget.remaining, 6);
+}
+
+#[test]
+fn awbc_region_stops_before_a_static_callees_unsupported_instructions() {
+    for requested_budget in [0, 1, 10] {
+        let mut program = callable_project_call_program();
+        program.blocks[0].terminator = AwbcTerminator::CallFunction {
+            function: AwbcFunctionId(1),
+            args: vec![],
+            dst: Some(AwbcRegisterId(1)),
+            resume: AwbcResumePointId(0),
+        };
+        program.frame_layouts[0].slots.push(AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(0),
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        });
+        program.frame_layouts[1].slots.push(AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(0),
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        });
+        program.instructions.push(AwbcInstruction::CopyValue {
+            dst: AwbcRegisterId(1),
+            src: AwbcRegisterId(0),
+        });
+        program.blocks[2].instructions = AwbcTableRange::new(0, 2);
+        let program = admit(program);
+        let report = lower_awbc_regions(
+            &program,
+            &AwbcRegionLowerOptions {
+                generation: ProgramGenerationId(1),
+                program_digest: PROGRAM_DIGEST,
+                ..Default::default()
+            },
+        );
+        assert_eq!(report.regions.len(), 1);
+        assert_eq!(report.rejected.len(), 1);
+        assert_eq!(report.rejected[0].function, AwbcFunctionId(1));
+        assert_eq!(
+            report.rejected[0].reason,
+            CompiledFallbackReason::UnsupportedOpcode(AwbcOpcode::CopyValue)
+        );
+        let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 10).unwrap();
+        let transition = execute_compiled_region(
+            report.regions[0].as_ref(),
+            identity(),
+            &program,
+            &RuntimeFormatContext::default(),
+            &mut fiber,
+            requested_budget,
+        )
+        .expect("a compiled caller cannot execute an unselected callee");
+        assert_eq!(transition, CompiledTransition::Continue);
+        if requested_budget == 0 {
+            assert_eq!(fiber.cursor.function, AwbcFunctionId(0));
+            assert_eq!(fiber.frames.len(), 1);
+            assert_eq!(fiber.budget.remaining, 10);
+        } else {
+            assert_eq!(fiber.cursor.function, AwbcFunctionId(1));
+            assert_eq!(fiber.cursor.block, AwbcBlockId(2));
+            assert_eq!(fiber.cursor.instruction_offset, 0);
+            assert_eq!(fiber.frames.len(), 2);
+            assert_eq!(fiber.budget.remaining, 9);
+            assert!(
+                fiber
+                    .active_frame()
+                    .unwrap()
+                    .register(AwbcRegisterId(0))
+                    .is_err()
+            );
+            assert!(
+                fiber
+                    .active_frame()
+                    .unwrap()
+                    .register(AwbcRegisterId(1))
+                    .is_err()
+            );
+        }
+    }
 }
 
 #[test]

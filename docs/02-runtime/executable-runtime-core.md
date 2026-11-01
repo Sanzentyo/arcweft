@@ -1185,6 +1185,15 @@ catalog facts, together with the caller's selected formatter context. Region
 execution constructs its VM context from that same admitted owner. A raw code
 or type lease cannot replace it or authorize Source readmission.
 
+The safe Rust baseline executes within its selected function. A static call,
+project call, helper or callback activation, tail transfer, or return into a
+different function ends the slice before that function executes an operation.
+The original frame, inputs, return continuation, and cursor pass back to the
+dispatcher for selection of the destination's executor. The VM applies this
+boundary before charging the next operation; it retains the ordinary slice
+budget and batching. Selecting a caller therefore grants no execution capability
+to an unselected callee, including a callee that requires a presentation bank.
+
 `CompiledStepExit` mapping is:
 
 | Exit | Dispatcher action |

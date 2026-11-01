@@ -16,7 +16,7 @@ use arcweft_core::awbc::schema::{
     AwbcBlockId, AwbcDigest, AwbcFunctionId, AwbcOpcode, AwbcProgram, AwbcTerminator, AwbcTrapCode,
 };
 use arcweft_core::awbc::vm::{
-    RejectingVmHost, VmExecutionContext, VmExit, VmStepOptions, step_with_host_context,
+    RejectingVmHost, VmExecutionContext, VmExit, VmStepOptions, step_function_with_host_context,
 };
 use std::sync::Arc;
 
@@ -331,7 +331,7 @@ impl CompiledRegion for BaselineAwbcRegion {
                 };
             }
         };
-        match step_with_host_context(
+        match step_function_with_host_context(
             input.program,
             input.fiber,
             VmStepOptions {
