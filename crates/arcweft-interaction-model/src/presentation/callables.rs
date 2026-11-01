@@ -87,7 +87,7 @@ impl PresentationCallableId {
     }
 
     pub fn argument_role(self, name: &str) -> Option<PresentationArgumentRole> {
-        match self {
+        let role = match self {
             Self::View | Self::Menu | Self::Overlay => view_argument(name),
             Self::Mount => match view_argument(name)? {
                 PresentationArgumentRole::View => Some(PresentationArgumentRole::ViewValue),
@@ -99,6 +99,15 @@ impl PresentationCallableId {
             Self::Show => character_argument(name, true),
             Self::RefShow | Self::Hide => character_argument(name, false),
             Self::RefBackground | Self::ClearBackground => background_reference_argument(name),
+        }?;
+        // An inert address has no lifetime or occupant custody. Scope selection
+        // belongs to operations that register or remove the occupant instead.
+        if role == PresentationArgumentRole::Scope
+            && matches!(self.result(), PresentationCallableResult::SlotRef(_))
+        {
+            None
+        } else {
+            Some(role)
         }
     }
 

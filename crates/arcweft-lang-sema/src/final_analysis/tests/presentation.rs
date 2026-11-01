@@ -9,6 +9,44 @@ use crate::types::TypeKind;
 use arcweft_interaction_model::presentation::PresentationResourceKind;
 
 #[test]
+fn inert_slot_reference_calls_reject_scope_and_occupant_configuration() {
+    for call in ["ref.bg", "ref.show"] {
+        for name in ["scope", "fade", "look", "param.extra"] {
+            let character = if call == "ref.show" {
+                "@character.alice, "
+            } else {
+                ""
+            };
+            let expression = format!("{call}({character}{name} = 42i32)");
+            let source = format!("pub character alice {{}}\nfn address() {{ {expression} }}");
+            let world = fixture(&source, None);
+            let report = analyze(&world).unwrap_or_else(|error| panic!("{source}: {error:?}"));
+            let calls = report.calls().collect::<Vec<_>>();
+            let [(_, call)] = calls.as_slice() else {
+                panic!("one rejected address call: {source}")
+            };
+            assert!(call.selected_application().is_none(), "{source}");
+            let [diagnostic] = call.diagnostics() else {
+                panic!("one address argument diagnostic: {source}")
+            };
+            assert_eq!(
+                diagnostic.code(),
+                CallableDiagnosticCode::NoViableSignature,
+                "{source}"
+            );
+            assert_eq!(
+                &source[diagnostic
+                    .span()
+                    .expect("address call span")
+                    .range()
+                    .as_range()],
+                expression
+            );
+        }
+    }
+}
+
+#[test]
 fn generic_handle_methods_preserve_the_checked_receiver_and_selected_identity() {
     for (name, expected) in [
         ("show", PresentationHandleMethodId::Show),

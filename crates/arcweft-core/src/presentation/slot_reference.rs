@@ -13,7 +13,6 @@ pub enum RuntimePresentationSlotRefInput {
     Target,
     Slot,
     Character,
-    Scope,
 }
 
 impl RuntimePresentationSlotRefInput {
@@ -22,7 +21,6 @@ impl RuntimePresentationSlotRefInput {
             Self::Target => 0,
             Self::Slot => 1,
             Self::Character => 2,
-            Self::Scope => 3,
         }
     }
 
@@ -31,7 +29,6 @@ impl RuntimePresentationSlotRefInput {
             0 => Some(Self::Target),
             1 => Some(Self::Slot),
             2 => Some(Self::Character),
-            3 => Some(Self::Scope),
             _ => None,
         }
     }
@@ -45,19 +42,18 @@ impl TryFrom<PresentationArgumentRole> for RuntimePresentationSlotRefInput {
             PresentationArgumentRole::TargetEntity => Ok(Self::Target),
             PresentationArgumentRole::Slot => Ok(Self::Slot),
             PresentationArgumentRole::Character => Ok(Self::Character),
-            PresentationArgumentRole::Scope => Ok(Self::Scope),
             _ => Err(RuntimePresentationError::SlotReferenceRole { role }),
         }
     }
 }
 
 /// The role sequence is the exact compact call ABI, independent of the order
-/// in which the caller evaluates authored expressions. There are at most four
+/// in which the caller evaluates authored expressions. There are at most three
 /// unique roles, retained inline by both live construction and decoding.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RuntimePresentationSlotRefCall {
     resource: PresentationResourceKind,
-    inputs: [RuntimePresentationSlotRefInput; 4],
+    inputs: [RuntimePresentationSlotRefInput; 3],
     length: u8,
 }
 
@@ -66,7 +62,7 @@ impl RuntimePresentationSlotRefCall {
         resource: PresentationResourceKind,
         inputs: impl IntoIterator<Item = RuntimePresentationSlotRefInput>,
     ) -> Result<Self, RuntimePresentationError> {
-        let mut roles = [RuntimePresentationSlotRefInput::Target; 4];
+        let mut roles = [RuntimePresentationSlotRefInput::Target; 3];
         let mut length = 0;
         let mut seen = 0_u8;
         for role in inputs {
@@ -184,8 +180,6 @@ impl RuntimePresentationSlotRefCall {
                     {
                         character = Some(public_id.as_str());
                     }
-                    // Scope is an execution-owned identity, not an arbitrary
-                    // entity/string granting access to another lexical owner.
                     _ => return Err(invalid().into()),
                 }
             }
@@ -308,25 +302,25 @@ impl<'de> Deserialize<'de> for RuntimePresentationSlotRefCall {
         struct Wire {
             resource: PresentationResourceKind,
             #[serde(deserialize_with = "bounded_inputs")]
-            inputs: ([RuntimePresentationSlotRefInput; 4], usize),
+            inputs: ([RuntimePresentationSlotRefInput; 3], usize),
         }
 
         fn bounded_inputs<'de, D: Deserializer<'de>>(
             deserializer: D,
-        ) -> Result<([RuntimePresentationSlotRefInput; 4], usize), D::Error> {
+        ) -> Result<([RuntimePresentationSlotRefInput; 3], usize), D::Error> {
             struct Inputs;
             impl<'de> de::Visitor<'de> for Inputs {
-                type Value = ([RuntimePresentationSlotRefInput; 4], usize);
+                type Value = ([RuntimePresentationSlotRefInput; 3], usize);
 
                 fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    formatter.write_str("at most four slot reference argument roles")
+                    formatter.write_str("at most three slot reference argument roles")
                 }
 
                 fn visit_seq<A: de::SeqAccess<'de>>(
                     self,
                     mut sequence: A,
                 ) -> Result<Self::Value, A::Error> {
-                    let mut roles = [RuntimePresentationSlotRefInput::Target; 4];
+                    let mut roles = [RuntimePresentationSlotRefInput::Target; 3];
                     let mut length = 0;
                     while let Some(role) = sequence.next_element()? {
                         if length == roles.len() {
@@ -409,10 +403,14 @@ mod tests {
         for json in [
             r#"{"resource":"background","inputs":["target","target"]}"#,
             r#"{"resource":"background","inputs":["character"]}"#,
-            r#"{"resource":"character","inputs":["target","slot","character","scope","target"]}"#,
+            r#"{"resource":"character","inputs":["target","slot","character","target"]}"#,
+            r#"{"resource":"background","inputs":["scope"]}"#,
             r#"{"resource":"background","inputs":[],"other":true}"#,
         ] {
             assert!(serde_json::from_str::<RuntimePresentationSlotRefCall>(json).is_err());
         }
+        assert!(
+            RuntimePresentationSlotRefInput::try_from(PresentationArgumentRole::Scope).is_err()
+        );
     }
 }

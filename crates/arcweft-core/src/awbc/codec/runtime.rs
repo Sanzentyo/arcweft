@@ -95,7 +95,7 @@ impl Wire for RuntimeCallTarget {
                 let inputs = reader
                     .read_table::<crate::presentation::RuntimePresentationSlotRefInput>(
                         "slot reference inputs",
-                        4,
+                        3,
                     )?;
                 crate::presentation::RuntimePresentationSlotRefCall::try_new(resource, inputs)
                     .map(Self::PresentationSlotRef)

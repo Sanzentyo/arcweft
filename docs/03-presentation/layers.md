@@ -257,6 +257,9 @@ is rejected during decoding, before executable custody admission. A valid addres
 still grants no authority over an occupant: Core checks its original token,
 bank, program, and scope separately. Retained slot references and registries use
 the same address rather than reconstructing a second target/slot key.
+The read-only `ref.bg` and `ref.show` calls select `target` and `slot` (and the
+character used for `ref.show`'s default slot). They accept no `scope` or occupant
+configuration. A scope selects custody of an occupant, not an address component.
 
 Sans-I/O Core owns runtime token issuance, scope custody, and release. The
 shared resource kinds and host-neutral image values belong to

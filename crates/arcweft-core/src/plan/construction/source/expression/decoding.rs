@@ -711,10 +711,10 @@ impl Decoder<'_, '_> {
                 let resource = arcweft_interaction_model::presentation::PresentationResourceKind::from_semantic_tag(r.byte()?)
                     .ok_or_else(|| r.invalid("slot reference resource"))?;
                 let count = r.count()?;
-                if count > 4 {
+                if count > 3 {
                     return Err(r.invalid("slot reference input count"));
                 }
-                let mut roles = [crate::presentation::RuntimePresentationSlotRefInput::Target; 4];
+                let mut roles = [crate::presentation::RuntimePresentationSlotRefInput::Target; 3];
                 for role in &mut roles[..count] {
                     *role =
                         crate::presentation::RuntimePresentationSlotRefInput::from_semantic_tag(

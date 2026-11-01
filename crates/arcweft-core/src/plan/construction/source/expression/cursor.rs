@@ -454,11 +454,11 @@ impl<'a> Cursor<'a> {
                 let resource = arcweft_interaction_model::presentation::PresentationResourceKind::from_semantic_tag(self.byte()?)
                     .ok_or_else(|| self.invalid("slot reference resource"))?;
                 let count = self.count()?;
-                if count > 4 {
+                if count > 3 {
                     return Err(self.invalid("slot reference input count"));
                 }
                 counts.array(count, 0)?;
-                let mut roles = [crate::presentation::RuntimePresentationSlotRefInput::Target; 4];
+                let mut roles = [crate::presentation::RuntimePresentationSlotRefInput::Target; 3];
                 for role in &mut roles[..count] {
                     *role =
                         crate::presentation::RuntimePresentationSlotRefInput::from_semantic_tag(

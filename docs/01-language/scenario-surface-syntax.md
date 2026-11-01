@@ -671,6 +671,9 @@ let alice_reflection = show(@character.alice, .sad, slot = @slot.character.alice
 
 The `ref` forms are read-only. They do not create a new visible object and they
 do not extend the current handle lifetime.
+They accept only `target` and `slot`, plus the required character argument of
+`ref.show`. They do not accept `scope` or occupant configuration such as `fade`
+or `look`: an address does not select the lifetime owner of an occupant.
 
 The syntax checker treats these as presentation-aware calls, not legacy
 scenario commands. It validates target and slot families and warns when multiple

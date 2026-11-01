@@ -1891,19 +1891,19 @@ pub(in crate::callable) fn presentation_schema(
             character_parameters(id, character, true),
             open_named_supply(),
         ),
-        PresentationCallableId::RefShow | PresentationCallableId::Hide => (
+        PresentationCallableId::RefShow => (character_parameters(id, character, false), closed()),
+        PresentationCallableId::Hide => (
             character_parameters(id, character, false),
             open_named_supply(),
         ),
-        PresentationCallableId::RefBackground | PresentationCallableId::ClearBackground => {
+        PresentationCallableId::RefBackground => (background_reference_parameters(id), closed()),
+        PresentationCallableId::ClearBackground => {
             (background_reference_parameters(id), open_named_supply())
         }
     };
     let reserved_open_names = match (id, character.is_some()) {
         (PresentationCallableId::Show, true) => Vec::new(),
-        (PresentationCallableId::Show, false)
-        | (PresentationCallableId::RefShow, _)
-        | (PresentationCallableId::Hide, _) => {
+        (PresentationCallableId::Show, false) | (PresentationCallableId::Hide, _) => {
             vec![CallableName::try_new("look").expect("presentation reserved name is valid")]
         }
         _ => Vec::new(),
@@ -2020,17 +2020,22 @@ fn character_parameters(
     parameters.extend([
         optional_presentation_named(id, 1 + offset, "target"),
         optional_presentation_named(id, 2 + offset, "slot"),
-        optional_presentation_named(id, 3 + offset, "scope"),
     ]);
+    if id.argument_role("scope").is_some() {
+        parameters.push(optional_presentation_named(id, 3 + offset, "scope"));
+    }
     parameters
 }
 
 fn background_reference_parameters(id: PresentationCallableId) -> Vec<CallableParameter> {
-    vec![
+    let mut parameters = vec![
         optional_presentation_named(id, 0, "target"),
         optional_presentation_named(id, 1, "slot"),
-        optional_presentation_named(id, 2, "scope"),
-    ]
+    ];
+    if id.argument_role("scope").is_some() {
+        parameters.push(optional_presentation_named(id, 2, "scope"));
+    }
+    parameters
 }
 
 fn probe_schema(kind: EntityKind, validator: CallableValidator) -> CallableSignatureSchema {
@@ -2497,6 +2502,37 @@ mod tests {
             let removed = presentation_schema(remove, None, None).expect("slot removal schema");
             let expected = TypeKind::Option(Box::new(TypeKind::PresentationResource(surface)));
             assert_eq!(removed.value_type(), Some(&expected));
+        }
+    }
+
+    #[test]
+    fn presentation_scope_selection_belongs_to_occupants_not_addresses() {
+        use arcweft_interaction_model::presentation::PresentationCallableResult;
+        for id in PresentationCallableId::ALL {
+            let roles = presentation_schema(id, None, None).unwrap();
+            let scope = roles
+                .groups()
+                .iter()
+                .flat_map(|group| group.parameters())
+                .any(|parameter| {
+                    parameter.consumer()
+                        == &CallableParameterConsumer::Presentation(PresentationArgumentRole::Scope)
+                });
+            assert_eq!(scope, id.argument_role("scope").is_some(), "{id:?}");
+            if matches!(id.result(), PresentationCallableResult::SlotRef(_)) {
+                assert!(!scope, "{id:?}");
+            }
+        }
+        for id in [
+            PresentationCallableId::Background,
+            PresentationCallableId::Show,
+            PresentationCallableId::ClearBackground,
+            PresentationCallableId::Hide,
+        ] {
+            assert_eq!(
+                id.argument_role("scope"),
+                Some(PresentationArgumentRole::Scope)
+            );
         }
     }
 

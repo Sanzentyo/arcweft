@@ -22,7 +22,7 @@ fn identity<T>(value: T) -> T { value }
 fn duplicate<T>(value: Address<T>) -> (Address<T>, Address<T>) { (value, value) }
 fn score_target(value: Ref<Target>) -> i32 { match value { @target.scene => 1i32, _ => 0i32 } }
 fn score_slot(value: Ref<Slot>) -> i32 { match value { @slot.background.far => 1i32, _ => 0i32 } }
-pub fn root() -> (Address<BackgroundSurface>, Address<BackgroundSurface>, Address<BackgroundSurface>, Address<CharacterSurface>, Address<CharacterSurface>, Address<CharacterSurface>, i32) {
+pub fn root() -> (Address<BackgroundSurface>, Address<BackgroundSurface>, Address<BackgroundSurface>, Address<CharacterSurface>, Address<CharacterSurface>, Address<CharacterSurface>, Address<BackgroundSurface>, Address<BackgroundSurface>, Address<CharacterSurface>, Address<CharacterSurface>, i32) {
     let (first, second) = duplicate(ref.bg());
     let first = identity::<Address<BackgroundSurface>>(first);
     let target = identity(@target.scene);
@@ -31,7 +31,11 @@ pub fn root() -> (Address<BackgroundSurface>, Address<BackgroundSurface>, Addres
     let far = ref.bg(slot = scope { order = order * 10i32 + 1i32; slot }, target = scope { order = order * 10i32 + 2i32; target });
     let (alice, again) = duplicate(ref.show(@character.alice));
     let shadow = ref.show(@character.alice, slot = @slot.character.alice.shadow, target = @target.scene);
-    (first, second, far, alice, again, shadow, order + score_target(target) + score_slot(slot) - 2i32)
+    let other_background = ref.bg(target = @target.reflection);
+    let near = ref.bg(slot = @slot.background.near);
+    let other_alice = ref.show(@character.alice, target = @target.reflection);
+    let near_alice = ref.show(@character.alice, slot = @slot.character.alice.near);
+    (first, second, far, alice, again, shadow, other_background, near, other_alice, near_alice, order + score_target(target) + score_slot(slot) - 2i32)
 }
 flow main() -> String { return "unused" }
 "#).expect("Source slot-reference factories compile");
@@ -170,34 +174,63 @@ flow main() -> String { return "unused" }
     ] {
         assert!(value.ownership().permits_copy());
         let RuntimeValue::Tuple(mut values) = value else {
-            panic!("six actual address values and the source-order observation")
+            panic!("ten actual address values and the source-order observation")
         };
-        assert_eq!(values.len(), 7);
+        assert_eq!(values.len(), 11);
         assert_eq!(values.pop(), Some(RuntimeValue::i32(12)));
         let expected = [
             (
                 PresentationResourceKind::Background,
+                "target.scene",
                 "slot.background.default",
             ),
             (
                 PresentationResourceKind::Background,
+                "target.scene",
                 "slot.background.default",
             ),
-            (PresentationResourceKind::Background, "slot.background.far"),
+            (
+                PresentationResourceKind::Background,
+                "target.scene",
+                "slot.background.far",
+            ),
             (
                 PresentationResourceKind::Character,
+                "target.scene",
                 "slot.character.alice.default",
             ),
             (
                 PresentationResourceKind::Character,
+                "target.scene",
                 "slot.character.alice.default",
             ),
             (
                 PresentationResourceKind::Character,
+                "target.scene",
                 "slot.character.alice.shadow",
             ),
+            (
+                PresentationResourceKind::Background,
+                "target.reflection",
+                "slot.background.default",
+            ),
+            (
+                PresentationResourceKind::Background,
+                "target.scene",
+                "slot.background.near",
+            ),
+            (
+                PresentationResourceKind::Character,
+                "target.reflection",
+                "slot.character.alice.default",
+            ),
+            (
+                PresentationResourceKind::Character,
+                "target.scene",
+                "slot.character.alice.near",
+            ),
         ];
-        for (value, (resource, slot)) in values.iter().zip(expected) {
+        for (value, (resource, target, slot)) in values.iter().zip(expected) {
             let ty = TypeKind::SlotRef(Box::new(TypeKind::PresentationResource(resource)));
             let ty = RuntimeOpaqueTypeOwner::presentation_slot_ref(
                 resource,
@@ -211,7 +244,7 @@ flow main() -> String { return "unused" }
                 .read_presentation_slot_ref(&ty, RuntimeBorrowedValue::from(value))
                 .unwrap();
             assert_eq!(address.resource(), resource);
-            assert_eq!(address.target().as_str(), "target.scene");
+            assert_eq!(address.target().as_str(), target);
             assert_eq!(address.slot().as_str(), slot);
         }
     }

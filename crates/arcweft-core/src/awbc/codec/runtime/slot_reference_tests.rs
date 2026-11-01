@@ -29,7 +29,7 @@ fn slot_reference_wire_preserves_the_selected_role_abi_for_every_resource() {
 #[test]
 fn slot_reference_wire_rejects_overlong_metadata_before_reading_its_members() {
     let resource = PresentationResourceKind::Background.semantic_tag();
-    let bytes = [3, resource, 5];
+    let bytes = [3, resource, 4];
     let budget = AwbcDecodeBudget::default();
     let mut reader = Reader::new(&bytes, &budget);
     assert!(matches!(
@@ -42,6 +42,7 @@ fn slot_reference_wire_rejects_overlong_metadata_before_reading_its_members() {
     for bytes in [
         vec![3, 255, 0],
         vec![3, resource, 1, 255],
+        vec![3, resource, 1, 3],
         vec![3, resource, 2, 0, 0],
         vec![
             3,
