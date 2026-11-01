@@ -17,7 +17,8 @@ pub use arguments::{
     PresentationArgumentKey, PresentationArgumentKeyError, PresentationArgumentRole,
 };
 pub use callables::{
-    PresentationCallableId, PresentationCallableResult, PresentationHandleMethodId,
+    PresentationCallableId, PresentationCallableOperation, PresentationCallableResult,
+    PresentationFactoryPlacement, PresentationHandleMethodId,
 };
 
 pub use image::{

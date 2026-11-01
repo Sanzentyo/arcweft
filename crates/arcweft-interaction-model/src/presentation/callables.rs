@@ -28,24 +28,77 @@ pub enum PresentationCallableResult {
     Removed(PresentationResourceKind),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PresentationFactoryPlacement {
+    Independent,
+    Slot,
+}
+
+/// Execution operation and result ownership come from this single catalogue.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PresentationCallableOperation {
+    Construct {
+        resource: PresentationResourceKind,
+        placement: PresentationFactoryPlacement,
+    },
+    Reference(PresentationResourceKind),
+    Remove(PresentationResourceKind),
+}
+
 impl PresentationCallableId {
     /// Resource family and ownership are selected together, before execution.
     #[must_use]
     pub const fn result(self) -> PresentationCallableResult {
-        use PresentationCallableResult::{Handle, Removed, SlotRef};
+        match self.operation() {
+            PresentationCallableOperation::Construct { resource, .. } => {
+                PresentationCallableResult::Handle(resource)
+            }
+            PresentationCallableOperation::Reference(resource) => {
+                PresentationCallableResult::SlotRef(resource)
+            }
+            PresentationCallableOperation::Remove(resource) => {
+                PresentationCallableResult::Removed(resource)
+            }
+        }
+    }
+
+    pub const fn operation(self) -> PresentationCallableOperation {
+        use PresentationCallableOperation::{Construct, Reference, Remove};
+        use PresentationFactoryPlacement::{Independent, Slot};
         use PresentationResourceKind as Resource;
         match self {
-            Self::View | Self::Mount => Handle(Resource::View),
-            Self::Menu => Handle(Resource::Menu),
-            Self::Overlay => Handle(Resource::Overlay),
-            Self::Background => Handle(Resource::Background),
-            Self::Image => Handle(Resource::Image),
-            Self::PlayerViewport => Handle(Resource::Viewport),
-            Self::Show => Handle(Resource::Character),
-            Self::RefBackground => SlotRef(Resource::Background),
-            Self::RefShow => SlotRef(Resource::Character),
-            Self::ClearBackground => Removed(Resource::Background),
-            Self::Hide => Removed(Resource::Character),
+            Self::View | Self::Mount => Construct {
+                resource: Resource::View,
+                placement: Independent,
+            },
+            Self::Menu => Construct {
+                resource: Resource::Menu,
+                placement: Independent,
+            },
+            Self::Overlay => Construct {
+                resource: Resource::Overlay,
+                placement: Independent,
+            },
+            Self::Background => Construct {
+                resource: Resource::Background,
+                placement: Slot,
+            },
+            Self::Image => Construct {
+                resource: Resource::Image,
+                placement: Independent,
+            },
+            Self::PlayerViewport => Construct {
+                resource: Resource::Viewport,
+                placement: Independent,
+            },
+            Self::Show => Construct {
+                resource: Resource::Character,
+                placement: Slot,
+            },
+            Self::RefBackground => Reference(Resource::Background),
+            Self::RefShow => Reference(Resource::Character),
+            Self::ClearBackground => Remove(Resource::Background),
+            Self::Hide => Remove(Resource::Character),
         }
     }
     pub const ALL: [Self; 12] = [
@@ -214,6 +267,12 @@ impl PresentationCallableId {
             Self::Hide => 10,
             Self::Mount => 11,
         }
+    }
+
+    pub fn from_semantic_tag(tag: u8) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|callable| callable.semantic_tag() == tag)
     }
 }
 

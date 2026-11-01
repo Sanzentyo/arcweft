@@ -189,6 +189,92 @@ pub(super) struct Reader<'a> {
 }
 
 impl<'a> Reader<'a> {
+    /// Precharges the complete borrowed factory metadata before allocating a
+    /// key vector or copying its first name. Rereading spends no new quota.
+    pub(super) fn read_presentation_factory(
+        &mut self,
+    ) -> Result<crate::presentation::RuntimePresentationFactoryCall, AwbcCodecError> {
+        use arcweft_interaction_model::presentation::{
+            PresentationArgumentKey, PresentationArgumentRole, PresentationCallableId,
+            PresentationCallableResult,
+        };
+        let offset = self.offset();
+        let invalid = |message: &str| AwbcCodecError::InvalidMetadata {
+            kind: "presentation factory ABI",
+            message: message.to_owned(),
+            offset,
+        };
+        let callable = PresentationCallableId::from_semantic_tag(u8::read_wire(self)?)
+            .ok_or_else(|| invalid("unknown factory"))?;
+        if !matches!(callable.result(), PresentationCallableResult::Handle(_)) {
+            return Err(invalid("call does not construct a handle"));
+        }
+        let resource_type =
+            crate::pattern::RuntimeSemanticTypeId::from_bytes(<[u8; 32]>::read_wire(self)?);
+        let body_type =
+            crate::pattern::RuntimeSemanticTypeId::from_bytes(<[u8; 32]>::read_wire(self)?);
+        let count = self.read_len()?;
+        Self::check_limit(
+            "presentation factory inputs",
+            count,
+            self.budget.collection_items,
+        )?;
+        self.add_collection_items(count)?;
+        count
+            .checked_mul(size_of::<PresentationArgumentKey>())
+            .filter(|bytes| isize::try_from(*bytes).is_ok())
+            .ok_or(AwbcCodecError::LengthOverflow)?;
+        let start = self.offset();
+        self.read_nested(|reader| {
+            let mut fixed = 0_u64;
+            for _ in 0..count {
+                let role = PresentationArgumentRole::from_semantic_tag(u8::read_wire(reader)?)
+                    .ok_or_else(|| invalid("unknown input role"))?;
+                if !callable.accepts_argument_role(role) {
+                    return Err(invalid("role is outside the selected factory"));
+                }
+                if role.requires_parameter() {
+                    let parameter = reader.read_str()?;
+                    PresentationArgumentKey::validate_parameter(parameter)
+                        .map_err(|_| invalid("invalid metadata key"))?;
+                } else {
+                    let bit = 1_u64 << role.semantic_tag();
+                    if fixed & bit != 0 {
+                        return Err(invalid("duplicate fixed destination"));
+                    }
+                    fixed |= bit;
+                }
+            }
+            Ok(())
+        })?;
+        let end = self.offset();
+        self.offset = start;
+        let mut keys = Vec::with_capacity(count);
+        for _ in 0..count {
+            let role = PresentationArgumentRole::from_semantic_tag(u8::read_wire(self)?)
+                .expect("preflighted role");
+            let parameter = if role.requires_parameter() {
+                let length = self.read_len()?;
+                Some(self.read_utf8(length)?.to_owned())
+            } else {
+                None
+            };
+            keys.push(
+                PresentationArgumentKey::try_new(role, parameter)
+                    .map_err(|_| invalid("invalid metadata key"))?,
+            );
+        }
+        debug_assert_eq!(self.offset(), end);
+        crate::presentation::RuntimePresentationFactoryCall::try_new(
+            callable,
+            keys.into_boxed_slice(),
+            resource_type,
+            body_type,
+            self.budget.original_source.values,
+        )
+        .map_err(|cause| invalid(&cause.to_string()))
+    }
+
     pub(super) const fn new(bytes: &'a [u8], budget: &AwbcDecodeBudget) -> Self {
         Self {
             bytes,

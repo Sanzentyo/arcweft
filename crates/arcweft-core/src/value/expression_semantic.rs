@@ -112,6 +112,20 @@ impl RuntimeExpr {
                             encoder.tag(input.semantic_tag());
                         }
                     }
+                    RuntimeCallTarget::PresentationFactory(call) => {
+                        encoder.tag(4);
+                        encoder.tag(call.callable().semantic_tag());
+                        encoder.digest(call.resource_type().as_bytes());
+                        encoder.digest(call.body_type().as_bytes());
+                        encoder.count(call.inputs().len());
+                        for key in call.inputs() {
+                            encoder.enter_element();
+                            encoder.tag(key.role().semantic_tag());
+                            if let Some(parameter) = key.parameter() {
+                                encoder.string(parameter);
+                            }
+                        }
+                    }
                 }
                 context.write_call_arguments(encoder, args)?;
             }

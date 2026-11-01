@@ -2140,6 +2140,12 @@ impl<'hir> FinalExprLowerer<'hir> {
                 callee: RuntimeCallTarget::PresentationSlotRef(*call),
                 args: arguments.into_boxed_slice(),
             }),
+            RuntimeResolvedCallDispatch::Static(
+                RuntimeResolvedStaticCallTarget::PresentationFactory { call, .. },
+            ) => Ok(RuntimeExprSeedKind::Call {
+                callee: RuntimeCallTarget::PresentationFactory(Arc::clone(call)),
+                args: arguments.into_boxed_slice(),
+            }),
             RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Format(_)) => {
                 unreachable!("formatter is lowered before generic call operands")
             }

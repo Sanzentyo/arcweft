@@ -67,6 +67,20 @@ impl Wire for RuntimeCallTarget {
                 call.resource().semantic_tag().write_wire(writer)?;
                 writer.write_table(call.inputs())
             }
+            Self::PresentationFactory(call) => {
+                4_u8.write_wire(writer)?;
+                call.callable().semantic_tag().write_wire(writer)?;
+                call.resource_type().as_bytes().write_wire(writer)?;
+                call.body_type().as_bytes().write_wire(writer)?;
+                writer.write_len(call.inputs().len())?;
+                for key in call.inputs() {
+                    key.role().semantic_tag().write_wire(writer)?;
+                    if let Some(parameter) = key.parameter() {
+                        writer.write_str(parameter)?;
+                    }
+                }
+                Ok(())
+            }
         }
     }
 
@@ -85,6 +99,9 @@ impl Wire for RuntimeCallTarget {
             }
             1 => crate::entry::RuntimeCallableId::read_wire(reader).map(Self::Callable),
             2 => crate::value::RuntimeExternalCallable::read_wire(reader).map(Self::External),
+            4 => reader
+                .read_presentation_factory()
+                .map(|call| Self::PresentationFactory(std::sync::Arc::new(call))),
             3 => {
                 let resource = arcweft_interaction_model::presentation::PresentationResourceKind::from_semantic_tag(u8::read_wire(reader)?)
                     .ok_or_else(|| AwbcCodecError::InvalidMetadata {

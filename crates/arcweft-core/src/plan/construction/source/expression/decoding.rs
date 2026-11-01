@@ -707,6 +707,44 @@ impl Decoder<'_, '_> {
             1 => {
                 RuntimeCallTarget::Callable(crate::entry::RuntimeCallableId::try_new(r.string()?)?)
             }
+            4 => {
+                use arcweft_interaction_model::presentation::{
+                    PresentationArgumentKey, PresentationArgumentRole, PresentationCallableId,
+                };
+                let callable = PresentationCallableId::from_semantic_tag(r.byte()?)
+                    .ok_or_else(|| r.invalid("presentation factory"))?;
+                let resource_type = crate::pattern::RuntimeSemanticTypeId::from_bytes(
+                    r.slice(32)?.try_into().expect("semantic identity width"),
+                );
+                let body_type = crate::pattern::RuntimeSemanticTypeId::from_bytes(
+                    r.slice(32)?.try_into().expect("semantic identity width"),
+                );
+                let n = r.count()?;
+                let mut keys = Vec::with_capacity(n);
+                for _ in 0..n {
+                    let role = PresentationArgumentRole::from_semantic_tag(r.byte()?)
+                        .ok_or_else(|| r.invalid("presentation argument role"))?;
+                    let parameter = if role.requires_parameter() {
+                        Some(r.string()?.to_owned())
+                    } else {
+                        None
+                    };
+                    keys.push(
+                        PresentationArgumentKey::try_new(role, parameter)
+                            .map_err(|_| r.invalid("presentation argument key"))?,
+                    );
+                }
+                RuntimeCallTarget::PresentationFactory(std::sync::Arc::new(
+                    crate::presentation::RuntimePresentationFactoryCall::try_new(
+                        callable,
+                        keys.into_boxed_slice(),
+                        resource_type,
+                        body_type,
+                        crate::entry::RuntimeSchemaLimits::engine_default(),
+                    )
+                    .map_err(|_| r.invalid("presentation factory ABI"))?,
+                ))
+            }
             3 => {
                 let resource = arcweft_interaction_model::presentation::PresentationResourceKind::from_semantic_tag(r.byte()?)
                     .ok_or_else(|| r.invalid("slot reference resource"))?;

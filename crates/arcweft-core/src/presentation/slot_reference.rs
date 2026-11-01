@@ -135,82 +135,17 @@ impl RuntimePresentationSlotRefCall {
         owner: &crate::pattern::RuntimeOpaqueTypeOwner,
         values: &[crate::value::RuntimeValue],
     ) -> Result<crate::value::RuntimeValue, crate::value::AwbcRuntimeValueSnapshotError> {
-        use crate::value::{RuntimeEntityReference, RuntimeValue};
-        use arcweft_id::{DeclarationIdentityFamily, ProjectEntityReferenceFamily};
-
         let result = (|| {
             admission.status()?;
             if values.len() != self.inputs().len() {
                 return Err(RuntimePresentationError::SlotReferenceArguments.into());
             }
-            let mut target = None;
-            let mut slot = None;
-            let mut character = None;
-            for (&role, value) in self.inputs().iter().zip(values) {
-                let invalid = || RuntimePresentationError::SlotReferenceInput { role };
-                let RuntimeValue::EntityRef(reference) = value else {
-                    return Err(invalid().into());
-                };
-                let (family, public_id) = match reference {
-                    RuntimeEntityReference::PresentationAddress(identity) => {
-                        (identity.kind().family(), identity.public_id())
-                    }
-                    RuntimeEntityReference::ImportedProject(reference) => {
-                        (reference.family(), reference.public_id())
-                    }
-                    RuntimeEntityReference::Project {
-                        family: DeclarationIdentityFamily::Character,
-                        public_id,
-                    } => (ProjectEntityReferenceFamily::Character, public_id),
-                    _ => return Err(invalid().into()),
-                };
-                match role {
-                    RuntimePresentationSlotRefInput::Target
-                        if family == ProjectEntityReferenceFamily::Target =>
-                    {
-                        target = Some(public_id.as_str());
-                    }
-                    RuntimePresentationSlotRefInput::Slot
-                        if family == ProjectEntityReferenceFamily::Slot =>
-                    {
-                        slot = Some(public_id.as_str());
-                    }
-                    RuntimePresentationSlotRefInput::Character
-                        if family == ProjectEntityReferenceFamily::Character =>
-                    {
-                        character = Some(public_id.as_str());
-                    }
-                    _ => return Err(invalid().into()),
-                }
-            }
-            let target = target.unwrap_or("target.scene");
-            let default;
-            let slot = match slot {
-                Some(slot) => slot,
-                None => {
-                    default = if self.resource == PresentationResourceKind::Character {
-                        let character = character
-                            .and_then(|id| id.strip_prefix("character."))
-                            .filter(|name| !name.is_empty())
-                            .ok_or(RuntimePresentationError::SlotReferenceInput {
-                                role: RuntimePresentationSlotRefInput::Character,
-                            })?;
-                        admission.construct_metadata_string(&[
-                            "slot.character.",
-                            character,
-                            ".default",
-                        ])?
-                    } else {
-                        admission.construct_metadata_string(&[
-                            "slot.",
-                            self.resource.as_str(),
-                            ".default",
-                        ])?
-                    };
-                    &default
-                }
-            };
-            admission.construct_presentation_slot_ref_parts(owner, self.resource, target, slot)
+            super::RuntimePresentationSlotSelectors::from_values(
+                self.inputs().iter().copied().zip(values),
+            )?
+            .with_parts(self.resource, admission, |admission, target, slot| {
+                admission.construct_presentation_slot_ref_parts(owner, self.resource, target, slot)
+            })
         })();
         result.inspect_err(|error| admission.retain_failure(error.clone()))
     }

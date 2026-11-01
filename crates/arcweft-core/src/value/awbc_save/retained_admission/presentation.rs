@@ -9,6 +9,47 @@ use arcweft_id::PublicId;
 use arcweft_interaction_model::presentation::{PresentationResourceKind, PresentationSlotAddress};
 
 impl RuntimeRetainedValueAdmission {
+    /// Native factories borrow the actual plan until the whole candidate and
+    /// registration metadata pass. Source storage and value headers allocate last.
+    pub(crate) fn construct_native_presentation_resource_with_metadata<T>(
+        &mut self,
+        program: std::sync::Arc<crate::plan::RuntimePlan>,
+        call: std::sync::Arc<crate::presentation::RuntimePresentationFactoryCall>,
+        binding: Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
+        body: crate::value::RuntimePayload,
+        metadata: impl FnOnce(
+            &mut Self,
+            &crate::presentation::RuntimePresentationFactoryCall,
+            &RuntimeValue,
+        ) -> Result<T, AwbcRuntimeValueSnapshotError>,
+    ) -> Result<(T, RuntimeValue), AwbcRuntimeValueSnapshotError> {
+        self.validate_view_with_requirement(
+            RuntimeValueView::PresentationResource(
+                crate::presentation::RuntimePresentationResourceView::NativeConstruction {
+                    program: &program,
+                    call: &call,
+                    binding: binding.as_deref(),
+                    body: body.value(),
+                },
+            ),
+            ValueAdmissionOrigin::Live,
+            Some(RetainedTypeObligation::Stored(call.resource_type())),
+            RuntimeValueOwnershipRequirement::Owned,
+        )?;
+        let metadata = metadata(self, &call, body.value())
+            .inspect_err(|error| self.retain_failure(error.clone()))?;
+        let value = crate::presentation::RuntimePresentationResourceValue {
+            source: crate::plan::task_source::RuntimeTaskSourceProgram::native(program),
+            call,
+            binding,
+            body,
+        };
+        Ok((
+            metadata,
+            RuntimeValue::PresentationResource(Box::new(value)),
+        ))
+    }
+
     /// Publishes the affine body only after its complete borrowed graph,
     /// original program, layout and invocation have used this owning bank.
     pub(crate) fn construct_presentation_resource(

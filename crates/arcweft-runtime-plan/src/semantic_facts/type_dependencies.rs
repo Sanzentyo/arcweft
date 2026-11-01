@@ -113,6 +113,11 @@ impl RuntimeResolvedCallDispatch {
 impl RuntimeResolvedStaticCallTarget {
     fn append_normalized_types<'a>(&'a self, roots: &mut Vec<&'a RuntimeNormalizedType>) {
         match self {
+            Self::PresentationFactory {
+                resource_type,
+                body_type,
+                ..
+            } => roots.extend([resource_type, body_type]),
             Self::StandardMapPrefix(map) => {
                 if let Some(collection) = map.collection() {
                     collection.append_normalized_types(roots);

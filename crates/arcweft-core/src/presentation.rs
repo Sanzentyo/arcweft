@@ -2,6 +2,8 @@
 
 mod factory;
 mod resource_value;
+mod selectors;
+pub(crate) use selectors::RuntimePresentationSlotSelectors;
 pub(crate) mod resources;
 mod slot_reference;
 

@@ -21,8 +21,27 @@ use arcweft_interaction_model::presentation::{
 };
 
 const BOOL: RuntimeSemanticTypeId = RuntimeSemanticTypeId::from_bytes([81; 32]);
-const BODY: RuntimeSemanticTypeId = RuntimeSemanticTypeId::from_bytes([82; 32]);
 const RESOURCE: RuntimeSemanticTypeId = RuntimeSemanticTypeId::from_bytes([83; 32]);
+
+fn keys() -> Box<[PresentationArgumentKey]> {
+    Box::new([PresentationArgumentKey::try_new(
+        PresentationArgumentRole::Parameter,
+        Some("channel".into()),
+    )
+    .unwrap()])
+}
+
+fn body_type() -> RuntimeSemanticTypeId {
+    RuntimePresentationFactoryCall::retained_body_identity(
+        PresentationCallableId::Image,
+        &keys(),
+        RESOURCE,
+        &crate::plan::RuntimeTypeScope::root(),
+        1,
+        |_| Some(BOOL),
+    )
+    .unwrap()
+}
 
 fn sources() -> [RuntimeTaskSourceProgram; 2] {
     let mut builder = RuntimePlanBuilder::new();
@@ -30,7 +49,10 @@ fn sources() -> [RuntimeTaskSourceProgram; 2] {
         .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(BOOL, RuntimePlanTypeProjection::Bool),
-                RuntimePlanTypeSeed::new(BODY, RuntimePlanTypeProjection::Tuple(Box::new([BOOL]))),
+                RuntimePlanTypeSeed::new(
+                    body_type(),
+                    RuntimePlanTypeProjection::Tuple(Box::new([BOOL])),
+                ),
                 RuntimePlanTypeSeed::new(
                     RESOURCE,
                     RuntimePlanTypeProjection::PresentationResource(
@@ -49,7 +71,10 @@ fn sources() -> [RuntimeTaskSourceProgram; 2] {
     let program = AwbcProgram {
         runtime_types: vec![
             AwbcRuntimeType::new(BOOL, AwbcRuntimeTypeShape::Bool),
-            AwbcRuntimeType::new(BODY, AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(0)])),
+            AwbcRuntimeType::new(
+                body_type(),
+                AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(0)]),
+            ),
             AwbcRuntimeType::new(
                 RESOURCE,
                 AwbcRuntimeTypeShape::PresentationResource(PresentationResourceKind::Image),
@@ -81,13 +106,9 @@ fn layout() -> Arc<RuntimePresentationFactoryCall> {
     Arc::new(
         RuntimePresentationFactoryCall::try_new(
             PresentationCallableId::Image,
-            Box::new([PresentationArgumentKey::try_new(
-                PresentationArgumentRole::Parameter,
-                Some("channel".into()),
-            )
-            .unwrap()]),
+            keys(),
             RESOURCE,
-            BODY,
+            body_type(),
             RuntimeSchemaLimits::engine_default(),
         )
         .unwrap(),
@@ -164,7 +185,7 @@ fn presentation_resource_rejects_foreign_lease_and_forged_source_body_and_resour
         );
         let snapshot =
             AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner).unwrap();
-        for mutation in 0..3 {
+        for mutation in 0..4 {
             let mut forged = snapshot.clone();
             let AwbcRuntimeValueSnapshot::PresentationResource(resource) = &mut forged else {
                 panic!("snapshot carrier")
@@ -182,11 +203,28 @@ fn presentation_resource_rejects_foreign_lease_and_forged_source_body_and_resour
                             PresentationCallableId::Image,
                             layout().inputs().into(),
                             BOOL,
-                            BODY,
+                            body_type(),
                             RuntimeSchemaLimits::engine_default(),
                         )
                         .unwrap(),
                     )
+                }
+                3 => {
+                    let changed = Box::new([PresentationArgumentKey::try_new(
+                        PresentationArgumentRole::Parameter,
+                        Some("other".into()),
+                    )
+                    .unwrap()]);
+                    resource.call = Arc::new(
+                        RuntimePresentationFactoryCall::try_new(
+                            PresentationCallableId::Image,
+                            changed,
+                            RESOURCE,
+                            body_type(),
+                            RuntimeSchemaLimits::engine_default(),
+                        )
+                        .unwrap(),
+                    );
                 }
                 _ => unreachable!(),
             }
@@ -211,6 +249,10 @@ fn presentation_resource_rejects_foreign_lease_and_forged_source_body_and_resour
                 ),
                 2 => assert!(
                     error.to_string().contains("requires resource type"),
+                    "{error}"
+                ),
+                3 => assert!(
+                    error.to_string().contains("disagrees with its layout"),
                     "{error}"
                 ),
                 _ => unreachable!(),

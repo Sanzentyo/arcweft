@@ -517,6 +517,25 @@ impl Sink<'_, '_> {
                     self.byte(input.semantic_tag())?;
                 }
             }
+            RuntimeCallTarget::PresentationFactory(call) => {
+                self.byte(4)?;
+                self.byte(call.callable().semantic_tag())?;
+                self.raw(call.resource_type().as_bytes())?;
+                self.raw(call.body_type().as_bytes())?;
+                self.counts.array(
+                    call.inputs().len(),
+                    std::mem::size_of::<
+                        arcweft_interaction_model::presentation::PresentationArgumentKey,
+                    >(),
+                )?;
+                self.count(call.inputs().len())?;
+                for key in call.inputs() {
+                    self.byte(key.role().semantic_tag())?;
+                    if let Some(parameter) = key.parameter() {
+                        self.text(parameter)?;
+                    }
+                }
+            }
             RuntimeCallTarget::External(callable) => {
                 self.byte(2)?;
                 self.text(callable.identity().as_str())?;

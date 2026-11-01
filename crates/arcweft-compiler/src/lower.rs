@@ -9754,6 +9754,94 @@ fn runtime_call_target(
             })?;
             return Ok(RuntimeResolvedStaticCallTarget::PresentationSlotRef(call));
         }
+        if let arcweft_interaction_model::presentation::PresentationCallableResult::Handle(
+            resource,
+        ) = presentation.result()
+        {
+            use arcweft_core::presentation::RuntimePresentationFactoryCall;
+            use arcweft_interaction_model::presentation::PresentationArgumentRole;
+            use arcweft_lang_sema::callable::CheckedCallRuntimeOperand;
+            let error = |reason: String| RuntimeSemanticProjectionError::Call { owner, reason };
+            let resource_type = lexical.runtime_type(
+                &TypeKind::PresentationResource(resource),
+                symbols,
+                world,
+                analysis,
+            )?;
+            let mut fields = application
+                .core()
+                .runtime_operands()
+                .into_iter()
+                .map(|operand| {
+                    let CheckedCallRuntimeOperand::Argument { slot, .. } = operand else {
+                        return Err(error(
+                            "presentation factory requires checked parameter operands".into(),
+                        ));
+                    };
+                    let key = slot.presentation_argument().ok_or_else(|| {
+                        error("presentation factory operand has no sealed destination".into())
+                    })?;
+                    Ok((
+                        slot.abi_position(),
+                        key.clone(),
+                        lexical.runtime_type(slot.inferred(), symbols, world, analysis)?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
+            fields.sort_unstable_by_key(|(position, ..)| *position);
+            if fields
+                .iter()
+                .enumerate()
+                .any(|(ordinal, (position, ..))| usize::try_from(*position).ok() != Some(ordinal))
+            {
+                return Err(error(
+                    "presentation factory input ABI is not contiguous".into(),
+                ));
+            }
+            let keys = fields
+                .iter()
+                .map(|(_, key, _)| key.clone())
+                .collect::<Box<[_]>>();
+            let retained = fields
+                .into_iter()
+                .filter_map(|(_, key, ty)| {
+                    (key.role() != PresentationArgumentRole::Scope).then_some(ty)
+                })
+                .collect::<Vec<_>>();
+            let scope = retained
+                .iter()
+                .map(RuntimeNormalizedType::scope)
+                .max_by_key(|scope| scope.binders().len())
+                .cloned()
+                .unwrap_or_else(arcweft_core::plan::RuntimeTypeScope::root);
+            let identity = RuntimePresentationFactoryCall::retained_body_identity(
+                *presentation,
+                &keys,
+                resource_type.identity(),
+                &scope,
+                retained.len(),
+                |ordinal| retained.get(ordinal).map(RuntimeNormalizedType::identity),
+            )
+            .map_err(|cause| error(cause.to_string()))?;
+            let body_type = RuntimeNormalizedType::new(
+                identity,
+                RuntimeTypeShape::Tuple(retained.into_boxed_slice()),
+            )
+            .with_scope(scope);
+            let call = RuntimePresentationFactoryCall::try_new(
+                *presentation,
+                keys,
+                resource_type.identity(),
+                identity,
+                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+            )
+            .map_err(|cause| error(cause.to_string()))?;
+            return Ok(RuntimeResolvedStaticCallTarget::PresentationFactory {
+                call: Arc::new(call),
+                resource_type,
+                body_type,
+            });
+        }
         return Err(RuntimeSemanticProjectionError::Call {
             owner,
             reason: format!(

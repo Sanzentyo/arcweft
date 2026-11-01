@@ -141,6 +141,11 @@ impl<'a> SnapshotStorageAdmission<'a> {
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         let owner = self.require_owner("presentation resource")?;
         let expected = resource.layout().resource_type();
+        if let Some(program) = resource.native_construction_program()
+            && !matches!(owner, RuntimeProgramOwner::Plan(original) if std::sync::Arc::ptr_eq(program, original))
+        {
+            return Err(AwbcRuntimeValueSnapshotError::ProgramOwnerMismatch { expected });
+        }
         if resource
             .source()
             .is_some_and(|source| !source.program_owner().same_program(owner))

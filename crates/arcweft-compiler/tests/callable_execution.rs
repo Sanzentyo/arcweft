@@ -228,6 +228,9 @@ macro_rules! callable_case {
 mod control_results;
 #[path = "callable_cases/presentation_slot_refs.rs"]
 mod presentation_slot_refs;
+
+#[path = "callable_cases/presentation_factories.rs"]
+mod presentation_factories;
 #[path = "callable_cases/standard_map_control.rs"]
 mod standard_map_control;
 #[path = "callable_cases/standard_map_program.rs"]

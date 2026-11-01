@@ -26,6 +26,49 @@ pub struct RuntimePresentationFactoryCall {
 }
 
 impl RuntimePresentationFactoryCall {
+    /// Canonical identity of the retained product, including its destinations.
+    /// Equal physical tuple shapes cannot exchange metadata roles or keys.
+    /// Child lookup borrows the selected type graph and allocates no side table.
+    pub fn retained_body_identity(
+        callable: PresentationCallableId,
+        inputs: &[PresentationArgumentKey],
+        resource_type: RuntimeSemanticTypeId,
+        scope: &crate::plan::RuntimeTypeScope,
+        fields: usize,
+        mut field: impl FnMut(usize) -> Option<RuntimeSemanticTypeId>,
+    ) -> Result<RuntimeSemanticTypeId, RuntimePresentationFactoryCallError> {
+        let mut hash = blake3::Hasher::new();
+        hash.update(b"arcweft.presentation.retained-product.v1\0");
+        hash.update(&[callable.semantic_tag()]);
+        hash.update(resource_type.as_bytes());
+        hash.update(&(inputs.len() as u64).to_le_bytes());
+        for key in inputs {
+            hash.update(&[
+                key.role().semantic_tag(),
+                u8::from(key.parameter().is_some()),
+            ]);
+            if let Some(parameter) = key.parameter() {
+                hash.update(&(parameter.len() as u64).to_le_bytes());
+                hash.update(parameter.as_bytes());
+            }
+        }
+        hash.update(&(scope.binders().len() as u64).to_le_bytes());
+        for binder in scope.binders() {
+            hash.update(&binder.types().to_le_bytes());
+            hash.update(&binder.const_lengths().to_le_bytes());
+            hash.update(&binder.effects().to_le_bytes());
+        }
+        hash.update(&(fields as u64).to_le_bytes());
+        for ordinal in 0..fields {
+            let identity =
+                field(ordinal).ok_or(RuntimePresentationFactoryCallError::BodyField { ordinal })?;
+            hash.update(identity.as_bytes());
+        }
+        Ok(RuntimeSemanticTypeId::from_bytes(
+            *hash.finalize().as_bytes(),
+        ))
+    }
+
     /// Admits the complete borrowed metadata under the caller-selected policy
     /// before building the duplicate-key index or publishing the owned row.
     pub fn try_new(
@@ -119,6 +162,70 @@ impl RuntimePresentationFactoryCall {
         Some(ordinal + usize::from(self.scope_input().is_some_and(|scope| scope <= ordinal)))
     }
 
+    pub(crate) fn registration_site(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        body: &crate::value::RuntimeValue,
+    ) -> Result<
+        super::resources::PresentationRegistrationSite,
+        crate::value::AwbcRuntimeValueSnapshotError,
+    > {
+        use super::{
+            RuntimePresentationError, RuntimePresentationSlotRefInput,
+            RuntimePresentationSlotSelectors,
+        };
+        use arcweft_interaction_model::presentation::{
+            PresentationCallableOperation, PresentationFactoryPlacement, PresentationSlotAddress,
+        };
+        let PresentationCallableOperation::Construct {
+            resource,
+            placement,
+        } = self.callable.operation()
+        else {
+            unreachable!("factory result was admitted")
+        };
+        if placement == PresentationFactoryPlacement::Independent {
+            return Ok(super::resources::PresentationRegistrationSite::Independent(
+                resource,
+            ));
+        }
+        let crate::value::RuntimeValue::Tuple(values) = body else {
+            return Err(RuntimePresentationError::InvalidState.into());
+        };
+        if values.len() != self.body_len() {
+            return Err(RuntimePresentationError::InvalidState.into());
+        }
+        let selectors = self
+            .body_inputs()
+            .enumerate()
+            .filter_map(|(ordinal, (_, key))| {
+                RuntimePresentationSlotRefInput::try_from(key.role())
+                    .ok()
+                    .map(|role| (role, &values[ordinal]))
+            });
+        RuntimePresentationSlotSelectors::from_values(selectors)?.with_parts(
+            resource,
+            admission,
+            |admission, target, slot| {
+                PresentationSlotAddress::validate_text(target, slot, resource)
+                    .map_err(RuntimePresentationError::from)?;
+                admission.validate_metadata_string(target)?;
+                admission.validate_metadata_string(slot)?;
+                let address = PresentationSlotAddress::try_new(
+                    arcweft_id::PublicId::try_new(target.to_owned())
+                        .expect("borrowed target validated"),
+                    arcweft_id::PublicId::try_new(slot.to_owned())
+                        .expect("borrowed slot validated"),
+                    resource,
+                )
+                .expect("borrowed slot address validated");
+                Ok(super::resources::PresentationRegistrationSite::Slot(
+                    address,
+                ))
+            },
+        )
+    }
+
     pub(crate) fn validate_body_type(
         &self,
         types: crate::program_types::RuntimeProgramTypes<'_>,
@@ -150,20 +257,64 @@ impl RuntimePresentationFactoryCall {
                 actual: kind,
             });
         }
-        let length = match types
+        let (length, identity) = match types
             .value_type(self.body_type)
             .map_err(|cause| RuntimePresentationFactoryCallError::Type(Box::new(cause)))?
         {
             RuntimeProgramValueType::Plan { program, ty } => {
                 match program.type_table().get(ty).map(|ty| ty.projection()) {
-                    Some(RuntimePlanTypeProjection::Tuple(items)) => Some(items.len()),
-                    _ => None,
+                    Some(RuntimePlanTypeProjection::Tuple(items)) => {
+                        if items.len() != self.body_len() {
+                            return Err(RuntimePresentationFactoryCallError::BodyLayout {
+                                expected: self.body_len(),
+                                actual: Some(items.len()),
+                            });
+                        }
+                        let row = program.type_table().get(ty).expect("selected body row");
+                        let identity = Self::retained_body_identity(
+                            self.callable,
+                            &self.inputs,
+                            self.resource_type,
+                            row.scope(),
+                            items.len(),
+                            |ordinal| {
+                                program
+                                    .type_table()
+                                    .get(items[ordinal])
+                                    .map(|row| row.semantic_identity())
+                            },
+                        )?;
+                        (Some(items.len()), Some(identity))
+                    }
+                    _ => (None, None),
                 }
             }
             RuntimeProgramValueType::Awbc { program, ty } => {
                 match program.runtime_types.get(ty.index()).map(|ty| ty.shape()) {
-                    Some(AwbcRuntimeTypeShape::Tuple(items)) => Some(items.len()),
-                    _ => None,
+                    Some(AwbcRuntimeTypeShape::Tuple(items)) => {
+                        if items.len() != self.body_len() {
+                            return Err(RuntimePresentationFactoryCallError::BodyLayout {
+                                expected: self.body_len(),
+                                actual: Some(items.len()),
+                            });
+                        }
+                        let row = &program.runtime_types[ty.index()];
+                        let identity = Self::retained_body_identity(
+                            self.callable,
+                            &self.inputs,
+                            self.resource_type,
+                            row.scope(),
+                            items.len(),
+                            |ordinal| {
+                                program
+                                    .runtime_types
+                                    .get(items[ordinal].index())
+                                    .map(|row| row.semantic_identity())
+                            },
+                        )?;
+                        (Some(items.len()), Some(identity))
+                    }
+                    _ => (None, None),
                 }
             }
         };
@@ -173,12 +324,27 @@ impl RuntimePresentationFactoryCall {
                 actual: length,
             });
         }
+        if identity != Some(self.body_type) {
+            return Err(RuntimePresentationFactoryCallError::BodyIdentity {
+                expected: self.body_type,
+                actual: identity.expect("tuple arity checked"),
+            });
+        }
         Ok(())
     }
 }
 
 #[derive(Debug, Error)]
 pub enum RuntimePresentationFactoryCallError {
+    #[error("presentation retained product has no field type at ordinal {ordinal}")]
+    BodyField { ordinal: usize },
+    #[error(
+        "presentation retained product identity {expected:?} disagrees with its layout {actual:?}"
+    )]
+    BodyIdentity {
+        expected: RuntimeSemanticTypeId,
+        actual: RuntimeSemanticTypeId,
+    },
     #[error("presentation factory requires resource type {expected:?}, found {actual:?}")]
     ResourceType {
         expected: PresentationResourceKind,

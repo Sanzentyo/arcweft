@@ -4525,6 +4525,7 @@ impl RuntimeResolvedCallDispatch {
             Self::Static(
                 RuntimeResolvedStaticCallTarget::Intrinsic(_)
                 | RuntimeResolvedStaticCallTarget::PresentationSlotRef(_)
+                | RuntimeResolvedStaticCallTarget::PresentationFactory { .. }
                 | RuntimeResolvedStaticCallTarget::Format(_)
                 | RuntimeResolvedStaticCallTarget::VecPopFront
                 | RuntimeResolvedStaticCallTarget::VecPop
@@ -4577,6 +4578,11 @@ pub enum RuntimeResolvedStaticCallTarget {
     Intrinsic(RuntimeIntrinsic),
     /// Core-owned inert address construction with the selected compact role ABI.
     PresentationSlotRef(arcweft_core::presentation::RuntimePresentationSlotRefCall),
+    PresentationFactory {
+        call: Arc<arcweft_core::presentation::RuntimePresentationFactoryCall>,
+        resource_type: RuntimeNormalizedType,
+        body_type: RuntimeNormalizedType,
+    },
     Format(RuntimeResolvedFormatCall),
     /// Checked in-place Vec operations consumed by expression lowering.
     VecPopFront,
@@ -8600,6 +8606,7 @@ impl RuntimePlanSemanticFacts {
                 RuntimeResolvedCallDispatch::Static(
                     RuntimeResolvedStaticCallTarget::Intrinsic(_)
                     | RuntimeResolvedStaticCallTarget::PresentationSlotRef(_)
+                    | RuntimeResolvedStaticCallTarget::PresentationFactory { .. }
                     | RuntimeResolvedStaticCallTarget::Format(_)
                     | RuntimeResolvedStaticCallTarget::VecPopFront
                     | RuntimeResolvedStaticCallTarget::VecPop
@@ -12512,6 +12519,64 @@ fn validate_call(
             }
         }
         RuntimeResolvedCallDispatch::Static(
+            RuntimeResolvedStaticCallTarget::PresentationFactory {
+                call: factory,
+                resource_type,
+                body_type,
+            },
+        ) => {
+            let invalid =
+                || RuntimeSemanticFactsError::InvalidRuntimeCallDisposition { expression };
+            let result = expression_source_type.ok_or_else(invalid)?;
+            let expected =
+                RuntimeOpaqueTypeOwner::presentation_handle(factory.resource(), result.identity());
+            if !matches!(result.shape(), RuntimeTypeShape::Opaque { producer, admission, value_class, persistence, arguments }
+                if producer == expected.producer() && *admission == expected.admission() && *value_class == expected.value_class() && *persistence == expected.persistence() && arguments.is_empty())
+            {
+                return Err(invalid());
+            }
+            validate_normalized_type(modules, resource_type)?;
+            validate_normalized_type(modules, body_type)?;
+            if resource_type.identity() != factory.resource_type()
+                || body_type.identity() != factory.body_type()
+                || !matches!(resource_type.shape(), RuntimeTypeShape::PresentationResource(kind) if *kind == factory.resource())
+            {
+                return Err(invalid());
+            }
+            let RuntimeTypeShape::Tuple(fields) = body_type.shape() else {
+                return Err(invalid());
+            };
+            let identity =
+                arcweft_core::presentation::RuntimePresentationFactoryCall::retained_body_identity(
+                    factory.callable(),
+                    factory.inputs(),
+                    resource_type.identity(),
+                    body_type.scope(),
+                    fields.len(),
+                    |ordinal| fields.get(ordinal).map(RuntimeNormalizedType::identity),
+                )
+                .map_err(|_| invalid())?;
+            if identity != body_type.identity()
+                || fields.len() != factory.body_len()
+                || call.operands().len() != factory.inputs().len()
+            {
+                return Err(invalid());
+            }
+            let mut operands = call.operands().iter().collect::<Vec<_>>();
+            operands.sort_unstable_by_key(|operand| operand.abi_position());
+            if operands.iter().enumerate().any(|(ordinal, operand)| {
+                usize::try_from(operand.abi_position()).ok() != Some(ordinal)
+            }) {
+                return Err(invalid());
+            }
+            for (ordinal, field) in fields.iter().enumerate() {
+                let input = factory.body_input_index(ordinal).ok_or_else(invalid)?;
+                if operands[input].ty() != field {
+                    return Err(invalid());
+                }
+            }
+        }
+        RuntimeResolvedCallDispatch::Static(
             RuntimeResolvedStaticCallTarget::Agent(_)
             | RuntimeResolvedStaticCallTarget::AgentProbeComparison(_)
             | RuntimeResolvedStaticCallTarget::AgentDiagnosticsHasError
@@ -13505,6 +13570,7 @@ fn validate_project_function_instance(
             RuntimeResolvedCallDispatch::Static(
                 RuntimeResolvedStaticCallTarget::Intrinsic(_)
                 | RuntimeResolvedStaticCallTarget::PresentationSlotRef(_)
+                | RuntimeResolvedStaticCallTarget::PresentationFactory { .. }
                 | RuntimeResolvedStaticCallTarget::Format(_)
                 | RuntimeResolvedStaticCallTarget::VecPopFront
                 | RuntimeResolvedStaticCallTarget::VecPop

@@ -105,6 +105,12 @@ pub struct RuntimePresentationResourceSnapshot {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum RuntimePresentationResourceView<'a> {
+    NativeConstruction {
+        program: &'a Arc<crate::plan::RuntimePlan>,
+        call: &'a RuntimePresentationFactoryCall,
+        binding: Option<&'a RuntimeFunctionEffectInstantiation>,
+        body: &'a RuntimeValue,
+    },
     Construction(&'a RuntimePresentationResourceValue),
     Live(&'a RuntimePresentationResourceValue),
     Snapshot(&'a RuntimePresentationResourceSnapshot),
@@ -113,12 +119,14 @@ pub(crate) enum RuntimePresentationResourceView<'a> {
 impl<'a> RuntimePresentationResourceView<'a> {
     pub(crate) fn live_value(self) -> Option<&'a RuntimePresentationResourceValue> {
         match self {
+            Self::NativeConstruction { .. } => None,
             Self::Construction(value) | Self::Live(value) => Some(value),
             Self::Snapshot(_) => None,
         }
     }
     pub(crate) fn layout(self) -> &'a RuntimePresentationFactoryCall {
         match self {
+            Self::NativeConstruction { call, .. } => call,
             Self::Construction(value) | Self::Live(value) => value.layout(),
             Self::Snapshot(value) => &value.call,
         }
@@ -126,6 +134,9 @@ impl<'a> RuntimePresentationResourceView<'a> {
 
     pub(crate) fn original_executable(self) -> [u8; 32] {
         match self {
+            Self::NativeConstruction { program, .. } => {
+                *program.executable_semantic_digest().as_bytes()
+            }
             Self::Construction(value) | Self::Live(value) => value.original_executable(),
             Self::Snapshot(value) => value.original_executable,
         }
@@ -133,6 +144,7 @@ impl<'a> RuntimePresentationResourceView<'a> {
 
     pub(crate) fn source(self) -> Option<&'a RuntimeTaskSourceProgram> {
         match self {
+            Self::NativeConstruction { .. } => None,
             Self::Construction(value) | Self::Live(value) => Some(&value.source),
             Self::Snapshot(_) => None,
         }
@@ -140,6 +152,7 @@ impl<'a> RuntimePresentationResourceView<'a> {
 
     pub(crate) fn binding(self) -> Option<&'a RuntimeFunctionEffectInstantiation> {
         match self {
+            Self::NativeConstruction { binding, .. } => binding,
             Self::Construction(value) | Self::Live(value) => value.binding.as_deref(),
             Self::Snapshot(value) => value.binding.as_deref(),
         }
@@ -147,8 +160,16 @@ impl<'a> RuntimePresentationResourceView<'a> {
 
     pub(crate) fn body(self) -> crate::value::RuntimeValueView<'a> {
         match self {
+            Self::NativeConstruction { body, .. } => body.view(),
             Self::Construction(value) | Self::Live(value) => value.body.0.view(),
             Self::Snapshot(value) => value.body.view(),
+        }
+    }
+
+    pub(crate) fn native_construction_program(self) -> Option<&'a Arc<crate::plan::RuntimePlan>> {
+        match self {
+            Self::NativeConstruction { program, .. } => Some(program),
+            _ => None,
         }
     }
 }

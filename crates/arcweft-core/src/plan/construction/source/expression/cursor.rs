@@ -450,6 +450,40 @@ impl<'a> Cursor<'a> {
                 }
             }
             1 => self.text(counts)?,
+            4 => {
+                use arcweft_interaction_model::presentation::{
+                    PresentationArgumentKey, PresentationArgumentRole, PresentationCallableId,
+                    PresentationCallableResult,
+                };
+                let callable = PresentationCallableId::from_semantic_tag(self.byte()?)
+                    .ok_or_else(|| self.invalid("presentation factory"))?;
+                if !matches!(callable.result(), PresentationCallableResult::Handle(_)) {
+                    return Err(self.invalid("presentation factory result"));
+                }
+                self.slice(64)?;
+                let n = self.count()?;
+                counts.array(n, std::mem::size_of::<PresentationArgumentKey>())?;
+                let mut fixed = 0_u64;
+                for _ in 0..n {
+                    let role = PresentationArgumentRole::from_semantic_tag(self.byte()?)
+                        .ok_or_else(|| self.invalid("presentation argument role"))?;
+                    if !callable.accepts_argument_role(role) {
+                        return Err(self.invalid("presentation argument destination"));
+                    }
+                    if role.requires_parameter() {
+                        let text = self.string()?;
+                        counts.storage(text.len().checked_mul(2).ok_or(Error::Arithmetic)?)?;
+                        PresentationArgumentKey::validate_parameter(text)
+                            .map_err(|_| self.invalid("presentation metadata key"))?;
+                    } else {
+                        let bit = 1_u64 << role.semantic_tag();
+                        if fixed & bit != 0 {
+                            return Err(self.invalid("duplicate presentation argument"));
+                        }
+                        fixed |= bit;
+                    }
+                }
+            }
             3 => {
                 let resource = arcweft_interaction_model::presentation::PresentationResourceKind::from_semantic_tag(self.byte()?)
                     .ok_or_else(|| self.invalid("slot reference resource"))?;
