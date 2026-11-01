@@ -1,0 +1,700 @@
+{
+  "version": 1,
+  "date": "2026-11-01",
+  "source": "1e0b3f9d5eb86baa04e0359d656ba638cd0ffa3a",
+  "inspectedHead": "1e0b3f9d5eb86baa04e0359d656ba638cd0ffa3a",
+  "publication": {
+    "version": 1,
+    "commit": "1e0b3f9d5eb86baa04e0359d656ba638cd0ffa3a",
+    "parent": "392b139c9c7de1bb10e00e42d7d18797b1d154c3",
+    "tree": "bf3d81c058e2a2f676fea2f5e9e5b503a38798c4",
+    "remote": "1e0b3f9d5eb86baa04e0359d656ba638cd0ffa3a",
+    "paths": [
+      {
+        "path": "crates/arcweft-core/src/engine/eval/calls.rs",
+        "blob": "c7022d2a990676a4353f551482392107a2b41240"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/presentation.rs",
+        "blob": "b2307d1a19c5abfec8a4da76545e03ee03837ed9"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "8235a13e9c2de2bdecc8ec1138cefd0368ae930f46bbd2a55a749a18dabed0ff",
+    "heldPatchSha256": "53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-01T12:46:21.6534353Z"
+  },
+  "testOnlyKnownFailingPublication": {
+    "version": 1,
+    "commit": "392b139c9c7de1bb10e00e42d7d18797b1d154c3",
+    "parent": "56682759268411273a2c82bcc7a29ac85a169140",
+    "tree": "f7b9553c76a600146861521d92546e755deaa67a",
+    "remote": "392b139c9c7de1bb10e00e42d7d18797b1d154c3",
+    "paths": [
+      {
+        "path": "crates/arcweft-core/src/engine/eval/calls/presentation_tests.rs",
+        "blob": "e91154aa2639aafa09be3b0b3b2de33b98afbdff"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "29027ee93e6bb54582f6ceddbd4b374e3e1d9e6228c599471ea4fa18d92f04c5",
+    "heldPatchSha256": "53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-01T12:33:58.7576107Z"
+  },
+  "status": "Native factory execution origin checked before capture; broader staging is not completed by this private change",
+  "initialCatalog": {
+    "version": 1,
+    "base": "56682759268411273a2c82bcc7a29ac85a169140",
+    "command": [
+      "nextest",
+      "list",
+      "-p",
+      "arcweft-core",
+      "--lib",
+      "--all-features",
+      "--locked",
+      "-E",
+      "test(native_factory_rejects_)",
+      "--message-format",
+      "json"
+    ],
+    "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-factory-native-context-baseline1-20261101.catalog.log",
+    "exitCode": 101,
+    "sourceInputs": 4057,
+    "sourceDrift": 0,
+    "startedAt": "2026-11-01T12:28:54.866308Z",
+    "finishedAt": "2026-11-01T12:29:47.8521415Z"
+  },
+  "baseline": {
+    "version": 1,
+    "base": "56682759268411273a2c82bcc7a29ac85a169140",
+    "run": "presentation-factory-native-context-baseline2-20261101.runtime",
+    "actualExitCode": 100,
+    "summary": "Summary [   0.051s] 6 tests run: 1 passed, 5 failed, 2195 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 6,
+    "passed": 1,
+    "failed": 5,
+    "skipped": 2195,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4057,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "engine::eval::calls::presentation_tests::native_factory_rejects_missing_ledger_before_capture"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "engine::eval::calls::presentation_tests::native_factory_rejects_equal_bytes_foreign_program_before_capture"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "engine::eval::calls::presentation_tests::native_factory_rejects_missing_parent_ledger_before_capture"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "engine::eval::calls::presentation_tests::native_factory_rejects_foreign_execution_before_capture"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "engine::eval::calls::presentation_tests::native_factory_rejects_missing_artifact_before_capture"
+      }
+    ],
+    "isPassingRun": false,
+    "recordedAt": "2026-11-01T12:32:54.150319Z"
+  },
+  "owner": {
+    "version": 1,
+    "base": "392b139c9c7de1bb10e00e42d7d18797b1d154c3",
+    "runs": [
+      "presentation-factory-native-context-focus1-20261101",
+      "presentation-factory-native-context-complement-20261101"
+    ],
+    "passed": 2577,
+    "failed": 0,
+    "ignored": 0,
+    "duplicateCases": 0,
+    "omittedCases": 0,
+    "sourceInputs": 4057,
+    "sourceInputDrift": 0,
+    "executableDrift": 0,
+    "byBinary": [
+      {
+        "binary": "arcweft-compiler",
+        "passed": 175
+      },
+      {
+        "binary": "arcweft-compiler::callable_execution",
+        "passed": 201
+      },
+      {
+        "binary": "arcweft-core",
+        "passed": 2201
+      }
+    ],
+    "terminals": [
+      {
+        "version": 1,
+        "base": "392b139c9c7de1bb10e00e42d7d18797b1d154c3",
+        "run": "presentation-factory-native-context-focus1-20261101.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   3.577s] 185 tests run: 185 passed, 2392 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 185,
+        "passed": 185,
+        "failed": 0,
+        "skipped": 2392,
+        "selectedPackages": 2,
+        "matchedPackages": 2,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4057,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-01T12:37:05.0012341Z"
+      },
+      {
+        "version": 1,
+        "base": "392b139c9c7de1bb10e00e42d7d18797b1d154c3",
+        "run": "presentation-factory-native-context-complement-20261101.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [  30.172s] 2392 tests run: 2392 passed, 185 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 2392,
+        "passed": 2392,
+        "failed": 0,
+        "skipped": 185,
+        "selectedPackages": 2,
+        "matchedPackages": 2,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4057,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-01T12:39:02.0387419Z"
+      }
+    ],
+    "resolvedReverseClosure": "presentation-factory-native-metadata.reverse-closure.json",
+    "reversePackages": 53,
+    "dependencyInputDrift": 0,
+    "scope": "Private Native Engine origin checks; complete Core library and Compiler library/callable_execution. Other runtime consumers and CLI were not rerun. The prior 53-package matrix remains evidence only for source 9c33b7de0ba05f0e764ecc2e17d593d20e68aaa3.",
+    "selectionRationale": "Only private Engine call/registration admission changes. Public types, serialized contracts, schema tags, Source/metadata grammar, AWBC and Cargo inputs are unchanged. Owner tests cover the five invalid-context paths and actual Native/decoded-AWBC Source image execution, source order and per-step save/restore. The remainder of the same three executables is selected once, as a disjoint complement.",
+    "recordedAt": "2026-11-01T12:41:30.9221608Z",
+    "initialAggregateGrouping": [
+      {
+        "binary": "",
+        "passed": 2577
+      }
+    ],
+    "aggregationCorrection": "PowerShell Group-Object by a property name did not read OrderedDictionary keys. Corrected the per-binary display grouping from the exact same 2577 case records; runtime, case partition, source and executable evidence are unchanged."
+  },
+  "quality": [
+    {
+      "gate": "default-core",
+      "record": {
+        "version": 1,
+        "base": "392b139c9c7de1bb10e00e42d7d18797b1d154c3",
+        "command": [
+          "check",
+          "-p",
+          "arcweft-core",
+          "--all-targets",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4057,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-01T12:40:11.3671969Z",
+        "finishedAt": "2026-11-01T12:41:13.2672975Z"
+      }
+    },
+    {
+      "gate": "workspace-check",
+      "record": {
+        "version": 1,
+        "base": "392b139c9c7de1bb10e00e42d7d18797b1d154c3",
+        "command": [
+          "check",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4057,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-01T12:41:13.7271591Z",
+        "finishedAt": "2026-11-01T12:42:28.4570591Z"
+      }
+    },
+    {
+      "gate": "clippy",
+      "record": {
+        "version": 1,
+        "base": "392b139c9c7de1bb10e00e42d7d18797b1d154c3",
+        "command": [
+          "clippy",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4057,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-01T12:42:28.960385Z",
+        "finishedAt": "2026-11-01T12:44:03.307272Z"
+      }
+    },
+    {
+      "gate": "structure",
+      "record": {
+        "version": 1,
+        "base": "392b139c9c7de1bb10e00e42d7d18797b1d154c3",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-factory-native-context-quality-20261101.structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4057,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-01T12:44:03.8307109Z",
+        "finishedAt": "2026-11-01T12:44:09.2292706Z"
+      }
+    },
+    {
+      "gate": "fmt",
+      "record": {
+        "version": 1,
+        "paths": [
+          "crates/arcweft-core/src/engine/eval/calls.rs",
+          "crates/arcweft-core/src/engine/presentation.rs",
+          "crates/arcweft-core/src/engine/eval/calls/presentation_tests.rs"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4057,
+        "sourceDrift": 0
+      }
+    }
+  ],
+  "sourceInputs": 4057,
+  "sourceDrift": 0,
+  "validatedInputBridge": [
+    {
+      "run": "presentation-factory-native-context-focus1-20261101",
+      "base": "392b139c9c7de1bb10e00e42d7d18797b1d154c3",
+      "publishedSource": "1e0b3f9d5eb86baa04e0359d656ba638cd0ffa3a",
+      "inputs": 4057,
+      "pathHashDrift": 0
+    },
+    {
+      "run": "presentation-factory-native-context-complement-20261101",
+      "base": "392b139c9c7de1bb10e00e42d7d18797b1d154c3",
+      "publishedSource": "1e0b3f9d5eb86baa04e0359d656ba638cd0ffa3a",
+      "inputs": 4057,
+      "pathHashDrift": 0
+    }
+  ],
+  "implementation": [
+    "One Engine-owned context check validates the exact original plan Arc, execution/fiber identity, all lexical scope-header contexts, absent Engine bank storage while any scoped grant remains, and the original artifact. Both pre-capture evaluation and final registration use it.",
+    "The check borrows the actual frame and returns its artifact binding; it does not copy captures, allocate banks, mint grants or reconstruct Source. Static input/body/result identity validation still runs first.",
+    "The baseline reproduces one capture evaluation in each of five rejected contexts. The repaired tests prove zero evaluations, absent new ledger and unchanged original lexical grants, including an orphaned parent scope."
+  ],
+  "ownershipReview": "Execution origin belongs to Engine and its actual frame/environment. The old registration-only guards are removed in favor of one shared method. RuntimeEnv remains the authority for scope-header context matching. No public type, wire/codec shape, schema, version marker, Cargo input or AWBC behavior is changed.",
+  "corrections": [
+    "The first catalog failed because the new fixture omitted the RuntimePayload import; fixed in the fixture without widening production visibility.",
+    "The first partition-report per-binary grouping used PowerShell property reflection on OrderedDictionary keys. Its initial aggregate and correction are retained in the owner audit. The exact same 2577 case records, runtime results, partition and hashes were retained; no tests were rerun for that reporting correction."
+  ],
+  "limits": [
+    "This proves pre-capture rejection for Native execution-origin invariants. Payload construction, later ledger/site capacity and complete live evaluation temporaries/all-fiber failure atomicity remain separate. Capacity can change during valid argument evaluation, so it is not rejected speculatively before arguments.",
+    "No new full 53-package runtime matrix or CLI run was performed. The latest full matrix/CLI evidence remains attached to source 9c33b7de0ba05f0e764ecc2e17d593d20e68aaa3 and is not relabeled as a result on this source.",
+    "Wasm, doctest, Tier 2 and final Native/Web image parity were not rerun for this private change.",
+    "Generic Match remains accepted. The prior exact 151-case verification is retained; this owner partition is not presented as a new full Generic Match run."
+  ],
+  "priorEvidence": "task-presentation-factory-native-metadata.json",
+  "originalWip": {
+    "tracked": 14,
+    "actualUntracked": 6,
+    "unchangedOldHashes": 19,
+    "benchWorkingBlob": "4df23c4afc860ca51ff3255befe87b69a16de39b",
+    "heldPatchSha256": "53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6"
+  },
+  "raw": {
+    "path": "task-presentation-factory-native-context-raw.zip",
+    "entryCount": 69,
+    "entryDrift": 0,
+    "sha256": "20e26cd8abe6a622c52642df71b88fa7c19b8647245e19d9259bb52ab52f3113",
+    "entries": [
+      {
+        "name": "audit-nextest-final-result.ps1",
+        "bytes": 5266,
+        "sha256": "9d136f5ff9dbe80e524a8c9adb2f11fc96cce75046e3e1fe3e93ba73888cc0ab"
+      },
+      {
+        "name": "audit-presentation-factory-native-context-docs.ps1",
+        "bytes": 2665,
+        "sha256": "aa6d9c88ce0deea6e49e4abcd4ed8efa4b4e5b1ba29fe1d31f5d6813a805eaa5"
+      },
+      {
+        "name": "audit-presentation-factory-native-context-partition.ps1",
+        "bytes": 4098,
+        "sha256": "a837d8bd166d04205abffb29f6a6c9e886688f4a255c53115069811b3be84d6e"
+      },
+      {
+        "name": "checkpoint-presentation-factory-native-context-regressions.message.txt",
+        "bytes": 443,
+        "sha256": "84eff47ba302def73b206a93a339efbc05a106ad6f9c89b4b83a25d5196dbb64"
+      },
+      {
+        "name": "checkpoint-presentation-factory-native-context-regressions.other.txt",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "checkpoint-presentation-factory-native-context-regressions.owned.txt",
+        "bytes": 64,
+        "sha256": "be9fff6a7a2653e53a35393199e90e7d713a44be37fd896fff66d17847843eff"
+      },
+      {
+        "name": "checkpoint-presentation-factory-native-context-regressions.pathspec",
+        "bytes": 64,
+        "sha256": "a8f6d462e0940fb213574e6914a9ad5650953d3d7525ecca48a6faeaa553e54d"
+      },
+      {
+        "name": "checkpoint-presentation-factory-native-context-regressions.prepared.json",
+        "bytes": 1401,
+        "sha256": "1ebf56c3052985484d21e416598164608d7ec7588b6bb806a048892bbc198ad3"
+      },
+      {
+        "name": "checkpoint-presentation-factory-native-context-regressions.reviewed.patch",
+        "bytes": 5751,
+        "sha256": "29027ee93e6bb54582f6ceddbd4b374e3e1d9e6228c599471ea4fa18d92f04c5"
+      },
+      {
+        "name": "checkpoint-presentation-factory-native-context-regressions.verified.json",
+        "bytes": 706,
+        "sha256": "9824b2802afd0e068ae88459d95d95e48274485f32a85d46cfeec1d8d7827383"
+      },
+      {
+        "name": "checkpoint-presentation-factory-native-context.message.txt",
+        "bytes": 512,
+        "sha256": "af50749106b307a8fdcbdbeae5fee952166091d678b082213079480c438c1d22"
+      },
+      {
+        "name": "checkpoint-presentation-factory-native-context.other.txt",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "checkpoint-presentation-factory-native-context.owned.txt",
+        "bytes": 94,
+        "sha256": "7fd0e38148ece02b8dc503a6790bf0bf5632fe06398ab75c74ab2ac9dcc0015d"
+      },
+      {
+        "name": "checkpoint-presentation-factory-native-context.pathspec",
+        "bytes": 92,
+        "sha256": "3c159bd2c1abecae3ccbd9d127f510d6d374544e31da35bd3b4a7a0af4ad172c"
+      },
+      {
+        "name": "checkpoint-presentation-factory-native-context.prepared.json",
+        "bytes": 1520,
+        "sha256": "c821ce4bcbd6039cf7414bf043db935454e28abe77d1e02c909a19be8e159a47"
+      },
+      {
+        "name": "checkpoint-presentation-factory-native-context.reviewed.patch",
+        "bytes": 3926,
+        "sha256": "8235a13e9c2de2bdecc8ec1138cefd0368ae930f46bbd2a55a749a18dabed0ff"
+      },
+      {
+        "name": "checkpoint-presentation-factory-native-context.verified.json",
+        "bytes": 825,
+        "sha256": "7ec8c0894f374b10ebf727be2367347954d415836c1d1123e79543dec9a763b5"
+      },
+      {
+        "name": "presentation-factory-native-context-baseline1-20261101.catalog.json",
+        "bytes": 618,
+        "sha256": "547161d116394d78dce6aeeeab601267abf8986ac3378bdf86f94000797f0cd6"
+      },
+      {
+        "name": "presentation-factory-native-context-baseline1-20261101.catalog.log",
+        "bytes": 10730,
+        "sha256": "8d19bf11a8a106991f52446ee6553688dbb01ba6f329bebb3ff56125d33c3578"
+      },
+      {
+        "name": "presentation-factory-native-context-baseline1-20261101.source-freeze.json",
+        "bytes": 793219,
+        "sha256": "b1e8fdd1d5c46481ab13bfd01c89d50a98d4e9d092b402454d27cb01de884bbe"
+      },
+      {
+        "name": "presentation-factory-native-context-baseline2-20261101.binaries-before.json",
+        "bytes": 202,
+        "sha256": "b221e4eef0713ad7704376d75bb9cd4c9d306212f641da8d883eef58616dcacf"
+      },
+      {
+        "name": "presentation-factory-native-context-baseline2-20261101.catalog.inventory.json",
+        "bytes": 562354,
+        "sha256": "002ce6e68ef091d58e25598e700d1d82a37b329ffed58a105460f09a9d9f7d57"
+      },
+      {
+        "name": "presentation-factory-native-context-baseline2-20261101.catalog.json",
+        "bytes": 616,
+        "sha256": "a5cd443caef47e4a9ee8470614f25cc3c27f9f0e379ec08835ee7c93049be28a"
+      },
+      {
+        "name": "presentation-factory-native-context-baseline2-20261101.catalog.log",
+        "bytes": 462903,
+        "sha256": "c4d6435647898f10cf24528e46988dce7b6f4b0409f2628a37c5278997b94e6a"
+      },
+      {
+        "name": "presentation-factory-native-context-baseline2-20261101.runtime.json",
+        "bytes": 710,
+        "sha256": "498760214a546a6731ec9a318b4d09cc59490a0fad9b254ddb3a2909be6eac0b"
+      },
+      {
+        "name": "presentation-factory-native-context-baseline2-20261101.runtime.log",
+        "bytes": 712426,
+        "sha256": "d27fdbb6fc29fcec715339c3f6511d825215bf7996680bb9298071a9541948e4"
+      },
+      {
+        "name": "presentation-factory-native-context-baseline2-20261101.runtime.terminal-audit.json",
+        "bytes": 1598,
+        "sha256": "86c0db243ebfe9900289807e995cc97a15292ab9b7ede3d84ac5063e86a90863"
+      },
+      {
+        "name": "presentation-factory-native-context-baseline2-20261101.source-freeze.json",
+        "bytes": 793219,
+        "sha256": "031c675065a68aeae4b15b68eb4cf645a598ead38b6f778b182f52dace0f5035"
+      },
+      {
+        "name": "presentation-factory-native-context-complement-20261101.binaries-before.json",
+        "bytes": 682,
+        "sha256": "d15a1af35ccb7bd83843f92ae2aa754d0d8239c9864cc2064fd5556ba2bbcf3d"
+      },
+      {
+        "name": "presentation-factory-native-context-complement-20261101.catalog.inventory.json",
+        "bytes": 652170,
+        "sha256": "ec807f35d9b4810feac090974635d9918f6f0b209e41a59fb225d36a937032e0"
+      },
+      {
+        "name": "presentation-factory-native-context-complement-20261101.catalog.json",
+        "bytes": 999,
+        "sha256": "8d0f7f859c244266027f7b45be59fb868781ab58176b95187318ddda5f86a07e"
+      },
+      {
+        "name": "presentation-factory-native-context-complement-20261101.catalog.log",
+        "bytes": 535043,
+        "sha256": "fea3b92985a2758d5dd7e7fb3c674e65b1530d8a0d0592de8ee9599fb359d2c4"
+      },
+      {
+        "name": "presentation-factory-native-context-complement-20261101.runtime.json",
+        "bytes": 1091,
+        "sha256": "451ae8b5023cd5d8d791399c13b1c35f0260420d7c2a8a5b0a520a20ad3d110e"
+      },
+      {
+        "name": "presentation-factory-native-context-complement-20261101.runtime.log",
+        "bytes": 882490,
+        "sha256": "bea3c4cf9760d0e35493d7656c06152b8d0dcd4204675f68ef1294ee1c9dac20"
+      },
+      {
+        "name": "presentation-factory-native-context-complement-20261101.runtime.terminal-audit.json",
+        "bytes": 648,
+        "sha256": "61f9b4ba6f84d51dbaf250ddd91492e5acc57213760a369a93f8515e0c163375"
+      },
+      {
+        "name": "presentation-factory-native-context-complement-20261101.source-freeze.json",
+        "bytes": 793219,
+        "sha256": "a2695e7fa21115b27caf9bf9cc131d7c937f6b6d9ec5c8400439ecb843109c64"
+      },
+      {
+        "name": "presentation-factory-native-context-focus1-20261101.binaries-before.json",
+        "bytes": 682,
+        "sha256": "d15a1af35ccb7bd83843f92ae2aa754d0d8239c9864cc2064fd5556ba2bbcf3d"
+      },
+      {
+        "name": "presentation-factory-native-context-focus1-20261101.catalog.inventory.json",
+        "bytes": 654378,
+        "sha256": "9518f17d3137a98831ab3eeb47e5c52da782c1f9336321de555efcc796e00725"
+      },
+      {
+        "name": "presentation-factory-native-context-focus1-20261101.catalog.json",
+        "bytes": 989,
+        "sha256": "b1403d0f386038d631cd2af9fa2f817f1e0b47af25cd867a4cf4a7d160deaa7d"
+      },
+      {
+        "name": "presentation-factory-native-context-focus1-20261101.catalog.log",
+        "bytes": 587457,
+        "sha256": "7f7356e26a464758c59a895cefa9e4ad59c3d9e9c58d43d5748215d79ee9198b"
+      },
+      {
+        "name": "presentation-factory-native-context-focus1-20261101.runtime.json",
+        "bytes": 1081,
+        "sha256": "fcbc600a757435767281967ac6d97319d1745856a05c7885fb9b2428ec1b0b7a"
+      },
+      {
+        "name": "presentation-factory-native-context-focus1-20261101.runtime.log",
+        "bytes": 932497,
+        "sha256": "28f0da6392371ed0d08d25df3157ef9b5accbc21d98e3baeba3a5c079115aca1"
+      },
+      {
+        "name": "presentation-factory-native-context-focus1-20261101.runtime.terminal-audit.json",
+        "bytes": 642,
+        "sha256": "60a6db800d97bb277ee2036db2fc6db629d7958a5efebc8da47fd7f83e34dca6"
+      },
+      {
+        "name": "presentation-factory-native-context-focus1-20261101.source-freeze.json",
+        "bytes": 793219,
+        "sha256": "8c6f616fbc6ea447c21c178809560ee599e45671d0d8c4a24b1dbdbb446fc2f5"
+      },
+      {
+        "name": "presentation-factory-native-context-quality-20261101.clippy.json",
+        "bytes": 356,
+        "sha256": "8a98399ca2c6a93f41d1a96878ca417bc284868d35256d884f98608fafb7072c"
+      },
+      {
+        "name": "presentation-factory-native-context-quality-20261101.clippy.log",
+        "bytes": 8666706,
+        "sha256": "52fd6a6283683358cbf1a6338f2a0e7b52d4a0304eef5bf9e3c2bd0f244cd411"
+      },
+      {
+        "name": "presentation-factory-native-context-quality-20261101.default-core.json",
+        "bytes": 344,
+        "sha256": "0644ad365a845fe5a0f1ab4e3f7c89db00f18452583c21135bbe6fac38f9649a"
+      },
+      {
+        "name": "presentation-factory-native-context-quality-20261101.default-core.log",
+        "bytes": 82555,
+        "sha256": "69ae87edfc417f5e2ad1873167b634d388030f4c2169f5f4663e658d5f839e11"
+      },
+      {
+        "name": "presentation-factory-native-context-quality-20261101.fmt.json",
+        "bytes": 285,
+        "sha256": "35f1aa521dfd751cf30651da28d61c42e26eaec33e8ac55696f2bc095f866759"
+      },
+      {
+        "name": "presentation-factory-native-context-quality-20261101.fmt.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "presentation-factory-native-context-quality-20261101.source-freeze.json",
+        "bytes": 793298,
+        "sha256": "506fe1ab41db3b6dd785ee17f3d90f4268e797d746c58f997bd6c4ec3f8b364e"
+      },
+      {
+        "name": "presentation-factory-native-context-quality-20261101.structure-report/dependency_edges.csv",
+        "bytes": 77544,
+        "sha256": "529e738d348314f7a4c0d909b165620d03ec57478b68ad42b06aa349b30e13f4"
+      },
+      {
+        "name": "presentation-factory-native-context-quality-20261101.structure-report/file_metrics.csv",
+        "bytes": 333737,
+        "sha256": "8b5d748ef16b9c1749e26e9512e2ea34212a15c82379893bba803a584380c474"
+      },
+      {
+        "name": "presentation-factory-native-context-quality-20261101.structure-report/findings.md",
+        "bytes": 122937,
+        "sha256": "dbc108a2b979815366370dbf4f5c6f4c85fc6dbfda8b25028a64b6b8b1af1ea3"
+      },
+      {
+        "name": "presentation-factory-native-context-quality-20261101.structure-report/package_metrics.csv",
+        "bytes": 6444,
+        "sha256": "c2df26363c079ef3c17be71810df334c6e4825ab5987b4951b3f1432368b85f2"
+      },
+      {
+        "name": "presentation-factory-native-context-quality-20261101.structure-report/public_type_duplicates.csv",
+        "bytes": 17296,
+        "sha256": "5c0d5ff256682ea6c19a4bfc4bf75a09f2da62cf37b02c8459dead7d1f177064"
+      },
+      {
+        "name": "presentation-factory-native-context-quality-20261101.structure.json",
+        "bytes": 547,
+        "sha256": "b8e395f275e12b33baa1788f83bf0e028e216124a7c9fa35e92fe15a2e3aad31"
+      },
+      {
+        "name": "presentation-factory-native-context-quality-20261101.structure.log",
+        "bytes": 65410,
+        "sha256": "8e5aed3b5886ef89b6059092d0b636c093a25c2e044ce7ec8354442257a0f6af"
+      },
+      {
+        "name": "presentation-factory-native-context-quality-20261101.workspace-check.json",
+        "bytes": 355,
+        "sha256": "d35f015439986e80d7bf64efce5a34270e52343cdf88a7702103e329f75360a9"
+      },
+      {
+        "name": "presentation-factory-native-context-quality-20261101.workspace-check.log",
+        "bytes": 109667,
+        "sha256": "edcc5918ca1a3545e1a3ea649c73e20b8840a6a006ea0614aca2fdda946baeb9"
+      },
+      {
+        "name": "presentation-factory-native-context-quality.active.txt",
+        "bytes": 52,
+        "sha256": "1313d02699e8519778ee52e722d807cd50e3380823a2f8a223a41ccb6286ca7a"
+      },
+      {
+        "name": "presentation-factory-native-context.docs-before.json",
+        "bytes": 1036,
+        "sha256": "39cc4a95a5d67d7b240c0eb6b8ab15e608712e1e3f1813b6503c0142d068c0fa"
+      },
+      {
+        "name": "presentation-factory-native-context.history-template.txt",
+        "bytes": 3498,
+        "sha256": "4edcf5ba6ccc0b5043d2591bc71715519321b2b98ab726cadc3da58efd5e057e"
+      },
+      {
+        "name": "presentation-factory-native-context.owner-partition.json",
+        "bytes": 676300,
+        "sha256": "f18d49fdbe2c5cbcee19e18993fe4009d0281ac18d3f10b7ee2629547986ac18"
+      },
+      {
+        "name": "presentation-factory-native-context.quality-owned.txt",
+        "bytes": 159,
+        "sha256": "f5ee76f0d82efb9fc3ecf04028f7537f4018c7c91965c94d4ae7f26e73e67c4d"
+      },
+      {
+        "name": "record-presentation-factory-native-context.ps1",
+        "bytes": 8859,
+        "sha256": "35da61d2f0392677ac1492dbb5336f16a683cc5805b996b5cd7bb310b6799bb4"
+      },
+      {
+        "name": "run-presentation-factory-native-context-quality.ps1",
+        "bytes": 2801,
+        "sha256": "0cf3e52410c9d2a1e5f76a7a01c056bae6ffdf519a629b73faed2d9ff4dab8fc"
+      },
+      {
+        "name": "run-shared-identity-owner.ps1",
+        "bytes": 3806,
+        "sha256": "834937c26fe595d91b254a96b8fdaaf88b1c0b10b18bee166e0dc403b5ac2849"
+      },
+      {
+        "name": "update-presentation-factory-native-context-docs.ps1",
+        "bytes": 5092,
+        "sha256": "1832672eb299f2a6ce6c6888bb632686206609b847630493063b627f734341d5"
+      }
+    ]
+  },
+  "recordedAt": "2026-11-01T12:48:34.7826159Z"
+}

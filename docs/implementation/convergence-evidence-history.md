@@ -13895,3 +13895,15 @@ Source 0c65eb15235f16ff96232e4926e5bbd563e5a90c（親534742896a9450e8bff54ce4376
 - 現状一覧から「Native引数評価前は継続中」という旧記述を削除し、再現2失敗と本修正の検証に基づく到達範囲へ訂正した。Generic Match行で旧Source 12180810c10ced738a2ad94f98dbb3b1cec831a1を「今回」と呼ぶ表現は「受入後」に訂正し、受入・公開SHA、151件と根拠linkを保持した。旧Source・件数・失敗・full SHAは履歴と原本へ保持する。引数子式のloweringや、後段body・registration・全live候補の失敗原子性まで完了したとはしない。明示scope・View／Removed生成・command／method・driver、default／Wasm・doctest・Tier 2・最終画像parityの未実行は各境界で区別し、全体goalを理由に個別受入を取り消さない。
 
 [全原本](acceptance-evidence/task-presentation-factory-native-metadata.json)と119 entryのraw ZIPを保持する（entry差分0、SHA256 2fd0479b0ba9af42972b01eaf8401d36298102aea162c8e8e3588d4a50322497）。
+
+
+## 2026-11-01 Native factoryの実行元をcapture前に拒否
+
+- 実装公開は1e0b3f9d5eb86baa04e0359d656ba638cd0ffa3a。Engineの同じowning contextで元planの実Arc、実行／fiber ID、artifact、全lexical scopeのcontext headerを確認し、grantがあるのにEngine bank storageが無い状態も拒否する。旧registration側の重複した検査をこの処理へ移し、引数評価前と最終registrationで共用した。入力・scope grant・bankを構築せず実frameを借用する。引数評価中に空く可能性がある登録容量を、評価前に推測して拒否してはいない。
+- 最初のcatalogはfixtureのRuntimePayload import不足で終了101。fixtureを直したbaselineは1 PASS／5 FAILで、artifact欠如、等しいbytesの別program lease、実行ID不一致、現在／親scopeのledger欠如の各条件でcapture probeが1回評価されてから拒否された。これが新しい実行元境界の修復根拠であり、前Sourceで受入済みのstatic metadata検査やSource image実行を取り消す根拠にはしない。test-onlyの既知失敗checkpointは392b139c9c7de1bb10e00e42d7d18797b1d154c3。
+- 修正後の185件は全PASS。さらに同じ入力・同じ3実行ファイルから未選択の2,392件だけを補完し、合計2,577 unique PASS／0 FAIL。Core library全2,201件、Compiler library 175件／callable_execution 201件で、ignored 0、case重複0、未選択0、Source／EXE差分0。5再現はcapture 0回・既存grant不変・新規ledgerなしになり、実Source imageの両backend・評価順12・Image／Root Handle・AWBC各step保存復元もPASSを維持した。PowerShellのOrderedDictionary集約が一度空のbinary名を出した報告上の誤りは、同じ2,577 caseから分類を訂正し、初回集約・訂正理由も原本に保持した。テストの再実行や件数の合算による訂正ではない。
+- 変更はprivate Engineの2 source pathと5再現のtest pathだけで、public型・wire／codec・Source grammar・AWBC・Cargo入力に変更はない。既存resolved metadataと推移的逆依存53 packageを照合し、ownerのCore／Compilerを実行した。他のruntime consumerとCLIの全体試験は今回再実行せず、以前のSource 9c33b7de0ba05f0e764ecc2e17d593d20e68aaa3の全53 package・通常3群7,116 PASS、およびCLI 649 PASS／43 FAILを本Sourceの結果へ読み替えない。
+- default Core全target・locked check、workspace全97 package・全target・全feature・locked check／Clippy、変更3 Rust path fmtは終了0。構造は3293 files／3163 Rust files・1785336 physical Rust LOC・384 review trigger・blocking0。警告は残存。ownerとquality、公開Sourceの4,057入力のpath／hash bridgeは差分0。元14 tracked／6 untracked WIP、19旧hashとbench既知blob、14-path patch SHA256を保持した。
+- 現状一覧のfactory行を今回の実行元検査へ更新し、全逆依存・CLIの行は直近の実測Sourceを明示して保持した。Generic Matchの受入・公開SHA、151件と根拠linkは変更していない。全staging、完全な評価一時値／all-fiberの構築前admissionや後段登録失敗の原子性、最終Native/Web parityへこのcutを拡張しない。残る受入範囲は現状一覧の該当行に置く。Wasm・doctest・Tier 2・最終画像parityは今回未再実行。
+
+[全原本](acceptance-evidence/task-presentation-factory-native-context.json)と69 entryのraw ZIPを保持する（entry差分0、SHA256 20e26cd8abe6a622c52642df71b88fa7c19b8647245e19d9259bb52ab52f3113）。

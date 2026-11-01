@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "source": "1e0b3f9d5eb86baa04e0359d656ba638cd0ffa3a",
+  "inspectedHead": "1e0b3f9d5eb86baa04e0359d656ba638cd0ffa3a",
+  "checkedDocuments": [
+    "docs/implementation/current-status.md",
+    "docs/implementation/convergence-evidence-history.md"
+  ],
+  "localLinks": 776,
+  "brokenLinks": 0,
+  "fencesBalanced": true,
+  "historicalPrefixBytes": 1699035,
+  "historicalPrefixDrift": 0,
+  "oldCommitShaLoss": 0,
+  "acceptedGenericMatchRowUnchanged": true,
+  "rawEntryCount": 69,
+  "rawEntryDrift": 0,
+  "rawZipSha256": "20e26cd8abe6a622c52642df71b88fa7c19b8647245e19d9259bb52ab52f3113",
+  "diffCheckExit": 0,
+  "recordedAt": "2026-11-01T12:48:42.1576504Z"
+}
