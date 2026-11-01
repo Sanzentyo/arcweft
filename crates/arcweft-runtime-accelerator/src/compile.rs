@@ -954,6 +954,9 @@ pub(super) fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
         RuntimeExprKind::Field { target, .. } => {
             1 + target.value().map_or(0, runtime_expr_work_units)
         }
+        RuntimeExprKind::PresentationHandleMethod { target, .. } => {
+            8 + target.value().map_or(0, runtime_expr_work_units)
+        }
         RuntimeExprKind::ProjectTuple { target, .. }
         | RuntimeExprKind::ProjectRecord { target, .. } => 1 + runtime_expr_work_units(target),
         RuntimeExprKind::Call { args, .. } | RuntimeExprKind::PureCall { args, .. } => {
