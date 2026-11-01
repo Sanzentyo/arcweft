@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "source": "eeb34b092a4941899e950f98a326dc22aaa636a8",
+  "inspectedHead": "eeb34b092a4941899e950f98a326dc22aaa636a8",
+  "documents": [
+    "docs/implementation/current-status.md",
+    "docs/implementation/convergence-evidence-history.md",
+    "docs/03-presentation/view-reactive.md"
+  ],
+  "localLinks": 796,
+  "brokenLinks": 0,
+  "fencesBalanced": true,
+  "historicalPrefixBytes": 1726688,
+  "historicalPrefixDrift": 0,
+  "acceptedGenericMatchRowUnchanged": true,
+  "rawEntryCount": 89,
+  "rawPayloadEntries": 88,
+  "rawZipSha256": "701105f8985da92ac3416ab21470945441349b92d881804188cb0d884178cfd8",
+  "rawEntryDrift": 0,
+  "recordedAt": "2026-11-01T19:47:46.1716109Z"
+}

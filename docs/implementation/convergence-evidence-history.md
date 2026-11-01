@@ -13995,3 +13995,13 @@ ViewValueの元宣言をCoreと描画側で共有するため、ViewId・ViewIdE
 最終4,062入力のnextest ownerは7／7 PASS・Source／case／EXE差分0、246は意図したfilter外。移した3件とViewId codecを共通ownerで4件、retained program／revision ownerで3件とし、混在していたcodec testのassertionを落とさず分けた。構造gate終了0、3,298 files／3,168 Rust files・1,788,649 physical Rust LOC・385 review trigger・blocking0。新ownerは7,133 bytes／221 LOC、ID facadeは34,019 bytes／1,073 LOC（module追加のみ）、旧identity ownerは8,360 bytes／260 LOC。共有の文法・hashは低層、retained executionとregistry stateは上層へ保ち、import-only consumerの状態責務とCargo edgeは変えない。各path metricと依存fan-in/outをowner review／CSVへ保持した。
 
 実metadata／target-all treeによるIDの全逆依存は71 package。全71のruntimeはViewValue public switch後の統合runで検証し、今回の7件やconsumer compileを全runtime受入へ置換しない。Source ViewValueの生成・mount実行、driver、全体の受入は引き続き実装中である。Generic Matchの受入・公開行と以前のSourceごとの実行結果は維持し、所有移行を理由に完了項目を未完了へ戻さない。現状一覧にはこの所有移行の行だけを追加した。
+
+## Source ViewValueの保持・直接生成 — 2026-11-02
+
+Core 6ee3af094df0d16769a54d82a77e5affd331fa2e、Compiler／RuntimePlan eeb34b092a4941899e950f98a326dc22aaa636a8 を通常commit・non-forced pushし、公開tree／patch／blob差分0を確認した。[入力別の原本](acceptance-evidence/task-source-view-value.json)と[生ログ・catalog・Source/EXE pin・公開照合ZIP](acceptance-evidence/task-source-view-value.raw.zip)を保持する。元14 tracked WIPのpatch SHA256 53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6は不変。全体cargo cleanは別の実行済み履歴を維持し、再実行していない。
+
+初回Source 6件は全FAIL。専用View targetと型・capture投影を追加した次の6件では、alias 2件のcompile-time型拒否に加え、直接／default省略4件が元Source式codecの未移行tagでFAILした。borrowed count/preflightとreaderを揃えたprojection2では4 PASS／2 FAIL。後から追加した名前付き引数順2件は、varと裸の引数blockというfixtureの誤りでreadiness拒否となった。let mut／scopeへ直したorder2は2／2 PASS、戻り値12。projection3の8件4 PASS／4 FAILも削除せず、fixture失敗とaliasの実装未達を区別して保持した。異なる入力の4件と2件を一つの8件PASS runに合算しない。AWBCはcanonical decode後、各stepで公開save／owned restoreを実施した。
+
+Core ownerは24／24 PASS。Native／decoded AWBCの元program下で供給parameter 2だけを保持する値の往復とaffine性、View名・definition・総parameter数・供給座標・resource型・body layoutの6種の拒否、private wireの正確なmetadata資源境界を確認した。各runの入力・case／EXE照合を原本へ保持する。最終側は4,066入力・差分0。workspace全97 packageの全target／全feature／locked check・Clippy、変更Rust 32 path fmt、構造gateは終了0、警告は残る。構造は3,302 files／3,172 Rust files・1,790,357 physical LOC・385 trigger・blocking0。新Core ownerはmetadata・型付きcapture layout・admissionに責任を限定し、bank・registry・描画・I/Oを取り込まない。既存のCompiler／RuntimePlan ownerは同じ投影責務を保持し、Cargo edge変更はない。
+
+現状一覧のViewValue生成を一律の未達列挙から対象別の実測行へ訂正した。alias 2件は現在も型投影でFAILしており、その具体的な拒否を残作業の根拠とする。Source全体の未達はHandle受入行から専用行へ移し、受入済みのHandle・slot・Generic Matchを未実装に戻さない。reactive defaultの評価、描画driver、全71逆依存runtimeと全体goalの受入はこのcutの成功から推定しない。

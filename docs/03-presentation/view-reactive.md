@@ -47,6 +47,12 @@ Core の通常関数値や実行 frame へ投影しない。`@view.*` は同じ 
 public identity を参照する entity reference として保持する。local/project の名前が
 builtin View head と同じ場合も、通常の shadowing と visibility に従う。
 
+生成された `ViewValue` は affine な値であり、元の program・View 宣言の意味的な
+identity・供給した parameter の座標と正確な型付き capture を保持する。省略した
+parameter は供給値の列に入れず、元宣言の default に任せる。値の生成と mount の
+handle 発行は別の操作である。保存復元でも元の program と invocation、宣言 identity、
+capture layout と型の一致を検査し、同じ物理表現だけで別の型や宣言を受け入れない。
+
 layout container の `Panel { ... }` と `Panel(...) { ... }` は、header に続いて
 子 View を source order で即時評価する。子ブロックは通常の lexical scope であり、
 closure を作成しない。`let`、`local state`、条件分岐、反復はそれぞれの所有 scope に従う。
