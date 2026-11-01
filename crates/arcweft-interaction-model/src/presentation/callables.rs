@@ -287,7 +287,26 @@ pub enum PresentationHandleMethodId {
     OverlayPop,
 }
 
+/// The owning effect of a handle method, shared by semantic admission and
+/// execution. Retiring a registration consumes its handle; visibility borrows
+/// the registration and leaves the same handle available to its caller.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PresentationHandleOperation {
+    SetVisibility(bool),
+    Retire,
+}
+
 impl PresentationHandleMethodId {
+    pub const fn operation(self) -> PresentationHandleOperation {
+        match self {
+            Self::Show => PresentationHandleOperation::SetVisibility(true),
+            Self::Hide => PresentationHandleOperation::SetVisibility(false),
+            Self::Unmount | Self::Release | Self::Destroy | Self::OverlayPop => {
+                PresentationHandleOperation::Retire
+            }
+        }
+    }
+
     /// Universal handle methods also apply before a generic item is closed.
     /// `pop` requires the exact Overlay resource rather than an unknown family.
     pub fn resolve(resource: Option<PresentationResourceKind>, method: &str) -> Option<Self> {

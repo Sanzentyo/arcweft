@@ -19,7 +19,7 @@ pub use arguments::{
 };
 pub use callables::{
     PresentationCallableId, PresentationCallableOperation, PresentationCallableResult,
-    PresentationFactoryPlacement, PresentationHandleMethodId,
+    PresentationFactoryPlacement, PresentationHandleMethodId, PresentationHandleOperation,
 };
 
 pub use image::{

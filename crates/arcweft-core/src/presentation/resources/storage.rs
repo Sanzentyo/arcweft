@@ -257,7 +257,7 @@ impl<V: RuntimeStoredValue> PresentationLedger<PresentationBody<V>> {
             let mut occupied = std::collections::BTreeSet::new();
             for (issuance, lease) in &self.state.leases {
                 admission.validate_metadata(&(issuance, &lease.token))?;
-                admission.validate_metadata(&lease.site)?;
+                admission.validate_metadata(&(&lease.site, lease.visibility_override))?;
                 if let PresentationRegistrationSite::Slot(address) = &lease.site {
                     address.validate().map_err(RuntimePresentationError::from)?;
                 }
@@ -380,6 +380,7 @@ impl PresentationLedger<PresentationBody<RuntimePayload>> {
                         token: lease.token.clone(),
                         owner: lease.owner,
                         site: lease.site.clone(),
+                        visibility_override: lease.visibility_override,
                         body: lease
                             .body
                             .as_ref()
@@ -432,6 +433,7 @@ impl PresentationLedger<PresentationBody<AwbcRuntimeValueSnapshot>> {
                         token: lease.token,
                         owner: lease.owner,
                         site: lease.site,
+                        visibility_override: lease.visibility_override,
                         body: lease
                             .body
                             .map(|body| body.into_admitted_live(context))

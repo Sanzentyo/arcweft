@@ -6,6 +6,7 @@ use crate::value::{RuntimeEnv, RuntimeValue};
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
+mod handle_methods;
 mod scope_grants;
 mod transition;
 

@@ -58,6 +58,9 @@ struct PresentationLease<V> {
     token: RuntimePresentationHandleToken,
     owner: Option<PresentationScopeOwner>,
     site: PresentationRegistrationSite,
+    /// Authored visibility remains in the original body. Only an explicit
+    /// handle command overrides it; lifecycle state has this one owner.
+    visibility_override: Option<bool>,
     body: Option<V>,
 }
 
@@ -438,6 +441,7 @@ impl<V> PresentationLedger<V> {
                 token: token.clone(),
                 owner: Some(owner),
                 site,
+                visibility_override: None,
                 body: Some(body),
             },
         );
@@ -506,6 +510,56 @@ impl<V> PresentationLedger<V> {
             .remove(&issuance)
             .expect("validated issuing record")
             .body)
+    }
+
+    /// Validates the original handle and its actual dynamic grant before any
+    /// lifecycle mutation. A displaced handle retains only its release duty.
+    fn preflight_handle_method(
+        &self,
+        program: &RuntimeProgramOwner,
+        token: &RuntimePresentationHandleToken,
+        owner: Option<PresentationScopeOwner>,
+        method: arcweft_interaction_model::presentation::PresentationHandleMethodId,
+    ) -> Result<NonZeroU64, RuntimePresentationError> {
+        use arcweft_interaction_model::presentation::{
+            PresentationHandleMethodId, PresentationHandleOperation,
+        };
+        let issuance = self.validate_handle(program, token, owner)?;
+        if method == PresentationHandleMethodId::OverlayPop
+            && token.resource() != PresentationResourceKind::Overlay
+        {
+            return Err(RuntimePresentationError::InvalidState);
+        }
+        if matches!(
+            method.operation(),
+            PresentationHandleOperation::SetVisibility(_)
+        ) && self.state.leases[&issuance].body.is_none()
+        {
+            return Err(RuntimePresentationError::InvalidState);
+        }
+        Ok(issuance)
+    }
+
+    fn apply_handle_method(
+        &mut self,
+        program: &RuntimeProgramOwner,
+        token: &RuntimePresentationHandleToken,
+        owner: Option<PresentationScopeOwner>,
+        method: arcweft_interaction_model::presentation::PresentationHandleMethodId,
+    ) -> Result<Option<V>, RuntimePresentationError> {
+        use arcweft_interaction_model::presentation::PresentationHandleOperation;
+        let issuance = self.preflight_handle_method(program, token, owner, method)?;
+        match method.operation() {
+            PresentationHandleOperation::SetVisibility(visible) => {
+                self.state
+                    .leases
+                    .get_mut(&issuance)
+                    .expect("exclusive admission retains the original handle")
+                    .visibility_override = Some(visible);
+                Ok(None)
+            }
+            PresentationHandleOperation::Retire => self.release(program, token, owner),
+        }
     }
 
     /// Exits only the exact dynamic owner, in deterministic issuance order.

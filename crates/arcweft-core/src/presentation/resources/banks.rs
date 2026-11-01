@@ -103,6 +103,41 @@ impl<V> PresentationBanks<V> {
         Ok(token)
     }
 
+    /// One handle method changes its original bank. Queue admission precedes
+    /// consuming a terminal handle, so rejection preserves the complete owner.
+    pub(crate) fn apply_handle_method(
+        &mut self,
+        program: &RuntimeProgramOwner,
+        token: &RuntimePresentationHandleToken,
+        owner: Option<PresentationScopeOwner>,
+        method: arcweft_interaction_model::presentation::PresentationHandleMethodId,
+    ) -> Result<(), RuntimePresentationError> {
+        use arcweft_interaction_model::presentation::PresentationHandleOperation;
+        let ledger = self
+            .ledgers
+            .get(&token.bank())
+            .ok_or(RuntimePresentationError::Owner)?;
+        let issuance = ledger.preflight_handle_method(program, token, owner, method)?;
+        if matches!(method.operation(), PresentationHandleOperation::Retire)
+            && ledger.state.leases[&issuance].body.is_some()
+            && self.retirements.len() >= ledger.limits.handles
+        {
+            return Err(RuntimePresentationError::RetirementCapacity);
+        }
+        let body = self
+            .ledgers
+            .get_mut(&token.bank())
+            .expect("exclusive admission retains the original bank")
+            .apply_handle_method(program, token, owner, method)?;
+        if let Some(body) = body {
+            self.retirements.push(PresentationRetirement {
+                token: token.clone(),
+                body,
+            });
+        }
+        Ok(())
+    }
+
     pub(crate) fn new(
         program: RuntimeProgramOwner,
         artifact: RuntimeArtifactFingerprint,
