@@ -496,11 +496,22 @@ impl Decoder<'_, '_> {
                 ordinal: r.u32()?,
                 payload: r.boolean()?.then(|| self.boxed()),
             },
+            37 => {
+                let tag = r.byte()?;
+                let method = arcweft_interaction_model::presentation::PresentationHandleMethodId::from_semantic_tag(tag)
+                    .expect("admitted handle method tag");
+                let target = if r.boolean()? {
+                    RuntimeValueTargetSeed::Inspect(self.place(&mut r)?)
+                } else {
+                    RuntimeValueTargetSeed::Value(self.boxed())
+                };
+                K::PresentationHandleMethod { method, target }
+            }
             18 => {
                 let target = if r.boolean()? {
-                    RuntimeFieldTargetSeed::Inspect(self.place(&mut r)?)
+                    RuntimeValueTargetSeed::Inspect(self.place(&mut r)?)
                 } else {
-                    RuntimeFieldTargetSeed::Value(self.boxed())
+                    RuntimeValueTargetSeed::Value(self.boxed())
                 };
                 let field = match r.byte()? {
                     0 => RuntimeFieldProjectionSeed::Nominal {

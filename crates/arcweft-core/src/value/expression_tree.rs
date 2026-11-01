@@ -414,7 +414,8 @@ impl<'a> Iterator for RuntimeExpressionChildren<'a> {
                         None
                     }
                 }
-                RuntimeExprKind::Field { target, .. } => (index == 0)
+                RuntimeExprKind::Field { target, .. }
+                | RuntimeExprKind::PresentationHandleMethod { target, .. } => (index == 0)
                     .then(|| target.value())
                     .flatten()
                     .map(|target| (R::Target, N::Expression(target))),

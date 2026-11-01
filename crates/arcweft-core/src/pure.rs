@@ -1996,6 +1996,12 @@ impl<'a> PureEvaluator<'a> {
                 self.evaluate_variant_expr(expr.ty(), *ordinal, payload.as_deref())
             }
             RuntimeExprKind::Field { target, field } => self.evaluate_field_expr(target, field),
+            RuntimeExprKind::PresentationHandleMethod { .. } => {
+                Err(RuntimeEvalError::UnsupportedPure {
+                    name: "presentation.handle".into(),
+                    reason: "a handle method requires its owning execution bank".into(),
+                })
+            }
             RuntimeExprKind::ProjectTuple { target, ordinal } => {
                 self.evaluate_project_tuple_expr(target, *ordinal)
             }
@@ -3110,12 +3116,12 @@ impl<'a> PureEvaluator<'a> {
 
     fn evaluate_field_expr(
         &mut self,
-        target: &crate::value::RuntimeFieldTarget,
+        target: &crate::value::RuntimeValueTarget,
         field: &RuntimeFieldProjection,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let value = match target {
-            crate::value::RuntimeFieldTarget::Value(value) => self.evaluate_expr(value)?,
-            crate::value::RuntimeFieldTarget::Inspect { place, .. } => {
+            crate::value::RuntimeValueTarget::Value(value) => self.evaluate_expr(value)?,
+            crate::value::RuntimeValueTarget::Inspect { place, .. } => {
                 return self.env.inspect_field(place, field);
             }
         };

@@ -30,7 +30,7 @@ use arcweft_interaction_model::dialogue::{
     CharacterDialoguePatchField, CharacterDialoguePatchOperation,
 };
 
-impl Wire for crate::awbc::schema::AwbcFieldTarget {
+impl Wire for crate::awbc::schema::AwbcValueTarget {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         match self {
             Self::Value(value) => {
@@ -50,7 +50,7 @@ impl Wire for crate::awbc::schema::AwbcFieldTarget {
             0 => Ok(Self::Value(AwbcRegisterId::read_wire(reader)?)),
             1 => Ok(Self::Inspect(AwbcMutablePlace::read_wire(reader)?)),
             tag => Err(AwbcCodecError::UnknownTag {
-                kind: "field target",
+                kind: "value target",
                 tag,
                 offset,
             }),
@@ -975,6 +975,15 @@ impl Wire for AwbcInstruction {
                 target.write_wire(writer)?;
                 field.write_wire(writer)?;
             }
+            Self::PresentationHandleMethod {
+                dst,
+                target,
+                method,
+            } => {
+                dst.write_wire(writer)?;
+                target.write_wire(writer)?;
+                writer.write_u8(method.semantic_tag());
+            }
             Self::ReadPlace {
                 dst,
                 root,
@@ -1304,9 +1313,22 @@ impl Wire for AwbcInstruction {
             },
             AwbcOpcode::ProjectField => Self::ProjectField {
                 dst: AwbcRegisterId::read_wire(reader)?,
-                target: crate::awbc::schema::AwbcFieldTarget::read_wire(reader)?,
+                target: crate::awbc::schema::AwbcValueTarget::read_wire(reader)?,
                 field: AwbcFieldProjection::read_wire(reader)?,
             },
+            AwbcOpcode::PresentationHandleMethod => {
+                let dst = AwbcRegisterId::read_wire(reader)?;
+                let target = crate::awbc::schema::AwbcValueTarget::read_wire(reader)?;
+                let offset = reader.offset();
+                let tag = reader.read_u8()?;
+                let method = arcweft_interaction_model::presentation::PresentationHandleMethodId::from_semantic_tag(tag)
+                    .ok_or(AwbcCodecError::UnknownTag { kind: "presentation handle method", tag, offset })?;
+                Self::PresentationHandleMethod {
+                    dst,
+                    target,
+                    method,
+                }
+            }
             AwbcOpcode::ReadPlace => Self::ReadPlace {
                 dst: AwbcRegisterId::read_wire(reader)?,
                 root: AwbcRegisterId::read_wire(reader)?,
@@ -1938,6 +1960,7 @@ impl Wire for AwbcTerminator {
             | AwbcOpcode::ProjectTuple
             | AwbcOpcode::ProjectRecord
             | AwbcOpcode::ProjectField
+            | AwbcOpcode::PresentationHandleMethod
             | AwbcOpcode::ReadPlace
             | AwbcOpcode::Unary
             | AwbcOpcode::Binary

@@ -1725,16 +1725,16 @@ impl AwbcMutablePlace {
 
 /// A consumed register or an address inspected without consuming its owner.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcFieldTarget {
+pub enum AwbcValueTarget {
     Value(AwbcRegisterId),
     Inspect(AwbcMutablePlace),
 }
-impl From<AwbcRegisterId> for AwbcFieldTarget {
+impl From<AwbcRegisterId> for AwbcValueTarget {
     fn from(value: AwbcRegisterId) -> Self {
         Self::Value(value)
     }
 }
-impl AwbcFieldTarget {
+impl AwbcValueTarget {
     pub const fn base(&self) -> AwbcRegisterId {
         match self {
             Self::Value(value) => *value,
@@ -1816,6 +1816,7 @@ pub enum AwbcOpcode {
     FormatOperandAttempt = 0x2b,
     CompleteFormatOperand = 0x2c,
     AbandonFormatAttempt = 0x2d,
+    PresentationHandleMethod = 0x2e,
     EmitEffect = 0x25,
     StartNeed = 0x26,
     StartProgram = 0x27,
@@ -1874,6 +1875,7 @@ impl AwbcOpcode {
         Self::ProjectTuple,
         Self::ProjectRecord,
         Self::ProjectField,
+        Self::PresentationHandleMethod,
         Self::Assign,
         Self::TestPattern,
         Self::Unary,
@@ -1993,6 +1995,7 @@ impl AwbcOpcode {
             | Self::Binary
             | Self::SpecializeCallable => AwbcOpcodeFamily::Value,
             Self::CallPureHelper
+            | Self::PresentationHandleMethod
             | Self::CallIntrinsic
             | Self::CallTraitMethod
             | Self::ApplyGroup
@@ -2182,8 +2185,13 @@ pub enum AwbcInstruction {
     },
     ProjectField {
         dst: AwbcRegisterId,
-        target: AwbcFieldTarget,
+        target: AwbcValueTarget,
         field: AwbcFieldProjection,
+    },
+    PresentationHandleMethod {
+        dst: AwbcRegisterId,
+        target: AwbcValueTarget,
+        method: arcweft_interaction_model::presentation::PresentationHandleMethodId,
     },
     /// Reads an initialized record child while retaining its sibling owners.
     ReadPlace {
@@ -2416,6 +2424,7 @@ impl AwbcInstruction {
             Self::ProjectTuple { .. } => AwbcOpcode::ProjectTuple,
             Self::ProjectRecord { .. } => AwbcOpcode::ProjectRecord,
             Self::ProjectField { .. } => AwbcOpcode::ProjectField,
+            Self::PresentationHandleMethod { .. } => AwbcOpcode::PresentationHandleMethod,
             Self::ReadPlace { .. } => AwbcOpcode::ReadPlace,
             Self::Unary { .. } => AwbcOpcode::Unary,
             Self::Binary { .. } => AwbcOpcode::Binary,

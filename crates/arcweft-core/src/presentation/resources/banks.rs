@@ -138,6 +138,38 @@ impl<V> PresentationBanks<V> {
         Ok(())
     }
 
+    /// Selects a grant only from the executing owner's actual scope bindings.
+    /// Coordinates decoded from a token cannot manufacture this authority.
+    pub(crate) fn handle_scope<'scope>(
+        &self,
+        program: &RuntimeProgramOwner,
+        token: &RuntimePresentationHandleToken,
+        bindings: impl IntoIterator<Item = &'scope RuntimePresentationScopeBinding>,
+    ) -> Result<Option<PresentationScopeOwner>, RuntimePresentationError> {
+        let ledger = self
+            .ledgers
+            .get(&token.bank())
+            .ok_or(RuntimePresentationError::Owner)?;
+        let lease = ledger
+            .state
+            .leases
+            .get(&token.issuance())
+            .ok_or(RuntimePresentationError::UnknownHandle)?;
+        ledger.validate_handle(program, token, lease.owner)?;
+        if let Some(owner) = lease.owner {
+            if !bindings.into_iter().any(|binding| {
+                binding.program.same_program(program)
+                    && binding
+                        .grants
+                        .get(&token.bank())
+                        .is_some_and(|grant| grant.owner == owner)
+            }) {
+                return Err(RuntimePresentationError::Owner);
+            }
+        }
+        Ok(lease.owner)
+    }
+
     pub(crate) fn new(
         program: RuntimeProgramOwner,
         artifact: RuntimeArtifactFingerprint,

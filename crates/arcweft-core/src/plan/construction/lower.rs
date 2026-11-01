@@ -943,19 +943,9 @@ impl RuntimePlanBodyConstruction<'_> {
                 }
             }
             RuntimeExprSeedKind::Field { target, field } => {
-                let target = match target {
-                    super::RuntimeFieldTargetSeed::Value(value) => {
-                        crate::value::RuntimeFieldTarget::Value(Box::new(
-                            self.lower_expression(*value)?,
-                        ))
-                    }
-                    super::RuntimeFieldTargetSeed::Inspect(place) => {
-                        let (place, ty) = self.lower_mutable_place(place, "field inspection")?;
-                        crate::value::RuntimeFieldTarget::Inspect { place, ty }
-                    }
-                };
+                let target = self.lower_value_target(target)?;
                 let field = self.lower_field_projection(ty, target.ty(), &field)?;
-                if matches!(target, crate::value::RuntimeFieldTarget::Inspect { .. })
+                if matches!(target, crate::value::RuntimeValueTarget::Inspect { .. })
                     && !self.field_inspection_result_is_copy(
                         ty,
                         0,
@@ -965,6 +955,37 @@ impl RuntimePlanBodyConstruction<'_> {
                     return invalid_projection("Copy field inspection result", ty);
                 }
                 RuntimeExprKind::Field { target, field }
+            }
+            RuntimeExprSeedKind::PresentationHandleMethod { method, target } => {
+                let target = self.lower_value_target(target)?;
+                let resource = match self.projection(target.ty())? {
+                    super::RuntimePlanTypeProjection::Opaque { producer, admission, value_class, persistence, .. } => {
+                        RuntimeOpaqueTypeOwner::with_admission(
+                            producer.clone(),
+                            self.plan.types.get(target.ty()).expect("resolved receiver type").semantic_identity(),
+                            *admission, *value_class, *persistence,
+                        ).presentation_handle_resource()
+                    }
+                    _ => None,
+                };
+                if !matches!(self.projection(ty)?, super::RuntimePlanTypeProjection::Unit)
+                    || resource.is_none()
+                    || !method.accepts_resource(resource)
+                    || !matches!(
+                        self.projection(target.ty())?,
+                        super::RuntimePlanTypeProjection::Opaque {
+                            value_class: crate::value::RuntimeOpaqueValueClass::PresentationHandle,
+                            ..
+                        }
+                    )
+                    || (matches!(
+                        method.operation(),
+                        arcweft_interaction_model::presentation::PresentationHandleOperation::Retire
+                    ) && matches!(target, crate::value::RuntimeValueTarget::Inspect { .. }))
+                {
+                    return invalid_projection("presentation handle method", ty);
+                }
+                RuntimeExprKind::PresentationHandleMethod { method, target }
             }
             RuntimeExprSeedKind::ProjectTuple { target, ordinal } => {
                 let target = self.lower_expression(*target)?;
@@ -1929,6 +1950,21 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
             crate::value::RuntimeAssignment::new(place, displacement),
             place_type,
         ))
+    }
+
+    fn lower_value_target(
+        &self,
+        target: super::RuntimeValueTargetSeed,
+    ) -> Result<crate::value::RuntimeValueTarget, RuntimePlanBuildError> {
+        Ok(match target {
+            super::RuntimeValueTargetSeed::Value(value) => {
+                crate::value::RuntimeValueTarget::Value(Box::new(self.lower_expression(*value)?))
+            }
+            super::RuntimeValueTargetSeed::Inspect(place) => {
+                let (place, ty) = self.lower_mutable_place(place, "stored value inspection")?;
+                crate::value::RuntimeValueTarget::Inspect { place, ty }
+            }
+        })
     }
 
     fn lower_mutable_place(
@@ -2978,11 +3014,12 @@ impl RuntimePlanBodyConstruction<'_> {
             | RuntimeExprKind::ReductionUnchanged { state: value } => {
                 self.validate_expression_locals(value, scope, used)
             }
-            RuntimeExprKind::Field { target, .. } => match target {
-                crate::value::RuntimeFieldTarget::Value(value) => {
+            RuntimeExprKind::Field { target, .. }
+            | RuntimeExprKind::PresentationHandleMethod { target, .. } => match target {
+                crate::value::RuntimeValueTarget::Value(value) => {
                     self.validate_expression_locals(value, scope, used)
                 }
-                crate::value::RuntimeFieldTarget::Inspect { place, .. } => {
+                crate::value::RuntimeValueTarget::Inspect { place, .. } => {
                     require_local_in_scope(place.local(), scope)?;
                     used.insert(place.local());
                     Ok(())

@@ -13,6 +13,64 @@ pub(super) struct VmExecutionResources<'execution> {
 }
 
 impl VmExecutionResources<'_> {
+    pub(super) fn apply_presentation_handle_method(
+        &mut self,
+        program: &AwbcProgram,
+        fiber: &FiberState,
+        target: &crate::awbc::schema::AwbcValueTarget,
+        method: arcweft_interaction_model::presentation::PresentationHandleMethodId,
+    ) -> Result<(), VmError> {
+        use crate::value::{RuntimeOpaqueValueClass, RuntimeValue};
+        let error = |cause: &dyn std::fmt::Display| VmError::Runtime(cause.to_string());
+        let context = self.context.ok_or(VmError::MissingExecutionContext)?;
+        let admitted = context.admitted_program(program)?;
+        let owner = context.program_owner(program)?;
+        let banks = self
+            .presentation
+            .as_deref_mut()
+            .and_then(Option::as_mut)
+            .ok_or(VmError::MissingExecutionContext)?;
+        let mut admission =
+            admitted.retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default());
+        banks
+            .admit_retained(&owner, context.artifact(), &mut admission)
+            .map_err(|cause| error(&cause))?;
+        fiber
+            .admit_retained(&mut admission)
+            .map_err(|cause| error(&cause))?;
+        admission
+            .finish_presentation_custody()
+            .map_err(|cause| error(&cause))?;
+        let frame = fiber.active_frame()?;
+        let value = match target {
+            crate::awbc::schema::AwbcValueTarget::Value(register) => frame.register(*register)?,
+            crate::awbc::schema::AwbcValueTarget::Inspect(place) => frame
+                .registers
+                .get(place.base().index())
+                .and_then(|storage| storage.field(place.fields()))
+                .ok_or(FiberStateError::InvalidFrame)?,
+        };
+        let RuntimeValue::Opaque(handle) = value else {
+            return Err(VmError::Runtime(
+                "presentation method requires a handle".into(),
+            ));
+        };
+        if handle.value_class() != RuntimeOpaqueValueClass::PresentationHandle {
+            return Err(VmError::Runtime(
+                "presentation method requires a handle".into(),
+            ));
+        }
+        let token =
+            crate::runtime_id::RuntimePresentationHandleToken::try_decode_payload(handle.payload())
+                .map_err(|cause| error(&cause))?;
+        let scope = banks
+            .handle_scope(&owner, &token, fiber.presentation_scope_bindings())
+            .map_err(|cause| error(&cause))?;
+        banks
+            .apply_handle_method(&owner, &token, scope, method)
+            .map_err(|cause| error(&cause))
+    }
+
     /// Check the original execution authority before any operand is moved or
     /// copied out of its register. A context for equal bytes is not its lease.
     pub(super) fn validate_presentation_factory(

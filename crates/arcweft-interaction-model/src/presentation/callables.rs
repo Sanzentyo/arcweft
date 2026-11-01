@@ -297,6 +297,21 @@ pub enum PresentationHandleOperation {
 }
 
 impl PresentationHandleMethodId {
+    pub const ALL: [Self; 6] = [
+        Self::Show,
+        Self::Hide,
+        Self::Unmount,
+        Self::Release,
+        Self::Destroy,
+        Self::OverlayPop,
+    ];
+
+    pub fn from_semantic_tag(tag: u8) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|method| method.semantic_tag() == tag)
+    }
+
     pub const fn operation(self) -> PresentationHandleOperation {
         match self {
             Self::Show => PresentationHandleOperation::SetVisibility(true),
@@ -305,6 +320,10 @@ impl PresentationHandleMethodId {
                 PresentationHandleOperation::Retire
             }
         }
+    }
+
+    pub fn accepts_resource(self, resource: Option<PresentationResourceKind>) -> bool {
+        self != Self::OverlayPop || resource == Some(PresentationResourceKind::Overlay)
     }
 
     /// Universal handle methods also apply before a generic item is closed.

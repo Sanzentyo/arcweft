@@ -586,7 +586,7 @@ fn fixture() -> RuntimePlan {
             body: Box::new(seed(
                 1,
                 K::Field {
-                    target: RuntimeFieldTargetSeed::Inspect(RuntimeMutablePlaceSeed::Local(
+                    target: RuntimeValueTargetSeed::Inspect(RuntimeMutablePlaceSeed::Local(
                         locals[2].clone(),
                     )),
                     field: RuntimeFieldProjectionSeed::Nominal {

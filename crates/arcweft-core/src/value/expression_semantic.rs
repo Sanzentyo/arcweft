@@ -130,15 +130,12 @@ impl RuntimeExpr {
                 context.write_call_arguments(encoder, args)?;
             }
             RuntimeExprKind::Field { target, field } => {
-                match target {
-                    super::RuntimeFieldTarget::Value(_) => encoder.tag(0),
-                    super::RuntimeFieldTarget::Inspect { place, ty } => {
-                        encoder.tag(1);
-                        context.write_place(encoder, place)?;
-                        context.write_type(encoder, *ty)?;
-                    }
-                }
+                target.encode_body_metadata(context, encoder)?;
                 field.encode_body_metadata(encoder);
+            }
+            RuntimeExprKind::PresentationHandleMethod { method, target } => {
+                encoder.tag(method.semantic_tag());
+                target.encode_body_metadata(context, encoder)?;
             }
             RuntimeExprKind::Local(read) => {
                 context.write_local(encoder, read.local())?;
@@ -217,6 +214,24 @@ impl RuntimeExpr {
             }
         }
         encoder.status().map_err(Into::into)
+    }
+}
+
+impl super::RuntimeValueTarget {
+    fn encode_body_metadata(
+        &self,
+        context: &RuntimeBodySemanticContext<'_>,
+        encoder: &mut TaskSemanticEncoder<'_>,
+    ) -> Result<(), RuntimeBodySemanticError> {
+        match self {
+            Self::Value(_) => encoder.tag(0),
+            Self::Inspect { place, ty } => {
+                encoder.tag(1);
+                context.write_place(encoder, place)?;
+                context.write_type(encoder, *ty)?;
+            }
+        }
+        Ok(())
     }
 }
 

@@ -524,14 +524,36 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                     });
                 dst
             }
+            RuntimeExprKind::PresentationHandleMethod { method, target } => {
+                let target = match target {
+                    arcweft_core::value::RuntimeValueTarget::Value(value) => {
+                        arcweft_core::awbc::schema::AwbcValueTarget::Value(self.lower(value))
+                    }
+                    arcweft_core::value::RuntimeValueTarget::Inspect { place, .. } => {
+                        arcweft_core::awbc::schema::AwbcValueTarget::Inspect(
+                            self.lower_mutable_place(place, "presentation handle receiver"),
+                        )
+                    }
+                };
+                let dst = self
+                    .frame
+                    .temp(admitted_plan_type(self.inventory, self.plan, expr.ty()));
+                self.inventory
+                    .push_instruction(AwbcInstruction::PresentationHandleMethod {
+                        dst,
+                        target,
+                        method: *method,
+                    });
+                dst
+            }
             RuntimeExprKind::Field { target, field } => {
                 let target_ty = admitted_plan_type(self.inventory, self.plan, target.ty());
                 let target = match target {
-                    arcweft_core::value::RuntimeFieldTarget::Value(value) => {
-                        arcweft_core::awbc::schema::AwbcFieldTarget::Value(self.lower(value))
+                    arcweft_core::value::RuntimeValueTarget::Value(value) => {
+                        arcweft_core::awbc::schema::AwbcValueTarget::Value(self.lower(value))
                     }
-                    arcweft_core::value::RuntimeFieldTarget::Inspect { place, .. } => {
-                        arcweft_core::awbc::schema::AwbcFieldTarget::Inspect(
+                    arcweft_core::value::RuntimeValueTarget::Inspect { place, .. } => {
+                        arcweft_core::awbc::schema::AwbcValueTarget::Inspect(
                             self.lower_mutable_place(place, "field inspection"),
                         )
                     }
@@ -541,14 +563,14 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 match field {
                     RuntimeFieldProjection::Nominal(field) => {
                         let instruction = match target {
-                            arcweft_core::awbc::schema::AwbcFieldTarget::Value(target) => {
+                            arcweft_core::awbc::schema::AwbcValueTarget::Value(target) => {
                                 AwbcInstruction::ProjectRecord {
                                     dst,
                                     target,
                                     ordinal: field.zero_based(),
                                 }
                             }
-                            arcweft_core::awbc::schema::AwbcFieldTarget::Inspect(place) => {
+                            arcweft_core::awbc::schema::AwbcValueTarget::Inspect(place) => {
                                 let mut fields = place.fields().to_vec();
                                 fields.push(*field);
                                 AwbcInstruction::ReadPlace {

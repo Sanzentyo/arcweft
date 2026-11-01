@@ -847,6 +847,7 @@ fn scalar_completion_expr_is_total(plan: &RuntimePlan, value: &RuntimeExpr, dept
         | RuntimeExprKind::NominalRecord(_)
         | RuntimeExprKind::Variant { .. }
         | RuntimeExprKind::Field { .. }
+        | RuntimeExprKind::PresentationHandleMethod { .. }
         | RuntimeExprKind::ProjectTuple { .. }
         | RuntimeExprKind::ProjectRecord { .. }
         | RuntimeExprKind::Assign { .. }

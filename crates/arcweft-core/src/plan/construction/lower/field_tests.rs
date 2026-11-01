@@ -17,7 +17,7 @@ use crate::plan::{
 };
 use crate::pure::VmPureFunctionScratch;
 use crate::step::{RuntimeStepInput, RuntimeStepOptions};
-use crate::value::{RuntimeFieldTarget, RuntimeLocalReadMode, RuntimeNominalRecordValue};
+use crate::value::{RuntimeLocalReadMode, RuntimeNominalRecordValue, RuntimeValueTarget};
 use std::sync::Arc;
 
 fn opaque_inspection_fixture() -> (RuntimePlanBuilder, RuntimeLocalSeedId) {
@@ -72,7 +72,7 @@ fn opaque_field_inspection_keeps_the_bytecode_copy_argument_contract() {
         let expression = builder.lower_expression(RuntimeExprSeed::new(
             identity(result),
             RuntimeExprSeedKind::Field {
-                target: crate::plan::RuntimeFieldTargetSeed::Inspect(
+                target: crate::plan::RuntimeValueTargetSeed::Inspect(
                     RuntimeMutablePlaceSeed::Local(local.clone()),
                 ),
                 field: RuntimeFieldProjectionSeed::OpaqueRecord {
@@ -257,7 +257,7 @@ fn inspection(local: &RuntimeLocalSeedId, ordinal: u32, result: u8) -> RuntimeEx
     RuntimeExprSeed::new(
         identity(result),
         RuntimeExprSeedKind::Field {
-            target: super::super::RuntimeFieldTargetSeed::Inspect(RuntimeMutablePlaceSeed::Local(
+            target: super::super::RuntimeValueTargetSeed::Inspect(RuntimeMutablePlaceSeed::Local(
                 local.clone(),
             )),
             field: RuntimeFieldProjectionSeed::Nominal {
@@ -282,7 +282,7 @@ fn field_inspection_admits_copy_result_from_an_affine_record() {
             .unwrap()
     );
     assert!(matches!(expression.kind(), RuntimeExprKind::Field {
-        target: RuntimeFieldTarget::Inspect { place: RuntimeMutablePlace::Local(local), ty },
+        target: RuntimeValueTarget::Inspect { place: RuntimeMutablePlace::Local(local), ty },
         field: RuntimeFieldProjection::Nominal(field),
     } if *local == owner && *ty == owner_ty && field.zero_based() == 0));
     let (_registry, need) = crate::tests::pending_string_need(identity(1));
@@ -362,7 +362,7 @@ fn field_inspection_rejects_resource_body_at_construction() {
         RuntimeExprSeed::new(
             identity(result),
             RuntimeExprSeedKind::Field {
-                target: super::super::RuntimeFieldTargetSeed::Inspect(
+                target: super::super::RuntimeValueTargetSeed::Inspect(
                     RuntimeMutablePlaceSeed::Local(admission.local_ids()[0].clone()),
                 ),
                 field: RuntimeFieldProjectionSeed::Agent(projection),
@@ -906,7 +906,7 @@ fn entity_reference_field_coordinates_are_closed_and_normalize_source_seeds() {
                 .lower_expression(RuntimeExprSeed::new(
                     identity(2),
                     RuntimeExprSeedKind::Field {
-                        target: super::super::RuntimeFieldTargetSeed::Inspect(
+                        target: super::super::RuntimeValueTargetSeed::Inspect(
                             RuntimeMutablePlaceSeed::Local(locals[0].clone()),
                         ),
                         field: projection,
@@ -966,7 +966,7 @@ fn entity_reference_fields_reject_borrowed_aliases_wrong_owners_and_nonstring_re
                 builder.lower_expression(RuntimeExprSeed::new(
                     identity(2),
                     RuntimeExprSeedKind::Field {
-                        target: super::super::RuntimeFieldTargetSeed::Inspect(
+                        target: super::super::RuntimeValueTargetSeed::Inspect(
                             RuntimeMutablePlaceSeed::Local(local.clone())
                         ),
                         field: projection.clone(),
@@ -989,7 +989,7 @@ fn entity_reference_fields_reject_borrowed_aliases_wrong_owners_and_nonstring_re
             builder.lower_expression(RuntimeExprSeed::new(
                 identity(3),
                 RuntimeExprSeedKind::Field {
-                    target: super::super::RuntimeFieldTargetSeed::Inspect(
+                    target: super::super::RuntimeValueTargetSeed::Inspect(
                         RuntimeMutablePlaceSeed::Local(locals[0].clone())
                     ),
                     field: projection,

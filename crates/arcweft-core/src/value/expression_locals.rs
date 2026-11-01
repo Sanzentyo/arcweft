@@ -149,11 +149,12 @@ impl RuntimeExpr {
             | RuntimeExprKind::ReductionUnchanged { state: value } => {
                 value.collect_evaluation_free_locals(plan, bound, locals)?;
             }
-            RuntimeExprKind::Field { target, .. } => match target {
-                super::RuntimeFieldTarget::Value(value) => {
+            RuntimeExprKind::Field { target, .. }
+            | RuntimeExprKind::PresentationHandleMethod { target, .. } => match target {
+                super::RuntimeValueTarget::Value(value) => {
                     value.collect_evaluation_free_locals(plan, bound, locals)?
                 }
-                super::RuntimeFieldTarget::Inspect { place, .. } => {
+                super::RuntimeValueTarget::Inspect { place, .. } => {
                     push_free_local(place.local(), bound, locals)
                 }
             },

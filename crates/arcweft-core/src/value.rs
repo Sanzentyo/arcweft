@@ -1888,10 +1888,11 @@ impl RuntimeProgressField {
     }
 }
 
-/// A field evaluates an owned value or inspects an initialized stored owner.
-/// Inspection is synchronous and may return only an unrestricted value.
+/// An operation evaluates an owned value or inspects an initialized stored
+/// owner. Inspection is synchronous and may return only an unrestricted value;
+/// the stored owner is never cloned or reconstructed for the operation.
 #[derive(Clone, Debug, PartialEq)]
-pub enum RuntimeFieldTarget {
+pub enum RuntimeValueTarget {
     Value(Box<RuntimeExpr>),
     Inspect {
         place: RuntimeMutablePlace,
@@ -1899,13 +1900,13 @@ pub enum RuntimeFieldTarget {
     },
 }
 
-impl From<Box<RuntimeExpr>> for RuntimeFieldTarget {
+impl From<Box<RuntimeExpr>> for RuntimeValueTarget {
     fn from(value: Box<RuntimeExpr>) -> Self {
         Self::Value(value)
     }
 }
 
-impl RuntimeFieldTarget {
+impl RuntimeValueTarget {
     pub fn value(&self) -> Option<&RuntimeExpr> {
         match self {
             Self::Value(value) => Some(value),
@@ -2209,8 +2210,12 @@ pub enum RuntimeExprKind {
         payload: Option<Box<RuntimeExpr>>,
     },
     Field {
-        target: RuntimeFieldTarget,
+        target: RuntimeValueTarget,
         field: RuntimeFieldProjection,
+    },
+    PresentationHandleMethod {
+        method: arcweft_interaction_model::presentation::PresentationHandleMethodId,
+        target: RuntimeValueTarget,
     },
     ProjectTuple {
         target: Box<RuntimeExpr>,
@@ -2399,6 +2404,7 @@ impl RuntimeExpr {
             | RuntimeExprKind::NominalRecord(_)
             | RuntimeExprKind::Variant { .. }
             | RuntimeExprKind::Field { .. }
+            | RuntimeExprKind::PresentationHandleMethod { .. }
             | RuntimeExprKind::ProjectTuple { .. }
             | RuntimeExprKind::ProjectRecord { .. }
             | RuntimeExprKind::Assign { .. }
@@ -2509,6 +2515,9 @@ impl fmt::Display for RuntimeExpr {
             }
             RuntimeExprKind::Variant { ordinal, .. } => write!(f, "variant#{ordinal}"),
             RuntimeExprKind::Field { field, .. } => write!(f, ".{}", field.label()),
+            RuntimeExprKind::PresentationHandleMethod { method, .. } => {
+                write!(f, "presentation.handle.{method:?}()")
+            }
             RuntimeExprKind::ProjectTuple { ordinal, .. } => write!(f, ".{ordinal}"),
             RuntimeExprKind::ProjectRecord { ordinal, .. } => write!(f, ".#{ordinal}"),
             RuntimeExprKind::Assign { place, .. } => {
@@ -4395,6 +4404,7 @@ impl RuntimeExprKind {
             Self::Match { .. } => 34,
             Self::ReductionUnchanged { .. } => 35,
             Self::ArrayFromVec { .. } => 36,
+            Self::PresentationHandleMethod { .. } => 37,
         }
     }
 }

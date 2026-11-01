@@ -88,8 +88,8 @@ pub use construction::{
     RuntimeDialogueResultTargetSeedError, RuntimeDialogueValueSiteSeed, RuntimeDropPolicySeed,
     RuntimeEffectFieldSeed, RuntimeEvaluatedEffectSeed, RuntimeExecutableBodySeed,
     RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFieldProjectionSeed,
-    RuntimeFieldTargetSeed, RuntimeFlowMatchArmSeed, RuntimeFlowMatchGuardSeed, RuntimeFlowOpSeed,
-    RuntimeFlowSeed, RuntimeFormatAttemptDeclarationSeed, RuntimeFormatAttemptOperandSeed,
+    RuntimeFlowMatchArmSeed, RuntimeFlowMatchGuardSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
+    RuntimeFormatAttemptDeclarationSeed, RuntimeFormatAttemptOperandSeed,
     RuntimeFormatAttemptSeedId, RuntimeFormatContentOperandSeed, RuntimeFunctionInputBindingSeed,
     RuntimeFunctionSiteBodySeed, RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId,
     RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeHostTaskRequestTemplateSeed,
@@ -106,7 +106,7 @@ pub use construction::{
     RuntimePureHelperSeedId, RuntimePureProgramBindingSeed, RuntimeRecordFieldSeedId,
     RuntimeRecordPatternFieldSeed, RuntimeScheduledCaptureSeed, RuntimeStreamMatchArmSeed,
     RuntimeStreamOpSeed, RuntimeStreamPlanSeed, RuntimeTraitMethodDeclarationSeed,
-    RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
+    RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId, RuntimeValueTargetSeed,
 };
 pub use construction::{RuntimeControlEffectContractSeed, RuntimeControlEffectContractSeedId};
 pub use control_effect::{

@@ -354,6 +354,16 @@ impl<'a> Cursor<'a> {
                 self.u32()?;
                 usize::from(self.boolean()?)
             }
+            37 => {
+                if arcweft_interaction_model::presentation::PresentationHandleMethodId::from_semantic_tag(self.byte()?).is_none() {
+                    return Err(self.invalid("presentation handle method"));
+                }
+                let inspect = self.boolean()?;
+                if inspect {
+                    self.place(counts)?;
+                }
+                usize::from(!inspect)
+            }
             18 => {
                 let inspect = self.boolean()?;
                 if inspect {

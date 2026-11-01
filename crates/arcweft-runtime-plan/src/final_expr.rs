@@ -3165,7 +3165,7 @@ impl<'hir> FinalExprLowerer<'hir> {
         owner: ExprId,
         mut receiver: CheckedFieldReceiver,
         place: &arcweft_lang_sema::final_analysis::CheckedPlace,
-    ) -> Result<arcweft_core::plan::RuntimeFieldTargetSeed, String> {
+    ) -> Result<arcweft_core::plan::RuntimeValueTargetSeed, String> {
         let mut projections = Vec::new();
         loop {
             let expression = match receiver {
@@ -3206,7 +3206,7 @@ impl<'hir> FinalExprLowerer<'hir> {
         }
         let stored = RuntimeResolvedPlace::try_from_checked(place)
             .ok_or_else(|| "field inspection lacks an admitted storage coordinate".to_owned())?;
-        let mut target = arcweft_core::plan::RuntimeFieldTargetSeed::Inspect(
+        let mut target = arcweft_core::plan::RuntimeValueTargetSeed::Inspect(
             self.checked_place_seed(owner, &stored, CheckedLocalPlaceMode::Inspect)?,
         );
         for expression in projections.into_iter().rev() {
@@ -3222,7 +3222,7 @@ impl<'hir> FinalExprLowerer<'hir> {
     fn lower_field_projection(
         &self,
         id: ExprId,
-        target: arcweft_core::plan::RuntimeFieldTargetSeed,
+        target: arcweft_core::plan::RuntimeValueTargetSeed,
     ) -> Result<RuntimeExprSeedKind, String> {
         match self
             .select(id)

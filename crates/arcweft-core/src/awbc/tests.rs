@@ -8878,7 +8878,7 @@ fn awbc_field_inspection_preserves_owner_across_budget_snapshot_and_later_move()
     let AwbcInstruction::ProjectField { target, .. } = &mut program.instructions[0] else {
         unreachable!()
     };
-    *target = super::schema::AwbcFieldTarget::Inspect(AwbcMutablePlace::Local(AwbcRegisterId(0)));
+    *target = super::schema::AwbcValueTarget::Inspect(AwbcMutablePlace::Local(AwbcRegisterId(0)));
     program.instructions.push(program.instructions[0].clone());
     program.frame_layouts[0].slots.push(AwbcFrameSlot {
         name: None,
@@ -8994,7 +8994,7 @@ fn awbc_field_inspection_preserves_owner_across_budget_snapshot_and_later_move()
     let AwbcInstruction::ProjectField { target, .. } = &mut same_destination.instructions[0] else {
         unreachable!()
     };
-    *target = super::schema::AwbcFieldTarget::Inspect(AwbcMutablePlace::Local(AwbcRegisterId(1)));
+    *target = super::schema::AwbcValueTarget::Inspect(AwbcMutablePlace::Local(AwbcRegisterId(1)));
     assert!(
         same_destination
             .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())

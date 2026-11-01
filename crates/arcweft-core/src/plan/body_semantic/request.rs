@@ -537,6 +537,7 @@ impl OriginalRequestEndpoint<'_> {
                 | Expr::FormatContent { .. }
                 | Expr::CharacterDialogue { .. }
                 | Expr::Call { .. }
+                | Expr::PresentationHandleMethod { .. }
                 | Expr::MakeCallable { .. }
                 | Expr::SpecializeCallable { .. }
                 | Expr::ApplyGroup { .. }

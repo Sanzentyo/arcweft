@@ -41,6 +41,19 @@ impl RuntimeOpaqueTypeOwner {
         }
     }
 
+    /// The exact standard handle family admitted by this owner.
+    pub fn presentation_handle_resource(&self) -> Option<PresentationResourceKind> {
+        if self.admission() != RuntimeOpaqueTypeAdmission::ExactIdentity
+            || self.value_class() != RuntimeOpaqueValueClass::PresentationHandle
+            || self.persistence() != RuntimeOpaquePersistence::SnapshotOnly
+        {
+            return None;
+        }
+        PresentationResourceKind::ALL.into_iter().find(|resource| {
+            self.producer().as_str() == Self::presentation_handle_producer(*resource)
+        })
+    }
+
     pub(super) fn validate_presentation_handle_payload(
         &self,
         payload: RuntimeValueView<'_>,

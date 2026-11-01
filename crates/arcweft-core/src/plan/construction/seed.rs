@@ -2086,14 +2086,14 @@ impl RuntimeMutablePlaceSeed {
     }
 }
 
-/// One owned field receiver or checked synchronous address inspection.
+/// One owned operand or checked synchronous address inspection.
 #[derive(Clone, Debug, PartialEq)]
-pub enum RuntimeFieldTargetSeed {
+pub enum RuntimeValueTargetSeed {
     Value(Box<RuntimeExprSeed>),
     Inspect(RuntimeMutablePlaceSeed),
 }
 
-impl From<Box<RuntimeExprSeed>> for RuntimeFieldTargetSeed {
+impl From<Box<RuntimeExprSeed>> for RuntimeValueTargetSeed {
     fn from(value: Box<RuntimeExprSeed>) -> Self {
         Self::Value(value)
     }
@@ -2391,8 +2391,12 @@ pub enum RuntimeExprSeedKind {
         payload: Option<Box<RuntimeExprSeed>>,
     },
     Field {
-        target: RuntimeFieldTargetSeed,
+        target: RuntimeValueTargetSeed,
         field: RuntimeFieldProjectionSeed,
+    },
+    PresentationHandleMethod {
+        method: arcweft_interaction_model::presentation::PresentationHandleMethodId,
+        target: RuntimeValueTargetSeed,
     },
     ProjectTuple {
         target: Box<RuntimeExprSeed>,
@@ -2805,9 +2809,10 @@ impl RuntimeExprSeed {
                     payload.collect_free_locals(bound, locals);
                 }
             }
-            RuntimeExprSeedKind::Field { target, .. } => match target {
-                RuntimeFieldTargetSeed::Value(value) => value.collect_free_locals(bound, locals),
-                RuntimeFieldTargetSeed::Inspect(place) => {
+            RuntimeExprSeedKind::Field { target, .. }
+            | RuntimeExprSeedKind::PresentationHandleMethod { target, .. } => match target {
+                RuntimeValueTargetSeed::Value(value) => value.collect_free_locals(bound, locals),
+                RuntimeValueTargetSeed::Inspect(place) => {
                     push_free_local(place.local(), bound, locals)
                 }
             },

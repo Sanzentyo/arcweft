@@ -1346,12 +1346,49 @@ fn execute_instruction(
             .ok_or_else(|| VmError::Runtime("record projection out of bounds".to_owned()))?;
             fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
+        AwbcInstruction::PresentationHandleMethod {
+            dst,
+            target,
+            method,
+        } => {
+            let frame = fiber.active_frame()?;
+            let slot = program
+                .frame_layouts
+                .get(frame.layout.index())
+                .and_then(|layout| layout.slots.get(dst.index()))
+                .ok_or(FiberStateError::InvalidFrame)?;
+            if dst.index() >= frame.registers.len()
+                || target.base() == *dst
+                || !matches!(
+                    program
+                        .runtime_types
+                        .get(slot.ty.index())
+                        .map(AwbcRuntimeType::shape),
+                    Some(AwbcRuntimeTypeShape::Unit)
+                )
+                || (matches!(
+                    method.operation(),
+                    arcweft_interaction_model::presentation::PresentationHandleOperation::Retire
+                ) && matches!(target, super::schema::AwbcValueTarget::Inspect(_)))
+            {
+                return Err(VmError::Runtime(
+                    "invalid presentation method destination or receiver mode".into(),
+                ));
+            }
+            execution.apply_presentation_handle_method(program, fiber, target, *method)?;
+            if let super::schema::AwbcValueTarget::Value(value) = target {
+                fiber.active_frame_mut()?.take_register(*value)?;
+            }
+            fiber
+                .active_frame_mut()?
+                .set_register(*dst, RuntimeValue::Unit)?;
+        }
         AwbcInstruction::ProjectField { dst, target, field } => {
             let target = match target {
-                super::schema::AwbcFieldTarget::Value(value) => {
+                super::schema::AwbcValueTarget::Value(value) => {
                     fiber.active_frame_mut()?.take_register(*value)?
                 }
-                super::schema::AwbcFieldTarget::Inspect(place) => {
+                super::schema::AwbcValueTarget::Inspect(place) => {
                     let frame = fiber.active_frame()?;
                     let value = frame
                         .registers

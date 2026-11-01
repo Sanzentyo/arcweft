@@ -2,8 +2,8 @@ use super::*;
 use arcweft_core::awbc::codec::AwbcDecodeBudget;
 use arcweft_core::awbc::fiber::FiberState;
 use arcweft_core::awbc::schema::{
-    AwbcEntryId, AwbcFieldProjection, AwbcFieldTarget, AwbcInstruction, AwbcMutablePlace,
-    AwbcPlaceReadMode, AwbcProgram, AwbcStringId,
+    AwbcEntryId, AwbcFieldProjection, AwbcInstruction, AwbcMutablePlace, AwbcPlaceReadMode,
+    AwbcProgram, AwbcStringId, AwbcValueTarget,
 };
 use arcweft_core::awbc::vm::{self, VmExit, VmStepOptions};
 use arcweft_core::entry::{
@@ -16,12 +16,13 @@ use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::plan::{
     EntryRuntimeId, FlowRuntimeId, RuntimeEffectSet, RuntimeEntryKind, RuntimeEntrySpec,
     RuntimeEntryTarget, RuntimeExecutableBodySeed, RuntimeExprSeed, RuntimeExprSeedKind,
-    RuntimeFieldProjectionSeed, RuntimeFieldTargetSeed, RuntimeFlowOpSeed, RuntimeFlowSchema,
-    RuntimeFlowSeed, RuntimeFunctionDefinitionIdentity, RuntimeFunctionSiteDeclarationSeed,
+    RuntimeFieldProjectionSeed, RuntimeFlowOpSeed, RuntimeFlowSchema, RuntimeFlowSeed,
+    RuntimeFunctionDefinitionIdentity, RuntimeFunctionSiteDeclarationSeed,
     RuntimeLocalDeclarationSeed, RuntimeLocalDeclarationSource, RuntimeLocalReadSeed,
     RuntimeMutablePlaceSeed, RuntimeNominalRecordDomainFieldSeed, RuntimeNominalRecordDomainSeed,
     RuntimeNominalRecordFieldSeed, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan,
     RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimeRecordFieldSeedId,
+    RuntimeValueTargetSeed,
 };
 use arcweft_core::value::{RuntimeLocalReadMode, RuntimeRecordFieldId, RuntimeValue};
 
@@ -119,7 +120,7 @@ fn nominal_inspection_plan() -> (RuntimePlan, RuntimeValue) {
         RuntimeExprSeed::new(
             identity(1),
             RuntimeExprSeedKind::Field {
-                target: RuntimeFieldTargetSeed::Inspect(RuntimeMutablePlaceSeed::Local(
+                target: RuntimeValueTargetSeed::Inspect(RuntimeMutablePlaceSeed::Local(
                     owner.clone(),
                 )),
                 field: RuntimeFieldProjectionSeed::Nominal {
@@ -332,7 +333,7 @@ fn nominal_field_inspection_rejects_a_forged_named_awbc_coordinate() {
     };
     *read = AwbcInstruction::ProjectField {
         dst,
-        target: AwbcFieldTarget::Inspect(AwbcMutablePlace::Local(root)),
+        target: AwbcValueTarget::Inspect(AwbcMutablePlace::Local(root)),
         field: AwbcFieldProjection::Named(label),
     };
     assert!(
@@ -389,9 +390,9 @@ fn reference_field_program(
             identity(2),
             RuntimeExprSeedKind::Field {
                 target: if inspect {
-                    RuntimeFieldTargetSeed::Inspect(RuntimeMutablePlaceSeed::Local(local.clone()))
+                    RuntimeValueTargetSeed::Inspect(RuntimeMutablePlaceSeed::Local(local.clone()))
                 } else {
-                    RuntimeFieldTargetSeed::Value(Box::new(local_read(RuntimeLocalReadMode::Copy)))
+                    RuntimeValueTargetSeed::Value(Box::new(local_read(RuntimeLocalReadMode::Copy)))
                 },
                 field: RuntimeFieldProjectionSeed::Agent(field.into()),
             },
@@ -616,9 +617,9 @@ fn wrong_owner_reference_field_awbc(inspect: bool) -> AwbcProgram {
     *instruction = AwbcInstruction::ProjectField {
         dst: destination,
         target: if inspect {
-            AwbcFieldTarget::Inspect(AwbcMutablePlace::Local(receiver))
+            AwbcValueTarget::Inspect(AwbcMutablePlace::Local(receiver))
         } else {
-            AwbcFieldTarget::Value(receiver)
+            AwbcValueTarget::Value(receiver)
         },
         field: AwbcFieldProjection::Named(label),
     };
@@ -673,7 +674,7 @@ fn entity_reference_fields_value_and_inspect_preserve_native_awbc_roundtrip_pari
         assert!(
             projects
                 .iter()
-                .all(|target| matches!(target, AwbcFieldTarget::Inspect(_)) == inspect)
+                .all(|target| matches!(target, AwbcValueTarget::Inspect(_)) == inspect)
         );
         let encoded = lowered.program.encode_canonical().unwrap();
         let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default()).unwrap();

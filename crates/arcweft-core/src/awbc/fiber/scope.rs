@@ -94,6 +94,19 @@ impl super::FiberFrame {
 }
 
 impl super::FiberState {
+    pub(crate) fn presentation_scope_bindings(
+        &self,
+    ) -> impl Iterator<Item = &crate::presentation::RuntimePresentationScopeBinding> {
+        self.frames.iter().flat_map(|frame| {
+            frame.root_presentation_scope.iter().chain(
+                frame
+                    .scopes
+                    .iter()
+                    .filter_map(|scope| scope.presentation_scope.as_ref()),
+            )
+        })
+    }
+
     /// The exiting callee and the caller's actual current lexical destination.
     pub(crate) fn presentation_return_scopes_mut(
         &mut self,

@@ -233,6 +233,82 @@ impl Engine {
         Ok(())
     }
 
+    pub(super) fn evaluate_presentation_handle_method(
+        &mut self,
+        method: arcweft_interaction_model::presentation::PresentationHandleMethodId,
+        target: &crate::value::RuntimeValueTarget,
+        backend: &mut impl crate::pure::RuntimeCallBackend,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        use crate::value::{
+            RuntimeOpaqueValueClass, RuntimeRetainedValueAdmission, RuntimeValueTarget,
+        };
+        self.presentation_context_artifact()?;
+        let owned = match target {
+            RuntimeValueTarget::Value(value) => {
+                Some(self.evaluate_expr_with_backend(value, backend)?)
+            }
+            RuntimeValueTarget::Inspect { .. } => None,
+        };
+        let value = match target {
+            RuntimeValueTarget::Value(_) => owned.as_ref().expect("evaluated owned receiver"),
+            RuntimeValueTarget::Inspect { place, .. } => {
+                self.fiber.frame.env.inspect_place(place)?
+            }
+        };
+        let semantic = self
+            .plan
+            .type_table()
+            .get(target.ty())
+            .ok_or(RuntimeEvalError::InvalidExpressionType(target.ty()))?
+            .semantic_identity();
+        let mut admission = RuntimeRetainedValueAdmission::for_program(
+            self.fiber.frame.program.clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        self.admit_live_retained_values(&mut admission)
+            .map_err(|source| RuntimeEvalError::NativeWorkAdmission {
+                source: Box::new(source),
+            })?;
+        let binding = self.fiber.frame.env.function_instantiation();
+        let admitted = if owned.is_some() {
+            admission.validate_typed_borrowed_in_invocation(value.into(), semantic, binding)
+        } else {
+            admission.validate_admitted_typed_borrowed_in_invocation(
+                value.into(),
+                semantic,
+                binding,
+            )
+        };
+        admitted.map_err(|source| RuntimeEvalError::NativeWorkAdmission {
+            source: Box::new(source),
+        })?;
+        admission.finish_presentation_custody().map_err(|source| {
+            RuntimeEvalError::NativeWorkAdmission {
+                source: Box::new(source),
+            }
+        })?;
+        let RuntimeValue::Opaque(handle) = value else {
+            return Err(RuntimeEvalError::InvalidExpressionType(target.ty()));
+        };
+        if handle.value_class() != RuntimeOpaqueValueClass::PresentationHandle {
+            return Err(RuntimeEvalError::InvalidExpressionType(target.ty()));
+        }
+        let token =
+            crate::runtime_id::RuntimePresentationHandleToken::try_decode_payload(handle.payload())
+                .map_err(|_| RuntimePresentationError::InvalidState)?;
+        let banks = self
+            .presentation
+            .as_mut()
+            .ok_or(RuntimePresentationError::MissingLedger)?;
+        let scope = banks.handle_scope(
+            &self.fiber.frame.program,
+            &token,
+            self.fiber.frame.env.presentation_scope_bindings(),
+        )?;
+        banks.apply_handle_method(&self.fiber.frame.program, &token, scope, method)?;
+        Ok(RuntimeValue::Unit)
+    }
+
     pub(super) fn transition_presentation_return<'value>(
         &mut self,
         scopes: usize,

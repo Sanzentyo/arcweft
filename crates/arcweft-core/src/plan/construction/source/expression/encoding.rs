@@ -375,9 +375,16 @@ impl Sink<'_, '_> {
                 self.u32(*ordinal)?;
                 self.boolean(payload.is_some())?;
             }
+            K::PresentationHandleMethod { method, target } => {
+                self.byte(method.semantic_tag())?;
+                self.boolean(matches!(target, RuntimeValueTarget::Inspect { .. }))?;
+                if let RuntimeValueTarget::Inspect { place, .. } = target {
+                    self.place(place)?;
+                }
+            }
             K::Field { target, field } => {
-                self.boolean(matches!(target, RuntimeFieldTarget::Inspect { .. }))?;
-                if let RuntimeFieldTarget::Inspect { place, .. } = target {
+                self.boolean(matches!(target, RuntimeValueTarget::Inspect { .. }))?;
+                if let RuntimeValueTarget::Inspect { place, .. } = target {
                     self.place(place)?;
                 }
                 match field {

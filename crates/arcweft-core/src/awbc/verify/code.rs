@@ -1475,10 +1475,10 @@ fn apply_instruction(
             crate::awbc::schema::AwbcFieldProjection::Named(field) => {
                 check_string(program, *field, &at)?;
                 let target_ty = match target {
-                    crate::awbc::schema::AwbcFieldTarget::Value(value) => {
+                    crate::awbc::schema::AwbcValueTarget::Value(value) => {
                         read_register(verifier, function, block, *value, state)?
                     }
-                    crate::awbc::schema::AwbcFieldTarget::Inspect(place) => read_place_type(
+                    crate::awbc::schema::AwbcValueTarget::Inspect(place) => read_place_type(
                         verifier,
                         function,
                         block,
@@ -1488,7 +1488,7 @@ fn apply_instruction(
                     )?,
                 };
                 let dst_ty = register_type(verifier, function, block, *dst)?;
-                if matches!(target, crate::awbc::schema::AwbcFieldTarget::Inspect(_))
+                if matches!(target, crate::awbc::schema::AwbcValueTarget::Inspect(_))
                     && (!runtime_type_permits_copy(program, dst_ty, 0) || target.base() == *dst)
                 {
                     return invalid_type(
@@ -1615,10 +1615,10 @@ fn apply_instruction(
                     &at,
                 )?;
                 let target_ty = match target {
-                    crate::awbc::schema::AwbcFieldTarget::Value(value) => {
+                    crate::awbc::schema::AwbcValueTarget::Value(value) => {
                         read_register(verifier, function, block, *value, state)?
                     }
-                    crate::awbc::schema::AwbcFieldTarget::Inspect(place) => read_place_type(
+                    crate::awbc::schema::AwbcValueTarget::Inspect(place) => read_place_type(
                         verifier,
                         function,
                         block,
@@ -1645,7 +1645,7 @@ fn apply_instruction(
                 if dst_ty != *field_type {
                     return type_mismatch(&at, *field_type, dst_ty);
                 }
-                if matches!(target, crate::awbc::schema::AwbcFieldTarget::Inspect(_))
+                if matches!(target, crate::awbc::schema::AwbcValueTarget::Inspect(_))
                     && (!runtime_type_permits_copy(program, dst_ty, 0) || target.base() == *dst)
                 {
                     return invalid_type(
@@ -1656,6 +1656,47 @@ fn apply_instruction(
                 write_register(verifier, function, block, *dst, state)?;
             }
         },
+        AwbcInstruction::PresentationHandleMethod {
+            dst,
+            target,
+            method,
+        } => {
+            use crate::awbc::schema::AwbcValueTarget;
+            let target_ty = match target {
+                AwbcValueTarget::Value(value) => {
+                    read_register(verifier, function, block, *value, state)?
+                }
+                AwbcValueTarget::Inspect(place) => read_place_type(
+                    verifier,
+                    function,
+                    block,
+                    place.base(),
+                    place.fields(),
+                    state,
+                )?,
+            };
+            let resource = program
+                .runtime_types
+                .get(target_ty.index())
+                .and_then(|row| row.try_opaque_owner(&program.strings).ok().flatten())
+                .and_then(|owner| owner.presentation_handle_resource());
+            let dst_ty = register_type(verifier, function, block, *dst)?;
+            if resource.is_none()
+                || !method.accepts_resource(resource)
+                || !matches!(
+                    runtime_shape(program, dst_ty),
+                    Some(AwbcRuntimeTypeShape::Unit)
+                )
+                || target.base() == *dst
+                || (matches!(
+                    method.operation(),
+                    arcweft_interaction_model::presentation::PresentationHandleOperation::Retire
+                ) && matches!(target, AwbcValueTarget::Inspect(_)))
+            {
+                return invalid_type(&at, "presentation handle method receiver and Unit result");
+            }
+            write_register(verifier, function, block, *dst, state)?;
+        }
         AwbcInstruction::Unary { dst, op, src } => {
             let src_ty = read_register(verifier, function, block, *src, state)?;
             let dst_ty = register_type(verifier, function, block, *dst)?;
@@ -2725,14 +2766,14 @@ fn apply_instruction_copy_and_move_effects(
             output_proof = Some(proof);
         }
         AwbcInstruction::ProjectField { dst, target, field } => {
-            if let crate::awbc::schema::AwbcFieldTarget::Value(value) = target {
+            if let crate::awbc::schema::AwbcValueTarget::Value(value) = target {
                 consumed.push(*value);
             }
             let target_register = target.base();
             outputs.push(*dst);
             let dst_ty = register_type(verifier, function, block, *dst)?;
             output_proof = Some(
-                if matches!(target, crate::awbc::schema::AwbcFieldTarget::Inspect(_)) {
+                if matches!(target, crate::awbc::schema::AwbcValueTarget::Inspect(_)) {
                     base_copy_proof(program, dst_ty)
                 } else {
                     match field {
@@ -2758,6 +2799,12 @@ fn apply_instruction_copy_and_move_effects(
                     }
                 },
             );
+        }
+        AwbcInstruction::PresentationHandleMethod { dst, target, .. } => {
+            if let crate::awbc::schema::AwbcValueTarget::Value(value) = target {
+                consumed.push(*value);
+            }
+            outputs.push(*dst);
         }
         AwbcInstruction::Unary { dst, src, .. } => {
             consumed.push(*src);

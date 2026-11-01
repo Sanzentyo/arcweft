@@ -158,6 +158,9 @@ impl Engine {
                 expr,
                 body,
             } => self.evaluate_let_expr(*binding, expr, body, pure_backend),
+            RuntimeExprKind::PresentationHandleMethod { method, target } => {
+                self.evaluate_presentation_handle_method(*method, target, pure_backend)
+            }
             RuntimeExprKind::Scope { identity, body } => {
                 self.fiber
                     .frame
@@ -1010,15 +1013,15 @@ impl Engine {
 
     fn evaluate_field_expr(
         &mut self,
-        target: &crate::value::RuntimeFieldTarget,
+        target: &crate::value::RuntimeValueTarget,
         field: &RuntimeFieldProjection,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let value = match target {
-            crate::value::RuntimeFieldTarget::Value(value) => {
+            crate::value::RuntimeValueTarget::Value(value) => {
                 self.evaluate_expr_with_backend(value, pure_backend)?
             }
-            crate::value::RuntimeFieldTarget::Inspect { place, .. } => {
+            crate::value::RuntimeValueTarget::Inspect { place, .. } => {
                 return self.fiber.frame.env.inspect_field(place, field);
             }
         };

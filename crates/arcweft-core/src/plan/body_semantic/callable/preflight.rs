@@ -116,6 +116,7 @@ impl<'a> RuntimeCallableChildPreflight<'a> {
             | RuntimeExprKind::NominalRecord(_)
             | RuntimeExprKind::Variant { .. }
             | RuntimeExprKind::Field { .. }
+            | RuntimeExprKind::PresentationHandleMethod { .. }
             | RuntimeExprKind::ProjectTuple { .. }
             | RuntimeExprKind::ProjectRecord { .. }
             | RuntimeExprKind::Assign { .. }
