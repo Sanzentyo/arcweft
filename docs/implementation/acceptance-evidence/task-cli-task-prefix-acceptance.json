@@ -1,0 +1,411 @@
+{
+  "version": 1,
+  "source": "b3dc452a041695f7b0184cabfb7b767da63a2548",
+  "publication": {
+    "version": 1,
+    "commit": "b3dc452a041695f7b0184cabfb7b767da63a2548",
+    "parent": "f859875408959ec05006c14330b6b987d21eec82",
+    "tree": "72c4d824e3668bf25a013043de5051f6173ed30e",
+    "remote": "b3dc452a041695f7b0184cabfb7b767da63a2548",
+    "paths": [
+      {
+        "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+        "blob": "978fe063f30d096900c279b76082beb255bc543d"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "8934fd87aff854e3b4eeee0f85b117d645189995623c00cbe7c898b5c3915c0e",
+    "heldPatchSha256": "9df601a7eb56662ba865765c820761d3c816b996ac265799c0bbacbe31fac0d6",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-01T23:33:45.3605957Z"
+  },
+  "boundary": "CLI native task tests reconciled with enforced operation budgets and typed request reporting",
+  "runtime": {
+    "version": 1,
+    "base": "f859875408959ec05006c14330b6b987d21eec82",
+    "run": "source-cli-task-prefix-owner3-20261102.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [   3.835s] 3 tests run: 3 passed, 478 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 3,
+    "passed": 3,
+    "failed": 0,
+    "skipped": 478,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4066,
+    "sourceDrift": 0,
+    "held": 13,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-11-01T23:29:21.0243326Z"
+  },
+  "rustTests": 3,
+  "cliSubprocesses": 9,
+  "conditions": {
+    "traversePrefix": {
+      "steps": 12,
+      "maxOps": 1,
+      "completedHostCalls": 3,
+      "completedTasks": 3,
+      "readOps": 0,
+      "submitted": 0,
+      "final": "running"
+    },
+    "traverseCompletion": [
+      {
+        "executor": "bytecode-vm",
+        "maxOps": 1,
+        "stepCap": 64,
+        "parallelBatch": 0,
+        "parallelTasks": 0,
+        "maxInFlight": 1
+      },
+      {
+        "executor": "awbc-product",
+        "maxOps": 1,
+        "stepCap": 256,
+        "parallelBatch": 0,
+        "parallelTasks": 0,
+        "maxInFlight": 1
+      },
+      {
+        "executor": "bytecode-vm",
+        "maxOps": 64,
+        "stepCap": 12,
+        "parallelBatch": 1,
+        "parallelTasks": 2,
+        "maxInFlight": 2
+      },
+      {
+        "executor": "awbc-product",
+        "maxOps": 64,
+        "stepCap": 12,
+        "parallelBatch": 1,
+        "parallelTasks": 2,
+        "maxInFlight": 2
+      }
+    ],
+    "traverseAll": "Exact ordered file contents A/B/C must match before returning done; 3 reads, 3 bytes, 6 completions including 3 host calls, 3 task submissions/dispatches/completions, zero failures/writes/system-info parallel tasks/program terminals; every step obeys its selected max_ops.",
+    "systemInfo": {
+      "prefixSteps": 8,
+      "maxOps": 1,
+      "prefixCompleted": 2,
+      "completionCap": 32,
+      "completedTasks": 3,
+      "systemInfoOps": 3
+    },
+    "profile": {
+      "prefixSteps": 5,
+      "maxOps": 1,
+      "prefixReads": 1,
+      "prefixWrites": 0,
+      "prefixBytesRead": 17,
+      "prefixBytesWritten": 0,
+      "prefixCompleted": 2,
+      "prefixHostCalls": 1,
+      "completionCap": 32,
+      "completedTasks": 4,
+      "completedHostCalls": 2,
+      "taskEventsIn": 2,
+      "submitted": 2,
+      "dispatched": 2,
+      "completed": 2,
+      "maxInFlight": 1,
+      "reads": 1,
+      "writes": 1,
+      "bytesRead": 17,
+      "bytesWritten": 17,
+      "actualOutput": "profile-native-ok",
+      "source": "profile.arcw",
+      "absoluteSourceDirectoryAbsent": true
+    }
+  },
+  "rationale": [
+    "Maintained runtime-step and Product AWBC contracts enforce max_ops inside the VM even in Drain. Keep the original 12/8/5-step, max_ops=1 prefixes as explicit assertions; do not make Drain ignore its budget.",
+    "Physical native batching is checked in a separate budget profile that admits that work; its original exact batch=1/tasks=2/IO=2/max-in-flight=2 assertions remain. One-op complete executions also retain exact zero-batch/max-in-flight=1 assertions. No production batching/fusion rule or default budget was changed.",
+    "Current typed request labels expose fs.read_text identity rather than old file.read_text save:path text. Verify the actual ordered A/B/C result and structured I/O statistics instead of restoring a legacy formatter or deleting path/data coverage.",
+    "completed_tasks aggregates the completed host calls as well as physical task completions, as the traverse test already expected. The profile full-run counter is 4=2 host calls+2 I/O tasks; its original 2-completion read-only prefix is preserved."
+  ],
+  "initialEvidence": {
+    "originalTwelveStepFailure": "presentation-view-semantic-capture-reverse23-20261102.cli-check.runtime.log",
+    "budgetProbe": {
+      "version": 1,
+      "source": "f859875408959ec05006c14330b6b987d21eec82",
+      "fixture": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\source-parallel-cli-repro1-20261102\\main.arcw",
+      "fixtureSha256": "fa3cc44ca62202f562d46185e89badcc22342340887162d5614baf910488cfee",
+      "exe": "D:/git/arcweft/target/debug/arcw.exe",
+      "exeSha256": "c3bd38248c3a9c41f42e4b16da69b82748d9f71230d19a98bd984a06759a2814",
+      "exeDrift": 0,
+      "maxOps": 1,
+      "mode": "drain",
+      "results": [
+        {
+          "limit": 12,
+          "exitCode": 0,
+          "steps": 12,
+          "executed": 12.0,
+          "maxExecuted": 1.0,
+          "final": "running",
+          "completed": 3,
+          "readOps": 0,
+          "submitted": 0,
+          "maxInFlight": 0
+        },
+        {
+          "limit": 64,
+          "exitCode": 0,
+          "steps": 38,
+          "executed": 38.0,
+          "maxExecuted": 1.0,
+          "final": "done Return(\"done\")",
+          "completed": 6,
+          "readOps": 3,
+          "submitted": 3,
+          "maxInFlight": 1
+        }
+      ],
+      "recordedAt": "2026-11-01T23:09:55.0403059Z"
+    },
+    "backendBudgetMatrix": [
+      {
+        "executor": "bytecode-vm",
+        "maxOps": 1,
+        "exitCode": 0,
+        "steps": 38,
+        "final": "done Return(\"done\")",
+        "reads": 3,
+        "completed": 6,
+        "parallelBatches": 0,
+        "parallelTasks": 0,
+        "parallelIo": 0,
+        "maxInFlight": 1
+      },
+      {
+        "executor": "bytecode-vm",
+        "maxOps": 64,
+        "exitCode": 0,
+        "steps": 6,
+        "final": "done Return(\"done\")",
+        "reads": 3,
+        "completed": 6,
+        "parallelBatches": 1,
+        "parallelTasks": 2,
+        "parallelIo": 2,
+        "maxInFlight": 2
+      },
+      {
+        "executor": "awbc-product",
+        "maxOps": 1,
+        "exitCode": 0,
+        "steps": 64,
+        "final": "need_waiting 4e988a356e6bf65b9def3215bffb578b0732bb6969b891422d76dea421d36dbe",
+        "reads": 2,
+        "completed": 5,
+        "parallelBatches": 0,
+        "parallelTasks": 0,
+        "parallelIo": 0,
+        "maxInFlight": 1
+      },
+      {
+        "executor": "awbc-product",
+        "maxOps": 64,
+        "exitCode": 0,
+        "steps": 9,
+        "final": "done Return(\"done\")",
+        "reads": 3,
+        "completed": 6,
+        "parallelBatches": 1,
+        "parallelTasks": 2,
+        "parallelIo": 2,
+        "maxInFlight": 2
+      }
+    ],
+    "productOneOpCompletion": "source-parallel-cli-awbc-product-ops1-full-20261102.log",
+    "systemInfoProbe": [
+      {
+        "limit": 8,
+        "steps": 8,
+        "final": "running",
+        "completed": 2,
+        "systemInfo": 2,
+        "submitted": 2,
+        "executed": 8.0
+      },
+      {
+        "limit": 32,
+        "steps": 21,
+        "final": "done Return(\"12\")",
+        "completed": 3,
+        "systemInfo": 3,
+        "submitted": 3,
+        "executed": 21.0
+      }
+    ],
+    "failedOwner": {
+      "version": 1,
+      "base": "f859875408959ec05006c14330b6b987d21eec82",
+      "run": "source-cli-task-prefix-owner1-20261102.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [   2.026s] 2 tests run: 1 passed, 1 failed, 479 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2,
+      "passed": 1,
+      "failed": 1,
+      "skipped": 479,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4066,
+      "sourceDrift": 0,
+      "held": 13,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "run_json_executes_traverse_parallel_file_tasks"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-11-01T23:18:10.7598686Z"
+    },
+    "twoCaseRepair": {
+      "version": 1,
+      "base": "f859875408959ec05006c14330b6b987d21eec82",
+      "run": "source-cli-task-prefix-owner2-20261102.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   3.747s] 2 tests run: 2 passed, 479 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 479,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4066,
+      "sourceDrift": 0,
+      "held": 13,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-01T23:22:47.3498557Z"
+    }
+  },
+  "quality": {
+    "clippy": {
+      "version": 1,
+      "base": "f859875408959ec05006c14330b6b987d21eec82",
+      "command": "cargo clippy -p arcweft-cli --test check --all-features --locked",
+      "exitCode": 0,
+      "sourceInputs": 4066,
+      "sourceDrift": 0,
+      "heldTracked": 13,
+      "recordedAt": "2026-11-01T23:31:51.1602174Z"
+    },
+    "format": {
+      "version": 1,
+      "command": "rustfmt --edition 2024 --config skip_children=true --check crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+      "exitCode": 0
+    }
+  },
+  "reuse": {
+    "version": 1,
+    "priorBase": "eb4702edd9c22bf8e1c2d1d712e0bc5606bedc50",
+    "testedBase": "f859875408959ec05006c14330b6b987d21eec82",
+    "sourceInputs": 4066,
+    "changed": [
+      {
+        "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+        "bytes": 318345,
+        "sha256": "1d74a0553a85a296b9c15419314858444392f53ddf3e57afb5d10071b2253dee"
+      }
+    ],
+    "unchanged": 4065,
+    "affectedTests": [
+      "run_json_executes_traverse_parallel_file_tasks",
+      "run_json_reports_runtime_system_info_tasks",
+      "profile_json_runs_native_file_tasks_without_absolute_source"
+    ],
+    "productionChanges": 0,
+    "scope": "The original 23-package runtime/97-package quality run retains its own inputs. The later View fixture change is separately accepted by 40/40 runtime tests. This cut changes only three CLI test bodies and incorporates the previously held System Info 8-to-32 completion probe with an exact 8-step prefix retained.",
+    "sharedGateReuse": {
+      "source": "eebe9aee7bbacfd59c51704cdc2ce0a516328e5d",
+      "inputs": 4066,
+      "changed": [
+        {
+          "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+          "bytes": 318345,
+          "sha256": "1d74a0553a85a296b9c15419314858444392f53ddf3e57afb5d10071b2253dee"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/callable_cases/presentation_view_values.rs",
+          "bytes": 15149,
+          "sha256": "782ef64efbc15b38e261f94729a6449acc55ff988298b2ff7db4144a3415a513"
+        }
+      ],
+      "unchanged": 4064
+    }
+  },
+  "cliReconciliation": {
+    "priorFullSource": "eebe9aee7bbacfd59c51704cdc2ce0a516328e5d",
+    "priorUnique": 692,
+    "priorPassed": 649,
+    "priorFailed": 43,
+    "priorIgnored": 23,
+    "freshFocused": 3,
+    "resolvedFailures": [
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "profile_json_runs_native_file_tasks_without_absolute_source"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "run_json_executes_traverse_parallel_file_tasks"
+      }
+    ],
+    "resolvedCount": 2,
+    "remainingPriorFailureCount": 41,
+    "effectivePassed": 651,
+    "effectiveFailed": 41,
+    "freshFullRerun": false,
+    "unaffectedResults": "Original full CLI evidence with unchanged production and unaffected test bodies; not fresh executions. New failures outside the focused set were not measured."
+  },
+  "wipReconciliation": {
+    "version": 1,
+    "base": "f859875408959ec05006c14330b6b987d21eec82",
+    "owned": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+    "originalWip": "The existing system-info completion probe changed 8 steps to 32. Preserve that completion probe and restore an exact 8-step/1-op prefix assertion in the same task-contract test migration.",
+    "originalFileSha256": "133ae9de55b0bc7857420236b92148b8f104ac712d5c5903fcd2e0b36f01f0d7",
+    "originalWorkingBlob": "4df23c4afc860ca51ff3255befe87b69a16de39b",
+    "priorHeld": 14,
+    "priorHeldPatchSha256": "53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6",
+    "remainingHeld": 13,
+    "remainingHeldPatchSha256": "9df601a7eb56662ba865765c820761d3c816b996ac265799c0bbacbe31fac0d6",
+    "noWipDiscarded": true,
+    "recordedAt": "2026-11-01T23:16:05.0030705Z"
+  },
+  "heldTracked": 13,
+  "heldPatchSha256": "9df601a7eb56662ba865765c820761d3c816b996ac265799c0bbacbe31fac0d6",
+  "heldActualUntracked": 6,
+  "limits": [
+    "Three Rust tests contain nine actual CLI invocations, not nine independent Rust tests.",
+    "No fresh all-target CLI or workspace acceptance is claimed from this focused cut.",
+    "Native public save, cancellation/cleanup, all fourteen host variants and Native/Web image parity remain separately bounded."
+  ],
+  "raw": {
+    "path": "task-cli-task-prefix-acceptance.raw.zip",
+    "entryCount": 65,
+    "payloadEntries": 64,
+    "bytes": 2532072,
+    "sha256": "0495e5053aa02ff4cbe485a5e2e7efcefeeaec1b8982e148849c3cde761d986b",
+    "entryDrift": 0
+  },
+  "recordedAt": "2026-11-01T23:37:14.5550065Z"
+}
