@@ -3002,8 +3002,10 @@ impl RuntimeOpaqueValue {
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeOpaqueValueError {
     #[error(transparent)]
+    PresentationSlotRef(#[from] crate::pattern::RuntimePresentationSlotRefDecodeError),
+    #[error(transparent)]
     PresentationToken(#[from] crate::runtime_id::RuntimePresentationHandleTokenDecodeError),
-    #[error("presentation handle expects {expected:?}, received {actual:?}")]
+    #[error("presentation value expects {expected:?}, received {actual:?}")]
     PresentationResource {
         expected: arcweft_interaction_model::presentation::PresentationResourceKind,
         actual: arcweft_interaction_model::presentation::PresentationResourceKind,

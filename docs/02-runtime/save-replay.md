@@ -280,6 +280,18 @@ semantic type identity を保持する。型 owner の admission は exact、val
 admission は token の resource family も照合し、形状が正しい別 family の token を
 拒否する。型を満たす token も、元の実 ledger による custody の検証を必要とする。
 
+`SlotRef<Resource>` は同じ資源を所有せず、共有 `PresentationSlotAddress` の不変な
+住所だけを運ぶ。Core の resource 別 producer と exact semantic type identity を
+保持し、value class は plain、persistence は constant-and-snapshot とする。
+payload は version 1、resource tag、target public ID、slot public ID の4 fieldで、
+tag の幅・未知値・余分なfield・別familyの住所を拒否する。通常のCopy／captureと
+保存復元は、保持される型引数の資源を移動・複製しない。
+
+値の構築は元の型admission contextで行う。opaque headerとpayloadの借用viewを使って
+完全なgraphのnode／string／byte上限と型を先に検査し、成功した後にだけtupleと
+住所文字列を確保する。読取りもlive／inertの由来と正確な型ownerを同じ累積allowanceで
+検査してから住所を複製する。拒否後は最初の失敗を保持し、allowanceを再初期化しない。
+
 一つの実行scopeは、資源の発行元bankごとのgrantを保持する。別bankから移された資源も
 同じ実scopeが所有でき、tokenの発行元bank・execution・fiber・issuanceは変更しない。
 実行frameの登録先bankはscopeが保持するgrantとは別に、実際のRoot／Dialogue／親子の

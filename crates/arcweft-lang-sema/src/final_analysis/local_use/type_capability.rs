@@ -147,6 +147,9 @@ fn classify_at(
         | TypeKind::Unit
         | TypeKind::Never
         | TypeKind::Ref(_)
+        // SlotRef owns an inert address, not the surface or its lease. Its
+        // type argument never contributes an affine retained descendant.
+        | TypeKind::SlotRef(_)
         | TypeKind::CompileTimeScalar(_) => Ok(Unrestricted),
         TypeKind::Function { .. } | TypeKind::CharacterDialogue(_) => Ok(ValueDependent),
         TypeKind::AcceptedNominal(nominal) => {

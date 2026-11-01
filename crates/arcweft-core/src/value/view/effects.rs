@@ -18,6 +18,12 @@ use crate::{
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum RuntimeOpaqueView<'a> {
+    /// Prospective immutable payload, borrowed for admission before its owning
+    /// opaque header or descendants are allocated. This grants no live value.
+    Construction {
+        owner: &'a RuntimeOpaqueTypeOwner,
+        payload: &'a RuntimeValueView<'a>,
+    },
     DialogueContent(&'a super::super::RuntimeDialogueContentValue),
     Live(&'a RuntimeOpaqueValue),
     Snapshot(&'a AwbcRuntimeOpaqueSnapshot),
@@ -26,6 +32,7 @@ pub(crate) enum RuntimeOpaqueView<'a> {
 impl<'a> RuntimeOpaqueView<'a> {
     pub(crate) fn producer(self) -> &'a RuntimeOpaqueTypeProducerId {
         match self {
+            Self::Construction { owner, .. } => owner.producer(),
             Self::DialogueContent(_) => {
                 super::super::RuntimeDialogueContentValue::borrowed_owner().producer()
             }
@@ -35,6 +42,7 @@ impl<'a> RuntimeOpaqueView<'a> {
     }
     pub(crate) fn semantic_identity(self) -> RuntimeSemanticTypeId {
         match self {
+            Self::Construction { owner, .. } => owner.semantic_identity(),
             Self::DialogueContent(_) => {
                 super::super::RuntimeDialogueContentValue::borrowed_owner().semantic_identity()
             }
@@ -44,6 +52,7 @@ impl<'a> RuntimeOpaqueView<'a> {
     }
     pub(crate) fn value_class(self) -> RuntimeOpaqueValueClass {
         match self {
+            Self::Construction { owner, .. } => owner.value_class(),
             Self::DialogueContent(_) => {
                 super::super::RuntimeDialogueOpaqueRole::Content.value_class()
             }
@@ -53,6 +62,7 @@ impl<'a> RuntimeOpaqueView<'a> {
     }
     pub(crate) fn persistence(self) -> RuntimeOpaquePersistence {
         match self {
+            Self::Construction { owner, .. } => owner.persistence(),
             Self::DialogueContent(_) => {
                 super::super::RuntimeDialogueOpaqueRole::Content.persistence()
             }
@@ -62,6 +72,7 @@ impl<'a> RuntimeOpaqueView<'a> {
     }
     pub(crate) fn payload(self) -> RuntimeValueView<'a> {
         match self {
+            Self::Construction { payload, .. } => *payload,
             Self::DialogueContent(v) => {
                 super::super::opaque::RuntimeDialogueTupleView::Content(v).view()
             }
@@ -72,7 +83,7 @@ impl<'a> RuntimeOpaqueView<'a> {
     pub(super) const fn live_value(self) -> Option<&'a RuntimeOpaqueValue> {
         match self {
             Self::Live(v) => Some(v),
-            Self::Snapshot(_) | Self::DialogueContent(_) => None,
+            Self::Construction { .. } | Self::Snapshot(_) | Self::DialogueContent(_) => None,
         }
     }
 }

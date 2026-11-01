@@ -1,5 +1,8 @@
 mod match_source;
 mod presentation;
+mod presentation_slot;
+
+pub use presentation_slot::RuntimePresentationSlotRefDecodeError;
 
 pub use match_source::{
     CanonicalMatchSource, MatchSourceArm, MatchSourceArmCoordinate, MatchSourceArmCoordinateOwner,
@@ -426,6 +429,9 @@ impl RuntimeOpaqueTypeOwner {
             && self
                 .validate_presentation_handle_payload(actual.payload())
                 .is_ok()
+            && self
+                .validate_presentation_slot_ref_payload(actual.payload())
+                .is_ok()
     }
 
     pub fn try_wrap(&self, payload: RuntimeValue) -> Result<RuntimeValue, RuntimeOpaqueValueError> {
@@ -441,6 +447,7 @@ impl RuntimeOpaqueTypeOwner {
             });
         }
         self.validate_presentation_handle_payload(payload.view())?;
+        self.validate_presentation_slot_ref_payload(payload.view())?;
         Ok(RuntimeValue::Opaque(RuntimeOpaqueValue::new_exact(
             self, payload,
         )))

@@ -5687,6 +5687,21 @@ fn runtime_type_scoped_at(
                 arguments: Box::new([]),
             }
         }
+        TypeKind::SlotRef(item) if matches!(item.as_ref(), TypeKind::PresentationResource(_)) => {
+            let TypeKind::PresentationResource(resource) = item.as_ref() else {
+                unreachable!("guard selects a presentation resource")
+            };
+            let owner = arcweft_core::pattern::RuntimeOpaqueTypeOwner::presentation_slot_ref(
+                *resource, identity,
+            );
+            RuntimeTypeShape::Opaque {
+                producer: owner.producer().clone(),
+                admission: owner.admission(),
+                value_class: owner.value_class(),
+                persistence: owner.persistence(),
+                arguments: Box::new([]),
+            }
+        }
         TypeKind::Named(_) if policy_owner.is_some() => RuntimeTypeShape::Nominal {
             nominal: RuntimeResolvedNominal::character_dialogue_policy(
                 policy_owner.expect("matched a graph-owned policy type"),

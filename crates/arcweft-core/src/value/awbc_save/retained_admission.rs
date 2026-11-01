@@ -15,6 +15,7 @@ use crate::value::ownership::RuntimeValueOwnershipRequirement;
 
 mod fanout;
 mod metadata;
+mod presentation;
 
 #[cfg(test)]
 mod state_tests;

@@ -627,6 +627,11 @@ changing slot ownership. `clear.bg(...)` and `hide(...)` return the removed
 surface as `Option<T>`; the removed surface and its scope-owned handle are
 distinct values.
 
+A `SlotRef<T>` owns only its inert address. It is unrestricted even when `T` is
+generic or its surface is owned by an affine handle: copying the reference
+neither copies that surface nor transfers its lease. Its exact resource family
+and address are checked by the runtime type owner when values are admitted.
+
 ```arcw
 let room = bg(@asset:.bg.room, target = @target.scene, slot = @slot.background.main)
 let background_slot = ref.bg(target = @target.scene, slot = @slot.background.main)

@@ -1217,6 +1217,19 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                 validate_variant_cases(&checked_type, path)?;
                 checked(checked_type)
             }
+            TypeKind::SlotRef(item)
+                if matches!(item.as_ref(), TypeKind::PresentationResource(_)) =>
+            {
+                let TypeKind::PresentationResource(resource) = item.as_ref() else {
+                    unreachable!("guard selects a presentation resource")
+                };
+                checked(RuntimeCheckedType::Opaque {
+                    owner: RuntimeOpaqueTypeOwner::presentation_slot_ref(
+                        *resource,
+                        Self::semantic_type_identity(ty, path)?.into(),
+                    ),
+                })
+            }
             TypeKind::Handle { state, .. } => match state {
                 HandleState::Live | HandleState::Detached => {
                     rejected(RuntimeOwnershipRejection::AffineValue)

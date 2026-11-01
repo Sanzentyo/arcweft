@@ -2,6 +2,70 @@ use super::*;
 use arcweft_interaction_model::presentation::PresentationResourceKind;
 
 #[test]
+fn presentation_slot_reference_source_preserves_aliases_generic_calls_and_unrestricted_reads() {
+    for resource in PresentationResourceKind::ALL {
+        let compiled = crate::source::compile_source(&format!(
+            "entry cli @entry.main {{ goto @flow.main }}\n\
+             pub type Address<T> = SlotRef<T>\n\
+             fn identity<T>(value: Address<T>) -> Address<T> {{ value }}\n\
+             fn duplicate<T>(value: Address<T>) -> (Address<T>, Address<T>) {{ (value, value) }}\n\
+             pub fn retain(value: Address<{name}>) -> (Address<{name}>, Address<{name}>) {{\n\
+                 let first = identity::<{name}>(value); let (left, right) = duplicate(first); (left, identity(value))\n\
+             }}\n\
+             flow main() -> i64 {{ let keep = retain; return 0i64 }}",
+            name = resource.type_name()
+        ))
+        .unwrap_or_else(|error| panic!("{resource:?}: {error:?}"));
+        let ty = TypeKind::SlotRef(Box::new(TypeKind::PresentationResource(resource)));
+        let semantic = arcweft_core::pattern::RuntimeSemanticTypeId::from(
+            ty.semantic_identity_digest().unwrap(),
+        );
+        let slot = compiled
+            .plan
+            .type_table()
+            .id_for_semantic(semantic)
+            .expect("slot reference parameter ABI is admitted");
+        let projected = runtime_type(
+            &ty,
+            compiled.analysis.project_symbols(),
+            compiled.analysis.registered_world(),
+            compiled.analysis.final_analysis().as_ref(),
+        )
+        .unwrap();
+        assert_eq!(
+            projected.checked_type().unwrap(),
+            arcweft_core::pattern::RuntimeCheckedType::Opaque {
+                owner: arcweft_core::pattern::RuntimeOpaqueTypeOwner::presentation_slot_ref(
+                    resource, semantic
+                ),
+            }
+        );
+        let result = TypeKind::Tuple(vec![ty.clone(), ty]);
+        let tuple = compiled
+            .plan
+            .type_table()
+            .id_for_semantic(arcweft_core::pattern::RuntimeSemanticTypeId::from(
+                result.semantic_identity_digest().unwrap(),
+            ))
+            .expect("two unrestricted references retain their exact result ABI");
+        let function = compiled
+            .plan
+            .function_sites()
+            .iter_with_ids()
+            .find_map(|(_, function)| (function.result() == tuple).then_some(function))
+            .expect("closed retained source function");
+        assert_eq!(function.parameter_inputs().count(), 1);
+        let identity = compiled
+            .plan
+            .function_sites()
+            .iter_with_ids()
+            .find_map(|(_, function)| (function.result() == slot).then_some(function))
+            .expect("closed generic identity retains the exact slot reference return ABI");
+        assert_eq!(identity.parameter_inputs().count(), 1);
+    }
+}
+
+#[test]
 fn presentation_handle_projection_retains_exact_resource_and_affine_snapshot_owner() {
     let compiled = crate::source::compile_source(
         "entry cli @entry.main { goto @flow.main }\nflow main() -> i64 { return 0i64 }",
