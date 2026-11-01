@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "source": "1cdaaca1b4d459399c11310cecaa3ef3f48bda19",
+  "publication": {
+    "version": 1,
+    "commit": "1cdaaca1b4d459399c11310cecaa3ef3f48bda19",
+    "parent": "eb4702edd9c22bf8e1c2d1d712e0bc5606bedc50",
+    "tree": "7862fca9ea79684880249583938ebd549ce65a3a",
+    "remote": "1cdaaca1b4d459399c11310cecaa3ef3f48bda19",
+    "paths": [
+      {
+        "path": "crates/arcweft-compiler/tests/callable_cases/presentation_view_values.rs",
+        "blob": "de585b700485b38107316afe9bd8b9dccced788c"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "57a61e294ef37671fee286d5a30de67102a8188d673d9b668f481e17d19cf45d",
+    "heldPatchSha256": "53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-01T23:02:46.39745Z"
+  },
+  "boundary": "Expected closure parameter types and ViewValue return through a generic callback",
+  "accepted": {
+    "previous": 36,
+    "added": 4,
+    "total": 40,
+    "programInvocation": 12,
+    "ordinaryFlow": 28,
+    "backends": [
+      "Native",
+      "canonical decoded AWBC"
+    ],
+    "maxOps": 1,
+    "maxTicks": 256,
+    "eachAwbcStepPublicSaveOwnedRestore": true
+  },
+  "conditions": [
+    "A String-to-i64 function binding supplies the expected parameter type to an unannotated closure that captures a View alias.",
+    "apply<T> receives String-to-T callback and returns the constructed ViewValue to the original Flow before mount/unmount. The callback parameter is inferred from its expected String type."
+  ],
+  "runtime": {
+    "version": 1,
+    "base": "eb4702edd9c22bf8e1c2d1d712e0bc5606bedc50",
+    "run": "presentation-view-contextual-capture-owner1-20261102.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [   0.971s] 40 tests run: 40 passed, 242 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 40,
+    "passed": 40,
+    "failed": 0,
+    "skipped": 242,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4066,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-11-01T23:00:04.7752343Z"
+  },
+  "clippy": {
+    "version": 1,
+    "base": "eb4702edd9c22bf8e1c2d1d712e0bc5606bedc50",
+    "command": "cargo clippy -p arcweft-compiler --test callable_execution --all-features --locked",
+    "exitCode": 0,
+    "sourceInputs": 4066,
+    "sourceDrift": 0,
+    "recordedAt": "2026-11-01T23:01:55.1559192Z"
+  },
+  "format": {
+    "version": 1,
+    "base": "eb4702edd9c22bf8e1c2d1d712e0bc5606bedc50",
+    "command": "rustfmt --edition 2024 --config skip_children=true --check crates/arcweft-compiler/tests/callable_cases/presentation_view_values.rs",
+    "exitCode": 0,
+    "recordedAt": "2026-11-01T23:01:27.9192716Z"
+  },
+  "reuse": {
+    "version": 1,
+    "priorSource": "eebe9aee7bbacfd59c51704cdc2ce0a516328e5d",
+    "testedBase": "eb4702edd9c22bf8e1c2d1d712e0bc5606bedc50",
+    "priorInputs": 4066,
+    "newInputs": 4066,
+    "changed": [
+      {
+        "path": "crates/arcweft-compiler/tests/callable_cases/presentation_view_values.rs",
+        "bytes": 15149,
+        "sha256": "782ef64efbc15b38e261f94729a6449acc55ff988298b2ff7db4144a3415a513"
+      }
+    ],
+    "unchanged": 4065,
+    "scope": "The only changed frozen input is the integration test fixture. Original 23-package runtime and 97-package quality evidence retains its original source/feature unions; it is not a fresh full rerun."
+  },
+  "reusedEvidence": "task-view-semantic-capture-acceptance.json: actual 23-package/5014-case terminal run and 97-package workspace gates for implementation eebe9aee7bbacfd59c51704cdc2ce0a516328e5d. Only the integration fixture changed; those broad results remain original evidence, not fresh reruns.",
+  "limits": [
+    "No unconstrained standalone closure parameter inference is claimed.",
+    "Reactive defaults, renderer/driver integration and actual Native/Web image parity remain separately bounded.",
+    "The original 14 tracked WIP changes remain part of the tested inputs; a clean checkout is not claimed."
+  ],
+  "held": {
+    "tracked": 14,
+    "patchSha256": "53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6",
+    "actualUntracked": 6
+  },
+  "raw": {
+    "path": "task-view-contextual-capture-acceptance.raw.zip",
+    "entryCount": 20,
+    "payloadEntries": 19,
+    "bytes": 769203,
+    "sha256": "bb6963e8935b72d751289823ad6b5aa3607333e1a4cf63ebc746346c0815b865",
+    "entryDrift": 0
+  },
+  "recordedAt": "2026-11-01T23:04:10.0781415Z"
+}
