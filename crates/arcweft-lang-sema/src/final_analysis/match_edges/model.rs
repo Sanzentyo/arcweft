@@ -526,7 +526,7 @@ mod tests {
 
         let value = (VALUE_RESOLUTION_TAG_BASE..=VALUE_RESOLUTION_TAG_END).collect::<Vec<_>>();
         assert_eq!(value.len(), usize::from(VALUE_RESOLUTION_TAG_COUNT));
-        assert_eq!(value, (0x0300_u16..=0x030a_u16).collect::<Vec<_>>());
+        assert_eq!(value, (0x0300_u16..=0x030b_u16).collect::<Vec<_>>());
         assert_unique(&value);
         assert_eq!(
             VALUE_RESOLUTION_TAG_END,
@@ -565,13 +565,13 @@ mod tests {
         let pattern =
             (PATTERN_RESOLUTION_TAG_BASE..=PATTERN_RESOLUTION_TAG_END).collect::<Vec<_>>();
         assert_eq!(pattern.len(), usize::from(PATTERN_RESOLUTION_TAG_COUNT));
-        assert_eq!(pattern, (0x0600_u16..=0x0606_u16).collect::<Vec<_>>());
+        assert_eq!(pattern, (0x0600_u16..=0x0607_u16).collect::<Vec<_>>());
         assert_unique(&pattern);
         assert_eq!(
             PATTERN_RESOLUTION_TAG_END,
             PATTERN_RESOLUTION_TAG_BASE + PATTERN_RESOLUTION_TAG_COUNT - 1
         );
-        assert_eq!(PATTERN_RESOLUTION_TAG_END, 0x0606);
+        assert_eq!(PATTERN_RESOLUTION_TAG_END, 0x0607);
 
         let mut all = expression;
         all.extend(value);
