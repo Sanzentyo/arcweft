@@ -14005,3 +14005,13 @@ Core 6ee3af094df0d16769a54d82a77e5affd331fa2e、Compiler／RuntimePlan eeb34b092
 Core ownerは24／24 PASS。Native／decoded AWBCの元program下で供給parameter 2だけを保持する値の往復とaffine性、View名・definition・総parameter数・供給座標・resource型・body layoutの6種の拒否、private wireの正確なmetadata資源境界を確認した。各runの入力・case／EXE照合を原本へ保持する。最終側は4,066入力・差分0。workspace全97 packageの全target／全feature／locked check・Clippy、変更Rust 32 path fmt、構造gateは終了0、警告は残る。構造は3,302 files／3,172 Rust files・1,790,357 physical LOC・385 trigger・blocking0。新Core ownerはmetadata・型付きcapture layout・admissionに責任を限定し、bank・registry・描画・I/Oを取り込まない。既存のCompiler／RuntimePlan ownerは同じ投影責務を保持し、Cargo edge変更はない。
 
 現状一覧のViewValue生成を一律の未達列挙から対象別の実測行へ訂正した。alias 2件は現在も型投影でFAILしており、その具体的な拒否を残作業の根拠とする。Source全体の未達はHandle受入行から専用行へ移し、受入済みのHandle・slot・Generic Matchを未実装に戻さない。reactive defaultの評価、描画driver、全71逆依存runtimeと全体goalの受入はこのcutの成功から推定しない。
+
+## semantic View calleeの区分・Program invocation — 2026-11-02
+
+Source 3f7f1108f9ec96d2950085c943d224fea6315e91（親661000455a296f1ecc5f7afb7358ec6a4ab1529e）を通常commit／non-forced pushし、公開tree／patch／blob差分0を確認した。[検証原本](acceptance-evidence/task-view-semantic-erasure.json)と[全原本ZIP](acceptance-evidence/task-view-semantic-erasure.raw.zip)へ、Source／case／EXE pin、初回失敗、一時診断、修復、公開照合を保持した。元14 trackedのpatch SHA256 53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6と元6 actual untrackedを保持する。
+
+Semaのsealed partitionがcompile-time callableの区分を所有し、RuntimePlanは同じ意味のsemantic rowだけを認める。alias束縛を実行データへ投影せず、既存の継続でprefixを実行する。共通SourceアドレスHirValueTypeOwnerをHIRへ移し、旧定義・再exportを除去した。最初の8件は8／8 PASS。追加4件の最初のfixtureは曖昧な裸のblockでreadiness拒否となった。letで始める正しいblockに直すと初期化prefix 2件はPASS、複合callee 2件はInvalidAssignmentFactでFAILした。一時診断でassignment access／root型は存在し、target／value型がないことを確認した。局所的な型promoteは取り消し、checked call／HIRのsemantic callee区分で元のprefixを到達させた。最終Program invocationは12／12 PASS、元のOneOp・各step decoded AWBC公開保存復元・評価順12を維持した。一時診断出力は除去済み。
+
+HIR／Sema／RuntimePlan／Compilerのlibraryは2,621／2,621 PASS・8 ignored。160秒台の上限境界1件をslowのまま保持し、timeoutやassertionは変更しない。4,066入力とcase／EXE差分0。workspace初回checkのtest scopeに残った旧owner参照は修復し、最終全97 package・全target／全feature／locked check・Clippy、変更Rust 20 path fmt、構造gateは終了0。警告は残る。構造は3,302 files／3,172 Rust files・1,790,662 physical LOC・385 trigger・blocking0。各ownerのpath metricとfanin/out、既存の大きなownerに同じ投影責務を保持する理由を原本へ記す。Cargo変更はない。
+
+別の通常Flowへaliasを直接置くcaseはruntime-plan-lowerでCompileTimeCallable<View::crate::Card>をglobal投影し1／1 FAILした。Program invocationの12条件をこのFlowの完了へ拡張せず、現状一覧の未達理由をこの実測へ更新した。既存のView値／codec・Handle・Generic Matchの受入を戻す判定ではない。全71逆依存runtime、一般のscope／capture／伝播条件、描画driverと全体goalはこのowner検証だけでは完了としない。
