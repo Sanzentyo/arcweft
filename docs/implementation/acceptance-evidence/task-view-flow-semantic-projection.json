@@ -1,0 +1,487 @@
+{
+  "version": 1,
+  "source": "150bceb149d35a159fc4235c67edc728d4c0f938",
+  "publication": {
+    "version": 1,
+    "commit": "150bceb149d35a159fc4235c67edc728d4c0f938",
+    "parent": "d2da4f4044f2880006e3395358574ab84c161df2",
+    "tree": "dbeebf4e5bd8d1867e7608f200b0730ce3ce68f3",
+    "remote": "150bceb149d35a159fc4235c67edc728d4c0f938",
+    "paths": [
+      {
+        "path": "crates/arcweft-compiler/src/lower.rs",
+        "blob": "7624428391aca639adc44affe34175652d141001"
+      },
+      {
+        "path": "crates/arcweft-compiler/src/lower/executable_types.rs",
+        "blob": "2f3625a2f53f5313f52fc6259fd23adc78f42730"
+      },
+      {
+        "path": "crates/arcweft-compiler/src/project/tests.rs",
+        "blob": "4fb973f6fc16e3dd2fe06847d14b62a8eff3b3f0"
+      },
+      {
+        "path": "crates/arcweft-compiler/src/project/tests/type_purpose.rs",
+        "blob": "636df9676f0af595116839e3b1a34d0a512a68af"
+      },
+      {
+        "path": "crates/arcweft-compiler/tests/callable_cases/presentation_view_values.rs",
+        "blob": "64e62143266edb51c82dfe91b065fac7c80db6d2"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis.rs",
+        "blob": "2e9cb3fcc71d0ea8042f5313142c6a47ca9a3658"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/report.rs",
+        "blob": "5530c28bfd7c0aa413886ecbcd8e37192c7bbfe2"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_expr.rs",
+        "blob": "0ae327ceea08262206dee177b88f91940dc0ab3e"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_expr/scopes.rs",
+        "blob": "8b2e97fba1734d722abe759413e13d66c75febd0"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+        "blob": "0cc0ab6b57d1976cd3246a85b20ff3b94e0b28fb"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_flow/defer.rs",
+        "blob": "afdc839cc47eefc1afd690d7a5124660ced3b210"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_flow/format_attempt.rs",
+        "blob": "4c3af7f2744bd5bbbb82c7565fa2e81799d7bb2a"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_flow/program_fanout.rs",
+        "blob": "203f1c8370a6f069b0b27f9ece6eb0963d1cb16a"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_flow/standard_map.rs",
+        "blob": "78995313c6d660574503b44c14907c4ee6a55e7d"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_flow/value_branches.rs",
+        "blob": "e634229396c4b01af5d8f42f9ecddf8b5222acba"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+        "blob": "5afd6aeb115547c03a118b50b2e455411c1084d1"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts/project_function.rs",
+        "blob": "69300bb131f8790c1fa722b975eb7f1a163947cf"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts/tests.rs",
+        "blob": "480830eed032493f11c5958530dacada71293c15"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts/tests/registry_write.rs",
+        "blob": "f4b3f17adfb9b798e83152da673c9e19e0029d26"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts/tests/suspension.rs",
+        "blob": "10ceda5eab53885c924e4efe02ab61d3a0016870"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts/type_dependencies.rs",
+        "blob": "c94c235eeb29081cc7424da08bf9d1e01f6ce29c"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "ad3c356e0a114fff41fa01d6af2d61a57da853ee07812222f08e787e37023286",
+    "heldPatchSha256": "53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-01T20:58:32.1517742Z"
+  },
+  "recordedAt": "2026-11-01T20:58:45.1788555Z",
+  "boundary": "Semantic View aliases and scoped callee prefixes execute in the original Flow as well as Program invocation",
+  "runs": [
+    {
+      "stem": "presentation-flow-projection-repro1-20261102",
+      "result": {
+        "version": 1,
+        "base": "d2da4f4044f2880006e3395358574ab84c161df2",
+        "run": "presentation-flow-projection-repro1-20261102.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   0.098s] 1 test run: 0 passed, 1 failed, 254 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 1,
+        "passed": 0,
+        "failed": 1,
+        "skipped": 254,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4066,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::callable_execution",
+            "test": "presentation_view_values::source_view_alias_can_enter_the_original_flow_plan"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-01T20:43:34.1647925Z"
+      }
+    },
+    {
+      "stem": "presentation-flow-projection-owner4-20261102",
+      "result": {
+        "version": 1,
+        "base": "d2da4f4044f2880006e3395358574ab84c161df2",
+        "run": "presentation-flow-projection-owner4-20261102.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   0.383s] 18 tests run: 18 passed, 242 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 18,
+        "passed": 18,
+        "failed": 0,
+        "skipped": 242,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4066,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-01T20:47:23.4781543Z"
+      }
+    },
+    {
+      "stem": "presentation-flow-projection-libraries2-20261102",
+      "result": {
+        "version": 1,
+        "base": "d2da4f4044f2880006e3395358574ab84c161df2",
+        "run": "presentation-flow-projection-libraries2-20261102.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [ 184.378s] 2621 tests run: 2621 passed (1 slow), 8 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 2621,
+        "passed": 2621,
+        "failed": 0,
+        "skipped": 8,
+        "selectedPackages": 4,
+        "matchedPackages": 4,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4066,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-01T20:54:48.0824017Z"
+      }
+    },
+    {
+      "stem": "presentation-flow-projection-continuations1-20261102",
+      "result": {
+        "version": 1,
+        "base": "d2da4f4044f2880006e3395358574ab84c161df2",
+        "run": "presentation-flow-projection-continuations1-20261102.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [  25.117s] 292 tests run: 292 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 292,
+        "passed": 292,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4066,
+        "sourceDrift": 0,
+        "held": 14,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-01T20:56:00.372432Z"
+      }
+    }
+  ],
+  "quality": [
+    {
+      "version": 1,
+      "base": "d2da4f4044f2880006e3395358574ab84c161df2",
+      "command": [
+        "check",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4066,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-01T20:56:18.486827Z",
+      "finishedAt": "2026-11-01T20:57:06.7784673Z"
+    },
+    {
+      "version": 1,
+      "base": "d2da4f4044f2880006e3395358574ab84c161df2",
+      "command": [
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4066,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-01T20:57:07.246107Z",
+      "finishedAt": "2026-11-01T20:58:04.6360174Z"
+    },
+    {
+      "version": 1,
+      "base": "d2da4f4044f2880006e3395358574ab84c161df2",
+      "command": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking",
+        "--write",
+        "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-flow-projection-quality-20261102.structure-report"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4066,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-01T20:58:05.1089561Z",
+      "finishedAt": "2026-11-01T20:58:08.7339481Z"
+    }
+  ],
+  "format": {
+    "command": "rustfmt --edition 2024 --config skip_children=true --check <21 explicit owned Rust paths>",
+    "exitCode": 0,
+    "paths": [
+      "crates/arcweft-compiler/src/lower.rs",
+      "crates/arcweft-compiler/src/lower/executable_types.rs",
+      "crates/arcweft-compiler/src/project/tests.rs",
+      "crates/arcweft-compiler/src/project/tests/type_purpose.rs",
+      "crates/arcweft-compiler/tests/callable_cases/presentation_view_values.rs",
+      "crates/arcweft-lang-sema/src/final_analysis.rs",
+      "crates/arcweft-lang-sema/src/final_analysis/report.rs",
+      "crates/arcweft-runtime-plan/src/final_expr.rs",
+      "crates/arcweft-runtime-plan/src/final_expr/scopes.rs",
+      "crates/arcweft-runtime-plan/src/final_flow.rs",
+      "crates/arcweft-runtime-plan/src/final_flow/defer.rs",
+      "crates/arcweft-runtime-plan/src/final_flow/format_attempt.rs",
+      "crates/arcweft-runtime-plan/src/final_flow/program_fanout.rs",
+      "crates/arcweft-runtime-plan/src/final_flow/standard_map.rs",
+      "crates/arcweft-runtime-plan/src/final_flow/value_branches.rs",
+      "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+      "crates/arcweft-runtime-plan/src/semantic_facts/project_function.rs",
+      "crates/arcweft-runtime-plan/src/semantic_facts/tests.rs",
+      "crates/arcweft-runtime-plan/src/semantic_facts/tests/registry_write.rs",
+      "crates/arcweft-runtime-plan/src/semantic_facts/tests/suspension.rs",
+      "crates/arcweft-runtime-plan/src/semantic_facts/type_dependencies.rs"
+    ],
+    "log": "presentation-flow-projection-format-final-20261102.log"
+  },
+  "ownerReview": {
+    "paths": [
+      {
+        "path": "crates/arcweft-compiler/src/lower.rs",
+        "bytes": 450640,
+        "physicalLines": 10567,
+        "classification": "production"
+      },
+      {
+        "path": "crates/arcweft-compiler/src/lower/executable_types.rs",
+        "bytes": 6122,
+        "physicalLines": 143,
+        "classification": "production"
+      },
+      {
+        "path": "crates/arcweft-compiler/src/project/tests.rs",
+        "bytes": 161747,
+        "physicalLines": 4340,
+        "classification": "test"
+      },
+      {
+        "path": "crates/arcweft-compiler/src/project/tests/type_purpose.rs",
+        "bytes": 7026,
+        "physicalLines": 177,
+        "classification": "test"
+      },
+      {
+        "path": "crates/arcweft-compiler/tests/callable_cases/presentation_view_values.rs",
+        "bytes": 8962,
+        "physicalLines": 290,
+        "classification": "test"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis.rs",
+        "bytes": 15669,
+        "physicalLines": 289,
+        "classification": "production"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/report.rs",
+        "bytes": 123362,
+        "physicalLines": 3067,
+        "classification": "production"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_expr.rs",
+        "bytes": 159144,
+        "physicalLines": 3897,
+        "classification": "production"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_expr/scopes.rs",
+        "bytes": 5824,
+        "physicalLines": 147,
+        "classification": "production"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+        "bytes": 449356,
+        "physicalLines": 10533,
+        "classification": "production"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_flow/defer.rs",
+        "bytes": 10041,
+        "physicalLines": 249,
+        "classification": "production"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_flow/format_attempt.rs",
+        "bytes": 12460,
+        "physicalLines": 310,
+        "classification": "production"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_flow/program_fanout.rs",
+        "bytes": 8986,
+        "physicalLines": 203,
+        "classification": "production"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_flow/standard_map.rs",
+        "bytes": 14902,
+        "physicalLines": 395,
+        "classification": "production"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_flow/value_branches.rs",
+        "bytes": 6403,
+        "physicalLines": 162,
+        "classification": "production"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+        "bytes": 612314,
+        "physicalLines": 15591,
+        "classification": "production"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts/project_function.rs",
+        "bytes": 123022,
+        "physicalLines": 3228,
+        "classification": "production"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts/tests.rs",
+        "bytes": 167384,
+        "physicalLines": 4571,
+        "classification": "test"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts/tests/registry_write.rs",
+        "bytes": 3989,
+        "physicalLines": 115,
+        "classification": "test"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts/tests/suspension.rs",
+        "bytes": 2949,
+        "physicalLines": 78,
+        "classification": "test"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts/type_dependencies.rs",
+        "bytes": 15215,
+        "physicalLines": 431,
+        "classification": "production"
+      }
+    ],
+    "packageMetrics": [
+      {
+        "package": "arcweft-compiler",
+        "manifest": "crates/arcweft-compiler/Cargo.toml",
+        "workspace_fan_in": "3",
+        "workspace_fan_out": "24",
+        "development_workspace_fan_in": "2",
+        "development_workspace_fan_out": "10"
+      },
+      {
+        "package": "arcweft-lang-sema",
+        "manifest": "crates/arcweft-lang-sema/Cargo.toml",
+        "workspace_fan_in": "8",
+        "workspace_fan_out": "14",
+        "development_workspace_fan_in": "4",
+        "development_workspace_fan_out": "0"
+      },
+      {
+        "package": "arcweft-runtime-plan",
+        "manifest": "crates/arcweft-runtime-plan/Cargo.toml",
+        "workspace_fan_in": "5",
+        "workspace_fan_out": "10",
+        "development_workspace_fan_in": "5",
+        "development_workspace_fan_out": "0"
+      }
+    ],
+    "disposition": [
+      "Final sema issues immutable owner/type/reachability proofs; global and closed RuntimePlan scopes use the same RuntimeExecutableTypeProjection algebra. Separate owned expression, pattern, local and annotation type catalogs were removed. Temporary validation maps only borrow that authority.",
+      "Source local order is validated before filtering semantic locals from the runtime frame. Semantic aliases never acquire Unit types, Core callable identities or local storage. Global generic-local context stays on the same typed projection.",
+      "One typed expression-evaluation map distinguishes runtime operands from completed semantic prefixes. Flow continuations execute initializer, callee and argument prefixes in source order exactly once, close lexical scopes, and resume without manufacturing a runtime operand.",
+      "The existing Compiler and RuntimePlan owners retain projection/admission/continuation responsibilities. Their large-file triggers require ownership review; no source-name scan, I/O, renderer owner, legacy reader, contract version or Cargo edge was introduced."
+    ]
+  },
+  "corrections": [
+    "The old Source 3f7f1108f9ec96d2950085c943d224fea6315e91 Flow failure was real. After global type projection was repaired, the same case reached Flow binding and exposed a missing local seed; that intermediate 1/1 FAIL is retained.",
+    "The compile-only regression was replaced by six actual Native/decoded AWBC Flow execution cases. The final five-target integration run includes all 18 View cases and passes all 292 cases with no exclusions.",
+    "The new test helper initially used the wrong plan ownership API and then captured a consuming restore in FnMut; all three compiler failures remain in owner1/2/3 catalogs. The fixed helper preserves one-op/max_ops=1/256 ticks and performs public save/owned restore after every AWBC step.",
+    "The first library catalog and a later check exposed direct mutations of deleted private type tables and missing test imports. They were migrated without dropping rejection assertions. The final four-library run passes 2621 cases, with 8 ignored and the existing HIR limit test still slow."
+  ],
+  "remaining": [
+    "Source View defaults/reactive evaluation, renderer-driver acceptance and the full 71-package ID reverse-runtime matrix remain separate unfinished boundaries.",
+    "The six new Flow cases establish alias and scoped initializer/callee source order. Existing named-scope/Try suites also pass; this is not acceptance of every semantic-prefix propagation or capture/lifetime condition."
+  ],
+  "wip": {
+    "heldTracked": 14,
+    "heldPatchSha256": "53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6",
+    "actualUntrackedHeld": 6
+  },
+  "raw": {
+    "path": "task-view-flow-semantic-projection.raw.zip",
+    "entryCount": 71,
+    "payloadEntries": 70,
+    "bytes": 3051147,
+    "sha256": "42576d02d991f64abc65b94b85866f732cf202cbaee5ed580d3cabe17d39c0d3",
+    "entryDrift": 0
+  },
+  "structure": {
+    "files": 3302,
+    "rustFiles": 3172,
+    "physicalRustLines": 1791187,
+    "workspacePackages": 97,
+    "reviewTriggers": 385,
+    "blocking": 0
+  }
+}

@@ -14015,3 +14015,13 @@ Semaのsealed partitionがcompile-time callableの区分を所有し、RuntimePl
 HIR／Sema／RuntimePlan／Compilerのlibraryは2,621／2,621 PASS・8 ignored。160秒台の上限境界1件をslowのまま保持し、timeoutやassertionは変更しない。4,066入力とcase／EXE差分0。workspace初回checkのtest scopeに残った旧owner参照は修復し、最終全97 package・全target／全feature／locked check・Clippy、変更Rust 20 path fmt、構造gateは終了0。警告は残る。構造は3,302 files／3,172 Rust files・1,790,662 physical LOC・385 trigger・blocking0。各ownerのpath metricとfanin/out、既存の大きなownerに同じ投影責務を保持する理由を原本へ記す。Cargo変更はない。
 
 別の通常Flowへaliasを直接置くcaseはruntime-plan-lowerでCompileTimeCallable<View::crate::Card>をglobal投影し1／1 FAILした。Program invocationの12条件をこのFlowの完了へ拡張せず、現状一覧の未達理由をこの実測へ更新した。既存のView値／codec・Handle・Generic Matchの受入を戻す判定ではない。全71逆依存runtime、一般のscope／capture／伝播条件、描画driverと全体goalはこのowner検証だけでは完了としない。
+
+## 通常Flowのsemantic View aliasとscope付きprefix — 2026-11-02
+
+Source 150bceb149d35a159fc4235c67edc728d4c0f938（親d2da4f4044f2880006e3395358574ab84c161df2）を通常commit／non-forced pushし、tree／patch／公開blob差分0を確認した。[検証原本](acceptance-evidence/task-view-flow-semantic-projection.json)と[全原本ZIP](acceptance-evidence/task-view-flow-semantic-projection.raw.zip)に、初回FAIL、compiler拒否、修復、4,066入力・case・EXE pin、21 pathの公開照合を保持する。元14 tracked WIPのpatch SHA256 53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6と元6 actual untrackedを保持する。
+
+3f7f1108f9ec96d2950085c943d224fea6315e91で記録した通常Flowのcompile-time callable正規化失敗を修復した。Semaのsealedなowner／型／reachability証拠を共通のRuntimeExecutableTypeProjectionへ渡し、globalの式・pattern・local・型注釈の重複所有テーブルを削除した。localの順序検査後にsemantic aliasを実行frameから除く。途中の同じFlow caseはlocal seed要求へ進んで1／1 FAILとなり、その結果も原本へ保持した。Flowのletとcalleeは、実行値とsemantic prefix完了を区別する既存の継続へ揃えた。架空のUnit・関数identity・local slotを作らず、scopeのcloseと引数前のprefix評価を維持する。
+
+compile-onlyの1 caseをNative／decoded AWBCの実行6条件へ置き換え、通常Flowのalias、scope付き初期化、複合calleeで実際のmount／unmountと評価順12を確認した。Program invocation 12条件と合わせて18件PASS。AWBCは各stepで公開保存・owned restoreを行い、OneOp・max_ops=1・256 ticks上限を維持する。初回test helperのplan所有APIとFnMut内のconsuming restoreの3回のcompiler拒否、および旧private tableを直接変更するlibrary fixtureとtest importの拒否を保持し、すべて修復した。最終4 libraryは2,621／2,621 PASS・8 ignored（HIR上限境界1 slow）、5 integration targetは292／292 PASS・除外0。workspace全97 package・全target／全feature／locked check・Clippy、変更21 Rust pathのfmtと構造gateは終了0。警告は残る。
+
+訂正理由は、旧Flow failureに対する型投影・束縛・継続の修復と実Native／AWBC実行結果である。現状一覧の「通常Flowのaliasは未達」をこの根拠で削除・更新した。過去のFAILや公開SHAは上の履歴・原本に残し、Generic Match等の受入済み項目は変更しない。すべてのsemantic-prefix伝播／capture、reactive default、描画driver、全71逆依存runtimeと全体goalを、この局所実行だけで完了とはしない。
