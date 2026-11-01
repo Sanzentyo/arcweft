@@ -40,12 +40,13 @@ use arcweft_core::{
         RuntimeUnsignedIntWidth, runtime_sequence_dense_bytes,
     },
 };
+use arcweft_id::view::ViewId;
 use arcweft_id::{DeclarationIdentityFamily, PublicId};
 use arcweft_interaction_model::dialogue::{
     CharacterDialogueFieldCoordinate as Coordinate, CharacterDialogueOperation,
     CharacterDialoguePatchField, CharacterDialoguePatchOperation as Operation,
 };
-use arcweft_view::{ViewId, ViewStyleSheetId};
+use arcweft_view::ViewStyleSheetId;
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,

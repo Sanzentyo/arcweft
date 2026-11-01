@@ -9,12 +9,13 @@
 use crate::style::{ViewPhysicalFlow, ViewStyleApplicationTarget};
 use crate::{
     CustomElementId, HandlerId, ImageId, SemanticSpecId, TextSourceId, ViewEvaluationSiteId,
-    ViewExecutionInput, ViewHandlerProgramId, ViewHandlerResult, ViewId, ViewInstructionIndex,
+    ViewExecutionInput, ViewHandlerProgramId, ViewHandlerResult, ViewInstructionIndex,
     ViewPartExport, ViewPartId, ViewPartInstructionKind, ViewPartLocalName, ViewPartName,
     ViewPartStaticReachability, ViewProgramBuildError, ViewProgramId, ViewStaticPart,
     ViewValueProgramId, ViewValueProgramInventory,
 };
 use arcweft_id::PublicId;
+use arcweft_id::view::ViewId;
 use arcweft_presentation::fx::{
     FxDefinitionArgumentValue, FxDefinitionParameterIndex, FxDefinitionParameterLayoutDigest, FxId,
 };
@@ -1010,9 +1011,10 @@ mod tests {
     };
     use crate::style::{ViewStyleApplicationTarget, ViewStylePatchId, ViewStyleSheetId};
     use crate::{
-        CustomElementId, ImageId, TextSourceId, ViewEvaluationSiteId, ViewId, ViewPartLocalName,
+        CustomElementId, ImageId, TextSourceId, ViewEvaluationSiteId, ViewPartLocalName,
         ViewPartName, ViewPartStaticReachability, ViewProgramBuildError, ViewProgramId,
     };
+    use arcweft_id::view::ViewId;
     use std::collections::BTreeSet;
 
     fn view_id(value: &str) -> ViewId {

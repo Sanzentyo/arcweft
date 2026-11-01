@@ -8,11 +8,12 @@ use arcweft_bundle::resource_codec::view::{
 use arcweft_bundle::resource_codec::{SectionCodecError, SourceSetRevision};
 use arcweft_core::awbc::schema::{AwbcFunctionId, AwbcProgram};
 use arcweft_id::PublicId;
+use arcweft_id::view::ViewId;
 use arcweft_view::{
     AcceptedViewProgramRevision, BindEvent, BindHandler, CustomElementId, HandlerId, ImageId,
     SemanticSpecId, TextSourceId, ViewBranch, ViewCall, ViewCallArgument, ViewCustomSpec,
     ViewElementSpec, ViewEvaluationSiteId, ViewExecutionInput, ViewFxApplicationInstruction,
-    ViewFxArgumentSource, ViewFxCallArgument, ViewHandlerProgramId, ViewHandlerResult, ViewId,
+    ViewFxArgumentSource, ViewFxCallArgument, ViewHandlerProgramId, ViewHandlerResult,
     ViewImageSpec, ViewInstruction, ViewPartId, ViewPartStaticReachability, ViewProgram,
     ViewProgramBuildError, ViewProgramBuilder, ViewProgramId, ViewRepeat, ViewSemanticSpec,
     ViewStableKey, ViewTextSpec, ViewValueInventoryError, ViewValueProgramInventory,

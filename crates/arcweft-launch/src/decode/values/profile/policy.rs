@@ -13,9 +13,10 @@ use crate::{
 use arcweft_dialogue::{
     CharacterDialogueStyleValue, FallbackStylePolicy, InlineFailurePolicy, InlineFallback,
 };
+use arcweft_id::view::{ViewId, ViewIdError};
 use arcweft_manifest_model::ProfileId;
 use arcweft_source::{SourceDocument, SourceSpan};
-use arcweft_view::{ViewId, ViewIdError, ViewStyleSheetId, ViewStyleSheetIdError};
+use arcweft_view::{ViewStyleSheetId, ViewStyleSheetIdError};
 use std::collections::BTreeMap;
 
 pub(super) fn decode_dialogue(

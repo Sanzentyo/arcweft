@@ -7,8 +7,9 @@ use arcweft_bundle::resource_codec::{
     ViewInstructionSpan, ViewProductValidationError, ViewProductValidationLimits,
     ViewProgramResource,
 };
+use arcweft_id::view::ViewId;
 use arcweft_source::{ProductSourceRef, SourceDocument, SourceDocumentId, SourceName};
-use arcweft_view::{ViewId, ViewPartLocalName, ViewPartName};
+use arcweft_view::{ViewPartLocalName, ViewPartName};
 
 #[test]
 fn complete_product_accepts_exact_revision_and_exposes_only_validated_views() {

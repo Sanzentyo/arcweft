@@ -1,9 +1,10 @@
 use crate::{
     AcceptedViewProgramRevision, DirtyFlags, Entity, EntityStore, PropertyBinding,
     PropertyBindingTableBuilder, ReactiveGraph, Revision, RustViewId, ValueSourceId,
-    ViewDescriptor, ViewError, ViewId, ViewImplementation, ViewProgramId, ViewPropertyId,
-    ViewPropertyKind, ViewRegistry, ViewRegistryError, ViewRegistryId, ViewSchemaId,
+    ViewDescriptor, ViewError, ViewImplementation, ViewProgramId, ViewPropertyId, ViewPropertyKind,
+    ViewRegistry, ViewRegistryError, ViewRegistryId, ViewSchemaId,
 };
+use arcweft_id::view::ViewId;
 
 #[derive(Debug, Eq, PartialEq)]
 struct DialogueSkinState {

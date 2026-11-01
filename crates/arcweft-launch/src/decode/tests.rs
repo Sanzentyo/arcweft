@@ -13,12 +13,12 @@ use crate::{
     },
 };
 use arcweft_dialogue::{FallbackStylePolicy, InlineFailurePolicy, InlineFallback};
+use arcweft_id::view::ViewId;
 use arcweft_manifest_model::{
     ActivityImplementationId, ContentCompression, ContentPlacement, ContentResidency,
     ContentUnitId, ExternalModuleImportId, ProfileId,
 };
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
-use arcweft_view::ViewId;
 use std::{collections::BTreeMap, net::SocketAddr, str::FromStr, sync::Arc};
 
 fn document(source: &str) -> Arc<SourceDocument> {
@@ -808,7 +808,7 @@ fn dialogue_profile_uses_nominal_view_and_style_ids_with_exact_source_map_entrie
             .dialogue
             .view
             .as_ref()
-            .map(arcweft_view::ViewId::as_str),
+            .map(arcweft_id::view::ViewId::as_str),
         Some("view.dialogue.mobile")
     );
     assert_eq!(

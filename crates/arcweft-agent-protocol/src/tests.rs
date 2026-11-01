@@ -36,6 +36,7 @@ use arcweft_character::id::CharacterId;
 use arcweft_core::plan::RuntimeLineId;
 use arcweft_dialogue::InlineFailurePolicy;
 use arcweft_id::TextKey;
+use arcweft_id::view::ViewId;
 use arcweft_layout::{
     CaptureComposition, CaptureCropBounds, CaptureMaskMetadata, CaptureMetadata,
     CaptureRendererKind, CaptureScope, ContentRect, LayoutCoordinateSpace, LayoutPoint, LayoutRect,
@@ -50,7 +51,6 @@ use arcweft_text_model::{
     RichTextTextProxyFieldKind, RichTextTextProxyFieldSchema, RichTextTextProxyScalar,
     RichTextTextProxySchema, RichTextTextRun, RichTextTextSource,
 };
-use arcweft_view::ViewId;
 use std::collections::BTreeMap;
 
 pub(super) fn test_text_contexts(

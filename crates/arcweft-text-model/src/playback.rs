@@ -1359,7 +1359,7 @@ mod tests {
     use arcweft_core::plan::RuntimeLineId;
     use arcweft_dialogue::InlineFailurePolicy;
     use arcweft_id::TextKey;
-    use arcweft_view::ViewId;
+    use arcweft_id::view::ViewId;
 
     fn frame(nodes: &[RichTextNode]) -> LineDisplayFrame {
         let mut text = String::new();

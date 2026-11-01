@@ -13,9 +13,10 @@ use arcweft_core::{
     character_nominal::CharacterNominalType, entry::RuntimeValueDigest,
     pattern::RuntimeSemanticTypeId,
 };
+use arcweft_id::view::ViewId;
 use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
-use arcweft_view::{AcceptedViewProgramRevision, ViewId, ViewProgramId, ViewStyleSheetId};
+use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId, ViewStyleSheetId};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct PlannerTypeRef {

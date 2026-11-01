@@ -1,9 +1,9 @@
 //! Process-local View registry slots and implementation descriptors.
 
 use super::{
-    AcceptedViewProgramRevision, ProjectedRuntimeViewId, RustViewId, ViewId, ViewIdentityError,
-    ViewProgramId, ViewSchemaId,
+    AcceptedViewProgramRevision, RustViewId, ViewIdentityError, ViewProgramId, ViewSchemaId,
 };
+use arcweft_id::view::{ProjectedRuntimeViewId, ViewId};
 use std::collections::BTreeMap;
 use thiserror::Error;
 
@@ -339,9 +339,10 @@ fn hash_projected_runtime_view_id(hasher: &mut blake3::Hasher, id: ProjectedRunt
 #[cfg(test)]
 mod tests {
     use super::{
-        AcceptedViewProgramRevision, RustViewId, ViewDescriptor, ViewId, ViewImplementation,
-        ViewProgramId, ViewRegistry, ViewRegistryError, ViewSchemaId,
+        AcceptedViewProgramRevision, RustViewId, ViewDescriptor, ViewImplementation, ViewProgramId,
+        ViewRegistry, ViewRegistryError, ViewSchemaId,
     };
+    use arcweft_id::view::ViewId;
 
     fn view_id(value: &str) -> ViewId {
         ViewId::try_new(value).unwrap()

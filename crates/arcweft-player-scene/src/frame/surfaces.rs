@@ -702,6 +702,7 @@ mod tests {
         ViewRuntimeControlBorderStyle, ViewRuntimeControlVisualStyle,
     };
     use arcweft_id::presentation::PresentationHandleId;
+    use arcweft_id::view::ViewId;
     use arcweft_presentation::appearance::PresentationColor;
     use arcweft_presentation::hit::HitRect;
     use arcweft_render_wgpu::geometry::PreparedViewSceneResources;
@@ -710,7 +711,7 @@ mod tests {
         BundleViewFrame, BundleViewInstancePath, BundleViewMountOutput, BundleViewPaintItem,
     };
     use arcweft_view::{
-        ViewId, ViewMountId,
+        ViewMountId,
         style::{ViewBoxAxisHostSeed, ViewBoxAxisSeedGeneration, ViewInheritedBoxAxes},
     };
     use std::collections::{BTreeMap, BTreeSet};

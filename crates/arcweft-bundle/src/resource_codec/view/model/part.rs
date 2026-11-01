@@ -1,7 +1,8 @@
 //! Typed product identities and provenance for exported View parts.
 
 use crate::resource_codec::SourceRangeRef;
-use arcweft_view::{ViewId, ViewPartLocalName, ViewPartName};
+use arcweft_id::view::ViewId;
+use arcweft_view::{ViewPartLocalName, ViewPartName};
 use core::fmt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 

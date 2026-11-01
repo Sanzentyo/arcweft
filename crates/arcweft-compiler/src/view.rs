@@ -23,6 +23,7 @@ use arcweft_bundle::{
     standard_view,
 };
 use arcweft_id::DeclarationIdentityFamily;
+use arcweft_id::view::ViewId;
 use arcweft_interaction_model::presentation::PresentationImage;
 use arcweft_lang_hir::{
     expr::HirCallArgument,
@@ -64,9 +65,8 @@ use arcweft_source::{
     SourceSpan,
 };
 use arcweft_view::{
-    ViewHandlerProgramId, ViewHandlerResult, ViewHandlerValueTypeId, ViewId,
-    ViewParameterCoordinate, ViewProgramId, ViewValueProgram, ViewValueProgramId,
-    style::ViewStyleSheetId,
+    ViewHandlerProgramId, ViewHandlerResult, ViewHandlerValueTypeId, ViewParameterCoordinate,
+    ViewProgramId, ViewValueProgram, ViewValueProgramId, style::ViewStyleSheetId,
 };
 use thiserror::Error;
 

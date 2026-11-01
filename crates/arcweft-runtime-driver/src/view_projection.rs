@@ -9,8 +9,9 @@ use arcweft_bundle::resource_codec::{
     ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation,
     ViewRuntimeScrollRegion, ViewRuntimeSurface, ViewRuntimeTextControl,
 };
+use arcweft_id::view::ViewId;
 use arcweft_interaction_model::presentation::PresentationImage;
-use arcweft_view::{EventKind, ViewId, ViewMountId};
+use arcweft_view::{EventKind, ViewMountId};
 use std::collections::BTreeSet;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -393,8 +394,9 @@ mod tests {
     use crate::view_runtime::{BundleViewInstancePath, BundleViewMountOutput};
     use arcweft_bundle::resource_codec::{ViewRuntimeButtonBounds, ViewRuntimeControlVisualStyle};
     use arcweft_id::presentation::PresentationHandleId;
+    use arcweft_id::view::ViewId;
     use arcweft_view::{
-        DialogueEntryId, DialogueInstanceId, DialoguePresentationId, DialogueStageIndex, ViewId,
+        DialogueEntryId, DialogueInstanceId, DialoguePresentationId, DialogueStageIndex,
         ViewMountId,
     };
 

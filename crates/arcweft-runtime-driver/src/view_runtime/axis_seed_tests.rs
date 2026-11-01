@@ -441,7 +441,7 @@ fn nested_mount_host_mutation_is_rejected_without_changing_runtime_state() {
         definitions: vec![
             ViewDefinitionResource {
                 public_id: arcweft_bundle::resource_codec::view::ViewDefinitionRef::new(
-                    arcweft_view::ViewId::try_new("view.Parent").unwrap(),
+                    arcweft_id::view::ViewId::try_new("view.Parent").unwrap(),
                 ),
                 body: ViewInstructionSpan::new(0, 1),
                 styles: Vec::new(),
@@ -451,7 +451,7 @@ fn nested_mount_host_mutation_is_rejected_without_changing_runtime_state() {
             },
             ViewDefinitionResource {
                 public_id: arcweft_bundle::resource_codec::view::ViewDefinitionRef::new(
-                    arcweft_view::ViewId::try_new("view.Child").unwrap(),
+                    arcweft_id::view::ViewId::try_new("view.Child").unwrap(),
                 ),
                 body: ViewInstructionSpan::new(1, 1),
                 styles: Vec::new(),
@@ -462,7 +462,7 @@ fn nested_mount_host_mutation_is_rejected_without_changing_runtime_state() {
         ],
         instructions: vec![ViewProgramInstruction::CallView {
             view: arcweft_bundle::resource_codec::view::ViewDefinitionRef::new(
-                arcweft_view::ViewId::try_new("view.Child").unwrap(),
+                arcweft_id::view::ViewId::try_new("view.Child").unwrap(),
             ),
             arguments: Vec::new(),
             styles: Vec::new(),
@@ -839,7 +839,7 @@ fn ordinary_and_dialogue_restore_roots_cannot_share_a_handle_identity() {
         },
         text_key: arcweft_id::TextKey::try_new("text.restore.collision").unwrap(),
         effective: arcweft_text_model::CharacterDialoguePresentationConfig::standalone(
-            arcweft_view::ViewId::try_new("view.Dialogue").unwrap(),
+            arcweft_id::view::ViewId::try_new("view.Dialogue").unwrap(),
             InlineFailurePolicy::FailLine,
         ),
         text: String::new(),
@@ -860,7 +860,7 @@ fn ordinary_and_dialogue_restore_roots_cannot_share_a_handle_identity() {
         )
         .expect("fixture Content envelope"),
     };
-    let dialogue_view = arcweft_view::ViewId::try_new("view.Dialogue").unwrap();
+    let dialogue_view = arcweft_id::view::ViewId::try_new("view.Dialogue").unwrap();
     let dialogue = crate::dialogue::DialogueViewInput {
         handle: handle.clone(),
         view: &dialogue_view,

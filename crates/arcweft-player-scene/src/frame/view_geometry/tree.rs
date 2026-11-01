@@ -11,13 +11,14 @@ use arcweft_bundle::resource_codec::{
     ViewRuntimeGeometryOwner, ViewRuntimeGeometryParticipation, ViewRuntimeNodeStyle,
 };
 use arcweft_id::presentation::PresentationHandleId;
+use arcweft_id::view::ViewId;
 use arcweft_runtime_driver::view_runtime::{
     BundleViewInstancePathSegment, BundleViewMountOutput, BundleViewStyleNode,
     BundleViewStyleNodeKind,
 };
 use arcweft_view::geometry::{ViewAvailableGeometrySize, ViewPaintOutsets, ViewScrollStateInput};
 use arcweft_view::style::{ViewPhysicalBoxStyle, ViewPhysicalContainerStyle, ViewStyleNodeKey};
-use arcweft_view::{ViewElementKind, ViewId, ViewMountId};
+use arcweft_view::{ViewElementKind, ViewMountId};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]

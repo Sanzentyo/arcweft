@@ -318,7 +318,7 @@ impl ValidatedViewProgramResource {
     }
 
     /// Resolves one accepted definition by its nominal public View identity.
-    pub fn definition(&self, id: &arcweft_view::ViewId) -> Option<&ViewDefinitionResource> {
+    pub fn definition(&self, id: &arcweft_id::view::ViewId) -> Option<&ViewDefinitionResource> {
         self.resource
             .definitions
             .iter()

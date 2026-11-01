@@ -11,6 +11,7 @@ use arcweft_bundle::resource_codec::{
 };
 use arcweft_id::PublicId;
 use arcweft_id::presentation::PresentationHandleId;
+use arcweft_id::view::ViewId;
 use arcweft_presentation::appearance::{
     ColorScheme, ContrastPreference, PresentationColor, PresentationEnvironment,
     PresentationEnvironmentField, PresentationEnvironmentFieldSet,
@@ -44,7 +45,7 @@ use arcweft_view::style::{
     ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
     ViewStyleTraceMode,
 };
-use arcweft_view::{ViewElementKind, ViewId, ViewMountId, ViewPartLocalName, ViewPartName};
+use arcweft_view::{ViewElementKind, ViewMountId, ViewPartLocalName, ViewPartName};
 
 #[test]
 fn placeholder_shown_is_retained_as_a_typed_element_state() {

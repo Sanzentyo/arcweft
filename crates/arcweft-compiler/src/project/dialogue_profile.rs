@@ -4,6 +4,7 @@ use super::registration::AcceptedLaunchProfileInput;
 use crate::view::CompiledViewProduct;
 use arcweft_bundle::resource_codec::{ValidatedViewProduct, ValidatedViewProgramResource};
 use arcweft_dialogue::{DialoguePresentationProfile, DialogueProfileRevision};
+use arcweft_id::view::ViewId;
 use arcweft_launch::{
     LaunchProfileSelection, ManifestTokenPath, ManifestTokenSlot, accepted::SourceBackedManifest,
 };
@@ -12,7 +13,7 @@ use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_source::{
     Diagnostic, DiagnosticLabel, DiagnosticSeverity, SourceDocument, SourceSetRevision, SourceSpan,
 };
-use arcweft_view::{ViewId, style::ViewStyleSheetId};
+use arcweft_view::style::ViewStyleSheetId;
 use std::sync::Arc;
 use thiserror::Error;
 

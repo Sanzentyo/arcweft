@@ -11,6 +11,10 @@ The current workspace member list is `[workspace].members` in [Cargo.toml](../..
   と canonical text の検証を所有する。driver、retained View、snapshot、描画 adapter
   は同じ型を使い、driver 経由の identity 定義や公開 alias を持たない。View・asset・
   image・target・layer の public ID と、実行時 occurrence の identity を区別する。
+- `arcweft-id::view` は authored／engine-owned View の `ViewId`、family の検査と
+  `ProjectedRuntimeViewId` の version 1 projection を所有する。Core、bundle、
+  retained View、driver、renderer はこの同じ型を直接使う。`arcweft-view` は
+  View program、registry、mount occurrence を所有し、共通 ID の別定義や再exportを持たない。
 - `arcweft-core` は runtime/data core に限定し、dialogue / presentation / syntax / verifier / CLI / LSP / wgpu / audio / Servo / DOM / filesystem / network / Cranelift / Wasmtime に依存しない。
 - `arcweft-interaction-model::presentation` は image の登録データ、fit、検証済み alignment、
   playback、fixed-point transformと `PresentationResourceKind` の共有domainを所有する。

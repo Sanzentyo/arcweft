@@ -11,7 +11,7 @@ use super::{
 use crate::InlineFailurePolicy;
 use arcweft_character::id::CharacterLookId;
 use arcweft_core::value::{RuntimeSeq, RuntimeValue};
-use arcweft_view::ViewId;
+use arcweft_id::view::ViewId;
 use core::marker::PhantomData;
 use std::collections::BTreeMap;
 

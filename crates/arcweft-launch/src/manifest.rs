@@ -1,13 +1,14 @@
 //! Final schema-1 manifest records, private until the one-reader cut switches consumers.
 
 use arcweft_dialogue::InlineFailurePolicy;
+use arcweft_id::view::ViewId;
 use arcweft_manifest_model::{
     ActivityBindingSpec, ActivityImplementationId, ActivityImplementationSpec, AdapterProfileId,
     BuildSpec, ContentUnitId, ContentUnitSpec, EntityIdRef, ExternalModuleImportId,
     ExternalModuleImportSpec, LaunchKind, ManifestSchemaVersion, NormalizedProjectPath,
     PackageSpec, ProfileContentSpec, ProfileId, ProjectLocaleSpec,
 };
-use arcweft_view::{ViewId, ViewStyleSheetId};
+use arcweft_view::ViewStyleSheetId;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use std::{collections::BTreeMap, net::SocketAddr, num::NonZeroU32, str::FromStr};
 

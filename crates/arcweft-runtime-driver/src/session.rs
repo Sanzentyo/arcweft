@@ -1585,6 +1585,7 @@ mod view_handler_queue_tests {
     };
     use arcweft_dialogue::InlineFailurePolicy;
     use arcweft_id::TextKey;
+    use arcweft_id::view::ViewId;
     use arcweft_presentation::input::{InputEpoch, InputEvent};
     use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
     use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
@@ -1594,7 +1595,7 @@ mod view_handler_queue_tests {
     };
     use arcweft_view::{
         DialogueEntryId, DialogueInstanceId, DialoguePresentationId, DialogueRevision,
-        DialogueStageIndex, ViewId,
+        DialogueStageIndex,
     };
 
     #[test]

@@ -21,6 +21,7 @@ use arcweft_core::{
 };
 use arcweft_dialogue::InlineFailurePolicy;
 use arcweft_id::presentation::PresentationHandleId;
+use arcweft_id::view::ViewId;
 use arcweft_id::{PublicId, TextKey};
 use arcweft_interaction_model::presentation::PresentationResourceKind;
 use arcweft_presentation::fx::{
@@ -57,7 +58,7 @@ use arcweft_view::{
     AcceptedViewProgramRevision, ContainerKind, DialogueAdvanceTarget, DialogueEntryId,
     DialogueInstanceId, DialoguePresentationId, DialogueRevision, DialogueStageIndex, EventKind,
     FragmentKind, NodeKey, RustViewId, SemanticSpecId, ViewDescriptor, ViewFragmentBuilder,
-    ViewHandlerInvocation, ViewHandlerResult, ViewHandlerResultRole, ViewHandlerRouteTable, ViewId,
+    ViewHandlerInvocation, ViewHandlerResult, ViewHandlerResultRole, ViewHandlerRouteTable,
     ViewImplementation, ViewInstruction, ViewMountId, ViewParameterCoordinate, ViewPartLocalName,
     ViewPartName, ViewProgramId, ViewRegistry, ViewRegistryError, ViewSchemaId,
     ViewSemanticFragmentBuilder, ViewSemanticNode,

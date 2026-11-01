@@ -42,13 +42,14 @@ use arcweft_core::{
         RuntimeDialogueViewValue, RuntimeEntityReference, RuntimeFormatContext, RuntimeValue,
     },
 };
+use arcweft_id::view::ViewId;
 use arcweft_presentation::fx::{
     FxEvaluationBudget, FxEvaluationError, FxGraphChildPath, FxRuntimeValue, FxSampleContext,
 };
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_view::{
-    EventKind, ViewHandlerProgramId, ViewHandlerRouteId, ViewId, ViewMountId, ViewMountState,
-    ViewRegistry, ViewStyleApplicationTarget, ViewValueEvaluationError, ViewValueProgramId,
+    EventKind, ViewHandlerProgramId, ViewHandlerRouteId, ViewMountId, ViewMountState, ViewRegistry,
+    ViewStyleApplicationTarget, ViewValueEvaluationError, ViewValueProgramId,
     ViewValueProgramInventory,
 };
 use std::collections::{BTreeMap, BTreeSet};

@@ -8,6 +8,7 @@ pub mod presentation;
 pub mod runtime_program;
 mod semantic_type;
 mod unsafe_audit;
+pub mod view;
 
 use core::fmt;
 use core::str::FromStr;

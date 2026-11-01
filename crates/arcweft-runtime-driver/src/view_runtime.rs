@@ -40,13 +40,14 @@ use arcweft_core::{
 };
 use arcweft_id::PublicId;
 use arcweft_id::presentation::PresentationHandleId;
+use arcweft_id::view::ViewId;
 use arcweft_presentation::fx::{
     FiniteF32Error, FxGraphChildPath, FxInstanceIdentity, FxLogicalTime, FxRuntimeType,
 };
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_text_model::{LineDisplayFrame, RichTextDocument};
 use arcweft_view::{
-    EventKind, ViewHandlerProgramId, ViewHandlerRouteId, ViewId, ViewMountAllocationError,
+    EventKind, ViewHandlerProgramId, ViewHandlerRouteId, ViewMountAllocationError,
     ViewMountAllocator, ViewMountId, ViewMountSnapshot, ViewMountState, ViewPartName,
     ViewProgramId, ViewRegistry, ViewRegistryError, ViewRegistryId, ViewStyleProgram,
     ViewValueEvaluationError, ViewValueInventoryError, ViewValueProgramInventory,

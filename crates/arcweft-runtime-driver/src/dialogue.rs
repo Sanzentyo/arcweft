@@ -7,9 +7,9 @@ use arcweft_core::runtime_id::DialogueActivationId;
 use arcweft_core::step::RuntimeDialogueContentEventKind;
 use arcweft_core::time::LogicalDuration;
 use arcweft_id::presentation::PresentationHandleId;
+use arcweft_id::view::ViewId;
 use arcweft_presentation::fx::{FxApplication, FxInstanceIdentity, FxInstanceOwnerKey};
 use arcweft_text_model::{LineDisplayFrame, LineDisplayStage};
-use arcweft_view::ViewId;
 use serde::{Deserialize, Serialize};
 
 pub use arcweft_view::{

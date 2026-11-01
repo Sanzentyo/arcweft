@@ -25,6 +25,7 @@ use arcweft_compiler::project::{
 };
 use arcweft_core::{effect::RuntimeArtifactFingerprint, plan::RuntimeLineId};
 use arcweft_dialogue::InlineFailurePolicy;
+use arcweft_id::view::ViewId;
 use arcweft_id::{PublicId, TextKey};
 use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
 use arcweft_lang_sema::{env::TypeCheckEnv, registration::ProjectRegistrationFacts};
@@ -58,7 +59,7 @@ use arcweft_text_model::{
 };
 use arcweft_view::{
     DialogueAdvanceTarget, DialogueEntryId, DialogueInstanceId, DialoguePresentationId,
-    DialogueRevision, DialogueStageIndex, ViewHandlerInvocation, ViewHandlerResultRole, ViewId,
+    DialogueRevision, DialogueStageIndex, ViewHandlerInvocation, ViewHandlerResultRole,
     style::ViewStyleSheetId,
 };
 
@@ -3484,7 +3485,7 @@ fn authored_nested_views_pass_core_values_locals_aliases_and_defaults() {
                     }
                     _ => {
                         *view = arcweft_bundle::resource_codec::view::ViewDefinitionRef::new(
-                            arcweft_view::ViewId::try_new("view.Missing").unwrap(),
+                            arcweft_id::view::ViewId::try_new("view.Missing").unwrap(),
                         )
                     }
                 }

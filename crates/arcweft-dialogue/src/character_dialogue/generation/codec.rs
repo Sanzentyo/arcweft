@@ -23,7 +23,7 @@ use arcweft_core::{
     task::RuntimeProgramOwner,
     value::{AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError},
 };
-use arcweft_view::ViewId;
+use arcweft_id::view::ViewId;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},

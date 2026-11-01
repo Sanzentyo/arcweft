@@ -317,7 +317,7 @@ impl ViewEvaluationSiteId {
 
     /// Derives a stable semantic site from its owner, local name, and instruction family.
     pub fn from_part(
-        view: &crate::ViewId,
+        view: &arcweft_id::view::ViewId,
         local: &ViewPartLocalName,
         kind: ViewPartInstructionKind,
     ) -> Self {

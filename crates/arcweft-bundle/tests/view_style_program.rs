@@ -5,8 +5,8 @@ use arcweft_bundle::resource_codec::view::{
     ViewStyleResource,
 };
 use arcweft_bundle::resource_codec::{CrossSectionRef, SourceMapSection, SourceRangeRef};
+use arcweft_id::view::ViewId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
-use arcweft_view::ViewId;
 use arcweft_view::style::{
     ViewBoxAxisMode, ViewPropertyKind, ViewRatioMilli, ViewSpecifiedValue, ViewStyleAssignOp,
     ViewStyleDeclaration, ViewStylePatch, ViewStylePatchId, ViewStyleProgram, ViewStyleRule,

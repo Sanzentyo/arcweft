@@ -13,9 +13,9 @@ use arcweft_bundle::standard_view::{
 };
 use arcweft_bundle::{BundleConstructionError, BundleViewProductAttachError};
 use arcweft_core::{effect::RuntimeArtifactFingerprint, value::RuntimeDialogueOpaqueRole};
+use arcweft_id::view::ViewId;
 use arcweft_presentation::appearance::PresentationColor;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
-use arcweft_view::ViewId;
 use arcweft_view::style::{
     ViewColorValue, ViewLengthMilli, ViewPosition, ViewPropertyKind, ViewSpecifiedValue,
     ViewStyleApplicationTarget, ViewStyleDeclaration,

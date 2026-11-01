@@ -5,9 +5,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use arcweft_bundle::resource_codec::view::{
     DialogueViewContractError, ViewInstructionSpan, ViewProgramInstruction,
 };
+use arcweft_id::view::ViewId;
 use arcweft_presentation::fx::FxRuntimeValue;
 use arcweft_view::{
-    ViewId, ViewMountId, ViewMountState, ViewProgramId, ViewRegistry, ViewValueEvaluationError,
+    ViewMountId, ViewMountState, ViewProgramId, ViewRegistry, ViewValueEvaluationError,
     ViewValueProgramInventory,
 };
 use thiserror::Error;

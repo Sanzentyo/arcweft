@@ -441,7 +441,7 @@ mod serde_tests {
     use super::*;
     use crate::RichTextTextSource;
     use arcweft_dialogue::InlineFailurePolicy;
-    use arcweft_view::ViewId;
+    use arcweft_id::view::ViewId;
 
     fn frame() -> LineDisplayFrame {
         let text = "Hello".to_owned();

@@ -44,7 +44,7 @@ fn source_ref() -> ProductSourceRef {
 
 fn view_definition(value: &str) -> DialogueViewDefinition {
     DialogueViewDefinition::new(
-        arcweft_view::ViewId::try_new(value).expect("test View ID is valid"),
+        arcweft_id::view::ViewId::try_new(value).expect("test View ID is valid"),
     )
 }
 
@@ -56,7 +56,7 @@ fn runtime_context(view: &str) -> RuntimeLineContext {
             display_name: "Narrator".to_owned(),
         },
         CharacterDialoguePresentationConfig::standalone(
-            arcweft_view::ViewId::try_new(view).expect("test View ID is valid"),
+            arcweft_id::view::ViewId::try_new(view).expect("test View ID is valid"),
             InlineFailurePolicy::FailLine,
         ),
         Vec::new(),

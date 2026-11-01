@@ -2,9 +2,10 @@
 
 use super::BundleViewInstancePath;
 use arcweft_bundle::resource_codec::view::{ViewElementKind, ViewRuntimeGeometryOwner};
+use arcweft_id::view::ViewId;
 use arcweft_view::{
-    ViewId, ViewMountId, ViewPartLocalName, ViewPartName, ViewStyleApplication,
-    ViewStyleApplicationTarget, ViewStyleBoundaryFacts, ViewStyleNodeKey, ViewStyleScopeId,
+    ViewMountId, ViewPartLocalName, ViewPartName, ViewStyleApplication, ViewStyleApplicationTarget,
+    ViewStyleBoundaryFacts, ViewStyleNodeKey, ViewStyleScopeId,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;

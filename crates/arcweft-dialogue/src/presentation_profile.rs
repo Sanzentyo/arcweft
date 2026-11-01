@@ -1,6 +1,7 @@
 //! Launch-selected dialogue presentation policy.
 
-use arcweft_view::{ViewId, ViewStyleSheetId};
+use arcweft_id::view::ViewId;
+use arcweft_view::ViewStyleSheetId;
 use serde::{Deserialize, Serialize};
 
 use crate::InlineFailurePolicy;

@@ -15,11 +15,11 @@ use arcweft_core::{
     pattern::{RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId},
     value::RuntimeOpaqueValueError,
 };
+use arcweft_id::view::ViewId;
 use arcweft_interaction_model::dialogue::CharacterDialogueCustomFieldIdError;
 pub use arcweft_interaction_model::dialogue::{
     CharacterDialogueCustomFieldId, CharacterDialogueRuntimeRole,
 };
-use arcweft_view::ViewId;
 use std::collections::BTreeMap;
 use thiserror::Error;
 

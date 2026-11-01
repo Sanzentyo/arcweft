@@ -11,13 +11,13 @@ use crate::{
     },
 };
 use arcweft_dialogue::DialoguePresentationProfile;
+use arcweft_id::view::ViewId;
 use arcweft_manifest_model::{
     ActivityId, ActivityImplementationId, ActivityImplementationSpec, AdapterProfileId,
     ContentUnitId, ContentUnitSpec, EntityIdRef, ExternalModuleImportId, ExternalModuleImportSpec,
     LaunchKind, NormalizedProjectPath, ProfileContentSpec, ProfileId, ProjectLocaleSpec,
 };
 use arcweft_source::SourceSpan;
-use arcweft_view::ViewId;
 use std::collections::BTreeMap;
 
 /// One Activity binding resolved to its exact selected implementation facts.

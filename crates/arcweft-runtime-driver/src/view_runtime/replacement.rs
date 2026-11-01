@@ -7,9 +7,10 @@ use arcweft_bundle::resource_codec::SourceSetRevision;
 use arcweft_bundle::resource_codec::view::{
     ValidatedViewProduct, ValidatedViewStyleResource, ViewProgramAdmissionError, ViewStyleResource,
 };
+use arcweft_id::view::ViewId;
 use arcweft_view::{
-    AcceptedViewProgramRevision, ViewId, ViewMountId, ViewProgramId, ViewRegistry,
-    ViewRegistryError, ViewValueProgramInventory,
+    AcceptedViewProgramRevision, ViewMountId, ViewProgramId, ViewRegistry, ViewRegistryError,
+    ViewValueProgramInventory,
 };
 use thiserror::Error;
 

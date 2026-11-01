@@ -9,6 +9,7 @@ use arcweft_dialogue::{
     FallbackStylePolicy, InlineFailurePolicy, InlineFailureSelection, InlineTextFailure,
 };
 use arcweft_id::TextKey;
+use arcweft_id::view::ViewId;
 use arcweft_render_text::{RuntimeLineContext, resolve_frame_with_template};
 use arcweft_source::{ProductSourceRef, SourceDocument, SourceDocumentId, SourceName};
 use arcweft_text_model::{
@@ -18,7 +19,6 @@ use arcweft_text_model::{
     RichTextNodeRange, RichTextPresentation, RichTextRange, RichTextRubyAnnotation, RichTextStyle,
     RichTextTextRunRange, RichTextTextSource,
 };
-use arcweft_view::ViewId;
 use std::collections::BTreeMap;
 
 mod support;

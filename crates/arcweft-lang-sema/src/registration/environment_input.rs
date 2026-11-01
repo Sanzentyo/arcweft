@@ -6,12 +6,12 @@
 use std::collections::BTreeSet;
 
 use arcweft_core::entry::{RuntimeNominalTypeId, TypeLayoutHash};
+use arcweft_id::view::ViewId;
 use arcweft_interaction_model::dialogue::CharacterDialogueCustomFieldId;
 use arcweft_lang_hir::symbol::ProjectSymbolWorldId;
 use arcweft_manifest_model::HostCallContractDigest;
 use arcweft_rust_abi::ArcweftRustTypeParameterIndex;
 use arcweft_source::{SourceDocumentIdentity, SourceSpan};
-use arcweft_view::ViewId;
 
 use crate::{
     callable::{

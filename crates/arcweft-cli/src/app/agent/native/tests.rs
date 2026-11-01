@@ -287,7 +287,7 @@ pub(super) fn test_line_display_frame() -> LineDisplayFrame {
         },
         text_key: arcweft_id::TextKey::try_new("text.test").expect("text key"),
         effective: arcweft_text_model::CharacterDialoguePresentationConfig::standalone(
-            arcweft_view::ViewId::try_new("view.dialogue.test").expect("View id"),
+            arcweft_id::view::ViewId::try_new("view.dialogue.test").expect("View id"),
             arcweft_dialogue::InlineFailurePolicy::FailLine,
         ),
         text: String::new(),

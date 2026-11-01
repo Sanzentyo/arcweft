@@ -13,6 +13,7 @@ use arcweft_bundle::resource_codec::{
     ViewTextBlockBounds,
 };
 use arcweft_id::presentation::PresentationHandleId;
+use arcweft_id::view::ViewId;
 use arcweft_presentation::appearance::{PresentationEnvironment, SystemPaletteSet};
 use arcweft_render_wgpu::geometry::{RenderPreferences, RenderViewport};
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
@@ -24,7 +25,7 @@ use arcweft_view::geometry::ViewGeometryConsumer;
 use arcweft_view::style::{
     ViewBoxAxisHostSeed, ViewBoxAxisSeedGeneration, ViewInheritedBoxAxes, ViewStyleNodeKey,
 };
-use arcweft_view::{ViewElementKind, ViewId, ViewMountId};
+use arcweft_view::{ViewElementKind, ViewMountId};
 use std::sync::Arc;
 
 struct GeometryFixture {

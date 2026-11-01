@@ -1,6 +1,7 @@
 //! Accepted product-to-runtime View-part authority.
 
-use arcweft_view::{ViewId, ViewPartLocalName, ViewPartName};
+use arcweft_id::view::ViewId;
+use arcweft_view::{ViewPartLocalName, ViewPartName};
 use std::collections::BTreeMap;
 
 use super::owner::ResolvedMountedViewOwner;
@@ -42,9 +43,9 @@ impl ViewPartRuntimeCatalog {
 
 #[cfg(test)]
 mod tests {
+    use arcweft_id::view::ViewId;
     use arcweft_view::{
-        RustViewId, ViewDescriptor, ViewId, ViewPartLocalName, ViewPartName, ViewRegistry,
-        ViewSchemaId,
+        RustViewId, ViewDescriptor, ViewPartLocalName, ViewPartName, ViewRegistry, ViewSchemaId,
     };
 
     use super::{ResolvedMountedViewOwner, ViewPartRuntimeCatalog};

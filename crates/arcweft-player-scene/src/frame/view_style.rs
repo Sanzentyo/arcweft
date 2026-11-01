@@ -9,6 +9,7 @@ use crate::input::InputController;
 use arcweft_bundle::resource_codec::ViewRuntimeNodeStyle;
 use arcweft_id::PublicId;
 use arcweft_id::presentation::PresentationHandleId;
+use arcweft_id::view::ViewId;
 use arcweft_presentation::appearance::{PresentationEnvironment, SystemPaletteSet};
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::interaction::InteractionState;
@@ -17,6 +18,7 @@ use arcweft_runtime_driver::view_runtime::{
     BundleViewInstancePathSegment, BundleViewMountOutput, BundleViewStyleNode,
     BundleViewStyleNodeKind,
 };
+use arcweft_view::ViewMountId;
 use arcweft_view::style::{
     ComputedViewStyle, ViewAxisProviderParticipation, ViewElementState, ViewElementStateSet,
     ViewInheritedBoxAxes, ViewInteractionSelector, ViewInteractionStateSet, ViewStyleApplication,
@@ -24,7 +26,6 @@ use arcweft_view::style::{
     ViewStyleProgram, ViewStyleResolveContext, ViewStyleResolveError, ViewStyleResolveResult,
     ViewStyleResolver, ViewStyleRevisionSet, ViewStyleTraceMode,
 };
-use arcweft_view::{ViewId, ViewMountId};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 

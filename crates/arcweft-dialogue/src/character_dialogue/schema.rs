@@ -35,11 +35,12 @@ use arcweft_core::{
     },
 };
 use arcweft_id::DeclarationIdentityFamily;
+use arcweft_id::view::ViewId;
 use arcweft_interaction_model::dialogue::{
     CharacterDialogueFieldCoordinate, CharacterDialogueOperation, CharacterDialoguePatchField,
     CharacterDialoguePatchOperation,
 };
-use arcweft_view::{ViewId, ViewRegistry};
+use arcweft_view::ViewRegistry;
 use policies::CharacterDialoguePolicyCase;
 pub use policies::{
     CharacterDialoguePolicyCaseSpec, CharacterDialoguePolicyTypeGraph,

@@ -9,7 +9,8 @@ use arcweft_dialogue::{
     CharacterDialogueRuntimeSchema, CharacterDialogueValue, CharacterDialogueValueError,
     InlineFailurePolicy,
 };
-use arcweft_view::{ViewId, ViewStyleSheetId};
+use arcweft_id::view::ViewId;
+use arcweft_view::ViewStyleSheetId;
 use serde::{Deserialize, Serialize, Serializer};
 
 /// Effective configuration with its original, generation-admitted value.

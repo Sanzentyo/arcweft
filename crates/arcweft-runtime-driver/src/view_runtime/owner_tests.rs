@@ -1,4 +1,5 @@
-use arcweft_view::{RustViewId, ViewDescriptor, ViewId, ViewRegistry, ViewSchemaId};
+use arcweft_id::view::ViewId;
+use arcweft_view::{RustViewId, ViewDescriptor, ViewRegistry, ViewSchemaId};
 
 use super::owner::{
     AcceptedViewProgramGeneration, ResolvedMountedViewOwner, SavedViewOwner, ViewOwnerEvidence,

@@ -14,6 +14,7 @@ use crate::resource_codec::view::{
 };
 use crate::resource_codec::{SourceMapSection, SourceRangeRef};
 use arcweft_core::value::{RuntimeDialogueOpaqueRole, RuntimeDialogueViewField};
+use arcweft_id::view::ViewId;
 use arcweft_presentation::appearance::PresentationColor;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_view::style::{
@@ -23,7 +24,7 @@ use arcweft_view::style::{
     ViewStyleSourceId,
 };
 use arcweft_view::{
-    EventKind, ViewHandlerProgramId, ViewHandlerResult, ViewHandlerResultRole, ViewId,
+    EventKind, ViewHandlerProgramId, ViewHandlerResult, ViewHandlerResultRole,
     ViewParameterCoordinate, ViewParameterInput, ViewPartLocalName, ViewPartName,
 };
 
@@ -37,8 +38,8 @@ pub const DIALOGUE_VIEW_SOURCE_ID: &str = "arcweft:standard/dialogue-view";
 /// Panics only if the engine-owned constant stops satisfying the canonical
 /// public identity grammar.
 #[must_use]
-pub fn dialogue_view_id() -> arcweft_view::ViewId {
-    arcweft_view::ViewId::try_new_engine_owned(DIALOGUE_VIEW_ID)
+pub fn dialogue_view_id() -> arcweft_id::view::ViewId {
+    arcweft_id::view::ViewId::try_new_engine_owned(DIALOGUE_VIEW_ID)
         .expect("the reserved standard dialogue View identity is valid")
 }
 

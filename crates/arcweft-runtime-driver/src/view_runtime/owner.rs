@@ -2,9 +2,10 @@
 
 use std::num::NonZeroU64;
 
+use arcweft_id::view::ViewId;
 use arcweft_view::{
-    AcceptedViewProgramRevision, RustViewId, ViewId, ViewImplementation, ViewProgramId,
-    ViewRegistry, ViewRegistryId, ViewSchemaId,
+    AcceptedViewProgramRevision, RustViewId, ViewImplementation, ViewProgramId, ViewRegistry,
+    ViewRegistryId, ViewSchemaId,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;

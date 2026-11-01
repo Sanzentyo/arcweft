@@ -17,6 +17,7 @@ use arcweft_core::plan::RuntimeLineId;
 use arcweft_dialogue::InlineFailurePolicy;
 use arcweft_id::TextKey;
 use arcweft_id::presentation::PresentationHandleId;
+use arcweft_id::view::ViewId;
 use arcweft_player_scene::{
     fonts::{DEFAULT_PLAYER_FONT_BYTES, PlayerFontSet},
     frame::{PlayerFrameFit, PlayerFramePlanner, PlayerFramePlannerState, PlayerFrameRequest},
@@ -41,8 +42,8 @@ use arcweft_text_model::{
     RichTextControl, RichTextDocument, RichTextInlineDirection, RichTextLayout, RichTextNode,
     RichTextStyle, RichTextWritingMode,
 };
+use arcweft_view::ViewMountId;
 use arcweft_view::style::{ViewBoxAxisHostSeed, ViewBoxAxisSeedGeneration, ViewInheritedBoxAxes};
-use arcweft_view::{ViewId, ViewMountId};
 
 fn test_source_ref() -> ProductSourceRef {
     let source = SourceDocument::try_new(

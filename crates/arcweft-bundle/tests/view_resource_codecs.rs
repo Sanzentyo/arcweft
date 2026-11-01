@@ -27,6 +27,7 @@ use arcweft_bundle::resource_codec::{
     ResourceWireType, SectionCodecBudget, SourceMapSection, SourceRangeRef, ValidatedViewProduct,
     ViewProductValidationError, ViewProductValidationLimits,
 };
+use arcweft_id::view::ViewId;
 use arcweft_presentation::appearance::{
     PresentationColor, PresentationEnvironmentOverrides, SystemColor,
 };
@@ -40,7 +41,7 @@ use arcweft_view::style::{
     ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleValueKind,
 };
 use arcweft_view::{
-    ViewHandlerProgramId, ViewHandlerResult, ViewHandlerResultRole, ViewHandlerValueTypeId, ViewId,
+    ViewHandlerProgramId, ViewHandlerResult, ViewHandlerResultRole, ViewHandlerValueTypeId,
     ViewParameterCoordinate, ViewPartLocalName, ViewPartName,
 };
 use arcweft_view::{ViewValueProgram, ViewValueProgramId};

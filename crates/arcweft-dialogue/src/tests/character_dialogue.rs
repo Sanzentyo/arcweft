@@ -25,7 +25,8 @@ use arcweft_core::{
     pattern::RuntimeSemanticTypeId,
     value::{MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeRecordFieldId, RuntimeSeq, RuntimeValue},
 };
-use arcweft_view::{RustViewId, ViewDescriptor, ViewId, ViewRegistry, ViewSchemaId};
+use arcweft_id::view::ViewId;
+use arcweft_view::{RustViewId, ViewDescriptor, ViewRegistry, ViewSchemaId};
 use std::collections::{BTreeMap, BTreeSet};
 
 fn sample_manifest() -> CharacterManifest {

@@ -4,6 +4,7 @@ use arcweft_bundle::resource_codec::view::{
     ViewProgramInstruction, ViewProgramResource, ViewRuntimeSurfaceBounds, ViewSurfaceResource,
 };
 use arcweft_id::presentation::PresentationHandleId;
+use arcweft_id::view::ViewId;
 use arcweft_player_scene::frame::{PlayerFrameFit, PlayerFramePlanner, PlayerFrameRequest};
 use arcweft_player_scene::images::BundleImageCatalog;
 use arcweft_player_scene::input::InputController;
@@ -26,7 +27,7 @@ use arcweft_view::style::{
     ViewStyleProgram, ViewStyleRule, ViewStyleScopeId, ViewStyleSelector,
     ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
 };
-use arcweft_view::{ViewId, ViewPartLocalName, ViewPartName, ViewProgramId};
+use arcweft_view::{ViewPartLocalName, ViewPartName, ViewProgramId};
 use js_sys::{Object, Reflect, Uint8Array};
 use std::fmt::Write as _;
 use wasm_bindgen::prelude::*;

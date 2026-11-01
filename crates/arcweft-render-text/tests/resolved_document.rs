@@ -2,6 +2,7 @@ use arcweft_character::id::CharacterId;
 use arcweft_core::{plan::RuntimeLineId, runtime_id::RuntimeDialogueValueSlotId};
 use arcweft_dialogue::{InlineFailurePolicy, InlineFailureSelection};
 use arcweft_id::TextKey;
+use arcweft_id::view::ViewId;
 use arcweft_render_text::{
     LanguageTag, ResolvedTextDocument, ResolvedTextRun, ResolvedTextRunSource, ResolvedTextStyle,
     RuntimeLineContext, TextColor, TextDocumentRevision, TextFontFamily, TextResolveError,
@@ -16,7 +17,6 @@ use arcweft_text_model::{
     RichTextPresentation, RichTextPresentationStyle, RichTextRange, RichTextRubyPosition,
     RichTextStyle, RichTextWritingMode,
 };
-use arcweft_view::ViewId;
 
 mod support;
 

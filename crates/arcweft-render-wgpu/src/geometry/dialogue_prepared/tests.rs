@@ -89,7 +89,7 @@ fn runtime_line_context() -> RuntimeLineContext {
             display_name: "Narrator".to_owned(),
         },
         CharacterDialoguePresentationConfig::standalone(
-            arcweft_view::ViewId::try_new_engine_owned("std.view.dialogue")
+            arcweft_id::view::ViewId::try_new_engine_owned("std.view.dialogue")
                 .expect("standard dialogue View id"),
             InlineFailurePolicy::FailLine,
         ),

@@ -262,7 +262,7 @@ fn unrelated_newer_dialogue_does_not_complete_a_rendered_active_entry() {
         .dialogue
         .apply_operations(&[DialoguePresentationOperation::append(
             activation,
-            DialogueViewDefinition::new(arcweft_view::ViewId::try_new("view.other").unwrap()),
+            DialogueViewDefinition::new(arcweft_id::view::ViewId::try_new("view.other").unwrap()),
             vertical_ruby_frame(&RuntimeLineId::from_runtime_line_value("say.other").unwrap()),
         )])
         .unwrap();

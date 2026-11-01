@@ -6,7 +6,8 @@ use arcweft_bundle::resource_codec::view::{
     ViewDefinitionResource, ViewExportedPart, ViewHandlerRef, ViewProgramInstruction,
     ViewProgramResource, ViewValueInputNamespace, ViewValueInputResource,
 };
-use arcweft_view::{ViewId, ViewValueProgram, ViewValueProgramId};
+use arcweft_id::view::ViewId;
+use arcweft_view::{ViewValueProgram, ViewValueProgramId};
 use serde::Serialize;
 
 use super::ViewProgramCatalogError;

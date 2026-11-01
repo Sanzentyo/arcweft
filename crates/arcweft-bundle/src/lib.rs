@@ -41,12 +41,12 @@ use arcweft_core::pattern::RuntimeSemanticTypeId;
 #[cfg(feature = "format-yaml")]
 use arcweft_data::{Number, Value};
 use arcweft_dialogue::CharacterDialogueGenerationDeclaration;
+use arcweft_id::view::ViewId;
 use arcweft_interaction_model::presentation::PresentationImage;
 use arcweft_manifest_model::ProjectLocaleSpec;
 use arcweft_resource_manifest::PublishedResourceTypeManifestSetV1;
 use arcweft_source::SourceDocumentId;
 use arcweft_text_model::DialogueContentCatalog;
-use arcweft_view::ViewId;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 #[cfg(feature = "format-cbor")]

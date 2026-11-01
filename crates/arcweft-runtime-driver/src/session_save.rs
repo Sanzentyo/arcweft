@@ -22,8 +22,9 @@ use arcweft_core::task::{
 };
 use arcweft_core::value::RuntimeBundleAssetOpaqueRole;
 use arcweft_id::LocaleTag;
+use arcweft_id::view::ViewId;
 use arcweft_presentation::fx::FxDiagnostic;
-use arcweft_view::{ViewId, virtualization::ViewVirtualizationSnapshot};
+use arcweft_view::virtualization::ViewVirtualizationSnapshot;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeSet;
 use thiserror::Error;
