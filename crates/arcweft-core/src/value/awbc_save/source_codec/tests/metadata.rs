@@ -70,6 +70,23 @@ fn literal_source_retains_exact_entity_segments_public_labels_and_imported_targe
             .unwrap(),
         ));
     }
+    use arcweft_interaction_model::presentation::{
+        PresentationAddressIdentity, PresentationAddressIdentityKind as Kind,
+        PresentationResourceKind,
+    };
+    let components = std::iter::once((Kind::Target, "target.scene".to_owned())).chain(
+        PresentationResourceKind::ALL.into_iter().map(|resource| {
+            (
+                Kind::Slot(resource),
+                format!("slot.{}.main", resource.as_str()),
+            )
+        }),
+    );
+    for (kind, id) in components {
+        entities.push(RuntimeEntityReference::PresentationAddress(
+            PresentationAddressIdentity::try_new(kind, PublicId::try_new(id).unwrap()).unwrap(),
+        ));
+    }
     for entity in entities {
         roundtrip(Value::EntityRef(entity));
     }
