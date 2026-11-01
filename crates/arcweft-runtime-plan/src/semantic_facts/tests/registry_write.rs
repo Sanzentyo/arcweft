@@ -32,12 +32,11 @@ fn registry_fixture(
         RuntimeTypeShape::Bool,
     );
     let mut input = complete_type_input(&project);
-    let value = input
-        .expression_facts
-        .iter_mut()
-        .find(|(owner, _)| *owner == checked.value())
-        .expect("original checked value");
-    value.1.ty = Some(boolean.clone());
+    replace_projected_type(
+        &mut input,
+        HirValueTypeOwner::Expression(checked.value()),
+        boolean.clone(),
+    );
     let write = super::super::RuntimeRegistryWriteFact::new(checked, boolean);
     (project, input, write)
 }

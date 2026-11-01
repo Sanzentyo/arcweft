@@ -1,10 +1,10 @@
 //! A pure scope joins its value or residual before its enclosing continuation.
 
 use super::{
-    BTreeMap, ExprId, FinalExprLowerer, PureTryContinuation, RuntimeExprMatchArmSeed,
-    RuntimeExprSeed, RuntimeExprSeedKind, RuntimeLocalReadMode, RuntimeLocalReadSeed,
-    RuntimeNormalizedType, RuntimeScopeOwner, RuntimeTryBoundaryOwner, StmtId,
-    normalized_variant_binding_pattern_seed, normalized_variant_expression_seed,
+    ExprId, FinalExprLowerer, PureTryContinuation, RuntimeExprMatchArmSeed, RuntimeExprSeed,
+    RuntimeExprSeedKind, RuntimeLocalReadMode, RuntimeLocalReadSeed, RuntimeNormalizedType,
+    RuntimeScopeOwner, RuntimeTryBoundaryOwner, StmtId, normalized_variant_binding_pattern_seed,
+    normalized_variant_expression_seed,
 };
 
 impl FinalExprLowerer<'_> {
@@ -62,7 +62,7 @@ impl FinalExprLowerer<'_> {
             .scope_locals
             .and_then(|locals| locals.get(&RuntimeScopeOwner::Expression(owner)))
             .ok_or_else(|| format!("Scope {owner:?} has no admitted continuation locals"))?;
-        let mut body_lowerer = self.clone_with_overrides(BTreeMap::new());
+        let mut body_lowerer = self.clone_with_overrides(super::RuntimeExpressionOverrides::new());
         body_lowerer.scope_continuations.push(continuation.clone());
         let body = body_lowerer.lower_function_block(
             statements,

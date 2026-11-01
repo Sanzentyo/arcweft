@@ -17,7 +17,7 @@ impl FinalFlowLowerer<'_> {
         owner: ExprId,
         call: &RuntimeResolvedCall,
         continuation: RuntimeFlowValueContinuation,
-        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        overrides: RuntimeExpressionOverrides,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         let contract = call.program_fanout().ok_or_else(|| {
             RuntimePlanLowerError::new("Program fanout has no exact checked call contract")

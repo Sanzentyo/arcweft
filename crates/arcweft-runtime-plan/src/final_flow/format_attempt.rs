@@ -250,7 +250,7 @@ impl<'a> FinalFlowLowerer<'a> {
         call: &RuntimeResolvedCall,
         formatted: &crate::semantic_facts::RuntimeResolvedFormatCall,
         continuation: RuntimeFlowValueContinuation,
-        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        overrides: RuntimeExpressionOverrides,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         let key = RuntimeFormatTemplateKey::for_call(self.semantic_facts.scope(), formatted);
         let attempt = self.format_attempts.get(&key).cloned().ok_or_else(|| {

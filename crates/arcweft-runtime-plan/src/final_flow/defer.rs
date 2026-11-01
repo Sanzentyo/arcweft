@@ -225,7 +225,7 @@ pub(super) fn define_global_defer_sites(
                 RuntimeFlowTail::Value {
                     expression: block.tail(),
                     continuation: Box::new(RuntimeFlowValueContinuation::Return),
-                    overrides: BTreeMap::new(),
+                    overrides: super::RuntimeExpressionOverrides::new(),
                 },
             )?;
             let assertions = lowerer.into_assertion_sites();

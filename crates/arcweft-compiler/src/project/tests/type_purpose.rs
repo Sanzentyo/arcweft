@@ -4,8 +4,8 @@ use arcweft_lang_hir::identity::HirValueTypeOwner;
 use arcweft_lang_sema::nominal::ResolvedTypeNodePurpose;
 use arcweft_lang_sema::types::{EntityKind, TypeKind};
 use arcweft_runtime_plan::semantic_facts::{
-    RuntimeProjectFunctionFactError, RuntimeProjectFunctionInstanceSemanticFacts,
-    RuntimeProjectFunctionTypeProjection, RuntimeTypeShape,
+    RuntimeExecutableTypeProjection, RuntimeProjectFunctionFactError,
+    RuntimeProjectFunctionInstanceSemanticFacts, RuntimeTypeShape,
 };
 
 #[test]
@@ -131,11 +131,11 @@ fn assert_strict_type_projection(
         .unwrap();
     assert!(matches!(
         &semantics.type_projection()[marker_index],
-        RuntimeProjectFunctionTypeProjection::SemanticOnlyType {
+        RuntimeExecutableTypeProjection::SemanticOnlyType {
             purpose, ..
         } if purpose == &ResolvedTypeNodePurpose::EntityFamilyArgument(family.clone())
     ));
-    let rebuild = |projection: Box<[RuntimeProjectFunctionTypeProjection]>| {
+    let rebuild = |projection: Box<[RuntimeExecutableTypeProjection]>| {
         RuntimeProjectFunctionInstanceSemanticFacts::try_new(
             partition.clone(),
             semantics.local_uses().clone(),
@@ -154,7 +154,7 @@ fn assert_strict_type_projection(
     };
     let value_type = semantics.ty(reference_owner).unwrap().clone();
     let mut forged = semantics.type_projection().to_vec();
-    forged[marker_index] = RuntimeProjectFunctionTypeProjection::value(marker_owner, value_type);
+    forged[marker_index] = RuntimeExecutableTypeProjection::value(marker_owner, value_type);
     assert_incomplete(forged.into_boxed_slice());
     for purpose in [
         ResolvedTypeNodePurpose::EntityFamilyArgument(EntityKind::Character),
@@ -162,15 +162,14 @@ fn assert_strict_type_projection(
         ResolvedTypeNodePurpose::ValueType,
     ] {
         let mut forged = semantics.type_projection().to_vec();
-        forged[marker_index] =
-            RuntimeProjectFunctionTypeProjection::semantic_only_type(marker, purpose);
+        forged[marker_index] = RuntimeExecutableTypeProjection::semantic_only_type(marker, purpose);
         assert_incomplete(forged.into_boxed_slice());
     }
     let mut missing = semantics.type_projection().to_vec();
     missing.remove(marker_index);
     assert_incomplete(missing.into_boxed_slice());
     let mut forged = semantics.type_projection().to_vec();
-    forged[reference_index] = RuntimeProjectFunctionTypeProjection::semantic_only_type(
+    forged[reference_index] = RuntimeExecutableTypeProjection::semantic_only_type(
         reference,
         ResolvedTypeNodePurpose::EntityFamilyArgument(family.clone()),
     );

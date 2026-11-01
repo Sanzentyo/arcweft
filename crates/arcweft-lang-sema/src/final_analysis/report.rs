@@ -363,6 +363,27 @@ pub struct CheckedExecutableRuntimeExpressionFactOwner {
     children: Box<[ExprId]>,
 }
 
+/// An immutable classification issued by final sema for one selected source
+/// owner. This is type evidence, not an executable frame or capability grant.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedSemanticValueProjection {
+    reachability: HirRuntimeReachabilityIdentity,
+    owner: HirValueTypeOwner,
+    ty: crate::types::CompileTimeCallableType,
+}
+
+impl CheckedSemanticValueProjection {
+    pub const fn owner(&self) -> HirValueTypeOwner {
+        self.owner
+    }
+    pub const fn ty(&self) -> &crate::types::CompileTimeCallableType {
+        &self.ty
+    }
+    pub fn belongs_to(&self, reachability: &HirRuntimeReachabilityIdentity) -> bool {
+        &self.reachability == reachability
+    }
+}
+
 impl CheckedExecutableRuntimeExpressionFactOwner {
     pub const fn coordinate(&self) -> &crate::semantic_coordinate::CheckedSemanticPath {
         &self.coordinate
@@ -503,6 +524,27 @@ pub struct CheckedExecutableRuntimeFactPartition {
 }
 
 impl CheckedExecutableRuntimeFactPartition {
+    pub fn semantic_value_projection(
+        &self,
+        owner: HirValueTypeOwner,
+    ) -> Option<CheckedSemanticValueProjection> {
+        Some(CheckedSemanticValueProjection {
+            reachability: self.reachability.clone(),
+            owner,
+            ty: self.semantic_values.get(&owner)?.clone(),
+        })
+    }
+    pub fn semantic_value_projections(
+        &self,
+    ) -> impl Iterator<Item = CheckedSemanticValueProjection> + '_ {
+        self.semantic_values
+            .iter()
+            .map(|(owner, ty)| CheckedSemanticValueProjection {
+                reachability: self.reachability.clone(),
+                owner: *owner,
+                ty: ty.clone(),
+            })
+    }
     /// The accepted semantic classification is distinct from an omitted
     /// effect result. It proves which values may be erased from runtime data.
     pub fn semantic_value_type(

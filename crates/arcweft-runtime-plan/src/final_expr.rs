@@ -65,6 +65,68 @@ pub(crate) struct FinalExprSourceSites<'hir> {
     pub(crate) tasks: &'hir arcweft_core::plan::RuntimeTaskPlanConstructionContext,
 }
 
+/// Source operands already executed by an enclosing continuation. Semantic
+/// callees record completion without inventing a runtime value or local slot.
+#[derive(Clone, Default)]
+pub(crate) struct RuntimeExpressionOverrides {
+    values: BTreeMap<ExprId, RuntimeExpressionEvaluation>,
+}
+
+#[derive(Clone)]
+enum RuntimeExpressionEvaluation {
+    Value(RuntimeExprSeed),
+    SemanticValue,
+}
+
+impl RuntimeExpressionOverrides {
+    pub(crate) const fn new() -> Self {
+        Self {
+            values: BTreeMap::new(),
+        }
+    }
+    pub(crate) fn get(&self, owner: &ExprId) -> Option<&RuntimeExprSeed> {
+        match self.values.get(owner)? {
+            RuntimeExpressionEvaluation::Value(value) => Some(value),
+            RuntimeExpressionEvaluation::SemanticValue => None,
+        }
+    }
+
+    pub(crate) fn contains_key(&self, owner: &ExprId) -> bool {
+        self.values.contains_key(owner)
+    }
+
+    pub(crate) fn insert(&mut self, owner: ExprId, value: RuntimeExprSeed) {
+        self.values
+            .insert(owner, RuntimeExpressionEvaluation::Value(value));
+    }
+
+    pub(crate) fn insert_semantic_value(&mut self, owner: ExprId) {
+        self.values
+            .insert(owner, RuntimeExpressionEvaluation::SemanticValue);
+    }
+
+    pub(crate) fn extend(&mut self, other: Self) {
+        self.values.extend(other.values);
+    }
+
+    pub(crate) fn extend_values(
+        &mut self,
+        values: impl IntoIterator<Item = (ExprId, RuntimeExprSeed)>,
+    ) {
+        for (owner, value) in values {
+            self.insert(owner, value);
+        }
+    }
+}
+
+impl FromIterator<(ExprId, RuntimeExprSeed)> for RuntimeExpressionOverrides {
+    fn from_iter<T: IntoIterator<Item = (ExprId, RuntimeExprSeed)>>(values: T) -> Self {
+        let mut overrides = Self::new();
+        overrides.extend_values(values);
+        overrides
+    }
+}
+
 pub(crate) struct FinalExprLowerer<'hir> {
     module: &'hir HirModule,
     facts: &'hir RuntimePlanSemanticFacts,
@@ -98,7 +160,7 @@ pub(crate) struct FinalExprLowerer<'hir> {
     >,
     callable_sources:
         Option<&'hir BTreeMap<RuntimeProjectCallableSourceKey, RuntimeCallableStateSeedId>>,
-    overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+    overrides: RuntimeExpressionOverrides,
     /// The exact admitted callable being executed. All other implicit roots
     /// remain values that create function sites in this lexical frame.
     implicit_body_root: Option<ExprId>,
@@ -128,7 +190,7 @@ enum PureTryContinuation {
     Compose {
         owner: ExprId,
         child: ExprId,
-        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        overrides: RuntimeExpressionOverrides,
         outer: Box<Self>,
     },
     LetBlock {
@@ -232,7 +294,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             environment_callable_states: None,
             callable_specializations: None,
             callable_sources: None,
-            overrides: BTreeMap::new(),
+            overrides: RuntimeExpressionOverrides::new(),
             implicit_body_root: None,
         }
     }
@@ -308,7 +370,7 @@ impl<'hir> FinalExprLowerer<'hir> {
         self
     }
 
-    pub(crate) fn with_overrides(mut self, overrides: BTreeMap<ExprId, RuntimeExprSeed>) -> Self {
+    pub(crate) fn with_overrides(mut self, overrides: RuntimeExpressionOverrides) -> Self {
         self.overrides.extend(overrides);
         self
     }
@@ -666,7 +728,7 @@ impl<'hir> FinalExprLowerer<'hir> {
         &self,
         site_owner: ExprId,
         body: ExprId,
-        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        overrides: RuntimeExpressionOverrides,
     ) -> Result<RuntimeExprSeed, String> {
         let lowerer = self.clone_with_overrides(overrides);
         if let Some(tried) = lowerer.facts.tried(body).filter(|tried| {
@@ -688,11 +750,11 @@ impl<'hir> FinalExprLowerer<'hir> {
     pub(crate) fn lower_implicit_callable_body(
         &self,
         owner: ExprId,
-        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        overrides: RuntimeExpressionOverrides,
     ) -> Result<RuntimeExprSeed, String> {
         self.implicit_callable(owner)
             .ok_or_else(|| format!("admitted implicit callable is missing for {owner:?}"))?;
-        let mut lowerer = self.clone_with_overrides(BTreeMap::new());
+        let mut lowerer = self.clone_with_overrides(RuntimeExpressionOverrides::new());
         lowerer.implicit_body_root = Some(owner);
         lowerer.lower_function_site_body(owner, owner, overrides)
     }
@@ -762,6 +824,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             HirExprKind::Call(call) => {
                 let kind = self.lower_call(id, call)?;
                 if let arcweft_lang_hir::expr::HirCallCallee::Value { value } = call.callee()
+                    && !self.overrides.contains_key(value)
                     && self
                         .semantic_facts
                         .semantic_value_type(HirValueTypeOwner::Expression(*value))
@@ -926,7 +989,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                             ),
                         ))
                     })
-                    .collect::<Result<BTreeMap<_, _>, String>>()?;
+                    .collect::<Result<RuntimeExpressionOverrides, String>>()?;
                 let body = self.clone_with_overrides(overrides).lower(pipe.right())?;
                 return Ok(RuntimeExprSeed::new(
                     self.expression_source_type(id)?,
@@ -979,7 +1042,7 @@ impl<'hir> FinalExprLowerer<'hir> {
         Ok(RuntimeExprSeed::new(self.expression_source_type(id)?, kind))
     }
 
-    fn clone_with_overrides(&self, overrides: BTreeMap<ExprId, RuntimeExprSeed>) -> Self {
+    fn clone_with_overrides(&self, overrides: RuntimeExpressionOverrides) -> Self {
         let mut merged = self.overrides.clone();
         merged.extend(overrides);
         Self {
@@ -1643,7 +1706,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                     ),
                 ))
             })
-            .collect::<Result<BTreeMap<_, _>, String>>()?;
+            .collect::<Result<RuntimeExpressionOverrides, String>>()?;
         let body = self
             .clone_with_overrides(overrides)
             .lower_with_try_continuation(pipe.right(), continuation)?;

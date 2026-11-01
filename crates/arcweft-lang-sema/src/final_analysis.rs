@@ -264,10 +264,11 @@ pub use report::{
     CheckedExecutableRuntimePatternFactOwner, CheckedExecutableRuntimeStatementFactFamily,
     CheckedExecutableRuntimeStatementFactOwner, CheckedExecutableRuntimeTypeFactOwner,
     CheckedExpressionExecution, CheckedImplicitCallableCaptureOrigin,
-    FinalAnalysisClosureExecution, FinalAnalysisExecutionProjection,
-    FinalAnalysisExecutionProjectionError, FinalAnalysisImplicitCallableBody,
-    FinalAnalysisImplicitCallableDefinition, FinalAnalysisImplicitCallableView,
-    FinalAnalysisPipeView, FinalAnalysisTryView, FinalSemanticAnalysis,
+    CheckedSemanticValueProjection, FinalAnalysisClosureExecution,
+    FinalAnalysisExecutionProjection, FinalAnalysisExecutionProjectionError,
+    FinalAnalysisImplicitCallableBody, FinalAnalysisImplicitCallableDefinition,
+    FinalAnalysisImplicitCallableView, FinalAnalysisPipeView, FinalAnalysisTryView,
+    FinalSemanticAnalysis,
 };
 pub(crate) use semantic_shapes::AcceptedSemanticShapeCatalog;
 pub(crate) use semantic_transcript::write_len;

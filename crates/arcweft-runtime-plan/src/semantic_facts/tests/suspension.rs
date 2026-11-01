@@ -22,13 +22,7 @@ fn fixture() -> (HirProject, RuntimePlanSemanticFactInput) {
                 ),
                 RuntimeTypeShape::Duration,
             );
-            input
-                .expression_facts
-                .iter_mut()
-                .find(|(id, _)| id == target)
-                .unwrap()
-                .1
-                .ty = Some(duration);
+            replace_projected_type(&mut input, HirValueTypeOwner::Expression(*target), duration);
             input.push_suspension(owner, suspension.as_ref().clone());
         }
     }
@@ -72,13 +66,11 @@ fn wait_admission_requires_complete_unique_exact_operands_and_duration_types() {
 
     let (project, mut input) = fixture();
     let (owner, CheckedSuspensionStatement::Wait { target }) = input.suspensions[0];
-    input
-        .expression_facts
-        .iter_mut()
-        .find(|(id, _)| *id == target)
-        .unwrap()
-        .1
-        .ty = Some(unit_type());
+    replace_projected_type(
+        &mut input,
+        HirValueTypeOwner::Expression(target),
+        unit_type(),
+    );
     assert_eq!(
         runtime_facts(&project, input).unwrap_err(),
         RuntimeSemanticFactsError::InvalidSuspension { statement: owner }

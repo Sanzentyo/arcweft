@@ -1,4 +1,4 @@
-use super::RuntimeFlowFact;
+use super::{RuntimeExecutableTypeProjection, RuntimeFlowFact, RuntimeNormalizedType};
 use arcweft_lang_hir::identity::HirValueTypeOwner;
 #[path = "tests/call_operand_sources.rs"]
 mod call_operand_sources;
@@ -1087,13 +1087,47 @@ fn complete_type_input(project: &HirProject) -> RuntimePlanSemanticFactInput {
     input
 }
 
+fn projected_type_mut(
+    input: &mut RuntimePlanSemanticFactInput,
+    owner: HirValueTypeOwner,
+) -> &mut RuntimeExecutableTypeProjection {
+    &mut input
+        .type_projections
+        .iter_mut()
+        .find(|(key, _)| *key == owner)
+        .expect("fixture has this type owner")
+        .1
+}
+
+fn replace_projected_type(
+    input: &mut RuntimePlanSemanticFactInput,
+    owner: HirValueTypeOwner,
+    replacement: RuntimeNormalizedType,
+) {
+    match projected_type_mut(input, owner) {
+        RuntimeExecutableTypeProjection::Value { ty, .. }
+        | RuntimeExecutableTypeProjection::Local { ty, .. } => *ty = replacement,
+        _ => panic!("fixture requires a runtime type"),
+    }
+}
+
 #[test]
 fn local_origins_reject_another_binding_and_hir_allocation_before_publication() {
     let source = "fn root(first: bool, second: bool) -> bool { first }\n";
     let project = project_fixture("local-origin-admission", source);
     let mut wrong_local = complete_type_input(&project);
-    let target = wrong_local.local_declarations[0].0;
-    wrong_local.local_declarations[0].1.origin = wrong_local.local_declarations[1].1.origin.clone();
+    let target = wrong_local.local_declaration_order[0];
+    let other = wrong_local.local_declaration_order[1];
+    let replacement = projected_type_mut(&mut wrong_local, HirValueTypeOwner::Local(other))
+        .local_origin()
+        .unwrap()
+        .clone();
+    let RuntimeExecutableTypeProjection::Local { origin, .. } =
+        projected_type_mut(&mut wrong_local, HirValueTypeOwner::Local(target))
+    else {
+        panic!("runtime local")
+    };
+    *origin = replacement;
     assert_eq!(
         runtime_facts(&project, wrong_local).unwrap_err(),
         RuntimeSemanticFactsError::InvalidLocalOrigin { local: target }
@@ -1101,9 +1135,19 @@ fn local_origins_reject_another_binding_and_hir_allocation_before_publication() 
 
     let foreign = project_fixture("local-origin-admission", source);
     let mut wrong_generation = complete_type_input(&project);
-    let foreign_input = complete_type_input(&foreign);
-    wrong_generation.local_declarations[0].1.origin =
-        foreign_input.local_declarations[0].1.origin.clone();
+    let mut foreign_input = complete_type_input(&foreign);
+    let foreign_local = foreign_input.local_declaration_order[0];
+    let replacement =
+        projected_type_mut(&mut foreign_input, HirValueTypeOwner::Local(foreign_local))
+            .local_origin()
+            .unwrap()
+            .clone();
+    let RuntimeExecutableTypeProjection::Local { origin, .. } =
+        projected_type_mut(&mut wrong_generation, HirValueTypeOwner::Local(target))
+    else {
+        panic!("runtime local")
+    };
+    *origin = replacement;
     assert_eq!(
         runtime_facts(&project, wrong_generation).unwrap_err(),
         RuntimeSemanticFactsError::InvalidLocalOrigin { local: target }
@@ -1171,12 +1215,8 @@ fn type_free_expression_origin_is_required_and_retained_before_publication() {
     let complete = || {
         let mut input = complete_type_input(&project);
         input
-            .expression_facts
-            .iter_mut()
-            .find(|(owner, _)| *owner == target)
-            .unwrap()
-            .1
-            .ty = None;
+            .type_projections
+            .retain(|(owner, _)| *owner != HirValueTypeOwner::Expression(target));
         input
     };
     let facts = RuntimePlanSemanticFacts::try_new(executable, &reachability, complete()).unwrap();
@@ -1291,20 +1331,26 @@ fn assignment_fact_fixture(
         field_type.clone(),
     );
     let mut input = complete_type_input(&project);
-    input
-        .local_declarations
-        .iter_mut()
-        .find(|(owner, _)| *owner == local)
-        .expect("assignment local type")
-        .1
-        .ty = record_type.clone();
-    for (owner, ty) in &mut input.expression_facts {
-        if *owner == base {
-            ty.ty = Some(record_type.clone());
-        } else if *owner == target || *owner == value {
-            ty.ty = Some(field_type.clone());
-        }
-    }
+    replace_projected_type(
+        &mut input,
+        HirValueTypeOwner::Local(local),
+        record_type.clone(),
+    );
+    replace_projected_type(
+        &mut input,
+        HirValueTypeOwner::Expression(base),
+        record_type.clone(),
+    );
+    replace_projected_type(
+        &mut input,
+        HirValueTypeOwner::Expression(target),
+        field_type.clone(),
+    );
+    replace_projected_type(
+        &mut input,
+        HirValueTypeOwner::Expression(value),
+        field_type.clone(),
+    );
     input.push_value(base, RuntimeResolvedValue::Local(local));
     input.push_select(
         target,
@@ -1827,10 +1873,12 @@ fn missing_extra_duplicate_and_reordered_local_projections_are_rejected() {
     assert!(owners.len() >= 2, "fixture retains both parameters");
     let mut missing = complete_type_input(&project);
     let missing_owner = missing
-        .local_declarations
+        .local_declaration_order
         .pop()
-        .expect("fixture local declaration")
-        .0;
+        .expect("fixture local declaration");
+    missing
+        .type_projections
+        .retain(|(owner, _)| *owner != HirValueTypeOwner::Local(missing_owner));
     assert_eq!(
         runtime_facts(&project, missing).expect_err("a local cannot be omitted"),
         RuntimeSemanticFactsError::MissingLocalDeclaration {
@@ -1868,7 +1916,7 @@ fn missing_extra_duplicate_and_reordered_local_projections_are_rejected() {
     );
 
     let mut reordered = complete_type_input(&project);
-    reordered.local_declarations.swap(0, 1);
+    reordered.local_declaration_order.swap(0, 1);
     assert_eq!(
         runtime_facts(&project, reordered)
             .expect_err("the same local set in a noncanonical order is invalid"),
@@ -4144,9 +4192,9 @@ fn flow_invocation_projection_rejects_nonfunction_and_incomplete_arity() {
 #[test]
 fn closed_entity_value_constructor_rejects_foreign_owner_and_type_before_publication() {
     use super::project_function::{
-        RuntimeProjectFunctionExpressionPayload, RuntimeProjectFunctionExpressionSemanticFact,
-        RuntimeProjectFunctionFactError, RuntimeProjectFunctionInstanceSemanticFacts,
-        RuntimeProjectFunctionTypeProjection,
+        RuntimeExecutableTypeProjection, RuntimeProjectFunctionExpressionPayload,
+        RuntimeProjectFunctionExpressionSemanticFact, RuntimeProjectFunctionFactError,
+        RuntimeProjectFunctionInstanceSemanticFacts,
     };
     use arcweft_lang_sema::final_analysis::{
         CheckedExecutableRuntimeExpressionFactFamily, CheckedLocalUseAuthority,
@@ -4190,14 +4238,14 @@ fn closed_entity_value_constructor_rejects_foreign_owner_and_type_before_publica
         let mut types = partition
             .expressions()
             .iter()
-            .map(|row| RuntimeProjectFunctionTypeProjection::Value {
+            .map(|row| RuntimeExecutableTypeProjection::Value {
                 owner: HirValueTypeOwner::Expression(row.owner()),
                 ty: normalized(identity),
             })
             .collect::<Vec<_>>();
         types.extend(partition.types().iter().map(|row| {
             if row.has_runtime_type() {
-                RuntimeProjectFunctionTypeProjection::Value {
+                RuntimeExecutableTypeProjection::Value {
                     owner: HirValueTypeOwner::Type(row.owner()),
                     ty: normalized(
                         *analysis
@@ -4209,13 +4257,13 @@ fn closed_entity_value_constructor_rejects_foreign_owner_and_type_before_publica
                     ),
                 }
             } else {
-                RuntimeProjectFunctionTypeProjection::SemanticOnlyType {
+                RuntimeExecutableTypeProjection::SemanticOnlyType {
                     owner: row.owner(),
                     purpose: row.purpose().clone(),
                 }
             }
         }));
-        types.sort_by_key(RuntimeProjectFunctionTypeProjection::owner);
+        types.sort_by_key(RuntimeExecutableTypeProjection::owner);
         let expressions = partition
             .expressions()
             .iter()
@@ -4287,13 +4335,7 @@ fn checked_entity_value_input(
                 RuntimeSemanticTypeId::from_bytes(*entity.type_identity().as_bytes()),
                 RuntimeTypeShape::EntityReference,
             );
-            input
-                .expression_facts
-                .iter_mut()
-                .find(|(row, _)| *row == owner)
-                .expect("runtime expression owner")
-                .1
-                .ty = Some(ty);
+            replace_projected_type(&mut input, HirValueTypeOwner::Expression(owner), ty);
             input.push_value(owner, RuntimeResolvedValue::Entity(select(owner, entity)));
         }
     }
@@ -4416,13 +4458,7 @@ fn entity_value_public_admission_rejects_wrong_ref_family_or_physical_shape_for_
         ),
     ] {
         let mut input = checked_entity_value_input(&project, &analysis, |_, value| value);
-        input
-            .expression_facts
-            .iter_mut()
-            .find(|(row, _)| *row == owner)
-            .expect("same expression owner")
-            .1
-            .ty = Some(ty);
+        replace_projected_type(&mut input, HirValueTypeOwner::Expression(owner), ty);
         assert_eq!(
             runtime_facts(&project, input).unwrap_err(),
             RuntimeSemanticFactsError::InvalidEntityValueType { expression: owner }
@@ -4489,14 +4525,13 @@ fn entity_pattern_public_admission_retains_exact_pattern_and_rejects_payload_own
                 } else {
                     entity.type_identity()
                 };
-                input
-                    .pattern_types
-                    .iter_mut()
-                    .find(|(pattern, _)| pattern == owner)
-                    .expect("same pattern owner")
-                    .1 = super::RuntimeNormalizedType::new(
-                    RuntimeSemanticTypeId::from_bytes(*identity.as_bytes()),
-                    RuntimeTypeShape::EntityReference,
+                replace_projected_type(
+                    &mut input,
+                    HirValueTypeOwner::Pattern(*owner),
+                    super::RuntimeNormalizedType::new(
+                        RuntimeSemanticTypeId::from_bytes(*identity.as_bytes()),
+                        RuntimeTypeShape::EntityReference,
+                    ),
                 );
                 input.push_pattern_entity(
                     *owner,

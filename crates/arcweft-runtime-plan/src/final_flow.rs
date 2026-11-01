@@ -109,7 +109,7 @@ use crate::assertion_identity::{
     RuntimeAssertionMode, RuntimeAssertionSite,
 };
 use crate::errors::RuntimePlanLowerError;
-use crate::final_expr::{FinalExprLowerer, FinalExprSourceSites};
+use crate::final_expr::{FinalExprLowerer, FinalExprSourceSites, RuntimeExpressionOverrides};
 use crate::final_pattern::FinalPatternLowerer;
 use crate::final_variant::{
     normalized_variant_binding_pattern_seed, normalized_variant_expression_seed,
@@ -122,11 +122,11 @@ use crate::semantic_facts::{
     RuntimeDialogueValueCaptureKey, RuntimeDropFadeFact, RuntimeDropPolicyFact,
     RuntimeEffectFieldFact, RuntimeEvaluatedEffect, RuntimeEvaluatedEffectFact,
     RuntimeEvaluatedEffectOperandFact, RuntimeExecutableSemanticScope,
-    RuntimeImplicitCallableSiteKey, RuntimeIteratorFact, RuntimeIteratorWitnessExecutableFact,
-    RuntimeLineCallable, RuntimeNormalizedType, RuntimePlanSemanticFacts, RuntimeProjectCallable,
-    RuntimeProjectFunctionExpressionPayload, RuntimeProjectFunctionInstanceFact,
-    RuntimeProjectFunctionInstanceKey, RuntimeProjectFunctionInstanceSemanticFacts,
-    RuntimeProjectFunctionParameterSource, RuntimeProjectFunctionTypeProjection,
+    RuntimeExecutableTypeProjection, RuntimeImplicitCallableSiteKey, RuntimeIteratorFact,
+    RuntimeIteratorWitnessExecutableFact, RuntimeLineCallable, RuntimeNormalizedType,
+    RuntimePlanSemanticFacts, RuntimeProjectCallable, RuntimeProjectFunctionExpressionPayload,
+    RuntimeProjectFunctionInstanceFact, RuntimeProjectFunctionInstanceKey,
+    RuntimeProjectFunctionInstanceSemanticFacts, RuntimeProjectFunctionParameterSource,
     RuntimeResolvedAttachedContent, RuntimeResolvedCall, RuntimeResolvedCallDispatch,
     RuntimeResolvedCallOperandOrigin, RuntimeResolvedCallOperandProjection,
     RuntimeResolvedCallOperandSource, RuntimeResolvedStaticCallTarget, RuntimeResolvedValue,
@@ -1039,13 +1039,13 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
                 .type_projection()
                 .iter()
                 .filter_map(|projection| match projection {
-                    RuntimeProjectFunctionTypeProjection::Local {
+                    RuntimeExecutableTypeProjection::Local {
                         owner: local,
-                        ty, origin
+                        ty, origin, ..
                     } => Some(origin.runtime_local_declaration_source().map(|origin| (ProjectFunctionFrameLocal::Hir(*local), RuntimeLocalDeclarationSeed::new(origin, ty.identity()))).map_err(|error| RuntimePlanLowerError::new(error.to_string()))),
-                    RuntimeProjectFunctionTypeProjection::Value { .. }
-                    | RuntimeProjectFunctionTypeProjection::SemanticOnlyExpression { .. }
-                    | RuntimeProjectFunctionTypeProjection::SemanticOnlyType { .. } | RuntimeProjectFunctionTypeProjection::SemanticValue { .. } => None,
+                    RuntimeExecutableTypeProjection::Value { .. }
+                    | RuntimeExecutableTypeProjection::SemanticOnlyExpression { .. }
+                    | RuntimeExecutableTypeProjection::SemanticOnlyType { .. } | RuntimeExecutableTypeProjection::SemanticValue { .. } => None,
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let mut locals = locals;
@@ -1121,8 +1121,8 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
         .map(|(key, semantics)| -> Result<_, RuntimePlanLowerError> {
             let mut rows = semantics.type_projection().iter().filter_map(|projection| {
                 match projection {
-                    RuntimeProjectFunctionTypeProjection::Local {
-                        owner: local, ty, origin
+                    RuntimeExecutableTypeProjection::Local {
+                        owner: local, ty, origin, ..
                     } => Some(origin.runtime_local_declaration_source().map(|origin| (ProjectFunctionFrameLocal::Hir(*local), RuntimeLocalDeclarationSeed::new(origin, ty.identity()))).map_err(|error| RuntimePlanLowerError::new(error.to_string()))),
                     _ => None,
                 }
@@ -1171,14 +1171,14 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
                 .type_projection()
                 .iter()
                 .filter_map(|projection| match projection {
-                    RuntimeProjectFunctionTypeProjection::Local {
+                    RuntimeExecutableTypeProjection::Local {
                         owner: local,
-                        ty, origin
+                        ty, origin, ..
                     } if !captured.contains(local) => Some(origin.runtime_local_declaration_source().map(|origin| (ClosureFrameLocal::Hir(*local), RuntimeLocalDeclarationSeed::new(origin, ty.identity()))).map_err(|error| RuntimePlanLowerError::new(error.to_string()))),
-                    RuntimeProjectFunctionTypeProjection::Local { .. }
-                    | RuntimeProjectFunctionTypeProjection::Value { .. }
-                    | RuntimeProjectFunctionTypeProjection::SemanticOnlyExpression { .. }
-                    | RuntimeProjectFunctionTypeProjection::SemanticOnlyType { .. } | RuntimeProjectFunctionTypeProjection::SemanticValue { .. } => None,
+                    RuntimeExecutableTypeProjection::Local { .. }
+                    | RuntimeExecutableTypeProjection::Value { .. }
+                    | RuntimeExecutableTypeProjection::SemanticOnlyExpression { .. }
+                    | RuntimeExecutableTypeProjection::SemanticOnlyType { .. } | RuntimeExecutableTypeProjection::SemanticValue { .. } => None,
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             rows.extend(closure.parameters().iter().map(|parameter| {
@@ -3545,7 +3545,7 @@ fn define_function_sites(
                             ),
                         ))
                     })
-                    .collect::<Result<BTreeMap<_, _>, String>>()?;
+                    .collect::<Result<RuntimeExpressionOverrides, String>>()?;
             if callable.control() == arcweft_lang_sema::final_analysis::CheckedExecutableControlRole::ExpressionCompatible
                 && definition.effects.is_empty() {
                 lowerer.lower_implicit_callable_body(definition.owner, overrides)
@@ -3617,7 +3617,11 @@ fn define_closure_sites(
                         closure.key(),
                         closure.semantics(),
                     ))
-                    .lower_function_site_body(closure.owner(), closure.body(), BTreeMap::new())
+                    .lower_function_site_body(
+                        closure.owner(),
+                        closure.body(),
+                        RuntimeExpressionOverrides::new(),
+                    )
                     .map(RuntimeFunctionSiteBodySeed::Expression)
                     .map_err(RuntimePlanLowerError::new)
             }
@@ -3731,7 +3735,7 @@ fn define_project_function_sites(
                     RuntimeFlowTail::Value {
                         expression: instance.body().tail(),
                         continuation: Box::new(RuntimeFlowValueContinuation::Return),
-                        overrides: BTreeMap::new(),
+                        overrides: RuntimeExpressionOverrides::new(),
                     },
                 ) {
                     Ok(ops) => ops,
@@ -3811,7 +3815,11 @@ fn define_project_default_function_sites(
                             instance.semantics(),
                         ),
                     )
-                    .lower_function_site_body(default.source(), default.source(), BTreeMap::new())
+                    .lower_function_site_body(
+                        default.source(),
+                        default.source(),
+                        RuntimeExpressionOverrides::new(),
+                    )
                     .map(RuntimeFunctionSiteBodySeed::Expression)
                     .map_err(RuntimePlanLowerError::new)
             }
@@ -4118,7 +4126,7 @@ fn define_pure_programs(
                                     flow.lower_match_guard(
                                         guard,
                                         matched.scrutinee(),
-                                        BTreeMap::new(),
+                                        RuntimeExpressionOverrides::new(),
                                     )
                                 })
                                 .transpose()?,
@@ -4154,7 +4162,11 @@ fn define_pure_programs(
                     if let HirExprKind::Closure(closure) = expression.kind() {
                         if expression_compatible {
                             return lowerer
-                                .lower_function_site_body(*owner, closure.body(), BTreeMap::new())
+                                .lower_function_site_body(
+                                    *owner,
+                                    closure.body(),
+                                    RuntimeExpressionOverrides::new(),
+                                )
                                 .map(RuntimeFunctionSiteBodySeed::Expression)
                                 .map_err(RuntimePlanLowerError::new);
                         }
@@ -4195,7 +4207,7 @@ fn define_pure_programs(
                                     ),
                                 ))
                             })
-                            .collect::<Result<BTreeMap<_, _>, RuntimePlanLowerError>>()?;
+                            .collect::<Result<RuntimeExpressionOverrides, RuntimePlanLowerError>>()?;
                         if expression_compatible {
                             return lowerer
                                 .lower_implicit_callable_body(*owner, overrides)
@@ -5807,7 +5819,7 @@ impl RuntimeMutationReturn {
 
 struct FinalFlowLowerer<'a> {
     task_plans: &'a arcweft_core::plan::RuntimeTaskPlanConstructionContext,
-    expression_overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+    expression_overrides: RuntimeExpressionOverrides,
     mutation_return: Option<RuntimeMutationReturn>,
     implicit_body_root: Option<ExprId>,
     module: &'a HirModule,
@@ -5911,18 +5923,18 @@ enum RuntimeFlowValueContinuation {
     Compose {
         owner: ExprId,
         child: ExprId,
-        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        overrides: RuntimeExpressionOverrides,
         outer: Box<Self>,
     },
     Pipe {
         owner: ExprId,
         right: ExprId,
-        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        overrides: RuntimeExpressionOverrides,
         outer: Box<Self>,
     },
     Branch {
         owner: ExprId,
-        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        overrides: RuntimeExpressionOverrides,
         outer: Box<Self>,
     },
 }
@@ -5945,12 +5957,12 @@ enum RuntimeFlowTail {
     Value {
         expression: ExprId,
         continuation: Box<RuntimeFlowValueContinuation>,
-        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        overrides: RuntimeExpressionOverrides,
     },
     SourceValue {
         expression: ExprId,
         continuation: Box<RuntimeFlowValueContinuation>,
-        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        overrides: RuntimeExpressionOverrides,
     },
     ContinueValue {
         value: RuntimeExprSeed,
@@ -6174,7 +6186,7 @@ impl<'a> FinalFlowLowerer<'a> {
         Self {
             task_plans: context.task_plans,
             module,
-            expression_overrides: BTreeMap::new(),
+            expression_overrides: RuntimeExpressionOverrides::new(),
             mutation_return: None,
             implicit_body_root: None,
             facts: context.facts,
@@ -6363,7 +6375,12 @@ impl<'a> FinalFlowLowerer<'a> {
                         ))
                     })?;
                 let target = callee.and_then(|callee| {
-                    if call.evaluates_callee(callee) {
+                    if call.evaluates_callee(callee)
+                        || self
+                            .semantic_facts
+                            .semantic_value_type(HirValueTypeOwner::Expression(callee))
+                            .is_some()
+                    {
                         Some(callee)
                     } else {
                         receiver.filter(|receiver| {
@@ -6572,7 +6589,7 @@ impl<'a> FinalFlowLowerer<'a> {
                 return self.lower_dialogue_value(
                     semantic_expression,
                     RuntimeFlowValueContinuation::Ignore(tail),
-                    BTreeMap::new(),
+                    RuntimeExpressionOverrides::new(),
                 );
             }
             HirThreadFlowItem::Statement(statement)
@@ -6616,6 +6633,14 @@ impl<'a> FinalFlowLowerer<'a> {
         tail: RuntimeFlowTail,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         match kind {
+            HirStmtKind::Let { initializer, .. }
+                if self
+                    .semantic_facts
+                    .semantic_value_type(HirValueTypeOwner::Expression(*initializer))
+                    .is_some() =>
+            {
+                self.lower_flow_value(*initializer, RuntimeFlowValueContinuation::Ignore(tail))
+            }
             HirStmtKind::Scope(scope) => self.lower_scope_statement(id, scope.body(), tail),
             HirStmtKind::Wait { .. } => self.lower_wait_statement(id, tail),
             HirStmtKind::Let {
@@ -6662,6 +6687,17 @@ impl<'a> FinalFlowLowerer<'a> {
         kind: &HirStmtKind,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         match kind {
+            HirStmtKind::Let { initializer, .. }
+                if self
+                    .semantic_facts
+                    .semantic_value_type(HirValueTypeOwner::Expression(*initializer))
+                    .is_some() =>
+            {
+                self.lower_flow_value(
+                    *initializer,
+                    RuntimeFlowValueContinuation::Ignore(RuntimeFlowTail::None),
+                )
+            }
             HirStmtKind::Wait { .. } => self.lower_wait_statement(id, RuntimeFlowTail::None),
             HirStmtKind::Defer { .. } => Err(RuntimePlanLowerError::new(format!(
                 "defer {id:?} requires scope-owned runtime registration"
@@ -6896,7 +6932,7 @@ impl<'a> FinalFlowLowerer<'a> {
                                 continuation: Box::new(RuntimeFlowValueContinuation::Ignore(
                                     RuntimeFlowTail::None,
                                 )),
-                                overrides: BTreeMap::new(),
+                                overrides: RuntimeExpressionOverrides::new(),
                             })?
                         }
                     };
@@ -6908,7 +6944,11 @@ impl<'a> FinalFlowLowerer<'a> {
                         guard: arm
                             .guard()
                             .map(|guard| {
-                                self.lower_match_guard(guard, matched.scrutinee(), BTreeMap::new())
+                                self.lower_match_guard(
+                                    guard,
+                                    matched.scrutinee(),
+                                    RuntimeExpressionOverrides::new(),
+                                )
                             })
                             .transpose()?,
                         ops,
@@ -6957,7 +6997,7 @@ impl<'a> FinalFlowLowerer<'a> {
                             ),
                             tail: RuntimeFlowTail::None,
                         }),
-                        overrides: BTreeMap::new(),
+                        overrides: RuntimeExpressionOverrides::new(),
                     })?;
                     key_ops.extend(body);
                     key_ops
@@ -7231,7 +7271,7 @@ impl<'a> FinalFlowLowerer<'a> {
         &mut self,
         owner: ExprId,
         scrutinee: ExprId,
-        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        overrides: RuntimeExpressionOverrides,
     ) -> Result<RuntimeFlowMatchGuardSeed, RuntimePlanLowerError> {
         let ty = self.expression_type(owner)?.clone();
         let candidate = self
@@ -7290,14 +7330,18 @@ impl<'a> FinalFlowLowerer<'a> {
         expression: ExprId,
         continuation: RuntimeFlowValueContinuation,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
-        self.lower_flow_value_with_overrides(expression, continuation, BTreeMap::new())
+        self.lower_flow_value_with_overrides(
+            expression,
+            continuation,
+            RuntimeExpressionOverrides::new(),
+        )
     }
 
     fn lower_flow_value_with_overrides(
         &mut self,
         expression: ExprId,
         continuation: RuntimeFlowValueContinuation,
-        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        overrides: RuntimeExpressionOverrides,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         self.lower_flow_tail(RuntimeFlowTail::Value {
             expression,
@@ -7310,7 +7354,7 @@ impl<'a> FinalFlowLowerer<'a> {
         &mut self,
         expression: ExprId,
         continuation: RuntimeFlowValueContinuation,
-        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        overrides: RuntimeExpressionOverrides,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         if let Some(value) = overrides.get(&expression) {
             return self.apply_value_continuation(value.clone(), continuation);
@@ -7353,7 +7397,7 @@ impl<'a> FinalFlowLowerer<'a> {
         &mut self,
         expression: ExprId,
         continuation: RuntimeFlowValueContinuation,
-        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        overrides: RuntimeExpressionOverrides,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         let call = self.call(expression).cloned().ok_or_else(|| {
             RuntimePlanLowerError::new("selected formatter attempt has no checked call")
@@ -7372,7 +7416,7 @@ impl<'a> FinalFlowLowerer<'a> {
         &mut self,
         expression: ExprId,
         continuation: RuntimeFlowValueContinuation,
-        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        overrides: RuntimeExpressionOverrides,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         self.lower_flow_tail(RuntimeFlowTail::SourceValue {
             expression,
@@ -7385,7 +7429,7 @@ impl<'a> FinalFlowLowerer<'a> {
         &mut self,
         expression: ExprId,
         continuation: RuntimeFlowValueContinuation,
-        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        overrides: RuntimeExpressionOverrides,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         if let Some(semantic_dialogue) = self.synthetic_dialogue_from_source(expression) {
             return self.lower_flow_value_with_overrides(
@@ -7434,7 +7478,7 @@ impl<'a> FinalFlowLowerer<'a> {
                             overrides,
                             outer: Box::new(continuation),
                         },
-                        BTreeMap::new(),
+                        RuntimeExpressionOverrides::new(),
                     );
                 }
             }
@@ -7500,7 +7544,7 @@ impl<'a> FinalFlowLowerer<'a> {
                             overrides,
                             outer: Box::new(continuation),
                         },
-                        BTreeMap::new(),
+                        RuntimeExpressionOverrides::new(),
                     );
                 }
             }
@@ -7606,10 +7650,15 @@ impl<'a> FinalFlowLowerer<'a> {
                         outer: Box::new(continuation),
                     },
                 )?);
-                if matches!(
-                    self.expression_type(expression)?.shape(),
-                    RuntimeTypeShape::Never
-                ) {
+                if self
+                    .semantic_facts
+                    .semantic_value_type(HirValueTypeOwner::Expression(expression))
+                    .is_none()
+                    && matches!(
+                        self.expression_type(expression)?.shape(),
+                        RuntimeTypeShape::Never
+                    )
+                {
                     // A Never tail has no value continuation. Retain a balanced
                     // lexical fallthrough for resumable terminal operations;
                     // a real return/goto unwinds before reaching this marker.
@@ -7646,8 +7695,15 @@ impl<'a> FinalFlowLowerer<'a> {
                             overrides,
                             outer: Box::new(continuation),
                         },
-                        BTreeMap::new(),
+                        RuntimeExpressionOverrides::new(),
                     );
+                }
+                if self
+                    .semantic_facts
+                    .semantic_value_type(HirValueTypeOwner::Expression(expression))
+                    .is_some()
+                {
+                    return self.apply_semantic_value_continuation(continuation);
                 }
                 let value = self
                     .expr_lowerer()
@@ -7667,7 +7723,7 @@ impl<'a> FinalFlowLowerer<'a> {
         &mut self,
         expression: ExprId,
         continuation: RuntimeFlowValueContinuation,
-        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        overrides: RuntimeExpressionOverrides,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         let call = self.call(expression).cloned().ok_or_else(|| {
             RuntimePlanLowerError::new(format!(
@@ -7691,7 +7747,7 @@ impl<'a> FinalFlowLowerer<'a> {
         expression: ExprId,
         call: &RuntimeResolvedCall,
         continuation: RuntimeFlowValueContinuation,
-        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        overrides: RuntimeExpressionOverrides,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         let result_type = self.expression_source_type(expression)?.clone();
         let local = self
@@ -7735,7 +7791,7 @@ impl<'a> FinalFlowLowerer<'a> {
         expression: ExprId,
         call: &RuntimeResolvedCall,
         continuation: RuntimeFlowValueContinuation,
-        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        overrides: RuntimeExpressionOverrides,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         let producer = call.need_producer().ok_or_else(|| {
             RuntimePlanLowerError::new(format!(
@@ -7817,7 +7873,7 @@ impl<'a> FinalFlowLowerer<'a> {
         &self,
         expression: ExprId,
         call: &RuntimeResolvedCall,
-        overrides: &BTreeMap<ExprId, RuntimeExprSeed>,
+        overrides: &RuntimeExpressionOverrides,
     ) -> Result<RuntimeProjectCallPlanSeed, RuntimePlanLowerError> {
         let checked = call.project_function().ok_or_else(|| {
             RuntimePlanLowerError::new(format!(
@@ -8007,7 +8063,7 @@ impl<'a> FinalFlowLowerer<'a> {
         &mut self,
         expression: ExprId,
         continuation: RuntimeFlowValueContinuation,
-        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        overrides: RuntimeExpressionOverrides,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         let semantic_expression = self.require_semantic_dialogue(expression)?;
         let application = self
@@ -8043,7 +8099,7 @@ impl<'a> FinalFlowLowerer<'a> {
                     overrides,
                     outer: Box::new(continuation),
                 },
-                BTreeMap::new(),
+                RuntimeExpressionOverrides::new(),
             );
         };
         let target = match application.target() {
@@ -8274,7 +8330,7 @@ impl<'a> FinalFlowLowerer<'a> {
         owner: ExprId,
         pipe: &arcweft_lang_hir::expr::HirPipeExpr,
         continuation: RuntimeFlowValueContinuation,
-        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        overrides: RuntimeExpressionOverrides,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         let inherited = overrides.clone();
         self.lower_flow_value_with_overrides(
@@ -8538,7 +8594,7 @@ impl<'a> FinalFlowLowerer<'a> {
             RuntimeFlowTail::Value {
                 expression: tail,
                 continuation: Box::new(continuation),
-                overrides: BTreeMap::new(),
+                overrides: RuntimeExpressionOverrides::new(),
             },
         )
     }
@@ -8564,7 +8620,7 @@ impl<'a> FinalFlowLowerer<'a> {
                 owner: expression,
                 outer: Box::new(continuation),
             }),
-            overrides: BTreeMap::new(),
+            overrides: RuntimeExpressionOverrides::new(),
         };
         let lowered = self.lower_statement_ids_with_tail(block.statements(), tail);
         self.carrier_continuations.remove(&expression);
@@ -8643,6 +8699,32 @@ impl<'a> FinalFlowLowerer<'a> {
             continuation,
         )?);
         Ok(ops)
+    }
+
+    fn apply_semantic_value_continuation(
+        &mut self,
+        continuation: RuntimeFlowValueContinuation,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        match continuation {
+            RuntimeFlowValueContinuation::Ignore(tail) => self.lower_flow_tail(tail),
+            RuntimeFlowValueContinuation::ExitScope { outer, .. } => {
+                let mut ops = vec![RuntimeFlowOpSeed::ExitScope];
+                ops.extend(self.apply_semantic_value_continuation(*outer)?);
+                Ok(ops)
+            }
+            RuntimeFlowValueContinuation::Compose {
+                owner,
+                child,
+                mut overrides,
+                outer,
+            } => {
+                overrides.insert_semantic_value(child);
+                self.lower_flow_value_source_with_overrides(owner, *outer, overrides)
+            }
+            _ => Err(RuntimePlanLowerError::new(
+                "semantic callee cannot supply a runtime value continuation",
+            )),
+        }
     }
 
     fn apply_value_continuation(
@@ -8899,7 +8981,7 @@ impl<'a> FinalFlowLowerer<'a> {
                         ))
                     })
                     .collect::<Result<Vec<_>, RuntimePlanLowerError>>()?;
-                overrides.extend(placeholder_uses);
+                overrides.extend_values(placeholder_uses);
                 if right == owner {
                     overrides.insert(pipe.left(), replacement);
                 }
@@ -9238,7 +9320,7 @@ impl<'a> FinalFlowLowerer<'a> {
         &mut self,
         expression: ExprId,
         continuation: RuntimeFlowValueContinuation,
-        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        overrides: RuntimeExpressionOverrides,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         let resolved = self.module.resolve_expr(expression).map_err(|error| {
             RuntimePlanLowerError::new(format!(
@@ -9982,17 +10064,23 @@ mod tests {
                 &HirRuntimeExecutableOwner::Item(owner),
             )
             .unwrap();
-        let projected_types = partition.expressions().iter().map(|row| {
-            let owner = arcweft_lang_hir::identity::HirValueTypeOwner::Expression(row.owner());
-            if row.has_runtime_type() {
-                crate::semantic_facts::RuntimeProjectFunctionTypeProjection::Value {
-                    owner,
-                    ty: facts.expression_type(row.owner()).unwrap().clone(),
+        let projected_types = partition
+            .expressions()
+            .iter()
+            .map(|row| {
+                let owner = arcweft_lang_hir::identity::HirValueTypeOwner::Expression(row.owner());
+                if row.has_runtime_type() {
+                    crate::semantic_facts::RuntimeExecutableTypeProjection::Value {
+                        owner,
+                        ty: facts.expression_type(row.owner()).unwrap().clone(),
+                    }
+                } else {
+                    crate::semantic_facts::RuntimeExecutableTypeProjection::SemanticOnlyExpression {
+                        owner: row.owner(),
+                    }
                 }
-            } else {
-                crate::semantic_facts::RuntimeProjectFunctionTypeProjection::SemanticOnlyExpression { owner: row.owner() }
-            }
-        }).collect::<Box<[_]>>();
+            })
+            .collect::<Box<[_]>>();
         let rows = partition
             .expressions()
             .iter()

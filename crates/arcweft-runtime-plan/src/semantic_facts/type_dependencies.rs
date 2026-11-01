@@ -8,11 +8,11 @@ use super::{
     RuntimeCheckedCapture, RuntimeClosureCaptureFact, RuntimeClosureInstanceFact,
     RuntimeClosureParameterFact, RuntimeContentFragmentFact, RuntimeDialogueApplication,
     RuntimeDialogueEffectTrigger, RuntimeDialogueValueExpression, RuntimeExecutableCaptureFact,
-    RuntimeIteratorFact, RuntimeNormalizedType, RuntimeProjectAttachedDefaultCapture,
-    RuntimeProjectCallable, RuntimeProjectContinuationAbi, RuntimeProjectFunctionExpressionPayload,
-    RuntimeProjectFunctionInstanceFact, RuntimeProjectFunctionInstanceSemanticFacts,
-    RuntimeProjectFunctionPatternPayload, RuntimeProjectFunctionStatementPayload,
-    RuntimeProjectFunctionTypeProjection, RuntimeRecordExpressionFact, RuntimeRecordPatternFact,
+    RuntimeExecutableTypeProjection, RuntimeIteratorFact, RuntimeNormalizedType,
+    RuntimeProjectAttachedDefaultCapture, RuntimeProjectCallable, RuntimeProjectContinuationAbi,
+    RuntimeProjectFunctionExpressionPayload, RuntimeProjectFunctionInstanceFact,
+    RuntimeProjectFunctionInstanceSemanticFacts, RuntimeProjectFunctionPatternPayload,
+    RuntimeProjectFunctionStatementPayload, RuntimeRecordExpressionFact, RuntimeRecordPatternFact,
     RuntimeResolvedAttachedContent, RuntimeResolvedCall, RuntimeResolvedCallDispatch,
     RuntimeResolvedCallOperand, RuntimeResolvedHostCallOwner, RuntimeResolvedNominalRecordField,
     RuntimeResolvedStaticCallTarget, RuntimeResolvedValue, RuntimeStandardMapCollection,
@@ -318,7 +318,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
         roots.extend(
             self.type_projection()
                 .iter()
-                .filter_map(RuntimeProjectFunctionTypeProjection::ty),
+                .filter_map(RuntimeExecutableTypeProjection::ty),
         );
         roots.extend(self.captures().iter().map(RuntimeCheckedCapture::ty));
         for expression in self.expressions() {

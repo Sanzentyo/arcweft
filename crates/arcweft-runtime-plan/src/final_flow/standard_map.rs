@@ -50,7 +50,7 @@ impl FinalFlowLowerer<'_> {
         owner: ExprId,
         map: RuntimeStandardMapCall,
         continuation: RuntimeFlowValueContinuation,
-        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        overrides: RuntimeExpressionOverrides,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         let operands = match map.order() {
             RuntimeStandardMapOperandOrder::MappingThenReceiver => [map.mapping(), map.receiver()],
@@ -66,7 +66,7 @@ impl FinalFlowLowerer<'_> {
                         overrides,
                         outer: Box::new(continuation),
                     },
-                    BTreeMap::new(),
+                    RuntimeExpressionOverrides::default(),
                 );
             }
         }

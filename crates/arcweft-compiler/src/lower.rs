@@ -899,6 +899,19 @@ fn project_runtime_semantic_fact_inventories(
         runtime_expression_type_owners.extend(program_owners.selected_expression_type_owners()?);
     }
     let mut input = RuntimePlanSemanticFactInput::new();
+    // Reuse the executable partition's sealed classification in the global
+    // projection. Semantic callable values never enter runtime normalization.
+    let mut semantic_values = BTreeMap::new();
+    for owners in std::iter::once(runtime_owners).chain(program_owners) {
+        for executable in owners.reachable_executables() {
+            let partition = execution_projection.runtime_fact_partition(owners, executable)?;
+            for proof in partition.semantic_value_projections() {
+                if !closed_instance_type_owners.contains(&proof.owner()) {
+                    semantic_values.entry(proof.owner()).or_insert(proof);
+                }
+            }
+        }
+    }
     input.attach_checked_local_uses(Arc::clone(analysis.checked_local_uses()));
     for template in format_templates {
         input.push_format_template(template);
@@ -932,6 +945,10 @@ fn project_runtime_semantic_fact_inventories(
         .collect::<BTreeSet<_>>();
     for owner in runtime_locals {
         if closed_instance_type_owners.contains(&HirValueTypeOwner::Local(owner)) {
+            continue;
+        }
+        if let Some(proof) = semantic_values.remove(&HirValueTypeOwner::Local(owner)) {
+            input.push_semantic_value_projection(proof);
             continue;
         }
         let local = analysis
@@ -1058,6 +1075,10 @@ fn project_runtime_semantic_fact_inventories(
             if closed_instance_type_owners.contains(&HirValueTypeOwner::Type(owner)) {
                 continue;
             }
+            if let Some(proof) = semantic_values.remove(&HirValueTypeOwner::Type(owner)) {
+                input.push_semantic_value_projection(proof);
+                continue;
+            }
             input.push_type(
                 owner,
                 runtime_type(ty, symbols, world, analysis).map_err(|error| {
@@ -1139,7 +1160,12 @@ fn project_runtime_semantic_fact_inventories(
         if let CheckedExpressionResolution::PostfixBracket(resolution) = expression.resolution() {
             input.push_postfix_candidate(owner, resolution.candidate());
         }
-        if runtime_expression_type_owners.contains(&owner) {
+        let semantic_value = semantic_values.remove(&HirValueTypeOwner::Expression(owner));
+        let is_semantic_value = semantic_value.is_some();
+        if let Some(proof) = semantic_value {
+            input.push_semantic_value_projection(proof);
+        }
+        if !is_semantic_value && runtime_expression_type_owners.contains(&owner) {
             input.push_expression_type(
                 owner,
                 runtime_type(
@@ -1257,6 +1283,9 @@ fn project_runtime_semantic_fact_inventories(
                 );
             }
             CheckedExpressionResolution::Value(value) => {
+                if is_semantic_value {
+                    continue;
+                }
                 let projected = if let Some(value) = runtime_callable_values.get(&owner) {
                     Some(value.clone())
                 } else {
@@ -1523,6 +1552,10 @@ fn project_runtime_semantic_fact_inventories(
             continue;
         }
         if closed_instance_type_owners.contains(&HirValueTypeOwner::Pattern(owner)) {
+            continue;
+        }
+        if let Some(proof) = semantic_values.remove(&HirValueTypeOwner::Pattern(owner)) {
+            input.push_semantic_value_projection(proof);
             continue;
         }
         input.push_pattern_type(

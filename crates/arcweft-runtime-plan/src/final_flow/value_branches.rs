@@ -3,7 +3,7 @@
 //! A branch evaluates its selector before entering exactly one body. Calls,
 //! Try and suspension in a body stay under that body's control edge.
 
-use std::collections::BTreeMap;
+use crate::final_expr::RuntimeExpressionOverrides;
 
 use arcweft_core::plan::{
     RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed,
@@ -22,7 +22,7 @@ impl FinalFlowLowerer<'_> {
         owner: ExprId,
         selector: ExprId,
         continuation: RuntimeFlowValueContinuation,
-        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        overrides: RuntimeExpressionOverrides,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         self.lower_flow_value_with_overrides(
             selector,
@@ -44,7 +44,7 @@ impl FinalFlowLowerer<'_> {
         owner: ExprId,
         selector: RuntimeExprSeed,
         continuation: RuntimeFlowValueContinuation,
-        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        overrides: RuntimeExpressionOverrides,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         let expression = self
             .module

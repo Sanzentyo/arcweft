@@ -9,7 +9,7 @@ use arcweft_lang_sema::{
     registration::RegisteredSemanticWorld,
 };
 use arcweft_runtime_plan::semantic_facts::{
-    RuntimeNormalizedType, RuntimeProjectFunctionTypeProjection,
+    RuntimeExecutableTypeProjection, RuntimeNormalizedType,
 };
 
 use super::{
@@ -47,7 +47,7 @@ impl RuntimeExecutableInstantiation<'_> {
         symbols: &ProjectSymbolTable,
         world: &RegisteredSemanticWorld,
         analysis: &FinalSemanticAnalysis,
-    ) -> Result<Box<[RuntimeProjectFunctionTypeProjection]>, RuntimeSemanticProjectionError> {
+    ) -> Result<Box<[RuntimeExecutableTypeProjection]>, RuntimeSemanticProjectionError> {
         // A checked parameter ABI can close an inferred callback effect row
         // which remains omitted at its authored TypeId. Preserve that exact
         // owner substitution rather than normalizing the annotation again.
@@ -55,56 +55,54 @@ impl RuntimeExecutableInstantiation<'_> {
         let mut projection = Vec::new();
         for expected in partition.expressions() {
             let owner = expected.owner();
-            if let Some(ty) = partition.semantic_value_type(HirValueTypeOwner::Expression(owner)) {
-                projection.push(RuntimeProjectFunctionTypeProjection::semantic_value(
-                    HirValueTypeOwner::Expression(owner),
-                    ty.clone(),
-                ));
+            if let Some(proof) =
+                partition.semantic_value_projection(HirValueTypeOwner::Expression(owner))
+            {
+                projection.push(RuntimeExecutableTypeProjection::semantic_value(proof));
                 continue;
             }
             if !expected.has_runtime_type() {
-                projection
-                    .push(RuntimeProjectFunctionTypeProjection::semantic_only_expression(owner));
+                projection.push(RuntimeExecutableTypeProjection::semantic_only_expression(
+                    owner,
+                ));
                 continue;
             }
             let ty = analysis
                 .expression(owner)
                 .and_then(|checked| checked.value_type())
                 .ok_or_else(|| origin.error("runtime expression has no checked value type"))?;
-            projection.push(RuntimeProjectFunctionTypeProjection::value(
+            projection.push(RuntimeExecutableTypeProjection::value(
                 HirValueTypeOwner::Expression(owner),
                 self.runtime_type(ty, symbols, world, analysis)?,
             ));
         }
         for expected in partition.patterns() {
             let owner = expected.owner();
-            if let Some(ty) = partition.semantic_value_type(HirValueTypeOwner::Pattern(owner)) {
-                projection.push(RuntimeProjectFunctionTypeProjection::semantic_value(
-                    HirValueTypeOwner::Pattern(owner),
-                    ty.clone(),
-                ));
+            if let Some(proof) =
+                partition.semantic_value_projection(HirValueTypeOwner::Pattern(owner))
+            {
+                projection.push(RuntimeExecutableTypeProjection::semantic_value(proof));
                 continue;
             }
             let checked = analysis
                 .pattern(owner)
                 .ok_or_else(|| origin.error("runtime pattern has no checked semantic fact"))?;
-            projection.push(RuntimeProjectFunctionTypeProjection::value(
+            projection.push(RuntimeExecutableTypeProjection::value(
                 HirValueTypeOwner::Pattern(owner),
                 self.runtime_type(checked.ty(), symbols, world, analysis)?,
             ));
         }
         for owner in partition.locals().iter().chain(partition.input_locals()) {
-            if let Some(ty) = partition.semantic_value_type(HirValueTypeOwner::Local(*owner)) {
-                projection.push(RuntimeProjectFunctionTypeProjection::semantic_value(
-                    HirValueTypeOwner::Local(*owner),
-                    ty.clone(),
-                ));
+            if let Some(proof) =
+                partition.semantic_value_projection(HirValueTypeOwner::Local(*owner))
+            {
+                projection.push(RuntimeExecutableTypeProjection::semantic_value(proof));
                 continue;
             }
             let checked = analysis
                 .local(*owner)
                 .ok_or_else(|| origin.error("runtime local has no checked semantic fact"))?;
-            projection.push(RuntimeProjectFunctionTypeProjection::local(
+            projection.push(RuntimeExecutableTypeProjection::local(
                 *owner,
                 self.runtime_type(checked.ty(), symbols, world, analysis)?,
                 analysis.local_binding_origin(*owner).map_err(|_| {
@@ -114,15 +112,13 @@ impl RuntimeExecutableInstantiation<'_> {
         }
         for expected in partition.types() {
             let owner = expected.owner();
-            if let Some(ty) = partition.semantic_value_type(HirValueTypeOwner::Type(owner)) {
-                projection.push(RuntimeProjectFunctionTypeProjection::semantic_value(
-                    HirValueTypeOwner::Type(owner),
-                    ty.clone(),
-                ));
+            if let Some(proof) = partition.semantic_value_projection(HirValueTypeOwner::Type(owner))
+            {
+                projection.push(RuntimeExecutableTypeProjection::semantic_value(proof));
                 continue;
             }
             if !expected.has_runtime_type() {
-                projection.push(RuntimeProjectFunctionTypeProjection::semantic_only_type(
+                projection.push(RuntimeExecutableTypeProjection::semantic_only_type(
                     owner,
                     expected.purpose().clone(),
                 ));
@@ -136,12 +132,12 @@ impl RuntimeExecutableInstantiation<'_> {
                 })?;
                 self.runtime_type(checked, symbols, world, analysis)?
             };
-            projection.push(RuntimeProjectFunctionTypeProjection::value(
+            projection.push(RuntimeExecutableTypeProjection::value(
                 HirValueTypeOwner::Type(owner),
                 ty,
             ));
         }
-        projection.sort_by_key(RuntimeProjectFunctionTypeProjection::owner);
+        projection.sort_by_key(RuntimeExecutableTypeProjection::owner);
         Ok(projection.into_boxed_slice())
     }
 }

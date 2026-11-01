@@ -422,8 +422,8 @@ flow main() -> i64 {
     assert_eq!(instances.len(), 2);
     assert_ne!(instances[0].key(), instances[1].key());
     use arcweft_runtime_plan::semantic_facts::{
-        RuntimeProjectFunctionFactError, RuntimeProjectFunctionInstanceSemanticFacts,
-        RuntimeProjectFunctionTypeProjection,
+        RuntimeExecutableTypeProjection, RuntimeProjectFunctionFactError,
+        RuntimeProjectFunctionInstanceSemanticFacts,
     };
     let analysis = compiled.analysis_lease().final_analysis();
     for (owner, _) in analysis.expressions() {
@@ -507,7 +507,7 @@ flow main() -> i64 {
             .iter()
             .find(|row| row.owner() == HirValueTypeOwner::Local(parameter_local))
             .unwrap();
-        let RuntimeProjectFunctionTypeProjection::Local { origin, .. } = local else {
+        let RuntimeExecutableTypeProjection::Local { origin, .. } = local else {
             panic!("local type projection retains accepted origin evidence")
         };
         assert_eq!(origin, &expected_origin);
@@ -518,8 +518,7 @@ flow main() -> i64 {
         .iter_mut()
         .find(|row| row.owner() == HirValueTypeOwner::Local(parameter_local))
         .unwrap();
-    *local =
-        RuntimeProjectFunctionTypeProjection::value(local.owner(), local.ty().unwrap().clone());
+    *local = RuntimeExecutableTypeProjection::value(local.owner(), local.ty().unwrap().clone());
     let rebuild = |projection| {
         RuntimeProjectFunctionInstanceSemanticFacts::try_new(
             semantics.partition().clone(),
@@ -543,7 +542,7 @@ flow main() -> i64 {
         .project_function_instances()
         .flat_map(|instance| instance.semantics().type_projection())
         .find_map(|row| match row {
-            RuntimeProjectFunctionTypeProjection::Local { origin, .. }
+            RuntimeExecutableTypeProjection::Local { origin, .. }
                 if origin.coordinate() == expected_origin.coordinate() =>
             {
                 Some(origin.clone())
@@ -553,7 +552,7 @@ flow main() -> i64 {
         .unwrap();
     assert_ne!(foreign_origin, expected_origin);
     let mut foreign_generation = semantics.type_projection().to_vec();
-    let RuntimeProjectFunctionTypeProjection::Local { origin, .. } = foreign_generation
+    let RuntimeExecutableTypeProjection::Local { origin, .. } = foreign_generation
         .iter_mut()
         .find(|row| row.owner() == HirValueTypeOwner::Local(parameter_local))
         .unwrap()
@@ -1457,12 +1456,17 @@ flow main(number: Route<i32>, word: Route<String>) {
         );
         let mut semantic_type_arguments = 0;
         for row in semantics.type_projection() {
-            use arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionTypeProjection;
+            use arcweft_runtime_plan::semantic_facts::RuntimeExecutableTypeProjection;
             match row {
-                RuntimeProjectFunctionTypeProjection::SemanticValue { owner, ty } => {
-                    assert_eq!(semantics.partition().semantic_value_type(*owner), Some(ty));
+                RuntimeExecutableTypeProjection::SemanticValue { projection } => {
+                    assert_eq!(
+                        semantics
+                            .partition()
+                            .semantic_value_type(projection.owner()),
+                        Some(projection.ty())
+                    );
                 }
-                RuntimeProjectFunctionTypeProjection::SemanticOnlyType { owner, purpose } => {
+                RuntimeExecutableTypeProjection::SemanticOnlyType { owner, purpose } => {
                     let expected = semantics
                         .partition()
                         .types()
@@ -1476,9 +1480,9 @@ flow main(number: Route<i32>, word: Route<String>) {
                         semantic_type_arguments += 1;
                     }
                 }
-                RuntimeProjectFunctionTypeProjection::SemanticOnlyExpression { .. } => {}
-                RuntimeProjectFunctionTypeProjection::Local { .. }
-                | RuntimeProjectFunctionTypeProjection::Value { .. } => {
+                RuntimeExecutableTypeProjection::SemanticOnlyExpression { .. } => {}
+                RuntimeExecutableTypeProjection::Local { .. }
+                | RuntimeExecutableTypeProjection::Value { .. } => {
                     assert!(row.ty().is_some());
                 }
             }
