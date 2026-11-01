@@ -1,0 +1,934 @@
+{
+  "version": 1,
+  "source": "eebe9aee7bbacfd59c51704cdc2ce0a516328e5d",
+  "publication": {
+    "version": 1,
+    "commit": "eebe9aee7bbacfd59c51704cdc2ce0a516328e5d",
+    "parent": "493163e5c57ce32c85d62594d30bd1d82b87443a",
+    "tree": "c232b36e5b912c6e03fe1c72c33002d6913188ba",
+    "remote": "eebe9aee7bbacfd59c51704cdc2ce0a516328e5d",
+    "paths": [
+      {
+        "path": "crates/arcweft-compiler/src/lower.rs",
+        "blob": "5acbb4358679180c892555c905e4441c313ddf0c"
+      },
+      {
+        "path": "crates/arcweft-compiler/src/lower/executable_types.rs",
+        "blob": "26e7f6d847a01549253d389f44534ef27c4063ce"
+      },
+      {
+        "path": "crates/arcweft-compiler/src/project/tests.rs",
+        "blob": "cf727f6a5380d24b78abb40771a933b6c88f3a3a"
+      },
+      {
+        "path": "crates/arcweft-compiler/src/project/tests/type_purpose.rs",
+        "blob": "e5fecda45cf2ee9785593f22a5b1f09c2ae960c4"
+      },
+      {
+        "path": "crates/arcweft-compiler/tests/callable_cases/presentation_view_values.rs",
+        "blob": "778ab0fe2e74a0dd583401e0efc5c9fb5aec17f8"
+      },
+      {
+        "path": "crates/arcweft-lang-hir/src/identity.rs",
+        "blob": "e01639578a15323f9cd9e4fbe91abfcc1e048a77"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/report.rs",
+        "blob": "0cea7a6171a1c088ef729532a74c543c4bb5c510"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+        "blob": "64de66068fd9f92c2f8d98611d08e4e79a3ddeab"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+        "blob": "26d00cc65acd13e020a6c961387038a68c5b5533"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts/project_function.rs",
+        "blob": "c14c2b5c470cfe0f3d91f4c0d36825db61882e62"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts/tests.rs",
+        "blob": "f7acc35d9990c0aa546fba34e48c0e47845cbb8e"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/src/semantic_facts/type_dependencies.rs",
+        "blob": "98610935987454307cb1ece99d96c7284ad84701"
+      },
+      {
+        "path": "docs/03-presentation/view-reactive.md",
+        "blob": "e257abc7cc8c8a7ced0b6b24c1eafebb66be0bcf"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "4ed69e8752b47ece385384abaecca522724ba78d16911cb7238304e1ca6dc7c6",
+    "heldPatchSha256": "53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-01T22:30:43.2639697Z"
+  },
+  "recordedAt": "2026-11-01T22:57:13.6628015Z",
+  "boundary": "Source View aliases captured by ordinary and nested closures; semantic captures erased, runtime data captures retain one owning type projection",
+  "model": [
+    "HIR includes Capture in its common value-type owner algebra. Sema seals semantic capture proof under the exact executable reachability; the full source capture inventory is retained.",
+    "Global and closed RuntimePlan facts own capture data in the existing type projection. The replaced separate capture catalogs and dedicated visitors are deleted.",
+    "Runtime closure ABI rows share the exact Arc-owned checked capture in that projection; an independently copied capture cannot replace the accepted authority.",
+    "Sema removes data-free captures before assigning runtime ABI ordinals. Semantic tokens allocate no Core value, frame, local slot or capture slot; actual data captures retain source order."
+  ],
+  "sourceViewCases": {
+    "previousAccepted": 28,
+    "added": 8,
+    "totalAccepted": 36,
+    "programInvocation": 12,
+    "ordinaryFlow": 24,
+    "conditions": [
+      "Alias-only closure capture",
+      "Semantic capture before and after real runtime data",
+      "Nested closure semantic capture"
+    ],
+    "closureParameterEvidence": "The newly accepted closure fixtures explicitly annotate their String parameters",
+    "backends": [
+      "Native",
+      "canonical decoded AWBC"
+    ],
+    "maxOps": 1,
+    "maxTicks": 256,
+    "publicSaveOwnedRestore": "Every AWBC product step; existing bounds unchanged"
+  },
+  "initialOwnerLibraries": {
+    "version": 1,
+    "base": "493163e5c57ce32c85d62594d30bd1d82b87443a",
+    "run": "presentation-view-semantic-capture-libraries1-20261102.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [ 186.014s] 2621 tests run: 2621 passed (1 slow), 8 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2621,
+    "passed": 2621,
+    "failed": 0,
+    "skipped": 8,
+    "selectedPackages": 4,
+    "matchedPackages": 4,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4066,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-11-01T22:19:59.9027794Z"
+  },
+  "finalOwnerLibraries": {
+    "selected": 2622,
+    "source": "eebe9aee7bbacfd59c51704cdc2ce0a516328e5d",
+    "featureUnion": "Full 23-package HIR reverse library/integration group",
+    "passed": 2622,
+    "proof": "All 4322 selected library/integration cases passed in the fresh final run"
+  },
+  "finalRejection": {
+    "version": 1,
+    "base": "493163e5c57ce32c85d62594d30bd1d82b87443a",
+    "run": "presentation-view-semantic-capture-rejection3-20261102.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [   0.091s] 1 test run: 1 passed, 132 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 1,
+    "passed": 1,
+    "failed": 0,
+    "skipped": 132,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4066,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-11-01T22:25:49.0167244Z"
+  },
+  "finalIntegrations": {
+    "version": 1,
+    "base": "493163e5c57ce32c85d62594d30bd1d82b87443a",
+    "run": "presentation-view-semantic-capture-integrations2-20261102.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  27.377s] 310 tests run: 310 passed, 0 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 310,
+    "passed": 310,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4066,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-11-01T22:28:33.587091Z"
+  },
+  "reverse": {
+    "version": 1,
+    "source": "eebe9aee7bbacfd59c51704cdc2ce0a516328e5d",
+    "graphPackages": 23,
+    "actualRuntimePackages": 23,
+    "compileOnlyPackages": [],
+    "uniqueSelected": 5014,
+    "duplicateSelection": 0,
+    "groups": [
+      {
+        "group": "libraries",
+        "passed": 4322,
+        "failed": 0,
+        "ignored": 8,
+        "executed": 4322,
+        "exitCode": 0,
+        "sourceInputs": 4066,
+        "sourceDrift": 0,
+        "caseDrift": 0
+      },
+      {
+        "group": "cli-unit",
+        "passed": 191,
+        "failed": 0,
+        "ignored": 0,
+        "executed": 191,
+        "exitCode": 0,
+        "sourceInputs": 4066,
+        "sourceDrift": 0,
+        "caseDrift": 0
+      },
+      {
+        "group": "cli-integration",
+        "passed": 29,
+        "failed": 0,
+        "ignored": 0,
+        "executed": 29,
+        "exitCode": 0,
+        "sourceInputs": 4066,
+        "sourceDrift": 0,
+        "caseDrift": 0
+      },
+      {
+        "group": "cli-check",
+        "passed": 415,
+        "failed": 43,
+        "ignored": 23,
+        "executed": 458,
+        "exitCode": 100,
+        "sourceInputs": 4066,
+        "sourceDrift": 0,
+        "caseDrift": 0
+      },
+      {
+        "group": "cli-extra",
+        "passed": 14,
+        "failed": 0,
+        "ignored": 0,
+        "executed": 14,
+        "exitCode": 0,
+        "sourceInputs": 4066,
+        "sourceDrift": 0,
+        "caseDrift": 0
+      }
+    ],
+    "priorSelected": 5005,
+    "newCaseCount": 9,
+    "newCases": [
+      "arcweft-compiler::callable_execution|presentation_view_values::source_view_alias_is_semantic_capture_for_an_invoked_decoded_awbc_closure",
+      "arcweft-compiler::callable_execution|presentation_view_values::source_view_alias_is_semantic_capture_for_an_invoked_native_closure",
+      "arcweft-compiler::callable_execution|presentation_view_values::source_view_alias_is_semantic_capture_for_nested_decoded_awbc_closures",
+      "arcweft-compiler::callable_execution|presentation_view_values::source_view_alias_is_semantic_capture_for_nested_native_closures",
+      "arcweft-compiler::callable_execution|presentation_view_values::source_view_semantic_capture_after_data_runs_in_decoded_awbc_closure",
+      "arcweft-compiler::callable_execution|presentation_view_values::source_view_semantic_capture_after_data_runs_in_native_closure",
+      "arcweft-compiler::callable_execution|presentation_view_values::source_view_semantic_capture_before_data_runs_in_decoded_awbc_closure",
+      "arcweft-compiler::callable_execution|presentation_view_values::source_view_semantic_capture_before_data_runs_in_native_closure",
+      "arcweft-runtime-plan|semantic_facts::tests::capture_type_requires_its_checked_lexical_projection"
+    ],
+    "missingPriorCases": [],
+    "failures": [
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_hit_test_capture_time_updates_unpinned_animated_image_frame_metadata"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_raw_blob"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_image_alignment_sample_uses_authored_alignment_geometry"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_captures_clipped_animated_image_object"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_hit_test_reports_animated_image_object_proxy_metadata"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_accented_latin_word_geometry"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_greek_latin_unit_geometry"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_hyphenated_western_word_geometry"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_numeric_unit_geometry"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_accented_latin_word_raw_crops"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_greek_latin_unit_raw_crops"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_hyphenated_western_word_raw_crops"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_unit_raw_crops"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_read_uri_preserves_animated_image_object_frame_metadata"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_read_uri_preserves_animated_image_layer_frame_pixels"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_reports_missing_scope_for_released_image_handle_object"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_rag_query_indexes_multiple_sources"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_reports_text_presentation_z_index_depth"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_checks_runtime_assert_sections"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_measures_branching_for_loop_pure_jit_characteristics"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_measures_checked_in_scalar_for_pure_jit_perf_guard"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_measures_headless_runtime_sections"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_measures_checked_in_mixed_for_iter_pure_jit_fixture"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_measures_runtime_match_to_pure_jit_characteristics"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_skips_adapter_only_script_benches"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_validates_headless_script_benches"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bundle_json_packages_image_animation_sample_assets_and_run_bundle_validates_them"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "plan_json_lists_runtime_task_graph"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "profile_json_reports_phase_timings_and_runtime_stats_without_absolute_source"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "profile_json_runs_native_file_tasks_without_absolute_source"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "run_json_executes_traverse_parallel_file_tasks"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "spec_rejected_edge_fixtures_fail_with_diagnostics"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "spec_valid_run_edge_fixture_now_executes"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "unsafe_json_lists_audit_regions"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_records_required_solver_checks"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "test_json_executes_headless_scenario_expectations"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_reports_missing_promotion_proof"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_reports_semantic_thread_join_conflict"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_respects_semantic_defer_cancel_discharge"
+      }
+    ],
+    "cliUnique": 692,
+    "cliDeclaredTargets": [
+      {
+        "kind": [
+          "lib"
+        ],
+        "crate_types": [
+          "lib"
+        ],
+        "name": "arcweft_cli",
+        "src_path": "D:\\git\\arcweft\\crates\\arcweft-cli\\src\\lib.rs",
+        "edition": "2024",
+        "doc": true,
+        "doctest": true,
+        "test": true
+      },
+      {
+        "kind": [
+          "bin"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "arcw",
+        "src_path": "D:\\git\\arcweft\\crates\\arcweft-cli\\src\\main.rs",
+        "edition": "2024",
+        "doc": true,
+        "doctest": false,
+        "test": true
+      },
+      {
+        "kind": [
+          "test"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "arcw_fixtures_check_run",
+        "src_path": "D:\\git\\arcweft\\crates\\arcweft-cli\\tests\\arcw_fixtures_check_run.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": true
+      },
+      {
+        "kind": [
+          "test"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "bracket_numeric_batch",
+        "src_path": "D:\\git\\arcweft\\crates\\arcweft-cli\\tests\\bracket_numeric_batch.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": true
+      },
+      {
+        "kind": [
+          "test"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "check",
+        "src_path": "D:\\git\\arcweft\\crates\\arcweft-cli\\tests\\check.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": true
+      },
+      {
+        "kind": [
+          "test"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "check_core_cli",
+        "src_path": "D:\\git\\arcweft\\crates\\arcweft-cli\\tests\\check_core_cli.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": true
+      },
+      {
+        "kind": [
+          "test"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "environment_callable_tensor",
+        "src_path": "D:\\git\\arcweft\\crates\\arcweft-cli\\tests\\environment_callable_tensor.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": true
+      },
+      {
+        "kind": [
+          "test"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "native_host_contracts",
+        "src_path": "D:\\git\\arcweft\\crates\\arcweft-cli\\tests\\native_host_contracts.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": true
+      },
+      {
+        "kind": [
+          "test"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "native_style_parity_sample",
+        "src_path": "D:\\git\\arcweft\\crates\\arcweft-cli\\tests\\native_style_parity_sample.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": true
+      },
+      {
+        "kind": [
+          "test"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "release_trust_json",
+        "src_path": "D:\\git\\arcweft\\crates\\arcweft-cli\\tests\\release_trust_json.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": true
+      },
+      {
+        "kind": [
+          "test"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "runtime_native_options",
+        "src_path": "D:\\git\\arcweft\\crates\\arcweft-cli\\tests\\runtime_native_options.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": true
+      },
+      {
+        "kind": [
+          "test"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "seq04_8_4_persistent_cache_build_cli_goldens",
+        "src_path": "D:\\git\\arcweft\\crates\\arcweft-cli\\tests\\seq04_8_4_persistent_cache_build_cli_goldens.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": true
+      }
+    ],
+    "cliTargetCount": 12,
+    "cliTargetDrift": 0,
+    "cliComparison": {
+      "priorSource": "8337b5867bcfd1f7aece65b08bd444a3a8ccb857",
+      "common": [
+        "arcweft-cli::check|agent_observe_native::agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_raw_blob",
+        "arcweft-cli::check|agent_observe_native::agent_hit_test_capture_time_updates_unpinned_animated_image_frame_metadata",
+        "arcweft-cli::check|agent_observe_native::agent_observe_image_alignment_sample_uses_authored_alignment_geometry",
+        "arcweft-cli::check|agent_observe_native::agent_hit_test_reports_animated_image_object_proxy_metadata",
+        "arcweft-cli::check|agent_observe_native::agent_observe_native_captures_clipped_animated_image_object",
+        "arcweft-cli::check|agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs",
+        "arcweft-cli::check|agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry",
+        "arcweft-cli::check|agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_accented_latin_word_geometry",
+        "arcweft-cli::check|agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_greek_latin_unit_geometry",
+        "arcweft-cli::check|agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_hyphenated_western_word_geometry",
+        "arcweft-cli::check|agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_numeric_unit_geometry",
+        "arcweft-cli::check|agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_accented_latin_word_raw_crops",
+        "arcweft-cli::check|agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_greek_latin_unit_raw_crops",
+        "arcweft-cli::check|agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_hyphenated_western_word_raw_crops",
+        "arcweft-cli::check|agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_unit_raw_crops",
+        "arcweft-cli::check|agent_observe_native::agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures",
+        "arcweft-cli::check|agent_observe_native::agent_observe_read_uri_preserves_animated_image_layer_frame_pixels",
+        "arcweft-cli::check|agent_observe_native::agent_observe_read_uri_preserves_animated_image_object_frame_metadata",
+        "arcweft-cli::check|agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering",
+        "arcweft-cli::check|agent_rag_query_indexes_multiple_sources",
+        "arcweft-cli::check|agent_observe_native::agent_observe_reports_missing_scope_for_released_image_handle_object",
+        "arcweft-cli::check|agent_observe_native::agent_observe_reports_text_presentation_z_index_depth",
+        "arcweft-cli::check|bench_json_checks_runtime_assert_sections",
+        "arcweft-cli::check|bench_json_measures_branching_for_loop_pure_jit_characteristics",
+        "arcweft-cli::check|bench_json_measures_checked_in_scalar_for_pure_jit_perf_guard",
+        "arcweft-cli::check|bench_json_measures_headless_runtime_sections",
+        "arcweft-cli::check|bench_json_measures_checked_in_mixed_for_iter_pure_jit_fixture",
+        "arcweft-cli::check|bench_json_measures_runtime_match_to_pure_jit_characteristics",
+        "arcweft-cli::check|bench_json_skips_adapter_only_script_benches",
+        "arcweft-cli::check|bench_json_validates_headless_script_benches",
+        "arcweft-cli::check|bundle_json_packages_image_animation_sample_assets_and_run_bundle_validates_them",
+        "arcweft-cli::check|plan_json_lists_runtime_task_graph",
+        "arcweft-cli::check|profile_json_reports_phase_timings_and_runtime_stats_without_absolute_source",
+        "arcweft-cli::check|profile_json_runs_native_file_tasks_without_absolute_source",
+        "arcweft-cli::check|run_json_executes_traverse_parallel_file_tasks",
+        "arcweft-cli::check|spec_rejected_edge_fixtures_fail_with_diagnostics",
+        "arcweft-cli::check|spec_valid_run_edge_fixture_now_executes",
+        "arcweft-cli::check|unsafe_json_lists_audit_regions",
+        "arcweft-cli::check|test_json_executes_headless_scenario_expectations",
+        "arcweft-cli::check|verify_json_records_required_solver_checks",
+        "arcweft-cli::check|verify_json_reports_missing_promotion_proof",
+        "arcweft-cli::check|verify_json_reports_semantic_thread_join_conflict",
+        "arcweft-cli::check|verify_json_respects_semantic_defer_cancel_discharge"
+      ],
+      "new": [],
+      "resolved": [],
+      "unselected": [],
+      "identityEqualityDoesNotProveCauseEquality": true
+    },
+    "recordedAt": "2026-11-01T22:57:11.7861801Z"
+  },
+  "followupCompileProbes": {
+    "initialUsage": {
+      "version": 1,
+      "source": "eebe9aee7bbacfd59c51704cdc2ce0a516328e5d",
+      "executable": "D:/git/arcweft/target/debug/arcw.exe",
+      "executableSha256": "c3bd38248c3a9c41f42e4b16da69b82748d9f71230d19a98bd984a06759a2814",
+      "executableDrift": 0,
+      "command": "arcw check <isolated temp package> --profile main --json",
+      "cases": [
+        {
+          "case": "untyped-view",
+          "exitCode": 2,
+          "sourcePath": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\capture-inference-probe-20261102\\untyped-view\\src\\main.arcw",
+          "sourceSha256": "cc20af52027224d148526239100f197148df9cd4a9d8fd0835686cbae6e6a799",
+          "log": "capture-inference-untyped-view-20261102.log"
+        },
+        {
+          "case": "untyped-function",
+          "exitCode": 2,
+          "sourcePath": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\capture-inference-probe-20261102\\untyped-function\\src\\main.arcw",
+          "sourceSha256": "35b77e09e22407d4a28f80cd0d7c4e7238137a15d48d0c8e21132f4d5240b516",
+          "log": "capture-inference-untyped-function-20261102.log"
+        },
+        {
+          "case": "expected-view",
+          "exitCode": 2,
+          "sourcePath": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\capture-inference-probe-20261102\\expected-view\\src\\main.arcw",
+          "sourceSha256": "432de4019e72c6bf439f53785fdeb1f06115f91e5f232c08c07db49c0d12093f",
+          "log": "capture-inference-expected-view-20261102.log"
+        }
+      ],
+      "recordedAt": "2026-11-01T22:51:48.6803138Z"
+    },
+    "manifestRetry": {
+      "version": 1,
+      "source": "eebe9aee7bbacfd59c51704cdc2ce0a516328e5d",
+      "executable": "D:/git/arcweft/target/debug/arcw.exe",
+      "executableSha256": "c3bd38248c3a9c41f42e4b16da69b82748d9f71230d19a98bd984a06759a2814",
+      "executableDrift": 0,
+      "command": "arcw check --manifest-path <isolated manifest> --profile main --json",
+      "cases": [
+        {
+          "case": "untyped-view",
+          "exitCode": 1,
+          "manifest": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\capture-inference-probe-20261102\\untyped-view\\arcw.toml",
+          "log": "capture-inference-untyped-view-retry2-20261102.log"
+        },
+        {
+          "case": "untyped-function",
+          "exitCode": 1,
+          "manifest": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\capture-inference-probe-20261102\\untyped-function\\arcw.toml",
+          "log": "capture-inference-untyped-function-retry2-20261102.log"
+        },
+        {
+          "case": "expected-view",
+          "exitCode": 1,
+          "manifest": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\capture-inference-probe-20261102\\expected-view\\arcw.toml",
+          "log": "capture-inference-expected-view-retry2-20261102.log"
+        }
+      ],
+      "recordedAt": "2026-11-01T22:52:14.0591413Z"
+    },
+    "semanticProbes": {
+      "version": 1,
+      "source": "eebe9aee7bbacfd59c51704cdc2ce0a516328e5d",
+      "executable": "D:/git/arcweft/target/debug/arcw.exe",
+      "executableSha256": "c3bd38248c3a9c41f42e4b16da69b82748d9f71230d19a98bd984a06759a2814",
+      "executableDrift": 0,
+      "cases": [
+        {
+          "case": "untyped-view",
+          "exitCode": 1,
+          "sourcePath": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\capture-inference-probe-retry3-20261102\\untyped-view\\src\\main.arcw",
+          "sourceSha256": "1c4c478f891f048cba4494d5d184a98c8b1dd37ffb28fa657d3b6f8adf2fdfa6",
+          "manifest": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\capture-inference-probe-retry3-20261102\\untyped-view\\arcw.toml",
+          "log": "capture-inference-untyped-view-retry3-20261102.log",
+          "output": "error[sema.final_analysis]: semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(2), slot: 1 }, slot: 22, kind: Expr }) has no admissible final type\r\n"
+        },
+        {
+          "case": "untyped-function",
+          "exitCode": 1,
+          "sourcePath": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\capture-inference-probe-retry3-20261102\\untyped-function\\src\\main.arcw",
+          "sourceSha256": "f17a375055249f03ae717f5e87a1faae33b2fe8de36469b03e3ca5dcf1b439fd",
+          "manifest": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\capture-inference-probe-retry3-20261102\\untyped-function\\arcw.toml",
+          "log": "capture-inference-untyped-function-retry3-20261102.log",
+          "output": "error[sema.final_analysis]: semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(2), slot: 1 }, slot: 19, kind: Expr }) has no admissible final type\r\n"
+        },
+        {
+          "case": "expected-view",
+          "exitCode": 1,
+          "sourcePath": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\capture-inference-probe-retry3-20261102\\expected-view\\src\\main.arcw",
+          "sourceSha256": "8eff366907d202f60207929cda193cc0c037d1734a2674e659077680a05d0003",
+          "manifest": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\capture-inference-probe-retry3-20261102\\expected-view\\arcw.toml",
+          "log": "capture-inference-expected-view-retry3-20261102.log",
+          "output": "error[sema.final_analysis]: nominal type resolution did not produce one complete type for TypeId(RawHirId { module: HirModuleId { database: HirDatabaseId(2), slot: 1 }, slot: 31, kind: Type })\r\n"
+        }
+      ],
+      "recordedAt": "2026-11-01T22:52:37.797344Z"
+    },
+    "contextualProbes": {
+      "version": 1,
+      "source": "eebe9aee7bbacfd59c51704cdc2ce0a516328e5d",
+      "executable": "D:/git/arcweft/target/debug/arcw.exe",
+      "executableSha256": "c3bd38248c3a9c41f42e4b16da69b82748d9f71230d19a98bd984a06759a2814",
+      "executableDrift": 0,
+      "cases": [
+        {
+          "case": "expected-i64",
+          "exitCode": 0,
+          "sourcePath": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\capture-inference-probe-retry4-20261102\\expected-i64\\src\\main.arcw",
+          "sourceSha256": "62882665d60786aaf6e2922564d8047f51a11fcbe35c0b04ae1060e3f4cef164",
+          "log": "capture-inference-expected-i64-retry4-20261102.log",
+          "output": "{\r\n  \"status\": \"ok\",\r\n  \"package\": \"org.arcweft.probe.expected-i64\",\r\n  \"manifest\": \"\\\\\\\\?\\\\C:\\\\Users\\\\sanze\\\\AppData\\\\Local\\\\Temp\\\\arcweft-1011-convergence-resume-cb798c1d\\\\capture-inference-probe-retry4-20261102\\\\expected-i64\\\\arcw.toml\",\r\n  \"selected_profile\": \"main\",\r\n  \"selected_source\": \"\\\\\\\\?\\\\C:\\\\Users\\\\sanze\\\\AppData\\\\Local\\\\Temp\\\\arcweft-1011-convergence-resume-cb798c1d\\\\capture-inference-probe-retry4-20261102\\\\expected-i64\\\\src\\\\main.arcw\",\r\n  \"modules\": [\r\n    {\r\n      \"module\": \"crate\",\r\n      \"source\": \"\\\\\\\\?\\\\C:\\\\Users\\\\sanze\\\\AppData\\\\Local\\\\Temp\\\\arcweft-1011-convergence-resume-cb798c1d\\\\capture-inference-probe-retry4-20261102\\\\expected-i64\\\\src\\\\main.arcw\",\r\n      \"source_hash\": \"dd34c8178d64fa2e058219938fed7130312ad505c69f0dbaa021c2449772caa6\"\r\n    }\r\n  ],\r\n  \"compile_units\": [\r\n    {\r\n      \"id\": 0,\r\n      \"modules\": [\r\n        \"crate\"\r\n      ],\r\n      \"fingerprint\": \"188487ffb672ea06faf6f0a171b508ec83a3b611fd576226ecdbbc39f08c0186\",\r\n      \"cache\": \"miss\"\r\n    }\r\n  ],\r\n  \"syntax_warnings\": 0,\r\n  \"flows\": 1,\r\n  \"line_task_groups\": 0,\r\n  \"verifier_diagnostics\": 0,\r\n  \"obligations\": 0,\r\n  \"unsafe_audits\": 0\r\n}\r\n"
+        },
+        {
+          "case": "generic-callback",
+          "exitCode": 0,
+          "sourcePath": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\capture-inference-probe-retry4-20261102\\generic-callback\\src\\main.arcw",
+          "sourceSha256": "83be8d938cc9cd728dd3c2f0095c7e2d2f13a2faacf7c6f14316b4eb0e90764a",
+          "log": "capture-inference-generic-callback-retry4-20261102.log",
+          "output": "{\r\n  \"status\": \"ok\",\r\n  \"package\": \"org.arcweft.probe.generic-callback\",\r\n  \"manifest\": \"\\\\\\\\?\\\\C:\\\\Users\\\\sanze\\\\AppData\\\\Local\\\\Temp\\\\arcweft-1011-convergence-resume-cb798c1d\\\\capture-inference-probe-retry4-20261102\\\\generic-callback\\\\arcw.toml\",\r\n  \"selected_profile\": \"main\",\r\n  \"selected_source\": \"\\\\\\\\?\\\\C:\\\\Users\\\\sanze\\\\AppData\\\\Local\\\\Temp\\\\arcweft-1011-convergence-resume-cb798c1d\\\\capture-inference-probe-retry4-20261102\\\\generic-callback\\\\src\\\\main.arcw\",\r\n  \"modules\": [\r\n    {\r\n      \"module\": \"crate\",\r\n      \"source\": \"\\\\\\\\?\\\\C:\\\\Users\\\\sanze\\\\AppData\\\\Local\\\\Temp\\\\arcweft-1011-convergence-resume-cb798c1d\\\\capture-inference-probe-retry4-20261102\\\\generic-callback\\\\src\\\\main.arcw\",\r\n      \"source_hash\": \"dbb68407412411f787bcbd7345473fc879ade5a64f847be50b37a4301dda85e9\"\r\n    }\r\n  ],\r\n  \"compile_units\": [\r\n    {\r\n      \"id\": 0,\r\n      \"modules\": [\r\n        \"crate\"\r\n      ],\r\n      \"fingerprint\": \"a2323e93b3bf5a912faa4dc3b0cf3121bf4d7a54a45cd51bbe351d2cbb7bd43f\",\r\n      \"cache\": \"miss\"\r\n    }\r\n  ],\r\n  \"syntax_warnings\": 0,\r\n  \"flows\": 1,\r\n  \"line_task_groups\": 0,\r\n  \"verifier_diagnostics\": 0,\r\n  \"obligations\": 0,\r\n  \"unsafe_audits\": 0\r\n}\r\n"
+        }
+      ],
+      "recordedAt": "2026-11-01T22:53:13.0813944Z"
+    },
+    "scope": "Isolated temp packages checked with the already-built CLI, with executable SHA256 before/after. Not Native/AWBC execution acceptance. Initial CLI argument misuse and missing top-level declaration newlines are retained as fixture failures. Unannotated View/function closures both reach final-type-unavailable diagnostics. The direct ViewValue annotation probe fails nominal resolution; no public spelling contract is inferred. Expected String-to-i64 and generic callback View construction both compile."
+  },
+  "quality": {
+    "check": {
+      "version": 1,
+      "base": "493163e5c57ce32c85d62594d30bd1d82b87443a",
+      "command": [
+        "check",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4066,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-01T22:28:34.5845486Z",
+      "finishedAt": "2026-11-01T22:29:21.3237213Z"
+    },
+    "clippy": {
+      "version": 1,
+      "base": "493163e5c57ce32c85d62594d30bd1d82b87443a",
+      "command": [
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4066,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-01T22:29:21.7677073Z",
+      "finishedAt": "2026-11-01T22:30:13.6101439Z"
+    },
+    "format": {
+      "version": 1,
+      "base": "493163e5c57ce32c85d62594d30bd1d82b87443a",
+      "command": "rustfmt --edition 2024 --config skip_children=true --check <12 explicit owned Rust files>",
+      "exitCode": 0,
+      "paths": [
+        "crates/arcweft-compiler/src/lower.rs",
+        "crates/arcweft-compiler/src/lower/executable_types.rs",
+        "crates/arcweft-compiler/src/project/tests.rs",
+        "crates/arcweft-compiler/src/project/tests/type_purpose.rs",
+        "crates/arcweft-compiler/tests/callable_cases/presentation_view_values.rs",
+        "crates/arcweft-lang-hir/src/identity.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/report.rs",
+        "crates/arcweft-runtime-plan/src/final_flow.rs",
+        "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+        "crates/arcweft-runtime-plan/src/semantic_facts/project_function.rs",
+        "crates/arcweft-runtime-plan/src/semantic_facts/tests.rs",
+        "crates/arcweft-runtime-plan/src/semantic_facts/type_dependencies.rs"
+      ],
+      "recordedAt": "2026-11-01T22:29:46.4141957Z"
+    },
+    "structure": {
+      "version": 1,
+      "base": "493163e5c57ce32c85d62594d30bd1d82b87443a",
+      "command": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking",
+        "--write",
+        "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-view-semantic-capture-quality-20261102.structure-report"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4066,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-01T22:30:14.1039117Z",
+      "finishedAt": "2026-11-01T22:30:18.1936932Z"
+    },
+    "structureSummary": {
+      "files": 3302,
+      "rustFiles": 3172,
+      "physicalRustLoc": 1791520,
+      "workspacePackages": 97,
+      "reviewTriggers": 385,
+      "blocking": 0
+    },
+    "warnings": "Existing compiler/Clippy warnings remain"
+  },
+  "failuresRetained": [
+    "The unannotated initial closure probe failed Sema ExpressionTypeUnavailable; it is not claimed accepted by the typed-parameter fixtures.",
+    "The annotated baseline probe at 493163e5c57ce32c85d62594d30bd1d82b87443a failed runtime type projection of CompileTimeCallable<View>.",
+    "The first migrated owner run kept all 28 existing cases passing and failed the 6 new capture conditions at the final closure/HIR validation boundary. After distinguishing source and runtime captures it passed 34/34.",
+    "Early compile checks failed during API migration, then check3 succeeded. Raw logs are retained.",
+    "Two new rejection-test fixtures selected no runtime capture in their helper inventory; the test now uses the actual source HIR capture identity and passes. Production rejection was retained.",
+    "The first five-target selection was stopped before runtime by an incorrect expected count of 300. Its actual catalog contained 310 cases; the unchanged complete selection subsequently passed 310/310."
+  ],
+  "validationScope": "Initial 2621/2621 owner evidence predates the final global malformed-capture guard and visitor deletion. Final rejection, 310 integrations, workspace gates and the full 23-package reverse run use the final inputs. Each original source/feature union remains separately recorded.",
+  "ownershipReview": "Capture belongs to HIR identity and Sema projection classification; RuntimePlan owns its checked runtime shape and lexical origin. The ABI references that authority rather than maintaining a second owned normalized type. Existing large-file ownership review triggers remain nonblocking; no unsafe, dependency, version, runtime budget or assertion relaxation was introduced.",
+  "limits": [
+    "Reactive defaults, Source-to-renderer/driver integration and actual Native/Web image parity remain separately bounded current-status items.",
+    "No blanket acceptance of unannotated standalone closure inference or every possible capture/propagation combination is claimed.",
+    "CLI failure identities are compared with the preceding actual run; identity equality does not establish cause equality.",
+    "Tests include the preserved original 14 tracked WIP changes; a clean public checkout is not claimed to be the exact tested input."
+  ],
+  "held": {
+    "tracked": 14,
+    "patchSha256": "53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6",
+    "actualUntracked": 6
+  },
+  "raw": {
+    "path": "task-view-semantic-capture-acceptance.raw.zip",
+    "entryCount": 181,
+    "payloadEntries": 180,
+    "bytes": 4901246,
+    "sha256": "c51747ff3a2316a72e6dbf609c342f8d1dc5b123532f5c6cf21993c0a19698a5",
+    "entryDrift": 0
+  }
+}

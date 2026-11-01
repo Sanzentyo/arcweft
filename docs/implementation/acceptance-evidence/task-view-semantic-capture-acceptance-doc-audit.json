@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "source": "eebe9aee7bbacfd59c51704cdc2ce0a516328e5d",
+  "inspectedHead": "eebe9aee7bbacfd59c51704cdc2ce0a516328e5d",
+  "documents": [
+    "docs/implementation/current-status.md",
+    "docs/00-overview/crate-map.md",
+    "docs/03-presentation/view-reactive.md",
+    "docs/implementation/convergence-evidence-history.md"
+  ],
+  "historyScan": "new appended evidence only; old prefix hash checked",
+  "localLinks": 106,
+  "brokenLinks": 0,
+  "fencesBalanced": true,
+  "historicalPrefixBytes": 1739832,
+  "historicalPrefixDrift": 0,
+  "acceptedGenericMatchRowUnchanged": true,
+  "rawEntryCount": 181,
+  "rawPayloadEntries": 180,
+  "rawZipSha256": "c51747ff3a2316a72e6dbf609c342f8d1dc5b123532f5c6cf21993c0a19698a5",
+  "rawEntryDrift": 0,
+  "originalUntracked": 6,
+  "originalUntrackedDrift": 0,
+  "recordedAt": "2026-11-01T22:57:14.152766Z",
+  "whitespaceCheck": {
+    "version": 1,
+    "source": "eebe9aee7bbacfd59c51704cdc2ce0a516328e5d",
+    "initialCommand": "git diff --cached --check",
+    "initialExitCode": 2,
+    "initialFinding": "CRLF treated as trailing whitespace under the default command; publication was withheld",
+    "policyCommand": "git -c core.whitespace=trailing-space,space-before-tab,cr-at-eol diff --cached --check",
+    "policyExitCode": 0,
+    "sourceOrHistoryBytesChanged": false,
+    "recordedAt": "2026-11-01T22:58:34.5473192Z"
+  }
+}

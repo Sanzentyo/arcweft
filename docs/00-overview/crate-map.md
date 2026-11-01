@@ -86,7 +86,7 @@ The current workspace member list is `[workspace].members` in [Cargo.toml](../..
   `HirProject` を所有する。semantic passes、verifier、compiler、CLI、LSP は
   accepted project/viewを入力境界にし、detached loweringやflattened linked HIRを
   構築しない。
-  expression／pattern／local／type の共通アドレス `HirValueTypeOwner` もここに置く。
+  expression／pattern／local／type／capture の共通アドレス `HirValueTypeOwner` もここに置く。
   runtime 表現の有無は Sema の checked projection が決め、RuntimePlan はその区分を
   保持する。semantic callee の prefix 評価と、callable 値を渡す通常の呼出しを区別する。
 - `arcweft-lang-hir` は syntax/CST 由来の typed ID context も所有する。
