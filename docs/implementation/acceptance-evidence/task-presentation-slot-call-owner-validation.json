@@ -1,0 +1,572 @@
+{
+  "version": 1,
+  "recordedAt": "2026-11-01T02:58:39.1963528Z",
+  "sourceCommit": "0b16aa4979720b101569d2a847a505279b25982b",
+  "scope": "Source readonly SlotRef construction without explicit scope, inert target/slot values and patterns, codecs, public AWBC save/restore, and original per-call candidate/metadata quota boundaries. Separate runs retain their exact input freezes and feature unions.",
+  "publishedCommits": [
+    {
+      "version": 1,
+      "commit": "f61d26da1051407c06bb251a53a01d78954493b1",
+      "parent": "0037a31d28f85799c4a4c05f07030197a9c56dce",
+      "tree": "bf3feeecb184e83ab06699c22e441f842aa1c677",
+      "remote": "f61d26da1051407c06bb251a53a01d78954493b1",
+      "paths": [
+        {
+          "path": "crates/arcweft-core/src/awbc/codec/runtime.rs",
+          "blob": "7e04952131a37f362026e420b40101dd40226bf2"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/verify/code.rs",
+          "blob": "ad74c7312e7c88f558ea40f2bb5cc63e95e8d226"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/vm.rs",
+          "blob": "4a5881a6e7d4c06b1d93b5fcf2a99d6c1605d707"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/eval.rs",
+          "blob": "b4ef34fc02acc10c98710bae02b35816f791d42c"
+        },
+        {
+          "path": "crates/arcweft-core/src/entry/schema.rs",
+          "blob": "b3289401ceb5ce8e1f427235acc52411eceead80"
+        },
+        {
+          "path": "crates/arcweft-core/src/entry/schema/value_budget.rs",
+          "blob": "81a0db2b7610b993828e976e130834b5b1f4e9a1"
+        },
+        {
+          "path": "crates/arcweft-core/src/entry/schema/value_encoding.rs",
+          "blob": "28f897246c35387d7b3cc3c491a3bc90dd55fefb"
+        },
+        {
+          "path": "crates/arcweft-core/src/pattern/presentation_slot.rs",
+          "blob": "d53077dfd50675801c64da34eb9fe8d13c5fb09a"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/lower.rs",
+          "blob": "0cd6f2194ed2d0ab8fa0cac7346aadbe25abc0d1"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/source/expression/cursor.rs",
+          "blob": "0c887f933cdf0f027773ec0d2f822a3f0ec1b06b"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/source/expression/decoding.rs",
+          "blob": "5499d8e658469272cbf3699a4c918da15df78985"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/source/expression/encoding.rs",
+          "blob": "7d4ac1e2151d86f2ad4a7b332cecbac12bedb1d3"
+        },
+        {
+          "path": "crates/arcweft-core/src/presentation.rs",
+          "blob": "95455d59e6dc0dc1c5bb5321ec925ba44c168098"
+        },
+        {
+          "path": "crates/arcweft-core/src/presentation/slot_reference.rs",
+          "blob": "1954b7e03113443ea47db40ed6a7b441ef2d00f9"
+        },
+        {
+          "path": "crates/arcweft-core/src/pure.rs",
+          "blob": "76c0d015d6f1917929abbdb28c93d9e3ecd596a0"
+        },
+        {
+          "path": "crates/arcweft-core/src/pure/program.rs",
+          "blob": "de74e1970213b10629818d249afd4a8d4aa38580"
+        },
+        {
+          "path": "crates/arcweft-core/src/value.rs",
+          "blob": "ffae001ab28f75b0183cfe6b4148cb0f38a09f1e"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/awbc_save/retained_admission.rs",
+          "blob": "cf27fc4b5eab103ada97b785086f79d802437389"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/awbc_save/retained_admission/presentation.rs",
+          "blob": "8958a2636906facefcf1abb9b270e5b5f443ed7b"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/awbc_save/retained_admission/state_tests.rs",
+          "blob": "7983ebc7415f00b46e71d31635d229d480828429"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/expression_semantic.rs",
+          "blob": "3f879552251146a09045a0b1a0710d30332f7d0f"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "de6fbfbc5952dd605369e631e31b334c5dd185410454d4edf32bea6f4610abf2",
+      "heldPatchSha256": "53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6",
+      "separatelyHeld": [
+        {
+          "path": "crates/arcweft-compiler/src/lower.rs",
+          "sha256": "05ebec671e4f1c1327a827f52ac13f2b3f1f153e4fcc86c12b55867de72ce9fe"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/callable_execution.rs",
+          "sha256": "80bcdd017fb9959655cfe7e61d845535936fc7cdfd5f86d1533c3b7e3625ae2f"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_expr.rs",
+          "sha256": "b99a94e06603c406718d706233eb09f2fb488b41e2944f9937f2b1365c686f00"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+          "sha256": "04527567e8bfb187acd4b149f4b11c3a15abebcaa71364b02657087ec7416be2"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/semantic_facts/type_dependencies.rs",
+          "sha256": "378401d38f75ec562cd045326994f6df3913e869d9f56d7495dec9a201ccfa43"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/callable_cases/presentation_slot_refs.rs",
+          "sha256": "4251b8b65b2e430df521016c1ad967ec09d43cdf9f258cc05b7d35f83473a1d3"
+        }
+      ],
+      "indexEmpty": true,
+      "at": "2026-11-01T02:05:20.3750743Z"
+    },
+    {
+      "version": 1,
+      "commit": "4e593d787c969d250924f9e02fcc9056e140df0f",
+      "parent": "f61d26da1051407c06bb251a53a01d78954493b1",
+      "tree": "c376f4815e8578e2a9264abf983a3ef5817fe49e",
+      "remote": "4e593d787c969d250924f9e02fcc9056e140df0f",
+      "paths": [
+        {
+          "path": "crates/arcweft-agent-protocol/src/value.rs",
+          "blob": "0233e8c4bbdf50ce7547acb8aaa3b47e0de72101"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/lower.rs",
+          "blob": "9c1428fd4f63553d97f4d00cda51b3abb34c23b4"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/callable_cases/presentation_slot_refs.rs",
+          "blob": "86f8ab3885810e02d39ed3ec7c6a7e47af25e7cc"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/callable_execution.rs",
+          "blob": "6c2121a76c408821c254326e73d0c5859ef70969"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/codec/entity_tests.rs",
+          "blob": "f9a2001cd9058fc3ea4f753b8160b7590531b8bd"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/codec/runtime.rs",
+          "blob": "4d2a34ab6daacf0ac6697c34d1b51b5c297bda17"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/codec/runtime/slot_reference_tests.rs",
+          "blob": "86b382d29bef7e607cf18cb667828217a262cccb"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/codec/types.rs",
+          "blob": "2c98217c2fb89fa76bea3bc3e7947e5216ee83c3"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/vm.rs",
+          "blob": "7c6d4fa38e36b6b10fe3535ef24d1e19f33c285c"
+        },
+        {
+          "path": "crates/arcweft-core/src/entry/schema/value_budget.rs",
+          "blob": "f71f57505fd435eb850360b070240f0a022db2d7"
+        },
+        {
+          "path": "crates/arcweft-core/src/entry/schema/value_encoding.rs",
+          "blob": "f6deb7789f9d1fe59d4fed55f4d95e5f7d544996"
+        },
+        {
+          "path": "crates/arcweft-core/src/presentation/slot_reference.rs",
+          "blob": "36e85bc75b0b2c230beb80f1e54f0edf6117ce86"
+        },
+        {
+          "path": "crates/arcweft-core/src/value.rs",
+          "blob": "515cb5d224eb020ad912f1661cd7e1cd35b75e6f"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/awbc_save/retained_admission/state_tests.rs",
+          "blob": "e563c0e060afa11f5c8a97813f8580d41bf7b9a2"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/awbc_save/source_codec.rs",
+          "blob": "e482ac7d2670677f573f8560ac322cd697289a44"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/awbc_save/source_codec/metadata/entity.rs",
+          "blob": "7e96d3e7bf1c836df8f5ae6ecae73bc906cd5a6c"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/entity_identity.rs",
+          "blob": "34b3133f9f401b52a1c533781e75e0973d484abd"
+        },
+        {
+          "path": "crates/arcweft-interaction-model/src/presentation.rs",
+          "blob": "9f69b7315600fde073913c5bbb53b0d56df2c307"
+        },
+        {
+          "path": "crates/arcweft-interaction-model/src/presentation/address_identity.rs",
+          "blob": "512c5c0bed1fa3da06666818c861b42f142997e1"
+        },
+        {
+          "path": "crates/arcweft-interaction-model/src/presentation/slot.rs",
+          "blob": "5ed3138755309710f05ed72da03158ea8af64010"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/entities.rs",
+          "blob": "bae961895d39b9c6a42283553d0d21b206f2d842"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expression_types.rs",
+          "blob": "6d38ffa539031f497570ab5d8f838cf5e703b24b"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/entity_pattern.rs",
+          "blob": "f1a04cd3e425e99e2fae2ca22f7244d9c86d7b9e"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/entity_value.rs",
+          "blob": "a416eda6066721d2fdc7da9269bd02f96bf67d4a"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/match_coverage/deconstruct.rs",
+          "blob": "dcec8e0ba8ff15f75cdf0e82158c4bbd92e07daa"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/match_coverage/domain.rs",
+          "blob": "6e74988658f073f55f55a3fa5113b70d82e42114"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/match_edges/model.rs",
+          "blob": "9e330bf3960d404c8fc7ddce80a048b51a807071"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/model.rs",
+          "blob": "f22aa210623b28550514848ce7e87f004a34d572"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/report.rs",
+          "blob": "a1b4e5d246376c1b24c847db5371cd0e5d68e246"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs",
+          "blob": "f7b4d58313f1ec79d370b83aad57b1b8e91f1d98"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/validation.rs",
+          "blob": "90cdec2b2d64fa83e0396544a5ec9aabf10975bd"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/types.rs",
+          "blob": "2fdbf68b4b29ef8a9622cd9beea73f3410f66827"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_expr.rs",
+          "blob": "0b9e8e1386fa02d9beefc7d446e0a79524e44882"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+          "blob": "94b64e813e47767d271af08515fd537ef7e32d18"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/semantic_facts/type_dependencies.rs",
+          "blob": "15275961837835347507cdd5899365c7dbf861c5"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "772cfc515d5e88e3c5adbede77f0f8806f3decd3227e4f33ab4559e9069f89fe",
+      "heldPatchSha256": "53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-01T02:26:04.6407421Z"
+    },
+    {
+      "version": 1,
+      "commit": "9457d896ac32a3633250fac9cde05bde3b87c069",
+      "parent": "4e593d787c969d250924f9e02fcc9056e140df0f",
+      "tree": "06a4ec52337f57b4fa80c53072974085d1a1e09c",
+      "remote": "9457d896ac32a3633250fac9cde05bde3b87c069",
+      "paths": [
+        {
+          "path": "crates/arcweft-core/src/value/awbc_save/source_codec/tests/metadata.rs",
+          "blob": "ca6e9e80a876a539c8a446673567c6679f984763"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "b14dbd47ed6bcd950f40541734414ccf6fc501c2e26d3356073d6689efdd4416",
+      "heldPatchSha256": "53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-01T02:29:00.5949238Z"
+    },
+    {
+      "version": 1,
+      "commit": "0b16aa4979720b101569d2a847a505279b25982b",
+      "parent": "9457d896ac32a3633250fac9cde05bde3b87c069",
+      "tree": "7d5ddea3ae3fccdcbe5aea0025659b57625c1410",
+      "remote": "0b16aa4979720b101569d2a847a505279b25982b",
+      "paths": [
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests/semantic_transcript_acceptance/expression_corpus.rs",
+          "blob": "a9c7f1a5023d0b09c5bd1712758c519e365978dc"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests/semantic_transcript_acceptance/patterns.rs",
+          "blob": "f10e7ca48aaf85387c6a989f4bc07a732ee50775"
+        },
+        {
+          "path": "docs/01-language/scenario-surface-syntax.md",
+          "blob": "66834c5d8d625f7e468ee9f8cf4bc17dd2e7a962"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "782405d666f24d24b60bef4d4c42fc9d9efd4f98d5a651b80bcd22fb813feced",
+      "heldPatchSha256": "53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-01T02:36:03.3422993Z"
+    }
+  ],
+  "sourceExecution": {
+    "version": 1,
+    "base": "f61d26da1051407c06bb251a53a01d78954493b1",
+    "run": "presentation-source-slot-ref-connect6-20261101.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [   1.598s] 1 test run: 1 passed, 198 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 1,
+    "passed": 1,
+    "failed": 0,
+    "skipped": 198,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4045,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-11-01T02:25:21.9531299Z"
+  },
+  "coreAndSharedOwner": {
+    "version": 1,
+    "base": "4e593d787c969d250924f9e02fcc9056e140df0f",
+    "run": "presentation-slot-call-owner1-20261101.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [   0.127s] 15 tests run: 15 passed, 2185 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 15,
+    "passed": 15,
+    "failed": 0,
+    "skipped": 2185,
+    "selectedPackages": 2,
+    "matchedPackages": 2,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4045,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-11-01T02:28:42.9407875Z"
+  },
+  "matchCorpusRepair": {
+    "version": 1,
+    "base": "9457d896ac32a3633250fac9cde05bde3b87c069",
+    "run": "presentation-slot-call-corpus1-20261101.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [   1.936s] 19 tests run: 19 passed, 1336 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 19,
+    "passed": 19,
+    "failed": 0,
+    "skipped": 1336,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4045,
+    "sourceDrift": 0,
+    "held": 14,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-11-01T02:35:12.1989628Z"
+  },
+  "quality": [
+    {
+      "version": 1,
+      "base": "0b16aa4979720b101569d2a847a505279b25982b",
+      "command": [
+        "check",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4045,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-01T02:36:06.2468277Z",
+      "finishedAt": "2026-11-01T02:36:42.0904739Z"
+    },
+    {
+      "version": 1,
+      "base": "0b16aa4979720b101569d2a847a505279b25982b",
+      "command": [
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4045,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-01T02:36:42.6142825Z",
+      "finishedAt": "2026-11-01T02:39:05.6343445Z"
+    },
+    {
+      "version": 1,
+      "base": "0b16aa4979720b101569d2a847a505279b25982b",
+      "command": [
+        "check",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4045,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-01T02:39:06.08255Z",
+      "finishedAt": "2026-11-01T02:39:39.5862896Z"
+    },
+    {
+      "version": 1,
+      "base": "0b16aa4979720b101569d2a847a505279b25982b",
+      "command": [
+        "check",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "--target",
+        "wasm32-unknown-unknown",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4045,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-01T02:39:40.0352742Z",
+      "finishedAt": "2026-11-01T02:40:16.3679833Z"
+    },
+    {
+      "version": 1,
+      "base": "0b16aa4979720b101569d2a847a505279b25982b",
+      "command": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking",
+        "--write",
+        "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-slot-call-quality-20261101T023604592.structure-report"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4045,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-01T02:40:16.8156174Z",
+      "finishedAt": "2026-11-01T02:40:21.8958093Z"
+    },
+    {
+      "version": 1,
+      "paths": [
+        "crates/arcweft-agent-protocol/src/value.rs",
+        "crates/arcweft-compiler/src/lower.rs",
+        "crates/arcweft-compiler/tests/callable_cases/presentation_slot_refs.rs",
+        "crates/arcweft-compiler/tests/callable_execution.rs",
+        "crates/arcweft-core/src/awbc/codec/entity_tests.rs",
+        "crates/arcweft-core/src/awbc/codec/runtime.rs",
+        "crates/arcweft-core/src/awbc/codec/runtime/slot_reference_tests.rs",
+        "crates/arcweft-core/src/awbc/codec/types.rs",
+        "crates/arcweft-core/src/awbc/verify/code.rs",
+        "crates/arcweft-core/src/awbc/vm.rs",
+        "crates/arcweft-core/src/engine/eval.rs",
+        "crates/arcweft-core/src/entry/schema.rs",
+        "crates/arcweft-core/src/entry/schema/value_budget.rs",
+        "crates/arcweft-core/src/entry/schema/value_encoding.rs",
+        "crates/arcweft-core/src/pattern/presentation_slot.rs",
+        "crates/arcweft-core/src/plan/construction/lower.rs",
+        "crates/arcweft-core/src/plan/construction/source/expression/cursor.rs",
+        "crates/arcweft-core/src/plan/construction/source/expression/decoding.rs",
+        "crates/arcweft-core/src/plan/construction/source/expression/encoding.rs",
+        "crates/arcweft-core/src/presentation.rs",
+        "crates/arcweft-core/src/presentation/slot_reference.rs",
+        "crates/arcweft-core/src/pure.rs",
+        "crates/arcweft-core/src/pure/program.rs",
+        "crates/arcweft-core/src/value.rs",
+        "crates/arcweft-core/src/value/awbc_save/retained_admission.rs",
+        "crates/arcweft-core/src/value/awbc_save/retained_admission/presentation.rs",
+        "crates/arcweft-core/src/value/awbc_save/retained_admission/state_tests.rs",
+        "crates/arcweft-core/src/value/awbc_save/source_codec.rs",
+        "crates/arcweft-core/src/value/awbc_save/source_codec/metadata/entity.rs",
+        "crates/arcweft-core/src/value/awbc_save/source_codec/tests/metadata.rs",
+        "crates/arcweft-core/src/value/entity_identity.rs",
+        "crates/arcweft-core/src/value/expression_semantic.rs",
+        "crates/arcweft-interaction-model/src/presentation.rs",
+        "crates/arcweft-interaction-model/src/presentation/address_identity.rs",
+        "crates/arcweft-interaction-model/src/presentation/slot.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/analyzer/entities.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/analyzer/expression_types.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/entity_pattern.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/entity_value.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/match_coverage/deconstruct.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/match_coverage/domain.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/match_edges/model.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/model.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/report.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/tests/semantic_transcript_acceptance/expression_corpus.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/tests/semantic_transcript_acceptance/patterns.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/validation.rs",
+        "crates/arcweft-lang-sema/src/types.rs",
+        "crates/arcweft-runtime-plan/src/final_expr.rs",
+        "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+        "crates/arcweft-runtime-plan/src/semantic_facts/type_dependencies.rs"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4045,
+      "sourceDrift": 0
+    }
+  ],
+  "raw": {
+    "path": "task-presentation-slot-call-owner-raw.zip",
+    "entries": 145,
+    "bytes": 4926189,
+    "sha256": "da7f1060d949ce6c5fbb8e652c3231531355a6d769d2aa868a4cbd99a372de1b"
+  },
+  "historicalFailures": "Retain all initial Source fixture/build/runtime failures, four exhaustive Runtime-plan migrations, the missing iterator conversion, the unregistered address-value gap, and both workspace lib-test inventory errors in the raw archive. Their runtime-not-run or failed results are not overwritten by later passes.",
+  "limitations": [
+    "Explicit scope operands have no complete execution-owned scope carrier in this call path.",
+    "The per-call constructor is not yet joined to the complete already-live execution contour; this is not aggregate live-state construction admission.",
+    "No public Native save, whole Tier 2, Native-Web capture parity, ViewValue/Handle/Removed producers, presentation command/method or real driver acceptance is claimed.",
+    "Clippy returned zero with warnings; this is not a warning-free claim."
+  ],
+  "genericMatch": {
+    "status": "accepted and published; not reopened",
+    "acceptedCommit": "850534b9e9bc8c8872f6528dd00050a5e6e7699e",
+    "publicationCommit": "f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2",
+    "newReverseCoverage": "recorded separately when the running complete reverse matrix closes"
+  },
+  "workspacePreservation": {
+    "tracked": 14,
+    "untrackedFiles": 6,
+    "trackedPatchSha256": "53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6",
+    "full20FileAudit": "recorded by the delivery documentation audit"
+  },
+  "currentStatus": "current-status.md is the sole current inventory; this file records closed execution evidence."
+}
