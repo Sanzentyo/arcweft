@@ -1,6 +1,8 @@
 //! Typed Sans-I/O presentation ownership and dialogue stage/voice commands.
 
 mod factory;
+#[cfg(test)]
+pub(crate) mod factory_test_support;
 mod resource_value;
 mod selectors;
 pub(crate) use selectors::RuntimePresentationSlotSelectors;

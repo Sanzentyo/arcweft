@@ -30,6 +30,8 @@ mod agent_tests;
 #[cfg(test)]
 mod field_tests;
 #[cfg(test)]
+mod presentation_tests;
+#[cfg(test)]
 mod static_effect_tests;
 #[cfg(test)]
 mod value_tests;
