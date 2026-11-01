@@ -13925,3 +13925,21 @@ Source 0c65eb15235f16ff96232e4926e5bbd563e5a90c（親534742896a9450e8bff54ce4376
 ユーザーの追加指定によるcargo clean --lockedは、この途中の品質gateが終了してビルドがない状態で実行し、149,486 files／159.9 GiBを削除した。4,057入力・HEAD・git statusの変化0を記録し、最終検証はその後の再ビルドで行った。ソース・検証記録を退避・削除したものではない。
 
 構造review: engine/rollback.rs は 1219 physical LOCとなりSIZE001のreview対象へ入った。Native frameの元code位置・実env context・継続header・保留queueを、同じ借用admissionとlive／inertのstorage phaseで検査する責務として確認した。追加したExpressionの規則もこのownerに属し、別のcontext台帳・再構築resolverは導入していない。await固有の検査は既存await_state ownerに保たれ、blockingは0。LOCだけを理由とした分割は行わない。
+
+## Source Handle操作・nominal格納の接続 — 2026-11-02
+
+公開Sourceは 892529516bf0a2cd28779f8ec1e42394f9999df6。テストのみの既知失敗checkpoint 1c2aef635fe69f65674b79eb94aa31d02b0e524e、台帳owner 69aae2e04da8c8397e9d80b11b53ab7872f0e6c3、型付きIR／AWBC 331363382bb3e0c23f5276d543eb04291b085709 を順に通常commit／non-forced pushした。最終Sourceの32 path・tree b24b0767aeed1d1f47cdfd1ee31e37e39064268d・patch SHA256 057bc28c7ee015a517ee2164534401893563deb889fe936524858dfed7a66190 と公開blobを照合し、差分0。元14 tracked／6 actual untracked WIPを保持し、元14 pathのpatch SHA256は 53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6 のままである。
+
+[実測・入力・全履歴](acceptance-evidence/task-presentation-handle-source.json) と [144 entryの原本ZIP](acceptance-evidence/task-presentation-handle-source.raw.zip) を保持する。ZIPは6,220,678 bytes、SHA256 92ac94d828e603fe08753eeb49cbacd3fdbd883cdc6272ac23d12513834edad5、全entry hash差分0。古い現在形・残作業はこの段落の時点の履歴であり、現在の一覧はcurrent-status.mdだけで判定する。
+
+既知失敗checkpointのbaselineは4,058入力、12 PASS／16 FAIL。台帳primitiveは別の4,059入力で4／4 PASS、その補完58／58 PASS。IRのCore／RuntimePlan／Compiler全target・全feature checkも終了0だったが、当時のSource接続や実行受入とは扱わなかった。初回のSource接続は31件中22 PASS／9 FAIL。filterは完全なtest IDに一致するため18 command・12 factory・1 SlotRefを含み、呼出側の期待30件と説明中の「13 factory」は誤りだった。また、その最初のrunには25 inputのpin漏れがあり、4,034 pathだけを固定していたため観測履歴に限定した。後続owner・Source runでは4,060 inputを固定し、case／Source／EXE差分0を確認した。
+
+Nativeの所有HandleにCopy用検査を使っていた失敗を所有値のadmissionへ修復した。格納receiverをValue／Inspect／Takeの単一grammarへ揃え、Takeは元bankの検査と退役容量検査を通過してからlocal／fieldを移動する。show／hideは借用し、終了操作は元登録を一度だけ退役させる。private sourceとAWBC codec、semantic metadata、型検査、Copy／Move proof、local/free-variable、Native／pure／AWBC consumersを同じversion 1へ揃えた。Overlay以外のpopとRetireのInspectはtyped admissionで拒否する。
+
+追加Core ownerの初回は1 PASS／4 FAILで、Unit型の重複fixtureと、式の試行カウンターまでcustody不変と比較したfixtureを修正した。後続の4 PASS／1 FAILは、VMが台帳拒否を文字列の一般エラーへ落とし、trap処理へ進んだ実装問題を露呈した。型付きPresentation拒否を保った後も残った1 FAILは、拒否前に予算が1減る実差分だった。一般のPresentation拒否分類をVM／Productで共有し、instruction／terminatorが拒否されたときはその命令の予算を戻す。最終Core ownerは5／5 PASSで、元leaseのvisibility変更、private Native rollback／公開AWBC保存復元、receiver・siblings・台帳・cursor・予算の完全保持と、キュー処理後の同じ命令の再試行を検証した。OneOp／max_ops 1・256回の条件とassertionを弱めていない。
+
+Sourceは新たなレコード回帰を含む36件で30 PASS／6 FAILとなり、うち2件がHandleをstructの葉型に持つnominal projectionのUnsupportedLeafだった。これは以前の直接Handle引数・戻り値の受入を取り消すものではなく、新たに実行したnominal格納条件の具体的な不足である。TypeKindの標準carrier選択をCompilerとnominal schemaで共有し、affine Handleには元executableの型authorityを要求するExecutableRef、inert SlotRefにはexactなPlain ownerを使う。修復後の36件は32 PASS／4 FAILで、Handle 19条件、既存factory 12条件、既存SlotRef 1条件が成功した。残る4件はclear.bg／free hideのNative／AWBC投影未接続を同じIDで保持する。追加したnominal SlotRefのコピー2条件も別runで2／2 PASS。異なる入力の結果を一つの再実行として合算しない。
+
+対象5 crateの全target／全feature／locked Clippyは警告あり・終了0。初回fmtはif-let chainの整形差分を検出して終了1。その後のrustfmtはindentと等価なclosure表記だけを修正し、全差分を確認して32 path checkが終了0となった。runtime／Clippyの証拠はこの最終formatter修正より前であり、入力差分を原本へ残す。全62 packageの推移的reverse graphはmetadata／cargo tree --target allで確認したが、その範囲のruntime matrix、workspace全体のcheck／Clippy、Wasm、doctest、Tier 2、最終Native/Web画像parityを今回実行したとはしない。
+
+現状一覧の訂正理由: Coreの旧「Source command／method未接続」と、factory行等の重複したmethod残作業を、今回実行済みのHandle専用行と未接続の削除commandへ分けて置き換えた。SlotRefのnominal格納は既存SlotRef行へ追加し、独立した重複現状行を作らなかった。Source削除command、完全な構築前資源検査、computed receiverを含む式全体の失敗原子性、明示scope capability、ViewValue／Removed生成、driverと統合受入は引き続き未達である。Generic Matchの受入・公開行と過去の検証・full SHAは保持し、全体goalの未達を理由に受入済み機能へ戻していない。

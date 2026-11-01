@@ -249,6 +249,18 @@ respectively. An older handle cannot clear a replacement occupant.
 changing ownership; `clear.bg(...)` / `hide(...)` remove the occupant and return
 `Option<BackgroundSurface>` / `Option<CharacterSurface>`.
 
+`handle.show()` and `handle.hide()` borrow the checked receiver. They override
+the visibility of its original registration while retaining the authored body,
+token, and scope. `unmount()`, `release()`, and `destroy()` consume the handle
+and retire that registration and its body once. `pop()` does the same for an
+Overlay handle. A displaced handle can release its original lease, but cannot
+change the replacement's visibility or remove its body.
+
+A stored receiver stays in its local or record field until the owning bank
+admits the operation and any required retirement capacity. A refusal retains
+that receiver, its siblings, the bank, and its continuation for retry. SlotRef
+fields remain ordinary copied addresses; they do not acquire occupant custody.
+
 The inert address is `PresentationSlotAddress` in the shared interaction model.
 It retains the exact target public ID, resource family, and slot public ID;
 the slot's `slot.<resource>.*` family must match that resource. Construction,
