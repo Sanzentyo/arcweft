@@ -13849,3 +13849,14 @@ Source 0c65eb15235f16ff96232e4926e5bbd563e5a90c（親534742896a9450e8bff54ce4376
 段階的workspace checkで判明した共有enumの利用側を移行した。最終check11はworkspace全target／全feature／lockedで終了0。Clippy／構造gate／変更59 Rust path fmtも終了0。初回失敗・全診断・元入力はrawへ保持し、警告なしとはしない。新入力の全逆依存／全CLI・default／Wasm・doctest・Tier 2・画像parityは未再実行。完了したGeneric Matchや個別ownerの受入は維持し、以前の9024 PASS・CLI 43 FAIL・151／151 PASSを新入力の再実行へ読み替えない。Source factory ABIのlayout結合、生成・明示scope・command／method・driver・全live contour admissionは残る。
 
 現状の唯一の一覧はcurrent-status.mdに集約し、旧現在形から未達を重複転記しない。詳細とraw hashは[checkpoint原本](acceptance-evidence/task-presentation-resource-progress.json)。全体cargo cleanは既に実行済み（198,113 files／244.6 GiB・終了0）で、この実装中には繰り返していない。生成物の移動・コピー・退避も行っていない。
+
+## 2026-11-01 Source factoryの実execution owner接続
+
+- ABI中間公開は3d220c40454c952f1861a01a00c76b097f4686a6、実行ownerの公開はcf9dfb95f67bdcfd4eb4e43b1fbeb44924d0fc2f。元14 tracked差分のSHA256は53b95c4ff3fb9ef6080f215b97cf7442033a1ff81f83da3ebe7db441b9d363b6のまま、6 actual untrackedも保持した。
+- 初回catalogの存在しないentity variant、execution接続中のmutable bankの型とresult rootのexhaustive matchの失敗を保持する。実行はABI時点17 PASS／2 FAIL、接続後71 PASS／2 FAIL、返却修復途中146 PASS／1 FAILを経て、最終focus5は147／147 PASS。各runの異なる選択・入力を合算しない。最終4,052入力・catalog case／Source／EXE差分0。NativeはScope／let／match／関数返却を、AWBCは各step snapshot／owned restoreを通す。新Sourceの公開Native saveや全factory／driver受入へ拡大しない。
+- 両Sourceテストがresource Handleをraw take_program_resultで取り出そうとした点は、fixtureの誤りとして訂正した。同APIはledgerを伴わない移動を正しく拒否する。実際に完了したowned resultの借用参照へ替え、取り出し拒否と拒否後の結果保持も追加で必須化した。Source実行・評価順12・Image／Root tokenのassertionは維持している。
+- 同入力のworkspace全target／全feature／locked checkとClippy、構造gate、変更40 Rust path fmtは終了0。構造は3288 files／3158 Rust files・1783877 physical Rust LOC・384 review trigger・blocking0。解決済みCargo graphの推移的逆依存は62 package、Cargo manifest／lock変更0。この新入力の全逆依存・全CLI runtime、default／Wasm・doctest・Tier 2・画像parityは未再実行。
+- 現状の訂正理由は実Source実行で判明したNativeのline専用投影と返却custodyの不具合、および今回の新しい公開・検証証拠。current-statusの冒頭に重複していた旧件数は表へ集約し、旧SHAと結果は既存履歴・原本に保持する。Core custody行に残ったHandle生成全般の未接続表現も、実Source imageの完了範囲に合わせて削除し、未接続のViewValue／Removed・command／methodを区別した。Generic Match等の完了項目を戻さない。現状一覧は引き続きcurrent-status.mdだけとする。
+- ユーザーの新しい明示指示によりcargo clean --lockedを再度実行した。検証済み出力先D:/git/arcweft/targetの201,467 files／227.2 GiBを削除・終了0。以前のclean記録と「当時は繰り返していない」という履歴は保持し、今回の指示が従前の再実行しない作業上の前提を更新したことを明記する。生成物の移動・コピー・退避は行っていない。
+
+初回失敗・中間公開・Source freeze・case／EXE pins・Cargo graph・全gate・clean実測は[今回原本](acceptance-evidence/task-presentation-factory-progress.json)と91 entryのraw ZIPに保持する（entry差分0、ZIP SHA256 569df43358132b1df177ae7d42f3cabddc16cfa23d84c39cdb4728ae4cc2d4ff）。

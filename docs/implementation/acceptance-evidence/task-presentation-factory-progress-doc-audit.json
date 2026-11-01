@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "base": "cf9dfb95f67bdcfd4eb4e43b1fbeb44924d0fc2f",
+  "paths": [
+    "docs/implementation/current-status.md",
+    "docs/implementation/convergence-evidence-history.md",
+    "docs/implementation/acceptance-evidence/task-presentation-factory-progress.json",
+    "docs/implementation/acceptance-evidence/task-presentation-factory-progress-raw.zip"
+  ],
+  "genericMatchUnchanged": true,
+  "historyPrefixUnchanged": true,
+  "markdownLinks": 771,
+  "brokenLinks": 0,
+  "rawEntryDrift": 0,
+  "correctionReason": "New actual Source execution, custody repairs and explicit user clean; duplicate introductory counts moved to the existing table while old results and full SHAs remain in immutable history/raw evidence; removed the obsolete broad Handle-generation incomplete listing because actual Source image execution is verified, while other explicit boundaries remain distinct",
+  "recordedAt": "2026-11-01T08:48:32.823547Z",
+  "historyBytePrefixUnchanged": true,
+  "historicalShaLoss": 0
+}
