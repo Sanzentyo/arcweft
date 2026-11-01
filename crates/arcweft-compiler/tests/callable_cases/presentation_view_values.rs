@@ -288,3 +288,93 @@ fn source_view_computed_callee_keeps_scoped_prefix_effects_in_native_flow() {
 fn source_view_computed_callee_keeps_scoped_prefix_effects_in_decoded_awbc_flow() {
     run_flow(false, FLOW_CALLEE_PREFIX, "12");
 }
+
+fn run_flow_try_prefix(native: bool, computed: bool, success: bool) {
+    let input = if success { "Some(2i64)" } else { "None" };
+    let prefix = "scope { let digit = try input; order = order * 10i64 + digit; Card }";
+    let call = if computed {
+        format!("({prefix})(caption = scope {{ order = order * 10i64 + 3i64; \"owned\" }})")
+    } else {
+        "selected(caption = scope { order = order * 10i64 + 3i64; \"owned\" })".to_owned()
+    };
+    let binding = if computed {
+        String::new()
+    } else {
+        format!("let selected = {prefix};")
+    };
+    let body = format!(
+        r#"
+        let input: Option<i64> = {input};
+        let mut order = 1i64;
+        let outcome = option {{
+            {binding}
+            let handle = mount({call});
+            handle.unmount();
+            order
+        }};
+        return if let Some(value) = outcome {{ value }} else {{ order }}
+    "#
+    );
+    run_flow(native, &body, if success { "123" } else { "1" });
+}
+
+#[test]
+fn source_view_alias_prefix_try_succeeds_in_native_flow() {
+    run_flow_try_prefix(true, false, true);
+}
+
+#[test]
+fn source_view_alias_prefix_try_succeeds_in_decoded_awbc_flow() {
+    run_flow_try_prefix(false, false, true);
+}
+
+#[test]
+fn source_view_alias_prefix_try_propagates_in_native_flow() {
+    run_flow_try_prefix(true, false, false);
+}
+
+#[test]
+fn source_view_alias_prefix_try_propagates_in_decoded_awbc_flow() {
+    run_flow_try_prefix(false, false, false);
+}
+
+#[test]
+fn source_view_computed_callee_prefix_try_succeeds_in_native_flow() {
+    run_flow_try_prefix(true, true, true);
+}
+
+#[test]
+fn source_view_computed_callee_prefix_try_succeeds_in_decoded_awbc_flow() {
+    run_flow_try_prefix(false, true, true);
+}
+
+#[test]
+fn source_view_computed_callee_prefix_try_propagates_in_native_flow() {
+    run_flow_try_prefix(true, true, false);
+}
+
+#[test]
+fn source_view_computed_callee_prefix_try_propagates_in_decoded_awbc_flow() {
+    run_flow_try_prefix(false, true, false);
+}
+
+const FLOW_ESCAPING_VIEW: &str = r#"
+    let value = scope {
+        let caption = "owned";
+        let selected = Card;
+        selected(caption)
+    };
+    let handle = mount(value);
+    handle.unmount();
+    return 42i64
+"#;
+
+#[test]
+fn source_view_value_leaves_its_construction_scope_before_mount_in_native_flow() {
+    run_flow(true, FLOW_ESCAPING_VIEW, "42");
+}
+
+#[test]
+fn source_view_value_leaves_its_construction_scope_before_mount_in_decoded_awbc_flow() {
+    run_flow(false, FLOW_ESCAPING_VIEW, "42");
+}
