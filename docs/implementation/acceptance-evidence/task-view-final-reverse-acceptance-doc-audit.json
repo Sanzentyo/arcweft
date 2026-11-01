@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "source": "a806ce126cf31edf0c438c2c9c9aaec25699253d",
+  "inspectedHead": "a806ce126cf31edf0c438c2c9c9aaec25699253d",
+  "documents": [
+    "docs/implementation/current-status.md",
+    "docs/00-overview/crate-map.md",
+    "docs/implementation/convergence-evidence-history.md"
+  ],
+  "historyScan": "new appended evidence only; old prefix hash checked",
+  "localLinks": 106,
+  "brokenLinks": 0,
+  "fencesBalanced": true,
+  "historicalPrefixBytes": 1736952,
+  "historicalPrefixDrift": 0,
+  "acceptedGenericMatchRowUnchanged": true,
+  "rawEntryCount": 76,
+  "rawPayloadEntries": 75,
+  "rawZipSha256": "e5dacea809e2b14e63d551622dd7020ba5189d6bd4319192910149c3494fb60d",
+  "rawEntryDrift": 0,
+  "originalUntracked": 6,
+  "originalUntrackedDrift": 0,
+  "recordedAt": "2026-11-01T21:58:05.6127655Z"
+}
