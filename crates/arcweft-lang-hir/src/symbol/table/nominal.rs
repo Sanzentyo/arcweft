@@ -171,7 +171,7 @@ impl<'a> NominalHir<'a> {
             Self::Enum(item) => item.name().resolved().map(HirName::as_str),
             Self::TypeAlias(item) => item.name().resolved().map(HirName::as_str),
             Self::Action(item) => match item.header().name() {
-                HirRetainedName::Resolved(name) => Some(name.as_str()),
+                HirRetainedName::Resolved(name) => Some(name.last_segment()),
                 HirRetainedName::Missing | HirRetainedName::Invalid => None,
             },
         }
@@ -183,6 +183,21 @@ impl<'a> NominalHir<'a> {
             Self::Enum(item) => item.generic_parameters(),
             Self::TypeAlias(item) => item.generic_parameters(),
             Self::Action(_) => &[],
+        }
+    }
+
+    fn owner_path(self) -> Box<[ModuleSegment]> {
+        match self {
+            Self::Action(item) => match item.header().name() {
+                HirRetainedName::Resolved(name) => name
+                    .namespace_segments()
+                    .map(|segment| {
+                        ModuleSegment::new(segment).expect("declaration namespace component")
+                    })
+                    .collect(),
+                HirRetainedName::Missing | HirRetainedName::Invalid => Box::new([]),
+            },
+            Self::Struct(_) | Self::Enum(_) | Self::TypeAlias(_) => Box::new([]),
         }
     }
 
@@ -442,7 +457,7 @@ pub(super) fn build_nominal_declaration(
             revision,
             module: module_path.clone(),
             kind: hir.kind(),
-            owner_path: Box::new([]),
+            owner_path: hir.owner_path(),
             name,
         },
         owner,

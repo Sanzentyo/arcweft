@@ -1,6 +1,6 @@
 //! Retained-identity declarations and their secondary member arena.
 
-use arcweft_id::{DeclarationIdentityFamily, DeclarationName, PublicId, PublicIdFamilyError};
+use arcweft_id::{DeclarationIdentityFamily, DeclarationPath, PublicId, PublicIdFamilyError};
 use arcweft_lang_syntax::ast::module_path::{CanonicalModulePath, ModuleSegment};
 use thiserror::Error;
 
@@ -123,7 +123,7 @@ pub enum HirRetainedPublicIdIssue {
 /// Valid or typed-recovered retained declaration name.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HirRetainedName {
-    Resolved(DeclarationName),
+    Resolved(DeclarationPath),
     Missing,
     Invalid,
 }

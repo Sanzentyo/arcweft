@@ -1,6 +1,6 @@
 use core::num::{NonZeroU32, NonZeroU64};
 
-use arcweft_id::{DeclarationIdentityFamily, DeclarationName, PublicId};
+use arcweft_id::{DeclarationIdentityFamily, DeclarationPath, PublicId};
 
 use super::callable::{HirCallableSignature, HirContractScopes, HirWherePredicate};
 use super::member_index::HirDeclarationMemberIndexResolveError;
@@ -239,7 +239,7 @@ fn activity_ports_require_exact_names_locals_and_disjoint_direction_rows() {
             value: PublicId::try_new("activity.route_planner").unwrap(),
             origin: HirPublicIdOrigin::Explicit,
         },
-        HirRetainedName::Resolved(DeclarationName::try_new("RoutePlanner").unwrap()),
+        HirRetainedName::Resolved(DeclarationPath::try_new("RoutePlanner").unwrap()),
     )
     .unwrap();
     let callable_scope = typed_id(module_id, 4);
@@ -341,7 +341,7 @@ fn layer_kind_defaults_and_member_recovery_are_owned_by_typed_payloads() {
             value: PublicId::try_new("layer.dialogue").unwrap(),
             origin: HirPublicIdOrigin::Explicit,
         },
-        HirRetainedName::Resolved(DeclarationName::try_new("dialogue_ui").unwrap()),
+        HirRetainedName::Resolved(DeclarationPath::try_new("dialogue_ui").unwrap()),
     )
     .unwrap();
     let declaration =
@@ -370,7 +370,7 @@ fn layer_item_rejects_transplanted_member_rows_and_clean_recovered_headers() {
             value: PublicId::try_new("layer.dialogue").unwrap(),
             origin: HirPublicIdOrigin::Explicit,
         },
-        HirRetainedName::Resolved(DeclarationName::try_new("dialogue_ui").unwrap()),
+        HirRetainedName::Resolved(DeclarationPath::try_new("dialogue_ui").unwrap()),
     )
     .unwrap();
     let transplanted = HirLayerDeclaration::try_new(
@@ -471,7 +471,7 @@ fn layer_reference_recovery_poison_propagates_to_its_item() {
             value: PublicId::try_new("layer.dialogue").unwrap(),
             origin: HirPublicIdOrigin::Explicit,
         },
-        HirRetainedName::Resolved(DeclarationName::try_new("dialogue_ui").unwrap()),
+        HirRetainedName::Resolved(DeclarationPath::try_new("dialogue_ui").unwrap()),
     )
     .unwrap();
     let declaration =
@@ -524,7 +524,7 @@ fn module_member_index_freezes_multiple_arenas_and_resolves_composite_ids() {
             value: PublicId::try_new("character.Alice").unwrap(),
             origin: HirPublicIdOrigin::DerivedFromName,
         },
-        HirRetainedName::Resolved(DeclarationName::try_new("Alice").unwrap()),
+        HirRetainedName::Resolved(DeclarationPath::try_new("Alice").unwrap()),
     )
     .unwrap();
     let item = HirItem::try_new(
@@ -567,7 +567,7 @@ fn module_member_index_freezes_multiple_arenas_and_resolves_composite_ids() {
             value: PublicId::try_new("character.Bob").unwrap(),
             origin: HirPublicIdOrigin::DerivedFromName,
         },
-        HirRetainedName::Resolved(DeclarationName::try_new("Bob").unwrap()),
+        HirRetainedName::Resolved(DeclarationPath::try_new("Bob").unwrap()),
     )
     .unwrap();
     let second_item = HirItem::try_new(
@@ -671,7 +671,7 @@ fn module_member_index_rejects_foreign_family_and_order_mismatches_before_freeze
             value: PublicId::try_new("character.Bob").unwrap(),
             origin: HirPublicIdOrigin::DerivedFromName,
         },
-        HirRetainedName::Resolved(DeclarationName::try_new("Bob").unwrap()),
+        HirRetainedName::Resolved(DeclarationPath::try_new("Bob").unwrap()),
     )
     .unwrap();
     let character = HirItem::try_new(
@@ -832,7 +832,7 @@ fn shared_flow_body_rejects_foreign_children() {
 
 #[test]
 fn retained_identity_and_known_family_recovery_remain_typed() {
-    let name = DeclarationName::try_new("Alice").unwrap();
+    let name = DeclarationPath::try_new("Alice").unwrap();
     let public_id = PublicId::try_new("character.Alice").unwrap();
     let header = HirRetainedHeader::try_new(
         &arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root(),
@@ -857,7 +857,7 @@ fn retained_identity_and_known_family_recovery_remain_typed() {
                 value: PublicId::try_new("asset.room").unwrap(),
                 origin: HirPublicIdOrigin::Explicit,
             },
-            HirRetainedName::Resolved(DeclarationName::try_new("room").unwrap()),
+            HirRetainedName::Resolved(DeclarationPath::try_new("room").unwrap()),
         ),
         Err(HirRetainedHeaderError::AssetIsCatalogOwned)
     );
@@ -904,7 +904,7 @@ fn retained_identity_and_known_family_recovery_remain_typed() {
 fn retained_view_header_validates_derived_identity_in_its_canonical_module() {
     use arcweft_lang_syntax::ast::module_path::{CanonicalModulePath, ModuleSegment};
     let module = CanonicalModulePath::from_segments([ModuleSegment::new("ui").unwrap()]);
-    let name = HirRetainedName::Resolved(DeclarationName::try_new("Card").unwrap());
+    let name = HirRetainedName::Resolved(DeclarationPath::try_new("Card").unwrap());
     let derived = |value: &str| HirRetainedPublicId::Resolved {
         value: PublicId::try_new(value).unwrap(),
         origin: HirPublicIdOrigin::DerivedFromName,
@@ -964,7 +964,7 @@ fn retained_header_preserves_recovery_without_fabricating_identity_or_name() {
             &arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root(),
             DeclarationIdentityFamily::Character,
             HirRetainedPublicId::Recovered(HirRetainedPublicIdIssue::WrongFamily(wrong_family,)),
-            HirRetainedName::Resolved(DeclarationName::try_new("Alice").unwrap()),
+            HirRetainedName::Resolved(DeclarationPath::try_new("Alice").unwrap()),
         )
         .is_ok()
     );
@@ -975,7 +975,7 @@ fn retained_header_preserves_recovery_without_fabricating_identity_or_name() {
             HirRetainedPublicId::Recovered(HirRetainedPublicIdIssue::WrongFamily(
                 PublicId::try_new("character.Alice").unwrap(),
             )),
-            HirRetainedName::Resolved(DeclarationName::try_new("Alice").unwrap()),
+            HirRetainedName::Resolved(DeclarationPath::try_new("Alice").unwrap()),
         ),
         Err(HirRetainedHeaderError::RecoveredIdentityMatchesFamily)
     );
@@ -984,7 +984,7 @@ fn retained_header_preserves_recovery_without_fabricating_identity_or_name() {
             &arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root(),
             DeclarationIdentityFamily::Character,
             HirRetainedPublicId::Recovered(HirRetainedPublicIdIssue::DerivedFromRecoveredName,),
-            HirRetainedName::Resolved(DeclarationName::try_new("Alice").unwrap()),
+            HirRetainedName::Resolved(DeclarationPath::try_new("Alice").unwrap()),
         ),
         Err(HirRetainedHeaderError::RecoveredDerivationHasResolvedName)
     );

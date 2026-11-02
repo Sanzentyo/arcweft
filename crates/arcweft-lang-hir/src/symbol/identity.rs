@@ -1,7 +1,7 @@
 use core::fmt;
 use std::collections::BTreeMap;
 
-use arcweft_id::{DeclarationIdentityFamily, DeclarationName, PublicId};
+use arcweft_id::{DeclarationIdentityFamily, DeclarationPath, PublicId};
 use arcweft_lang_syntax::ast::{
     common::Visibility,
     module_path::{CanonicalModulePath, ModulePathError, ModulePathRoot, ModuleSegment},
@@ -295,7 +295,7 @@ pub struct ExternalSymbol {
 pub struct ProjectRetainedSymbol {
     public_id: PublicId,
     family: DeclarationIdentityFamily,
-    name: DeclarationName,
+    name: DeclarationPath,
     owner: ItemId,
     module: CanonicalModulePath,
     visibility: Option<Visibility>,
@@ -1136,7 +1136,7 @@ impl ProjectRetainedSymbol {
         revision: ProjectSymbolRevision,
         public_id: PublicId,
         family: DeclarationIdentityFamily,
-        name: DeclarationName,
+        name: DeclarationPath,
         owner: ItemId,
         module: CanonicalModulePath,
         visibility: Option<Visibility>,
@@ -1146,11 +1146,14 @@ impl ProjectRetainedSymbol {
         let projection = match family {
             DeclarationIdentityFamily::View => {
                 ProjectRetainedProjection::ViewConstructor(CallableDeclarationKey::Existing(
-                    CallableDeclarationId::try_new(
+                    CallableDeclarationId::try_new_in_owner_path(
                         world.package().clone(),
                         module.clone(),
                         CallableDeclarationOwner::View,
-                        name.as_str(),
+                        name.namespace_segments().map(|segment| {
+                            ModuleSegment::new(segment).expect("declaration namespace component")
+                        }),
+                        name.last_segment(),
                     )
                     .expect("accepted retained View names are callable names"),
                 ))
@@ -1206,7 +1209,7 @@ impl ProjectRetainedSymbol {
         self.family
     }
 
-    pub const fn name(&self) -> &DeclarationName {
+    pub const fn name(&self) -> &DeclarationPath {
         &self.name
     }
 

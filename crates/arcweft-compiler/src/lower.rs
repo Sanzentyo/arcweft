@@ -3105,7 +3105,7 @@ fn character_presentation_record(
         })
         .transpose()?;
     let fallback = match character.header().name() {
-        HirRetainedName::Resolved(name) => Some(name.as_str()),
+        HirRetainedName::Resolved(name) => Some(name.last_segment()),
         HirRetainedName::Missing | HirRetainedName::Invalid => None,
     }
     .map(CharacterDisplayNameValue::try_new)

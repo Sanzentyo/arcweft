@@ -1,6 +1,6 @@
 //! Final semantic payload for one ordinary `flow` declaration.
 
-use arcweft_id::{DeclarationIdentityFamily, DeclarationName, PublicId};
+use arcweft_id::{DeclarationIdentityFamily, DeclarationPath, PublicId};
 use arcweft_lang_syntax::ast::module_path::{CanonicalModulePath, ModuleSegment};
 
 use crate::expr::HirThreadBody;
@@ -60,7 +60,7 @@ impl HirFlowItem {
     ) -> Option<(PublicId, FlowPublicationKind)> {
         match identity {
             HirFlowIdentity::Name { name } => {
-                let name = DeclarationName::try_new(name.as_str()).ok()?;
+                let name = DeclarationPath::try_new(name.as_str()).ok()?;
                 let public_id = DeclarationIdentityFamily::Flow
                     .derive_public_id(module.segments().iter().map(ModuleSegment::as_str), &name)
                     .ok()?;

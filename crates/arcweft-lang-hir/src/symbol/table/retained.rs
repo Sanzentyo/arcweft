@@ -104,6 +104,14 @@ impl ProjectSymbolTable {
             return;
         };
 
+        // Account for every component before allocating binding and owner paths.
+        let additional_components =
+            u64::try_from(name.segments().count().saturating_sub(1)).unwrap_or(u64::MAX);
+        if let Err(error) = Self::charge(work, additional_components, Some(source.clone())) {
+            diagnostics.push(error);
+            return;
+        }
+
         let declaration_id = ProjectDeclarationId::Retained(public_id.clone());
         if let Some(ProjectSymbol::Retained(first)) = self.symbols.get(&declaration_id) {
             diagnostics.push(ProjectSymbolLinkError::DuplicatePublicId {
@@ -114,52 +122,43 @@ impl ProjectSymbolTable {
             return;
         }
 
-        let binding_names = vec![name.as_str()];
-        let paths = binding_names
-            .iter()
-            .map(|binding| {
-                ProjectSymbolPath::new(
-                    ModulePathRoot::ImplicitCrate,
-                    [ProjectSymbolSegment::try_new(*binding)
-                        .expect("resolved retained names are project symbol segments")],
-                )
-                .expect("one retained name is a valid implicit project binding")
-            })
-            .collect::<Vec<_>>();
-        for (binding, path) in binding_names.iter().zip(&paths) {
-            let lookup_key = path.to_string();
-            if let Some(first) = self
-                .scopes
-                .get(module_path)
-                .and_then(|scope| scope.get(&lookup_key))
-                .and_then(|bindings| bindings.first())
-                .and_then(|binding| binding.sites.first())
-                .cloned()
-            {
-                diagnostics.push(ProjectSymbolLinkError::duplicate_declaration(
-                    module_path.clone(),
-                    (*binding).to_owned(),
-                    first,
-                    source,
-                ));
-                return;
-            }
+        let path = ProjectSymbolPath::new(
+            ModulePathRoot::ImplicitCrate,
+            name.segments().map(|segment| {
+                ProjectSymbolSegment::try_new(segment)
+                    .expect("declaration components are project symbol segments")
+            }),
+        )
+        .expect("one declaration path owns its implicit project binding");
+        let lookup_key = path.to_string();
+        if let Some(first) = self
+            .scopes
+            .get(module_path)
+            .and_then(|scope| scope.get(&lookup_key))
+            .and_then(|bindings| bindings.first())
+            .and_then(|binding| binding.sites.first())
+            .cloned()
+        {
+            diagnostics.push(ProjectSymbolLinkError::duplicate_declaration(
+                module_path.clone(),
+                name.as_str().to_owned(),
+                first,
+                source,
+            ));
+            return;
         }
-
         let visibility = item.prefix().visibility().map(super::hir_visibility);
         let target = ProjectSymbolTargetId::Retained(public_id.clone());
-        for path in paths {
-            self.insert_scope_binding(
-                module_path,
-                ScopeBinding::new(
-                    path,
-                    target.clone(),
-                    visibility,
-                    module_path.clone(),
-                    [source.clone()],
-                ),
-            );
-        }
+        self.insert_scope_binding(
+            module_path,
+            ScopeBinding::new(
+                path,
+                target,
+                visibility,
+                module_path.clone(),
+                [source.clone()],
+            ),
+        );
         self.symbols.insert(
             declaration_id,
             ProjectSymbol::Retained(ProjectRetainedSymbol::new(

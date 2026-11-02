@@ -57,6 +57,14 @@ catalog derives `asset.*` identities from normalized virtual paths under the
 selected `assets/` root, while source uses the reference expressions described
 above.
 
+A retained declaration's binding name is a contiguous dotted path of ordinary
+identifiers, for example `pub action feedback.submit(value: String)`. It creates
+one binding for the complete path; it does not also introduce `submit`. The
+default public ID joins the declaration family, owning module, and binding
+path. An explicit public ID supplies identity independently of that binding
+path. Empty components are invalid. Registry-key components remain single
+identifiers and do not acquire this declaration-path grammar.
+
 `#` is reserved for Rust-like attributes in the `#[...]` form and is not an
 entity-reference marker.
 

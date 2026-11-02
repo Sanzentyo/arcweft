@@ -1,6 +1,6 @@
 //! Final retained-identity item lowering.
 
-use arcweft_id::{DeclarationIdentityFamily, DeclarationName};
+use arcweft_id::DeclarationIdentityFamily;
 use arcweft_lang_syntax::attachment::{
     AstNode, AttachedCharacterBody, AttachedCharacterDeclaration, AttachedCharacterInitializer,
     AttachedCharacterMember, AttachedDeclarationPublicId, AttachedDeclarationPublicIdIssue,
@@ -322,14 +322,10 @@ impl HirRetainedHeader {
         family: DeclarationIdentityFamily,
     ) -> Result<Self, HirLowerFailure> {
         let name = match attached.name() {
-            AttachedRetainedName::Resolved { value, .. } => HirRetainedName::Resolved(
-                DeclarationName::try_new(value.as_str())
-                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
-            ),
-            AttachedRetainedName::Derived { value, .. } => HirRetainedName::Resolved(
-                DeclarationName::try_new(value.as_str())
-                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
-            ),
+            AttachedRetainedName::Resolved { value, .. }
+            | AttachedRetainedName::Derived { value, .. } => {
+                HirRetainedName::Resolved(value.clone())
+            }
             AttachedRetainedName::Missing { .. } => HirRetainedName::Missing,
             AttachedRetainedName::Invalid { .. } => HirRetainedName::Invalid,
         };

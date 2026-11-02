@@ -40,14 +40,14 @@ impl HirProof {
         name: &crate::item::HirRequiredName,
         attached: &arcweft_lang_syntax::attachment::AttachedDeclarationPublicId,
     ) -> Result<Option<arcweft_id::PublicId>, HirInvariantFailure> {
-        use arcweft_id::{DeclarationIdentityFamily, DeclarationName};
+        use arcweft_id::{DeclarationIdentityFamily, DeclarationPath};
         use arcweft_lang_syntax::attachment::AttachedDeclarationPublicId;
         match attached {
             AttachedDeclarationPublicId::Explicit { value, .. } => Ok(Some(value.clone())),
             AttachedDeclarationPublicId::Derived => {
                 name.resolved()
                     .map(|name| {
-                        let name = DeclarationName::try_new(name.as_str())
+                        let name = DeclarationPath::try_new(name.as_str())
                             .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
                         DeclarationIdentityFamily::Proof
                             .derive_public_id(

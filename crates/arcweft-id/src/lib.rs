@@ -91,7 +91,7 @@ pub enum DeclarationIdentityFamily {
     Style = 10,
 }
 
-/// Validated module-local spelling of a retained declaration.
+/// One validated identifier component of a declaration or registry key.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DeclarationName(String);
 
@@ -101,6 +101,22 @@ pub enum DeclarationNameError {
     Empty,
     #[error("declaration name is not one Arcweft identifier: {value}")]
     InvalidIdentifier { value: String },
+}
+
+/// One module-local declaration binding path. Components use the same
+/// identifier grammar as declaration names, with no empty components.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct DeclarationPath(String);
+
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum DeclarationPathError {
+    #[error("declaration path must not be empty")]
+    Empty,
+    #[error("declaration path component {index} is invalid: {source}")]
+    InvalidComponent {
+        index: usize,
+        source: DeclarationNameError,
+    },
 }
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
@@ -277,7 +293,7 @@ impl DeclarationIdentityFamily {
     pub fn derive_public_id<'a>(
         self,
         namespace: impl IntoIterator<Item = &'a str>,
-        local: &DeclarationName,
+        local: &DeclarationPath,
     ) -> Result<PublicId, PublicIdFamilyError> {
         let mut value = self.prefix().to_owned();
         for segment in namespace {
@@ -399,7 +415,9 @@ impl TryFrom<&AssetVirtualPath> for AssetId {
 
 impl DeclarationName {
     pub fn try_new(value: impl Into<String>) -> Result<Self, DeclarationNameError> {
-        validate_declaration_identifier(value.into()).map(Self)
+        let value = value.into();
+        Self::validate_source(&value)?;
+        Ok(Self(value))
     }
 
     /// Checks borrowed source before a bounded decoder copies its identity.
@@ -417,6 +435,54 @@ impl DeclarationName {
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// Returns the owner-issued bytes of this validated identifier.
+    #[must_use]
+    pub fn canonical_identity_bytes(&self) -> &[u8] {
+        self.0.as_bytes()
+    }
+}
+
+impl DeclarationPath {
+    pub fn try_new(value: impl Into<String>) -> Result<Self, DeclarationPathError> {
+        let value = value.into();
+        Self::validate_source(&value)?;
+        Ok(Self(value))
+    }
+
+    pub fn validate_source(value: &str) -> Result<(), DeclarationPathError> {
+        if value.is_empty() {
+            return Err(DeclarationPathError::Empty);
+        }
+        for (index, component) in value.split('.').enumerate() {
+            DeclarationName::validate_source(component)
+                .map_err(|source| DeclarationPathError::InvalidComponent { index, source })?;
+        }
+        Ok(())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Borrows the validated components of the declaration's binding path.
+    pub fn segments(&self) -> impl DoubleEndedIterator<Item = &str> + Clone {
+        self.0.split('.')
+    }
+
+    /// The final identifier, for consumers whose domain requires a local leaf.
+    pub fn last_segment(&self) -> &str {
+        self.segments()
+            .next_back()
+            .expect("validated declaration paths are nonempty")
+    }
+
+    /// Namespace components preceding the declaration's final identifier.
+    pub fn namespace_segments(&self) -> impl Iterator<Item = &str> + Clone {
+        let mut segments = self.segments();
+        segments.next_back();
+        segments
     }
 
     /// Returns the owner-issued bytes of this validated declaration name.
@@ -559,16 +625,6 @@ impl FromStr for DeclarationName {
     }
 }
 
-fn validate_declaration_identifier(value: String) -> Result<String, DeclarationNameError> {
-    if value.is_empty() {
-        return Err(DeclarationNameError::Empty);
-    }
-    if !valid_declaration_identifier_source(&value) {
-        return Err(DeclarationNameError::InvalidIdentifier { value });
-    }
-    Ok(value)
-}
-
 fn valid_declaration_identifier_source(value: &str) -> bool {
     let mut characters = value.chars();
     let Some(first) = characters.next() else {
@@ -613,7 +669,7 @@ fn is_reserved_prefix(value: &str) -> bool {
 mod tests {
     use super::{
         AssetId, AssetIdError, AssetVirtualPath, DeclarationIdentityFamily, DeclarationName,
-        IdErrorKind, PublicId, PublicIdFamilyError, TextKey,
+        DeclarationPath, IdErrorKind, PublicId, PublicIdFamilyError, TextKey,
     };
 
     #[test]
@@ -655,7 +711,7 @@ mod tests {
 
     #[test]
     fn declaration_family_validates_and_derives_public_identity() {
-        let name = DeclarationName::try_new("MainDialogue").expect("declaration name");
+        let name = DeclarationPath::try_new("MainDialogue").expect("declaration path");
         let derived = DeclarationIdentityFamily::View
             .derive_public_id(std::iter::empty(), &name)
             .expect("derived View identity");
@@ -724,7 +780,7 @@ mod tests {
 
     #[test]
     fn declaration_namespace_identity_uses_one_public_id_grammar() {
-        let name = DeclarationName::try_new("Card").unwrap();
+        let name = DeclarationPath::try_new("Card").unwrap();
         let scoped = DeclarationIdentityFamily::View
             .derive_public_id(["ui", "mobile"], &name)
             .unwrap();
@@ -845,10 +901,32 @@ mod tests {
     }
 
     #[test]
-    fn retained_local_names_share_the_language_identifier_rule() {
+    fn retained_binding_paths_share_the_language_identifier_rule() {
         assert!(DeclarationName::try_new("会話2").is_ok());
         assert!(DeclarationName::try_new("alice_2").is_ok());
         assert!(DeclarationName::try_new("dialogue.main").is_err());
+        let qualified = DeclarationPath::try_new("dialogue.main").unwrap();
+        assert_eq!(
+            qualified.segments().collect::<Vec<_>>(),
+            ["dialogue", "main"]
+        );
+        assert_eq!(qualified.last_segment(), "main");
+        assert_eq!(
+            DeclarationIdentityFamily::Action
+                .derive_public_id(["ui"], &qualified)
+                .unwrap()
+                .as_str(),
+            "action.ui.dialogue.main"
+        );
+        for malformed in [
+            "dialogue.",
+            ".main",
+            "dialogue..main",
+            "dialogue.2main",
+            "dialogue.if-key",
+        ] {
+            assert!(DeclarationPath::try_new(malformed).is_err(), "{malformed}");
+        }
         assert!(DeclarationName::try_new("2dialogue").is_err());
     }
 }

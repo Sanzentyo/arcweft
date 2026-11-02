@@ -31,7 +31,7 @@ impl HirStyleItem {
     ) -> Result<crate::item::HirRetainedPublicId, HirLowerFailure> {
         use crate::item::{HirPublicIdOrigin, HirRetainedPublicId, HirRetainedPublicIdIssue};
         use crate::leaf::HirIdRef;
-        use arcweft_id::{DeclarationIdentityFamily, DeclarationName, PublicId};
+        use arcweft_id::{DeclarationIdentityFamily, DeclarationPath, PublicId};
         use arcweft_lang_syntax::attachment::StyleIdForm;
         let reference = id_ref(
             attached
@@ -58,7 +58,7 @@ impl HirStyleItem {
                 .as_str()
                 .split('.')
                 .collect::<Vec<_>>();
-            let name = DeclarationName::try_new(
+            let name = DeclarationPath::try_new(
                 declaration
                     .pop()
                     .ok_or(HirInvariantFailure::InvalidArenaCommit)?,

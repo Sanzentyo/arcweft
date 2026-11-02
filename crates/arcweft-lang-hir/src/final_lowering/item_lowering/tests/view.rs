@@ -38,7 +38,7 @@ fn assert_view_freeze_rejects(
 #[test]
 fn view_freeze_rejects_a_derived_identity_from_a_different_module() {
     use crate::item::HirRetainedHeader;
-    use arcweft_id::{DeclarationName, PublicId};
+    use arcweft_id::{DeclarationPath, PublicId};
     use arcweft_lang_syntax::ast::module_path::ModuleSegment;
     assert_view_freeze_rejects(
         "foreign-derived-identity",
@@ -57,7 +57,7 @@ fn view_freeze_rejects_a_derived_identity_from_a_different_module() {
                     value: PublicId::try_new("view.other.Main").unwrap(),
                     origin: HirPublicIdOrigin::DerivedFromName,
                 },
-                HirRetainedName::Resolved(DeclarationName::try_new("Main").unwrap()),
+                HirRetainedName::Resolved(DeclarationPath::try_new("Main").unwrap()),
             )
             .unwrap();
             let replacement = HirItem::try_new_with_state(

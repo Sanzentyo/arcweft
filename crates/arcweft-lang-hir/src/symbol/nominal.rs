@@ -4,7 +4,7 @@
 //! revision-bound source evidence. It does not retain detached syntax trees or
 //! rebuild authored type records from source text.
 
-use arcweft_id::{DeclarationIdentityFamily, DeclarationName, PublicId};
+use arcweft_id::{DeclarationIdentityFamily, DeclarationPath, PublicId};
 use arcweft_lang_syntax::ast::{
     common::Visibility,
     module_path::{CanonicalModulePath, ModulePathError, ModuleSegment},
@@ -159,7 +159,7 @@ impl ProjectNominalDeclarationId {
         world: ProjectSymbolWorldId,
         revision: ProjectSymbolRevision,
         module: CanonicalModulePath,
-        name: &DeclarationName,
+        name: &DeclarationPath,
         public_id: PublicId,
     ) -> Self {
         DeclarationIdentityFamily::Action
@@ -170,9 +170,14 @@ impl ProjectNominalDeclarationId {
             revision,
             module,
             kind: ProjectNominalDeclarationKind::Action { public_id },
-            owner_path: Box::new([]),
-            name: ModuleSegment::new(name.as_str())
-                .expect("a retained declaration name is a module segment"),
+            owner_path: name
+                .namespace_segments()
+                .map(|segment| {
+                    ModuleSegment::new(segment).expect("declaration namespace component")
+                })
+                .collect(),
+            name: ModuleSegment::new(name.last_segment())
+                .expect("a retained declaration leaf is a module segment"),
         }
     }
 

@@ -4,7 +4,7 @@
 //! that projection to the exact CST descendants and source components once;
 //! downstream consumers never scan declaration text or parser diagnostics.
 
-use arcweft_id::PublicId;
+use arcweft_id::{DeclarationPath, PublicId};
 use arcweft_source::SourceSpan;
 
 use super::family::NameFamily;
@@ -24,7 +24,6 @@ use crate::grammar::declaration_projection::{
     PendingDeclarationPublicId, PendingDeclarationPublicIdIssue,
 };
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole, SyntaxRoleClass};
-use crate::name::SyntaxName;
 
 /// Resolved or recovered public-ID state shared by declaration headers.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -70,11 +69,11 @@ impl AttachedDeclarationIdentity {
 pub enum AttachedRetainedName {
     Resolved {
         syntax: NameNode,
-        value: SyntaxName,
+        value: DeclarationPath,
     },
     Derived {
         public_id: AstNode<DeclarationPublicIdKind>,
-        value: SyntaxName,
+        value: DeclarationPath,
     },
     Missing {
         syntax: NameNode,
@@ -732,7 +731,7 @@ mod tests {
             "character @character.broken. Malformed {}\n",
             "character @ MissingId {}\n",
             "character {}\n",
-            "character Bad.Name {}\n",
+            "character Bad..Name {}\n",
             "character Alias as {}\n",
         );
         let snapshot = attach(source);
@@ -783,6 +782,29 @@ mod tests {
             AttachedRetainedName::Invalid { .. }
         ));
         assert!(semantics[6].has_unexpected_header());
+    }
+
+    #[test]
+    fn attached_qualified_declaration_keeps_one_path_and_its_complete_name_span() {
+        let snapshot = attach("character feedback.alice {}\n");
+        let declarations = characters(&snapshot);
+        let [declaration] = declarations.as_slice() else {
+            panic!("one qualified declaration");
+        };
+        let semantics = declaration.semantics().unwrap();
+        let AttachedRetainedName::Resolved { syntax, value } = semantics.header().name() else {
+            panic!("one accepted binding path");
+        };
+        assert_eq!(value.segments().collect::<Vec<_>>(), ["feedback", "alice"]);
+        assert_eq!(value.last_segment(), "alice");
+        assert_eq!(
+            syntax.source_span().range(),
+            arcweft_source::SourceRange::new(10, 24)
+        );
+        assert!(matches!(
+            semantics.header().public_id(),
+            AttachedDeclarationPublicId::Derived
+        ));
     }
 
     #[test]

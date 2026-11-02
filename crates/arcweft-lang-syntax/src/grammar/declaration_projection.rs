@@ -10,7 +10,7 @@ use arcweft_source::SourceRange;
 
 use super::roles::{LayerKindSyntaxValue, LayerMemberSyntaxKind, LayerPolicySyntaxValue};
 use crate::id_ref::SyntaxIdRefSyntax;
-use crate::name::SyntaxName;
+use arcweft_id::DeclarationPath;
 
 /// Parser-selected public-ID state for one declaration identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -60,11 +60,11 @@ pub(crate) enum PendingDeclarationPublicIdIssue {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PendingDeclarationName {
     Resolved {
-        value: SyntaxName,
+        value: DeclarationPath,
         source: SourceRange,
     },
     Derived {
-        value: SyntaxName,
+        value: DeclarationPath,
         source: SourceRange,
     },
     Missing {

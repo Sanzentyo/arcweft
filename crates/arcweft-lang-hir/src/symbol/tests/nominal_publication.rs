@@ -1,6 +1,58 @@
 use super::*;
 
 #[test]
+fn action_declaration_paths_publish_one_binding_and_preserve_nominal_namespace() {
+    let (document, project) = project("pub action feedback.submit(value: String)\n");
+    let table = ProjectSymbolTable::link(
+        project.view(),
+        &declarations(&document, Vec::new(), "qualified-action-payload"),
+    )
+    .unwrap()
+    .into_table();
+    let action = table.retained_symbols().next().unwrap();
+    assert_eq!(action.name().as_str(), "feedback.submit");
+    assert_eq!(action.public_id().as_str(), "action.feedback.submit");
+    let payload = table.nominal(action.action_payload().unwrap()).unwrap();
+    assert_eq!(payload.id().name().as_str(), "submit");
+    assert_eq!(
+        payload
+            .id()
+            .owner_path()
+            .iter()
+            .map(|segment| segment.as_str())
+            .collect::<Vec<_>>(),
+        ["feedback"]
+    );
+    let ProjectTypeTarget::Nominal(resolved) = table
+        .resolve_hir_type_target(
+            action.module(),
+            &type_path("feedback.submit"),
+            payload.source().name().clone(),
+        )
+        .unwrap()
+    else {
+        panic!("the declared path is the payload type binding");
+    };
+    assert_eq!(resolved.id(), payload.id());
+    assert_eq!(table.visible_type_bindings(action.module()).count(), 1);
+    assert_eq!(table.callable_symbols().count(), 0);
+}
+
+#[test]
+fn action_declaration_rejected_retained_rows_never_publish_a_second_payload() {
+    let (document, project) = project(concat!(
+        "pub action @action:.feedback.same first(value: String)\n",
+        "pub action @action:.feedback.same second(value: i64)\n",
+    ));
+    let report = ProjectSymbolTable::link(
+        project.view(),
+        &declarations(&document, Vec::new(), "duplicate-action-payload"),
+    )
+    .unwrap_err();
+    assert!(report.diagnostics().iter().any(|error| matches!(error, ProjectSymbolLinkError::DuplicatePublicId { public_id, .. } if public_id.as_str() == "action.feedback.same")));
+}
+
+#[test]
 fn action_payload_publishes_one_nominal_record_from_its_original_declaration() {
     let (document, project) =
         project("pub action @action:.feedback.submit submit(value: String, count: i64)\n");

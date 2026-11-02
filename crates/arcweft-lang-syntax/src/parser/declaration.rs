@@ -1,6 +1,6 @@
 //! Shared declaration-header grammar over the private document cursor.
 
-use arcweft_id::{DeclarationIdentityFamily, PublicId};
+use arcweft_id::{DeclarationIdentityFamily, DeclarationPath, PublicId};
 use arcweft_source::SourceRange;
 
 use super::cursor::DocumentParser;
@@ -632,6 +632,7 @@ pub(super) fn emit_character_declaration_header<T>(
         PendingDeclarationPublicId::Explicit { value, source } => value
             .last_segment()
             .and_then(|segment| SyntaxName::try_new(segment).ok())
+            .map(|name| DeclarationPath::try_new(name.as_str()).expect("validated identifier"))
             .map_or_else(
                 || emit_declaration_name(parser, family.prefix()),
                 |value| PendingDeclarationName::Derived {
@@ -828,18 +829,41 @@ fn emit_declaration_name(
     parser: &mut DocumentParser<'_, '_>,
     family: &str,
 ) -> PendingDeclarationName {
-    if parser.current_kind() == Some(SyntaxKind::IdentifierToken) && !current_name_is_dotted(parser)
-    {
+    if parser.current_kind() == Some(SyntaxKind::IdentifierToken) {
         let token = parser.current().expect("checked declaration name token");
-        let name = SyntaxName::try_new(parser.text_of(token))
-            .expect("identifier token is a validated declaration name");
-        parser.start(SyntaxKind::NameDefinition, SyntaxRole::Name);
-        parser.bump();
-        parser.finish();
-        return PendingDeclarationName::Resolved {
-            value: name,
-            source: token.range(),
-        };
+        let mut end = parser.cursor() + 1;
+        let mut source_end = token.range().end();
+        let mut valid = true;
+        while let Some(dot) = parser.token_at(end)
+            && dot.range().start() == source_end
+            && parser.text_of(dot).starts_with('.')
+        {
+            if parser.text_of(dot) != "." {
+                valid = false;
+                break;
+            }
+            let Some(component) = parser.token_at(end + 1).filter(|component| {
+                component.range().start() == dot.range().end()
+                    && component.kind() == SyntaxKind::IdentifierToken
+            }) else {
+                valid = false;
+                break;
+            };
+            end += 2;
+            source_end = component.range().end();
+        }
+        if valid {
+            let source = SourceRange::new(token.range().start(), source_end);
+            let name = DeclarationPath::try_new(&parser.source()[source.as_range()])
+                .expect("identifier components form one validated declaration path");
+            parser.start(SyntaxKind::NameDefinition, SyntaxRole::Name);
+            bump_until(parser, end);
+            parser.finish();
+            return PendingDeclarationName::Resolved {
+                value: name,
+                source,
+            };
+        }
     }
 
     let at = parser.current_offset();
@@ -859,7 +883,7 @@ fn emit_declaration_name(
         parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
             "syntax.declaration.missing_name",
             SourceRange::new(at, at),
-            format!("{family} declaration requires one ordinary local name"),
+            format!("{family} declaration requires a local binding path"),
         )));
         return PendingDeclarationName::Missing {
             insertion: SourceRange::new(at, at),
@@ -872,21 +896,12 @@ fn emit_declaration_name(
     parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
         "syntax.declaration.invalid_name",
         SourceRange::new(at, parser.current_offset()),
-        format!("{family} declaration name must be one non-keyword identifier"),
+        format!("{family} declaration name requires non-keyword identifiers separated by dots"),
     )));
     PendingDeclarationName::Invalid {
         insertion: SourceRange::new(at, at),
         recovery: SourceRange::new(at, parser.current_offset()),
     }
-}
-
-fn current_name_is_dotted(parser: &DocumentParser<'_, '_>) -> bool {
-    let Some(current) = parser.current() else {
-        return false;
-    };
-    parser.token_at(parser.cursor() + 1).is_some_and(|next| {
-        next.range().start() == current.range().end() && parser.text_of(next) == "."
-    })
 }
 
 fn bump_invalid_declaration_name(parser: &mut DocumentParser<'_, '_>) {
@@ -896,7 +911,11 @@ fn bump_invalid_declaration_name(parser: &mut DocumentParser<'_, '_>) {
     let mut end = first.range().end();
     while parser.current().is_some_and(|token| {
         token.range().start() == end
-            && (parser.text_of(token) == "." || token.kind() == SyntaxKind::IdentifierToken)
+            && (parser
+                .text_of(token)
+                .chars()
+                .all(|character| character == '.')
+                || token.kind() == SyntaxKind::IdentifierToken)
     }) {
         end = parser
             .bump()

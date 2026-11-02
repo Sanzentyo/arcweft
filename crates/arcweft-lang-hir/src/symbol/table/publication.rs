@@ -833,6 +833,21 @@ impl ProjectSymbolTable {
         source: SourceSpan,
         diagnostics: &mut Vec<ProjectSymbolLinkError>,
     ) {
+        // An Action payload is projected only from its admitted retained row.
+        // Duplicate names/IDs and exhausted work have already been reported by
+        // that owner; they must not allocate a second payload or panic here.
+        if let NominalHir::Action(action) = hir
+            && !action
+                .header()
+                .public_id()
+                .resolved()
+                .and_then(|public_id| self.retained(public_id))
+                .is_some_and(|retained| {
+                    retained.owner() == owner && retained.module() == module_path
+                })
+        {
+            return;
+        }
         let nominal = match nominal::build_nominal_declaration(
             owner,
             hir,

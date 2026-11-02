@@ -279,14 +279,18 @@ fn source_owner(
         ),
         HirItemKind::View(view) => {
             let name = match view.header().name() {
-                HirRetainedName::Resolved(name) => Some(name.as_str()),
+                HirRetainedName::Resolved(name) => Some(name),
                 HirRetainedName::Missing | HirRetainedName::Invalid => None,
             };
             ordinary_callable(
                 module,
                 CallableDeclarationOwner::View,
-                name,
-                std::iter::empty(),
+                name.map(arcweft_id::DeclarationPath::last_segment),
+                name.into_iter()
+                    .flat_map(arcweft_id::DeclarationPath::namespace_segments)
+                    .map(|segment| {
+                        ModuleSegment::new(segment).expect("declaration namespace component")
+                    }),
             )
         }
         HirItemKind::ExternCapability(capability) => {
