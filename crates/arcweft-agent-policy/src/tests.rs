@@ -15,6 +15,8 @@ use arcweft_content_policy::{
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 
+mod image_metadata;
+
 fn resource_uri(value: &str) -> AgentResourceUri {
     AgentResourceUri::new(value).expect("test resource URI is nonempty")
 }
@@ -245,7 +247,13 @@ fn missing_image_bytes_is_withheld() {
     let mut resource = raw_rgba_resource(AgentImageKind::Color, vec![1, 2, 3, 255]);
     resource.body = AgentResourceBody::Text("not image bytes".to_owned());
 
+    let mut other = resource.clone();
+    other.image.as_mut().unwrap().capture_time_millis = 150;
+
     let published = gate.publish(resource).expect("publication succeeds");
+
+    let other = gate.publish(other).expect("other descriptor publishes");
+    assert_ne!(published.resource().uri, other.resource().uri);
 
     assert_review_placeholder_with_image_metadata(&published, "missing_image_bytes");
     let metadata = published

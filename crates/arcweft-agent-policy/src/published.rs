@@ -69,27 +69,21 @@ impl AgentPolicySummary {
         }
     }
 
-    /// Opaque stable token used for moderated resource addresses and scope ids.
+    /// Opaque identity of the complete admitted publication and policy decision.
     pub fn opaque_token(&self) -> String {
-        self.receipt_ids.first().map_or_else(
-            || {
-                self.output_digest
-                    .as_ref()
-                    .unwrap_or(&self.input_digest)
-                    .as_str()
-                    .chars()
-                    .take(20)
-                    .collect()
-            },
-            |receipt| {
-                blake3::hash(receipt.as_bytes())
-                    .to_hex()
-                    .as_str()
-                    .chars()
-                    .take(20)
-                    .collect()
-            },
-        )
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"arcweft.agent.publication.v1\0");
+        // The summary contains only strings, closed enums, booleans and ordered
+        // collections. JSON serialization to the infallible hasher cannot fail.
+        serde_json::to_writer(&mut hasher, self)
+            .expect("policy summary consists entirely of JSON-safe scalar values");
+        hasher
+            .finalize()
+            .to_hex()
+            .as_str()
+            .chars()
+            .take(20)
+            .collect()
     }
 
     /// External URI that does not preserve the raw resource path or query.

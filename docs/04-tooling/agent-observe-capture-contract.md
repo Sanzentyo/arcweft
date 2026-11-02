@@ -160,6 +160,19 @@ contents still carry the MCP blob itself; clients that need image metadata
 should use the Agent tool response or the session resource descriptors rather
 than expecting metadata to be embedded inside the blob content.
 
+Publication admits both the pixels and the complete bounded, typed image
+metadata. When both are allowed unchanged, it preserves the descriptor's
+object occurrence, scope, capture links and diagnostics. Approval of the
+pixels alone does not approve metadata text or keys. Metadata that requires
+rewriting or withholding withholds the complete resource; individual context
+or occurrence links are never rewritten independently. A masked image retains
+the scrubbed descriptor appropriate to its sanitized output, and a withheld
+image publishes a policy placeholder; metadata-only failure responses may
+retain a scrubbed descriptor.
+The opaque publication URI binds the complete admitted metadata, bytes and
+policy decision. Identical pixels with different metadata receive distinct
+publication URIs so a retained read cannot substitute another descriptor.
+
 View-scoped image metadata carries a `view` reference in addition to
 `scope.view.id`. The reference preserves the view id, optional parent id, object
 count, member object refs, bbox, and view capture refs so clients can inspect

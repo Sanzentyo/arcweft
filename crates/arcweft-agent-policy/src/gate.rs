@@ -223,11 +223,11 @@ where
                 ));
             }
             Err(AgentPolicyError::MissingImageBytes) => {
-                return Ok(self.withheld_image_metadata_resource(
+                return self.withheld_image_metadata_resource(
                     resource,
                     PolicyDisposition::Review,
                     "missing_image_bytes",
-                ));
+                );
             }
             Err(AgentPolicyError::UnsupportedImageEncoding(_)) => {
                 return Ok(self.withheld_resource(
@@ -251,10 +251,27 @@ where
             }
             Err(error) => return Err(error),
         };
+        let input_digest = Self::image_resource_digest(&resource)?;
         let outcome = self.engine.process_image(&decoded.image, None)?;
-        let summary = AgentPolicySummary::from_receipt(&outcome.receipt);
+        let mut summary = AgentPolicySummary::from_receipt(&outcome.receipt);
+        summary.input_digest = input_digest.clone();
+        let preserve_metadata = matches!(&outcome.publication, PolicyPublication::Allowed { .. });
         match outcome.publication {
             PolicyPublication::Allowed { .. } => {
+                summary = self.admit_image_metadata(&resource, outcome.receipt, input_digest)?;
+                if !summary.disposition.can_publish_original() || summary.sanitized {
+                    resource.image = None;
+                    resource.mime_type = "application/json".to_owned();
+                    resource.body = AgentResourceBody::Json(policy_placeholder(
+                        summary.disposition,
+                        "image_metadata_not_publishable",
+                    ));
+                    let digest = resource_body_digest(&resource.body);
+                    digest.as_str().clone_into(&mut resource.hash);
+                    summary.output_digest = Some(digest);
+                    resource.uri = moderated_resource_uri(&summary, "json");
+                    return Ok(PublishedAgentResource::new(resource, summary));
+                }
                 resource_body_digest(&resource.body)
                     .as_str()
                     .clone_into(&mut resource.hash);
@@ -298,10 +315,71 @@ where
                 resource.uri = moderated_resource_uri(&summary, "json");
             }
         }
-        if let Some(metadata) = resource.image.as_mut() {
+        if !preserve_metadata && let Some(metadata) = resource.image.as_mut() {
             metadata.scrub_for_external_publication(&summary.opaque_token());
         }
         Ok(PublishedAgentResource::new(resource, summary))
+    }
+
+    /// Pixels do not authorize their accompanying text, identities or context.
+    /// Admit the complete bounded typed envelope before retaining it unchanged.
+    fn admit_image_metadata(
+        &self,
+        resource: &AgentResource,
+        image_receipt: PolicyReceipt,
+        input_digest: ContentDigest,
+    ) -> Result<AgentPolicySummary, AgentPolicyError> {
+        let metadata = resource
+            .image
+            .as_ref()
+            .ok_or(AgentPolicyError::MissingImageMetadata)?;
+        // AgentImageMetadata's serializer checks the envelope's byte/work/depth
+        // bounds and context joins before allocating a JSON projection.
+        let mut value = serde_json::to_value(metadata)?;
+        let mut receipts = vec![image_receipt];
+        let mut decision = PolicyDecision::allow();
+        moderate_json_value(
+            &self.engine,
+            resource.uri.as_str(),
+            "$.image",
+            &mut value,
+            &mut receipts,
+            &mut decision,
+        )?;
+        for receipt in &receipts {
+            decision = decision.merge(receipt.decision.clone());
+        }
+        if !decision.disposition.can_publish_original() || receipts.iter().any(|r| r.sanitized) {
+            // Rewriting a context, occurrence or capture link independently can
+            // break its typed joins. Withhold the resource as one transaction.
+            decision = decision.force(PolicyDisposition::Review, "image_metadata_requires_rewrite");
+        }
+        let output_digest = decision
+            .disposition
+            .can_publish_original()
+            .then(|| input_digest.clone());
+        Ok(AgentPolicySummary::aggregate(
+            self.engine.profile().id.as_str(),
+            self.engine.profile().version.as_str(),
+            input_digest,
+            output_digest,
+            &receipts,
+            decision,
+        ))
+    }
+
+    fn image_resource_digest(resource: &AgentResource) -> Result<ContentDigest, AgentPolicyError> {
+        let metadata = resource
+            .image
+            .as_ref()
+            .ok_or(AgentPolicyError::MissingImageMetadata)?;
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"arcweft.agent.image-publication.v1\0");
+        hasher.update(resource_body_digest(&resource.body).as_str().as_bytes());
+        // Typed serialization checks the complete metadata before streaming it.
+        // This also distinguishes retained scrubbed descriptors with equal pixels.
+        serde_json::to_writer(&mut hasher, metadata)?;
+        Ok(ContentDigest::from_hasher(&hasher))
     }
 
     fn withheld_resource(
@@ -334,8 +412,8 @@ where
         mut resource: AgentResource,
         disposition: PolicyDisposition,
         reason: &str,
-    ) -> PublishedAgentResource {
-        let input_digest = resource_body_digest(&resource.body);
+    ) -> Result<PublishedAgentResource, AgentPolicyError> {
+        let input_digest = Self::image_resource_digest(&resource)?;
         "application/json".clone_into(&mut resource.mime_type);
         resource.body = AgentResourceBody::Json(policy_placeholder(disposition, reason));
         let output_digest = resource_body_digest(&resource.body);
@@ -353,7 +431,7 @@ where
         }
         output_digest.as_str().clone_into(&mut resource.hash);
         resource.uri = moderated_resource_uri(&summary, "json");
-        PublishedAgentResource::new(resource, summary)
+        Ok(PublishedAgentResource::new(resource, summary))
     }
 }
 

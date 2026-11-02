@@ -47,7 +47,7 @@ impl PolicyProfile {
     pub fn strict_default() -> Self {
         Self {
             id: PolicyProfileId::new("arcweft.agent.strict"),
-            version: "2026-06-22".to_owned(),
+            version: "1".to_owned(),
             default_finding_disposition: PolicyDisposition::Review,
             partial_classifier_disposition: PolicyDisposition::Review,
             unsupported_classifier_disposition: PolicyDisposition::Review,

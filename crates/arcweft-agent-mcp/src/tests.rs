@@ -45,7 +45,7 @@ struct AllowAllClassifier;
 
 impl ContentClassifier for AllowAllClassifier {
     fn identity(&self) -> ClassifierIdentity {
-        ClassifierIdentity::new("arcweft.test.allow", "2026-06-22")
+        ClassifierIdentity::new("arcweft.test.allow", "1")
     }
 
     fn classify(
@@ -266,7 +266,7 @@ fn image_agent_resource_maps_to_mcp_blob_and_image_tool_content() {
     let description = descriptor.description.as_deref().unwrap();
     assert!(description.contains("kind=color"));
     assert!(description.contains("renderer=native"));
-    assert!(description.contains("scope=layer:layer."));
+    assert!(description.contains("scope=layer:dialogue"));
     assert!(description.contains("composition=masked_framebuffer_crop"));
     assert_eq!(
         AgentImageComposition::ObjectIdAttachment.as_str(),
@@ -291,7 +291,7 @@ fn image_agent_resource_maps_to_mcp_blob_and_image_tool_content() {
             && text.contains("\"renderer\":\"native\"")
             && text.contains("\"scope\"")
             && text.contains("\"kind\":\"layer\"")
-            && text.contains("\"id\":\"layer.")
+            && text.contains("\"id\":\"dialogue\"")
             && text.contains("\"composition\":\"masked_framebuffer_crop\"")
             && text.contains("\"crop_origin\"")
             && text.contains("\"content_viewport_bbox\"")
@@ -330,6 +330,7 @@ fn image_tool_content_preserves_object_rich_text_ref_metadata() {
         }
     );
     let capture_uri = object.capture_refs.captures[0].uri.clone();
+    let expected_metadata = serde_json::to_value(&metadata).unwrap();
     let resource = AgentResource {
         uri: resource_uri(&capture_uri),
         kind: AgentResourceKind::Image,
@@ -356,14 +357,9 @@ fn image_tool_content_preserves_object_rich_text_ref_metadata() {
         );
     };
     let json: serde_json::Value = serde_json::from_str(text).expect("metadata text is JSON object");
-    assert!(json["image"]["object"].is_null());
-    assert!(json["image"]["text_contexts"].is_null());
-    assert!(
-        json["image"]["scope"]["id"]
-            .as_str()
-            .is_some_and(|id| id.starts_with("object."))
-    );
+    assert_eq!(json["image"], expected_metadata);
     assert!(json["content_policy"].is_object());
+    assert_eq!(json["content_policy"]["profile_version"], "1");
 }
 
 #[test]
@@ -371,6 +367,7 @@ fn image_tool_content_preserves_image_object_frame_metadata() {
     let metadata: AgentImageMetadata =
         serde_json::from_value(image_object_frame_metadata_fixture())
             .expect("image object frame metadata deserializes");
+    let expected_metadata = serde_json::to_value(&metadata).unwrap();
     let resource = AgentResource {
         uri: resource_uri(
             "arcweft://session/cli/frame/0/object.object.image.layer.foreground.0.1.rgba",
@@ -399,13 +396,9 @@ fn image_tool_content_preserves_image_object_frame_metadata() {
         );
     };
     let json: serde_json::Value = serde_json::from_str(text).expect("metadata text is JSON object");
-    assert!(json["image"]["object"].is_null());
-    assert!(
-        json["image"]["scope"]["id"]
-            .as_str()
-            .is_some_and(|id| id.starts_with("object."))
-    );
+    assert_eq!(json["image"], expected_metadata);
     assert!(json["content_policy"].is_object());
+    assert_eq!(json["content_policy"]["profile_version"], "1");
 }
 
 fn proxy_document_layout_fixture() -> arcweft_text_layout::TextLayout {

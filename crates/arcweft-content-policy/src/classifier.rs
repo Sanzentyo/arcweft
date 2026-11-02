@@ -90,7 +90,7 @@ impl RuleClassifier {
 
     pub fn strict_builtin() -> Self {
         Self::new(
-            ClassifierIdentity::new("arcweft.rules", "2026-06-22"),
+            ClassifierIdentity::new("arcweft.rules", "1"),
             vec![
                 TextRule::new("BEGIN PRIVATE KEY", PolicyCategory::security_secret(), 1000)
                     .with_scope(TextRuleScope::Whole),

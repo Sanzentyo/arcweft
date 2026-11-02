@@ -1027,9 +1027,7 @@ impl AgentImageMetadata {
             return Err(AgentImageFormatError::RowStride.into());
         }
         if let Some(object) = &self.object {
-            if object.text_context.is_some()
-                && !matches!(&self.scope, AgentImageScope::Object { id } if id == &object.id)
-            {
+            if !matches!(&self.scope, AgentImageScope::Object { id } if id == &object.id) {
                 return Err(crate::text_context::AgentTextContextError::ObjectOwner {
                     object_id: object.id.clone(),
                 });
