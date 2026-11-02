@@ -2332,6 +2332,17 @@ impl AwbcProductStepExecutor {
         &self.program
     }
 
+    /// Borrows the same original resource records used by execution and restore.
+    pub fn presentation_frame(
+        &self,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> Result<
+        crate::presentation::RuntimePresentationFrame<'_>,
+        crate::presentation::RuntimePresentationFrameError,
+    > {
+        crate::presentation::RuntimePresentationFrame::try_new(self.presentation.as_ref(), limits)
+    }
+
     /// Retains the selected executable type authority across host completion.
     pub fn program_arc(&self) -> Arc<AwbcProgram> {
         self.program.program_arc()

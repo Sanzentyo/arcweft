@@ -1005,6 +1005,28 @@ impl ArcweftRuntimeExecutor {
         }
     }
 
+    /// Borrows the active presentation banks without copying their bodies.
+    pub fn presentation_frame(
+        &self,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> Result<
+        crate::presentation::RuntimePresentationFrame<'_>,
+        crate::presentation::RuntimePresentationFrameError,
+    > {
+        match &self.inner {
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(executor) => {
+                executor.engine().presentation_frame(limits)
+            }
+            ArcweftRuntimeExecutorInner::StructuredAot(executor) => {
+                executor.vm.engine().presentation_frame(limits)
+            }
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
+                executor.vm.presentation_frame(limits)
+            }
+            ArcweftRuntimeExecutorInner::Vacant => unreachable!("restore slot is not runnable"),
+        }
+    }
+
     pub fn product_active_entry_snapshot_identity(
         &self,
     ) -> Result<Option<ActiveEntrySnapshotV1>, RootRuntimeError> {

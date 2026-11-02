@@ -36,6 +36,16 @@ impl<V, L> PresentationBanks<V, L> {
 }
 
 impl<V> PresentationBanks<V> {
+    pub(super) fn active_leases(&self) -> impl Iterator<Item = &PresentationLease<V>> {
+        self.ledgers.values().flat_map(|ledger| {
+            ledger
+                .state
+                .leases
+                .values()
+                .filter(|lease| lease.body.is_some())
+        })
+    }
+
     /// A read/removal never creates a ledger or advances an identity frontier.
     pub(crate) fn validate_slot_bank(
         &self,

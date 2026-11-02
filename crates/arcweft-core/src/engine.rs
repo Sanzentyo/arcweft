@@ -2226,6 +2226,17 @@ impl Engine {
         Arc::clone(&self.plan)
     }
 
+    /// Borrows the original presentation custody after frame-count admission.
+    pub fn presentation_frame(
+        &self,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> Result<
+        crate::presentation::RuntimePresentationFrame<'_>,
+        crate::presentation::RuntimePresentationFrameError,
+    > {
+        crate::presentation::RuntimePresentationFrame::try_new(self.presentation.as_ref(), limits)
+    }
+
     pub(super) fn allocate_dialogue_activation(
         &mut self,
         content: crate::runtime_id::RuntimeDialogueContentPlanId,

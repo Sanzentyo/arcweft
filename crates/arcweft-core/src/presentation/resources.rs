@@ -21,11 +21,15 @@ use std::num::NonZeroU64;
 mod bank_rows;
 mod banks;
 mod execution;
+mod frame;
 mod scope;
 mod storage;
 pub(crate) use banks::PresentationBanks;
 pub(crate) use banks::PresentationBanksSaveSnapshot;
 pub(crate) use execution::{PresentationExecutionAdmission, PresentationExecutionRole};
+pub use frame::{
+    RuntimePresentationFrame, RuntimePresentationFrameError, RuntimePresentationResourceRef,
+};
 use scope::PresentationScopeGrant;
 pub(crate) use scope::{
     PresentationScopeAnchor, PresentationScopeExit, PresentationScopeOwner, PresentationScopeRef,

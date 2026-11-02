@@ -44,6 +44,16 @@ impl RuntimePresentationResourceValue {
         &self.body.0
     }
 
+    /// The retained executable remains the authority for this body's types.
+    pub fn source(&self) -> &RuntimeTaskSourceProgram {
+        &self.source
+    }
+
+    /// The construction invocation, independently of a later receiving scope.
+    pub fn type_instantiation(&self) -> Option<&RuntimeFunctionEffectInstantiation> {
+        self.binding.as_deref()
+    }
+
     pub(crate) fn original_executable(&self) -> [u8; 32] {
         *self
             .source

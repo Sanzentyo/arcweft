@@ -25,7 +25,10 @@ pub use view_value::{
     RuntimePresentationViewCall, RuntimePresentationViewCallError, RuntimePresentationViewIdentity,
 };
 
-pub use resources::{RuntimePresentationScopeBinding, RuntimePresentationScopeSnapshot};
+pub use resources::{
+    RuntimePresentationFrame, RuntimePresentationFrameError, RuntimePresentationResourceRef,
+    RuntimePresentationScopeBinding, RuntimePresentationScopeSnapshot,
+};
 
 use crate::effect::RuntimeDropPolicy;
 use crate::line_task::RuntimeLineHandleScope;
