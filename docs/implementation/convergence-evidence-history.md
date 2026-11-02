@@ -14287,3 +14287,10 @@ RAGの現在診断はunknown text_styleである。現行dialogue仕様にはtex
 Source 58c5b7d64febafaa8c1dab4e4546b901b5c52f58（親fb62a7fe645df5890b8a7b24c6bd2daf380d1c3b）を通常commit／non-forced pushし、21 pathのblob・tree・patchを照合した。元のAction nominal未公開は再現失敗後に修復し、対象10件とNative／decoded AWBCの実戻り値42を確認した。共通record、generic関数、capture、宣言と異なるfield順を通した実行である。callによるmessage構築・emit／receive・保存復元の受入へ広げない。全98 gateの後の2 path差分は限定再検証と区別し、全23 consumer runtimeは次の入力で未実行と記録する。
 
 訂正理由: 宣言署名の公開済み判定を維持した上で、payload ownerの新しい成立範囲を現状一覧へ追加した。旧23 package／CLI 693件の実測は前Sourceの履歴であり、最新Sourceの実行済み件数として重複掲示しない。Generic Match受入行は変更していない。初回失敗・テストfixture/API修正・全full SHA・実rawは[owner原本](acceptance-evidence/task-action-payload-owner.json)に保持する。
+
+
+## Action payloadの全23 consumer照合 — 2026-11-02
+
+Source 58c5b7d64febafaa8c1dab4e4546b901b5c52f58、base fda22d364bd73365c0add6068746bd061659891a、4082入力で通常22 packageの4336件を全実行し、4336 PASS／0 FAIL（6 slow、8 ignored）。Generic Match151／View値40は同じexact IDで全件PASS。CLIは693実行／660 PASS／33 FAIL／23 ignored。直前の全693件実行から維持33／追加0／解消0であり、同じIDから原因の同一性は推定しない。両contextのSource／case／EXE差分0、normal／CLI間の入力差分0、全23 packageの欠落0を確認した。[全raw・SHA・graph・現在診断](acceptance-evidence/task-action-payload-consumers.json)。
+
+訂正理由: payload owner公開時のconsumer未実行は、今回の全件実測によって現状一覧から置き換えた。旧件数・初回失敗・full SHA・raw archiveは履歴へ保持し、Generic Matchの受入行は変更していない。owner記録のcompile-error件数表現も数を限定しない表記へ訂正した。repro1の型path、owner2の非存在method、owner4のprivate fieldアクセスの各失敗はrawに残し、実結果・SHAは変更していない。

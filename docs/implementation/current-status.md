@@ -1,6 +1,6 @@
 # Arcweft 現状一覧
 
-確認日: 2026-11-02。最新公開Sourceは58c5b7d64febafaa8c1dab4e4546b901b5c52f58。Actionの宣言署名に続き、元宣言に紐づくpayload recordと型付きチャンネル値を公開した。影響23 packageのruntime再照合は次の検証対象として確定している。既存12 tracked／6 actual untracked WIPを保持している。
+確認日: 2026-11-02。最新公開Sourceは58c5b7d64febafaa8c1dab4e4546b901b5c52f58。Action payload変更の影響23 packageと全CLI targetを実照合し、最新結果は下表へ集約する。既存12 tracked／6 actual untracked WIPを保持している。
 この文書を項目別の現状の唯一の一覧とする。現行契約は[仕様索引](../README.md)、過去の実行結果・失敗・公開full SHAは
 [収束検証履歴](convergence-evidence-history.md) と [その他の検証履歴](evidence-history.md) に置く。
 履歴中の古い現在形・計画や、保持したuntrackedの2026-10-09 CLI修復メモを、そのまま現在の残作業へ転記しない。
@@ -83,8 +83,8 @@
 
 | 対象・入力 | 実際の結果 | 適用範囲・原本 |
 |---|---|---|
-| 共有契約／推移的逆依存matrix | **最新payload Sourceの23 package graphを確定。runtime照合は未実行** | HIR／Sema／RuntimePlan／LSPから全normal・dev・build・target edgeを辿った23 packageを次の実行範囲とする。直前の署名Sourceで得た通常22 packageの4327 PASS、Generic Match151／View値40 PASSは[履歴原本](acceptance-evidence/task-action-declaration-consumers.json)に保持し、今回の再実行件数へ合算しない。[現在のgraphとowner入力](acceptance-evidence/task-action-payload-owner.json)。 |
-| CLI全target照合 | **直前Sourceは660 PASS／33 FAIL。最新payload Sourceは未再実行** | 直前の署名Sourceはbase e16d141a60faaa4b3c758bb270bcc5ca265691ac・4082入力、all-target／all-feature／lockedで693件を全実行（22 slow、23 ignored）、Source／case／EXE差分0だった。失敗33 IDと現在stderrを[原本](acceptance-evidence/task-action-declaration-consumers.json)へ保持する。最新payload Sourceの結果と取り違えず、別機能の受入済み判定も維持する。 |
+| 共有契約／推移的逆依存matrix | **payload Sourceの影響23 packageを実照合。通常22は4336／4336 PASS** | base fda22d364bd73365c0add6068746bd061659891a・4082入力、all-target／all-feature／lockedで通常4336 PASS（6 slow）／8 ignored。選択・実行22 package、Source／case／test EXE差分0。Generic Match151／View値40 exact IDは全件PASS。残るCLIは次行へ集約する。前Sourceの結果・full SHAは履歴へ保持し、今回を全63／全goalの再実行とはしない。[現在の照合原本](acceptance-evidence/task-action-payload-consumers.json)。 |
+| CLI全target照合 | **最新693件を全実行し660 PASS／33 FAIL。新規失敗ID 0** | base fda22d364bd73365c0add6068746bd061659891a・4082入力、all-target／all-feature／locked。Source／case／test EXE差分0。直前の全693件実行との失敗ID差分は、維持33／追加0／解消0。原因の同一性はIDから推定せず今回の完全stderrを保持する。[全件・差分・現在の診断](acceptance-evidence/task-action-payload-consumers.json)。 |
 | workspace check／Clippy・fmt・構造gate | **payload契約の全98 package gateと、最終2 pathのowner gateは終了0。警告は残存** | 4082入力でworkspace all-target／all-feature／locked check・Clippy・構造gateを確認した。続く差分はHIR private実装の等価なmethod-pointer整理とCompiler実行testの2 pathだけで、最終入力のHIR／Compiler all-target・all-feature check／Clippy・構造gateも終了0。対象fmtとNative／decoded AWBC実行を確認し、全98の再実行とは区別する。[各epoch・入力差分・ownerレビュー](acceptance-evidence/task-action-payload-owner.json)。 |
 
 以前の件数・失敗・full SHAと今回の訂正理由は[検証履歴](convergence-evidence-history.md)と各原本へ保持する。過去の資料整理は[資料整理記録](documentation-cleanup.md)を参照。

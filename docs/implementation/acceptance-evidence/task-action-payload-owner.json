@@ -837,7 +837,7 @@
   "ownershipReview": "HIR retains the original item/parameter/local/type anchors and one retained lexical binding. The nominal ID owns the payload definition, Sema owns field admission and persistent type identity, RuntimePlan validates the original Action PublicId/item, and LSP consumes the same declaration. Proof-header access remains crate-private. Existing large owners retain their admission/publication responsibilities; no I/O, duplicate catalog, source parser or physical-split API was added.",
   "historicalCorrections": [
     "The original missing nominal payload regression failed before the implementation.",
-    "Two test API compile errors and the malformed-pattern fixture failure are retained; syntax correctly rejected malformed Action parameters before HIR linking.",
+    "Test API compile errors and the malformed-pattern fixture failure are retained; syntax correctly rejected malformed Action parameters before HIR linking.",
     "An unannotated lower-case named-record test input recovered; the common type-directed record literal is the valid construction used by the passing semantic and Native/AWBC cases. These corrections do not weaken an existing accepted test."
   ],
   "rawArchive": {
@@ -1301,5 +1301,6 @@
       }
     ],
     "entryDrift": 0
-  }
+  },
+  "wordingCorrection": "Removed the ambiguous numeric count of compile-error runs: the retained repro1 type-path error, owner2 unavailable method and owner4 private-field access are all preserved. No execution result, SHA, or raw archive changed."
 }
