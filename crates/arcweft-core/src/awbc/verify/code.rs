@@ -1711,7 +1711,13 @@ fn apply_instruction(
                     }
                 }
                 AwbcUnaryOp::Neg => {
-                    if !is_numeric(runtime_shape(program, src_ty)) {
+                    let quantity = program
+                        .opaque_owner(src_ty)
+                        .ok()
+                        .flatten()
+                        .and_then(|owner| crate::value::RuntimeQuantityKind::from_owner(&owner))
+                        .is_some_and(crate::value::RuntimeQuantityKind::supports_negation);
+                    if !is_numeric(runtime_shape(program, src_ty)) && !quantity {
                         return invalid_type(&at, "numeric unary operand");
                     }
                     require_compatible(program, dst_ty, src_ty, &at)?;

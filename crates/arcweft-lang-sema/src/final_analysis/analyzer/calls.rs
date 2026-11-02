@@ -4643,10 +4643,13 @@ impl Analyzer<'_, '_, '_> {
         let Some(id) = id else {
             return Ok(None);
         };
-        let schema = crate::callable::PresentationSchemaContext::checker_signature_schema(id)
-            .map_err(|_| {
-                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
-            })?;
+        let schema = crate::callable::PresentationSchemaContext::checker_signature_schema(
+            id,
+            self.catalogs.world().environment().compile_time_scalars(),
+        )
+        .map_err(|_| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
+        })?;
         let group = schema.group(CallableGroupIndex::ZERO).ok_or_else(|| {
             AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
         })?;

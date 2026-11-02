@@ -1853,6 +1853,40 @@ impl Analyzer<'_, '_, '_> {
                 CheckedTypeSelection::Inferred,
             )),
             HirExprKind::Literal(literal) => {
+                if let HirLiteral::UnitNumber(arcweft_lang_hir::leaf::HirUnitNumberLiteral::Value {
+                    unit,
+                    ..
+                }) = literal
+                    && let Some(kind) = super::expression_types::unit_scalar_kind(*unit, expected)
+                {
+                    use crate::checked_text_proxy::CheckedCompileTimeScalarKind;
+                    let checked_kind = match kind {
+                        crate::types::CompileTimeScalarKind::Length => {
+                            CheckedCompileTimeScalarKind::Length
+                        }
+                        crate::types::CompileTimeScalarKind::Ratio => {
+                            CheckedCompileTimeScalarKind::Ratio
+                        }
+                        crate::types::CompileTimeScalarKind::Angle => {
+                            CheckedCompileTimeScalarKind::Angle
+                        }
+                        _ => return Err(AnalyzerExpressionError::rejected(owner)),
+                    };
+                    crate::checked_text_proxy::reduce_scalar_literal(literal, &checked_kind)
+                        .map_err(|_| AnalyzerExpressionError::rejected(owner))?;
+                    let (ty, selection) = literal_type(literal, expected).unwrap_or_else(|| {
+                        (
+                            self.compile_time_scalar_type(&checked_kind),
+                            CheckedTypeSelection::Inferred,
+                        )
+                    });
+                    return Ok(Some(CheckedExpression::value(
+                        ty,
+                        selection,
+                        EffectSet::new(),
+                        CheckedExpressionResolution::Literal(literal.clone()),
+                    )));
+                }
                 let (ty, selection) = literal_type(literal, expected)
                     .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
                 Ok(CheckedExpression::value(

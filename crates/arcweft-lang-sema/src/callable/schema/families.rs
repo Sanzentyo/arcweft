@@ -1848,6 +1848,7 @@ pub(in crate::callable) fn presentation_schema(
     id: PresentationCallableId,
     owner: Option<&ResolvedCharacterOwner>,
     environment: Option<&RegisteredTypeCheckEnv>,
+    scalars: &RegisteredCompileTimeScalarTypes,
 ) -> Result<CallableSignatureSchema, CallableSchemaError> {
     let validator = CallableValidator::Presentation(id);
     let result = presentation_result(id);
@@ -1862,44 +1863,50 @@ pub(in crate::callable) fn presentation_schema(
         PresentationCallableId::View
         | PresentationCallableId::Menu
         | PresentationCallableId::Overlay
-        | PresentationCallableId::Mount => (view_parameters(id), open_named_supply()),
+        | PresentationCallableId::Mount => (view_parameters(id, scalars), open_named_supply()),
         PresentationCallableId::Background => (
             vec![
                 required_positional(0, "asset", TypeKind::entity_ref(EntityKind::Asset))
                     .with_consumer(CallableParameterConsumer::Presentation(
                         PresentationArgumentRole::Asset,
                     )),
-                optional_presentation_named(id, 1, "target"),
-                optional_presentation_named(id, 2, "slot"),
-                optional_presentation_named(id, 3, "scope"),
-                optional_presentation_named(id, 4, "fade"),
-                optional_presentation_named(id, 5, "fit"),
-                optional_presentation_named(id, 6, "opacity"),
+                optional_presentation_named(id, 1, "target", scalars),
+                optional_presentation_named(id, 2, "slot", scalars),
+                optional_presentation_named(id, 3, "scope", scalars),
+                optional_presentation_named(id, 4, "fade", scalars),
+                optional_presentation_named(id, 5, "fit", scalars),
+                optional_presentation_named(id, 6, "opacity", scalars),
             ],
             open_named_supply(),
         ),
-        PresentationCallableId::Image => (image_parameters(), open_named_supply()),
+        PresentationCallableId::Image => (image_parameters(scalars), open_named_supply()),
         PresentationCallableId::PlayerViewport => (
             vec![
-                optional_presentation_named(id, 0, "width"),
-                optional_presentation_named(id, 1, "height"),
-                optional_presentation_named(id, 2, "fit"),
+                optional_presentation_named(id, 0, "width", scalars),
+                optional_presentation_named(id, 1, "height", scalars),
+                optional_presentation_named(id, 2, "fit", scalars),
             ],
             open_named_supply(),
         ),
         PresentationCallableId::Show => (
-            character_parameters(id, character, true),
+            character_parameters(id, character, true, scalars),
             open_named_supply(),
         ),
-        PresentationCallableId::RefShow => (character_parameters(id, character, false), closed()),
+        PresentationCallableId::RefShow => (
+            character_parameters(id, character, false, scalars),
+            closed(),
+        ),
         PresentationCallableId::Hide => (
-            character_parameters(id, character, false),
+            character_parameters(id, character, false, scalars),
             open_named_supply(),
         ),
-        PresentationCallableId::RefBackground => (background_reference_parameters(id), closed()),
-        PresentationCallableId::ClearBackground => {
-            (background_reference_parameters(id), open_named_supply())
+        PresentationCallableId::RefBackground => {
+            (background_reference_parameters(id, scalars), closed())
         }
+        PresentationCallableId::ClearBackground => (
+            background_reference_parameters(id, scalars),
+            open_named_supply(),
+        ),
     };
     let reserved_open_names = match (id, character.is_some()) {
         (PresentationCallableId::Show, true) => Vec::new(),
@@ -1927,7 +1934,7 @@ fn presentation_result(id: PresentationCallableId) -> TypeKind {
     }
 }
 
-fn image_parameters() -> Vec<CallableParameter> {
+fn image_parameters(scalars: &RegisteredCompileTimeScalarTypes) -> Vec<CallableParameter> {
     let id = PresentationCallableId::Image;
     vec![
         parameter_with_consumer(
@@ -1938,60 +1945,63 @@ fn image_parameters() -> Vec<CallableParameter> {
             CallableParameterPresence::Optional,
             CallableParameterConsumer::Presentation(PresentationArgumentRole::Source),
         ),
-        optional_presentation_named(id, 1, "asset"),
-        optional_presentation_named(id, 2, "lifetime"),
-        optional_presentation_named(id, 3, "target"),
-        optional_presentation_named(id, 4, "layer"),
-        optional_presentation_named(id, 5, "depth"),
-        optional_presentation_named(id, 6, "enabled"),
-        optional_presentation_named(id, 7, "visible"),
-        optional_presentation_named(id, 8, "id"),
-        optional_presentation_named(id, 9, "action"),
-        optional_presentation_named(id, 10, "actions"),
-        optional_presentation_named(id, 11, "fit"),
-        optional_presentation_named(id, 12, "opacity"),
-        optional_presentation_named(id, 13, "x"),
-        optional_presentation_named(id, 14, "y"),
-        optional_presentation_named(id, 15, "width"),
-        optional_presentation_named(id, 16, "height"),
-        optional_presentation_named(id, 17, "focus"),
-        optional_presentation_named(id, 18, "input_capture"),
-        optional_presentation_named(id, 19, "owner"),
-        optional_presentation_named(id, 20, "drop"),
-        optional_presentation_named(id, 21, "alignment.x"),
-        optional_presentation_named(id, 22, "alignment.y"),
-        optional_presentation_named(id, 23, "playback.start"),
-        optional_presentation_named(id, 24, "playback.paused_at"),
-        optional_presentation_named(id, 25, "playback.local_time"),
-        optional_presentation_named(id, 26, "playback.rate"),
-        optional_presentation_named(id, 27, "transform.tx"),
-        optional_presentation_named(id, 28, "transform.ty"),
-        optional_presentation_named(id, 29, "transform.m11"),
-        optional_presentation_named(id, 30, "transform.m12"),
-        optional_presentation_named(id, 31, "transform.m21"),
-        optional_presentation_named(id, 32, "transform.m22"),
-        optional_presentation_named(id, 33, "proxy.id"),
-        optional_presentation_named(id, 34, "proxy.type"),
-        optional_presentation_named(id, 35, "proxy.role"),
-        optional_presentation_named(id, 36, "proxy.layer"),
-        optional_presentation_named(id, 37, "proxy.depth"),
-        optional_presentation_named(id, 38, "proxy.hit_test"),
+        optional_presentation_named(id, 1, "asset", scalars),
+        optional_presentation_named(id, 2, "lifetime", scalars),
+        optional_presentation_named(id, 3, "target", scalars),
+        optional_presentation_named(id, 4, "layer", scalars),
+        optional_presentation_named(id, 5, "depth", scalars),
+        optional_presentation_named(id, 6, "enabled", scalars),
+        optional_presentation_named(id, 7, "visible", scalars),
+        optional_presentation_named(id, 8, "id", scalars),
+        optional_presentation_named(id, 9, "action", scalars),
+        optional_presentation_named(id, 10, "actions", scalars),
+        optional_presentation_named(id, 11, "fit", scalars),
+        optional_presentation_named(id, 12, "opacity", scalars),
+        optional_presentation_named(id, 13, "x", scalars),
+        optional_presentation_named(id, 14, "y", scalars),
+        optional_presentation_named(id, 15, "width", scalars),
+        optional_presentation_named(id, 16, "height", scalars),
+        optional_presentation_named(id, 17, "focus", scalars),
+        optional_presentation_named(id, 18, "input_capture", scalars),
+        optional_presentation_named(id, 19, "owner", scalars),
+        optional_presentation_named(id, 20, "drop", scalars),
+        optional_presentation_named(id, 21, "alignment.x", scalars),
+        optional_presentation_named(id, 22, "alignment.y", scalars),
+        optional_presentation_named(id, 23, "playback.start", scalars),
+        optional_presentation_named(id, 24, "playback.paused_at", scalars),
+        optional_presentation_named(id, 25, "playback.local_time", scalars),
+        optional_presentation_named(id, 26, "playback.rate", scalars),
+        optional_presentation_named(id, 27, "transform.tx", scalars),
+        optional_presentation_named(id, 28, "transform.ty", scalars),
+        optional_presentation_named(id, 29, "transform.m11", scalars),
+        optional_presentation_named(id, 30, "transform.m12", scalars),
+        optional_presentation_named(id, 31, "transform.m21", scalars),
+        optional_presentation_named(id, 32, "transform.m22", scalars),
+        optional_presentation_named(id, 33, "proxy.id", scalars),
+        optional_presentation_named(id, 34, "proxy.type", scalars),
+        optional_presentation_named(id, 35, "proxy.role", scalars),
+        optional_presentation_named(id, 36, "proxy.layer", scalars),
+        optional_presentation_named(id, 37, "proxy.depth", scalars),
+        optional_presentation_named(id, 38, "proxy.hit_test", scalars),
     ]
 }
 
-fn view_parameters(id: PresentationCallableId) -> Vec<CallableParameter> {
+fn view_parameters(
+    id: PresentationCallableId,
+    scalars: &RegisteredCompileTimeScalarTypes,
+) -> Vec<CallableParameter> {
     vec![
-        required_presentation(id, 0, "view"),
-        optional_presentation_named(id, 1, "lifetime"),
-        optional_presentation_named(id, 2, "target"),
-        optional_presentation_named(id, 3, "layer"),
-        optional_presentation_named(id, 4, "id"),
-        optional_presentation_named(id, 5, "handle"),
-        optional_presentation_named(id, 6, "key"),
-        optional_presentation_named(id, 7, "mount"),
-        optional_presentation_named(id, 8, "depth"),
-        optional_presentation_named(id, 9, "visible"),
-        optional_presentation_named(id, 10, "enabled"),
+        required_presentation(id, 0, "view", scalars),
+        optional_presentation_named(id, 1, "lifetime", scalars),
+        optional_presentation_named(id, 2, "target", scalars),
+        optional_presentation_named(id, 3, "layer", scalars),
+        optional_presentation_named(id, 4, "id", scalars),
+        optional_presentation_named(id, 5, "handle", scalars),
+        optional_presentation_named(id, 6, "key", scalars),
+        optional_presentation_named(id, 7, "mount", scalars),
+        optional_presentation_named(id, 8, "depth", scalars),
+        optional_presentation_named(id, 9, "visible", scalars),
+        optional_presentation_named(id, 10, "enabled", scalars),
     ]
 }
 
@@ -1999,6 +2009,7 @@ fn character_parameters(
     id: PresentationCallableId,
     character: Option<&CharacterId>,
     include_look: bool,
+    scalars: &RegisteredCompileTimeScalarTypes,
 ) -> Vec<CallableParameter> {
     let character = include_look.then_some(character).flatten();
     let mut parameters = vec![
@@ -2018,22 +2029,30 @@ fn character_parameters(
     }
     let offset = usize::from(character.is_some());
     parameters.extend([
-        optional_presentation_named(id, 1 + offset, "target"),
-        optional_presentation_named(id, 2 + offset, "slot"),
+        optional_presentation_named(id, 1 + offset, "target", scalars),
+        optional_presentation_named(id, 2 + offset, "slot", scalars),
     ]);
     if id.argument_role("scope").is_some() {
-        parameters.push(optional_presentation_named(id, 3 + offset, "scope"));
+        parameters.push(optional_presentation_named(
+            id,
+            3 + offset,
+            "scope",
+            scalars,
+        ));
     }
     parameters
 }
 
-fn background_reference_parameters(id: PresentationCallableId) -> Vec<CallableParameter> {
+fn background_reference_parameters(
+    id: PresentationCallableId,
+    scalars: &RegisteredCompileTimeScalarTypes,
+) -> Vec<CallableParameter> {
     let mut parameters = vec![
-        optional_presentation_named(id, 0, "target"),
-        optional_presentation_named(id, 1, "slot"),
+        optional_presentation_named(id, 0, "target", scalars),
+        optional_presentation_named(id, 1, "slot", scalars),
     ];
     if id.argument_role("scope").is_some() {
-        parameters.push(optional_presentation_named(id, 2, "scope"));
+        parameters.push(optional_presentation_named(id, 2, "scope", scalars));
     }
     parameters
 }
@@ -2248,11 +2267,12 @@ fn optional_presentation_named(
     id: PresentationCallableId,
     index: usize,
     name: &str,
+    scalars: &RegisteredCompileTimeScalarTypes,
 ) -> CallableParameter {
     parameter_with_consumer(
         index,
         Some(name),
-        presentation_parameter_type(id, name),
+        presentation_parameter_type(id, name, scalars),
         CallableParameterPassing::NamedOnly,
         CallableParameterPresence::Optional,
         CallableParameterConsumer::Presentation(
@@ -2266,11 +2286,12 @@ fn required_presentation(
     id: PresentationCallableId,
     index: usize,
     name: &str,
+    scalars: &RegisteredCompileTimeScalarTypes,
 ) -> CallableParameter {
     parameter_with_consumer(
         index,
         Some(name),
-        presentation_parameter_type(id, name),
+        presentation_parameter_type(id, name, scalars),
         CallableParameterPassing::PositionalOrNamed,
         CallableParameterPresence::Required,
         CallableParameterConsumer::Presentation(
@@ -2283,11 +2304,12 @@ fn required_presentation(
 fn presentation_parameter_type(
     id: PresentationCallableId,
     name: &str,
+    scalars: &RegisteredCompileTimeScalarTypes,
 ) -> CallableParameterAdmission {
     let argument = id
         .argument_role(name)
         .expect("presentation schema parameter belongs to the callable argument catalog");
-    match PresentationArgumentValuePolicy::for_role(argument) {
+    match PresentationArgumentValuePolicy::for_role(argument, scalars) {
         PresentationArgumentValuePolicy::PublicIdReference(family, ty) => {
             CallableParameterAdmission::checked_with_rule(
                 ty,
@@ -2384,6 +2406,38 @@ const fn open_named_supply() -> CallableArgumentPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn presentation_schema(
+        id: PresentationCallableId,
+        owner: Option<&ResolvedCharacterOwner>,
+        environment: Option<&RegisteredTypeCheckEnv>,
+    ) -> Result<CallableSignatureSchema, CallableSchemaError> {
+        use crate::env::nominal::{AcceptedNominalVisibilityIndex, AcceptedNominalWorld};
+        use arcweft_lang_hir::symbol::{
+            CallablePackageId, ProjectSymbolRevision, ProjectSymbolWorldId,
+        };
+        use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+        let document = SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://presentation-schema").unwrap(),
+            SourceName::Generated,
+            "",
+        )
+        .unwrap();
+        let world_id = ProjectSymbolWorldId::try_new(
+            CallablePackageId::try_new("presentation-schema").unwrap(),
+            document.identity().id().clone(),
+            "test",
+        )
+        .unwrap();
+        let world = AcceptedNominalWorld::new(
+            std::sync::Arc::new(crate::env::TypeCheckEnv::standard()),
+            world_id,
+            ProjectSymbolRevision::try_for_documents([document.identity()]).unwrap(),
+            std::collections::BTreeMap::new(),
+            AcceptedNominalVisibilityIndex::default(),
+        );
+        let scalars = RegisteredCompileTimeScalarTypes::try_from_world(&world).unwrap();
+        super::presentation_schema(id, owner, environment, &scalars)
+    }
     use crate::callable::{
         CallableGroupIndex, CallableLogLevel, CallableParameterCoordinate, CallableParameterIndex,
         CallableSchemaGenericRole, DropCallableId,

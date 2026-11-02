@@ -2620,7 +2620,30 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
             RuntimePlanTypeProjection::Signed(_)
                 | RuntimePlanTypeProjection::F32
                 | RuntimePlanTypeProjection::F64
-        ) {
+        ) || match self.projection(ty)? {
+            RuntimePlanTypeProjection::Opaque {
+                producer,
+                admission,
+                value_class,
+                persistence,
+                arguments,
+            } if arguments.is_empty() => {
+                let owner = RuntimeOpaqueTypeOwner::with_admission(
+                    producer.clone(),
+                    self.plan
+                        .types
+                        .get(ty)
+                        .expect("resolved negation type")
+                        .semantic_identity(),
+                    *admission,
+                    *value_class,
+                    *persistence,
+                );
+                crate::value::RuntimeQuantityKind::from_owner(&owner)
+                    .is_some_and(crate::value::RuntimeQuantityKind::supports_negation)
+            }
+            _ => false,
+        } {
             Ok(())
         } else {
             invalid_projection(context, ty)

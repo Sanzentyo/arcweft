@@ -8,6 +8,7 @@
 pub use crate::checked_text_proxy::{
     CheckedCompileTimeScalar, CheckedCompileTimeScalarEnum, CheckedCompileTimeScalarEnumCase,
     CheckedCompileTimeScalarEnumValue, CheckedCompileTimeScalarKind,
+    CompileTimeScalarReductionError, reduce_scalar_literal,
 };
 
 use crate::types::TypeKind;

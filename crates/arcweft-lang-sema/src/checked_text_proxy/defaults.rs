@@ -99,6 +99,14 @@ pub(crate) fn reduce_enum_value(
     ))
 }
 
+/// Reduces typed literal data without reparsing source text or dropping its unit.
+pub fn reduce_scalar_literal(
+    literal: &HirLiteral,
+    kind: &CheckedCompileTimeScalarKind,
+) -> Result<CheckedCompileTimeScalar, CompileTimeScalarReductionError> {
+    reduce_literal(literal, kind, false)
+}
+
 fn reduce_literal(
     literal: &HirLiteral,
     kind: &CheckedCompileTimeScalarKind,
@@ -154,11 +162,11 @@ fn reduce_literal(
                 HirUnitNumberUnit::Px => LengthUnit::Px,
                 HirUnitNumberUnit::Pt => LengthUnit::Pt,
                 HirUnitNumberUnit::Em => LengthUnit::Em,
-                HirUnitNumberUnit::Percent
-                | HirUnitNumberUnit::Rem
-                | HirUnitNumberUnit::Vw
-                | HirUnitNumberUnit::Vh
-                | HirUnitNumberUnit::Deg
+                HirUnitNumberUnit::Percent => LengthUnit::Percent,
+                HirUnitNumberUnit::Rem => LengthUnit::Rem,
+                HirUnitNumberUnit::Vw => LengthUnit::Vw,
+                HirUnitNumberUnit::Vh => LengthUnit::Vh,
+                HirUnitNumberUnit::Deg
                 | HirUnitNumberUnit::Rad
                 | HirUnitNumberUnit::Turn
                 | HirUnitNumberUnit::Db
@@ -172,6 +180,19 @@ fn reduce_literal(
                 milli: checked_signed_milli(signed_decimal_milli(decimal, negative)?)?,
                 unit,
             }))
+        }
+        (
+            HirLiteral::UnitNumber(HirUnitNumberLiteral::Value {
+                decimal,
+                unit: HirUnitNumberUnit::Percent,
+            }),
+            CheckedCompileTimeScalarKind::Ratio,
+        ) if !negative => {
+            let milli = signed_decimal_milli(decimal, false)?;
+            if milli % 100 != 0 {
+                return Err(CompileTimeScalarReductionError::PrecisionLoss);
+            }
+            checked_ratio(milli / 100)
         }
         (
             HirLiteral::UnitNumber(HirUnitNumberLiteral::Value {

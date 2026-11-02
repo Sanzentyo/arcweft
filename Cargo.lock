@@ -1585,7 +1585,6 @@ dependencies = [
  "arcweft-lang-hir",
  "arcweft-lang-sema",
  "arcweft-lang-syntax",
- "arcweft-primitives",
  "arcweft-source",
  "arcweft-text-model",
  "blake3",

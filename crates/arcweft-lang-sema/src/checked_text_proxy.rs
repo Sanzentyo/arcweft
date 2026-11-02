@@ -23,6 +23,7 @@ use crate::{
 
 mod defaults;
 mod prepared;
+pub use defaults::reduce_scalar_literal;
 pub(crate) use defaults::{reduce_color_argument, reduce_enum_value, reduce_literal_expression};
 pub(crate) use prepared::{
     PreparedCheckedTextProxyApplication, PreparedCheckedTextProxyCatalog,

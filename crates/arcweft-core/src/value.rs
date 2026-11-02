@@ -42,8 +42,11 @@ pub use canonical_transform::{RuntimeValueMergeError, RuntimeValueNormalizationE
 mod character_dialogue;
 mod collection;
 mod color;
+mod quantity;
 pub(crate) use collection::evaluate_collection_intrinsic;
 pub(crate) use ownership::evaluate_ownership_intrinsic;
+pub(crate) use quantity::quantity_payload_is_valid;
+pub use quantity::{RuntimeQuantity, RuntimeQuantityKind};
 mod data_shape;
 mod dense_numeric;
 mod entity_identity;
@@ -2777,6 +2780,8 @@ impl From<RuntimeLocalBinding> for RuntimeLocalSlot {
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimeEvalError {
     #[error(transparent)]
+    Quantity(#[from] RuntimeOpaqueValueError),
+    #[error(transparent)]
     ValueOwnership(#[from] ownership::RuntimeValueOwnershipAdmissionError),
     #[error("Program task repeats capture local {local:?}")]
     DuplicateProgramTaskCapture { local: RuntimeLocalDeclarationId },
@@ -3052,6 +3057,15 @@ pub(crate) fn evaluate_unary(
         }
         (RuntimeUnaryOp::Neg, RuntimeValue::F32(value)) => Ok(RuntimeValue::F32(-value)),
         (RuntimeUnaryOp::Neg, RuntimeValue::F64(value)) => Ok(RuntimeValue::F64(-value)),
+        (RuntimeUnaryOp::Neg, RuntimeValue::Opaque(value)) => {
+            let quantity = RuntimeQuantity::from_value(&value)
+                .and_then(RuntimeQuantity::checked_neg)
+                .ok_or_else(|| RuntimeEvalError::UnsupportedUnary {
+                    op: "-",
+                    value: format!("opaque/{}", value.producer().as_str()),
+                })?;
+            Ok(quantity.into_runtime_value(value.semantic_identity())?)
+        }
         (op, value) => Err(RuntimeEvalError::UnsupportedUnary {
             op: op.as_label(),
             value: runtime_value_label(&value),

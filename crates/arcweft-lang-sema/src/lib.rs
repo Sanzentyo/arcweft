@@ -8,7 +8,7 @@ pub mod assertion;
 pub mod callable;
 pub mod character_definition;
 pub mod character_dialogue;
-mod checked_compile_time;
+pub mod checked_compile_time;
 pub mod checked_rich_text;
 mod checked_text_proxy;
 pub mod dialogue_view;

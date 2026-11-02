@@ -36,17 +36,26 @@ impl PresentationSchemaContext<'_> {
         &self,
         id: PresentationCallableId,
     ) -> Result<CallableSignatureSchema, CallableSchemaError> {
-        super::schema::presentation_schema(id, self.owner, Some(self.environment))
+        super::schema::presentation_schema(
+            id,
+            self.owner,
+            Some(self.environment),
+            self.environment.compile_time_scalars(),
+        )
     }
 
     pub(crate) fn checker_signature_schema(
         id: PresentationCallableId,
+        scalars: &crate::registration::RegisteredCompileTimeScalarTypes,
     ) -> Result<CallableSignatureSchema, CallableSchemaError> {
-        super::schema::presentation_schema(id, None, None)
+        super::schema::presentation_schema(id, None, None, scalars)
     }
 }
 impl PresentationArgumentValuePolicy {
-    pub(crate) fn for_role(role: PresentationArgumentRole) -> PresentationArgumentValuePolicy {
+    pub(crate) fn for_role(
+        role: PresentationArgumentRole,
+        scalars: &crate::registration::RegisteredCompileTimeScalarTypes,
+    ) -> PresentationArgumentValuePolicy {
         use PresentationArgumentValuePolicy::{Exact, MetadataScalar, TokenScalar, Unchecked};
 
         match role {
@@ -93,7 +102,7 @@ impl PresentationArgumentValuePolicy {
             | PresentationArgumentRole::PlaybackPausedAt
             | PresentationArgumentRole::PlaybackLocalTime => TokenScalar(playback_time()),
             PresentationArgumentRole::Width | PresentationArgumentRole::Height => {
-                TokenScalar(viewport_dimension())
+                TokenScalar(viewport_dimension(scalars))
             }
             PresentationArgumentRole::Parameter | PresentationArgumentRole::ProxyParameter => {
                 MetadataScalar
@@ -137,9 +146,11 @@ fn playback_time() -> TypeKind {
     ])
 }
 
-fn viewport_dimension() -> TypeKind {
+fn viewport_dimension(scalars: &crate::registration::RegisteredCompileTimeScalarTypes) -> TypeKind {
     TypeKind::Choice(vec![
-        TypeKind::Named("Length".to_owned()),
+        scalars
+            .type_for(crate::registration::CompileTimeScalarTypeRoleId::Length)
+            .clone(),
         TypeKind::I32,
         TypeKind::F64,
         TypeKind::String,

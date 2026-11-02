@@ -5556,6 +5556,20 @@ fn runtime_type_scoped_at(
         {
             RuntimeTypeShape::Color
         }
+        TypeKind::CompileTimeScalar(scalar) if scalar.kind().runtime_quantity_kind().is_some() => {
+            let owner = scalar
+                .kind()
+                .runtime_quantity_kind()
+                .expect("matched quantity kind")
+                .owner(identity);
+            RuntimeTypeShape::Opaque {
+                producer: owner.producer().clone(),
+                admission: owner.admission(),
+                value_class: owner.value_class(),
+                persistence: owner.persistence(),
+                arguments: Box::new([]),
+            }
+        }
         TypeKind::CompileTimeScalar(_) => {
             return Err(RuntimeSemanticProjectionError::Type {
                 reason: format!(
@@ -5783,6 +5797,36 @@ fn projection_index(index: usize) -> u32 {
 }
 
 fn runtime_literal(literal: &HirLiteral, ty: &TypeKind) -> Result<RuntimeValue, String> {
+    if let TypeKind::CompileTimeScalar(scalar) = ty
+        && scalar.kind().runtime_quantity_kind().is_some()
+    {
+        use arcweft_core::value::RuntimeQuantity;
+        use arcweft_lang_sema::checked_compile_time::{
+            CheckedCompileTimeScalarKind, reduce_scalar_literal,
+        };
+        use arcweft_lang_sema::types::CompileTimeScalarKind;
+        let kind = match scalar.kind() {
+            CompileTimeScalarKind::Milli => CheckedCompileTimeScalarKind::Milli,
+            CompileTimeScalarKind::Ratio => CheckedCompileTimeScalarKind::Ratio,
+            CompileTimeScalarKind::Length => CheckedCompileTimeScalarKind::Length,
+            CompileTimeScalarKind::Angle => CheckedCompileTimeScalarKind::Angle,
+            _ => return Err("scalar has no quantity representation".to_owned()),
+        };
+        let value =
+            match reduce_scalar_literal(literal, &kind).map_err(|error| error.to_string())? {
+                CheckedCompileTimeScalar::Milli(value) => RuntimeQuantity::Milli(value),
+                CheckedCompileTimeScalar::Ratio(value) => RuntimeQuantity::Ratio(value),
+                CheckedCompileTimeScalar::Length(value) => RuntimeQuantity::Length(value),
+                CheckedCompileTimeScalar::Angle(value) => RuntimeQuantity::Angle(value),
+                _ => return Err("literal reducer returned a different quantity kind".to_owned()),
+            };
+        return value
+            .into_runtime_value(RuntimeSemanticTypeId::from(
+                ty.semantic_identity_digest()
+                    .map_err(|error| error.to_string())?,
+            ))
+            .map_err(|error| error.to_string());
+    }
     match literal {
         HirLiteral::String(HirStringLiteral::Value(value)) => {
             Ok(RuntimeValue::String(value.to_string()))

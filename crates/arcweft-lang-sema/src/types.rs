@@ -623,7 +623,7 @@ impl CompileTimeCallableType {
 
 /// Closed semantic kind of one compile-time scalar value.
 ///
-/// These values are semantic-only leaves. Their accepted nominal declaration
+/// These values are checked scalar leaves. Their accepted nominal declaration
 /// remains part of the identity because the same scalar kind may be supplied
 /// by more than one accepted environment owner.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -637,6 +637,17 @@ pub enum CompileTimeScalarKind {
 }
 
 impl CompileTimeScalarKind {
+    /// Core representation for fixed-point values that can cross an ordinary call.
+    pub const fn runtime_quantity_kind(self) -> Option<arcweft_core::value::RuntimeQuantityKind> {
+        use arcweft_core::value::RuntimeQuantityKind;
+        match self {
+            Self::Milli => Some(RuntimeQuantityKind::Milli),
+            Self::Ratio => Some(RuntimeQuantityKind::Ratio),
+            Self::Length => Some(RuntimeQuantityKind::Length),
+            Self::Angle => Some(RuntimeQuantityKind::Angle),
+            Self::PublicId | Self::Color => None,
+        }
+    }
     /// All closed scalar kinds in their canonical declaration order.
     pub const ALL: [Self; 6] = [
         Self::Milli,

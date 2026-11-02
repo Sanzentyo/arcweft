@@ -426,6 +426,7 @@ impl RuntimeOpaqueTypeOwner {
             && (self.admission == RuntimeOpaqueTypeAdmission::ProducerWide
                 || self.semantic_identity == actual.semantic_identity())
             && crate::value::standard_asset_opaque_payload_is_valid(self, actual.payload())
+            && crate::value::quantity_payload_is_valid(self, actual.payload())
             && self
                 .validate_presentation_handle_payload(actual.payload())
                 .is_ok()
@@ -441,7 +442,9 @@ impl RuntimeOpaqueTypeOwner {
                 semantic_identity: self.semantic_identity,
             });
         }
-        if !crate::value::standard_asset_opaque_payload_is_valid(self, payload.view()) {
+        if !crate::value::standard_asset_opaque_payload_is_valid(self, payload.view())
+            || !crate::value::quantity_payload_is_valid(self, payload.view())
+        {
             return Err(RuntimeOpaqueValueError::InvalidStandardPayload {
                 producer: self.producer.clone(),
             });

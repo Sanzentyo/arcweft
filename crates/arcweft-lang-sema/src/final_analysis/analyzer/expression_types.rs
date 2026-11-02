@@ -6,6 +6,39 @@ use super::{
     TypeKind,
 };
 use crate::final_analysis::type_rules::{integer_suffix_type, is_integer};
+use crate::types::CompileTimeScalarKind;
+use arcweft_lang_hir::leaf::{HirUnitNumberLiteral, HirUnitNumberUnit};
+
+pub(super) fn unit_scalar_kind(
+    unit: HirUnitNumberUnit,
+    expected: Option<&TypeKind>,
+) -> Option<CompileTimeScalarKind> {
+    let length_expected = expected.is_some_and(|ty| match ty {
+        TypeKind::CompileTimeScalar(scalar) => scalar.kind() == CompileTimeScalarKind::Length,
+        TypeKind::Choice(items) => items.iter().any(|ty| {
+            matches!(ty,
+            TypeKind::CompileTimeScalar(scalar) if scalar.kind() == CompileTimeScalarKind::Length)
+        }),
+        _ => false,
+    });
+    match unit {
+        HirUnitNumberUnit::Px
+        | HirUnitNumberUnit::Pt
+        | HirUnitNumberUnit::Em
+        | HirUnitNumberUnit::Rem
+        | HirUnitNumberUnit::Vw
+        | HirUnitNumberUnit::Vh => Some(CompileTimeScalarKind::Length),
+        HirUnitNumberUnit::Percent if length_expected => Some(CompileTimeScalarKind::Length),
+        HirUnitNumberUnit::Percent => Some(CompileTimeScalarKind::Ratio),
+        HirUnitNumberUnit::Deg | HirUnitNumberUnit::Rad | HirUnitNumberUnit::Turn => {
+            Some(CompileTimeScalarKind::Angle)
+        }
+        HirUnitNumberUnit::Db
+        | HirUnitNumberUnit::Lufs
+        | HirUnitNumberUnit::Bpm
+        | HirUnitNumberUnit::Bars => None,
+    }
+}
 
 pub(super) fn literal_type(
     literal: &HirLiteral,
@@ -34,11 +67,21 @@ pub(super) fn literal_type(
             }
             None => (TypeKind::F64, CheckedTypeSelection::DefaultNumericFallback),
         },
-        HirLiteral::UnitNumber(_) => expected.cloned().map_or(
-            (TypeKind::F64, CheckedTypeSelection::DefaultNumericFallback),
-            |ty| (ty, CheckedTypeSelection::Expected),
-        ),
-        HirLiteral::Integer(HirIntegerLiteral::Invalid(_))
+        HirLiteral::UnitNumber(HirUnitNumberLiteral::Value { unit, .. }) => {
+            if let Some(kind) = unit_scalar_kind(*unit, expected) {
+                let accepts = |ty: &&TypeKind| matches!(ty, TypeKind::CompileTimeScalar(scalar) if scalar.kind() == kind);
+                let ty = match expected? {
+                    TypeKind::Choice(items) => items.iter().find(accepts)?,
+                    ty if accepts(&ty) => ty,
+                    _ => return None,
+                };
+                (ty.clone(), CheckedTypeSelection::Expected)
+            } else {
+                (TypeKind::F64, CheckedTypeSelection::DefaultNumericFallback)
+            }
+        }
+        HirLiteral::UnitNumber(HirUnitNumberLiteral::Invalid(_))
+        | HirLiteral::Integer(HirIntegerLiteral::Invalid(_))
         | HirLiteral::Float(HirFloatLiteral::Invalid(_)) => return None,
     };
     Some(inferred)
