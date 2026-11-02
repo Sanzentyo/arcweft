@@ -14229,3 +14229,23 @@ metadataのBlock／rewriteは全resourceを保留し、pixel mask時はscrubbed 
 現状一覧から旧MCP metadata未達と画像7件の途中状態を削除した理由は、この新しい修復と最終8件の実測である。元の失敗結果・全SHAは履歴として保持する。
 Generic Match・View値等の既受入は維持し、Generic行はbyte単位で不変。原本は[MCP画像公開](acceptance-evidence/task-presentation-frame-mcp-publication.json)。
 physical LOCは従来と同じRust行のみの集計で、全file合計1799731とは区別する。
+
+
+## 2026-11-02 全63逆依存・全CLIの終端照合と利用側修復
+
+base 5653e03560cd9fff3dac432bab82ab36cd07c0a9、4080入力でSource／case／EXE差分0。通常8948件は8947 PASS／1 FAIL・24 skipped、CLI全target692件は657 PASS／35 FAIL・23 skipped。
+通常は58 runtime packageと4 empty suite、別CLIで全63 packageを照合した。元auditのselectedPackages=0はworkspace指定を-p数だけで数えた集計上の不足であり、実catalogで62通常packageへ補正した。元receiptは変更せず保持する。
+Generic Matchの既受入151 ID、View値40 IDはこの新Sourceでも全件PASS。残る別境界の失敗を理由に戻さない。
+
+唯一の通常FAILはIME生成Cargo scriptのViewDefinitionResourceにconstruction_identityが欠けた9bdの移行漏れ（E0063）。workspace checkではこのscript本体をコンパイルしていなかった。
+3fc21baee3ae806e2d40cceade52dd8d4fcfa7d3（parent 5653e03560cd9fff3dac432bab82ab36cd07c0a9、tree f1ef965d3f852063f0be35f532e3c92721c14e36）でengine-owned定義へNoneを明示した。
+限定1／1 PASSは2回のAWFB byte一致、codec検証、3 controls、5実callback、元256-instruction条件を維持する。nightly fmtも0。他8947件は再利用し、8948件を新たに通し実行したとはしない。
+
+CLIは旧40 FAILから画像7件がPASSへ進み、新規2 IDが許可metadataの旧scrub期待でFAILした。33 shared IDについて現在stderrを保存し、同じIDを根拠に旧原因と同一視しない。
+34247073edd2e7444256e2e386328ef6866aee2a（parent 3fc21baee3ae806e2d40cceade52dd8d4fcfa7d3、tree 876e75efcdc23a6813b13a015adebfa1f4c3dfde）は完全descriptor一致へ期待を同期し、元のmoderated URIとpixel/blob検査を保持した。
+local-dev／sensitive指定でもbuiltin policyが秘密metadataをBlockする検査を加え、3／3 PASS。CLI all-target／all-feature／locked Clippy、対象fmtは0。production codeの変更はない。
+旧名allows_color_capture_and_scrubs_metadataはpreserves_admitted_metadataへ改名し、秘密metadataの1 testを追加した。現在universe693を旧692の同一ID集合や全件再実行と呼ばない。657 PASSは再利用、未修復は33件として扱う。
+
+補足訂正: 先行メモでScrollのdotted action宣言を単にobsoleteと記したのは断定が早かった。converged-language-surfaceの採用例には同じ形があり、共通のlocal name／公開ID規則と照合して最終契約を決める必要がある。実際の構文拒否は履歴として保持し、実装拒否だけを仕様根拠としない。
+現状一覧の全63／全CLI未実行という記述は、今回の実測と限定修復に基づいて置換した。旧7987 PASS・CLI652／40などの全結果・SHAは前Sourceの履歴として保持する。
+原本は[consumer closure](acceptance-evidence/task-presentation-frame-consumer-closure.json)。12 tracked／6 actual untracked WIPとGeneric行を保持した。
