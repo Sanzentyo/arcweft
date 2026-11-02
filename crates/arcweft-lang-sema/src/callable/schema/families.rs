@@ -2411,7 +2411,7 @@ mod tests {
         owner: Option<&ResolvedCharacterOwner>,
         environment: Option<&RegisteredTypeCheckEnv>,
     ) -> Result<CallableSignatureSchema, CallableSchemaError> {
-        use crate::env::nominal::{AcceptedNominalVisibilityIndex, AcceptedNominalWorld};
+        use crate::registration::{AcceptedNominalVisibilityIndex, AcceptedNominalWorld};
         use arcweft_lang_hir::symbol::{
             CallablePackageId, ProjectSymbolRevision, ProjectSymbolWorldId,
         };

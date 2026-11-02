@@ -313,7 +313,7 @@ flow main() -> String {
     assert!(matches!(
         ratio_value,
         field if matches!(field.origin(), CheckedTextProxyValueOrigin::AttributeDefault(_))
-            && matches!(field.value(), Some(CheckedCompileTimeScalar::Ratio(value)) if value.0 == 750)
+            && matches!(field.value(), Some(CheckedCompileTimeScalar::Ratio(value)) if value.get() == 750)
     ));
     assert!(matches!(
         length_value,

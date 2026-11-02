@@ -1711,12 +1711,14 @@ fn apply_instruction(
                     }
                 }
                 AwbcUnaryOp::Neg => {
-                    let quantity = program
-                        .opaque_owner(src_ty)
-                        .ok()
-                        .flatten()
-                        .and_then(|owner| crate::value::RuntimeQuantityKind::from_owner(&owner))
-                        .is_some_and(crate::value::RuntimeQuantityKind::supports_negation);
+                    let quantity = matches!(runtime_shape(program, src_ty),
+                        Some(AwbcRuntimeTypeShape::Opaque { arguments, .. }) if arguments.is_empty())
+                        && program
+                            .opaque_owner(src_ty)
+                            .ok()
+                            .flatten()
+                            .and_then(|owner| crate::value::RuntimeQuantityKind::from_owner(&owner))
+                            .is_some_and(crate::value::RuntimeQuantityKind::supports_negation);
                     if !is_numeric(runtime_shape(program, src_ty)) && !quantity {
                         return invalid_type(&at, "numeric unary operand");
                     }

@@ -58,9 +58,9 @@ pub use rich_effects::{
     Milli, RichTextAngle, RichTextInlineDirection, RichTextJlreqStrictness, RichTextLayout,
     RichTextObjectProxy, RichTextObjectProxyDeclaration, RichTextParam, RichTextPresentation,
     RichTextRubyPosition, RichTextTextProxyField, RichTextTextProxyFieldKind,
-    RichTextTextProxyFieldSchema, RichTextTextProxyLength, RichTextTextProxyScalar,
-    RichTextTextProxySchema, RichTextTransform, RichTextTransformOrigin, RichTextVec2,
-    RichTextVerticalLatinMode, RichTextWritingMode,
+    RichTextTextProxyFieldSchema, RichTextTextProxyScalar, RichTextTextProxySchema,
+    RichTextTransform, RichTextTransformOrigin, RichTextVec2, RichTextVerticalLatinMode,
+    RichTextWritingMode,
 };
 pub use rich_text::{
     DialogueHostEvent, DialogueVoiceSource, RichTextControl, RichTextDocument, RichTextNode,

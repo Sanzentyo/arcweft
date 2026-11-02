@@ -8,7 +8,7 @@ use arcweft_lang_sema::{
 use arcweft_text_model::{
     Milli, RichTextColor, RichTextObjectProxy, RichTextObjectProxyDeclaration,
     RichTextTextProxyField, RichTextTextProxyFieldKind, RichTextTextProxyFieldSchema,
-    RichTextTextProxyLength, RichTextTextProxyScalar, RichTextTextProxySchema,
+    RichTextTextProxyScalar, RichTextTextProxySchema,
 };
 
 use super::{ExprId, RuntimeSemanticProjectionError};
@@ -132,12 +132,9 @@ fn lower_scalar(value: &CheckedCompileTimeScalar) -> RichTextTextProxyScalar {
         CheckedCompileTimeScalar::Ratio(value) => {
             RichTextTextProxyScalar::Ratio { milli: value.get() }
         }
-        CheckedCompileTimeScalar::Length(value) => RichTextTextProxyScalar::Length {
-            value: RichTextTextProxyLength {
-                milli: value.milli,
-                unit: value.unit,
-            },
-        },
+        CheckedCompileTimeScalar::Length(value) => {
+            RichTextTextProxyScalar::Length { value: *value }
+        }
         CheckedCompileTimeScalar::Angle(value) => RichTextTextProxyScalar::Angle {
             milli_degrees: value.milli_degrees,
         },

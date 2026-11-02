@@ -302,24 +302,40 @@ pub struct RichTextTextProxyField {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RichTextTextProxyScalar {
-    Bool { value: bool },
-    Int { value: i64 },
-    Milli { value: Milli },
-    Ratio { milli: u16 },
-    Length { value: RichTextTextProxyLength },
-    Angle { milli_degrees: i32 },
-    Duration { millis: u64 },
-    ClosedEnum { enum_id: String, variant: u32 },
-    PublicId { value: String },
-    Text { value: String },
-    Color { value: crate::style::RichTextColor },
-}
-
-/// Fixed-point length retained without collapsing its authored semantic unit.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RichTextTextProxyLength {
-    pub milli: i32,
-    pub unit: arcweft_primitives::LengthUnit,
+    Bool {
+        value: bool,
+    },
+    Int {
+        value: i64,
+    },
+    Milli {
+        value: Milli,
+    },
+    Ratio {
+        milli: u16,
+    },
+    Length {
+        value: arcweft_primitives::CheckedLength,
+    },
+    Angle {
+        milli_degrees: i32,
+    },
+    Duration {
+        millis: u64,
+    },
+    ClosedEnum {
+        enum_id: String,
+        variant: u32,
+    },
+    PublicId {
+        value: String,
+    },
+    Text {
+        value: String,
+    },
+    Color {
+        value: crate::style::RichTextColor,
+    },
 }
 
 /// Presentation metadata resolved for a text run or ruby annotation.

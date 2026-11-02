@@ -8,30 +8,14 @@ frame timing.
 
 ## Source Surface
 
-The source surface uses ordinary call syntax and authored
-image-object declarations. Asset identities come from the selected asset
-catalog rather than source declarations:
+The source surface uses ordinary factory calls that return a typed
+`Handle<ImageSurface>`. Asset identities come from the selected asset catalog.
+An `id` supplies presentation metadata on the created value; it does not
+declare another source entity or replace the issued handle's identity:
 
 ```arcw
-pub image sample.pulse_sprite {
-  asset = @asset:.bg.pulse
-  target = @target.sample.pulse_sprite
-  layer = @layer.foreground
-  x = 96px
-  y = 72px
-  width = 360px
-  height = 180px
-  fit = stretch
-  opacity = 0.5
-  playback.local_time = 50ms
-  proxy.id = @proxy.pulse_sprite.hotspot
-  proxy.hit_test = true
-}
-
 bg(@asset:.bg.room)
 bg(@asset:.bg.poster, fit = "intrinsic", alignment.x = "right", alignment.y = "bottom")
-
-image(@image.sample.pulse_sprite)
 
 image(
   asset = @asset:.bg.pulse,

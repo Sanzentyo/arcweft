@@ -89,7 +89,9 @@ impl LengthUnit {
 }
 
 /// Fixed-point length; interpretation belongs to the consuming layout context.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(
+    Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize,
+)]
 pub struct CheckedLength {
     pub milli: i32,
     pub unit: LengthUnit,

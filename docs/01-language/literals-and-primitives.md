@@ -180,6 +180,13 @@ literal does not imply that the value occupies one player-visible glyph cell.
 Unit-number literals are syntax-level values that type checking resolves into
 semantic primitives.
 
+An unspecialized percentage has type `Ratio`; an expected `Length` makes it a
+relative length. A quantity keeps its semantic type and unit across locals,
+ordinary calls, return values, and saved execution. A parameter accepting a
+choice of representations does not replace the quantity's actual type with
+that whole choice. Resolving a length to pixels requires the consuming layout
+context; passing it through a call does not remove its unit.
+
 ```text
 Duration:
   ns us ms s min h
