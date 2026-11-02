@@ -2658,6 +2658,10 @@ fn agent_observe_read_uri_preserves_animated_image_object_frame_metadata() {
     let object_id = image_object["id"]
         .as_str()
         .expect("bounded image object id");
+    assert_eq!(
+        object_id,
+        assert_image_execution_occurrence(image_object, "image.sample.pulse_sprite")
+    );
     let raw_uri = image_object["capture_refs"]["captures"]
         .as_array()
         .expect("bounded image object reports capture refs")
@@ -2694,10 +2698,7 @@ fn agent_observe_read_uri_preserves_animated_image_object_frame_metadata() {
     assert_eq!(image_content["intrinsic_width"], 2);
     assert_eq!(image_content["intrinsic_height"], 1);
     assert_eq!(image_content["actions"][0], "action.inspect.pulse_sprite");
-    assert_eq!(
-        image_content["params"]["param.role"]["value"],
-        "animated-hotspot"
-    );
+    assert_eq!(image_content["params"]["role"]["value"], "animated-hotspot");
     assert_eq!(
         image_content["proxies"][0]["id"],
         "proxy.pulse_sprite.hotspot"
@@ -2716,7 +2717,17 @@ fn agent_observe_reports_missing_scope_for_released_image_handle_object() {
         workspace_root().join("samples/image-animation.arcw"),
         "entry.image_sprite_overlay",
     );
-    let object_id = "object.image.image.sample.pulse_sprite";
+    // The sibling entry is a positive rendering control, not a replay of the
+    // same resource's lifetime. Core/driver tests cover that custody transition.
+    let live =
+        observe_image_animation_sample_entry_at(&source_path, "entry.image_sprite_overlay", "0.15");
+    let live_image = live["objects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|object| object["content"]["object"] == "image.sample.pulse_sprite")
+        .expect("the positive control actually observes the authored sprite");
+    let object_id = assert_image_execution_occurrence(live_image, "image.sample.pulse_sprite");
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("observe")
@@ -2750,7 +2761,10 @@ fn agent_observe_reports_missing_scope_for_released_image_handle_object() {
             .as_array()
             .expect("objects are reported")
             .iter()
-            .all(|object| object["id"] != object_id),
+            .all(|object| {
+                object["id"] != object_id
+                    && object["content"]["object"] != "image.sample.pulse_sprite"
+            }),
         "released image object should be absent from observed objects: {json}"
     );
     assert!(json["diagnostics"].as_array().is_some_and(|diagnostics| {
@@ -3244,6 +3258,24 @@ fn agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_ra
         workspace_root().join("samples/image-animation.arcw"),
         "entry.image_sprite_overlay",
     );
+    let observed =
+        observe_image_animation_sample_entry_at(&source_path, "entry.image_sprite_overlay", "0.15");
+    let image = observed["objects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|object| object["content"]["object"] == "image.sample.pulse_sprite")
+        .expect("the sprite exists before its MCP resource is requested");
+    let object_id = assert_image_execution_occurrence(image, "image.sample.pulse_sprite");
+    let raw_uri = image["capture_refs"]["captures"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|capture| {
+            capture["kind"] == "color" && capture["mime_type"] == "application/octet-stream"
+        })
+        .and_then(|capture| capture["uri"].as_str())
+        .expect("the sprite issues its raw color resource reference");
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("observe")
@@ -3255,10 +3287,14 @@ fn agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_ra
         .arg("--capture-time")
         .arg("0.15")
         .arg("--read-uri")
-        .arg("arcweft://session/cli/frame/0/object.object.image.layer.foreground.0.1.rgba")
+        .arg(raw_uri)
         .arg("--mcp")
         .arg("--mcp-format")
         .arg("tool-result")
+        // This fixture verifies local raw transport. Strict publication has
+        // separate moderation tests and must not be treated as a raw blob API.
+        .arg("--content-policy-mode")
+        .arg("local-dev")
         .arg("--json")
         .output()
         .expect("arcw agent observe reads animated image object raw URI as MCP tool result");
@@ -3280,10 +3316,7 @@ fn agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_ra
     .expect("MCP tool-result metadata is JSON");
     assert_eq!(metadata["mime_type"], "application/octet-stream");
     assert_eq!(metadata["image"]["scope"]["kind"], "object");
-    assert_eq!(
-        metadata["image"]["scope"]["id"],
-        "object.image.layer.foreground.0.1"
-    );
+    assert_eq!(metadata["image"]["scope"]["id"], object_id);
     assert_eq!(metadata["image"]["width"], 360);
     assert_eq!(metadata["image"]["height"], 180);
     assert_eq!(
@@ -3296,7 +3329,7 @@ fn agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_ra
         50
     );
     assert_eq!(
-        metadata["image"]["object"]["content"]["params"]["param.role"]["value"],
+        metadata["image"]["object"]["content"]["params"]["role"]["value"],
         "animated-hotspot"
     );
     assert_eq!(
@@ -3316,11 +3349,8 @@ fn agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_ra
         .decode(blob)
         .expect("MCP raw image blob decodes");
     assert_eq!(bytes.len(), 360 * 180 * 4);
-    assert_eq!(
-        &bytes[..4],
-        &[5, 26, 161, 127],
-        "MCP raw blob should preserve the pinned animated image pixel and opacity"
-    );
+    assert_eq!(metadata["image"]["composition"], "masked_framebuffer_crop");
+    assert_masked_animated_sprite_pixels(&bytes);
 }
 
 #[test]
@@ -3338,9 +3368,11 @@ fn agent_hit_test_reports_animated_image_object_proxy_metadata() {
     );
 
     assert_eq!(hit["status"], "ok");
-    assert_eq!(hit["top_object_id"], "object.image.layer.foreground.0.1");
     let top_hit = &hit["hits"][0];
-    assert_eq!(top_hit["object_id"], "object.image.layer.foreground.0.1");
+    let object_id =
+        assert_image_execution_occurrence(&top_hit["object"], "image.sample.pulse_sprite");
+    assert_eq!(hit["top_object_id"], object_id);
+    assert_eq!(top_hit["object_id"], object_id);
     assert_eq!(top_hit["layer"], "layer.hit");
     assert_eq!(top_hit["object"]["layer"], "layer.foreground");
     assert_eq!(top_hit["region"]["kind"], "object_proxy");
@@ -3350,7 +3382,7 @@ fn agent_hit_test_reports_animated_image_object_proxy_metadata() {
     assert_eq!(top_hit["region"]["proxy_layer"], "layer.hit");
     assert_eq!(top_hit["region"]["depth"], 2600);
     assert_eq!(
-        top_hit["region"]["proxy_params"]["param.channel"]["value"],
+        top_hit["region"]["proxy_params"]["channel"]["value"],
         "preview"
     );
     let image_content = &top_hit["object"]["content"];
@@ -3383,14 +3415,6 @@ fn agent_hit_test_capture_time_updates_unpinned_animated_image_frame_metadata() 
 
     assert_eq!(early["status"], "ok");
     assert_eq!(late["status"], "ok");
-    assert_eq!(
-        early["top_object_id"],
-        "object.image.image.background.default"
-    );
-    assert_eq!(
-        late["top_object_id"],
-        "object.image.image.background.default"
-    );
     let early_hit = early["hits"]
         .as_array()
         .expect("early hit stack")
@@ -3409,6 +3433,13 @@ fn agent_hit_test_capture_time_updates_unpinned_animated_image_frame_metadata() 
                 && hit["object"]["content"]["asset"] == "asset.bg.pulse"
         })
         .expect("late background image hit");
+    let early_id =
+        assert_image_execution_occurrence(&early_hit["object"], "image.background.default");
+    let late_id =
+        assert_image_execution_occurrence(&late_hit["object"], "image.background.default");
+    assert_eq!(early["top_object_id"], early_id);
+    assert_eq!(late["top_object_id"], late_id);
+    assert_eq!(early_id, late_id);
     assert_eq!(early_hit["region"]["kind"], "object");
     assert_eq!(late_hit["region"]["kind"], "object");
 
@@ -3477,7 +3508,10 @@ fn agent_observe_native_captures_clipped_animated_image_object() {
     let object_id = image_object["id"]
         .as_str()
         .expect("clipped animated image object id");
-    assert_eq!(object_id, "object.image.image.sample.clipped_pulse");
+    assert_eq!(
+        object_id,
+        assert_image_execution_occurrence(image_object, "image.sample.clipped_pulse")
+    );
     assert_eq!(image_object["bbox"]["x"], 1184);
     assert_eq!(image_object["bbox"]["y"], 48);
     assert_eq!(image_object["bbox"]["width"], 96);
@@ -3529,17 +3563,36 @@ fn agent_observe_native_captures_clipped_animated_image_object() {
         "object_id_attachment",
     );
     assert_eq!(object_id_bytes.len(), 96 * 96 * 4);
+    let expected_tint = agent_object_id_color_from_json(image_object);
     assert_eq!(
         &object_id_bytes[..4],
-        &[129, 170, 155, 255],
+        &expected_tint,
         "clipped object-id capture should use the stable typed object identity tint"
     );
     assert!(
-        object_id_bytes.chunks_exact(4).all(|pixel| pixel[3] == 255),
-        "selected object-id attachment pixels should remain fully opaque"
+        object_id_bytes
+            .chunks_exact(4)
+            .all(|pixel| pixel == expected_tint),
+        "every selected attachment pixel must exactly match the issued occurrence tint"
     );
 
     fs::remove_dir_all(&dir).expect("remove clipped animated image capture dir");
+}
+
+fn assert_image_execution_occurrence<'a>(
+    object: &'a serde_json::Value,
+    authored_id: &str,
+) -> &'a str {
+    assert_eq!(object["content"]["kind"], "image");
+    assert_eq!(object["entity"], authored_id);
+    assert_eq!(object["content"]["source"], authored_id);
+    assert_eq!(object["content"]["object"], authored_id);
+    let occurrence: arcweft_id::presentation::PresentationHandleId =
+        serde_json::from_value(object["content"]["occurrence"].clone())
+            .expect("live image carries a checked execution occurrence");
+    let object_id = object["id"].as_str().expect("observed image object id");
+    assert_eq!(object_id, format!("object.image.{occurrence}"));
+    object_id
 }
 
 fn observe_image_animation_sample_entry_at(

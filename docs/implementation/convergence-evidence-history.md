@@ -14191,3 +14191,18 @@ Native/Web capture parityはこのcutでは未実行。旧Source5dfcd9caa087a6d8
 Generic Matchの受入850534b9e9bc8c8872f6528dd00050a5e6e7699e／公開f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2、
 View値40条件等の既受入は維持し、現状一覧のGeneric行はbyte単位で変更していない。
 原本は[frame/driver checkpoint](acceptance-evidence/task-presentation-frame-driver-checkpoint.json)。
+
+## 2026-11-02 実CLIの画像観測・captureと残るMCP不整合
+
+公開Source 9bd9fe195ec3da493bce853ad644ca0e03e85052、観測base 4c60776ea42582d87a292504d31c0c6d53d24b8d。
+保持12 tracked／6 actual untrackedを含む4078入力を固定した。最初のpositive指定は誤った完全修飾名で0件となり、catalog guardでruntimeを実行していない。
+正しいpositive2は1 PASS／1 FAIL。画像は存在し、alignmentはPASSしたが、旧テストのparam.role期待がtyped destinationのroleと不一致だった。
+metadataキー・実occurrence・発行URIへテストを同期したimages1は9件中6 PASS／3 FAIL。元Scroll fixtureはdotted action構文で拒否され、変更せず未stageで保持する。
+MCP raw取得fixtureはstrict既定のreview結果をraw blobと誤認していたため、他のローカルraw fixtureと同じ明示local-devへ同期した。既定の公開policyは変更していない。
+images2は1 PASS／1 FAIL。clipped object-idは元観測のoccurrence tintで全pixelを厳密照合してPASSした。固定した旧著者IDのRGB期待は、新しい実occurrenceを表さないため置換した。
+MCPのraw bytes公開は許可されるが、object metadataがscrubされるためscope IDの照合がFAILした。現行capture仕様のmetadata保持に対する具体的未達であり、期待値を削除していない。
+images1の6画像PASSとimages2のclipped PASSを合わせた異なる7条件を確認した。8件が同一runでPASSしたとは主張しない。MCPとclippedの2関数以外は後続差分の影響がないため6件の結果を再利用する。
+release probeには実画像を観測するsibling positive controlと著者metadataの欠落検査を追加した。同一sessionの発行からreleaseまでの受入とは区別する。
+元の2-step／4-step・64-op条件を維持し、色・透明領域・crop寸法の厳密検査を保持した。MCPのcomposited pixel検査も同じmasked framebuffer全体を検査する。
+限定ClippyはCLI全target／all-feature／lockedで終了0、警告は残る。Generic Matchおよび他の既受入は変更しない。
+原本は[CLI画像検証](acceptance-evidence/task-presentation-frame-cli-images.json)。既存履歴のprefixをbyte単位で保持して追記した。

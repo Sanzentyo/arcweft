@@ -1,0 +1,143 @@
+{
+  "historyPrefix": {
+    "bytes": 1760334,
+    "sha256": "b7ed77bc6c2b209568190de6048de88754fef1998ea57536e16dfeac7cfabb9c"
+  },
+  "reuse": "Six image passes in images1 plus the clipped-image pass in images2. Only the MCP and clipped-tint assertions changed between runs; no single eight-case passing run is claimed.",
+  "initialPositive": {
+    "version": 1,
+    "base": "4c60776ea42582d87a292504d31c0c6d53d24b8d",
+    "run": "presentation-frame-cli-positive2-20261102.runtime",
+    "actualExitCode": 100,
+    "summary": "Summary [   7.050s] 2 tests run: 1 passed, 1 failed, 479 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2,
+    "passed": 1,
+    "failed": 1,
+    "skipped": 479,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4078,
+    "sourceDrift": 0,
+    "held": 12,
+    "failureSet": [
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_read_uri_preserves_animated_image_object_frame_metadata"
+      }
+    ],
+    "isPassingRun": false,
+    "recordedAt": "2026-11-02T05:06:33.1061939Z"
+  },
+  "distinctPassingImageConditions": 7,
+  "repairRun": {
+    "version": 1,
+    "base": "4c60776ea42582d87a292504d31c0c6d53d24b8d",
+    "run": "presentation-frame-cli-images2-20261102.runtime",
+    "actualExitCode": 100,
+    "summary": "Summary [   8.983s] 2 tests run: 1 passed, 1 failed, 479 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2,
+    "passed": 1,
+    "failed": 1,
+    "skipped": 479,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4078,
+    "sourceDrift": 0,
+    "held": 12,
+    "failureSet": [
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_raw_blob"
+      }
+    ],
+    "isPassingRun": false,
+    "recordedAt": "2026-11-02T05:13:40.6421933Z"
+  },
+  "version": 1,
+  "pending": "MCP permitted image publication still scrubs object/occurrence metadata, contrary to the maintained capture contract. Raw transport fixture explicitly selects local-dev; strict fail-closed behavior is unchanged.",
+  "source": "4c60776ea42582d87a292504d31c0c6d53d24b8d",
+  "clippy": {
+    "version": 1,
+    "sourceInputs": 4078,
+    "base": "4c60776ea42582d87a292504d31c0c6d53d24b8d",
+    "exitCode": 0,
+    "startedAt": "2026-11-02T05:14:59.7395436Z",
+    "finishedAt": "2026-11-02T05:17:12.9026983Z",
+    "command": [
+      "clippy",
+      "-p",
+      "arcweft-cli",
+      "--all-targets",
+      "--all-features",
+      "--locked"
+    ],
+    "sourceDrift": 0
+  },
+  "originalScrollFixtureSha256": "0660517fb5c75b47dc4dac068eb49c0af5b9c33f1537cdf97d8f934baa0e753d",
+  "otherFailure": "Unmodified Scroll fixture WIP has an obsolete dotted action declaration; syntax rejects it before runtime. It is left unstaged.",
+  "deviations": [
+    "Initial positive1 filter matched zero cases; catalog guard prevented runtime.",
+    "Metadata keys are typed destinations role/channel, not source spellings param.role/param.channel.",
+    "MCP now consumes the issued resource URI. Its raw blob assertion checks exact composited masked pixels.",
+    "Object-id attachment checks every pixel against the issued occurrence tint instead of an obsolete authored-ID color.",
+    "Release uses a sibling positive control and separately rejects the authored sprite; it is not same-session lifetime acceptance.",
+    "OneOp prefix probes are diagnostic history only, not larger-budget acceptance."
+  ],
+  "raw": {
+    "sha256": "511d32d2560da75f98af87c9af42b7d60e78f134dec323a26f588236f2b5132f",
+    "path": "docs/implementation/acceptance-evidence/task-presentation-frame-cli-images.raw.zip",
+    "payloadEntries": 157,
+    "buildArtifactsIncluded": false
+  },
+  "workingTree": {
+    "heldTracked": 12,
+    "actualUntracked": 6
+  },
+  "imageAndScrollRun": {
+    "version": 1,
+    "base": "4c60776ea42582d87a292504d31c0c6d53d24b8d",
+    "run": "presentation-frame-cli-images1-20261102.runtime",
+    "actualExitCode": 100,
+    "summary": "Summary [  11.580s] 9 tests run: 6 passed, 3 failed, 472 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 9,
+    "passed": 6,
+    "failed": 3,
+    "skipped": 472,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4078,
+    "sourceDrift": 0,
+    "held": 12,
+    "failureSet": [
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_raw_blob"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_captures_clipped_animated_image_object"
+      }
+    ],
+    "isPassingRun": false,
+    "recordedAt": "2026-11-02T05:11:54.5674932Z"
+  },
+  "productionSource": "9bd9fe195ec3da493bce853ad644ca0e03e85052"
+}
