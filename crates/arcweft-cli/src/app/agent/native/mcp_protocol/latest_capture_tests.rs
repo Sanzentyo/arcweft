@@ -7,6 +7,7 @@ use arcweft_agent_protocol::{
 fn session_info_reuses_the_published_latest_capture() {
     let capture = test_latest_capture_resource();
     let source_uri = capture.uri.clone();
+    let source_image = capture.image.clone().expect("issued capture has metadata");
     let mut state = AgentMcpState {
         content_policy_mode: AgentContentPolicyMode::LocalDev,
         report: Some(test_observation_report()),
@@ -40,10 +41,7 @@ fn session_info_reuses_the_published_latest_capture() {
         selected_scope,
         &arcweft_agent_protocol::image::AgentSelectedCaptureScope::from(&expected_image.scope)
     );
-    assert!(matches!(
-        &expected_image.scope,
-        AgentImageScope::Layer { id } if id.starts_with("layer.") && id != "dialogue"
-    ));
+    assert_eq!(expected_image, &source_image);
 
     assert_eq!(
         info["latest_capture"],

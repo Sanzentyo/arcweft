@@ -695,11 +695,14 @@ fn agent_mcp_strict_mode_withholds_color_capture_without_visual_classifier() {
 }
 
 #[test]
-fn agent_mcp_local_dev_mode_allows_color_capture_and_scrubs_metadata() {
+fn agent_mcp_local_dev_mode_allows_color_capture_and_preserves_admitted_metadata() {
+    let capture = test_agent_raw_rgba_capture_resource(AgentImageKind::Color);
+    let expected_metadata =
+        serde_json::to_value(&capture.image).expect("issued metadata serializes");
     let mut state = AgentMcpState {
         content_policy_mode: AgentContentPolicyMode::LocalDev,
         report: Some(test_agent_observation_report(None)),
-        capture_resources: vec![test_agent_raw_rgba_capture_resource(AgentImageKind::Color)],
+        capture_resources: vec![capture],
         ..AgentMcpState::default()
     };
 
@@ -723,17 +726,7 @@ fn agent_mcp_local_dev_mode_allows_color_capture_and_scrubs_metadata() {
         metadata["image"]["scope"]["kind"],
         serde_json::json!("object")
     );
-    assert!(
-        metadata["image"]["scope"]["id"]
-            .as_str()
-            .expect("opaque object scope id")
-            .starts_with("object.")
-    );
-    assert!(
-        !serde_json::to_string(&metadata)
-            .expect("metadata serializes")
-            .contains("customer.secret")
-    );
+    assert_eq!(metadata["image"], expected_metadata);
     let resource = mcp_tool_resource_value(&result);
     assert!(
         resource["resource"]["uri"]
@@ -741,11 +734,48 @@ fn agent_mcp_local_dev_mode_allows_color_capture_and_scrubs_metadata() {
             .expect("published URI")
             .starts_with("arcweft://moderated/")
     );
+    assert!(
+        !resource["resource"]["uri"]
+            .as_str()
+            .unwrap()
+            .contains("customer.secret")
+    );
     assert_eq!(
         resource["resource"]["mimeType"],
         serde_json::json!("application/octet-stream")
     );
     assert_eq!(resource["resource"]["blob"], serde_json::json!("IECA/w=="));
+}
+
+#[test]
+fn agent_mcp_local_dev_mode_withholds_secret_image_metadata() {
+    let mut capture = test_agent_raw_rgba_capture_resource(AgentImageKind::Color);
+    capture.image.as_mut().unwrap().scope = AgentImageScope::Object {
+        id: "api_key=not-a-real-key".into(),
+    };
+    let uri = capture.uri.clone();
+    let mut state = AgentMcpState {
+        content_policy_mode: AgentContentPolicyMode::LocalDev,
+        report: Some(test_agent_observation_report(None)),
+        capture_resources: vec![capture],
+        ..AgentMcpState::default()
+    };
+    let result = agent_mcp_call_resource_read(
+        &serde_json::json!({"uri": uri, "max_privacy": "sensitive"}),
+        &mut state,
+    )
+    .expect("policy returns a structured publication decision");
+    let metadata = mcp_tool_metadata_json(&result);
+    assert_eq!(metadata["content_policy"]["disposition"], "block");
+    assert!(metadata["image"].is_null());
+    assert!(
+        !serde_json::to_string(&result)
+            .unwrap()
+            .contains("api_key=not-a-real-key")
+    );
+    let resource = mcp_tool_resource_value(&result);
+    assert_eq!(resource["resource"]["mimeType"], "application/json");
+    assert!(resource["resource"]["blob"].is_null());
 }
 
 #[test]
