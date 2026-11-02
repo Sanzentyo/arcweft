@@ -14,10 +14,10 @@ An `id` supplies presentation metadata on the created value; it does not
 declare another source entity or replace the issued handle's identity:
 
 ```arcw
-bg(@asset:.bg.room)
-bg(@asset:.bg.poster, fit = "intrinsic", alignment.x = "right", alignment.y = "bottom")
+let room = bg(@asset:.bg.room)
+let poster = bg(@asset:.bg.poster, fit = "intrinsic", alignment.x = "right", alignment.y = "bottom")
 
-image(
+let sprite = image(
   asset = @asset:.bg.pulse,
   id = "image.sample.pulse_sprite",
   target = @target.sample.pulse_sprite,
@@ -40,6 +40,10 @@ image(
   proxy.hit_test = true
 )
 ```
+
+Keep a factory's returned Handle in a local, return it from a reusable factory,
+or consume it through a typed API. Discarding its non-Unit result is not a valid
+Unit expression statement.
 
 `bg(...)` writes a background slot. By default it uses cover fit, centered
 alignment, full opacity, and capture-time playback. It accepts the same

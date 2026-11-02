@@ -1,30 +1,3 @@
-pub image sample.pulse_sprite {
-    asset = @asset:.bg.pulse
-    target = @target.sample.pulse_sprite
-    layer = @layer.foreground
-    x = 96px
-    y = 72px
-    width = 360px
-    height = 180px
-    fit = stretch
-    opacity = 0.5
-    playback.local_time = 50ms
-    transform.tx = 24px
-    transform.ty = 12px
-    depth = 2500
-    visible = true
-    action = @action.inspect.pulse_sprite
-    param.role = "animated-hotspot"
-    param.hit_channel = "channel.preview"
-    proxy.id = @proxy.pulse_sprite.hotspot
-    proxy.type = PulseSpriteHotspot
-    proxy.role = inspect
-    proxy.layer = @layer.hit
-    proxy.depth = 2600
-    proxy.hit_test = true
-    proxy.param.channel = "preview"
-}
-
 pub character narrator {
     display = "Narrator"
 }
@@ -66,7 +39,7 @@ entry cli @entry.image_alignment_object {
 }
 
 flow image_static_png() -> String {
-    bg(@asset:.bg.room)
+    let background = bg(@asset:.bg.room)
 
     narrator(id=@say.image.static_png, voice=auto)[
         Static PNG background image as a first-class presentation object.[p]
@@ -76,7 +49,7 @@ flow image_static_png() -> String {
 }
 
 flow image_static_jpeg() -> String {
-    bg(@asset:.bg.garden)
+    let background = bg(@asset:.bg.garden)
 
     narrator(id=@say.image.static_jpeg, voice=auto)[
         Static JPEG background image follows the same Agent capture path.[p]
@@ -86,7 +59,7 @@ flow image_static_jpeg() -> String {
 }
 
 flow image_static_webp() -> String {
-    bg(@asset:.bg.poster, fit = "intrinsic", alignment.x = "right", alignment.y = "bottom", opacity = 0.75)
+    let background = bg(@asset:.bg.poster, fit = "intrinsic", alignment.x = "right", alignment.y = "bottom", opacity = 0.75)
 
     narrator(id=@say.image.static_webp, voice=auto)[
         Static WebP background image is decoded into the same image frame model.[p]
@@ -96,7 +69,7 @@ flow image_static_webp() -> String {
 }
 
 flow image_animated_gif() -> String {
-    bg(@asset:.bg.pulse)
+    let background = bg(@asset:.bg.pulse)
 
     narrator(id=@say.image.animated_gif, voice=auto)[
         Animated GIF background image is selected from deterministic capture time.[p]
@@ -106,7 +79,7 @@ flow image_animated_gif() -> String {
 }
 
 flow image_animated_webp() -> String {
-    bg(@asset:.bg.loop)
+    let background = bg(@asset:.bg.loop)
 
     narrator(id=@say.image.animated_webp, voice=auto)[
         Animated WebP background image uses the same deterministic frame selection contract.[p]
@@ -116,8 +89,33 @@ flow image_animated_webp() -> String {
 }
 
 flow image_sprite_overlay() -> String {
-    bg(@asset:.bg.room)
-    image(@image.sample.pulse_sprite)
+    let background = bg(@asset:.bg.room)
+    let image_handle = image(asset = @asset:.bg.pulse,
+        target = @target.sample.pulse_sprite,
+        layer = @layer.foreground,
+        x = 96px,
+        y = 72px,
+        width = 360px,
+        height = 180px,
+        fit = "stretch",
+        opacity = 0.5,
+        playback.local_time = 50ms,
+        transform.tx = 24px,
+        transform.ty = 12px,
+        depth = 2500,
+        visible = true,
+        action = "action.inspect.pulse_sprite",
+        param.role = "animated-hotspot",
+        param.hit_channel = "channel.preview",
+        proxy.id = "proxy.pulse_sprite.hotspot",
+        proxy.type = "PulseSpriteHotspot",
+        proxy.role = "inspect",
+        proxy.layer = @layer.hit,
+        proxy.depth = 2600,
+        proxy.hit_test = true,
+        proxy.param.channel = "preview",
+        id = "image.sample.pulse_sprite"
+    )
 
     narrator(id=@say.image.sprite_overlay, voice=auto)[
         Foreground image object uses authored bounds, layer, object capture, and animation timing.[p]
@@ -127,8 +125,33 @@ flow image_sprite_overlay() -> String {
 }
 
 flow image_sprite_released() -> String {
-    bg(@asset:.bg.room)
-    let sprite = image(@image.sample.pulse_sprite)
+    let background = bg(@asset:.bg.room)
+    let sprite = image(asset = @asset:.bg.pulse,
+        target = @target.sample.pulse_sprite,
+        layer = @layer.foreground,
+        x = 96px,
+        y = 72px,
+        width = 360px,
+        height = 180px,
+        fit = "stretch",
+        opacity = 0.5,
+        playback.local_time = 50ms,
+        transform.tx = 24px,
+        transform.ty = 12px,
+        depth = 2500,
+        visible = true,
+        action = "action.inspect.pulse_sprite",
+        param.role = "animated-hotspot",
+        param.hit_channel = "channel.preview",
+        proxy.id = "proxy.pulse_sprite.hotspot",
+        proxy.type = "PulseSpriteHotspot",
+        proxy.role = "inspect",
+        proxy.layer = @layer.hit,
+        proxy.depth = 2600,
+        proxy.hit_test = true,
+        proxy.param.channel = "preview",
+        id = "image.sample.pulse_sprite"
+    )
     sprite.release()
 
     narrator(id=@say.image.sprite_released, voice=auto)[
@@ -139,8 +162,8 @@ flow image_sprite_released() -> String {
 }
 
 flow image_clipped_object() -> String {
-    bg(@asset:.bg.room)
-    image(asset = @asset:.bg.pulse, id = "image.sample.clipped_pulse", target = "target.sample.clipped_pulse", layer = "layer.clipped", x = 1184px, y = 48px, width = 192px, height = 96px, fit = "stretch", opacity = 0.5, depth = 2700, enabled = true, visible = true, action = "action.inspect.clipped_pulse", param.role = "clipped-animated-hotspot")
+    let background = bg(@asset:.bg.room)
+    let image_handle = image(asset = @asset:.bg.pulse, id = "image.sample.clipped_pulse", target = "target.sample.clipped_pulse", layer = "layer.clipped", x = 1184px, y = 48px, width = 192px, height = 96px, fit = "stretch", opacity = 0.5, depth = 2700, enabled = true, visible = true, action = "action.inspect.clipped_pulse", param.role = "clipped-animated-hotspot")
 
     narrator(id=@say.image.clipped_object, voice=auto)[
         Clipped animated image object proves object capture uses viewport-visible geometry.[p]
@@ -150,8 +173,8 @@ flow image_clipped_object() -> String {
 }
 
 flow image_alignment_object() -> String {
-    bg(@asset:.bg.room)
-    image(asset = @asset:.bg.poster, id = "image.sample.aligned_poster", target = "target.sample.aligned_poster", layer = "layer.aligned", x = 96px, y = 72px, width = 360px, height = 180px, fit = "intrinsic", alignment.x = "right", alignment.y = "bottom", opacity = 1, depth = 2400, enabled = true, visible = true, action = "action.inspect.aligned_poster", param.role = "aligned-static-hotspot")
+    let background = bg(@asset:.bg.room)
+    let image_handle = image(asset = @asset:.bg.poster, id = "image.sample.aligned_poster", target = "target.sample.aligned_poster", layer = "layer.aligned", x = 96px, y = 72px, width = 360px, height = 180px, fit = "intrinsic", alignment.x = "right", alignment.y = "bottom", opacity = 1, depth = 2400, enabled = true, visible = true, action = "action.inspect.aligned_poster", param.role = "aligned-static-hotspot")
 
     narrator(id=@say.image.alignment_object, voice=auto)[
         Static image object alignment places intrinsic pixels inside authored bounds.[p]
