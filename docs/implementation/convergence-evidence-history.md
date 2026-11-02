@@ -14294,3 +14294,10 @@ Source 58c5b7d64febafaa8c1dab4e4546b901b5c52f58（親fb62a7fe645df5890b8a7b24c6b
 Source 58c5b7d64febafaa8c1dab4e4546b901b5c52f58、base fda22d364bd73365c0add6068746bd061659891a、4082入力で通常22 packageの4336件を全実行し、4336 PASS／0 FAIL（6 slow、8 ignored）。Generic Match151／View値40は同じexact IDで全件PASS。CLIは693実行／660 PASS／33 FAIL／23 ignored。直前の全693件実行から維持33／追加0／解消0であり、同じIDから原因の同一性は推定しない。両contextのSource／case／EXE差分0、normal／CLI間の入力差分0、全23 packageの欠落0を確認した。[全raw・SHA・graph・現在診断](acceptance-evidence/task-action-payload-consumers.json)。
 
 訂正理由: payload owner公開時のconsumer未実行は、今回の全件実測によって現状一覧から置き換えた。旧件数・初回失敗・full SHA・raw archiveは履歴へ保持し、Generic Matchの受入行は変更していない。owner記録のcompile-error件数表現も数を限定しない表記へ訂正した。repro1の型path、owner2の非存在method、owner4のprivate fieldアクセスの各失敗はrawに残し、実結果・SHAは変更していない。
+
+
+## Action payload call構築・全consumer照合 — 2026-11-03
+
+Source bb3d3de5850222a1759ef6730db33b156500700d（親c7e4e24a48dc29c10e8783b554d2f5b3a9239090）の18 pathを通常commit／non-forced pushし、tree・patch・blobを照合した。構文修正c7e4e24a48dc29c10e8783b554d2f5b3a9239090の全734件と、最終constructor owner6／6 PASS、通常24 package 5122／5122 PASS、CLI 660 PASS／33 FAIL（全693件）を記録する。新規失敗ID 0／解消0。Generic151／View40 exact IDは全件PASSで、既存受入は維持した。25 packageのquality gateと最終2 pathの限定再検証を、workspace全98の新しい実行へ読み替えない。
+
+訂正理由: 以前のpayload ownerはcall構築を含めていなかったが、今回は実呼出し・local別名・capture・generic・source order・空payload・型拒否が成立したため、唯一の現状一覧のAction行を拡張した。送受信・元program channel admission・保存復元はこのcutから完了にしない。追加した不正引数testの初回失敗は、重複名が既存HIR recoveryでReadiness拒否されるのにTypeCheckを期待したtest側の誤りで、同じ不正入力の正確な早期拒否をassertするよう訂正した。旧Sourceの検証・full SHA・失敗は削除せず、過去の現在形だけを新しい一覧の根拠に更新した。[全実測・履歴・raw](acceptance-evidence/task-action-callable-constructor.json)。

@@ -1,6 +1,6 @@
 # Arcweft 現状一覧
 
-確認日: 2026-11-02。最新公開Sourceは58c5b7d64febafaa8c1dab4e4546b901b5c52f58。Action payload変更の影響23 packageと全CLI targetを実照合し、最新結果は下表へ集約する。既存12 tracked／6 actual untracked WIPを保持している。
+確認日: 2026-11-03。最新公開Sourceはbb3d3de5850222a1759ef6730db33b156500700d。Action call構築・構文修正の影響25 packageを実照合し、現在の結果を下表へ集約する。既存12 tracked／6 actual untracked WIPを保持している。
 この文書を項目別の現状の唯一の一覧とする。現行契約は[仕様索引](../README.md)、過去の実行結果・失敗・公開full SHAは
 [収束検証履歴](convergence-evidence-history.md) と [その他の検証履歴](evidence-history.md) に置く。
 履歴中の古い現在形・計画や、保持したuntrackedの2026-10-09 CLI修復メモを、そのまま現在の残作業へ転記しない。
@@ -15,7 +15,7 @@
 
 | 項目・境界 | 状態 | 根拠と、別途区別する範囲 |
 |---|---|---|
-| Action宣言・payload record／型付きチャンネル値 | **当該ownerは検証・公開済み。call構築・送受信は別境界** | Source 58c5b7d64febafaa8c1dab4e4546b901b5c52f58。Action自身の引数・元pattern/local/typeを一つのnominal recordへ接続し、retainedの単一bindingから型を解決する。永続PublicIdが型identityを所有し、channel値は元payload型を保持する。対象10件PASS、型注釈付きrecord literal・generic関数・captureを通したNative／canonical decoded AWBCの実戻り値42を確認した。callによるmessage構築、emit／receiveの登録・停止復帰とdotted宣言例の整合は、このrecord実行から受入としない。[検証・元失敗・公開記録](acceptance-evidence/task-action-payload-owner.json)。 |
+| Action宣言・payload record／型付きチャンネル値 | **call構築まで検証・公開済み。送受信・channelの停止復元は別境界** | Source bb3d3de5850222a1759ef6730db33b156500700d。元Action・PublicId・nominal recordからコンストラクターを発行し、共通binderと元レコードlayoutを使う。直接／位置・名前付き／local別名／capture／generic、空payload、callee先行・引数source順と宣言順格納、別Action・不正引数拒否を6 testで確認し、Native／canonical decoded AWBCが期待値42を返した。emit／receiveとchannelの元program admission・保存復元、module-qualified宣言の受入は別であり、この実行から完了とはしない。[実測・訂正理由・raw](acceptance-evidence/task-action-callable-constructor.json)。 |
 | 未定義値パス／宣言defaultの診断 | **当該修復は受入・公開済み** | Source d16dd07d7a4764b81cefc6a9632d796b2d8cc0d6。Semaが型付きHIR pathと正確なSourceSpanを保持し、未定義値をsema.value.unknown_symbolで報告する。通常の値・callable・closed variantの探索順は維持する。TextProxyの専用default診断とline alias拒否も同じエラー型へ移行した。対象4件と全22逆依存で検証し、元のroute_params CLI拒否もPASS。[受入・初回2失敗と修復の原本](acceptance-evidence/task-value-path-acceptance.json)。 |
 | qualified nullary variant のRuntimePlan所有・lowering | **当該境界は検証・公開済み** | Source 218f6270f27d6b663ef6dbc3eaefa5b201469563。意味解析済みのEnum.Caseを既存variant ownerで扱い、global／specialized functionの両factと最終loweringを一致させた。Native／canonical decoded AWBCの実戻り値42、通常field、typed payload pathを含むCompiler 198／198 PASS（R3485、16逆依存のfeature統合下）。line-plan outのtyped plan構築とAWBC codecも確認。後続の実値・子Thread・明示進行入力は[対話実行の受入](acceptance-evidence/task-dialogue-prefix-acceptance.json)へ記録。[受入・失敗原本・保全証明](acceptance-evidence/task-qualified-variant-acceptance.json)。 |
 | 対話の段階実行／所有子Thread／line out値 | **現行契約へ同期・当該実行は検証済み** | Source 171e32a8689ff19e5ea49cc0df143810e3eccf70。旧CLIのdone／Host proxy期待はOneOp・bounded run・廃止済み内部routeの採用契約に矛盾していた。元の2／3-stepと1-opを厳密なprefix検査へ移行し、別のNative／decoded AWBC実行で一回のreveal・子のlog／回収・Host proxy 0を確認。実Ready activationへ一回だけ進行入力を返したline outは、両backendで実戻り値42に到達する。新16-step観測を元3-stepの子完了とは扱わず、公開Native saveの受入にも拡張しない。[訂正根拠・旧IDとの対応・実行原本](acceptance-evidence/task-dialogue-prefix-acceptance.json)。 |
@@ -83,8 +83,8 @@
 
 | 対象・入力 | 実際の結果 | 適用範囲・原本 |
 |---|---|---|
-| 共有契約／推移的逆依存matrix | **payload Sourceの影響23 packageを実照合。通常22は4336／4336 PASS** | base fda22d364bd73365c0add6068746bd061659891a・4082入力、all-target／all-feature／lockedで通常4336 PASS（6 slow）／8 ignored。選択・実行22 package、Source／case／test EXE差分0。Generic Match151／View値40 exact IDは全件PASS。残るCLIは次行へ集約する。前Sourceの結果・full SHAは履歴へ保持し、今回を全63／全goalの再実行とはしない。[現在の照合原本](acceptance-evidence/task-action-payload-consumers.json)。 |
-| CLI全target照合 | **最新693件を全実行し660 PASS／33 FAIL。新規失敗ID 0** | base fda22d364bd73365c0add6068746bd061659891a・4082入力、all-target／all-feature／locked。Source／case／test EXE差分0。直前の全693件実行との失敗ID差分は、維持33／追加0／解消0。原因の同一性はIDから推定せず今回の完全stderrを保持する。[全件・差分・現在の診断](acceptance-evidence/task-action-payload-consumers.json)。 |
-| workspace check／Clippy・fmt・構造gate | **payload契約の全98 package gateと、最終2 pathのowner gateは終了0。警告は残存** | 4082入力でworkspace all-target／all-feature／locked check・Clippy・構造gateを確認した。続く差分はHIR private実装の等価なmethod-pointer整理とCompiler実行testの2 pathだけで、最終入力のHIR／Compiler all-target・all-feature check／Clippy・構造gateも終了0。対象fmtとNative／decoded AWBC実行を確認し、全98の再実行とは区別する。[各epoch・入力差分・ownerレビュー](acceptance-evidence/task-action-payload-owner.json)。 |
+| 共有契約／推移的逆依存matrix | **最新Sourceの影響25 packageを実照合。通常24は5122／5122 PASS** | all-target／all-feature／locked、4082入力で通常24 packageを全実行、5122 PASS／0 FAIL。Source／case／test EXE差分0。受入済みGeneric Match151／View値40 exact IDは全件PASS。CLIは次行へ集約する。前Sourceの実測・full SHAは履歴へ保持し、全workspace／全goalの再実行とはしない。[照合原本](acceptance-evidence/task-action-callable-constructor.json)。 |
+| CLI全target照合 | **最新693件を全実行し660 PASS／33 FAIL。新規失敗ID 0** | Source bb3d3de5850222a1759ef6730db33b156500700d・4082入力、all-target／all-feature／locked。Source／case／test EXE差分0。直前のpayload Sourceの全件実行との失敗ID差分は、維持33／追加0／解消0。原因の同一性はIDから推定せず今回の完全stderrを保持する。[全件・差分・診断](acceptance-evidence/task-action-callable-constructor.json)。 |
+| workspace check／Clippy・fmt・構造gate | **今回の影響25 package gateと、最終2 pathのowner gateは終了0。警告は残存** | 4082入力で影響25 packageのall-target／all-feature／locked check・Clippy・構造gateを確認した。最後の差分はSema schemaの等価なOption処理とCompiler testの警告整理だけで、最終Sema／Compiler gateと6 testも終了0。対象fmtと3 crateのdoctest（収録2件PASS、残る2 crateは0件）を確認し、今回をworkspace全98 packageの再実行とはしない。以前の全98 gateは[履歴原本](acceptance-evidence/task-action-payload-owner.json)、今回の入力差分・owner判断は[現在の原本](acceptance-evidence/task-action-callable-constructor.json)へ保持する。 |
 
 以前の件数・失敗・full SHAと今回の訂正理由は[検証履歴](convergence-evidence-history.md)と各原本へ保持する。過去の資料整理は[資料整理記録](documentation-cleanup.md)を参照。
