@@ -1,0 +1,1231 @@
+{
+  "version": 1,
+  "source": "a2688f77338bd0b34a7651d4910312045a59d6bf",
+  "runBase": "e16d141a60faaa4b3c758bb270bcc5ca265691ac",
+  "signatureEvidence": "task-action-declaration-signature.json",
+  "normal": {
+    "version": 1,
+    "base": "e16d141a60faaa4b3c758bb270bcc5ca265691ac",
+    "run": "action-declaration-reverse-normal2-20261102.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [ 676.086s] 4327 tests run: 4327 passed (7 slow), 8 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 4327,
+    "passed": 4327,
+    "failed": 0,
+    "skipped": 8,
+    "selectedPackages": 22,
+    "matchedPackages": 22,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4082,
+    "sourceDrift": 0,
+    "held": 12,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-11-02T07:38:09.5533297Z"
+  },
+  "cli": {
+    "version": 1,
+    "base": "e16d141a60faaa4b3c758bb270bcc5ca265691ac",
+    "run": "action-declaration-reverse-cli1-20261102.runtime",
+    "actualExitCode": 100,
+    "summary": "Summary [ 505.485s] 693 tests run: 660 passed (22 slow), 33 failed, 23 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 693,
+    "passed": 660,
+    "failed": 33,
+    "skipped": 23,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4082,
+    "sourceDrift": 0,
+    "held": 12,
+    "failureSet": [
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_accented_latin_word_geometry"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_greek_latin_unit_geometry"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_hyphenated_western_word_geometry"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_numeric_unit_geometry"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_accented_latin_word_raw_crops"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_greek_latin_unit_raw_crops"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_hyphenated_western_word_raw_crops"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_unit_raw_crops"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_rag_query_indexes_multiple_sources"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_reports_text_presentation_z_index_depth"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_checks_runtime_assert_sections"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_measures_branching_for_loop_pure_jit_characteristics"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_measures_checked_in_scalar_for_pure_jit_perf_guard"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_measures_headless_runtime_sections"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_measures_checked_in_mixed_for_iter_pure_jit_fixture"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_measures_runtime_match_to_pure_jit_characteristics"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_skips_adapter_only_script_benches"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_validates_headless_script_benches"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "bundle_json_packages_image_animation_sample_assets_and_run_bundle_validates_them"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "plan_json_lists_runtime_task_graph"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "profile_json_reports_phase_timings_and_runtime_stats_without_absolute_source"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "spec_rejected_edge_fixtures_fail_with_diagnostics"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "spec_valid_run_edge_fixture_now_executes"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "unsafe_json_lists_audit_regions"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "test_json_executes_headless_scenario_expectations"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_records_required_solver_checks"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_reports_missing_promotion_proof"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_reports_semantic_thread_join_conflict"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_respects_semantic_defer_cancel_discharge"
+      }
+    ],
+    "isPassingRun": false,
+    "recordedAt": "2026-11-02T07:52:35.7501175Z"
+  },
+  "coverage": {
+    "version": 1,
+    "source": "e16d141a60faaa4b3c758bb270bcc5ca265691ac",
+    "graph": "action-declaration.reverse-graph.json",
+    "normalPackages": 22,
+    "cases": 4327,
+    "packageDrift": 0,
+    "packages": [
+      {
+        "package": "arcweft-adapter-sema",
+        "cases": 13
+      },
+      {
+        "package": "arcweft-agent-mcp",
+        "cases": 31
+      },
+      {
+        "package": "arcweft-agent-mcp-client",
+        "cases": 2
+      },
+      {
+        "package": "arcweft-agent-repl",
+        "cases": 37
+      },
+      {
+        "package": "arcweft-agent-runner",
+        "cases": 69
+      },
+      {
+        "package": "arcweft-compiler",
+        "cases": 771
+      },
+      {
+        "package": "arcweft-lang-hir",
+        "cases": 965
+      },
+      {
+        "package": "arcweft-lang-sema",
+        "cases": 1383
+      },
+      {
+        "package": "arcweft-lsp",
+        "cases": 223
+      },
+      {
+        "package": "arcweft-player-native",
+        "cases": 63
+      },
+      {
+        "package": "arcweft-player-scene",
+        "cases": 128
+      },
+      {
+        "package": "arcweft-player-web",
+        "cases": 36
+      },
+      {
+        "package": "arcweft-project-loader",
+        "cases": 158
+      },
+      {
+        "package": "arcweft-runtime-driver",
+        "cases": 153
+      },
+      {
+        "package": "arcweft-runtime-host",
+        "cases": 72
+      },
+      {
+        "package": "arcweft-runtime-plan",
+        "cases": 164
+      },
+      {
+        "package": "arcweft-test",
+        "cases": 3
+      },
+      {
+        "package": "arcweft-tooling",
+        "cases": 27
+      },
+      {
+        "package": "arcweft-verify",
+        "cases": 8
+      },
+      {
+        "package": "arcweft-verify-lsp",
+        "cases": 14
+      },
+      {
+        "package": "arcweft-verify-oxiz",
+        "cases": 5
+      },
+      {
+        "package": "arcweft-verify-z3",
+        "cases": 2
+      }
+    ],
+    "cli": "Separate all-target 693-case run in progress"
+  },
+  "dependencyGraph": {
+    "workspacePackages": 98,
+    "reversePackages": 23,
+    "graphInputDrift": 0,
+    "reuse": "Unchanged manifests, lockfile, toolchain and configuration retain the prior resolved graph; the exact 101 inputs and complete graph remain in the archive.",
+    "raw": "action-declaration.reverse-graph.json",
+    "roots": [
+      "arcweft-lang-hir",
+      "arcweft-lang-sema"
+    ],
+    "resolvedPackages": 846,
+    "graphInputPaths": 101,
+    "metadata": "presentation-frame-driver.metadata.json"
+  },
+  "initialCatalogFailure": {
+    "version": 1,
+    "base": "e16d141a60faaa4b3c758bb270bcc5ca265691ac",
+    "command": [
+      "nextest",
+      "list",
+      "-p",
+      "arcweft-adapter-sema",
+      "-p",
+      "arcweft-agent-mcp",
+      "-p",
+      "arcweft-agent-mcp-client",
+      "-p",
+      "arcweft-agent-repl",
+      "-p",
+      "arcweft-agent-runner",
+      "-p",
+      "arcweft-compiler",
+      "-p",
+      "arcweft-lang-hir",
+      "-p",
+      "arcweft-lang-sema",
+      "-p",
+      "arcweft-lsp",
+      "-p",
+      "arcweft-player-native",
+      "-p",
+      "arcweft-player-scene",
+      "-p",
+      "arcweft-player-web",
+      "-p",
+      "arcweft-project-loader",
+      "-p",
+      "arcweft-runtime-driver",
+      "-p",
+      "arcweft-runtime-host",
+      "-p",
+      "arcweft-runtime-plan",
+      "-p",
+      "arcweft-test",
+      "-p",
+      "arcweft-tooling",
+      "-p",
+      "arcweft-verify",
+      "-p",
+      "arcweft-verify-lsp",
+      "-p",
+      "arcweft-verify-oxiz",
+      "-p",
+      "arcweft-verify-z3",
+      "--all-targets",
+      "--all-features",
+      "--locked",
+      "-E",
+      "not ((package(=arcweft-lang-hir) or package(=arcweft-lang-sema)) and kind(lib))",
+      "--message-format",
+      "json"
+    ],
+    "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/action-declaration-reverse-normal1-20261102.catalog.log",
+    "exitCode": 101,
+    "sourceInputs": 4082,
+    "sourceDrift": 0,
+    "startedAt": "2026-11-02T07:04:28.0801823Z",
+    "finishedAt": "2026-11-02T07:09:44.498422Z"
+  },
+  "clean": {
+    "version": 1,
+    "head": "e16d141a60faaa4b3c758bb270bcc5ca265691ac",
+    "target": "D:\\git\\arcweft\\target",
+    "command": "cargo clean",
+    "exitCode": 0,
+    "sourceInputs": 4082,
+    "sourceDrift": 0,
+    "gitDrift": 0,
+    "freeBytesBefore": 2154496,
+    "freeBytesAfter": 293918621696,
+    "buildArtifactsMovedOrCopied": false,
+    "startedAt": "2026-11-02T07:10:24.4693841Z",
+    "finishedAt": "2026-11-02T07:11:41.8796277Z",
+    "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/action-declaration-cargo-clean.log"
+  },
+  "cleanUntracked": {
+    "version": 1,
+    "head": "e16d141a60faaa4b3c758bb270bcc5ca265691ac",
+    "originalUntracked": 6,
+    "untrackedDrift": 0,
+    "at": "2026-11-02T07:12:35.5231Z"
+  },
+  "executableContext": {
+    "version": 1,
+    "rootSelection": "22 explicit packages, all targets/all features/locked",
+    "reason": "Rerun owner libraries with the actual unified consumer Cargo context; do not infer equivalent executable identity from isolated owner passes.",
+    "comparisons": [
+      {
+        "binary": "arcweft-lang-hir",
+        "before": {
+          "binary": "arcweft-lang-hir",
+          "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_hir-96780cec4a084439.exe",
+          "sha256": "0ab5efad1743e74e1984d4de2ede9a6e89cab4d3756cfb0a96ed1b17ea8948aa"
+        },
+        "after": {
+          "binary": "arcweft-lang-hir",
+          "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_hir-196650236a03025a.exe",
+          "sha256": "a366c437c40b30cb0afe6d6d18931a7ecbb64a06d488ab3348fbc392a2b0e49c"
+        },
+        "identicalExecutable": false
+      },
+      {
+        "binary": "arcweft-lang-sema",
+        "before": {
+          "binary": "arcweft-lang-sema",
+          "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-3ce5fbea17ccfb1c.exe",
+          "sha256": "ebff4b587eb24c275effd37be9ae6bd18a5052f4003105eb801f95a5099399bb"
+        },
+        "after": {
+          "binary": "arcweft-lang-sema",
+          "path": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-b6defb45772fec91.exe",
+          "sha256": "7cd6cda6f63df118f821bbf2d4ec34598f1f9cd6d3fce5851489277dd566c35e"
+        },
+        "identicalExecutable": false
+      }
+    ]
+  },
+  "ownerRerunReason": "The isolated and unified owner executable identities differ. The complete 22-package context reran HIR and Sema libraries instead of assuming those earlier executions were equivalent.",
+  "accepted": {
+    "view": {
+      "raw": "action-declaration-reverse-view40.json",
+      "caseDrift": 0,
+      "matched": 40,
+      "passed": 40,
+      "failed": 0
+    },
+    "genericMatch": {
+      "raw": "action-declaration-reverse-genericMatch.json",
+      "caseDrift": 0,
+      "matched": 151,
+      "passed": 151,
+      "failed": 0
+    }
+  },
+  "cliDelta": {
+    "version": 1,
+    "comparisonSource": "docs/implementation/acceptance-evidence/task-presentation-frame-consumer-closure.json",
+    "comparisonMeaning": "33 unresolved case IDs from the published 692-case run plus separately verified publication expectation repairs; this is not a prior full 693-case run.",
+    "baselineFailureCount": 33,
+    "newlyFailingIds": [],
+    "resolvedFailureIds": [],
+    "causeCaution": "Matching case IDs do not prove matching causes. Preserve the current complete runtime log and inspect current failure blocks.",
+    "retainedFailureCount": 33,
+    "raw": "action-declaration-reverse-cli-delta.json"
+  },
+  "currentFailureSamples": {
+    "version": 1,
+    "source": "e16d141a60faaa4b3c758bb270bcc5ca265691ac",
+    "fullLog": "action-declaration-reverse-cli1-20261102.runtime.log",
+    "note": "Bounded current stderr for triage; identical IDs are not proof of identical causes. The full raw log is authoritative.",
+    "cases": [
+      {
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs",
+        "panicLine": 2156,
+        "causeSample": [
+          "    thread 'agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs' (43664) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/shared.rs:485:13:",
+          "    dialogue_view object for rich-text line `say.full.001.extreme` should be observed: {\"status\":\"ok\",\"session_id\":\"cli\",\"tick\":3,\"frame_id\":\"frame.3\",\"state_hash\":\"8098865c1a79779f90d0adbdd34093d00d3a38229ea979c191b5145245366074\",\"render_hash\":\"dac5efc47438db221831c70062c54c464e1e1e15a120f52204a8c48879c68c17\",\"source\":\"../..\\\\samples/rich-text-full-grammar.arcw\",\"viewport\":{\"width\":1280,\"height\":720,\"scale\":1.0},\"images\":[{\"kind\":\"color\",\"renderer\":\"native\",\"scope\":{\"kind\":\"layer\",\"id\":\"dialogue.rich_text\"},\"composition\":\"masked_framebuffer_crop\",\"capture_step\":4,\"capture_time_millis\":60000,\" [truncated]",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+          "",
+          "        FAIL [   7.345s] (224/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry",
+          "  stdout ───",
+          "",
+          "    running 1 test",
+          "    test agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry ... FAILED"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry",
+        "panicLine": 2175,
+        "causeSample": [
+          "    thread 'agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry' (57140) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/native_samples_effects.rs:58:10:",
+          "    target dialogue_view object is observed",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+          "",
+          "        PASS [  14.960s] (225/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_reports_capture_step_metadata",
+          "        PASS [  15.955s] (226/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_reports_decomposed_kana_strict_class_mix_geometry",
+          "        PASS [  17.260s] (227/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_captures_clear_after_page_object",
+          "        PASS [  31.319s] (228/693) arcweft-cli::check agent_observe_native::agent_observe_native_captures_clipped_animated_image_object",
+          "        PASS [  17.339s] (229/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_reports_emoji_modifier_strict_class_mix_geometry"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_accented_latin_word_geometry",
+        "panicLine": 2209,
+        "causeSample": [
+          "    thread 'agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_accented_latin_word_geometry' (56996) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/published_jlreq_units.rs:4105:9:",
+          "    body text after the accented Latin word should continue after the word: next column should advance leftward",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+          "",
+          "        PASS [  14.358s] (241/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_reports_jlreq_preset_specific_column_geometry",
+          "        PASS [  44.017s] (242/693) arcweft-cli::check agent_observe_native::agent_hit_test_capture_time_follows_animated_text_proxy_bounds",
+          "        PASS [  14.696s] (243/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_reports_jlreq_punctuation_compression_and_hanging",
+          "        FAIL [   7.713s] (244/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_greek_latin_unit_geometry",
+          "  stdout ───"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_greek_latin_unit_geometry",
+        "panicLine": 2231,
+        "causeSample": [
+          "    thread 'agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_greek_latin_unit_geometry' (53876) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/published_jlreq_units.rs:4105:9:",
+          "    body text after the Greek+Latin unit should continue after the unit: next column should advance leftward",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+          "",
+          "        PASS [  15.228s] (245/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_reports_katakana_phonetic_extension_small_kana_geometry",
+          "        PASS [  14.318s] (246/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_reports_keycap_strict_class_mix_geometry",
+          "        PASS [  15.169s] (247/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_reports_long_vertical_ruby_expansion_geometry",
+          "        PASS [  15.397s] (248/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_accented_latin_word_class_mix_geometry",
+          "        PASS [  28.085s] (249/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_reports_fullwidth_colon_semicolon_hanging_punctuation"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_hyphenated_western_word_geometry",
+        "panicLine": 2255,
+        "causeSample": [
+          "    thread 'agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_hyphenated_western_word_geometry' (23688) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/shared.rs:1638:5:",
+          "    assertion `left == right` failed: published JLREQ letters after a word-internal hyphen should stay attached: clusters should share the same vertical column",
+          "      left: Number(1169)",
+          "     right: Number(1127)",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+          "",
+          "        PASS [  13.954s] (251/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_european_numeral_sequence_geometry",
+          "        PASS [  15.100s] (252/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_decomposed_accented_latin_word_class_mix_geometry",
+          "        PASS [  15.760s] (253/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_cent_prefixed_abbreviation_class_mix_geometry"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_numeric_unit_geometry",
+        "panicLine": 2283,
+        "causeSample": [
+          "    thread 'agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_numeric_unit_geometry' (32920) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/published_jlreq_units.rs:4105:9:",
+          "    body text after the numeric unit symbol should continue in the next column: next column should advance leftward",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+          "",
+          "        PASS [  15.009s] (259/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_latin_unit_geometry",
+          "        PASS [  14.687s] (260/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_numeric_separator_class_mix_geometry",
+          "        SLOW [> 60.000s] (───────) arcweft-cli::check agent_observe_native::agent_observe_native_authored_profile_text_extent_and_typography_reach_the_same_capture_owner",
+          "        PASS [  28.191s] (261/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_apostrophe_western_word_geometry",
+          "        PASS [  14.686s] (262/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_parenthesized_reference_mark_class_mix_geometry"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_accented_latin_word_raw_crops",
+        "panicLine": 2374,
+        "causeSample": [
+          "    thread 'agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_accented_latin_word_raw_crops' (48428) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/published_jlreq_units.rs:4105:9:",
+          "    body text after the accented Latin word should continue after the word: next column should advance leftward",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+          "",
+          "        PASS [  52.705s] (328/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_writes_halfwidth_small_kana_raw_crops",
+          "        PASS [  26.325s] (329/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_writes_long_vertical_ruby_mask_raw_crop",
+          "        SLOW [> 60.000s] (───────) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_writes_fullwidth_colon_semicolon_raw_crops",
+          "        PASS [  26.878s] (330/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_writes_long_vertical_ruby_object_id_raw_crop",
+          "        SLOW [> 60.000s] (───────) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_writes_halfwidth_middle_dot_and_prolonged_sound_raw_crops"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_greek_latin_unit_raw_crops",
+        "panicLine": 2398,
+        "causeSample": [
+          "    thread 'agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_greek_latin_unit_raw_crops' (11584) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/published_jlreq_units.rs:4105:9:",
+          "    body text after the Greek+Latin unit should continue after the unit: next column should advance leftward",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+          "",
+          "        FAIL [  14.048s] (332/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_hyphenated_western_word_raw_crops",
+          "  stdout ───",
+          "",
+          "    running 1 test",
+          "    test agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_hyphenated_western_word_raw_crops ... FAILED"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_hyphenated_western_word_raw_crops",
+        "panicLine": 2417,
+        "causeSample": [
+          "    thread 'agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_hyphenated_western_word_raw_crops' (42840) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/shared.rs:1638:5:",
+          "    assertion `left == right` failed: published JLREQ letters after a word-internal hyphen should stay attached: clusters should share the same vertical column",
+          "      left: Number(1169)",
+          "     right: Number(1127)",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+          "",
+          "        PASS [  53.444s] (333/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_writes_katakana_phonetic_extension_small_kana_raw_crops",
+          "        PASS [  56.006s] (334/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_writes_keycap_strict_class_mix_raw_crops",
+          "        PASS [  55.197s] (335/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_writes_overheight_vertical_ruby_raw_crops"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_unit_raw_crops",
+        "panicLine": 2452,
+        "causeSample": [
+          "    thread 'agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_unit_raw_crops' (60304) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/published_jlreq_units.rs:4105:9:",
+          "    body text after the numeric unit symbol should continue in the next column: next column should advance leftward",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+          "",
+          "        PASS [  57.476s] (346/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_greek_superscript_object_class_mix_raw_crops",
+          "        SLOW [>120.000s] (───────) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_writes_fullwidth_bracket_pair_raw_crops",
+          "        SLOW [> 60.000s] (───────) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_ideographic_abbreviation_class_mix_raw_crops",
+          "        SLOW [> 60.000s] (───────) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_ideographic_numeric_abbreviation_raw_crops",
+          "        PASS [  55.898s] (347/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_latin_unit_raw_crops"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures",
+        "panicLine": 2501,
+        "causeSample": [
+          "    thread 'agent_observe_native::agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures' (31712) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/shared.rs:1139:28:",
+          "    rich-text run `吾輩は猫である。ABC 123 2026` should be observed: {\"status\":\"ok\",\"session_id\":\"cli\",\"tick\":3,\"frame_id\":\"frame.3\",\"state_hash\":\"8098865c1a79779f90d0adbdd34093d00d3a38229ea979c191b5145245366074\",\"render_hash\":\"de7ce700b12bbbdf28307a8f252f93d9f2c8bbc0c85078a0ade201c907811468\",\"source\":\"../..\\\\samples/rich-text-full-grammar.arcw\",\"viewport\":{\"width\":1280,\"height\":720,\"scale\":1.0},\"images\":[{\"kind\":\"color\",\"renderer\":\"native\",\"scope\":{\"kind\":\"viewport\"},\"composition\":\"framebuffer\",\"capture_step\":4,\"capture_time_millis\":60000,\"uri\":\"arcweft://session/cli/frame/3/color.png\",\"mime_type\":\"i [truncated]",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+          "",
+          "        SLOW [> 60.000s] (───────) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_unit_symbol_class_mix_raw_crops",
+          "        PASS [  27.298s] (366/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_writes_strict_jlreq_closing_opening_raw_crops",
+          "        PASS [ 110.639s] (367/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_unit_class_mix_raw_crops",
+          "        SLOW [>120.000s] (───────) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_separator_raw_crops",
+          "        PASS [  50.506s] (368/693) arcweft-cli::check agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_western_word_raw_crops"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering",
+        "panicLine": 2587,
+        "causeSample": [
+          "    thread 'agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering' (54768) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/native_samples_effects.rs:3117:5:",
+          "    authored Scroll live observe should succeed, stderr: error[syntax.declaration.invalid_name]: action declaration name must be one non-keyword identifier",
+          "     --> C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-cli-agent-observe-authored-scroll-view-59624.arcw:2:12",
+          "      |",
+          "    2 | pub action feedback.submit(value: String)",
+          "      |            ^^^^^^^^^^^^^^^",
+          "    error[hir.project.analysis]: HIR module `crate` at HirSnapshotId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, revision: HirRevision(1) } has required recovery and cannot enter semantic analysis",
+          "",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "agent_rag_query_indexes_multiple_sources",
+        "panicLine": 2619,
+        "causeSample": [
+          "    thread 'agent_rag_query_indexes_multiple_sources' (11808) panicked at crates\\arcweft-cli\\tests\\check/agent_script_debug.rs:2871:5:",
+          "    agent rag query should index repeated --source inputs",
+          "    stdout:",
+          "",
+          "    stderr:",
+          "    error[sema.call.unknown_target]: unknown function `text_style`",
+          "      |",
+          "      = note: source text is unavailable; span labels were omitted",
+          "    2 sources: agent rag query failed to compile source: ExitCode(ExitCode(1))"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_reports_text_presentation_z_index_depth",
+        "panicLine": 2659,
+        "causeSample": [
+          "    thread 'agent_observe_native::agent_observe_reports_text_presentation_z_index_depth' (57608) panicked at crates\\arcweft-cli\\tests\\check\\agent_observe_native/core.rs:661:5:",
+          "    assertion `left == right` failed",
+          "      left: Null",
+          "     right: \"caption\"",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+          "",
+          "        PASS [   0.494s] (439/693) arcweft-cli::check agent_rag_query_uses_local_embedding_debug_db_channel",
+          "        PASS [   7.530s] (440/693) arcweft-cli::check agent_observe_native::agent_observe_shared_renderer_writes_dialogue_layer_masked_framebuffer_crop",
+          "        PASS [   1.022s] (441/693) arcweft-cli::check agent_rag_query_uses_debug_db_graph_and_history_channels"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_checks_runtime_assert_sections",
+        "panicLine": 2715,
+        "causeSample": [
+          "    thread 'bench_json_checks_runtime_assert_sections' (48528) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:6648:5:",
+          "    bench assertions should pass, stderr: ",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+          "",
+          "        PASS [   0.778s] (470/693) arcweft-cli::check bench_json_fails_runtime_assert_sections",
+          "        PASS [   0.769s] (471/693) arcweft-cli::check bench_json_fuses_bracket_sequence_pure_sum_jit_calls",
+          "        PASS [   0.935s] (472/693) arcweft-cli::check bench_json_fails_native_file_assertions",
+          "        PASS [   0.656s] (473/693) arcweft-cli::check bench_json_fuses_map_closure_pure_sum_jit_calls",
+          "        PASS [   0.671s] (474/693) arcweft-cli::check bench_json_measures_checked_in_dense_i128_map_pure_batch_fixture"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_measures_branching_for_loop_pure_jit_characteristics",
+        "panicLine": 2740,
+        "causeSample": [
+          "    thread 'bench_json_measures_branching_for_loop_pure_jit_characteristics' (39472) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:3858:5:",
+          "    assertion `left == right` failed",
+          "      left: Number(96)",
+          "     right: 192",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+          "",
+          "        PASS [   0.752s] (477/693) arcweft-cli::check bench_json_measures_checked_in_dense_f32_map_pure_batch_fixture_with_auto_jit",
+          "        PASS [   0.629s] (478/693) arcweft-cli::check bench_json_measures_checked_in_dense_i32_map_pure_batch_fixture",
+          "        PASS [  25.594s] (479/693) arcweft-cli::check agent_observe_native::agent_observe_native_vertical_lr_typewriter_text_combine_capture_time_controls_object_id"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_measures_checked_in_scalar_for_pure_jit_perf_guard",
+        "panicLine": 2784,
+        "causeSample": [
+          "    thread 'bench_json_measures_checked_in_scalar_for_pure_jit_perf_guard' (41616) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:4387:5:",
+          "    assertion `left == right` failed",
+          "      left: Number(15)",
+          "     right: 16",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+          "",
+          "        PASS [   0.815s] (500/693) arcweft-cli::check bench_json_measures_checked_in_tensor_f64_math_fixture",
+          "        PASS [   0.829s] (501/693) arcweft-cli::check bench_json_measures_checked_in_thread_scheduling_fixture",
+          "        PASS [   0.846s] (502/693) arcweft-cli::check bench_json_measures_for_loop_pure_jit_without_arg_vec_allocation"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_measures_headless_runtime_sections",
+        "panicLine": 2808,
+        "causeSample": [
+          "    thread 'bench_json_measures_headless_runtime_sections' (47264) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:3059:5:",
+          "    bench JSON should include headless measurement and compiler profiling: {",
+          "      \"source\": \"arcweft-cli-script-bench-measured-49112.arcw\",",
+          "      \"syntax_warnings\": 0,",
+          "      \"line_task_groups\": 0,",
+          "      \"compiler\": {",
+          "        \"syntax\": {",
+          "          \"accepted_source_bytes\": 201,",
+          "          \"lexer_tokens\": 69,"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_measures_checked_in_mixed_for_iter_pure_jit_fixture",
+        "panicLine": 3129,
+        "causeSample": [
+          "    thread 'bench_json_measures_checked_in_mixed_for_iter_pure_jit_fixture' (23400) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:4485:5:",
+          "    assertion `left == right` failed",
+          "      left: Number(39)",
+          "     right: 40",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+          "",
+          "        PASS [   1.201s] (505/693) arcweft-cli::check bench_json_measures_checked_in_wide_for_pure_jit_fixture",
+          "        PASS [   1.061s] (506/693) arcweft-cli::check bench_json_measures_pure_helper_with_vm_aot_and_jit",
+          "        PASS [   0.763s] (507/693) arcweft-cli::check bench_json_measures_thread_scheduling_characteristics"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_measures_runtime_match_to_pure_jit_characteristics",
+        "panicLine": 3155,
+        "causeSample": [
+          "    thread 'bench_json_measures_runtime_match_to_pure_jit_characteristics' (59796) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:3941:5:",
+          "    assertion `left == right` failed",
+          "      left: Number(9)",
+          "     right: 7",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+          "",
+          "        PASS [   1.183s] (511/693) arcweft-cli::check bench_json_measures_threaded_native_read_scheduling",
+          "        PASS [   1.627s] (512/693) arcweft-cli::check bench_json_measures_profile_inference_matmul_bias_adapter_fixture",
+          "        FAIL [   0.866s] (513/693) arcweft-cli::check bench_json_skips_adapter_only_script_benches"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_skips_adapter_only_script_benches",
+        "panicLine": 3178,
+        "causeSample": [
+          "    thread 'bench_json_skips_adapter_only_script_benches' (37624) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:7043:5:",
+          "    adapter-only bench should be skipped, stderr: ",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+          "",
+          "        FAIL [   0.892s] (514/693) arcweft-cli::check bench_json_validates_headless_script_benches",
+          "  stdout ───",
+          "",
+          "    running 1 test",
+          "    test bench_json_validates_headless_script_benches ... FAILED"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "bench_json_validates_headless_script_benches",
+        "panicLine": 3197,
+        "causeSample": [
+          "    thread 'bench_json_validates_headless_script_benches' (42196) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:3005:5:",
+          "    bench validation should succeed, stderr: ",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+          "",
+          "        PASS [   0.612s] (515/693) arcweft-cli::check check_json_reports_compiler_pipeline_summary",
+          "        PASS [   0.677s] (516/693) arcweft-cli::check check_accepts_valid_arcw_file",
+          "        PASS [   0.693s] (517/693) arcweft-cli::check check_allows_redundant_decl_identity_warning",
+          "        PASS [   0.750s] (518/693) arcweft-cli::check check_registry_write_accepts_an_ordinary_call_rhs",
+          "        PASS [   2.739s] (519/693) arcweft-cli::check bench_json_measures_checked_in_mixed_width_for_iter_pure_jit_fixture"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "bundle_json_packages_image_animation_sample_assets_and_run_bundle_validates_them",
+        "panicLine": 3236,
+        "causeSample": [
+          "    thread 'bundle_json_packages_image_animation_sample_assets_and_run_bundle_validates_them' (41372) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:1956:5:",
+          "    assertion `left == right` failed",
+          "      left: String(\"dialogue\")",
+          "     right: \"dialogue image.static_png\"",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+          "",
+          "        PASS [   0.319s] (536/693) arcweft-cli::check debug_db_search_filters_chunks_by_privacy",
+          "        PASS [   0.656s] (537/693) arcweft-cli::check debug_db_embed_records_remote_provider_unavailable_diagnostic",
+          "        PASS [   0.603s] (538/693) arcweft-cli::check debug_db_embed_remote_command_indexes_provider_vectors"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "plan_json_lists_runtime_task_graph",
+        "panicLine": 3280,
+        "causeSample": [
+          "    thread 'plan_json_lists_runtime_task_graph' (50872) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:699:5:",
+          "    plan listing should succeed, stderr: ",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+          "",
+          "        PASS [   0.507s] (560/693) arcweft-cli::check plan_json_reports_syntax_denial_with_exact_source_spans",
+          "        PASS [   0.529s] (561/693) arcweft-cli::check jit_check_json_measures_let_chain_case",
+          "        PASS [   0.341s] (562/693) arcweft-cli::check profile_rejects_unknown_adapter",
+          "        PASS [   0.641s] (563/693) arcweft-cli::check profile_check_rejects_ambient_route_params",
+          "        PASS [   0.719s] (564/693) arcweft-cli::check profile_json_can_select_aot_executor_without_absolute_source"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "profile_json_reports_phase_timings_and_runtime_stats_without_absolute_source",
+        "panicLine": 3304,
+        "causeSample": [
+          "    thread 'profile_json_reports_phase_timings_and_runtime_stats_without_absolute_source' (52820) panicked at crates\\arcweft-cli\\tests\\check.rs:582:5:",
+          "    runtime execution counters should be populated: {\"host_system\":{\"physical_cores\":12,\"logical_threads\":20,\"available_parallelism\":20},\"executor\":\"bytecode_vm\",\"executor_stats\":{\"aot_fast_path_ops\":0,\"pure_config\":{\"backend\":\"auto\",\"workers\":\"auto\",\"resolved_workers\":20,\"worker_pool_active\":false,\"batch_min_len\":1024,\"emit_object_artifacts\":false,\"math_backend\":\"auto\",\"math_wgpu_min_elements\":67108864},\"pure_acceleration\":{\"annotated\":0,\"inferred\":0,\"jit\":0,\"aot\":0,\"vm\":0},\"pure_compile\":{\"jit_attempts\":0,\"jit_successes\":0,\"jit_failures\":0,\"aot_attempts\":0,\"aot_successes\":0,\"aot_failures\":0, [truncated]",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+          "",
+          "        PASS [   0.731s] (566/693) arcweft-cli::check profile_json_reports_runtime_math_backend_selection",
+          "        PASS [   0.461s] (567/693) arcweft-cli::check profile_source_and_path_are_mutually_exclusive",
+          "        PASS [   0.586s] (568/693) arcweft-cli::check pure_measurement_boundary_tests::pure_bench_zero_argument_checked_function_is_invoked_for_every_row",
+          "        PASS [   0.743s] (569/693) arcweft-cli::check pure_measurement_boundary_tests::pure_bench_non_i64_abi_is_rejected_without_rebinding_or_coercion",
+          "        PASS [   0.656s] (570/693) arcweft-cli::check run_flow_values_are_sealed_once_by_parameter_coordinate"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "spec_rejected_edge_fixtures_fail_with_diagnostics",
+        "panicLine": 3381,
+        "causeSample": [
+          "    thread 'spec_rejected_edge_fixtures_fail_with_diagnostics' (58700) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:7246:9:",
+          "    stderr for D:\\git\\arcweft\\crates\\arcweft-cli\\../..\\tests/fixtures/arcw/spec_should_fail/013_continue_expr_position_rejected.arcw should contain `semantic value resolution failed`:",
+          "    error[sema.value.unknown_symbol]: unknown symbol `continue`",
+          "      |",
+          "      = note: source text is unavailable; span labels were omitted",
+          "",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+          "",
+          "        PASS [   1.243s] (625/693) arcweft-cli::check source_map_batch_owner_tests::source_map_hidden_second_call_declines_batch_and_executes_each_original_call_once"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "spec_valid_run_edge_fixture_now_executes",
+        "panicLine": 3411,
+        "causeSample": [
+          "    thread 'spec_valid_run_edge_fixture_now_executes' (57200) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:7193:5:",
+          "    D:\\git\\arcweft\\crates\\arcweft-cli\\../..\\tests/fixtures/arcw/spec_should_pass/check/011_dialogue_line_value_and_handle_discard.arcw should now execute, stdout: {",
+          "      \"host_system\": {",
+          "        \"physical_cores\": 12,",
+          "        \"logical_threads\": 20,",
+          "        \"available_parallelism\": 20",
+          "      },",
+          "      \"executor\": \"bytecode_vm\",",
+          "      \"executor_stats\": {"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "unsafe_json_lists_audit_regions",
+        "panicLine": 3824,
+        "causeSample": [
+          "    thread 'unsafe_json_lists_audit_regions' (42100) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:676:5:",
+          "    unsafe listing should succeed, stderr: ",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+          "",
+          "        FAIL [   0.826s] (640/693) arcweft-cli::check test_json_executes_headless_scenario_expectations",
+          "  stdout ───",
+          "",
+          "    running 1 test",
+          "    test test_json_executes_headless_scenario_expectations ... FAILED"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "test_json_executes_headless_scenario_expectations",
+        "panicLine": 3843,
+        "causeSample": [
+          "    thread 'test_json_executes_headless_scenario_expectations' (11524) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:2968:5:",
+          "    headless scenario test should pass, stderr: ",
+          "    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace",
+          "",
+          "        FAIL [   0.399s] (641/693) arcweft-cli::check verify_json_records_required_solver_checks",
+          "  stdout ───",
+          "",
+          "    running 1 test",
+          "    test verify_json_records_required_solver_checks ... FAILED"
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_records_required_solver_checks",
+        "panicLine": 3862,
+        "causeSample": [
+          "    thread 'verify_json_records_required_solver_checks' (53552) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:381:5:",
+          "    JSON report should include the required solver check: {",
+          "      \"version\": 1,",
+          "      \"status\": \"denied\",",
+          "      \"stage\": \"type-check\",",
+          "      \"diagnostics\": [",
+          "        {",
+          "          \"module\": null,",
+          "          \"stage\": \"type-check\","
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_reports_missing_promotion_proof",
+        "panicLine": 3906,
+        "causeSample": [
+          "    thread 'verify_json_reports_missing_promotion_proof' (56112) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:348:5:",
+          "    JSON report should include the promotion obligation: {",
+          "      \"version\": 1,",
+          "      \"status\": \"denied\",",
+          "      \"stage\": \"type-check\",",
+          "      \"diagnostics\": [",
+          "        {",
+          "          \"module\": null,",
+          "          \"stage\": \"type-check\","
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_reports_semantic_thread_join_conflict",
+        "panicLine": 3949,
+        "causeSample": [
+          "    thread 'verify_json_reports_semantic_thread_join_conflict' (23488) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:421:5:",
+          "    JSON report should include the semantic thread-join obligation: {",
+          "      \"version\": 1,",
+          "      \"status\": \"denied\",",
+          "      \"stage\": \"readiness\",",
+          "      \"diagnostics\": [",
+          "        {",
+          "          \"module\": null,",
+          "          \"stage\": \"readiness\","
+        ]
+      },
+      {
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_respects_semantic_defer_cancel_discharge",
+        "panicLine": 3989,
+        "causeSample": [
+          "    thread 'verify_json_respects_semantic_defer_cancel_discharge' (50648) panicked at crates\\arcweft-cli\\tests\\check/cli_runtime_bench.rs:647:5:",
+          "    completed and cancelled defers should discharge line focus, stdout: {",
+          "      \"version\": 1,",
+          "      \"status\": \"denied\",",
+          "      \"stage\": \"type-check\",",
+          "      \"diagnostics\": [",
+          "        {",
+          "          \"module\": null,",
+          "          \"stage\": \"type-check\","
+        ]
+      }
+    ]
+  },
+  "probes": {
+    "normalization": "CLI diagnostics are stage-wrapped. The first display-only code projection returned null; original stdout and matrix retained complete diagnostics unchanged.",
+    "execution": "CLI check only",
+    "raw": "action-after-signature-matrix-20261102.json",
+    "executable": {
+      "drift": 0,
+      "path": "D:/git/arcweft/target/debug/arcw.exe",
+      "sha256": "9dc999b5c2480390f7773332a158c37ebb8f0ce353ffe0da951f99c915eb8e32"
+    },
+    "cases": [
+      {
+        "name": "plain",
+        "exitCode": 0,
+        "status": "ok",
+        "stage": null,
+        "diagnostics": [
+          null
+        ]
+      },
+      {
+        "name": "declaration",
+        "exitCode": 0,
+        "status": "ok",
+        "stage": null,
+        "diagnostics": [
+          null
+        ]
+      },
+      {
+        "name": "explicit_id",
+        "exitCode": 0,
+        "status": "ok",
+        "stage": null,
+        "diagnostics": [
+          null
+        ]
+      },
+      {
+        "name": "construction",
+        "exitCode": 1,
+        "status": "denied",
+        "stage": "type-check",
+        "diagnostics": [
+          {
+            "severity": "error",
+            "code": "sema.final_analysis",
+            "message": "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 15, kind: Expr }) has no admissible final type",
+            "span": null,
+            "labels": [],
+            "notes": [],
+            "suggestions": [],
+            "commands": []
+          }
+        ]
+      },
+      {
+        "name": "emit",
+        "exitCode": 1,
+        "status": "denied",
+        "stage": "type-check",
+        "diagnostics": [
+          {
+            "severity": "error",
+            "code": "sema.call.unknown_target",
+            "message": "unknown function `emit`",
+            "span": {
+              "source": {
+                "id": "arcweft-project://action-after-signature-emit-20261102/action-after-signature-emit-20261102.arcw",
+                "revision": "d43073c9bd35d5539188f394c0c80bc7f939c31bf4b01b2921c0f0b4e25001af",
+                "source_len": 217
+              },
+              "start": 175,
+              "end": 179
+            },
+            "labels": [
+              {
+                "style": "primary",
+                "span": {
+                  "source": {
+                    "id": "arcweft-project://action-after-signature-emit-20261102/action-after-signature-emit-20261102.arcw",
+                    "revision": "d43073c9bd35d5539188f394c0c80bc7f939c31bf4b01b2921c0f0b4e25001af",
+                    "source_len": 217
+                  },
+                  "start": 175,
+                  "end": 179
+                },
+                "message": "no registered callable candidate matches this target"
+              }
+            ],
+            "notes": [],
+            "suggestions": [],
+            "commands": []
+          }
+        ]
+      },
+      {
+        "name": "receive",
+        "exitCode": 1,
+        "status": "denied",
+        "stage": "type-check",
+        "diagnostics": [
+          {
+            "severity": "error",
+            "code": "sema.call.unknown_target",
+            "message": "unknown function `receive`",
+            "span": {
+              "source": {
+                "id": "arcweft-project://action-after-signature-receive-20261102/action-after-signature-receive-20261102.arcw",
+                "revision": "89a412395988535664409436615a58d2ddf5f4519c0d5b51d21a1bbb6506a494",
+                "source_len": 221
+              },
+              "start": 193,
+              "end": 200
+            },
+            "labels": [
+              {
+                "style": "primary",
+                "span": {
+                  "source": {
+                    "id": "arcweft-project://action-after-signature-receive-20261102/action-after-signature-receive-20261102.arcw",
+                    "revision": "89a412395988535664409436615a58d2ddf5f4519c0d5b51d21a1bbb6506a494",
+                    "source_len": 221
+                  },
+                  "start": 193,
+                  "end": 200
+                },
+                "message": "no registered callable candidate matches this target"
+              }
+            ],
+            "notes": [],
+            "suggestions": [],
+            "commands": []
+          }
+        ]
+      },
+      {
+        "name": "dotted_declaration",
+        "exitCode": 1,
+        "status": "denied",
+        "stage": "readiness",
+        "diagnostics": [
+          {
+            "severity": "error",
+            "code": "syntax.declaration.invalid_name",
+            "message": "action declaration name must be one non-keyword identifier",
+            "span": {
+              "source": {
+                "id": "arcweft-project://action-after-signature-dotted_declaration-20261102/action-after-signature-dotted_declaration-20261102.arcw",
+                "revision": "650881c39a2746d452a4c7f5e956b3c302a22046d205316681feb6dbcbd5d120",
+                "source_len": 171
+              },
+              "start": 11,
+              "end": 26
+            },
+            "labels": [
+              {
+                "style": "primary",
+                "span": {
+                  "source": {
+                    "id": "arcweft-project://action-after-signature-dotted_declaration-20261102/action-after-signature-dotted_declaration-20261102.arcw",
+                    "revision": "650881c39a2746d452a4c7f5e956b3c302a22046d205316681feb6dbcbd5d120",
+                    "source_len": 171
+                  },
+                  "start": 11,
+                  "end": 26
+                },
+                "message": null
+              }
+            ],
+            "notes": [],
+            "suggestions": [],
+            "commands": []
+          },
+          {
+            "severity": "error",
+            "code": "hir.project.analysis",
+            "message": "HIR module `crate` at HirSnapshotId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, revision: HirRevision(1) } has required recovery and cannot enter semantic analysis",
+            "span": null,
+            "labels": [],
+            "notes": [],
+            "suggestions": [],
+            "commands": []
+          }
+        ]
+      }
+    ]
+  },
+  "corrections": [
+    "Replace the pending 23-package consumer statement with the fresh complete normal22 and CLI1 runs.",
+    "The fresh CLI universe is 693: 660 PASS and 33 FAIL, not a reconstruction of the prior 692-case run. The failure IDs match the 33 previously unresolved IDs; inspect current stderr for causes.",
+    "The initial normal catalog failed with disk-full LNK1180 before runtime tests. Full user-authorized cargo clean removed 242981 files / 287.3 GiB with source and Git drift 0; the successful rerun is a separate epoch.",
+    "Action declaration and explicit-ID declaration now pass actual CLI check. Message construction still has no admissible final type; emit and receive have no registered callable target. These are separate unmet protocol boundaries, not a reversal of the repaired signature boundary.",
+    "Dotted Action spelling is still rejected by the implementation while the adopted converged surface contains that example. Reconcile the common lexical name/public-ID contract as part of completing the vertical Action implementation.",
+    "RAG currently reports unknown text_style. Maintained dialogue chapters still specify text_style/rich_text_style typed calls, so implementation rejection alone does not justify deleting or replacing that source as obsolete."
+  ],
+  "qualityReuse": "The source implementation is unchanged since the recorded a2688f77338bd0b34a7651d4910312045a59d6bf signature cut. Workspace check/Clippy/structure and final test-only lint cleanup evidence remain in task-action-declaration-signature.json. This cut changes documentation and evidence only.",
+  "workingTree": {
+    "heldTracked": 12,
+    "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+    "originalUntrackedDrift": 0,
+    "originalUntracked": 6
+  },
+  "historyPrefix": {
+    "bytes": 1771097,
+    "sha256": "57f1a954305e548e6c62cad13c73732c67feca81df442f845177a3eeccca3c05"
+  },
+  "genericRowSha256": "f91dd14463c6074e3ba4630a185013040a7454bf2bb3975e50a236e84b7b3819",
+  "raw": {
+    "buildArtifactsIncluded": false,
+    "sha256": "7cae5d1100d048ae53c4de5e380f0208c6a7611e0079030a49b40a007060aa1b",
+    "path": "docs/implementation/acceptance-evidence/task-action-declaration-consumers.raw.zip",
+    "entryHashDrift": 0,
+    "payloadEntries": 69
+  },
+  "postRunInputDelta": []
+}

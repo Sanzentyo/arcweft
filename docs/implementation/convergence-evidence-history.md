@@ -14262,3 +14262,22 @@ workspace全target／全feature／locked check・Clippy、構造gateは終了0�
 修復は宣言・署名解析に限る。typed構築、emit／receive、採用例のdotted宣言整合、Scroll CLI、Native/AWBCやNative/Webの受入を完了とはしない。
 既受入Generic Matchなどを戻す根拠はなく、現状のGeneric行はbyte不変。既存12 tracked／6 actual untracked WIPも保持した。
 現状一覧には未達を一括列挙せず、この署名解析の完了と送受信の未検証範囲を同じ1行で区別した。原本は[Action署名](acceptance-evidence/task-action-declaration-signature.json)。
+
+## 2026-11-02 Action署名Sourceの全23 consumer照合・全体clean・実CLI check
+
+Source a2688f77338bd0b34a7651d4910312045a59d6bf、run base e16d141a60faaa4b3c758bb270bcc5ca265691ac、4082入力でSource／case／test EXE差分0。
+通常22 packageは4327／4327 PASS（7 slow）、8 ignored、676.086秒。CLI全targetは693件・660 PASS（22 slow）／33 FAIL、23 ignored、505.485秒。別runとして保持し、全体goalの完了とはしない。
+実graphの影響23 packageを通常22とCLI1で照合した。単独ownerと統合contextのEXE identityが異なるため、HIR／Sema libraryも今回の統合条件で実行した。
+Generic Matchの既受入151 ID、View値40 IDは同じIDですべてPASS。Generic現状行はbyte不変で、他境界の失敗を理由に受入を戻さない。
+
+初回normal1はcatalogのビルド中にLNK1180／ディスク容量不足で終了101、runtime実行0件。ご指示のcargo cleanでD:\git\arcweft\target全体を削除し、242981 files／287.3 GiBを除去した。
+clean終了0、4082 SourceとGit差分0、既存untracked6件のhash差分0。生成物の移動・コピーは行っていない。後続normal2の成功は新たなepochとして記録した。
+
+新しいCLI失敗33 IDは直前の未修復33 IDと一致し、新規失敗ID 0／解消ID 0。元692件・657 PASS／35 FAILと限定3件修復の履歴を保持し、現在693件の全実測へ置換した。ID一致だけで原因まで同一とせず、今回の全raw logと33件のstderr抜粋を保持する。
+実CLI checkの最小probeはplain control・Action宣言・明示ID付き宣言が終了0。message構築は最終型なし、emit／receiveはsema.call.unknown_targetで拒否された。
+dotted宣言も構文拒否される一方、採用surfaceには同じ例があり、共通local name／public ID規則との整合を実装とともに解決する。署名修復の完了を戻す判定ではなく、送受信protocolの具体的未達条件として記録する。
+最初のprobe表示でdiagnosticsの外側からcodeを取りnullとなった点は、stage-wrappedなdiagnosticへ正規化して訂正した。元stdoutとmatrixには完全な診断が保存されており、変更していない。
+RAGの現在診断はunknown text_styleである。現行dialogue仕様にはtext_style／rich_text_style呼出しが残っており、実装拒否だけを根拠にshowcaseをobsoleteとして削除・差し替える判定はしない。
+
+現状一覧から23 consumer未実行と古いCLI途中集計を削除した理由は、今回の全件実測である。元の失敗・検証値・full SHAは履歴として保持する。今回のdocs/evidence変更でRust sourceは変更せず、署名cutのworkspace gateを再利用した。
+原本は[Action consumer照合](acceptance-evidence/task-action-declaration-consumers.json)。既存12 tracked／6 actual untracked WIPを保持する。
