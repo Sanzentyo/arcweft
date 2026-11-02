@@ -731,6 +731,23 @@ pub struct EnumVariantSignatureId {
     owner: SemanticTypeDigest,
     case: u32,
 }
+
+/// One declaration-backed record constructor. Parameter spelling is carried
+/// by its accepted fields; the result nominal owns the stable identity.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct RecordConstructorSignatureId {
+    owner: SemanticTypeDigest,
+}
+
+impl RecordConstructorSignatureId {
+    pub(crate) const fn new(owner: SemanticTypeDigest) -> Self {
+        Self { owner }
+    }
+
+    pub const fn owner(&self) -> SemanticTypeDigest {
+        self.owner
+    }
+}
 impl EnumVariantSignatureId {
     /// Identifies one constructor by its declaration-template owner and
     /// declaration ordinal. The completed application owns its instantiated
@@ -1830,6 +1847,7 @@ pub enum CallableCandidateId {
     LineSchedule(LineScheduleCallableId),
     Drop(DropCallableId),
     Promotion(PromotionCallableId),
+    RecordConstructor(RecordConstructorSignatureId),
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1858,11 +1876,12 @@ pub enum CallableFamily {
     LineSchedule,
     Drop,
     Promotion,
+    RecordConstructor,
 }
 
 impl CallableFamily {
     /// Every production callable family in stable semantic-audit order.
-    pub const ALL: [Self; 24] = [
+    pub const ALL: [Self; 25] = [
         Self::FxConstructor,
         Self::EnumConstructor,
         Self::ResultConstructor,
@@ -1887,6 +1906,7 @@ impl CallableFamily {
         Self::Drop,
         Self::Promotion,
         Self::Content,
+        Self::RecordConstructor,
     ];
 }
 
@@ -1916,6 +1936,7 @@ impl CallableCandidateId {
             Self::LineSchedule(_) => CallableFamily::LineSchedule,
             Self::Drop(_) => CallableFamily::Drop,
             Self::Promotion(_) => CallableFamily::Promotion,
+            Self::RecordConstructor(_) => CallableFamily::RecordConstructor,
         }
     }
 }
@@ -1942,4 +1963,5 @@ pub enum LanguageCallableFamily {
     Promote,
     Assume,
     Content,
+    RecordConstructor,
 }

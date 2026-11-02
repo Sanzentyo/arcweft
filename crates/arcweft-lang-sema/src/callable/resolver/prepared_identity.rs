@@ -22,11 +22,11 @@ use super::super::{
     DropCallableId, EnumVariantSignatureId, FunctionValueOrdinal, FunctionValueSignatureId,
     FxSourceConstructor, IntegerMethodId, LanguageCallableFamily, LineContextMethodId,
     LineScheduleCallableId, OptionConstructorKind, PresentationCallableId,
-    PresentationHandleMethodId, PromotionCallableId, ResolvedCallableBaseInstantiation,
-    ResultConstructorKind, StageMethodId,
+    PresentationHandleMethodId, PromotionCallableId, RecordConstructorSignatureId,
+    ResolvedCallableBaseInstantiation, ResultConstructorKind, StageMethodId,
 };
 use super::{
-    AcceptedEnumVariantCase, PreparedFunctionValueOriginEvidence,
+    AcceptedConstructorSignature, PreparedFunctionValueOriginEvidence,
     PreparedFunctionValueOriginProducer, SignatureOrigin,
 };
 use crate::callable::{CatalogCallableDispatch, CheckedCallableId};
@@ -38,6 +38,7 @@ use crate::callable::{CatalogCallableDispatch, CheckedCallableId};
 pub(crate) enum PreparedLanguageCallableIdentity {
     FxConstructor(FxSourceConstructor),
     EnumConstructor(EnumVariantSignatureId),
+    RecordConstructor(RecordConstructorSignatureId),
     Result(ResultConstructorKind),
     Option(OptionConstructorKind),
     Builtin(BuiltinCallableId),
@@ -90,6 +91,20 @@ impl PreparedLanguageCallableIdentity {
                 CheckedLanguageCallableIdentity::EnumConstructor {
                     owner: signature.owner(),
                     case: signature.case(),
+                }
+            }
+            (
+                Self::RecordConstructor(signature),
+                CallableCandidateId::RecordConstructor(candidate),
+                CallableFamily::RecordConstructor,
+            ) if &signature == candidate
+                && matches!(instantiation,
+                ResolvedCallableBaseInstantiation::Receiver { receiver: crate::types::TypeKind::Ref(entity) }
+                if entity.kind() == &crate::types::EntityKind::Action
+                    && entity.value().is_some_and(|payload| payload.semantic_identity_digest() == Ok(signature.owner()))) =>
+            {
+                CheckedLanguageCallableIdentity::RecordConstructor {
+                    owner: signature.owner(),
                 }
             }
             (
@@ -286,7 +301,7 @@ impl PreparedResolvedCallableIdentity {
         origin: &SignatureOrigin,
         checked: Option<&CheckedCallableId>,
         instantiation: &super::CallableInstantiation,
-        enum_seed: Option<&AcceptedEnumVariantCase>,
+        constructor_seed: Option<AcceptedConstructorSignature<'_>>,
         function_origin: Option<&PreparedFunctionValueOriginEvidence>,
     ) -> Option<Self> {
         match origin {
@@ -331,7 +346,7 @@ impl PreparedResolvedCallableIdentity {
                 _ => None,
             },
             SignatureOrigin::Language { family } => {
-                language_identity(id, *family, instantiation, enum_seed, None)
+                language_identity(id, *family, instantiation, constructor_seed, None)
             }
             SignatureOrigin::LanguageDialogue { operation, callee } => {
                 let CallableCandidateId::Dialogue(candidate) = id else {
@@ -352,7 +367,7 @@ fn language_identity(
     id: &CallableCandidateId,
     family: LanguageCallableFamily,
     instantiation: &super::CallableInstantiation,
-    enum_seed: Option<&AcceptedEnumVariantCase>,
+    constructor_seed: Option<AcceptedConstructorSignature<'_>>,
     dialogue: Option<PreparedDialogueCalleeIdentity>,
 ) -> Option<PreparedResolvedCallableIdentity> {
     let identity = match (id, family) {
@@ -360,7 +375,9 @@ fn language_identity(
             PreparedLanguageCallableIdentity::FxConstructor(*id)
         }
         (CallableCandidateId::EnumVariant(id), LanguageCallableFamily::EnumConstructor) => {
-            let seed = enum_seed?;
+            let AcceptedConstructorSignature::Variant(seed) = constructor_seed? else {
+                return None;
+            };
             let super::CallableInstantiation::EnumConstructor = instantiation else {
                 return None;
             };
@@ -368,6 +385,18 @@ fn language_identity(
                 return None;
             }
             PreparedLanguageCallableIdentity::EnumConstructor(id.clone())
+        }
+        (CallableCandidateId::RecordConstructor(id), LanguageCallableFamily::RecordConstructor) => {
+            let AcceptedConstructorSignature::Record(seed) = constructor_seed? else {
+                return None;
+            };
+            let super::CallableInstantiation::Receiver { receiver } = instantiation else {
+                return None;
+            };
+            if &seed.id != id || receiver != &seed.receiver {
+                return None;
+            }
+            PreparedLanguageCallableIdentity::RecordConstructor(id.clone())
         }
         (CallableCandidateId::Result(id), LanguageCallableFamily::ResultConstructor) => {
             PreparedLanguageCallableIdentity::Result(*id)

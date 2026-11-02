@@ -382,6 +382,9 @@ pub enum CheckedLanguageCallableIdentity {
         owner: SemanticTypeDigest,
         case: u32,
     },
+    RecordConstructor {
+        owner: SemanticTypeDigest,
+    },
     Result(ResultConstructorKind),
     Option(OptionConstructorKind),
     Builtin(BuiltinCallableId),
@@ -3395,6 +3398,9 @@ fn language_family(identity: &CheckedLanguageCallableIdentity) -> LanguageCallab
         CheckedLanguageCallableIdentity::EnumConstructor { .. } => {
             LanguageCallableFamily::EnumConstructor
         }
+        CheckedLanguageCallableIdentity::RecordConstructor { .. } => {
+            LanguageCallableFamily::RecordConstructor
+        }
         CheckedLanguageCallableIdentity::Result(_) => LanguageCallableFamily::ResultConstructor,
         CheckedLanguageCallableIdentity::Option(_) => LanguageCallableFamily::OptionConstructor,
         CheckedLanguageCallableIdentity::Builtin(_) => LanguageCallableFamily::Builtin,
@@ -4146,6 +4152,10 @@ impl CheckedCallCanonicalEncoder {
                 self.tag(1);
                 self.digest(owner.as_bytes());
                 self.u32(*case);
+            }
+            CheckedLanguageCallableIdentity::RecordConstructor { owner } => {
+                self.tag(19);
+                self.digest(owner.as_bytes());
             }
             CheckedLanguageCallableIdentity::Result(kind) => {
                 self.tag(2);

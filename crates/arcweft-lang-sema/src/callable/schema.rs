@@ -2097,6 +2097,7 @@ pub enum CallableValidator {
         member: CallableName,
     },
     EnumConstructor(EnumVariantSignatureId),
+    RecordConstructor(super::RecordConstructorSignatureId),
     ResultConstructor(ResultConstructorKind),
     OptionConstructor(OptionConstructorKind),
     ReductionConstructor(ReductionConstructorKind),
@@ -2446,6 +2447,17 @@ impl CallableSignatureSchema {
                     });
                 }
                 match (parameter.semantic_binding(), parameter.consumer()) {
+                    (
+                        CallableParameterSemanticBinding::AcceptedProjectRecordField(binding),
+                        CallableParameterConsumer::Value,
+                    ) if group.index == CallableGroupIndex::ZERO
+                        && matches!(&validator, CallableValidator::RecordConstructor(id)
+                        if u32::try_from(parameter.index.get()).ok()
+                            .zip(parameter.declared_type()
+                                .and_then(|ty| ty.semantic_identity_digest().ok()))
+                            .is_some_and(|(ordinal, ty)| *binding
+                                == AcceptedRecordFieldSemanticId::issue(id.owner(), ordinal, ty))) =>
+                        {}
                     (
                         CallableParameterSemanticBinding::AcceptedProjectRecordField(binding),
                         CallableParameterConsumer::Content(
@@ -2853,6 +2865,85 @@ impl CallableSignatureSchema {
                 .iter()
                 .zip(other.core.groups.iter())
                 .all(|(left, right)| left.semantic_eq(right))
+    }
+
+    pub(crate) fn for_accepted_project_record_constructor(
+        id: super::RecordConstructorSignatureId,
+        declaration: &arcweft_lang_hir::symbol::nominal::ProjectNominalDeclaration,
+        types: &std::collections::BTreeMap<arcweft_lang_hir::identity::TypeId, TypeKind>,
+        result: TypeKind,
+        limits: &CallableLimits,
+    ) -> Result<Self, CallableSchemaError> {
+        let invalid = || CallableSchemaError::FamilyInvariant {
+            family: super::CallableFamily::RecordConstructor,
+            code: super::CallableFamilyInvariantCode::InvalidOwner,
+        };
+        let TypeKind::ProjectNominal(nominal) = &result else {
+            return Err(invalid());
+        };
+        if nominal.declaration() != declaration.id()
+            || !nominal.arguments().is_empty()
+            || !declaration.type_parameters().is_empty()
+            || id.owner() != result.semantic_identity_digest()?
+        {
+            return Err(invalid());
+        }
+        let arcweft_lang_hir::symbol::nominal::ProjectNominalBody::Struct { fields } =
+            declaration.body()
+        else {
+            return Err(invalid());
+        };
+        if fields.len() > limits.max_parameters_per_callable() {
+            return Err(CallableSchemaError::ParameterLimit {
+                actual: fields.len(),
+                limit: limits.max_parameters_per_callable(),
+            });
+        }
+        let mut parameters = Vec::with_capacity(fields.len());
+        for (ordinal, field) in fields.iter().enumerate() {
+            let ty = types
+                .get(&field.ty())
+                .ok_or(CallableSchemaError::FamilyInvariant {
+                    family: super::CallableFamily::RecordConstructor,
+                    code: super::CallableFamilyInvariantCode::InvalidParameterType,
+                })?;
+            let semantic = AcceptedRecordFieldSemanticId::issue(
+                id.owner(),
+                u32::try_from(ordinal).map_err(|_| invalid())?,
+                ty.semantic_identity_digest()?,
+            );
+            let parameter =
+                CallableParameterIndex::try_from_usize(ordinal).map_err(|_| invalid())?;
+            let name = CallArgumentName::try_new(field.name().as_str()).map_err(|_| invalid())?;
+            parameters.push(CallableParameter::for_accepted_project_record_field(
+                parameter,
+                Some(name),
+                semantic,
+                CallableParameterAdmission::checked(ty.clone()),
+                CallableParameterPassing::PositionalOrNamed,
+                CallableParameterPresence::Required,
+                None,
+                None,
+            )?);
+        }
+        let group = CallableParameterGroup::try_new(
+            CallableGroupIndex::ZERO,
+            CallableGroupKind::Initial,
+            parameters,
+            limits,
+        )?;
+        Self::try_new(
+            vec![group],
+            result,
+            CallableEffectSchema::fixed(EffectRow::closed(crate::effects::EffectSet::new())),
+            CallableArgumentPolicy::new(
+                UnknownNamedArgumentPolicy::Reject,
+                SpreadArgumentPolicy::FixedLiteralOnly,
+            ),
+            CallableValidator::RecordConstructor(id),
+            CallableGenericParameterIssuer::empty(),
+            limits,
+        )
     }
 
     /// Builds a constructor from one accepted declaration-template case and

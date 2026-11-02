@@ -4475,6 +4475,7 @@ impl RuntimeResolvedCall {
                     | RuntimeResolvedStaticCallTarget::AgentProbeComparison(_)
                     | RuntimeResolvedStaticCallTarget::AgentDiagnosticsHasError
                     | RuntimeResolvedStaticCallTarget::Variant(_)
+                    | RuntimeResolvedStaticCallTarget::RecordConstructor { .. }
                     | RuntimeResolvedStaticCallTarget::Reduction(_)
                     | RuntimeResolvedStaticCallTarget::CharacterDialogue(_)
                     | RuntimeResolvedStaticCallTarget::Traverse
@@ -4537,6 +4538,7 @@ impl RuntimeResolvedCallDispatch {
                 | RuntimeResolvedStaticCallTarget::AgentProbeComparison(_)
                 | RuntimeResolvedStaticCallTarget::AgentDiagnosticsHasError
                 | RuntimeResolvedStaticCallTarget::Variant(_)
+                | RuntimeResolvedStaticCallTarget::RecordConstructor { .. }
                 | RuntimeResolvedStaticCallTarget::Reduction(_)
                 | RuntimeResolvedStaticCallTarget::CharacterDialogue(_)
                 | RuntimeResolvedStaticCallTarget::StandardMap(_)
@@ -4613,6 +4615,13 @@ pub enum RuntimeResolvedStaticCallTarget {
     /// Constructor calls are values in the runtime expression algebra, not
     /// registered callables or string-selected intrinsics.
     Variant(RuntimeResolvedVariant),
+    /// Nominal record construction through a checked value receiver. The
+    /// receiver participates in source-order evaluation; field storage uses
+    /// the declaration's existing canonical record layout.
+    RecordConstructor {
+        record: RuntimeResolvedNominalRecord,
+        receiver: ExprId,
+    },
     /// Core-owned `Reduction` value construction selected by semantic identity.
     Reduction(RuntimeReductionConstructor),
     /// Exact immutable dialogue producer operation, consumed through source-row ANF.
@@ -8742,6 +8751,7 @@ impl RuntimePlanSemanticFacts {
                     | RuntimeResolvedStaticCallTarget::AgentProbeComparison(_)
                     | RuntimeResolvedStaticCallTarget::AgentDiagnosticsHasError
                     | RuntimeResolvedStaticCallTarget::Variant(_)
+                    | RuntimeResolvedStaticCallTarget::RecordConstructor { .. }
                     | RuntimeResolvedStaticCallTarget::Reduction(_)
                     | RuntimeResolvedStaticCallTarget::StandardMap(_)
                     | RuntimeResolvedStaticCallTarget::StandardMapPrefix(_)
@@ -12700,6 +12710,66 @@ fn validate_call(
             validate_variant(modules, variant)?;
         }
         RuntimeResolvedCallDispatch::Static(
+            RuntimeResolvedStaticCallTarget::RecordConstructor { record, receiver },
+        ) => {
+            validate_nominal_record(modules, record)?;
+            let invalid =
+                || RuntimeSemanticFactsError::InvalidRuntimeCallDisposition { expression };
+            if !matches!(record.nominal().source(),
+                RuntimeResolvedNominalSource::Project { declaration, .. }
+                if matches!(declaration.kind(),
+                    arcweft_lang_hir::symbol::nominal::ProjectNominalDeclarationKind::Action { .. }))
+                || hir_call.callee().value_expression() != Some(*receiver)
+                || call.completed_group.get() != 0
+                || call.result() != RuntimeCallResultShape::Value
+                || call.attached_content().is_some()
+                || call.project_function().is_some()
+                || call.need_producer().is_some()
+                || call.mutation().is_some()
+                || expression_source_type.map(RuntimeNormalizedType::identity)
+                    != Some(record.nominal().identity())
+                || call.operands().len() != record.fields().len().saturating_add(1)
+            {
+                return Err(invalid());
+            }
+            let mut receivers = call.operands().iter().filter(|operand| {
+                matches!(operand.origin(), RuntimeResolvedCallOperandOrigin::Receiver)
+            });
+            let channel = receivers.next().ok_or_else(invalid)?;
+            if receivers.next().is_some()
+                || channel.source() != RuntimeResolvedCallOperandSource::Expression(*receiver)
+                || channel.abi_position() != 0
+                || !matches!(channel.ty().shape(), RuntimeTypeShape::EntityReference)
+                || !matches!(
+                    channel.projection(),
+                    RuntimeResolvedCallOperandProjection::Scalar
+                )
+            {
+                return Err(invalid());
+            }
+            for (ordinal, field) in record.fields().iter().enumerate() {
+                let ordinal = u32::try_from(ordinal).map_err(|_| invalid())?;
+                let mut fields = call.operands().iter().filter(|operand| {
+                    operand.parameter() == Some(RuntimeCallParameterCoordinate::new(0, ordinal))
+                });
+                let operand = fields.next().ok_or_else(invalid)?;
+                if fields.next().is_some()
+                    || operand.abi_position() != ordinal.saturating_add(1)
+                    || operand.ty() != field.ty()
+                    || !matches!(
+                        operand.origin(),
+                        RuntimeResolvedCallOperandOrigin::Argument { .. }
+                    )
+                    || !matches!(
+                        operand.projection(),
+                        RuntimeResolvedCallOperandProjection::Scalar
+                    )
+                {
+                    return Err(invalid());
+                }
+            }
+        }
+        RuntimeResolvedCallDispatch::Static(
             RuntimeResolvedStaticCallTarget::CharacterDialogue(dialogue),
         ) => {
             if !dialogue.accepts_source_row(call.operands(), call.result())
@@ -13816,6 +13886,7 @@ fn validate_project_function_instance(
                 | RuntimeResolvedStaticCallTarget::AgentProbeComparison(_)
                 | RuntimeResolvedStaticCallTarget::AgentDiagnosticsHasError
                 | RuntimeResolvedStaticCallTarget::Variant(_)
+                | RuntimeResolvedStaticCallTarget::RecordConstructor { .. }
                 | RuntimeResolvedStaticCallTarget::Reduction(_)
                 | RuntimeResolvedStaticCallTarget::StandardMap(_)
                 | RuntimeResolvedStaticCallTarget::StandardMapPrefix(_)

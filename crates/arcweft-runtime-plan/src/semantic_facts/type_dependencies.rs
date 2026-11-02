@@ -135,6 +135,14 @@ impl RuntimeResolvedStaticCallTarget {
             }
             Self::Declaration(callable) => callable.append_normalized_types(roots),
             Self::Variant(variant) => variant.owner().append_normalized_types(roots),
+            Self::RecordConstructor { record, .. } => {
+                roots.extend(
+                    record
+                        .fields()
+                        .iter()
+                        .map(super::RuntimeResolvedNominalRecordField::ty),
+                );
+            }
             Self::Host(host) => match host.owner() {
                 RuntimeResolvedHostCallOwner::ExternCapability { callable, .. } => {
                     callable.append_normalized_types(roots);

@@ -371,6 +371,13 @@ let submitted = await receive(feedback.submit)
 The exact `emit`/`receive` continuation shape is owned by the common callable
 and suspension contracts.
 
+Calling a typed Action channel constructs its nominal payload value. Fixed
+required parameters follow the ordinary positional/named argument rules, and
+the channel remains callable through a local binding or closure capture.
+The callee is evaluated before arguments, arguments are evaluated in source
+order, and fields are stored in declaration order. Payloads from different
+Action declarations remain distinct even when their field shapes coincide.
+
 ## Smaller retained decisions
 
 - Choice compact arms keep `->` for `goto` and `=>` for `out`; complex behavior

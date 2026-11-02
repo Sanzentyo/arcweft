@@ -159,10 +159,10 @@ pub use identity::{
     LanguageDocumentationFamily, LineContextMethodId, LineScheduleCallableId, LocalCallableId,
     MathCallableId, OptionConstructorKind, PresentationHandleMethodId, ProbeComparisonId,
     ProbeComparisonOperator, ProjectCallablePath, ProjectNameBinding, PromotionCallableId,
-    ReceiverMethodKey, ReductionConstructorKind, ResultConstructorKind, RustItemPath,
-    STANDARD_TRAIT_CATALOG_VERSION, StageMethodId, StandardCallableDeclarationId,
-    StandardEnvironmentId, StandardTraitCatalogVersion, StdFloatCallableId, StdFloatOperation,
-    VectorDimensions,
+    ReceiverMethodKey, RecordConstructorSignatureId, ReductionConstructorKind,
+    ResultConstructorKind, RustItemPath, STANDARD_TRAIT_CATALOG_VERSION, StageMethodId,
+    StandardCallableDeclarationId, StandardEnvironmentId, StandardTraitCatalogVersion,
+    StdFloatCallableId, StdFloatOperation, VectorDimensions,
 };
 pub use join::{
     CallableInstantiationDigest, CallableReceiverMode, CheckedCallableArgument,

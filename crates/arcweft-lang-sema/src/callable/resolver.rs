@@ -102,6 +102,10 @@ pub(crate) enum PreparedCallCallee<'a> {
     EnumConstructor {
         seed: &'a AcceptedEnumVariantCase,
     },
+    RecordConstructor {
+        source: ExprId,
+        seed: &'a AcceptedRecordConstructor,
+    },
     Selected {
         receiver_expression: ExprId,
         receiver_type: &'a TypeKind,
@@ -165,6 +169,10 @@ pub(crate) enum PreparedFinalCallCallee<'a> {
     },
     EnumConstructor {
         seed: Box<AcceptedEnumVariantCase>,
+    },
+    RecordConstructor {
+        source: ExprId,
+        seed: Box<AcceptedRecordConstructor>,
     },
     Selected {
         receiver_expression: ExprId,
@@ -659,6 +667,7 @@ impl PreparedFinalCallCallee<'_> {
             Self::Free { .. }
             | Self::ProjectView { .. }
             | Self::EnumConstructor { .. }
+            | Self::RecordConstructor { .. }
             | Self::Selected { .. }
             | Self::AssociatedType { .. }
             | Self::Dialogue { .. }
@@ -672,6 +681,12 @@ impl PreparedFinalCallCallee<'_> {
                 PreparedCallCalleeConstraintInputs::Free
             }
             Self::EnumConstructor { .. } => PreparedCallCalleeConstraintInputs::EnumConstructor,
+            Self::RecordConstructor { source, seed } => {
+                PreparedCallCalleeConstraintInputs::ValueReceiver {
+                    source: *source,
+                    actual: seed.receiver.clone(),
+                }
+            }
             Self::Selected {
                 receiver_expression,
                 receiver_type,
@@ -708,6 +723,10 @@ impl PreparedFinalCallCallee<'_> {
                 context: *context,
             },
             Self::EnumConstructor { seed } => PreparedCallCallee::EnumConstructor { seed },
+            Self::RecordConstructor { source, seed } => PreparedCallCallee::RecordConstructor {
+                source: *source,
+                seed,
+            },
             Self::Selected {
                 receiver_expression,
                 receiver_type,
@@ -745,6 +764,7 @@ pub(crate) struct FinalCallCalleeFacts<'a, P, U> {
     expressions: &'a BTreeMap<ExprId, PreparedExpressionFact>,
     prepared_calls: super::PreparedCallGraphIngress<'a, P, U>,
     nominal_receivers: &'a BTreeMap<TypeId, TypeResolutionReport>,
+    types: &'a BTreeMap<TypeId, TypeKind>,
     function_value_origin: Option<PreparedFunctionValueOriginEvidence>,
 }
 
@@ -753,12 +773,14 @@ impl<'a, P, U> FinalCallCalleeFacts<'a, P, U> {
         expressions: &'a BTreeMap<ExprId, PreparedExpressionFact>,
         prepared_calls: super::PreparedCallGraphIngress<'a, P, U>,
         nominal_receivers: &'a BTreeMap<TypeId, TypeResolutionReport>,
+        types: &'a BTreeMap<TypeId, TypeKind>,
         function_value_origin: Option<PreparedFunctionValueOriginEvidence>,
     ) -> Self {
         Self {
             expressions,
             prepared_calls,
             nominal_receivers,
+            types,
             function_value_origin,
         }
     }
@@ -802,6 +824,8 @@ pub(crate) enum PrepareFinalCallCalleeError {
     InvalidFunctionSchema,
     #[error("checked enum variant cannot issue one accepted constructor case")]
     InvalidEnumVariantAuthority { expression: ExprId },
+    #[error("checked channel cannot issue its declaration-backed record constructor")]
+    InvalidRecordConstructorAuthority { expression: ExprId },
     #[error("checked Character project item has no exact Character identity")]
     InvalidCharacterIdentity { expression: ExprId },
     #[error("prepared continuation ingress is invalid: {0}")]
@@ -852,6 +876,66 @@ struct TypedEnvironmentMethodCandidate<'a> {
 pub(crate) struct AcceptedEnumVariantCase {
     id: super::EnumVariantSignatureId,
     schema: CallableSignatureSchema,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) struct AcceptedRecordConstructor {
+    id: super::RecordConstructorSignatureId,
+    schema: CallableSignatureSchema,
+    receiver: TypeKind,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum AcceptedConstructorSignature<'a> {
+    Variant(&'a AcceptedEnumVariantCase),
+    Record(&'a AcceptedRecordConstructor),
+}
+
+impl AcceptedRecordConstructor {
+    fn try_from_channel(
+        authority: CallResolverAuthority<'_>,
+        receiver: &TypeKind,
+        types: &BTreeMap<TypeId, TypeKind>,
+        limits: &CallableLimits,
+    ) -> Result<Self, super::CallableSchemaError> {
+        let invalid = || super::CallableSchemaError::InvalidCandidateIssuer;
+        let TypeKind::Ref(entity) = receiver else {
+            return Err(invalid());
+        };
+        if entity.kind() != &crate::types::EntityKind::Action {
+            return Err(invalid());
+        }
+        let Some(TypeKind::ProjectNominal(nominal)) = entity.value() else {
+            return Err(invalid());
+        };
+        let symbols = authority.symbols;
+        let declaration = symbols.nominal(nominal.declaration()).ok_or_else(invalid)?;
+        let arcweft_lang_hir::symbol::nominal::ProjectNominalDeclarationKind::Action { public_id } =
+            declaration.id().kind()
+        else {
+            return Err(invalid());
+        };
+        let retained = symbols.retained(public_id).ok_or_else(invalid)?;
+        if retained.owner() != declaration.owner()
+            || retained.action_payload() != Some(declaration.id())
+        {
+            return Err(invalid());
+        }
+        let result = TypeKind::ProjectNominal(nominal.clone());
+        let id = super::RecordConstructorSignatureId::new(result.semantic_identity_digest()?);
+        let schema = CallableSignatureSchema::for_accepted_project_record_constructor(
+            id.clone(),
+            declaration,
+            types,
+            result,
+            limits,
+        )?;
+        Ok(Self {
+            id,
+            schema,
+            receiver: receiver.clone(),
+        })
+    }
 }
 
 impl AcceptedEnumVariantCase {

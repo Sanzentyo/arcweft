@@ -148,6 +148,36 @@ where
         });
     }
 
+    if let Some(receiver @ TypeKind::Ref(entity)) = facts
+        .expressions
+        .get(&value)
+        .and_then(PreparedExpressionFact::value_type)
+        && entity.kind() == &EntityKind::Action
+        && matches!(entity.value(), Some(TypeKind::ProjectNominal(nominal))
+            if matches!(nominal.declaration().kind(),
+                arcweft_lang_hir::symbol::nominal::ProjectNominalDeclarationKind::Action { .. }))
+    {
+        if function_origin.is_some() {
+            return Err(PrepareFinalCallCalleeError::UnexpectedFunctionValueOrigin {
+                expression: value,
+            });
+        }
+        let seed =
+            super::AcceptedRecordConstructor::try_from_channel(
+                authority,
+                receiver,
+                facts.types,
+                limits,
+            )
+            .map_err(|_| {
+                PrepareFinalCallCalleeError::InvalidRecordConstructorAuthority { expression: value }
+            })?;
+        return Ok(PreparedFinalCallCallee::RecordConstructor {
+            source: value,
+            seed: Box::new(seed),
+        });
+    }
+
     if let Some(checked) = facts.expressions.get(&value)
         && let Some(callee) = character_dialogue_callee(value, checked)?
     {
@@ -779,6 +809,12 @@ pub(super) fn classify_prepared_callee(
 ) -> Result<CallCalleeClassificationFact, ResolveCallError> {
     let module_id = module.module_id();
     match (prepared, call.callee()) {
+        (
+            PreparedCallCallee::RecordConstructor { source, .. },
+            HirCallCallee::Value { value },
+        ) if source == value && value.module() == module_id => {
+            Ok(CallCalleeClassificationFact::Value { expression: *value })
+        }
         (
             PreparedCallCallee::Free { .. }
             | PreparedCallCallee::ProjectView { .. }

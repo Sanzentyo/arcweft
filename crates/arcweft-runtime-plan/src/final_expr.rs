@@ -2368,6 +2368,9 @@ impl<'hir> FinalExprLowerer<'hir> {
             )
             | RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Variant(_))
             | RuntimeResolvedCallDispatch::Static(
+                RuntimeResolvedStaticCallTarget::RecordConstructor { .. },
+            )
+            | RuntimeResolvedCallDispatch::Static(
                 RuntimeResolvedStaticCallTarget::CharacterDialogue(_),
             )
             | RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Reduction(_))
@@ -2781,6 +2784,40 @@ impl<'hir> FinalExprLowerer<'hir> {
                     },
                 )?),
             }),
+            RuntimeResolvedCallDispatch::Static(
+                RuntimeResolvedStaticCallTarget::RecordConstructor { record, .. },
+            ) => {
+                let fields = record
+                    .fields()
+                    .iter()
+                    .enumerate()
+                    .map(|(ordinal, field)| {
+                        let ordinal = u32::try_from(ordinal).map_err(|_| {
+                            format!("record constructor {id:?} has too many fields")
+                        })?;
+                        let value = self.exact_scalar_operand_value(
+                            id,
+                            &local_values,
+                            operands,
+                            "record field",
+                            |operand| {
+                                operand.parameter()
+                                    == Some(RuntimeCallParameterCoordinate::new(0, ordinal))
+                            },
+                        )?;
+                        if value.ty() != field.ty().identity() {
+                            return Err(format!(
+                                "record constructor {id:?} field {ordinal} has another type"
+                            ));
+                        }
+                        Ok(RuntimeNominalRecordFieldSeed::new(
+                            RuntimeRecordFieldSeedId::from_zero_based(ordinal),
+                            value,
+                        ))
+                    })
+                    .collect::<Result<Box<[_]>, String>>()?;
+                RuntimeExprSeedKind::NominalRecord(fields)
+            }
             RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Variant(
                 variant,
             )) => {

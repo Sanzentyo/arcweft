@@ -1861,6 +1861,7 @@ impl Analyzer<'_, '_, '_> {
                         .map_err(AnalyzerExpressionError::fact)?,
                 ),
                 &self.type_reports,
+                &self.types,
                 function_value_origin,
             ),
             dialogue_context,
@@ -5441,7 +5442,25 @@ impl Analyzer<'_, '_, '_> {
             return Ok(AnalyzerPreparedCalleeExpression::none());
         }
         let (value, nominal_receiver) = match call.callee() {
-            HirCallCallee::Value { value } => (*value, false),
+            HirCallCallee::Value { value } => {
+                if let crate::callable::PreparedCallCalleeConstraintInputs::ValueReceiver {
+                    source,
+                    actual,
+                } = callee_inputs
+                    && source == value
+                {
+                    let checked = self.facts.expressions().get(value).ok_or(
+                        FinalSemanticAnalysisError::CallResolutionFailed { owner: *value },
+                    )?;
+                    if checked.value_type() != Some(actual) {
+                        return Err(FinalSemanticAnalysisError::CallResolutionFailed {
+                            owner: *value,
+                        });
+                    }
+                    return Ok(AnalyzerPreparedCalleeExpression::semantic(*value));
+                }
+                (*value, false)
+            }
             HirCallCallee::UnresolvedDot { value_receiver, .. } => match callee_inputs {
                 crate::callable::PreparedCallCalleeConstraintInputs::ValueReceiver {
                     source,

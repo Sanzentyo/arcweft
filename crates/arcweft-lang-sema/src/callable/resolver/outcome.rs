@@ -650,7 +650,31 @@ impl PreparedResolvedCallable {
             None,
             family,
             limits,
-            Some(seed),
+            Some(super::AcceptedConstructorSignature::Variant(seed)),
+            None,
+        )
+    }
+
+    pub(crate) fn try_from_intrinsic_with_record_seed(
+        seed: &super::AcceptedRecordConstructor,
+        limits: &CallableLimits,
+    ) -> Result<Self, ResolveCallError> {
+        Self::try_new_state(
+            CallableCandidateId::RecordConstructor(seed.id.clone()),
+            SignatureOrigin::Language {
+                family: LanguageCallableFamily::RecordConstructor,
+            },
+            None,
+            None,
+            Some(Arc::new(seed.schema.clone())),
+            CallableInstantiation::Receiver {
+                receiver: seed.receiver.clone(),
+            },
+            Vec::new(),
+            None,
+            super::CallableFamily::RecordConstructor,
+            limits,
+            Some(super::AcceptedConstructorSignature::Record(seed)),
             None,
         )
     }
@@ -774,7 +798,7 @@ impl PreparedResolvedCallable {
         authority: Option<CallableAuthorityRank>,
         family: super::CallableFamily,
         limits: &CallableLimits,
-        enum_seed: Option<&super::AcceptedEnumVariantCase>,
+        constructor_seed: Option<super::AcceptedConstructorSignature<'_>>,
         function_origin: Option<&super::PreparedFunctionValueOriginEvidence>,
     ) -> Result<Self, ResolveCallError> {
         let backing_is_valid = match (&checked, &record, &intrinsic_schema) {
@@ -811,7 +835,7 @@ impl PreparedResolvedCallable {
             &origin,
             checked.as_ref(),
             &instantiation,
-            enum_seed,
+            constructor_seed,
             function_origin,
         )
         .ok_or(ResolveCallError::InvalidResolvedCallable)?;
@@ -1147,6 +1171,9 @@ const fn language_origin_matches(id: &CallableCandidateId, family: LanguageCalla
             CallableCandidateId::EnumVariant(_),
             LanguageCallableFamily::EnumConstructor
         ) | (
+            CallableCandidateId::RecordConstructor(_),
+            LanguageCallableFamily::RecordConstructor
+        ) | (
             CallableCandidateId::Result(_),
             LanguageCallableFamily::ResultConstructor
         ) | (
@@ -1242,6 +1269,7 @@ fn instantiation_matches(id: &CallableCandidateId, instantiation: &CallableInsta
             | CallableCandidateId::DomainMethod(_)
             | CallableCandidateId::StageMethod(_)
             | CallableCandidateId::LineContextMethod(_)
+            | CallableCandidateId::RecordConstructor(_)
             | CallableCandidateId::Drop(_),
             CallableInstantiation::Receiver { .. },
         )

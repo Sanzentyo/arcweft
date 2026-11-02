@@ -573,6 +573,7 @@ impl CanonicalEncoder {
             CallableValidator::FxConstructor(_) => 1,
             CallableValidator::UnknownFxMember { .. } => 2,
             CallableValidator::EnumConstructor(_) => 3,
+            CallableValidator::RecordConstructor(_) => 27,
             CallableValidator::ResultConstructor(_) => 4,
             CallableValidator::OptionConstructor(_) => 5,
             CallableValidator::ReductionConstructor(_) => 6,
@@ -596,6 +597,9 @@ impl CanonicalEncoder {
             CallableValidator::BuiltinFx(_) => 24,
             CallableValidator::Format => 25,
         });
+        if let CallableValidator::RecordConstructor(id) = validator {
+            self.bytes(id.owner().as_bytes());
+        }
         if let CallableValidator::NeedProducer(role) = validator {
             match role.operation() {
                 arcweft_core::task::NeedProducerOperation::AssetLoad { kind } => {

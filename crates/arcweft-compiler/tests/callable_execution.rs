@@ -116,6 +116,154 @@ entry cli @entry.main { goto @flow.main }
 }
 
 #[test]
+fn action_payload_callable_constructor_uses_shared_mapping_in_native_and_decoded_awbc() {
+    for construction in [
+        "let message = submit(count = 42i64, value = \"hello\")",
+        "let message = submit(\"hello\", 42i64)",
+        "let make = submit; let message = make(count = 42i64, value = \"hello\")",
+        "let make = submit; let build = || make(count = 42i64, value = \"hello\"); let message = build()",
+    ] {
+        let source = format!(
+            r#"
+entry cli @entry.main {{ goto @flow.main }}
+pub action @action:.feedback.submit submit(value: String, count: i64)
+fn identity<T>(value: T) -> T {{ value }}
+fn result(message: submit) -> i64 {{
+    if message.value == "hello" {{ message.count }} else {{ 0i64 }}
+}}
+flow main() -> i64 {{
+    {construction}
+    let retained = identity(message)
+    let callback = || result(retained)
+    return callback()
+}}
+"#
+        );
+        assert_native_return(&source, "42");
+        assert_awbc_return(&source, RuntimeValue::i64(42));
+    }
+}
+
+#[test]
+fn ordinary_named_block_arguments_keep_their_source_order() {
+    const SOURCE: &str = r#"
+entry cli @entry.main { goto @flow.main }
+struct Counter { value: i64 }
+fn calculate(value: String, count: i64) -> i64 { count }
+flow main() -> i64 {
+    let counter = Counter { value = 0i64 }
+    let result = calculate(
+        count = { counter.value = counter.value + 1i64; 39i64 + counter.value },
+        value = { counter.value = counter.value + 1i64; "hello" }
+    )
+    return result + counter.value
+}
+"#;
+    assert_native_return(SOURCE, "42");
+    assert_awbc_return(SOURCE, RuntimeValue::i64(42));
+}
+
+#[test]
+fn action_payload_callable_constructor_keeps_argument_evaluation_order() {
+    const SOURCE: &str = r#"
+entry cli @entry.main { goto @flow.main }
+pub action submit(value: String, count: i64)
+struct Counter { value: i64 }
+flow main() -> i64 {
+    let counter = Counter { value = 0i64 }
+    let message = submit(
+        count = { counter.value = counter.value + 1i64; 39i64 + counter.value },
+        value = { counter.value = counter.value + 1i64; "hello" }
+    )
+    return message.count + counter.value
+}
+"#;
+    assert_native_return(SOURCE, "42");
+    assert_awbc_return(SOURCE, RuntimeValue::i64(42));
+}
+
+#[test]
+fn action_payload_callable_constructor_evaluates_its_callee_before_arguments() {
+    const SOURCE: &str = r#"
+entry cli @entry.main { goto @flow.main }
+pub action submit(value: String, count: i64)
+struct Counter { value: i64 }
+flow main() -> i64 {
+    let counter = Counter { value = 0i64 }
+    let message = ({ counter.value = counter.value + 1i64; submit })(
+        count = { counter.value = counter.value + 1i64; 37i64 + counter.value },
+        value = { counter.value = counter.value + 1i64; "hello" }
+    )
+    return message.count + counter.value
+}
+"#;
+    assert_native_return(SOURCE, "42");
+    assert_awbc_return(SOURCE, RuntimeValue::i64(42));
+}
+
+#[test]
+fn action_payload_callable_constructor_accepts_empty_payloads() {
+    const SOURCE: &str = r"
+entry cli @entry.main { goto @flow.main }
+pub action ping()
+fn result(message: ping) -> i64 { 42i64 }
+flow main() -> i64 {
+    let channel = ping
+    let message = channel()
+    return result(message)
+}
+";
+    assert_native_return(SOURCE, "42");
+    assert_awbc_return(SOURCE, RuntimeValue::i64(42));
+}
+
+#[test]
+fn action_payload_callable_constructor_rejects_invalid_arguments_and_foreign_payloads() {
+    use arcweft_compiler::project::ProjectCompileStage::{Readiness, TypeCheck};
+
+    for (call, stage) in [
+        ("submit()", TypeCheck),
+        ("submit(count = 42i64)", TypeCheck),
+        (
+            "submit(value = \"hello\", count = 42i64, extra = 0i64)",
+            TypeCheck,
+        ),
+        // Duplicate named arguments already require HIR recovery, before sema.
+        (
+            "submit(value = \"hello\", value = \"again\", count = 42i64)",
+            Readiness,
+        ),
+        ("submit(\"hello\", 42i64, 0i64)", TypeCheck),
+        ("submit(value = 0i64, count = 42i64)", TypeCheck),
+        ("other(value = \"hello\", count = 42i64)", TypeCheck),
+    ] {
+        let source = format!(
+            r"
+entry cli @entry.main {{ goto @flow.main }}
+pub action submit(value: String, count: i64)
+pub action other(value: String, count: i64)
+fn result(message: submit) -> i64 {{ message.count }}
+flow main() -> i64 {{ return result({call}) }}
+"
+        );
+        let error = compile_source(&source).expect_err("invalid Action call must be rejected");
+        let diagnostics = error.project().diagnostics();
+        assert!(!diagnostics.is_empty(), "{call}: {error:?}");
+        assert!(
+            diagnostics.iter().all(|diagnostic| {
+                diagnostic.stage() == stage
+                    && diagnostic
+                        .diagnostic()
+                        .code()
+                        .map(arcweft_source::DiagnosticCode::as_str)
+                        != Some("sema.final_analysis")
+            }),
+            "{call}: {error:?}"
+        );
+    }
+}
+
+#[test]
 fn action_payload_record_survives_generic_calls_and_capture_in_native_and_decoded_awbc() {
     const SOURCE: &str = r#"
 entry cli @entry.main { goto @flow.main }

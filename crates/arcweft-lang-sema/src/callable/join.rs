@@ -1090,6 +1090,7 @@ pub enum IntrinsicCallableCandidateTag {
     LineSchedule,
     Drop,
     Promotion,
+    RecordConstructor,
 }
 
 impl IntrinsicCallableCandidateTag {
@@ -1117,6 +1118,7 @@ impl IntrinsicCallableCandidateTag {
             Self::LineSchedule => 19,
             Self::Drop => 20,
             Self::Promotion => 21,
+            Self::RecordConstructor => 23,
         }
     }
 
@@ -1144,6 +1146,7 @@ impl IntrinsicCallableCandidateTag {
             CallableCandidateId::LineSchedule(_) => Self::LineSchedule,
             CallableCandidateId::Drop(_) => Self::Drop,
             CallableCandidateId::Promotion(_) => Self::Promotion,
+            CallableCandidateId::RecordConstructor(_) => Self::RecordConstructor,
             CallableCandidateId::Project(_)
             | CallableCandidateId::Detached(_)
             | CallableCandidateId::Standard(_) => return None,
@@ -2139,6 +2142,7 @@ fn callable_family_tag(family: CallableFamily) -> u8 {
         CallableFamily::Drop => 21,
         CallableFamily::Promotion => 22,
         CallableFamily::Content => 23,
+        CallableFamily::RecordConstructor => 24,
     }
 }
 

@@ -58,6 +58,12 @@ pub(crate) fn resolve_call_target(mut request: CallResolverRequest<'_>) -> Resol
                 Err(error) => ResolveCallOutcome::Rejected(error),
             }
         }
+        PreparedCallCallee::RecordConstructor { seed, .. } => {
+            match resolve_record_constructor(&mut request, seed) {
+                Ok(target) => ResolveCallOutcome::Resolved(target),
+                Err(error) => ResolveCallOutcome::Rejected(error),
+            }
+        }
         PreparedCallCallee::Selected {
             receiver_expression,
             receiver_type,
@@ -973,6 +979,17 @@ fn resolve_enum_constructor(
         Vec::new(),
         request.limits,
     )?;
+    NonEmptyResolvedCandidates::try_new(vec![callable], request.limits)
+        .map(ResolvedCallTarget::Candidates)
+}
+
+fn resolve_record_constructor(
+    request: &mut CallResolverRequest<'_>,
+    seed: &super::AcceptedRecordConstructor,
+) -> Result<ResolvedCallTarget, ResolveCallError> {
+    check_query_step(request)?;
+    let callable =
+        PreparedResolvedCallable::try_from_intrinsic_with_record_seed(seed, request.limits)?;
     NonEmptyResolvedCandidates::try_new(vec![callable], request.limits)
         .map(ResolvedCallTarget::Candidates)
 }

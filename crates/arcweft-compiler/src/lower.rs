@@ -9692,6 +9692,25 @@ fn runtime_call_target(
     let selected = application.core().candidates().selected();
     let selected_id = selected.id();
     let selected_family = selected.family();
+    if let CallableCandidateId::RecordConstructor(signature) = selected_id {
+        let projection = analysis
+            .runtime_nominal_projection(signature.owner())
+            .ok_or_else(|| RuntimeSemanticProjectionError::Call {
+                owner,
+                reason: "record constructor has no sealed nominal projection".to_owned(),
+            })?;
+        let record = runtime_nominal_record_under(
+            projection.checked(),
+            symbols,
+            world,
+            analysis,
+            enclosing,
+        )?;
+        return Ok(RuntimeResolvedStaticCallTarget::RecordConstructor {
+            record,
+            receiver: checked_call_receiver_expression(owner, application)?,
+        });
+    }
     if let CallableCandidateId::PresentationHandleMethod(method) = selected_id {
         return Ok(RuntimeResolvedStaticCallTarget::PresentationHandleMethod {
             method: *method,
