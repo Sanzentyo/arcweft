@@ -1,0 +1,401 @@
+{
+  "notClaimed": [
+    "Full 63-package consumer runtime",
+    "Full CLI all-target runtime",
+    "Native/Web capture parity",
+    "Full Source Presentation staging atomicity and scope/lifetime acceptance",
+    "Same-session CLI image lifetime acceptance from the sibling positive control"
+  ],
+  "historicalAttempts": [
+    {
+      "reason": "Test classifier used a text field on borrowed str; fixture corrected.",
+      "result": "catalog 101; no runtime",
+      "stem": "metadata-owner1"
+    },
+    {
+      "reason": "New fixture omitted bbox coordinate space; corrected without production fallback.",
+      "result": "68 PASS / 4 FAIL",
+      "stem": "metadata-owner2"
+    },
+    {
+      "reason": "Initial metadata boundary checkpoint before final marker/URI changes.",
+      "result": "73 PASS",
+      "stem": "metadata-owner3"
+    },
+    {
+      "reason": "Old MCP expectations required scrubbed allowed metadata, contrary to current capture contract; replace them with exact complete-descriptor comparison.",
+      "result": "102 PASS / 3 FAIL",
+      "stem": "metadata-owner4"
+    },
+    {
+      "reason": "Before the newly added URI collision condition.",
+      "result": "105 PASS",
+      "stem": "metadata-owner5"
+    },
+    {
+      "reason": "Same pixels, different metadata produced the same URI from the first image receipt. The complete summary/envelope now owns identity.",
+      "result": "0 PASS / 1 FAIL",
+      "stem": "uri-repro1"
+    },
+    {
+      "reason": "Before extending full input identity to scrubbed and metadata-only descriptors.",
+      "result": "105 PASS",
+      "stem": "metadata-owner6"
+    },
+    {
+      "reason": "Intermediate source before the final marker/URI changes; final CLI images4 reruns all eight.",
+      "result": "8 PASS",
+      "stem": "cli-images3"
+    },
+    {
+      "reason": "Intermediate source; quality2 validates the final Rust bytes.",
+      "result": "all gates 0",
+      "stem": "quality1"
+    }
+  ],
+  "graph": {
+    "targetEdges": "all resolved normal/dev/build/target edges",
+    "reversePackages": [
+      "arcweft",
+      "arcweft-adapter-desktop",
+      "arcweft-adapter-sema",
+      "arcweft-agent-mcp",
+      "arcweft-agent-mcp-client",
+      "arcweft-agent-policy",
+      "arcweft-agent-protocol",
+      "arcweft-agent-repl",
+      "arcweft-agent-runner",
+      "arcweft-audio-codec",
+      "arcweft-audio-core",
+      "arcweft-audio-device-cpal",
+      "arcweft-audio-mixer",
+      "arcweft-browser-bench",
+      "arcweft-bundle",
+      "arcweft-bundle-assets",
+      "arcweft-character-view",
+      "arcweft-cli",
+      "arcweft-compiler",
+      "arcweft-content-policy",
+      "arcweft-core",
+      "arcweft-debug-model",
+      "arcweft-debug-sqlite",
+      "arcweft-desktop-native",
+      "arcweft-dialogue",
+      "arcweft-glyphon",
+      "arcweft-host-adapter",
+      "arcweft-interaction-model",
+      "arcweft-lang-hir",
+      "arcweft-lang-jit-cranelift",
+      "arcweft-lang-sema",
+      "arcweft-lang-syntax",
+      "arcweft-launch",
+      "arcweft-lsp",
+      "arcweft-player-native",
+      "arcweft-player-scene",
+      "arcweft-player-text-input",
+      "arcweft-player-web",
+      "arcweft-presentation",
+      "arcweft-project",
+      "arcweft-project-loader",
+      "arcweft-rag",
+      "arcweft-render-text",
+      "arcweft-render-web",
+      "arcweft-render-wgpu",
+      "arcweft-resource-manifest",
+      "arcweft-resource-model",
+      "arcweft-runtime-accelerator",
+      "arcweft-runtime-codegen",
+      "arcweft-runtime-driver",
+      "arcweft-runtime-host",
+      "arcweft-runtime-plan",
+      "arcweft-runtime-scheduler",
+      "arcweft-save",
+      "arcweft-test",
+      "arcweft-text-layout",
+      "arcweft-text-model",
+      "arcweft-tooling",
+      "arcweft-verify",
+      "arcweft-verify-lsp",
+      "arcweft-verify-oxiz",
+      "arcweft-verify-z3",
+      "arcweft-view"
+    ],
+    "metadataReuse": "Resolved all-feature metadata from 9bd9fe195ec3da493bce853ad644ca0e03e85052; manifests and lockfile unchanged. New root content-policy is included explicitly.",
+    "changedPackages": [
+      "arcweft-agent-mcp",
+      "arcweft-agent-policy",
+      "arcweft-agent-protocol",
+      "arcweft-bundle",
+      "arcweft-cli",
+      "arcweft-compiler",
+      "arcweft-content-policy",
+      "arcweft-core",
+      "arcweft-interaction-model",
+      "arcweft-player-native",
+      "arcweft-player-scene",
+      "arcweft-player-web",
+      "arcweft-presentation",
+      "arcweft-runtime-driver"
+    ],
+    "workspaceCount": 98,
+    "version": 1,
+    "sourceBase": "3d1a66addbf20a191d811a882a698bab7bd68f72",
+    "resolvedPackages": 846,
+    "reverseCount": 63,
+    "runtimeStatus": "pending",
+    "graphInputPaths": 101,
+    "graphInputDrift": 0
+  },
+  "scope": [
+    "Complete bounded typed image metadata admitted independently from pixels; allow preserves original context/occurrence/capture links.",
+    "Blocked values/keys and metadata requiring rewrite withhold the whole resource; sanitized pixels retain a scrubbed descriptor.",
+    "All object metadata joins its actual scope; descriptor changes distinguish allowed, scrubbed and missing-byte publication URIs.",
+    "Native CLI image geometry, frame time, proxies, exact masked/composited pixels and clipped object-id attachment; issued capture refs feed MCP raw readback."
+  ],
+  "workingTree": {
+    "actualUntracked": 6,
+    "heldTracked": 12,
+    "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac"
+  },
+  "publication": {
+    "version": 1,
+    "commit": "c0610408b58d39b02fcb6d8ebbaea911e20818fe",
+    "parent": "3d1a66addbf20a191d811a882a698bab7bd68f72",
+    "tree": "b9daabb1b49f9963c0ee18a79bd27b687c971798",
+    "remote": "c0610408b58d39b02fcb6d8ebbaea911e20818fe",
+    "paths": [
+      {
+        "path": "crates/arcweft-agent-mcp/src/tests.rs",
+        "blob": "d018ca173982627885fa7f7e944b28610b6a1eda"
+      },
+      {
+        "path": "crates/arcweft-agent-policy/src/gate.rs",
+        "blob": "d26cccf5e1e27ee34d72ed3898f514b3e9833642"
+      },
+      {
+        "path": "crates/arcweft-agent-policy/src/published.rs",
+        "blob": "e59ba3f0b09ff720aff9cafb076c506817d42e22"
+      },
+      {
+        "path": "crates/arcweft-agent-policy/src/tests.rs",
+        "blob": "3879d8ea8677d50fd2bbea20a2b39666c4083c71"
+      },
+      {
+        "path": "crates/arcweft-agent-policy/src/tests/image_metadata.rs",
+        "blob": "469aaf17f90056ce38b7794a2799255fa6d80dd0"
+      },
+      {
+        "path": "crates/arcweft-agent-protocol/src/image.rs",
+        "blob": "5f1fb5dd13485b4242f6dc56b73530caed484678"
+      },
+      {
+        "path": "crates/arcweft-content-policy/src/classifier.rs",
+        "blob": "4f2bc7271a5bb22a7dba73f257cdd50f7f2d1109"
+      },
+      {
+        "path": "crates/arcweft-content-policy/src/profile.rs",
+        "blob": "29795d7010aa9303e539064113fb9cd5c2505248"
+      },
+      {
+        "path": "docs/04-tooling/agent-observe-capture-contract.md",
+        "blob": "07959c54aedbe2d9733c979b9079a17cb900f5d1"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "ab31b6d61a75b298d0d60bc3a8ff0d60f57d46dc85f978cd8cbda3973908de09",
+    "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-02T05:40:45.0276908Z"
+  },
+  "source": "c0610408b58d39b02fcb6d8ebbaea911e20818fe",
+  "quality": {
+    "check": {
+      "version": 1,
+      "base": "3d1a66addbf20a191d811a882a698bab7bd68f72",
+      "command": [
+        "check",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4080,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-02T05:38:44.006997Z",
+      "finishedAt": "2026-11-02T05:38:52.7573797Z"
+    },
+    "clippy": {
+      "version": 1,
+      "base": "3d1a66addbf20a191d811a882a698bab7bd68f72",
+      "command": [
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4080,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-02T05:38:53.1987664Z",
+      "finishedAt": "2026-11-02T05:39:05.2188965Z"
+    },
+    "warningsRemain": true,
+    "structure": {
+      "version": 1,
+      "base": "3d1a66addbf20a191d811a882a698bab7bd68f72",
+      "command": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking",
+        "--write",
+        "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/presentation-frame-mcp-quality2-20261102.structure-report"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4080,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-02T05:39:05.6610509Z",
+      "finishedAt": "2026-11-02T05:39:09.4290838Z"
+    },
+    "counts": {
+      "blocking": 0,
+      "physicalLOC": 1792638,
+      "files": 3312,
+      "reviewTriggers": 384,
+      "rust": 3181,
+      "allFilePhysicalLOC": 1799731,
+      "physicalLOCScope": "Rust rows only, matching the prior canonical count"
+    },
+    "format": {
+      "version": 1,
+      "paths": [
+        "crates/arcweft-agent-policy/src/gate.rs",
+        "crates/arcweft-agent-policy/src/published.rs",
+        "crates/arcweft-agent-policy/src/tests.rs",
+        "crates/arcweft-agent-policy/src/tests/image_metadata.rs",
+        "crates/arcweft-agent-protocol/src/image.rs",
+        "crates/arcweft-content-policy/src/classifier.rs",
+        "crates/arcweft-content-policy/src/profile.rs",
+        "crates/arcweft-agent-mcp/src/tests.rs"
+      ],
+      "exitCode": 0
+    }
+  },
+  "priorCliPublication": {
+    "version": 1,
+    "commit": "3d1a66addbf20a191d811a882a698bab7bd68f72",
+    "parent": "4c60776ea42582d87a292504d31c0c6d53d24b8d",
+    "tree": "9fb885c71f3068e022f165b46145d0cb377afba5",
+    "remote": "3d1a66addbf20a191d811a882a698bab7bd68f72",
+    "paths": [
+      {
+        "blob": "f9f328bd21e74c0a4c44f7caa56136682e2be5da",
+        "path": "crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs"
+      },
+      {
+        "blob": "c896b043c659748f57cc2f195892ab0d0aafbbd6",
+        "path": "docs/implementation/acceptance-evidence/task-presentation-frame-cli-images.json"
+      },
+      {
+        "blob": "0c3c26ec525a050ceda04146df08a715af324fce",
+        "path": "docs/implementation/acceptance-evidence/task-presentation-frame-cli-images.raw.zip"
+      },
+      {
+        "blob": "4e3bc66699f653554fdbd30b5fb4b475e5122be6",
+        "path": "docs/implementation/convergence-evidence-history.md"
+      },
+      {
+        "blob": "93200bbeb5660246b3f27e182a2ed7e9463cfd40",
+        "path": "docs/implementation/current-status.md"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "2a4777a53d8df3f7a062d4bd156b1f79c5fe2bb9f167774b8df8c962297e1c83",
+    "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-02T05:18:56.8704829Z"
+  },
+  "owner": {
+    "version": 1,
+    "base": "3d1a66addbf20a191d811a882a698bab7bd68f72",
+    "run": "presentation-frame-mcp-metadata-owner7-20261102.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [   7.558s] 105 tests run: 105 passed, 0 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 105,
+    "passed": 105,
+    "failed": 0,
+    "skipped": 0,
+    "selectedPackages": 4,
+    "matchedPackages": 4,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4080,
+    "sourceDrift": 0,
+    "held": 12,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-11-02T05:36:22.2487143Z"
+  },
+  "ownerDisposition": {
+    "tests": "231 LOC / 8142 bytes: five cases exercise the same publication transaction, plus exact existing MCP descriptor comparisons. No crate/dependency changes.",
+    "protocol": "Existing metadata envelope owns object/scope and retained text-context validation before copy/serialization.",
+    "summary": "168 LOC / 5907 bytes: the existing typed summary owns opaque publication identity; no secondary identity catalog.",
+    "gate": "550 LOC / 21886 bytes: existing Sans-I/O publication transaction owns admission and full envelope hashing, with the existing bounded metadata/JSON authorities."
+  },
+  "cli": {
+    "version": 1,
+    "base": "3d1a66addbf20a191d811a882a698bab7bd68f72",
+    "run": "presentation-frame-mcp-cli-images4-20261102.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  11.767s] 8 tests run: 8 passed, 473 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 8,
+    "passed": 8,
+    "failed": 0,
+    "skipped": 473,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4080,
+    "sourceDrift": 0,
+    "held": 12,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-11-02T05:38:43.0063704Z"
+  },
+  "genericRowSha256": "f91dd14463c6074e3ba4630a185013040a7454bf2bb3975e50a236e84b7b3819",
+  "version": 1,
+  "docOnlyDelta": {
+    "validationReused": true,
+    "version": 1,
+    "rustInputDrift": 0,
+    "changes": [
+      {
+        "path": "docs/04-tooling/agent-observe-capture-contract.md",
+        "before": "72d46604d645fdfcc308a58c12ae45489055cdbd7a2a230165b0263bae535bb9",
+        "after": "97acfa715c9050f47d2bad749c355c7c36689352c6a1c127b261acc774952f9a"
+      }
+    ],
+    "reason": "Clarify the existing metadata-only missing-bytes placeholder behavior, covered by the passing owner test. No Rust/test/fixture/manifest changes."
+  },
+  "raw": {
+    "entryHashDrift": 0,
+    "sha256": "016a79cb67fdf3d92af86659f5264edb60931cc1c43474a2104b80222da5a814",
+    "payloadEntries": 106,
+    "buildArtifactsIncluded": false,
+    "path": "docs/implementation/acceptance-evidence/task-presentation-frame-mcp-publication.raw.zip"
+  },
+  "genericAcceptedUnchanged": true,
+  "historyPrefix": {
+    "bytes": 1762667,
+    "sha256": "1ec1e57fbcc4cc6e70ef57f052baa729465f707ea2e0a8f6a551ecab7f95e7b2"
+  }
+}

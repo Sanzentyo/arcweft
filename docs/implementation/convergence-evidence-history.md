@@ -14206,3 +14206,26 @@ release probeには実画像を観測するsibling positive controlと著者meta
 元の2-step／4-step・64-op条件を維持し、色・透明領域・crop寸法の厳密検査を保持した。MCPのcomposited pixel検査も同じmasked framebuffer全体を検査する。
 限定ClippyはCLI全target／all-feature／lockedで終了0、警告は残る。Generic Matchおよび他の既受入は変更しない。
 原本は[CLI画像検証](acceptance-evidence/task-presentation-frame-cli-images.json)。既存履歴のprefixをbyte単位で保持して追記した。
+
+## 2026-11-02 MCP画像metadata・公開identityの修復
+
+CLI fixture移行は3d1a66addbf20a191d811a882a698bab7bd68f72（parent 4c60776ea42582d87a292504d31c0c6d53d24b8d）として公開した。
+MCP修復はc0610408b58d39b02fcb6d8ebbaea911e20818fe（parent 3d1a66addbf20a191d811a882a698bab7bd68f72）、tree b9daabb1b49f9963c0ee18a79bd27b687c971798、9 path、patch SHA256 ab31b6d61a75b298d0d60bc3a8ff0d60f57d46dc85f978cd8cbda3973908de09。
+main/origin・公開blob・保持12 tracked WIP・index emptyを照合した。Scroll fixtureの元18行は前cutでhunk本文を照合して未stageで保持した。
+
+元のMCP gateはpixelの許可後もmetadataを無条件scrubしていた。完全なbounded typed envelopeと各text/keyを元policyで検査し、許可時は元のobject・occurrence・context・capture link・診断を保持する。
+metadataのBlock／rewriteは全resourceを保留し、pixel mask時はscrubbed descriptorを保つ。全objectのscope照合も元metadata ownerへ置いた。触れたArcweft policy／分類器markerは1へ同期した。
+同じpixel・異なるmetadataが同じURIになる条件はuri-repro1で0 PASS／1 FAILとして実再現した。first receiptだけからのURI生成を置換し、元metadataを含む入力digestと完全な公開summaryへidentityを束縛した。
+許可・mask・byte欠落のdescriptor差分も別URIになることを確認した。既存MCPのscrub期待3件は現行capture仕様に矛盾するため、完全なmetadata一致へ訂正した。
+
+最終owner7は関連4 packageで105／105 PASS、最終CLI images4は8／8 PASS・473 skipped。同じ4080入力でSource／case／EXE差分0。
+画像alignment・frame/local-time・proxy metadata・正確なcomposited pixel・clipped object-id attachment・発行URIによるMCP raw readbackを確認した。
+前段の73／105 PASSやCLI images3の8 PASSを最終件数へ合算していない。fixture compile失敗、bbox.space欠落の68 PASS／4 FAIL、旧MCP期待の102 PASS／3 FAIL、URI衝突FAILを原本に保持する。
+全98 package／all-target／all-feature／locked check・Clippy、構造gate、対象fmtは終了0。警告は残る。公開前にmetadata-only failureの仕様補足だけを行い、Rust/test/fixture/Cargo差分0として検証を再利用した。
+構造は3312 file／3181 Rust／1792638 physical LOC、review trigger384／blocking0。Gate550 LOC、summary168 LOC、新test owner231 LOCは既存のpublication・identity・同一境界の拒否/保持を各々所有し、I/O・別catalog・旧readerを増やしていない。
+
+実graphは846 resolved／98 workspace、今回までの変更14 ownerの推移的63 package。manifest/config101入力の差分0により元の解決済みgraphを再利用し、新たなcontent-policy ownerをclosureへ含めた。
+全63 runtime・全CLI target・Native/Web capture parityとSource staging全体の未達は、この限定cutの受入へ拡張しない。
+現状一覧から旧MCP metadata未達と画像7件の途中状態を削除した理由は、この新しい修復と最終8件の実測である。元の失敗結果・全SHAは履歴として保持する。
+Generic Match・View値等の既受入は維持し、Generic行はbyte単位で不変。原本は[MCP画像公開](acceptance-evidence/task-presentation-frame-mcp-publication.json)。
+physical LOCは従来と同じRust行のみの集計で、全file合計1799731とは区別する。
