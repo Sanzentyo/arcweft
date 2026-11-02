@@ -1,6 +1,6 @@
 # Arcweft 現状一覧
 
-確認日: 2026-11-02。最新公開Sourceは34247073edd2e7444256e2e386328ef6866aee2a。MCP実装c0610408b58d39b02fcb6d8ebbaea911e20818feに続き、IME生成側の移行漏れを3fc21baee3ae806e2d40cceade52dd8d4fcfa7d3で修復した。既存12 tracked／6 actual untracked WIPを保持している。63逆依存の全件runと、後続の限定修復・再利用を下表で区別する。
+確認日: 2026-11-02。最新公開Sourceはa2688f77338bd0b34a7651d4910312045a59d6bf。Action宣言の署名解析を修復した。既存12 tracked／6 actual untracked WIPを保持している。全63逆依存の既存runと、Action変更の23逆依存で未実行の範囲を区別する。
 この文書を項目別の現状の唯一の一覧とする。現行契約は[仕様索引](../README.md)、過去の実行結果・失敗・公開full SHAは
 [収束検証履歴](convergence-evidence-history.md) と [その他の検証履歴](evidence-history.md) に置く。
 履歴中の古い現在形・計画や、保持したuntrackedの2026-10-09 CLI修復メモを、そのまま現在の残作業へ転記しない。
@@ -15,6 +15,7 @@
 
 | 項目・境界 | 状態 | 根拠と、別途区別する範囲 |
 |---|---|---|
+| Action宣言のpayload署名解析 | **宣言・署名の修復は検証・公開済み。送受信の受入は別境界** | Source a2688f77338bd0b34a7651d4910312045a59d6bf。Action自身の引数root・元pattern/localを既存HIR topologyに保持し、Semaが宣言型とchecked意味座標を確定する。宣言だけでのInvalidOwnedPathと、後段のLocalTypeUnavailableを再現して修復した。HIR通常958／958（8 ignored）、Sema1359／1359、workspace check／Clippy・構造gate終了0。最終test-only lint修正は当該1件とHIR Clippyを再実行した。実graphの23逆依存の残り、typed構築・emit／receive・dotted宣言の整合・Scroll CLIは、この署名解析の完了へ含めない。[失敗・修復・公開・検証範囲](acceptance-evidence/task-action-declaration-signature.json)。 |
 | 未定義値パス／宣言defaultの診断 | **当該修復は受入・公開済み** | Source d16dd07d7a4764b81cefc6a9632d796b2d8cc0d6。Semaが型付きHIR pathと正確なSourceSpanを保持し、未定義値をsema.value.unknown_symbolで報告する。通常の値・callable・closed variantの探索順は維持する。TextProxyの専用default診断とline alias拒否も同じエラー型へ移行した。対象4件と全22逆依存で検証し、元のroute_params CLI拒否もPASS。[受入・初回2失敗と修復の原本](acceptance-evidence/task-value-path-acceptance.json)。 |
 | qualified nullary variant のRuntimePlan所有・lowering | **当該境界は検証・公開済み** | Source 218f6270f27d6b663ef6dbc3eaefa5b201469563。意味解析済みのEnum.Caseを既存variant ownerで扱い、global／specialized functionの両factと最終loweringを一致させた。Native／canonical decoded AWBCの実戻り値42、通常field、typed payload pathを含むCompiler 198／198 PASS（R3485、16逆依存のfeature統合下）。line-plan outのtyped plan構築とAWBC codecも確認。後続の実値・子Thread・明示進行入力は[対話実行の受入](acceptance-evidence/task-dialogue-prefix-acceptance.json)へ記録。[受入・失敗原本・保全証明](acceptance-evidence/task-qualified-variant-acceptance.json)。 |
 | 対話の段階実行／所有子Thread／line out値 | **現行契約へ同期・当該実行は検証済み** | Source 171e32a8689ff19e5ea49cc0df143810e3eccf70。旧CLIのdone／Host proxy期待はOneOp・bounded run・廃止済み内部routeの採用契約に矛盾していた。元の2／3-stepと1-opを厳密なprefix検査へ移行し、別のNative／decoded AWBC実行で一回のreveal・子のlog／回収・Host proxy 0を確認。実Ready activationへ一回だけ進行入力を返したline outは、両backendで実戻り値42に到達する。新16-step観測を元3-stepの子完了とは扱わず、公開Native saveの受入にも拡張しない。[訂正根拠・旧IDとの対応・実行原本](acceptance-evidence/task-dialogue-prefix-acceptance.json)。 |

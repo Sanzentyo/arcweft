@@ -14249,3 +14249,16 @@ local-dev／sensitive指定でもbuiltin policyが秘密metadataをBlockする�
 補足訂正: 先行メモでScrollのdotted action宣言を単にobsoleteと記したのは断定が早かった。converged-language-surfaceの採用例には同じ形があり、共通のlocal name／公開ID規則と照合して最終契約を決める必要がある。実際の構文拒否は履歴として保持し、実装拒否だけを仕様根拠としない。
 現状一覧の全63／全CLI未実行という記述は、今回の実測と限定修復に基づいて置換した。旧7987 PASS・CLI652／40などの全結果・SHAは前Sourceの履歴として保持する。
 原本は[consumer closure](acceptance-evidence/task-presentation-frame-consumer-closure.json)。12 tracked／6 actual untracked WIPとGeneric行を保持した。
+
+## 2026-11-02 Action宣言・payload署名の所有／型付け修復
+
+Source a2688f77338bd0b34a7651d4910312045a59d6bf、parent a7f47b0ef7ddf8196cec527382b041c7db451d09、tree b240efd1b8031b9ceee89a5d89878bd90170817f。
+最小のAction宣言だけでHIR topologyがInvalidOwnedPathとなることを実testで再現した。Actionの元pattern/localをitem署名rootとして既存ownerへ登録し、架空のcallable symbolを作らずに修復した。
+次のSema testはLocalTypeUnavailableで失敗し、宣言型を共通pattern seedへ接続して修復した。どちらの失敗原本も保持する。
+HIR通常958 PASS／8 ignored、Sema1359 PASS。空引数・複数引数・明示公開ID・複数Actionと、checked型・元local・item意味座標を確認した。
+workspace全target／全feature／locked check・Clippy、構造gateは終了0。構造3314 file／3183 Rust／1792937 Rust physical LOC、review trigger384／blocking0。警告は残る。
+新testのClippy指摘1箇所をassert_eqへ直し、当該1件とHIR全target Clippyは再実行してPASS／終了0。他の検証はproduction差分0を根拠に再利用し、958件の新規通し再実行とはしない。
+実graphは846 resolved／98 workspace、manifest等101入力差分0、HIR/Semaの推移的逆依存23 package。残るconsumer全件はこの時点で未実行として保持する。
+修復は宣言・署名解析に限る。typed構築、emit／receive、採用例のdotted宣言整合、Scroll CLI、Native/AWBCやNative/Webの受入を完了とはしない。
+既受入Generic Matchなどを戻す根拠はなく、現状のGeneric行はbyte不変。既存12 tracked／6 actual untracked WIPも保持した。
+現状一覧には未達を一括列挙せず、この署名解析の完了と送受信の未検証範囲を同じ1行で区別した。原本は[Action署名](acceptance-evidence/task-action-declaration-signature.json)。
