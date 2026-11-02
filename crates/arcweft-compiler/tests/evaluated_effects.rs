@@ -3294,3 +3294,6 @@ fn physical_line_endings_normalize_display_without_erasing_inline_spaces_in_nati
 
 #[path = "evaluated_effects/dialogue_readiness.rs"]
 mod dialogue_readiness;
+
+#[path = "evaluated_effects/dialogue_template_order.rs"]
+mod dialogue_template_order;

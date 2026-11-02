@@ -1947,6 +1947,9 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
     };
     let (dialogue_content, mut dialogue_assertion_sites, plain_text_context_template) =
         lower_dialogue_content(&context, &dialogue_effect_sites, &mut builder, &mut errors);
+    if !errors.is_empty() {
+        return Err(errors);
+    }
     dialogue_assertion_sites.extend(dialogue_effect_assertion_sites);
     let context = FinalLoweringContext {
         dialogue_content: &dialogue_content,
@@ -4459,76 +4462,62 @@ fn lower_dialogue_content<'facts>(
     Vec<RuntimeAssertionSite>,
     Option<DialogueContentFragmentTemplate>,
 ) {
+    let mut templates = Vec::new();
     context
         .facts
         .visit_dialogue_content_fragments(&mut |_, fragment| {
             let template = fragment.template();
-            let slots = template
-                .slots()
-                .iter()
-                .map(|slot| arcweft_core::plan::RuntimeDialogueContentSlotSeed {
-                    slot: slot.slot(),
-                    role: slot.role(),
-                    semantic_type: slot.semantic_type(),
-                })
-                .collect::<Vec<_>>()
-                .into_boxed_slice();
-            let effects = dialogue_content_effect_slot_seeds(fragment.effects());
-            if let Err(error) = builder.register_dialogue_content_template_seed(
+            templates.push(
                 arcweft_core::plan::RuntimeDialogueContentTemplateManifestSeed {
                     id: template.id(),
                     digest: template.digest(),
-                    slots,
-                    effects,
+                    slots: template
+                        .slots()
+                        .iter()
+                        .map(|slot| arcweft_core::plan::RuntimeDialogueContentSlotSeed {
+                            slot: slot.slot(),
+                            role: slot.role(),
+                            semantic_type: slot.semantic_type(),
+                        })
+                        .collect(),
+                    effects: dialogue_content_effect_slot_seeds(fragment.effects()),
                 },
-            ) {
-                errors.push(RuntimePlanLowerError::new(format!(
-                    "dialogue content template {} is invalid: {error}",
-                    template.id()
-                )));
-            }
+            );
         });
     for fact in context.facts.format_templates() {
         let template = fact.template();
-        let slots = template
-            .slots()
-            .iter()
-            .map(|slot| arcweft_core::plan::RuntimeDialogueContentSlotSeed {
-                slot: slot.slot(),
-                role: slot.role(),
-                semantic_type: slot.semantic_type(),
-            })
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
-        if let Err(error) = builder.register_dialogue_content_template_seed(
+        templates.push(
             arcweft_core::plan::RuntimeDialogueContentTemplateManifestSeed {
                 id: template.id(),
                 digest: template.digest(),
-                slots,
+                slots: template
+                    .slots()
+                    .iter()
+                    .map(|slot| arcweft_core::plan::RuntimeDialogueContentSlotSeed {
+                        slot: slot.slot(),
+                        role: slot.role(),
+                        semantic_type: slot.semantic_type(),
+                    })
+                    .collect(),
                 effects: Box::default(),
             },
-        ) {
+        );
+    }
+    // Dialogue fragments and formatters share one issued identity catalog.
+    // Executable visitation order need not match that catalog's dense order.
+    templates.sort_unstable_by_key(|template| template.id);
+    let template_count = templates.len();
+    for template in templates {
+        let id = template.id;
+        if let Err(error) = builder.register_dialogue_content_template_seed(template) {
             errors.push(RuntimePlanLowerError::new(format!(
-                "formatter content template {} is invalid: {error}",
-                template.id()
+                "content template {id} is invalid: {error}"
             )));
         }
     }
-    let mut template_ids = BTreeSet::new();
-    context
-        .facts
-        .visit_dialogue_content_fragments(&mut |_, fragment| {
-            template_ids.insert(fragment.template().id());
-        });
-    template_ids.extend(
-        context
-            .facts
-            .format_templates()
-            .map(|fact| fact.template().id()),
-    );
     let plain_text_context_template = if needs_plain_text_context_template(context.facts) {
         match arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(
-            template_ids.len(),
+            template_count,
         ) {
             Some(id) => match DialogueContentFragmentTemplate::plain_text_context(id) {
                 Ok(template) => {
