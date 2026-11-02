@@ -11,6 +11,10 @@ use thiserror::Error;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PresentationImage {
+    /// Execution occurrence, separate from the authored metadata ID below.
+    /// Catalog definitions have no occurrence until instantiated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub occurrence: Option<arcweft_id::presentation::PresentationHandleId>,
     pub id: String,
     pub asset: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -42,6 +46,18 @@ pub struct PresentationImage {
     pub proxies: Vec<PresentationImageProxy>,
     #[serde(default = "default_true")]
     pub visible: bool,
+}
+
+impl PresentationImage {
+    /// Exact identity consumed by scene/render/capture tables. Definitions use
+    /// their authored identity; a live instance uses its issued occurrence.
+    #[must_use]
+    pub fn object_id(&self) -> &str {
+        match &self.occurrence {
+            Some(occurrence) => occurrence.as_str(),
+            None => &self.id,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

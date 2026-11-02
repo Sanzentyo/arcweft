@@ -16,6 +16,7 @@ arcweft-interaction-model = { workspace = true }
 arcweft-id = { workspace = true }
 arcweft-save = { workspace = true }
 arcweft-layout.workspace = true
+arcweft-primitives.workspace = true
 arcweft-manifest-model = { workspace = true }
 arcweft-presentation = { workspace = true }
 arcweft-render-text = { workspace = true }

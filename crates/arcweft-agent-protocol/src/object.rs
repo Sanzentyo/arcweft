@@ -139,6 +139,9 @@ impl AgentObservedObjectContent {
 /// Image-specific payload for an observed image presentation object.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct AgentObservedImageContent {
+    /// Exact execution occurrence when the source is a live resource.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub occurrence: Option<arcweft_id::presentation::PresentationHandleId>,
     pub source: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object: Option<String>,

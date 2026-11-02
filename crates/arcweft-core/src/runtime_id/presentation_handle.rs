@@ -76,6 +76,36 @@ impl RuntimePresentationHandleToken {
         self.bank
     }
 
+    /// Stable display occurrence identity for this exact issuance. Authored
+    /// resource IDs remain metadata and never replace this identity. The
+    /// projection is inert: it cannot reconstruct a token or access custody.
+    pub fn presentation_id(&self) -> arcweft_id::presentation::PresentationHandleId {
+        let mut hash = blake3::Hasher::new();
+        hash.update(b"arcweft.presentation.occurrence.v1\0");
+        hash.update(self.artifact.as_bytes());
+        hash.update(&[self.resource.semantic_tag()]);
+        hash.update(&self.execution.get().get().to_le_bytes());
+        hash.update(&self.fiber.get().to_le_bytes());
+        hash.update(&self.issuance.get().to_le_bytes());
+        match self.bank {
+            RuntimePresentationBankId::Root => {
+                hash.update(&[0]);
+            }
+            RuntimePresentationBankId::Dialogue { activation } => {
+                hash.update(&[1]);
+                hash.update(activation.artifact().as_bytes());
+                hash.update(&activation.owner_fiber().get().to_le_bytes());
+                hash.update(&activation.content().get().get().to_le_bytes());
+                hash.update(&activation.occurrence().to_le_bytes());
+            }
+        }
+        arcweft_id::presentation::PresentationHandleId::try_new(format!(
+            "handle.resource.{}",
+            hash.finalize().to_hex()
+        ))
+        .expect("the fixed occurrence prefix and lowercase hex satisfy the shared identity grammar")
+    }
+
     /// The canonical value envelope is independent of Native/AWBC storage.
     pub fn encode_payload(&self) -> RuntimeValue {
         RuntimeValue::Tuple(vec![
@@ -157,6 +187,55 @@ mod tests {
             NonZeroU64::new(1).unwrap(),
             RuntimePresentationBankId::Root,
         )
+    }
+
+    #[test]
+    fn display_occurrences_distinguish_every_issuance_coordinate_after_wire_roundtrip() {
+        use super::super::{DialogueActivationId, RuntimeDialogueContentPlanId};
+        use std::num::NonZeroU32;
+        let original = token();
+        let mut candidates = Vec::new();
+        for resource in PresentationResourceKind::ALL {
+            let mut candidate = original.clone();
+            candidate.resource = resource;
+            candidates.push(candidate);
+        }
+        let mut candidate = original.clone();
+        candidate.artifact = RuntimeArtifactFingerprint::try_from_bytes([8; 32]).unwrap();
+        candidates.push(candidate);
+        let mut candidate = original.clone();
+        candidate.execution = ExecutionInstanceId::from_allocated(NonZeroU64::new(4).unwrap());
+        candidates.push(candidate);
+        let mut candidate = original.clone();
+        candidate.fiber = RuntimePersistentFiberId::from_allocated(1);
+        candidates.push(candidate);
+        let mut candidate = original.clone();
+        candidate.issuance = NonZeroU64::new(2).unwrap();
+        candidates.push(candidate);
+        for (fiber, content, occurrence) in [(0, 1, 0), (1, 1, 0), (0, 2, 0), (0, 1, 1)] {
+            let mut candidate = original.clone();
+            candidate.bank = RuntimePresentationBankId::Dialogue {
+                activation: DialogueActivationId::new(
+                    original.artifact,
+                    RuntimePersistentFiberId::from_allocated(fiber),
+                    RuntimeDialogueContentPlanId::from_accepted_ordinal(
+                        NonZeroU32::new(content).unwrap(),
+                    ),
+                    occurrence,
+                ),
+            };
+            candidates.push(candidate);
+        }
+        let mut identities = std::collections::BTreeSet::new();
+        for candidate in candidates {
+            let identity = candidate.presentation_id();
+            assert!(identities.insert(identity.clone()));
+            let decoded =
+                RuntimePresentationHandleToken::try_decode_payload(&candidate.encode_payload())
+                    .unwrap();
+            assert_eq!(decoded.presentation_id(), identity);
+        }
+        assert_eq!(identities.len(), 16);
     }
 
     #[test]

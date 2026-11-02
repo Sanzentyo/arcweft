@@ -368,6 +368,7 @@ fn image_object_decode_requires_explicit_image_values_and_validates_alignment() 
 
 fn fixture_image_object() -> PresentationImage {
     PresentationImage {
+        occurrence: None,
         id: "image.hero.logo".to_owned(),
         asset: "asset.view.logo".to_owned(),
         target: Some("target.hero.logo".to_owned()),

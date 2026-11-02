@@ -219,6 +219,7 @@ impl<'a> From<&'a RuntimeValue> for RuntimeBorrowedValue<'a> {
         }
     }
 }
+
 impl<'a> From<&'a RuntimeOpaqueValue> for RuntimeBorrowedValue<'a> {
     fn from(value: &'a RuntimeOpaqueValue) -> Self {
         Self {

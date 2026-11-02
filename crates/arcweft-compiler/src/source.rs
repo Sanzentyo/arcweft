@@ -120,6 +120,7 @@ pub fn compile_source_with_env_and_control(
     )
     .expect("runtime projection already validated the same immutable Character inputs");
     Ok(CompiledSource {
+        compilation: Arc::clone(&compiled_project),
         plan: report.plan.clone(),
         dialogue_content: report.dialogue_content_catalog.clone(),
         dialogue_profile: compiled_project.dialogue_profile().clone(),

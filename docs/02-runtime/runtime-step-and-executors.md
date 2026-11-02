@@ -35,6 +35,24 @@ contract is defined in [`executor.rs`](../../crates/arcweft-core/src/executor.rs
 
 ## Executors
 
+Presentation adapters borrow `RuntimePresentationFrame` from the actual Engine,
+Product AWBC executor or executor facade. Admission checks the complete live
+resource count before exposing references. The frame borrows the original bank
+records, slot addresses, visibility overrides and resource bodies in stable
+bank/issuance order. Retired and displaced bodies are absent. The borrow prevents
+execution or restore from changing custody while a projection is being read;
+the frame has no wire constructor and issues no grant.
+
+The portable driver derives its presentation from those records. It does not
+replay string calls into another Handle lifecycle table. View construction
+retains the checked declaration identity, supplied parameter ordinals and omitted
+defaults. The bundle joins that identity to its accepted View definition. Before
+copying View inputs, one retained allowance checks all bodies against their
+original Source and type instantiation, including callback captures. A resource
+carrier remains affine even when its immutable input body permits Copy.
+Session save and staged restore compare projected handles, images and viewport
+selection with the exact executor and retained View frame before committing.
+
 All tiers use the same typed step input, options, and result contract, owned by
 [`step.rs`](../../crates/arcweft-core/src/step.rs). The facade also accepts an
 adapter-provided `RuntimeCallBackend` for pure helper acceleration, keeping

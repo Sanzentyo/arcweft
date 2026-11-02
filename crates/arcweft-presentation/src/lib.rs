@@ -334,6 +334,20 @@ impl BackgroundSlotAddress {
     }
 }
 
+impl TryFrom<PresentationSlotAddress> for BackgroundSlotAddress {
+    type Error = PresentationSlotAddressError;
+
+    fn try_from(address: PresentationSlotAddress) -> Result<Self, Self::Error> {
+        if address.resource() != PresentationResourceKind::Background {
+            return Err(PresentationSlotAddressError::Slot {
+                resource: PresentationResourceKind::Background,
+            });
+        }
+        address.validate()?;
+        Ok(Self { address })
+    }
+}
+
 impl PresentationSlot {
     pub const fn new(id: PublicId) -> Self {
         Self { id }

@@ -4,6 +4,7 @@ use super::{
     AgentImageFrameStore, AgentObservedObject, ExitCode, HitRect, NativeAgentRuntimeState,
     PlayerPreparedFrame, PreparedFrame, PreparedTextObservationOwner, agent_object_id_color,
 };
+use arcweft_agent_protocol::object::AgentObservedObjectContent;
 use arcweft_agent_protocol::rich_text::{AgentRichTextElementKind, AgentRichTextElementRef};
 use arcweft_agent_protocol::text_context::{
     AgentTextBodyCapture, AgentTextContextCatalog, AgentTextContextContent, AgentTextContextError,
@@ -423,11 +424,17 @@ fn player_capture_region_order(
     source_index: usize,
 ) -> (u8, usize, PlayerTextCapturePaintOrder, usize) {
     if object.role == "image" {
-        let image_index = object
-            .entity
-            .as_deref()
-            .and_then(|entity| prepared.images.iter().position(|image| image.id == entity))
-            .unwrap_or(source_index);
+        let image_index = match &object.content {
+            AgentObservedObjectContent::Image(content) => {
+                let id = content
+                    .occurrence
+                    .as_ref()
+                    .map_or(content.source.as_str(), |id| id.as_str());
+                prepared.images.iter().position(|image| image.id == id)
+            }
+            _ => None,
+        }
+        .unwrap_or(source_index);
         return (
             0,
             image_index,

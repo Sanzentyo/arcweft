@@ -75,6 +75,7 @@ impl BundleImageCatalog {
     ) -> Result<Vec<RenderImage>, BundleImageCatalogError> {
         objects
             .iter()
+            .filter(|object| object.visible)
             .map(|object| self.render_image(object, elapsed_millis, viewport))
             .collect()
     }
@@ -102,7 +103,7 @@ impl BundleImageCatalog {
             })?;
         let placement = render_placement(object, viewport)?;
         Ok(RenderImage {
-            id: object.id.clone(),
+            id: object.object_id().to_owned(),
             frame: RenderImageFrame {
                 index: usize::try_from(frame.index()).ok(),
                 width: frame.dimensions().width(),

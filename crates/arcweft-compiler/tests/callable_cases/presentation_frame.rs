@@ -49,6 +49,14 @@ impl Seen {
         let mut first = None;
         let mut second = None;
         for resource in frame.resources() {
+            let _original_program = resource.value().program_owner();
+            assert_eq!(
+                resource
+                    .value()
+                    .copy_unrestricted_body(RuntimeSchemaLimits::engine_default())
+                    .unwrap(),
+                *resource.value().body(),
+            );
             let call = resource.value().layout().factory().expect("source factory");
             let RuntimeValue::Tuple(values) = resource.value().body() else {
                 panic!("original input tuple")

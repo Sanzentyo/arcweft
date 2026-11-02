@@ -158,7 +158,6 @@ fn frame_borrows_original_bodies_in_bank_and_issuance_order() {
         assert!(
             resource
                 .value()
-                .source()
                 .program_owner()
                 .same_program(&fixture.program)
         );
@@ -337,7 +336,6 @@ fn admitted_restore_preserves_projected_identity_body_and_visibility() {
     assert!(
         resource
             .value()
-            .source()
             .program_owner()
             .same_program(&fixture.program)
     );

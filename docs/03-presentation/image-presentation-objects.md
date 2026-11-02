@@ -11,7 +11,16 @@ frame timing.
 The source surface uses ordinary factory calls that return a typed
 `Handle<ImageSurface>`. Asset identities come from the selected asset catalog.
 An `id` supplies presentation metadata on the created value; it does not
-declare another source entity or replace the issued handle's identity:
+declare another source entity or replace the issued handle's identity.
+
+Live instances carry a separate `occurrence` using the shared
+`PresentationHandleId`. Core derives it from the complete original token:
+artifact, resource family, execution, fiber, issuance and bank. Two live
+instances with the same authored `id` retain separate occurrences. Catalog
+definitions have no execution occurrence until instantiated. Scene, render and
+capture tables address the occurrence; authored image metadata stays in `id`.
+Agent image content preserves its metadata `source`/`object` and reports the
+same typed `occurrence` separately.
 
 ```arcw
 let room = bg(@asset:.bg.room)

@@ -14,6 +14,8 @@ mod owner;
 mod owner_tests;
 mod part;
 mod replacement;
+mod roots;
+pub use roots::BundleViewRootInput;
 mod snapshot;
 pub(crate) use snapshot::BundleViewRuntimeSaveSnapshot;
 mod style_scope;

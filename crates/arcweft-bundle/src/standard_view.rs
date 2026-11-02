@@ -132,6 +132,7 @@ pub fn dialogue_program() -> ViewProgramResource {
                 value_slot: None,
                 default_program: None,
             }],
+            construction_identity: None,
             parameter_contract: None,
             state_schema_hash: 0x5354_4444_4941_4c47,
         }],

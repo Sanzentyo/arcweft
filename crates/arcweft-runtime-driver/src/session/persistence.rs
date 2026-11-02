@@ -115,6 +115,51 @@ impl<'a> SessionRestoreValueValidator<'a> {
 }
 
 impl BundleSession {
+    /// The wire projection cannot manufacture a second presentation authority.
+    /// Both live save and staged restore compare it with the exact executor.
+    fn validate_execution_presentation(
+        &self,
+        executor: &super::ArcweftRuntimeExecutor,
+        presentation: &BundlePresentationSnapshot,
+    ) -> Result<(), BundleSessionSaveError> {
+        let reject = |message| BundleSessionSaveError::Presentation { message };
+        let frame = executor
+            .presentation_frame(arcweft_core::entry::RuntimeSchemaLimits::engine_default())
+            .map_err(|error| reject(error.to_string()))?;
+        let projection = crate::presentation_projection::PresentationProjection::try_new(
+            frame,
+            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+        )
+        .map_err(|error| reject(error.to_string()))?;
+        let images = if self.view_runtime.has_program() {
+            project_view_resources(
+                &presentation.view,
+                &ViewProjectionInput {
+                    executable_definitions: &self.view_runtime.definition_ids(),
+                    current_images: &projection.images,
+                    current_text_inputs: &presentation.text_inputs,
+                    images: &self.image_objects,
+                    text_inputs: &self.text_inputs,
+                    action_buttons: &self.action_buttons,
+                    scroll_regions: &self.scroll_regions,
+                    surfaces: &self.surfaces,
+                    focus_groups: &self.focus_groups,
+                    focus_navigation: &self.focus_navigation,
+                },
+            )
+            .images
+        } else {
+            projection.images
+        };
+        if presentation.presentation_handles != projection.handles
+            || presentation.images != images
+            || presentation.viewport_fit != projection.viewport_fit
+        {
+            return Err(reject("saved display resources differ from the original execution custody and retained View frame".to_owned()));
+        }
+        Ok(())
+    }
+
     /// Starts a fresh foreground entry on the currently committed active generation.
     pub fn start_foreground_entry_on_current_generation(
         &mut self,
@@ -174,6 +219,7 @@ impl BundleSession {
             )
             .map_err(|message| BundleSessionSaveError::TaskDispatch { message })?;
         validate_presentation_snapshot(&self.presentation, &self.fx_definitions)?;
+        self.validate_execution_presentation(&self.executor, &self.presentation)?;
         self.validate_presentation_runtime_context(&self.presentation)?;
         validate_dialogue_content_frames(&self.dialogue_content, &self.presentation)?;
         validate_dialogue_view_save_point(&self.view_runtime, &self.presentation)?;
@@ -594,6 +640,7 @@ impl BundleSession {
             }
         };
         let restored = (|| -> Result<_, BundleSessionSaveError> {
+            self.validate_execution_presentation(&restored_executor, &snapshot.presentation)?;
             let restored_launches = restored_executor.restartable_dispatches();
             let restored_tasks = RuntimeTaskRegistry::restore_restartable(
                 &restartable_tasks,

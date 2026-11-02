@@ -1648,6 +1648,7 @@ fn cli_main_entry() -> arcweft_core::plan::RuntimeEntrySpec {
 
 fn fixture_image_object() -> PresentationImage {
     PresentationImage {
+        occurrence: None,
         id: "sprite.object".to_owned(),
         asset: "sprite".to_owned(),
         target: None,

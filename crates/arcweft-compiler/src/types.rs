@@ -8,6 +8,7 @@ use std::sync::Arc;
 /// Source compilation result shared by developer tooling and player hosts.
 #[derive(Clone)]
 pub struct CompiledSource {
+    pub(crate) compilation: Arc<crate::project::CompiledProject>,
     pub plan: arcweft_core::plan::RuntimePlan,
     pub dialogue_content: DialogueContentCatalog,
     pub dialogue_profile: crate::project::CheckedDialogueProfile,
@@ -23,6 +24,14 @@ pub struct CompiledSource {
     pub style: crate::style::CompiledViewStyleArtifact,
     pub fx_definitions: Arc<[FxDefinition]>,
     pub runtime_plan_stats: RuntimePlanLowerStats,
+}
+
+impl CompiledSource {
+    /// Borrows the complete accepted View product, including its text catalog,
+    /// from the original compiler transaction retained by this source result.
+    pub fn view_product(&self) -> &crate::view::CompiledViewProduct {
+        self.compilation.view_product()
+    }
 }
 
 /// Agent controller bundle compilation result.

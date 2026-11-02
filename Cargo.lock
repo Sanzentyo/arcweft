@@ -1526,6 +1526,7 @@ dependencies = [
  "arcweft-layout",
  "arcweft-manifest-model",
  "arcweft-presentation",
+ "arcweft-primitives",
  "arcweft-render-text",
  "arcweft-resource-manifest",
  "arcweft-resource-model",

@@ -850,12 +850,7 @@ impl BundleSession {
         let mut requested_host_calls =
             self.publish_and_acknowledge_root_commands(&root_commands, &mut diagnostics);
         let previous_text_inputs = self.presentation.text_inputs.clone();
-        self.update_presentation_snapshot(
-            &display,
-            &result.fiber_status,
-            &line_effects,
-            &mut diagnostics,
-        );
+        self.update_presentation_snapshot(&display, &result.fiber_status, &mut diagnostics);
         let view_pure_before = pure_backend.stats();
         self.update_view_presentation(
             &view_bindings,
@@ -1037,16 +1032,24 @@ impl BundleSession {
         &mut self,
         display: &DisplayResolution,
         status: &FlowFiberStatus,
-        line_effects: &[LineEffectRequest],
         diagnostics: &mut Vec<String>,
     ) {
         let previous_dialogue_fx = self.presentation.dialogue.clone();
+        let frame = match self
+            .executor
+            .presentation_frame(arcweft_core::entry::RuntimeSchemaLimits::engine_default())
+        {
+            Ok(frame) => frame,
+            Err(error) => {
+                diagnostics.push(error.to_string());
+                return;
+            }
+        };
         let presentation_handle_diagnostics = match self.presentation.update(
             display,
             status,
-            line_effects,
+            frame,
             BundlePresentationResources {
-                image_objects: &self.image_objects,
                 text_inputs: &self.text_inputs,
                 action_buttons: &self.action_buttons,
                 scroll_regions: &self.scroll_regions,
@@ -1145,8 +1148,18 @@ impl BundleSession {
                     .map(|application| application.identity.instance())
             })
             .collect::<std::collections::BTreeSet<_>>();
+        let source_frame = match self
+            .executor
+            .presentation_frame(arcweft_core::entry::RuntimeSchemaLimits::engine_default())
+        {
+            Ok(frame) => frame,
+            Err(error) => {
+                diagnostics.push(error.to_string());
+                return;
+            }
+        };
         let mut frame = self.view_runtime.evaluate_with_dialogue_and_backend(
-            &self.presentation.presentation_handles,
+            crate::view_runtime::BundleViewRootInput::Execution(source_frame),
             &self.presentation.dialogue.view_inputs(),
             bindings,
             self.environment.effective().reduced_motion(),

@@ -792,102 +792,62 @@ fn restored_dialogue_action_button_requires_sealed_mount_provenance() {
 }
 
 #[test]
-fn presentation_handle_save_load_restores_lifecycle_table() {
+fn presentation_save_rejects_a_forged_resource_outside_execution_custody() {
     let bytes = product_awfb_bytes("entry.main");
     let mut session = product_session_from_bytes(&bytes);
     session.step_with_clock(
         RuntimeClockStep::from_millis(1, 16).expect("clock"),
         BundleStepInput::default(),
     );
-    let mut snapshot = session.snapshot_session().expect("snapshot exports");
-    let mut expected = session
-        .snapshot_session()
-        .expect("independent expected snapshot");
-    for presentation in [&mut snapshot.presentation, &mut expected.presentation] {
-        presentation.revision = 7;
-        presentation.presentation_handle_epoch = 2;
-        presentation.presentation_handles = vec![view_handle(
-            "handle.flow.feedback.panel",
-            PresentationResourceState::Hidden,
-            1,
-            2,
-        )];
+    for state in [
+        PresentationResourceState::Mounted,
+        PresentationResourceState::Hidden,
+    ] {
+        let before = session
+            .snapshot_session()
+            .expect("actual executor snapshot");
+        let mut forged = session.snapshot_session().expect("candidate snapshot");
+        forged.presentation.presentation_handles = vec![view_handle("handle.forged", state)];
+        assert!(matches!(
+            session.restore_session_snapshot(forged),
+            Err(BundleSessionSaveError::Presentation { .. })
+        ));
+        assert_eq!(
+            session.snapshot_session().unwrap(),
+            before,
+            "rejection keeps the original executor and presentation"
+        );
     }
-
-    session
-        .restore_session_snapshot(snapshot)
-        .expect("snapshot restores");
-    assert_eq!(session.presentation(), &expected.presentation);
-
-    let save = session
-        .export_session_save_bytes()
-        .expect("session save exports presentation handles");
+    let expected = session.snapshot_session().unwrap();
+    let save = session.export_session_save_bytes().unwrap();
     let mut restored = product_session_from_bytes(&bytes);
     restored
         .import_session_save_bytes(&save, &arcweft_save::SaveDecodeOptions::default())
-        .expect("session save imports presentation handles");
-
-    assert_eq!(restored.presentation(), &expected.presentation);
+        .unwrap();
+    assert_eq!(restored.snapshot_session().unwrap(), expected);
 }
 
 #[test]
-fn presentation_handle_rollback_restores_tombstones() {
+fn presentation_rollback_rejects_forged_tombstones_without_replacing_live_state() {
     let bytes = product_awfb_bytes("entry.main");
     let mut session = product_session_from_bytes(&bytes);
-    let mut live = session.snapshot_session().expect("live snapshot exports");
-    live.presentation.presentation_handle_epoch = 1;
-    live.presentation.presentation_handles = vec![view_handle(
-        "handle.flow.feedback.panel",
-        PresentationResourceState::Mounted,
-        1,
-        1,
-    )];
-    let released_snapshot = || {
-        let mut snapshot = session
+    for state in [
+        PresentationResourceState::Released,
+        PresentationResourceState::Destroyed,
+        PresentationResourceState::Unmounted,
+    ] {
+        let before = session
             .snapshot_session()
-            .expect("independent released snapshot");
-        snapshot.presentation.presentation_handle_epoch = 2;
-        snapshot.presentation.presentation_handles = vec![view_handle(
-            "handle.flow.feedback.panel",
-            PresentationResourceState::Released,
-            1,
-            2,
-        )];
-        snapshot
-    };
-    let released = released_snapshot();
-    let expected_released = released_snapshot();
-
-    session
-        .restore_session_snapshot(live)
-        .expect("live snapshot restores");
-    assert_eq!(
-        session.presentation().presentation_handles[0].state,
-        PresentationResourceState::Mounted
-    );
-
-    session
-        .restore_session_snapshot(released)
-        .expect("released snapshot restores");
-    assert_eq!(
-        session.presentation().presentation_handles[0].state,
-        PresentationResourceState::Released
-    );
-    assert_eq!(
-        session.presentation().presentation_handles[0].updated_epoch,
-        2
-    );
-
-    let save = session
-        .export_session_save_bytes()
-        .expect("released handle save exports");
-    let mut restored = product_session_from_bytes(&bytes);
-    restored
-        .import_session_save_bytes(&save, &arcweft_save::SaveDecodeOptions::default())
-        .expect("released handle save imports");
-    assert_eq!(restored.presentation(), &expected_released.presentation);
+            .expect("actual executor snapshot");
+        let mut forged = session.snapshot_session().expect("candidate snapshot");
+        forged.presentation.presentation_handles = vec![view_handle("handle.forged", state)];
+        assert!(matches!(
+            session.restore_session_snapshot(forged),
+            Err(BundleSessionSaveError::Presentation { .. })
+        ));
+        assert_eq!(session.snapshot_session().unwrap(), before);
+    }
 }
-
 #[test]
 fn awbc_save_load_preserves_cleanup_stacks() {
     let mut program = minimal_awbc_program("entry.main");
@@ -2179,12 +2139,7 @@ fn fx_definition() -> FxDefinition {
     .expect("Fx definition")
 }
 
-fn view_handle(
-    id: &str,
-    state: PresentationResourceState,
-    created_epoch: u64,
-    updated_epoch: u64,
-) -> PresentationHandleRecord {
+fn view_handle(id: &str, state: PresentationResourceState) -> PresentationHandleRecord {
     PresentationHandleRecord::new(
         PresentationHandleId::try_new(id).expect("valid handle id"),
         PresentationResourceKind::View,
@@ -2194,7 +2149,6 @@ fn view_handle(
         Some("layer.view".to_owned()),
         1_500,
     )
-    .with_epochs(created_epoch, updated_epoch)
 }
 
 fn cleanup(program: &AwbcProgram, key: &str, value: &str) -> FiberScopeCleanup {

@@ -21,10 +21,10 @@ use super::value::{fx_placeholder, runtime_to_fx};
 use super::{
     BundleViewDiagnostic, BundleViewDiagnosticCode, BundleViewEventBinding, BundleViewFrame,
     BundleViewFxApplication, BundleViewFxArgument, BundleViewInstancePath,
-    BundleViewInstancePathSegment, BundleViewMountOutput, BundleViewPaintItem, BundleViewRuntime,
-    BundleViewTextOutput, MountedView, MountedViewExecutionLocal, MountedViewHandlerInput,
-    MountedViewHandlerKey, MountedViewHandlerPublication, MountedViewHandlerSeal,
-    PublishedViewEventToken, RuntimeDialogueActionToken, ViewOccurrenceKey,
+    BundleViewInstancePathSegment, BundleViewMountOutput, BundleViewPaintItem, BundleViewRootInput,
+    BundleViewRuntime, BundleViewTextOutput, MountedView, MountedViewExecutionLocal,
+    MountedViewHandlerInput, MountedViewHandlerKey, MountedViewHandlerPublication,
+    MountedViewHandlerSeal, PublishedViewEventToken, RuntimeDialogueActionToken, ViewOccurrenceKey,
     ViewProgramRuntimeAuthority, deterministic_mount_seed, mount_scoped_interaction_target,
 };
 use crate::dialogue::DialogueViewInput;
@@ -405,7 +405,7 @@ impl BundleViewRuntime {
     ) -> BundleViewFrame {
         let mut backend = VmRuntimePureCallBackend::default();
         self.evaluate_with_dialogue_and_backend(
-            handles,
+            BundleViewRootInput::Descriptions(handles),
             &[],
             bindings,
             reduce_motion,
@@ -428,7 +428,7 @@ impl BundleViewRuntime {
     ) -> BundleViewFrame {
         let mut backend = VmRuntimePureCallBackend::default();
         self.evaluate_with_dialogue_and_backend(
-            handles,
+            BundleViewRootInput::Descriptions(handles),
             dialogue,
             bindings,
             reduce_motion,
@@ -444,15 +444,33 @@ impl BundleViewRuntime {
     )]
     pub fn evaluate_with_dialogue_and_backend<'a, B: RuntimeCallBackend>(
         &mut self,
-        handles: &[PresentationHandleRecord],
+        roots: BundleViewRootInput<'_>,
         dialogue: &'a [DialogueViewInput<'a>],
         bindings: &[RuntimeBinding],
         reduce_motion: bool,
         format_context: &RuntimeFormatContext,
         pure_backend: &mut B,
     ) -> BundleViewFrame {
+        let handles = match roots.handles() {
+            Ok(handles) => handles,
+            Err(error) => {
+                return BundleViewFrame {
+                    mounts: Vec::new(),
+                    diagnostics: vec![BundleViewDiagnostic {
+                        code: BundleViewDiagnosticCode::InputType,
+                        handle: None,
+                        mount: None,
+                        view: None,
+                        instruction: None,
+                        message: error.to_string(),
+                    }],
+                };
+            }
+        };
+        let handles = handles.as_ref();
         let ingress = (|| {
             let mut admission = self.retained_value_admission();
+            roots.admit(&mut admission, self.catalog.as_ref())?;
             self.admit_retained_metadata(&mut admission)?;
             admission.validate_metadata_string(format_context.active_locale().as_str())?;
             admission.validate_metadata_collection(bindings.len())?;
@@ -465,7 +483,7 @@ impl BundleViewRuntime {
             {
                 admission.validate(value)?;
             }
-            Ok::<(), arcweft_core::value::AwbcRuntimeValueSnapshotError>(())
+            Ok::<(), crate::presentation_projection::PresentationProjectionError>(())
         })();
         if let Err(error) = ingress {
             return BundleViewFrame {
@@ -602,7 +620,23 @@ impl BundleViewRuntime {
                 handle: handle.id.clone(),
                 path: BundleViewInstancePath::default(),
             };
-            match evaluator.prepare_occurrence(&key, definition_index, None) {
+            let arguments = match roots.arguments(&handle.id) {
+                Ok(arguments) => arguments,
+                Err(error) => {
+                    evaluator.record_failure(
+                        &key,
+                        &view,
+                        None,
+                        EvaluationFailure::new(
+                            BundleViewDiagnosticCode::InputType,
+                            None,
+                            error.to_string(),
+                        ),
+                    );
+                    continue;
+                }
+            };
+            match evaluator.prepare_occurrence(&key, definition_index, arguments) {
                 Ok(()) => {
                     evaluator.visited.insert(key.clone());
                 }

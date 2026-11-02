@@ -339,6 +339,23 @@ impl ViewProgramResource {
     ) -> Result<(), SectionCodecError> {
         let definitions = self.validate_application_bindings()?;
         self.validate_handlers()?;
+        for intrinsic in &program.intrinsics {
+            let arcweft_core::value::RuntimeCallTarget::PresentationView(call) =
+                &intrinsic.identity
+            else {
+                continue;
+            };
+            let definition = definitions.get(call.view().as_str()).ok_or(
+                SectionCodecError::NonCanonicalTable("view_construction_owner"),
+            )?;
+            if definition.construction_identity != Some(call.definition())
+                || definition.parameters.len() != call.parameters() as usize
+            {
+                return Err(SectionCodecError::NonCanonicalTable(
+                    "view_construction_abi",
+                ));
+            }
+        }
         let bindings = program
             .pure_programs
             .iter()

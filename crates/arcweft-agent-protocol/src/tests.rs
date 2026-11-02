@@ -1230,6 +1230,7 @@ fn generic_image_object_metadata_does_not_require_rich_text_ref() {
 
 fn test_observed_image_content() -> AgentObservedImageContent {
     AgentObservedImageContent {
+        occurrence: None,
         source: "view.image.7".to_owned(),
         object: Some("image.logo".to_owned()),
         target: Some("target.logo".to_owned()),

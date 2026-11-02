@@ -538,22 +538,6 @@ pub(crate) fn validate_presentation_snapshot(
                 message: format!("duplicate presentation handle `{}`", handle.id),
             });
         }
-        if handle.created_epoch > handle.updated_epoch {
-            return Err(BundleSessionSaveError::Presentation {
-                message: format!(
-                    "presentation handle `{}` has created_epoch {} after updated_epoch {}",
-                    handle.id, handle.created_epoch, handle.updated_epoch
-                ),
-            });
-        }
-        if handle.updated_epoch > snapshot.presentation_handle_epoch {
-            return Err(BundleSessionSaveError::Presentation {
-                message: format!(
-                    "presentation handle `{}` updated at epoch {} beyond table epoch {}",
-                    handle.id, handle.updated_epoch, snapshot.presentation_handle_epoch
-                ),
-            });
-        }
     }
     Ok(())
 }

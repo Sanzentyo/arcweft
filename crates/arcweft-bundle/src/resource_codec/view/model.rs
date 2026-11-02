@@ -331,6 +331,9 @@ pub struct ViewCallArgumentBindingRef {
 #[serde(deny_unknown_fields)]
 pub struct ViewDefinitionResource {
     pub public_id: ViewDefinitionRef,
+    /// Exact checked declaration callable from a retained Core View value.
+    /// Engine/host-only definitions have no Source construction authority.
+    pub construction_identity: Option<arcweft_core::presentation::RuntimePresentationViewIdentity>,
     pub body: ViewInstructionSpan,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub styles: Vec<ViewStyleApplicationTarget>,

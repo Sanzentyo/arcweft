@@ -4,13 +4,13 @@ use crate::dialogue::{
 };
 use crate::fx_runtime::{BundleFxRuntimeError, BundleFxRuntimeSnapshot};
 use crate::presentation_handles::{
-    PresentationHandleDiagnostic, PresentationHandleRecord, apply_presentation_handle_operations,
-    apply_presentation_image_handles, filter_presentation_action_buttons,
+    PresentationHandleDiagnostic, PresentationHandleRecord, filter_presentation_action_buttons,
     filter_presentation_focus_groups, filter_presentation_focus_navigation,
     filter_presentation_scroll_regions, filter_presentation_surfaces,
     filter_presentation_text_inputs, hidden_focus_diagnostics,
-    presentation_handle_operations_from_effects,
 };
+use crate::presentation_projection::PresentationProjection;
+pub use crate::presentation_projection::PresentationProjectionError;
 use crate::view_projection::ProjectedViewResources;
 use crate::view_runtime::BundleViewFrame;
 use arcweft_bundle::resource_codec::{
@@ -20,12 +20,12 @@ use arcweft_bundle::resource_codec::{
 use arcweft_character::presentation_name::{
     AcceptedCharacterPresentationCatalog, CharacterNameResolutionLocales,
 };
-use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
 use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::plan::{
     FlowEvent, RuntimeDialogueContentApplicationKey, RuntimeDialogueContentSlot,
     RuntimeDialogueValueBinding,
 };
+use arcweft_core::presentation::RuntimePresentationFrame;
 use arcweft_core::value::{
     RuntimeCharacterDialogueProducerId, RuntimeDialogueContentValue, RuntimeOpaqueValue,
     RuntimeValue,
@@ -35,16 +35,10 @@ use arcweft_dialogue::{
     CharacterDialogueRolePayloadCodec, CharacterDialogueRuntimeSchema, CharacterDialogueType,
 };
 use arcweft_id::{DeclarationIdentityFamily, LocaleTag};
-use arcweft_interaction_model::presentation::{
-    ImageObjectAlignment, ImageObjectFit, ImageObjectPlayback, ImageObjectTransform,
-};
-use arcweft_interaction_model::presentation::{PresentationImage, PresentationImageBounds};
+use arcweft_interaction_model::presentation::PresentationImage;
 use arcweft_layout::ScalePolicy;
-use arcweft_layout::stage_placement::{StageAnchor, StagePlacement, StageRect, StageSize};
 use arcweft_manifest_model::ProjectLocaleSpec;
-use arcweft_presentation::{
-    BackgroundSlotAddress, PresentationSlot, PresentationTarget, fx::FxDiagnostic,
-};
+use arcweft_presentation::fx::FxDiagnostic;
 use arcweft_render_text::{RuntimeLineContext, resolve_materialized_frame};
 use arcweft_text_model::{
     CharacterDialoguePresentationConfig, DialogueContentCatalog, DialogueContentFragmentTemplate,
@@ -55,9 +49,6 @@ use arcweft_view::{ViewStyleProgram, ViewStyleSheetId};
 use core::fmt;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-
-mod viewport;
-use viewport::viewport_fit_from_effects;
 
 /// Choice metadata shared by native and Web presentation hosts.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -305,46 +296,15 @@ pub enum DialogueRuntimeContextError {
 pub enum BundlePresentationUpdateError {
     #[error(transparent)]
     Dialogue(#[from] DialoguePresentationStoreError),
-    #[error("presentation command `{callee}` requires argument `{argument}`")]
-    MissingCommandArgument {
-        callee: &'static str,
-        argument: &'static str,
-    },
-    #[error(
-        "presentation command `{callee}` argument `{argument}` has invalid value `{value}`; expected {expected}"
-    )]
-    InvalidCommandArgument {
-        callee: &'static str,
-        argument: &'static str,
-        value: String,
-        expected: &'static str,
-    },
-}
-
-impl BundlePresentationUpdateError {
-    fn missing_argument(callee: &'static str, argument: &'static str) -> Self {
-        Self::MissingCommandArgument { callee, argument }
-    }
-
-    fn invalid_argument(
-        callee: &'static str,
-        argument: &'static str,
-        value: impl Into<String>,
-        expected: &'static str,
-    ) -> Self {
-        Self::InvalidCommandArgument {
-            callee,
-            argument,
-            value: value.into(),
-            expected,
-        }
-    }
+    #[error(transparent)]
+    Projection(#[from] PresentationProjectionError),
 }
 
 /// Current portable presentation state consumed by renderer adapters.
 ///
 /// This value is a diagnostic/render input model, not a DOM instruction set.
 #[derive(Clone, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 #[serde(bound(
     serialize = "F: Serialize + PartialEq",
     deserialize = "F: Deserialize<'de>"
@@ -354,8 +314,6 @@ pub struct BundlePresentationSnapshot<F = arcweft_text_model::LineDisplayFrame> 
     pub dialogue: DialoguePresentationStore<F>,
     pub choices: Vec<BundleChoice>,
     pub images: Vec<PresentationImage>,
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub presentation_handle_epoch: u64,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub presentation_handles: Vec<PresentationHandleRecord>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -389,7 +347,6 @@ impl<F> Default for BundlePresentationSnapshot<F> {
             dialogue: DialoguePresentationStore::default(),
             choices: Vec::new(),
             images: Vec::new(),
-            presentation_handle_epoch: 0,
             presentation_handles: Vec::new(),
             viewport_fit: None,
             text_inputs: Vec::new(),
@@ -439,7 +396,6 @@ impl<F> BundlePresentationSnapshot<F> {
             dialogue: self.dialogue.try_map_frames(&mut map)?,
             choices: self.choices,
             images: self.images,
-            presentation_handle_epoch: self.presentation_handle_epoch,
             presentation_handles: self.presentation_handles,
             viewport_fit: self.viewport_fit,
             text_inputs: self.text_inputs,
@@ -458,7 +414,6 @@ impl<F> BundlePresentationSnapshot<F> {
 /// Runtime resources that affect portable presentation state.
 #[derive(Clone, Copy)]
 pub(crate) struct BundlePresentationResources<'a> {
-    pub(crate) image_objects: &'a [PresentationImage],
     pub(crate) text_inputs: &'a [ViewRuntimeTextControl],
     pub(crate) action_buttons: &'a [ViewRuntimeActionButton],
     pub(crate) scroll_regions: &'a [ViewRuntimeScrollRegion],
@@ -637,29 +592,21 @@ impl BundlePresentationSnapshot {
         &mut self,
         resolution: &DisplayResolution,
         status: &FlowFiberStatus,
-        effects: &[LineEffectRequest],
+        frame: RuntimePresentationFrame<'_>,
         resources: BundlePresentationResources<'_>,
     ) -> Result<Vec<PresentationHandleDiagnostic>, BundlePresentationUpdateError> {
         let mut next_dialogue = self.dialogue.clone();
         next_dialogue.apply_operations(&resolution.dialogue_operations)?;
         next_dialogue.synchronize_waiting_activation(waiting_dialogue_activation(status))?;
         let next_choices = choices_from_status(status);
-        let (handle_operations, mut handle_diagnostics) =
-            presentation_handle_operations_from_effects(effects);
-        let mut next_presentation_handles = self.presentation_handles.clone();
-        let mut next_presentation_handle_epoch = self.presentation_handle_epoch;
-        handle_diagnostics.extend(apply_presentation_handle_operations(
-            &mut next_presentation_handles,
-            &mut next_presentation_handle_epoch,
-            &handle_operations,
-        ));
-        let mut next_images = images_from_effects(&self.images, effects, resources.image_objects)?;
-        apply_presentation_image_handles(
-            &mut next_images,
-            &next_presentation_handles,
-            resources.image_objects,
-        );
-        let next_viewport_fit = viewport_fit_from_effects(self.viewport_fit, effects)?;
+        let projection = PresentationProjection::try_new(
+            frame,
+            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+        )?;
+        let next_presentation_handles = projection.handles;
+        let next_images = projection.images;
+        let next_viewport_fit = projection.viewport_fit;
+        let mut handle_diagnostics = Vec::new();
         let next_text_inputs = filter_presentation_text_inputs(
             resources.text_inputs.to_vec(),
             &next_presentation_handles,
@@ -688,7 +635,6 @@ impl BundlePresentationSnapshot {
         if self.dialogue != next_dialogue
             || self.choices != next_choices
             || self.images != next_images
-            || self.presentation_handle_epoch != next_presentation_handle_epoch
             || self.presentation_handles != next_presentation_handles
             || self.viewport_fit != next_viewport_fit
             || self.text_inputs != next_text_inputs
@@ -702,7 +648,6 @@ impl BundlePresentationSnapshot {
             self.dialogue = next_dialogue;
             self.choices = next_choices;
             self.images = next_images;
-            self.presentation_handle_epoch = next_presentation_handle_epoch;
             self.presentation_handles = next_presentation_handles;
             self.viewport_fit = next_viewport_fit;
             self.text_inputs = next_text_inputs;
@@ -790,7 +735,6 @@ impl<F: fmt::Debug + Clone> fmt::Debug for BundlePresentationSnapshot<F> {
             .field("dialogue", &self.dialogue)
             .field("choices", &self.choices)
             .field("images", &self.images)
-            .field("presentation_handle_epoch", &self.presentation_handle_epoch)
             .field("presentation_handles", &self.presentation_handles)
             .field("viewport_fit", &self.viewport_fit)
             .field("text_inputs", &self.redacted_for_observation().text_inputs)
@@ -836,671 +780,6 @@ fn choices_from_status(status: &FlowFiberStatus) -> Vec<BundleChoice> {
             label: option.label.clone(),
         })
         .collect()
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum PresentationImageEffect {
-    Object(String),
-    InlineObject(Box<PresentationImage>),
-    Background(Box<PresentationImage>),
-    ClearBackground(String),
-}
-
-impl PresentationImageEffect {
-    fn from_call(call: &RuntimeCall) -> Result<Option<Self>, BundlePresentationUpdateError> {
-        match call.callee.as_str() {
-            "image" => image_effect_from_call(call),
-            "bg" => background_image_object(call)
-                .map(Box::new)
-                .map(Self::Background)
-                .map(Some),
-            "bg.clear" => background_slot_address(call, "bg.clear")
-                .map(|address| address.image_id().as_str().to_owned())
-                .map(Self::ClearBackground)
-                .map(Some),
-            _ => Ok(None),
-        }
-    }
-}
-
-fn image_effect_from_call(
-    call: &RuntimeCall,
-) -> Result<Option<PresentationImageEffect>, BundlePresentationUpdateError> {
-    if named_arg(&call.args, "asset").is_some() {
-        return inline_image_object(call)
-            .map(|object| Some(PresentationImageEffect::InlineObject(Box::new(object))));
-    }
-    let Some(argument) = call
-        .args
-        .first()
-        .filter(|argument| !argument.contains(" = "))
-        .map(String::as_str)
-        .or_else(|| named_arg(&call.args, "id"))
-    else {
-        return Err(BundlePresentationUpdateError::missing_argument(
-            "image",
-            "asset or id",
-        ));
-    };
-    public_id_arg(argument)
-        .filter(|id| id.starts_with("image."))
-        .map(PresentationImageEffect::Object)
-        .map(Some)
-        .ok_or_else(|| {
-            BundlePresentationUpdateError::invalid_argument(
-                "image",
-                "id",
-                argument,
-                "an `image.*` public ID or a complete inline image object",
-            )
-        })
-}
-
-fn images_from_effects(
-    previous: &[PresentationImage],
-    effects: &[LineEffectRequest],
-    image_objects: &[PresentationImage],
-) -> Result<Vec<PresentationImage>, BundlePresentationUpdateError> {
-    let mut active = previous.to_vec();
-    for effect in effects {
-        let LineEffectRequest::Call(call) = effect else {
-            continue;
-        };
-        let Some(effect) = PresentationImageEffect::from_call(call)? else {
-            continue;
-        };
-        match effect {
-            PresentationImageEffect::Object(id) => {
-                if let Some(object) = image_objects
-                    .iter()
-                    .find(|object| object.id == id && object.visible)
-                {
-                    upsert_image_object(&mut active, object.clone());
-                }
-            }
-            PresentationImageEffect::InlineObject(object) => {
-                if object.visible {
-                    upsert_image_object(&mut active, *object);
-                }
-            }
-            PresentationImageEffect::Background(object) => {
-                upsert_image_object(&mut active, *object);
-            }
-            PresentationImageEffect::ClearBackground(id) => {
-                active.retain(|object| object.id != id);
-            }
-        }
-        active.sort_by(|left, right| {
-            (left.depth_milli, &left.id).cmp(&(right.depth_milli, &right.id))
-        });
-    }
-    Ok(active)
-}
-
-fn upsert_image_object(active: &mut Vec<PresentationImage>, object: PresentationImage) {
-    if let Some(existing) = active.iter_mut().find(|existing| existing.id == object.id) {
-        *existing = object;
-    } else {
-        active.push(object);
-    }
-}
-
-fn named_arg<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
-    args.iter().find_map(|arg| {
-        let (arg_name, value) = arg.split_once(" = ")?;
-        (arg_name.trim() == name).then_some(value.trim())
-    })
-}
-
-fn public_id_arg(arg: &str) -> Option<String> {
-    let value = arg
-        .split_once(" = ")
-        .map_or(arg, |(_, value)| value)
-        .trim()
-        .trim_matches('"')
-        .trim_matches('\'');
-    let value = value.strip_prefix('@').unwrap_or(value);
-    let normalized = value.split_once(":.").map_or_else(
-        || value.to_owned(),
-        |(family, suffix)| format!("{family}.{suffix}"),
-    );
-    (!normalized.is_empty()
-        && normalized
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-')))
-    .then_some(normalized)
-}
-
-fn inline_image_object(
-    call: &RuntimeCall,
-) -> Result<PresentationImage, BundlePresentationUpdateError> {
-    let asset = named_arg(&call.args, "asset")
-        .and_then(public_id_arg)
-        .filter(|id| id.starts_with("asset."))
-        .ok_or_else(|| {
-            BundlePresentationUpdateError::invalid_argument(
-                "image",
-                "asset",
-                named_arg(&call.args, "asset").unwrap_or("<missing>"),
-                "an `asset.*` public ID",
-            )
-        })?;
-    let id_arg = named_arg(&call.args, "id")
-        .ok_or_else(|| BundlePresentationUpdateError::missing_argument("image", "id"))?;
-    let id = public_id_arg(id_arg)
-        .filter(|id| id.starts_with("image."))
-        .ok_or_else(|| {
-            BundlePresentationUpdateError::invalid_argument(
-                "image",
-                "id",
-                id_arg,
-                "an `image.*` public ID",
-            )
-        })?;
-    let bounds = PresentationImageBounds {
-        x_milli: required_image_coordinate(call, "x")?,
-        y_milli: required_image_coordinate(call, "y")?,
-        width_milli: required_image_extent(call, "width")?,
-        height_milli: required_image_extent(call, "height")?,
-    };
-    let placement = StagePlacement::absolute(StageRect::new(
-        bounds.x_milli,
-        bounds.y_milli,
-        bounds.width_milli,
-        bounds.height_milli,
-    ));
-    Ok(PresentationImage {
-        id,
-        asset,
-        target: optional_image_public_id(call, "target", "target.")?,
-        layer: optional_image_public_id(call, "layer", "layer.")?,
-        view: None,
-        containing_scroll_region: None,
-        bounds,
-        placement: Some(placement),
-        fit: presentation_image_fit_arg(call, "image", ImageObjectFit::Contain)?,
-        alignment: presentation_image_alignment_arg(call, "image")?,
-        playback: presentation_image_playback_arg(call, "image")?,
-        transform: image_transform_arg(call)?,
-        depth_milli: optional_image_argument(
-            call,
-            "depth",
-            0,
-            parse_depth_arg,
-            "a finite i32 milli-depth",
-        )?,
-        opacity_milli: presentation_opacity_arg(call, "image")?,
-        actions: Vec::new(),
-        params: std::collections::BTreeMap::default(),
-        proxies: Vec::new(),
-        visible: optional_image_argument(
-            call,
-            "visible",
-            true,
-            parse_bool_arg,
-            "`true` or `false`",
-        )?,
-    })
-}
-
-fn required_image_coordinate(
-    call: &RuntimeCall,
-    argument: &'static str,
-) -> Result<i32, BundlePresentationUpdateError> {
-    let value = named_arg(&call.args, argument)
-        .ok_or_else(|| BundlePresentationUpdateError::missing_argument("image", argument))?;
-    parse_px_milli(value).ok_or_else(|| {
-        BundlePresentationUpdateError::invalid_argument(
-            "image",
-            argument,
-            value,
-            "a finite logical-pixel coordinate",
-        )
-    })
-}
-
-fn required_image_extent(
-    call: &RuntimeCall,
-    argument: &'static str,
-) -> Result<u32, BundlePresentationUpdateError> {
-    let value = named_arg(&call.args, argument)
-        .ok_or_else(|| BundlePresentationUpdateError::missing_argument("image", argument))?;
-    parse_px_milli(value)
-        .and_then(|value| u32::try_from(value).ok())
-        .filter(|value| *value > 0)
-        .ok_or_else(|| {
-            BundlePresentationUpdateError::invalid_argument(
-                "image",
-                argument,
-                value,
-                "a finite positive logical-pixel extent",
-            )
-        })
-}
-
-fn optional_image_public_id(
-    call: &RuntimeCall,
-    argument: &'static str,
-    family: &'static str,
-) -> Result<Option<String>, BundlePresentationUpdateError> {
-    let Some(value) = named_arg(&call.args, argument) else {
-        return Ok(None);
-    };
-    public_id_arg(value)
-        .filter(|id| id.starts_with(family))
-        .map(Some)
-        .ok_or_else(|| {
-            BundlePresentationUpdateError::invalid_argument(
-                "image",
-                argument,
-                value,
-                match family {
-                    "target." => "a `target.*` public ID",
-                    "layer." => "a `layer.*` public ID",
-                    _ => "a public ID from the required family",
-                },
-            )
-        })
-}
-
-fn optional_image_argument<T: Copy>(
-    call: &RuntimeCall,
-    argument: &'static str,
-    default: T,
-    parse: impl FnOnce(&str) -> Option<T>,
-    expected: &'static str,
-) -> Result<T, BundlePresentationUpdateError> {
-    let Some(value) = named_arg(&call.args, argument) else {
-        return Ok(default);
-    };
-    parse(value).ok_or_else(|| {
-        BundlePresentationUpdateError::invalid_argument("image", argument, value, expected)
-    })
-}
-
-fn background_image_object(
-    call: &RuntimeCall,
-) -> Result<PresentationImage, BundlePresentationUpdateError> {
-    let asset_arg = call
-        .args
-        .first()
-        .filter(|arg| !arg.contains(" = "))
-        .map(String::as_str)
-        .or_else(|| named_arg(&call.args, "asset"))
-        .ok_or_else(|| BundlePresentationUpdateError::missing_argument("bg", "asset"))?;
-    let asset = public_id_arg(asset_arg)
-        .filter(|id| id.starts_with("asset."))
-        .ok_or_else(|| {
-            BundlePresentationUpdateError::invalid_argument(
-                "bg",
-                "asset",
-                asset_arg,
-                "an `asset.*` public ID",
-            )
-        })?;
-    let address = background_slot_address(call, "bg")?;
-    let id = address.image_id().as_str().to_owned();
-    let target = address.target().as_str().to_owned();
-    let bounds = PresentationImageBounds::try_from_px(0, 0, 1280, 720)
-        .expect("fixed image bounds fit milli-unit storage");
-    Ok(PresentationImage {
-        id,
-        asset,
-        target: Some(target),
-        layer: Some("layer.background".to_owned()),
-        view: None,
-        containing_scroll_region: None,
-        bounds,
-        placement: Some(StagePlacement::anchor(
-            StageAnchor::TopLeft,
-            StageAnchor::TopLeft,
-            StageSize::new(bounds.width_milli, bounds.height_milli),
-        )),
-        fit: presentation_image_fit_arg(call, "bg", ImageObjectFit::Cover)?,
-        alignment: presentation_image_alignment_arg(call, "bg")?,
-        playback: presentation_image_playback_arg(call, "bg")?,
-        transform: ImageObjectTransform::default(),
-        depth_milli: 0,
-        opacity_milli: presentation_opacity_arg(call, "bg")?,
-        actions: Vec::new(),
-        params: std::collections::BTreeMap::default(),
-        proxies: Vec::new(),
-        visible: true,
-    })
-}
-
-fn background_slot_address(
-    call: &RuntimeCall,
-    callee: &'static str,
-) -> Result<BackgroundSlotAddress, BundlePresentationUpdateError> {
-    let target = match named_arg(&call.args, "target") {
-        Some(value) => {
-            let target = public_id_arg(value)
-                .filter(|target| target.starts_with("target."))
-                .ok_or_else(|| {
-                    BundlePresentationUpdateError::invalid_argument(
-                        callee,
-                        "target",
-                        value,
-                        "a `target.*` public ID",
-                    )
-                })?;
-            PresentationTarget::try_new(target).map_err(|_| {
-                BundlePresentationUpdateError::invalid_argument(
-                    callee,
-                    "target",
-                    value,
-                    "a `target.*` public ID",
-                )
-            })?
-        }
-        None => PresentationTarget::scene(),
-    };
-    let slot = match named_arg(&call.args, "slot") {
-        Some(value) => {
-            let slot = public_id_arg(value)
-                .filter(|slot| slot.starts_with("slot.background."))
-                .ok_or_else(|| {
-                    BundlePresentationUpdateError::invalid_argument(
-                        callee,
-                        "slot",
-                        value,
-                        "a `slot.background.*` public ID",
-                    )
-                })?;
-            PresentationSlot::try_new(slot).map_err(|_| {
-                BundlePresentationUpdateError::invalid_argument(
-                    callee,
-                    "slot",
-                    value,
-                    "a `slot.background.*` public ID",
-                )
-            })?
-        }
-        None => PresentationSlot::default_background(),
-    };
-    BackgroundSlotAddress::try_new(target, slot).map_err(|_| {
-        BundlePresentationUpdateError::invalid_argument(
-            callee,
-            "target/slot",
-            "invalid background address",
-            "a valid background target/slot pair",
-        )
-    })
-}
-
-fn presentation_image_fit_arg(
-    call: &RuntimeCall,
-    callee: &'static str,
-    default: ImageObjectFit,
-) -> Result<ImageObjectFit, BundlePresentationUpdateError> {
-    match named_arg(&call.args, "fit").map(unquote_arg) {
-        None => Ok(default),
-        Some("cover") => Ok(ImageObjectFit::Cover),
-        Some("contain") => Ok(ImageObjectFit::Contain),
-        Some("stretch") => Ok(ImageObjectFit::Stretch),
-        Some("intrinsic") => Ok(ImageObjectFit::Intrinsic),
-        Some(value) => Err(BundlePresentationUpdateError::invalid_argument(
-            callee,
-            "fit",
-            value,
-            "`cover`, `contain`, `stretch`, or `intrinsic`",
-        )),
-    }
-}
-
-fn presentation_image_alignment_arg(
-    call: &RuntimeCall,
-    callee: &'static str,
-) -> Result<ImageObjectAlignment, BundlePresentationUpdateError> {
-    let axis = |argument: &'static str, axis: &'static str| {
-        let Some(value) = named_arg(&call.args, argument) else {
-            return Ok(500);
-        };
-        parse_alignment_view_milli(value, axis).ok_or_else(|| {
-            BundlePresentationUpdateError::invalid_argument(
-                callee,
-                argument,
-                value,
-                "an alignment keyword, a ratio in [0, 1], or integer milli-units in [0, 1000]",
-            )
-        })
-    };
-    ImageObjectAlignment::try_new(axis("alignment.x", "x")?, axis("alignment.y", "y")?).map_err(
-        |error| {
-            let argument = match error.axis {
-                arcweft_interaction_model::presentation::ImageAlignmentAxis::X => "alignment.x",
-                arcweft_interaction_model::presentation::ImageAlignmentAxis::Y => "alignment.y",
-            };
-            BundlePresentationUpdateError::invalid_argument(
-                callee,
-                argument,
-                &error.value.to_string(),
-                "an alignment in [0, 1000] milli-units",
-            )
-        },
-    )
-}
-
-fn presentation_opacity_arg(
-    call: &RuntimeCall,
-    callee: &'static str,
-) -> Result<u16, BundlePresentationUpdateError> {
-    let Some(value) = named_arg(&call.args, "opacity") else {
-        return Ok(1_000);
-    };
-    parse_opacity_milli(value).ok_or_else(|| {
-        BundlePresentationUpdateError::invalid_argument(
-            callee,
-            "opacity",
-            value,
-            "a ratio in [0, 1], percentage in [0%, 100%], or integer milli-units in [0, 1000]",
-        )
-    })
-}
-
-fn presentation_image_playback_arg(
-    call: &RuntimeCall,
-    callee: &'static str,
-) -> Result<ImageObjectPlayback, BundlePresentationUpdateError> {
-    let duration = |argument: &'static str| {
-        let Some(value) = named_arg(&call.args, argument) else {
-            return Ok(None);
-        };
-        parse_duration_millis(value).map(Some).ok_or_else(|| {
-            BundlePresentationUpdateError::invalid_argument(
-                callee,
-                argument,
-                value,
-                "a finite non-negative duration",
-            )
-        })
-    };
-    let rate_milli = match named_arg(&call.args, "playback.rate") {
-        None => 1_000,
-        Some(value) => parse_rate_milli(value).ok_or_else(|| {
-            BundlePresentationUpdateError::invalid_argument(
-                callee,
-                "playback.rate",
-                value,
-                "a non-negative ratio or integer milli-unit rate",
-            )
-        })?,
-    };
-    Ok(ImageObjectPlayback::from_parts(
-        duration("playback.start")?.unwrap_or_default(),
-        rate_milli,
-        duration("playback.paused_at")?,
-        duration("playback.local_time")?,
-    ))
-}
-
-fn parse_alignment_view_milli(value: &str, axis: &str) -> Option<i32> {
-    let value = unquote_arg(value);
-    match (axis, value) {
-        ("x", "left" | "start") | ("y", "top" | "start") => return Some(0),
-        ("x" | "y", "center" | "middle") => return Some(500),
-        ("x", "right" | "end") | ("y", "bottom" | "end") => return Some(1_000),
-        _ => {}
-    }
-    let numeric = value.parse::<f64>().ok()?;
-    if !numeric.is_finite() || !(0.0..=1_000.0).contains(&numeric) {
-        return None;
-    }
-    if numeric <= 1.0 {
-        return rounded_i32(numeric * 1_000.0);
-    }
-    if numeric.fract().abs() <= f64::EPSILON {
-        rounded_i32(numeric)
-    } else {
-        None
-    }
-}
-
-fn image_transform_arg(
-    call: &RuntimeCall,
-) -> Result<ImageObjectTransform, BundlePresentationUpdateError> {
-    let component = |argument: &'static str,
-                     default: i32,
-                     parse: fn(&str) -> Option<i32>,
-                     expected: &'static str| {
-        optional_image_argument(call, argument, default, parse, expected)
-    };
-    Ok(ImageObjectTransform {
-        m11_milli: component(
-            "transform.m11",
-            1_000,
-            parse_milli_arg,
-            "a finite i32 milli-transform component",
-        )?,
-        m12_milli: component(
-            "transform.m12",
-            0,
-            parse_milli_arg,
-            "a finite i32 milli-transform component",
-        )?,
-        m21_milli: component(
-            "transform.m21",
-            0,
-            parse_milli_arg,
-            "a finite i32 milli-transform component",
-        )?,
-        m22_milli: component(
-            "transform.m22",
-            1_000,
-            parse_milli_arg,
-            "a finite i32 milli-transform component",
-        )?,
-        tx_milli: component(
-            "transform.tx",
-            0,
-            parse_px_milli,
-            "a finite logical-pixel translation",
-        )?,
-        ty_milli: component(
-            "transform.ty",
-            0,
-            parse_px_milli,
-            "a finite logical-pixel translation",
-        )?,
-    })
-}
-
-fn parse_bool_arg(value: &str) -> Option<bool> {
-    match unquote_arg(value) {
-        "true" => Some(true),
-        "false" => Some(false),
-        _ => None,
-    }
-}
-
-fn parse_opacity_milli(value: &str) -> Option<u16> {
-    let value = unquote_arg(value);
-    let milli = if let Some(percent) = value.strip_suffix('%') {
-        let percent = percent.trim().parse::<f64>().ok()?;
-        if !percent.is_finite() || !(0.0..=100.0).contains(&percent) {
-            return None;
-        }
-        rounded_i32(percent * 10.0)?
-    } else {
-        let numeric = value.parse::<f64>().ok()?;
-        if !numeric.is_finite() || !(0.0..=1_000.0).contains(&numeric) {
-            return None;
-        }
-        if numeric <= 1.0 {
-            rounded_i32(numeric * 1_000.0)?
-        } else if numeric.fract().abs() <= f64::EPSILON {
-            rounded_i32(numeric)?
-        } else {
-            return None;
-        }
-    };
-    u16::try_from(milli).ok()
-}
-
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn parse_rate_milli(value: &str) -> Option<u32> {
-    let numeric = unquote_arg(value).parse::<f64>().ok()?;
-    if !numeric.is_finite() || numeric < 0.0 {
-        return None;
-    }
-    let milli = if numeric <= 1.0 {
-        numeric * 1_000.0
-    } else if numeric.fract().abs() <= f64::EPSILON {
-        numeric
-    } else {
-        return None;
-    };
-    (milli <= f64::from(u32::MAX)).then_some(milli as u32)
-}
-
-fn parse_depth_arg(value: &str) -> Option<i32> {
-    rounded_i32(unquote_arg(value).parse::<f64>().ok()?)
-}
-
-fn parse_milli_arg(value: &str) -> Option<i32> {
-    let value = unquote_arg(value);
-    if let Some(percent) = value.strip_suffix('%') {
-        return rounded_i32(percent.trim().parse::<f64>().ok()? * 10.0);
-    }
-    rounded_i32(value.parse::<f64>().ok()? * 1_000.0)
-}
-
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_precision_loss,
-    clippy::cast_sign_loss
-)]
-fn parse_duration_millis(value: &str) -> Option<u64> {
-    let value = unquote_arg(value);
-    let millis = if let Some(ms) = value.strip_suffix("ms") {
-        ms.trim().parse::<f64>().ok()?
-    } else if let Some(seconds) = value.strip_suffix('s') {
-        seconds.trim().parse::<f64>().ok()? * 1_000.0
-    } else {
-        value.parse::<f64>().ok()?
-    };
-    let millis = millis.round();
-    (millis.is_finite() && millis >= 0.0 && millis <= u64::MAX as f64).then_some(millis as u64)
-}
-
-fn parse_px_milli(value: &str) -> Option<i32> {
-    let value = unquote_arg(value);
-    let pixels = value.strip_suffix("px").unwrap_or(value).trim();
-    let parsed = pixels.parse::<f64>().ok()?;
-    rounded_i32(parsed * 1_000.0)
-}
-
-#[allow(clippy::cast_possible_truncation)]
-fn rounded_i32(value: f64) -> Option<i32> {
-    let rounded = value.round();
-    rounded
-        .is_finite()
-        .then_some(rounded.clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32)
-}
-
-fn unquote_arg(value: &str) -> &str {
-    value.trim().trim_matches('"').trim_matches('\'')
 }
 
 fn is_default<T>(value: &T) -> bool

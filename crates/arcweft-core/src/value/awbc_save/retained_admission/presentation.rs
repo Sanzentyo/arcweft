@@ -12,6 +12,23 @@ use arcweft_id::PublicId;
 use arcweft_interaction_model::presentation::{PresentationResourceKind, PresentationSlotAddress};
 
 impl RuntimeRetainedValueAdmission {
+    /// Admits immutable presentation inputs under their original Source and
+    /// construction invocation while sharing the enclosing consumer's quota.
+    /// The resource carrier and its execution grant are never copied.
+    pub fn validate_presentation_body(
+        &mut self,
+        value: &crate::presentation::RuntimePresentationResourceValue,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.with_program_owner(value.program_owner(), |admission| {
+            admission.task_source = Some(value.source.clone());
+            admission.validate_typed_in_invocation(
+                value.body(),
+                value.body_type(),
+                value.type_instantiation(),
+            )
+        })
+    }
+
     /// Native factories borrow the actual plan until the whole candidate and
     /// registration metadata pass. Source storage and value headers allocate last.
     pub(crate) fn construct_native_presentation_resource_with_metadata<T>(

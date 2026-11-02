@@ -45,13 +45,25 @@ impl RuntimePresentationResourceValue {
     }
 
     /// The retained executable remains the authority for this body's types.
-    pub fn source(&self) -> &RuntimeTaskSourceProgram {
-        &self.source
+    pub fn program_owner(&self) -> crate::task::RuntimeProgramOwner {
+        self.source.program_owner()
     }
 
     /// The construction invocation, independently of a later receiving scope.
     pub fn type_instantiation(&self) -> Option<&RuntimeFunctionEffectInstantiation> {
         self.binding.as_deref()
+    }
+
+    /// Copies a presentation consumer's immutable inputs only after the whole
+    /// body passes its original Source, invocation, ownership and resource
+    /// allowance. Affine descendants are rejected before any child is copied.
+    pub fn copy_unrestricted_body(
+        &self,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> Result<RuntimeValue, crate::value::AwbcRuntimeValueSnapshotError> {
+        crate::value::RuntimeRetainedValueAdmission::standalone(limits)
+            .validate_presentation_body(self)?;
+        Ok(self.body().clone())
     }
 
     pub(crate) fn original_executable(&self) -> [u8; 32] {

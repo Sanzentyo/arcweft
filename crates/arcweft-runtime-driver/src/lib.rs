@@ -10,6 +10,7 @@ pub mod display;
 pub mod fx_runtime;
 pub mod generation_runtime;
 pub mod presentation_handles;
+mod presentation_projection;
 pub mod session;
 pub mod session_save;
 pub mod swap;

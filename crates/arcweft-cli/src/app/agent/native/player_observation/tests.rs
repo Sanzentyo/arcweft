@@ -427,6 +427,7 @@ fn render_image(id: &str) -> RenderImage {
 
 fn bundle_image_object(id: &str, visible: bool) -> PresentationImage {
     PresentationImage {
+        occurrence: None,
         id: id.to_owned(),
         asset: "asset.glass_bg".to_owned(),
         target: Some("target.glass_bg".to_owned()),

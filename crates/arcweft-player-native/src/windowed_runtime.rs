@@ -1237,6 +1237,7 @@ mod tests {
 
     fn fixture_image_object() -> PresentationImage {
         PresentationImage {
+            occurrence: None,
             id: "sprite.object".to_owned(),
             asset: "sprite".to_owned(),
             target: None,

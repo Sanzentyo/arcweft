@@ -1974,6 +1974,7 @@ mod tests {
     #[test]
     fn bundle_image_objects_round_trip_as_typed_metadata() {
         let expected = PresentationImage {
+            occurrence: None,
             id: "image.hero.logo".to_owned(),
             asset: "asset.view.logo".to_owned(),
             target: Some("target.hero.logo".to_owned()),

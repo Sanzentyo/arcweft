@@ -926,7 +926,7 @@ fn player_observed_image_objects(
             let source = presentation
                 .images
                 .iter()
-                .find(|object| object.id == image.id);
+                .find(|object| object.object_id() == image.id);
             player_observed_image_object(step, viewport, image, source, visual_time_millis)
         })
         .collect()
@@ -955,7 +955,9 @@ fn player_observed_image_object(
     Some(AgentObservedObject {
         id: object_id.clone(),
         parent_id: None,
-        entity: Some(image.id.clone()),
+        entity: source
+            .map(|source| source.id.clone())
+            .or_else(|| Some(image.id.clone())),
         layer: layer.clone(),
         role: "image".to_owned(),
         visible: true,
@@ -970,7 +972,9 @@ fn player_observed_image_object(
             AgentCaptureSourceIdentity::Object {
                 id: object_id.clone(),
                 parent_id: None,
-                entity: Some(image.id.clone()),
+                entity: source
+                    .map(|source| source.id.clone())
+                    .or_else(|| Some(image.id.clone())),
                 layer: layer.clone(),
                 role: "image".to_owned(),
                 object_layer: Some(layer.clone()),
@@ -984,8 +988,9 @@ fn player_observed_image_object(
         text_context: None,
         rich_text_ref: None,
         content: AgentObservedObjectContent::Image(Box::new(AgentObservedImageContent {
-            source: image.id.clone(),
-            object: Some(image.id.clone()),
+            occurrence: source.and_then(|source| source.occurrence.clone()),
+            source: source.map_or_else(|| image.id.clone(), |source| source.id.clone()),
+            object: source.map(|source| source.id.clone()),
             target,
             asset: source.map(|source| source.asset.clone()),
             frame_index: image.frame.index,

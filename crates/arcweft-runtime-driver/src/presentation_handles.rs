@@ -2,9 +2,7 @@ use arcweft_bundle::resource_codec::{
     ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation,
     ViewRuntimeScrollRegion, ViewRuntimeSurface, ViewRuntimeTextControl,
 };
-use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
 use arcweft_id::presentation::PresentationHandleId;
-use arcweft_interaction_model::presentation::PresentationImage;
 use arcweft_interaction_model::presentation::PresentationResourceKind;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -44,8 +42,10 @@ impl PresentationResourceState {
     }
 }
 
-/// Serializable runtime record for one scoped presentation resource.
+/// Inert description of one presentation occurrence. Bundle sessions derive
+/// these records from Core custody; decoding never creates a resource.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct PresentationHandleRecord {
     pub id: PresentationHandleId,
     pub kind: PresentationResourceKind,
@@ -58,10 +58,6 @@ pub struct PresentationHandleRecord {
     pub layer: Option<String>,
     #[serde(default, skip_serializing_if = "is_default")]
     pub depth_milli: i32,
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub created_epoch: u64,
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub updated_epoch: u64,
 }
 
 impl PresentationHandleRecord {
@@ -83,16 +79,7 @@ impl PresentationHandleRecord {
             state,
             layer,
             depth_milli,
-            created_epoch: 0,
-            updated_epoch: 0,
         }
-    }
-
-    #[must_use]
-    pub fn with_epochs(mut self, created_epoch: u64, updated_epoch: u64) -> Self {
-        self.created_epoch = created_epoch;
-        self.updated_epoch = updated_epoch;
-        self
     }
 
     #[must_use]
@@ -111,135 +98,10 @@ impl PresentationHandleRecord {
     }
 }
 
-/// Deterministic lifecycle operation emitted by lowering/runtime effects.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "op", rename_all = "snake_case")]
-pub enum PresentationHandleOperation {
-    Create {
-        id: PresentationHandleId,
-        kind: PresentationResourceKind,
-        resource_id: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        owner: Option<String>,
-        #[serde(default = "default_true")]
-        visible: bool,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        layer: Option<String>,
-        #[serde(default, skip_serializing_if = "is_default")]
-        depth_milli: i32,
-    },
-    Show {
-        id: PresentationHandleId,
-    },
-    Hide {
-        id: PresentationHandleId,
-    },
-    Unmount {
-        id: PresentationHandleId,
-    },
-    Release {
-        id: PresentationHandleId,
-    },
-    Destroy {
-        id: PresentationHandleId,
-    },
-    Dispose {
-        id: PresentationHandleId,
-    },
-}
-
-impl PresentationHandleOperation {
-    /// Parses the canonical runtime call surface used by lowering.
-    pub fn from_call(call: &RuntimeCall) -> Option<Result<Self, PresentationHandleDiagnostic>> {
-        match call.callee.as_str() {
-            "presentation.handle.create" => Some(Self::create_from_call(call)),
-            "presentation.handle.show" => Some(Self::unary_from_call(call, |id| Self::Show { id })),
-            "presentation.handle.hide" => Some(Self::unary_from_call(call, |id| Self::Hide { id })),
-            "presentation.handle.unmount" => {
-                Some(Self::unary_from_call(call, |id| Self::Unmount { id }))
-            }
-            "presentation.handle.release" => {
-                Some(Self::unary_from_call(call, |id| Self::Release { id }))
-            }
-            "presentation.handle.destroy" => {
-                Some(Self::unary_from_call(call, |id| Self::Destroy { id }))
-            }
-            "presentation.handle.dispose" => {
-                Some(Self::unary_from_call(call, |id| Self::Dispose { id }))
-            }
-            _ => None,
-        }
-    }
-
-    #[must_use]
-    pub fn id(&self) -> &PresentationHandleId {
-        match self {
-            Self::Create { id, .. }
-            | Self::Show { id }
-            | Self::Hide { id }
-            | Self::Unmount { id }
-            | Self::Release { id }
-            | Self::Destroy { id }
-            | Self::Dispose { id } => id,
-        }
-    }
-
-    fn create_from_call(call: &RuntimeCall) -> Result<Self, PresentationHandleDiagnostic> {
-        let id = handle_id_arg(call)?;
-        let Some(kind) = named_runtime_arg(&call.args, "kind")
-            .and_then(|value| PresentationResourceKind::from_label(clean_runtime_arg(value)))
-        else {
-            return Err(PresentationHandleDiagnostic::new(
-                PresentationHandleDiagnosticCode::InvalidCall,
-                Some(id),
-                "presentation.handle.create requires a supported presentation resource kind",
-            ));
-        };
-        let resource_id = named_runtime_arg(&call.args, "resource")
-            .and_then(public_id_arg)
-            .ok_or_else(|| {
-                PresentationHandleDiagnostic::new(
-                    PresentationHandleDiagnosticCode::InvalidCall,
-                    Some(id.clone()),
-                    "presentation.handle.create requires a resource argument",
-                )
-            })?;
-        let owner = named_runtime_arg(&call.args, "owner").and_then(public_id_arg);
-        let visible = named_runtime_arg(&call.args, "visible")
-            .and_then(parse_bool_arg)
-            .unwrap_or(true);
-        let layer = named_runtime_arg(&call.args, "layer").and_then(public_id_arg);
-        let depth_milli = named_runtime_arg(&call.args, "depth")
-            .and_then(parse_i32_arg)
-            .unwrap_or_default();
-        Ok(Self::Create {
-            id,
-            kind,
-            resource_id,
-            owner,
-            visible,
-            layer,
-            depth_milli,
-        })
-    }
-
-    fn unary_from_call(
-        call: &RuntimeCall,
-        build: impl FnOnce(PresentationHandleId) -> Self,
-    ) -> Result<Self, PresentationHandleDiagnostic> {
-        handle_id_arg(call).map(build)
-    }
-}
-
-/// Stable diagnostics produced while applying presentation handle operations.
+/// Stable diagnostics produced while filtering presentation projections.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PresentationHandleDiagnosticCode {
-    InvalidCall,
-    DuplicateHandle,
-    UnknownHandle,
-    DoubleDispose,
-    TerminalHandle,
     HiddenButFocusable,
 }
 
@@ -247,11 +109,6 @@ impl PresentationHandleDiagnosticCode {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::InvalidCall => "PH001_INVALID_CALL",
-            Self::DuplicateHandle => "PH002_DUPLICATE_HANDLE",
-            Self::UnknownHandle => "PH003_UNKNOWN_HANDLE",
-            Self::DoubleDispose => "PH004_DOUBLE_DISPOSE",
-            Self::TerminalHandle => "PH005_TERMINAL_HANDLE",
             Self::HiddenButFocusable => "PH006_HIDDEN_BUT_FOCUSABLE",
         }
     }
@@ -293,204 +150,6 @@ impl fmt::Display for PresentationHandleDiagnostic {
             None => write!(formatter, "{}: {}", self.code.as_str(), self.message),
         }
     }
-}
-
-pub(crate) fn presentation_handle_operations_from_effects(
-    effects: &[LineEffectRequest],
-) -> (
-    Vec<PresentationHandleOperation>,
-    Vec<PresentationHandleDiagnostic>,
-) {
-    let mut operations = Vec::new();
-    let mut diagnostics = Vec::new();
-    for effect in effects {
-        let LineEffectRequest::Call(call) = effect else {
-            continue;
-        };
-        match PresentationHandleOperation::from_call(call) {
-            Some(Ok(operation)) => operations.push(operation),
-            Some(Err(diagnostic)) => diagnostics.push(diagnostic),
-            None => {}
-        }
-    }
-    (operations, diagnostics)
-}
-
-pub(crate) fn apply_presentation_handle_operations(
-    handles: &mut Vec<PresentationHandleRecord>,
-    operation_epoch: &mut u64,
-    operations: &[PresentationHandleOperation],
-) -> Vec<PresentationHandleDiagnostic> {
-    operations
-        .iter()
-        .filter_map(|operation| {
-            *operation_epoch = operation_epoch.saturating_add(1);
-            apply_presentation_handle_operation(handles, *operation_epoch, operation)
-        })
-        .collect()
-}
-
-fn apply_presentation_handle_operation(
-    handles: &mut Vec<PresentationHandleRecord>,
-    operation_epoch: u64,
-    operation: &PresentationHandleOperation,
-) -> Option<PresentationHandleDiagnostic> {
-    match operation {
-        PresentationHandleOperation::Create {
-            id,
-            kind,
-            resource_id,
-            owner,
-            visible,
-            layer,
-            depth_milli,
-        } => {
-            let state = if *visible {
-                PresentationResourceState::Mounted
-            } else {
-                PresentationResourceState::Hidden
-            };
-            if let Some(existing) = handles.iter_mut().find(|handle| handle.id == *id) {
-                if existing.kind == *kind
-                    && existing.resource_id == *resource_id
-                    && !existing.is_terminal()
-                {
-                    existing.owner.clone_from(owner);
-                    existing.state = state;
-                    existing.layer.clone_from(layer);
-                    existing.depth_milli = *depth_milli;
-                    existing.updated_epoch = operation_epoch;
-                    return None;
-                }
-                return Some(PresentationHandleDiagnostic::new(
-                    PresentationHandleDiagnosticCode::DuplicateHandle,
-                    Some(id.clone()),
-                    "handle ids are stable within one save lineage and cannot be reused",
-                ));
-            }
-            handles.push(
-                PresentationHandleRecord::new(
-                    id.clone(),
-                    *kind,
-                    resource_id.clone(),
-                    owner.clone(),
-                    state,
-                    layer.clone(),
-                    *depth_milli,
-                )
-                .with_epochs(operation_epoch, operation_epoch),
-            );
-            None
-        }
-        PresentationHandleOperation::Show { id } => set_live_state(
-            handles,
-            id,
-            operation_epoch,
-            PresentationResourceState::Mounted,
-            "show terminal presentation handle",
-        ),
-        PresentationHandleOperation::Hide { id } => set_live_state(
-            handles,
-            id,
-            operation_epoch,
-            PresentationResourceState::Hidden,
-            "hide terminal presentation handle",
-        ),
-        PresentationHandleOperation::Unmount { id } => set_live_state(
-            handles,
-            id,
-            operation_epoch,
-            PresentationResourceState::Unmounted,
-            "unmount terminal presentation handle",
-        ),
-        PresentationHandleOperation::Release { id }
-        | PresentationHandleOperation::Dispose { id } => terminate_handle(
-            handles,
-            id,
-            operation_epoch,
-            PresentationResourceState::Released,
-        ),
-        PresentationHandleOperation::Destroy { id } => terminate_handle(
-            handles,
-            id,
-            operation_epoch,
-            PresentationResourceState::Destroyed,
-        ),
-    }
-}
-
-fn set_live_state(
-    handles: &mut [PresentationHandleRecord],
-    id: &PresentationHandleId,
-    operation_epoch: u64,
-    next_state: PresentationResourceState,
-    terminal_message: &'static str,
-) -> Option<PresentationHandleDiagnostic> {
-    let Some(handle) = handles.iter_mut().find(|handle| handle.id == *id) else {
-        return Some(unknown_handle(id));
-    };
-    if handle.is_terminal() {
-        return Some(PresentationHandleDiagnostic::new(
-            PresentationHandleDiagnosticCode::TerminalHandle,
-            Some(id.clone()),
-            terminal_message,
-        ));
-    }
-    handle.state = next_state;
-    handle.updated_epoch = operation_epoch;
-    None
-}
-
-fn terminate_handle(
-    handles: &mut [PresentationHandleRecord],
-    id: &PresentationHandleId,
-    operation_epoch: u64,
-    next_state: PresentationResourceState,
-) -> Option<PresentationHandleDiagnostic> {
-    let Some(handle) = handles.iter_mut().find(|handle| handle.id == *id) else {
-        return Some(unknown_handle(id));
-    };
-    if handle.is_terminal() {
-        return Some(PresentationHandleDiagnostic::new(
-            PresentationHandleDiagnosticCode::DoubleDispose,
-            Some(id.clone()),
-            format!("handle is already {}", handle.state.as_str()),
-        ));
-    }
-    handle.state = next_state;
-    handle.updated_epoch = operation_epoch;
-    None
-}
-
-fn unknown_handle(id: &PresentationHandleId) -> PresentationHandleDiagnostic {
-    PresentationHandleDiagnostic::new(
-        PresentationHandleDiagnosticCode::UnknownHandle,
-        Some(id.clone()),
-        "presentation handle operation targets an unknown handle",
-    )
-}
-
-pub(crate) fn apply_presentation_image_handles(
-    active: &mut Vec<PresentationImage>,
-    handles: &[PresentationHandleRecord],
-    image_objects: &[PresentationImage],
-) {
-    for handle in handles
-        .iter()
-        .filter(|handle| handle.kind == PresentationResourceKind::Image)
-    {
-        if handle.is_render_visible() {
-            if let Some(object) = image_objects
-                .iter()
-                .find(|object| object.id == handle.resource_id && object.visible)
-            {
-                upsert_image_object(active, object.clone());
-            }
-        } else {
-            active.retain(|object| object.id != handle.resource_id);
-        }
-    }
-    active.sort_by(|left, right| (left.depth_milli, &left.id).cmp(&(right.depth_milli, &right.id)));
 }
 
 pub(crate) fn filter_presentation_text_inputs(
@@ -701,75 +360,6 @@ fn hidden_matching_handle<'a>(
     hidden
 }
 
-fn upsert_image_object(active: &mut Vec<PresentationImage>, object: PresentationImage) {
-    if let Some(existing) = active.iter_mut().find(|existing| existing.id == object.id) {
-        *existing = object;
-    } else {
-        active.push(object);
-    }
-}
-
-fn handle_id_arg(call: &RuntimeCall) -> Result<PresentationHandleId, PresentationHandleDiagnostic> {
-    let Some(value) = named_runtime_arg(&call.args, "handle").and_then(public_id_arg) else {
-        return Err(PresentationHandleDiagnostic::new(
-            PresentationHandleDiagnosticCode::InvalidCall,
-            None,
-            format!("{} requires handle = @handle...", call.callee),
-        ));
-    };
-    PresentationHandleId::try_new(value).map_err(|error| {
-        PresentationHandleDiagnostic::new(
-            PresentationHandleDiagnosticCode::InvalidCall,
-            None,
-            error.to_string(),
-        )
-    })
-}
-
-fn named_runtime_arg<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
-    args.iter().find_map(|arg| {
-        let (arg_name, value) = arg.split_once(" = ")?;
-        (arg_name.trim() == name).then_some(value.trim())
-    })
-}
-
-fn public_id_arg(arg: &str) -> Option<String> {
-    let value = clean_runtime_arg(arg);
-    let value = value.strip_prefix('@').unwrap_or(value);
-    let normalized = value.split_once(":.").map_or_else(
-        || value.to_owned(),
-        |(family, suffix)| format!("{family}.{suffix}"),
-    );
-    is_valid_handle_token(&normalized).then_some(normalized)
-}
-
-fn clean_runtime_arg(value: &str) -> &str {
-    value.trim().trim_matches('"').trim_matches('\'')
-}
-
-fn parse_bool_arg(value: &str) -> Option<bool> {
-    match clean_runtime_arg(value) {
-        "true" => Some(true),
-        "false" => Some(false),
-        _ => None,
-    }
-}
-
-fn parse_i32_arg(value: &str) -> Option<i32> {
-    clean_runtime_arg(value).parse::<i32>().ok()
-}
-
-fn is_valid_handle_token(value: &str) -> bool {
-    !value.is_empty()
-        && value
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-' | '/' | ':'))
-}
-
-const fn default_true() -> bool {
-    true
-}
-
 fn is_default<T>(value: &T) -> bool
 where
     T: Default + PartialEq,
@@ -807,6 +397,19 @@ mod tests {
             assert!(
                 serde_json::from_value::<PresentationHandleRecord>(wire).is_err(),
                 "invalid identity {value:?} must not bypass construction through serde"
+            );
+        }
+        for field in ["created_epoch", "updated_epoch"] {
+            let original = view_handle(
+                "handle.valid",
+                "view.Main",
+                PresentationResourceState::Mounted,
+            );
+            let mut wire = serde_json::to_value(original).unwrap();
+            wire[field] = serde_json::json!(1);
+            assert!(
+                serde_json::from_value::<PresentationHandleRecord>(wire).is_err(),
+                "the removed lifecycle reader must not accept {field}"
             );
         }
     }
@@ -856,152 +459,6 @@ mod tests {
             handlers: ViewRuntimeTextControlHandlers::default(),
             style: ViewRuntimeControlVisualStyle::default(),
         }
-    }
-
-    #[test]
-    fn create_hide_and_release_transitions_are_deterministic() {
-        let mut handles = Vec::new();
-        let mut operation_epoch = 0;
-        let operations = vec![
-            PresentationHandleOperation::Create {
-                id: handle("handle.flow.menu.background"),
-                kind: PresentationResourceKind::Image,
-                resource_id: "image.menu.background".to_owned(),
-                owner: Some("flow.menu/block.0".to_owned()),
-                visible: true,
-                layer: Some("layer.background".to_owned()),
-                depth_milli: -1_000,
-            },
-            PresentationHandleOperation::Hide {
-                id: handle("handle.flow.menu.background"),
-            },
-            PresentationHandleOperation::Release {
-                id: handle("handle.flow.menu.background"),
-            },
-        ];
-
-        let diagnostics =
-            apply_presentation_handle_operations(&mut handles, &mut operation_epoch, &operations);
-
-        assert!(diagnostics.is_empty());
-        assert_eq!(operation_epoch, 3);
-        assert_eq!(handles.len(), 1);
-        assert_eq!(handles[0].state, PresentationResourceState::Released);
-        assert_eq!(handles[0].created_epoch, 1);
-        assert_eq!(handles[0].updated_epoch, 3);
-    }
-
-    #[test]
-    fn double_dispose_reports_structured_diagnostic_without_revival() {
-        let mut handles = Vec::new();
-        let mut operation_epoch = 0;
-        let id = handle("handle.flow.menu.overlay");
-        let operations = vec![
-            PresentationHandleOperation::Create {
-                id: id.clone(),
-                kind: PresentationResourceKind::Overlay,
-                resource_id: "view.MainMenu".to_owned(),
-                owner: Some("flow.menu/block.0".to_owned()),
-                visible: true,
-                layer: None,
-                depth_milli: 0,
-            },
-            PresentationHandleOperation::Dispose { id: id.clone() },
-            PresentationHandleOperation::Dispose { id: id.clone() },
-            PresentationHandleOperation::Show { id },
-        ];
-
-        let diagnostics =
-            apply_presentation_handle_operations(&mut handles, &mut operation_epoch, &operations);
-
-        assert_eq!(operation_epoch, 4);
-        assert_eq!(handles[0].state, PresentationResourceState::Released);
-        assert_eq!(handles[0].created_epoch, 1);
-        assert_eq!(handles[0].updated_epoch, 2);
-        assert_eq!(diagnostics.len(), 2);
-        assert_eq!(
-            diagnostics[0].code,
-            PresentationHandleDiagnosticCode::DoubleDispose
-        );
-        assert_eq!(
-            diagnostics[1].code,
-            PresentationHandleDiagnosticCode::TerminalHandle
-        );
-    }
-
-    #[test]
-    fn reusable_resource_can_have_independent_live_handles() {
-        let mut handles = Vec::new();
-        let mut operation_epoch = 0;
-        let operations = vec![
-            PresentationHandleOperation::Create {
-                id: handle("handle.flow.a.menu"),
-                kind: PresentationResourceKind::View,
-                resource_id: "view.MainMenu".to_owned(),
-                owner: Some("flow.a".to_owned()),
-                visible: true,
-                layer: None,
-                depth_milli: 0,
-            },
-            PresentationHandleOperation::Create {
-                id: handle("handle.flow.b.menu"),
-                kind: PresentationResourceKind::View,
-                resource_id: "view.MainMenu".to_owned(),
-                owner: Some("flow.b".to_owned()),
-                visible: true,
-                layer: None,
-                depth_milli: 0,
-            },
-        ];
-
-        let diagnostics =
-            apply_presentation_handle_operations(&mut handles, &mut operation_epoch, &operations);
-
-        assert_eq!(operation_epoch, 2);
-        assert_eq!(handles.len(), 2);
-        assert!(diagnostics.is_empty());
-        assert_ne!(handles[0].id, handles[1].id);
-        assert_eq!(handles[0].resource_id, handles[1].resource_id);
-    }
-
-    #[test]
-    fn create_is_idempotent_for_same_live_handle() {
-        let mut handles = Vec::new();
-        let mut operation_epoch = 0;
-        let id = handle("handle.flow.main.mount.view.view.MainMenu");
-        let operations = vec![
-            PresentationHandleOperation::Create {
-                id: id.clone(),
-                kind: PresentationResourceKind::View,
-                resource_id: "view.MainMenu".to_owned(),
-                owner: Some("flow.main".to_owned()),
-                visible: true,
-                layer: Some("layer.controls".to_owned()),
-                depth_milli: 100,
-            },
-            PresentationHandleOperation::Create {
-                id,
-                kind: PresentationResourceKind::View,
-                resource_id: "view.MainMenu".to_owned(),
-                owner: Some("flow.main/reentry".to_owned()),
-                visible: false,
-                layer: Some("layer.overlay".to_owned()),
-                depth_milli: 250,
-            },
-        ];
-
-        let diagnostics =
-            apply_presentation_handle_operations(&mut handles, &mut operation_epoch, &operations);
-
-        assert!(diagnostics.is_empty());
-        assert_eq!(operation_epoch, 2);
-        assert_eq!(handles.len(), 1);
-        assert_eq!(handles[0].state, PresentationResourceState::Hidden);
-        assert_eq!(handles[0].owner.as_deref(), Some("flow.main/reentry"));
-        assert_eq!(handles[0].layer.as_deref(), Some("layer.overlay"));
-        assert_eq!(handles[0].depth_milli, 250);
-        assert_eq!(handles[0].created_epoch, 1);
-        assert_eq!(handles[0].updated_epoch, 2);
     }
 
     #[test]
@@ -1070,54 +527,5 @@ mod tests {
 
         assert_eq!(visible.len(), 1);
         assert_eq!(visible[0].public_id, "input.name");
-    }
-
-    #[test]
-    fn handle_table_epoch_survives_serde_roundtrip_and_rollback() {
-        let mut handles = Vec::new();
-        let mut operation_epoch = 0;
-        let id = handle("handle.flow.rollback.panel");
-        let operations = vec![
-            PresentationHandleOperation::Create {
-                id: id.clone(),
-                kind: PresentationResourceKind::View,
-                resource_id: "view.RollbackPanel".to_owned(),
-                owner: Some("flow.rollback/block.0".to_owned()),
-                visible: true,
-                layer: None,
-                depth_milli: 0,
-            },
-            PresentationHandleOperation::Dispose { id: id.clone() },
-        ];
-        let diagnostics =
-            apply_presentation_handle_operations(&mut handles, &mut operation_epoch, &operations);
-        assert!(diagnostics.is_empty());
-        let rollback_handles = handles.clone();
-        let rollback_epoch = operation_epoch;
-        let encoded = serde_json::to_string(&handles).expect("handles serialize");
-        let decoded: Vec<PresentationHandleRecord> =
-            serde_json::from_str(&encoded).expect("handles deserialize");
-        assert_eq!(decoded, handles);
-
-        let stale_show = [PresentationHandleOperation::Show { id }];
-        let stale_diagnostics =
-            apply_presentation_handle_operations(&mut handles, &mut operation_epoch, &stale_show);
-        assert_eq!(
-            stale_diagnostics[0].code,
-            PresentationHandleDiagnosticCode::TerminalHandle
-        );
-        assert_eq!(handles[0].state, PresentationResourceState::Released);
-
-        handles = rollback_handles;
-        operation_epoch = rollback_epoch;
-        let stale_diagnostics =
-            apply_presentation_handle_operations(&mut handles, &mut operation_epoch, &stale_show);
-        assert_eq!(
-            stale_diagnostics[0].code,
-            PresentationHandleDiagnosticCode::TerminalHandle
-        );
-        assert_eq!(operation_epoch, rollback_epoch + 1);
-        assert_eq!(handles[0].state, PresentationResourceState::Released);
-        assert_eq!(handles[0].updated_epoch, rollback_epoch);
     }
 }

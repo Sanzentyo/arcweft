@@ -1102,7 +1102,7 @@ fn view_expression_locale_is_execution_input_and_invalidates_only_changed_cache(
             arcweft_id::LocaleTag::try_new(tag).unwrap(),
         );
         let frame = runtime.evaluate_with_dialogue_and_backend(
-            &handles,
+            arcweft_runtime_driver::view_runtime::BundleViewRootInput::Descriptions(&handles),
             &[],
             &[],
             false,
@@ -1136,7 +1136,7 @@ fn view_expression_locale_is_execution_input_and_invalidates_only_changed_cache(
         arcweft_id::LocaleTag::try_new("fr-FR").unwrap(),
     );
     let frame = restored.evaluate_with_dialogue_and_backend(
-        &handles,
+        arcweft_runtime_driver::view_runtime::BundleViewRootInput::Descriptions(&handles),
         &[],
         &[],
         false,

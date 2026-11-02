@@ -623,6 +623,7 @@ struct PreparedAuthoredView<'a> {
     owner: ItemId,
     declaration: &'a HirViewDeclaration,
     id: ViewId,
+    construction_identity: arcweft_core::presentation::RuntimePresentationViewIdentity,
     parameters: BTreeMap<LocalId, CheckedViewParameter>,
     parameter_resources: Vec<ViewParameterResource>,
     parameter_contract: arcweft_lang_sema::callable::CheckedCallableParameterContract,
@@ -937,10 +938,16 @@ fn prepare_authored_view<'a>(
             arcweft_lang_hir::source_index::HirCallableSourceOwner::ViewItem,
         )
         .ok_or_else(invalid)?;
-    let parameter_contract = analysis
+    let checked = analysis
         .checked_callables()
         .project_callable(declaration.declaration())
-        .map_err(|_| invalid())?
+        .map_err(|_| invalid())?;
+    let construction_identity =
+        arcweft_core::presentation::RuntimePresentationViewIdentity::from_checked_declaration(
+            checked.id().semantic_digest().into_bytes(),
+        )
+        .map_err(|_| invalid())?;
+    let parameter_contract = checked
         .parameter_contract(
             arcweft_lang_sema::callable::CallableGroupIndex::try_from_usize(0)
                 .expect("initial View parameter group fits"),
@@ -1012,6 +1019,7 @@ fn prepare_authored_view<'a>(
         owner,
         declaration: view,
         id: view_id,
+        construction_identity,
         parameters,
         parameter_resources,
         parameter_contract,
@@ -1150,6 +1158,7 @@ fn lower_authored_view(
         lower_view_parameter_defaults(project, view, analysis, registered_world, output)?;
     output.definitions.push(ViewDefinitionResource {
         public_id: ViewDefinitionRef::new(view.id.clone()),
+        construction_identity: Some(view.construction_identity),
         body: ViewInstructionSpan::new(start, end),
         styles: Vec::new(),
         parameters,

@@ -106,6 +106,8 @@ The current workspace member list is `[workspace].members` in [Cargo.toml](../..
   `ProjectCompilationLease` は完成済みの HIR / analysis / compiled phase を表す。
   LSP の accepted snapshot と compiler error はこの phase lease を保持するため、
   完成した解析は後続の実行 admission が失敗しても利用できる。
+  単一 Source の `CompiledSource` も元の `CompiledProject` を保持し、完全な
+  View product と text catalog を同じ compiler transaction から借用する。
 - `arcweft-runtime-plan` は checked HIR から `arcweft-core` の `RuntimePlan` / line task graph へ lowering する。
 - `arcweft-runtime-codegen` は full-script AOT/JIT の executor policy、
   safe-region runtime-code IR、frame layout、cache key、structured compiled
