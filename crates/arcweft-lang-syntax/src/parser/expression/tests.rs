@@ -1028,6 +1028,91 @@ fn records_e20_e21_project_authored_fields_and_exact_source_parts() {
 }
 
 #[test]
+fn braced_assignment_places_are_blocks_and_record_field_heads_stay_records() {
+    for source in [
+        "{ counter.value = 1; counter.value }",
+        "{ values[0] = 1; values[0] }",
+        "{ *cell = 1; *cell }",
+        "{ counter = 1; counter }",
+        "{ counter = current < limit; counter }",
+        "{ counter.value = 1 }",
+    ] {
+        let events = expression_events(source);
+        assert!(
+            matches!(
+                projection(&events, SyntaxKind::BlockExpression).projection(),
+                ExpressionProjection::Block
+            ),
+            "{source}"
+        );
+        assert!(
+            !events.iter().any(|event| matches!(
+                event,
+                SyntaxEvent::StartNode {
+                    kind: SyntaxKind::RecordLiteralExpression,
+                    ..
+                }
+            )),
+            "{source}"
+        );
+    }
+    for source in [
+        "{ first = value }",
+        "{ first: value }",
+        "{ first, second }",
+        "{ field = current < limit }",
+    ] {
+        let events = expression_events(source);
+        assert!(
+            matches!(
+                projection(&events, SyntaxKind::RecordLiteralExpression).projection(),
+                ExpressionProjection::RecordLiteral(_)
+            ),
+            "{source}"
+        );
+    }
+    let nested = expression_events("{ value = { counter.value = 1; counter.value } }");
+    assert!(
+        matches!(projection(&nested, SyntaxKind::RecordLiteralExpression).projection(),
+        ExpressionProjection::RecordLiteral(fields) if fields.len() == 1)
+    );
+    assert!(matches!(
+        projection(&nested, SyntaxKind::BlockExpression).projection(),
+        ExpressionProjection::Block
+    ));
+}
+
+#[test]
+fn anonymous_record_missing_name_and_value_keep_exact_recovery_components() {
+    for (source, missing_name) in [("{ = value }", true), ("{ field = }", false)] {
+        let events = expression_events(source);
+        let record = projection(&events, SyntaxKind::RecordLiteralExpression);
+        let ExpressionProjection::RecordLiteral(fields) = record.projection() else {
+            panic!("record recovery");
+        };
+        assert_eq!(fields.len(), 1);
+        assert!(
+            matches!(&fields[0], SyntaxRecordField::Explicit { name, value }
+            if if missing_name { name.is_err() && *value == SyntaxExpressionSlot::Authored }
+                else { name.is_ok() && *value == SyntaxExpressionSlot::Missing })
+        );
+        let part = if missing_name {
+            ExpressionRecordFieldPart::Name
+        } else {
+            ExpressionRecordFieldPart::Value
+        };
+        let missing = record
+            .components()
+            .iter()
+            .find(|component| {
+                component.role() == ExpressionComponentRole::RecordField { field: 0, part }
+            })
+            .unwrap();
+        assert!(missing.range().is_empty());
+    }
+}
+
+#[test]
 fn record_field_value_may_start_on_a_more_indented_line() {
     let source = "Transform2D {\n    translate_y:\n        sin(time),\n    opacity: 1.0\n}";
     let events = expression_events(source);

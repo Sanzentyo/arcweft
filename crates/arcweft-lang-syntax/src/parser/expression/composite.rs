@@ -20,7 +20,8 @@ use crate::parser::lexer::{LiteralLexemePart, typed_literal};
 use crate::parser::pattern::emit_pattern;
 use crate::parser::shadow_recovery::{
     bump_until, emit_close_delimiter, emit_open_delimiter, emit_required_punctuation,
-    find_matching_close, find_top_level_boundary, first_significant, token_text, trimmed_end,
+    find_matching_close, find_statement_terminator, find_top_level_boundary, first_significant,
+    token_text, trimmed_end,
 };
 use crate::parser::statement::indentation::token_indent;
 use crate::parser::type_ref::emit_type;
@@ -1082,6 +1083,21 @@ fn looks_like_record_literal(parser: &DocumentParser<'_, '_>, start: usize, end:
     if crate::parser::statement::is_statement_start(parser, first, end) {
         return false;
     }
+    // A top-level statement terminator selects a block. Semicolons inside
+    // nested field values do not participate in this choice.
+    let mut statement = first;
+    while let Some((terminator, semicolon)) = find_statement_terminator(parser, statement, end) {
+        if semicolon {
+            return false;
+        }
+        statement = terminator + 1;
+    }
     let boundary = find_top_level_boundary(parser, first, end, &["=", ":", ",", ";"]);
-    boundary < end && token_text(parser, boundary) != Some(";")
+    if boundary >= end || token_text(parser, boundary) == Some(";") {
+        return false;
+    }
+    // A record field head is one name token. A place made from selection,
+    // indexing or dereference belongs to block assignment grammar instead.
+    // An absent name still selects record recovery at its separator.
+    boundary == first || first_significant(parser, first + 1, boundary).is_none()
 }
