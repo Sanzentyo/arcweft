@@ -839,21 +839,21 @@ fn nominal_records_publish_once_and_resolve_through_every_import_form() {
     assert_eq!(local_record.id(), imported_record.id());
     assert_eq!(
         local_record.id().kind(),
-        ProjectNominalDeclarationKind::Struct
+        &ProjectNominalDeclarationKind::Struct
     );
     assert_eq!(local_record.id().module(), &models);
     assert!(local_record.id().owner_path().is_empty());
     assert_eq!(local_record.id().name().as_str(), "Record");
 
     let choice = resolve_nominal(&root, "Pick");
-    assert_eq!(choice.id().kind(), ProjectNominalDeclarationKind::Enum);
+    assert_eq!(choice.id().kind(), &ProjectNominalDeclarationKind::Enum);
     assert_eq!(
         choice.id(),
         resolve_nominal(&root, "crate.models.Choice").id()
     );
 
     let alias = resolve_nominal(&root, "Alias");
-    assert_eq!(alias.id().kind(), ProjectNominalDeclarationKind::TypeAlias);
+    assert_eq!(alias.id().kind(), &ProjectNominalDeclarationKind::TypeAlias);
     assert_eq!(
         alias.id(),
         resolve_nominal(&root, "crate.facade.Alias").id()

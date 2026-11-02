@@ -15184,6 +15184,21 @@ fn validate_nominal(
         return Ok(());
     };
     let item = resolve_item(modules, *owner)?;
+    if let arcweft_lang_hir::symbol::nominal::ProjectNominalDeclarationKind::Action { public_id } =
+        declaration.kind()
+    {
+        return match item.kind() {
+            HirItemKind::Action(action)
+                if action.header().public_id().resolved() == Some(public_id) =>
+            {
+                Ok(())
+            }
+            _ => Err(RuntimeSemanticFactsError::WrongItemFamily {
+                item: *owner,
+                actual: item.kind().family(),
+            }),
+        };
+    }
     let valid = matches!(
         (declaration.kind(), item.kind()),
         (
@@ -15213,8 +15228,11 @@ fn validate_nominal_record(
 ) -> Result<(), RuntimeSemanticFactsError> {
     let nominal = record.nominal();
     if let RuntimeResolvedNominalSource::Project { declaration, owner } = nominal.source()
-        && declaration.kind()
-            != arcweft_lang_hir::symbol::nominal::ProjectNominalDeclarationKind::Struct
+        && !matches!(
+            declaration.kind(),
+            arcweft_lang_hir::symbol::nominal::ProjectNominalDeclarationKind::Struct
+                | arcweft_lang_hir::symbol::nominal::ProjectNominalDeclarationKind::Action { .. }
+        )
     {
         return Err(RuntimeSemanticFactsError::WrongNominalRecordItemFamily { item: *owner });
     }

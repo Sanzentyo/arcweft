@@ -261,11 +261,22 @@ impl ArrayLengthCanonicalEncoder {
         // The declaration's accepted revision is provenance, checked by the
         // owning semantic generation. Unrelated source bodies cannot change
         // this type's identity; its definition graph commits data layout.
+        if let ProjectNominalDeclarationKind::Action { public_id } = id.kind() {
+            // An empty lexical path plus a distinct family tag commits the
+            // persistent Action ID without its diagnostic binding spelling.
+            self.len(0)?;
+            self.tag(3);
+            self.string(public_id.as_str())?;
+            return Ok(());
+        }
         self.module_path(id.module())?;
         self.tag(match id.kind() {
             ProjectNominalDeclarationKind::Struct => 0,
             ProjectNominalDeclarationKind::Enum => 1,
             ProjectNominalDeclarationKind::TypeAlias => 2,
+            ProjectNominalDeclarationKind::Action { .. } => {
+                unreachable!("Action identity was encoded above")
+            }
         });
         self.len(id.owner_path().len())?;
         for segment in id.owner_path() {
@@ -1197,11 +1208,20 @@ impl Encoder {
         self.project_world(id.world());
         // Match the checked-byte grammar above: generation admission owns
         // revision checks independently of stable type identity.
+        if let ProjectNominalDeclarationKind::Action { public_id } = id.kind() {
+            self.len(0);
+            self.byte(3);
+            self.string(public_id.as_str());
+            return;
+        }
         self.module_path(id.module());
         self.byte(match id.kind() {
             ProjectNominalDeclarationKind::Struct => 0,
             ProjectNominalDeclarationKind::Enum => 1,
             ProjectNominalDeclarationKind::TypeAlias => 2,
+            ProjectNominalDeclarationKind::Action { .. } => {
+                unreachable!("Action identity was encoded above")
+            }
         });
         self.len(id.owner_path().len());
         for segment in id.owner_path() {

@@ -892,19 +892,21 @@ fn push_edit(
     Some(())
 }
 
-const fn completion_kind(kind: ProjectNominalDeclarationKind) -> CompletionItemKind {
+const fn completion_kind(kind: &ProjectNominalDeclarationKind) -> CompletionItemKind {
     match kind {
         ProjectNominalDeclarationKind::Struct => CompletionItemKind::STRUCT,
         ProjectNominalDeclarationKind::Enum => CompletionItemKind::ENUM,
         ProjectNominalDeclarationKind::TypeAlias => CompletionItemKind::TYPE_PARAMETER,
+        ProjectNominalDeclarationKind::Action { .. } => CompletionItemKind::EVENT,
     }
 }
 
-const fn declaration_kind_label(kind: ProjectNominalDeclarationKind) -> &'static str {
+const fn declaration_kind_label(kind: &ProjectNominalDeclarationKind) -> &'static str {
     match kind {
         ProjectNominalDeclarationKind::Struct => "struct",
         ProjectNominalDeclarationKind::Enum => "enum",
         ProjectNominalDeclarationKind::TypeAlias => "type alias",
+        ProjectNominalDeclarationKind::Action { .. } => "action payload",
     }
 }
 

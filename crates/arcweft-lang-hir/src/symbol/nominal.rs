@@ -4,6 +4,7 @@
 //! revision-bound source evidence. It does not retain detached syntax trees or
 //! rebuild authored type records from source text.
 
+use arcweft_id::{DeclarationIdentityFamily, DeclarationName, PublicId};
 use arcweft_lang_syntax::ast::{
     common::Visibility,
     module_path::{CanonicalModulePath, ModulePathError, ModuleSegment},
@@ -14,11 +15,16 @@ use crate::identity::{ItemId, TypeId};
 
 use super::{ProjectSymbolLimitKind, ProjectSymbolRevision, ProjectSymbolWorldId, qualified_name};
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ProjectNominalDeclarationKind {
     Struct,
     Enum,
     TypeAlias,
+    /// The declaration's persistent channel identity owns this implicit
+    /// payload record; its lexical binding is only a source lookup name.
+    Action {
+        public_id: PublicId,
+    },
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -121,6 +127,10 @@ pub struct ProjectNominalDeclaration {
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ProjectNominalDeclarationError {
+    InvalidActionParameter {
+        parameter: u32,
+        source: SourceSpan,
+    },
     InvalidName {
         source: SourceSpan,
         reason: ModulePathError,
@@ -145,6 +155,27 @@ pub enum ProjectNominalDeclarationError {
 }
 
 impl ProjectNominalDeclarationId {
+    pub(super) fn action_payload(
+        world: ProjectSymbolWorldId,
+        revision: ProjectSymbolRevision,
+        module: CanonicalModulePath,
+        name: &DeclarationName,
+        public_id: PublicId,
+    ) -> Self {
+        DeclarationIdentityFamily::Action
+            .validate_public_id(&public_id)
+            .expect("a retained Action header owns an Action public ID");
+        Self {
+            world,
+            revision,
+            module,
+            kind: ProjectNominalDeclarationKind::Action { public_id },
+            owner_path: Box::new([]),
+            name: ModuleSegment::new(name.as_str())
+                .expect("a retained declaration name is a module segment"),
+        }
+    }
+
     pub const fn world(&self) -> &ProjectSymbolWorldId {
         &self.world
     }
@@ -154,8 +185,8 @@ impl ProjectNominalDeclarationId {
     pub const fn module(&self) -> &CanonicalModulePath {
         &self.module
     }
-    pub const fn kind(&self) -> ProjectNominalDeclarationKind {
-        self.kind
+    pub const fn kind(&self) -> &ProjectNominalDeclarationKind {
+        &self.kind
     }
     pub fn owner_path(&self) -> &[ModuleSegment] {
         &self.owner_path

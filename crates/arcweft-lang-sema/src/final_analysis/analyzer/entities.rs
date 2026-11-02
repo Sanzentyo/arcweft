@@ -147,6 +147,19 @@ impl Analyzer<'_, '_, '_> {
             .resolve_item(owner)
             .map_err(|_| EntityReferenceResolutionError::Lookup)?;
         let value = match item.kind() {
+            HirItemKind::Action(action) => {
+                let declaration = action
+                    .header()
+                    .public_id()
+                    .resolved()
+                    .and_then(|id| self.symbols.retained(id))
+                    .filter(|symbol| symbol.owner() == owner)
+                    .and_then(|symbol| symbol.action_payload())
+                    .ok_or(EntityReferenceResolutionError::WrongFamily)?;
+                return Ok(Some(TypeKind::ProjectNominal(
+                    crate::types::ProjectNominalType::new(declaration.clone(), Vec::new()),
+                )));
+            }
             HirItemKind::Signal(signal) => Some(signal.observable_type()),
             HirItemKind::Metric(metric) => Some(metric.value_type()),
             _ => None,

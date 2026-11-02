@@ -801,6 +801,73 @@ impl<'transaction, 'source> HirProofReturnHeaderModuleView<'transaction, 'source
         }
     }
 
+    pub(crate) fn resolve_pattern(
+        self,
+        owner: PatternId,
+    ) -> Result<&'transaction HirPattern, IdResolveError> {
+        match self.module {
+            ProofReturnProjectModuleTransaction::Staged(module) => {
+                match module.arenas.patterns.resolve_staged(&module.slots, owner) {
+                    Ok(pattern) => Ok(pattern),
+                    Err(HirArenaError::Slot(HirSlotError::Resolve(error))) => Err(error),
+                    Err(error) => unreachable!(
+                        "validated Proof header pattern failed staged resolution: {error}"
+                    ),
+                }
+            }
+            ProofReturnProjectModuleTransaction::Retained(module) => {
+                module.module.resolve_pattern(owner)
+            }
+        }
+    }
+
+    pub(crate) fn resolve_local(
+        self,
+        owner: LocalId,
+    ) -> Result<&'transaction HirLocal, IdResolveError> {
+        match self.module {
+            ProofReturnProjectModuleTransaction::Staged(module) => {
+                match module.arenas.locals.resolve_staged(&module.slots, owner) {
+                    Ok(local) => Ok(local),
+                    Err(HirArenaError::Slot(HirSlotError::Resolve(error))) => Err(error),
+                    Err(error) => unreachable!(
+                        "validated Proof header local failed staged resolution: {error}"
+                    ),
+                }
+            }
+            ProofReturnProjectModuleTransaction::Retained(module) => {
+                module.module.resolve_local(owner)
+            }
+        }
+    }
+
+    pub(crate) fn pattern_source_site(
+        self,
+        owner: PatternId,
+    ) -> Option<&'transaction HirSourceSite> {
+        match self.module {
+            ProofReturnProjectModuleTransaction::Staged(module) => module
+                .slots
+                .resolve_staged(owner)
+                .ok()
+                .map(crate::slot::HirSlotMetadata::source_site),
+            ProofReturnProjectModuleTransaction::Retained(module) => module
+                .module
+                .source_site(
+                    module.module.provenance().source_identity(),
+                    crate::source_index::HirSourceQuery::Pattern {
+                        owner,
+                        role: crate::source_index::HirPatternSourceRole::Whole,
+                    },
+                )
+                .ok()
+                .and_then(|lookup| match lookup.presence() {
+                    HirSourcePresence::Present(site) => Some(site),
+                    HirSourcePresence::AbsentOptional => None,
+                }),
+        }
+    }
+
     pub fn type_source_site(
         self,
         owner: TypeId,

@@ -1257,6 +1257,14 @@ impl<'a> EntryCheckContext<'a> {
         let kind = match declaration.id().kind() {
             ProjectNominalDeclarationKind::Struct => BoundNominalKind::Struct,
             ProjectNominalDeclarationKind::Enum => BoundNominalKind::Enum,
+            ProjectNominalDeclarationKind::Action { .. } => {
+                diagnostics.push(CheckedEntryDiagnostic::new(
+                    "sema.entry.role_not_direct_nominal",
+                    format!("{role} role is an Action payload; bind one direct project struct or enum"),
+                    source,
+                ).with_related([declaration.source().whole().clone()]));
+                return None;
+            }
             ProjectNominalDeclarationKind::TypeAlias => {
                 diagnostics.push(
                     CheckedEntryDiagnostic::new(

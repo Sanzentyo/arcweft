@@ -2590,6 +2590,14 @@ fn validate_project_item(
             if accepted.owner() != *owner || accepted.family() != item.family() {
                 return Err(FinalSemanticAnalysisError::InvalidOwner);
             }
+            if let Some(payload) = accepted.action_payload()
+                && !matches!(item.ty(), TypeKind::Ref(entity)
+                    if entity.kind() == &crate::types::EntityKind::Action
+                    && matches!(entity.value(), Some(TypeKind::ProjectNominal(nominal))
+                        if nominal.declaration() == payload && nominal.arguments().is_empty()))
+            {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
             let owner = resolve_item(modules, *owner)?;
             let family_matches = matches!(
                 (accepted.family(), owner.kind()),
@@ -3276,7 +3284,10 @@ fn validate_nominal(
     let item = resolve_item(modules, nominal.owner())?;
     if !matches!(
         item.kind(),
-        HirItemKind::Struct(_) | HirItemKind::Enum(_) | HirItemKind::TypeAlias(_)
+        HirItemKind::Struct(_)
+            | HirItemKind::Enum(_)
+            | HirItemKind::TypeAlias(_)
+            | HirItemKind::Action(_)
     ) {
         return Err(FinalSemanticAnalysisError::InvalidNominalOwner);
     }

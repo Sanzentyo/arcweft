@@ -301,7 +301,15 @@ pub struct ProjectRetainedSymbol {
     visibility: Option<Visibility>,
     declaration_span: SourceSpan,
     executable: bool,
-    callable: Option<CallableDeclarationKey>,
+    projection: ProjectRetainedProjection,
+}
+
+/// A retained definition has one semantic projection for its operation role.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ProjectRetainedProjection {
+    Entity,
+    ViewConstructor(CallableDeclarationKey),
+    ActionPayload(super::nominal::ProjectNominalDeclarationId),
 }
 
 /// Unified declaration identity.
@@ -1124,7 +1132,8 @@ impl ExternalSymbol {
 impl ProjectRetainedSymbol {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
-        package: CallablePackageId,
+        world: ProjectSymbolWorldId,
+        revision: ProjectSymbolRevision,
         public_id: PublicId,
         family: DeclarationIdentityFamily,
         name: DeclarationName,
@@ -1134,17 +1143,29 @@ impl ProjectRetainedSymbol {
         declaration_span: SourceSpan,
         executable: bool,
     ) -> Self {
-        let callable = (family == DeclarationIdentityFamily::View).then(|| {
-            CallableDeclarationKey::Existing(
-                CallableDeclarationId::try_new(
-                    package,
+        let projection = match family {
+            DeclarationIdentityFamily::View => {
+                ProjectRetainedProjection::ViewConstructor(CallableDeclarationKey::Existing(
+                    CallableDeclarationId::try_new(
+                        world.package().clone(),
+                        module.clone(),
+                        CallableDeclarationOwner::View,
+                        name.as_str(),
+                    )
+                    .expect("accepted retained View names are callable names"),
+                ))
+            }
+            DeclarationIdentityFamily::Action => ProjectRetainedProjection::ActionPayload(
+                super::nominal::ProjectNominalDeclarationId::action_payload(
+                    world,
+                    revision,
                     module.clone(),
-                    CallableDeclarationOwner::View,
-                    name.as_str(),
-                )
-                .expect("accepted retained View names are callable names"),
-            )
-        });
+                    &name,
+                    public_id.clone(),
+                ),
+            ),
+            _ => ProjectRetainedProjection::Entity,
+        };
         Self {
             public_id,
             family,
@@ -1154,7 +1175,7 @@ impl ProjectRetainedSymbol {
             visibility,
             declaration_span,
             executable,
-            callable,
+            projection,
         }
     }
 
@@ -1165,7 +1186,20 @@ impl ProjectRetainedSymbol {
     /// Callable projection of this retained owner. Entity lookup continues to
     /// use its public ID and the single retained scope binding.
     pub const fn callable(&self) -> Option<&CallableDeclarationKey> {
-        self.callable.as_ref()
+        match &self.projection {
+            ProjectRetainedProjection::ViewConstructor(declaration) => Some(declaration),
+            ProjectRetainedProjection::Entity | ProjectRetainedProjection::ActionPayload(_) => None,
+        }
+    }
+
+    /// Exact nominal identity of this declaration's typed Action message.
+    pub const fn action_payload(&self) -> Option<&super::nominal::ProjectNominalDeclarationId> {
+        match &self.projection {
+            ProjectRetainedProjection::ActionPayload(declaration) => Some(declaration),
+            ProjectRetainedProjection::Entity | ProjectRetainedProjection::ViewConstructor(_) => {
+                None
+            }
+        }
     }
 
     pub const fn family(&self) -> DeclarationIdentityFamily {

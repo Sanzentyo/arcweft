@@ -6,18 +6,22 @@ use arcweft_lang_syntax::ast::{
     common::Visibility,
     module_path::{CanonicalModulePath, ModuleSegment},
 };
-use arcweft_source::SourceSpan;
+use arcweft_source::{SourceDocument, SourceRange, SourceSpan};
 
-use crate::identity::{ItemId, TypeId};
+use crate::identity::{ItemId, LocalId, PatternId, TypeId};
 use crate::item::{
-    HirEnumItem, HirEnumVariantPayload, HirGenericParameter, HirRequiredName, HirStructField,
-    HirStructItem, HirTypeAliasItem, HirWherePredicate,
+    HirActionDeclaration, HirEnumItem, HirEnumVariantPayload, HirGenericParameter,
+    HirParameterKind, HirRequiredName, HirRetainedName, HirStructField, HirStructItem,
+    HirTypeAliasItem, HirWherePredicate,
 };
+use crate::leaf::HirName;
 use crate::module::HirModule;
+use crate::pattern::{HirPattern, HirPatternBinding, HirPatternKind};
 use crate::proof_return::HirProofReturnHeaderModuleView;
+use crate::scope::HirLocal;
 use crate::source_index::{
-    HirDeclarationSourceRole, HirItemSourceRole, HirNominalMemberSourcePart, HirSourcePresence,
-    HirSourceQuery, HirSourceSite, HirTypeSourceRole,
+    HirDeclarationSourceRole, HirItemSourceRole, HirNominalMemberSourcePart, HirPatternSourceRole,
+    HirSourcePresence, HirSourceQuery, HirSourceSite, HirTypeSourceRole,
 };
 use crate::type_ref::{HirAssociatedTypeBinding, HirType, HirTypeKind};
 
@@ -37,6 +41,7 @@ pub(super) enum NominalHir<'a> {
     Struct(&'a HirStructItem),
     Enum(&'a HirEnumItem),
     TypeAlias(&'a HirTypeAliasItem),
+    Action(&'a HirActionDeclaration),
 }
 
 #[derive(Clone, Copy)]
@@ -46,6 +51,51 @@ pub(super) enum NominalModuleView<'a, 'source> {
 }
 
 impl<'a> NominalModuleView<'a, '_> {
+    fn document(self) -> &'a SourceDocument {
+        match self {
+            Self::Published(module) => module.provenance().document(),
+            Self::ProofHeader(module) => module.document(),
+        }
+    }
+
+    fn resolve_pattern(self, owner: PatternId) -> Option<&'a HirPattern> {
+        match self {
+            Self::Published(module) => module.resolve_pattern(owner).ok(),
+            Self::ProofHeader(module) => module.resolve_pattern(owner).ok(),
+        }
+    }
+
+    fn resolve_local(self, owner: LocalId) -> Option<&'a HirLocal> {
+        match self {
+            Self::Published(module) => module.resolve_local(owner).ok(),
+            Self::ProofHeader(module) => module.resolve_local(owner).ok(),
+        }
+    }
+
+    fn pattern_source(self, owner: PatternId) -> Option<SourceSpan> {
+        match self {
+            Self::Published(module) => {
+                let lookup = module
+                    .source_site(
+                        module.provenance().source_identity(),
+                        HirSourceQuery::Pattern {
+                            owner,
+                            role: HirPatternSourceRole::Whole,
+                        },
+                    )
+                    .ok()?;
+                match lookup.presence() {
+                    HirSourcePresence::Present(HirSourceSite::Span(span)) => Some(span.clone()),
+                    _ => None,
+                }
+            }
+            Self::ProofHeader(module) => match module.pattern_source_site(owner)? {
+                HirSourceSite::Span(span) => Some(span.clone()),
+                HirSourceSite::Insertion(_) => None,
+            },
+        }
+    }
+
     fn resolve_type(self, owner: TypeId) -> Option<&'a HirTypeKind> {
         match self {
             Self::Published(module) => module.resolve_type(owner).ok().map(HirType::kind),
@@ -99,19 +149,31 @@ impl<'a> NominalModuleView<'a, '_> {
 }
 
 impl<'a> NominalHir<'a> {
-    pub(super) const fn kind(self) -> ProjectNominalDeclarationKind {
+    pub(super) fn kind(self) -> ProjectNominalDeclarationKind {
         match self {
             Self::Struct(_) => ProjectNominalDeclarationKind::Struct,
             Self::Enum(_) => ProjectNominalDeclarationKind::Enum,
             Self::TypeAlias(_) => ProjectNominalDeclarationKind::TypeAlias,
+            Self::Action(item) => ProjectNominalDeclarationKind::Action {
+                public_id: item
+                    .header()
+                    .public_id()
+                    .resolved()
+                    .expect("nominal Action publication follows retained header admission")
+                    .clone(),
+            },
         }
     }
 
-    fn name(self) -> &'a HirRequiredName {
+    fn name(self) -> Option<&'a str> {
         match self {
-            Self::Struct(item) => item.name(),
-            Self::Enum(item) => item.name(),
-            Self::TypeAlias(item) => item.name(),
+            Self::Struct(item) => item.name().resolved().map(HirName::as_str),
+            Self::Enum(item) => item.name().resolved().map(HirName::as_str),
+            Self::TypeAlias(item) => item.name().resolved().map(HirName::as_str),
+            Self::Action(item) => match item.header().name() {
+                HirRetainedName::Resolved(name) => Some(name.as_str()),
+                HirRetainedName::Missing | HirRetainedName::Invalid => None,
+            },
         }
     }
 
@@ -120,6 +182,7 @@ impl<'a> NominalHir<'a> {
             Self::Struct(item) => item.generic_parameters(),
             Self::Enum(item) => item.generic_parameters(),
             Self::TypeAlias(item) => item.generic_parameters(),
+            Self::Action(_) => &[],
         }
     }
 
@@ -128,6 +191,7 @@ impl<'a> NominalHir<'a> {
             Self::Struct(item) => item.where_predicates(),
             Self::Enum(item) => item.where_predicates(),
             Self::TypeAlias(item) => item.where_predicates(),
+            Self::Action(_) => &[],
         }
     }
 
@@ -136,6 +200,7 @@ impl<'a> NominalHir<'a> {
             Self::Struct(item) => item.fields().len(),
             Self::Enum(item) => item.variants().len(),
             Self::TypeAlias(_) => 0,
+            Self::Action(item) => item.parameters().len(),
         }
     }
 
@@ -162,6 +227,9 @@ impl<'a> NominalHir<'a> {
                 }
             }
             Self::TypeAlias(item) => types.push(item.target()),
+            Self::Action(item) => {
+                types.extend(item.parameters().iter().map(crate::item::HirParameter::ty));
+            }
         }
         types
     }
@@ -188,7 +256,16 @@ pub(super) fn build_nominal_declaration(
     revision: ProjectSymbolRevision,
 ) -> Result<ProjectNominalDeclaration, ProjectNominalDeclarationError> {
     let whole = item_span(module, owner);
-    let name = required_name(hir.name(), &whole)?;
+    let name = hir
+        .name()
+        .ok_or_else(|| ProjectNominalDeclarationError::RecoveredName {
+            source: whole.clone(),
+        })?;
+    let name =
+        ModuleSegment::new(name).map_err(|reason| ProjectNominalDeclarationError::InvalidName {
+            source: whole.clone(),
+            reason,
+        })?;
     let name_source = item_component_span(
         module,
         owner,
@@ -354,6 +431,9 @@ pub(super) fn build_nominal_declaration(
         NominalHir::TypeAlias(item) => ProjectNominalBody::TypeAlias {
             target: item.target(),
         },
+        NominalHir::Action(item) => ProjectNominalBody::Struct {
+            fields: build_action_fields(item, module)?,
+        },
     };
 
     Ok(ProjectNominalDeclaration {
@@ -376,6 +456,66 @@ pub(super) fn build_nominal_declaration(
             generics: None,
         },
     })
+}
+
+fn build_action_fields(
+    item: &HirActionDeclaration,
+    module: NominalModuleView<'_, '_>,
+) -> Result<Box<[ProjectNominalField]>, ProjectNominalDeclarationError> {
+    item.parameters()
+        .iter()
+        .enumerate()
+        .map(|(ordinal, parameter)| {
+            let source = module
+                .pattern_source(parameter.pattern())
+                .expect("an authored Action parameter owns its original pattern span");
+            let invalid = || ProjectNominalDeclarationError::InvalidActionParameter {
+                parameter: u32::try_from(ordinal).expect("nominal member limit fits u32"),
+                source: source.clone(),
+            };
+            let Some(HirPatternKind::Binding(HirPatternBinding::Bound { name, local })) = module
+                .resolve_pattern(parameter.pattern())
+                .map(HirPattern::kind)
+            else {
+                return Err(invalid());
+            };
+            if parameter.kind() != HirParameterKind::Fixed
+                || parameter.locals() != [*local]
+                || parameter.default().is_some()
+                || !module.resolve_local(*local).is_some_and(|binding| {
+                    binding.scope() == item.callable_scope()
+                        && !binding.is_mutable_binding()
+                        && !binding.is_poisoned()
+                        && binding.name() == name
+                })
+            {
+                return Err(invalid());
+            }
+            let name = ModuleSegment::new(name.as_str()).map_err(|reason| {
+                ProjectNominalDeclarationError::InvalidName {
+                    source: source.clone(),
+                    reason,
+                }
+            })?;
+            let ty_source = type_span(module, parameter.ty());
+            let whole = module
+                .document()
+                .span(SourceRange::new(
+                    source.range().start(),
+                    ty_source.range().end(),
+                ))
+                .expect("Action parameter anchors belong to the original document");
+            Ok(ProjectNominalField {
+                name,
+                ty: parameter.ty(),
+                source: ProjectNominalFieldSource {
+                    whole,
+                    name: source,
+                },
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Vec::into_boxed_slice)
 }
 
 fn build_type_parameters(

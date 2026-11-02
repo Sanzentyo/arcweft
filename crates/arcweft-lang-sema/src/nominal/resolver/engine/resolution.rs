@@ -476,7 +476,9 @@ impl Resolver<'_, '_> {
             .map(|(owner, value)| self.require_type(context, owner, value))
             .collect::<Vec<_>>();
         match declaration.id().kind() {
-            ProjectNominalDeclarationKind::Struct | ProjectNominalDeclarationKind::Enum => {
+            ProjectNominalDeclarationKind::Struct
+            | ProjectNominalDeclarationKind::Enum
+            | ProjectNominalDeclarationKind::Action { .. } => {
                 let nominal = ProjectNominalType::new(declaration.id().clone(), checked);
                 Ok(NameResult {
                     value: NodeValue::typed(

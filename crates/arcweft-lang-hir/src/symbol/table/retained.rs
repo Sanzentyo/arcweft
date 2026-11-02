@@ -163,7 +163,8 @@ impl ProjectSymbolTable {
         self.symbols.insert(
             declaration_id,
             ProjectSymbol::Retained(ProjectRetainedSymbol::new(
-                self.world.package().clone(),
+                self.world.clone(),
+                self.revision,
                 public_id.clone(),
                 header.family(),
                 name.clone(),

@@ -644,6 +644,15 @@ impl ProjectSymbolTable {
                 HirItemKind::Struct(item) => nominal::NominalHir::Struct(item),
                 HirItemKind::Enum(item) => nominal::NominalHir::Enum(item),
                 HirItemKind::TypeAlias(item) => nominal::NominalHir::TypeAlias(item),
+                HirItemKind::Action(item)
+                    if item.header().public_id().resolved().is_some_and(|id| {
+                        table
+                            .retained(id)
+                            .is_some_and(|symbol| symbol.owner() == item_ref.id())
+                    }) =>
+                {
+                    nominal::NominalHir::Action(item)
+                }
                 _ => continue,
             };
             let module = item_ref.module();
@@ -1320,10 +1329,19 @@ impl ProjectSymbolTable {
                     reference: path.clone(),
                     source,
                 }),
+            ProjectSymbolTargetId::Retained(id) => self
+                .retained(id)
+                .and_then(ProjectRetainedSymbol::action_payload)
+                .and_then(|id| self.nominal(id))
+                .map(ProjectTypeTarget::Nominal)
+                .ok_or_else(|| ProjectTypeLookupError::WrongKind {
+                    reference: path.clone(),
+                    source,
+                    actual: Box::new(actual),
+                }),
             ProjectSymbolTargetId::Callable(_)
             | ProjectSymbolTargetId::Trait(_)
             | ProjectSymbolTargetId::StructuralCallable(_)
-            | ProjectSymbolTargetId::Retained(_)
             | ProjectSymbolTargetId::Module(_) => Err(ProjectTypeLookupError::WrongKind {
                 reference: path.clone(),
                 source,
@@ -1350,10 +1368,12 @@ impl ProjectSymbolTable {
                     ProjectSymbolTargetId::External(id) => {
                         ProjectTypeTarget::External(self.external(*id)?)
                     }
+                    ProjectSymbolTargetId::Retained(id) => ProjectTypeTarget::Nominal(
+                        self.nominal(self.retained(id)?.action_payload()?)?,
+                    ),
                     ProjectSymbolTargetId::Callable(_)
                     | ProjectSymbolTargetId::Trait(_)
                     | ProjectSymbolTargetId::StructuralCallable(_)
-                    | ProjectSymbolTargetId::Retained(_)
                     | ProjectSymbolTargetId::Module(_) => {
                         return None;
                     }

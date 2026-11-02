@@ -428,7 +428,9 @@ fn nominal_key(
     let expected_kind = match nominal.id().kind() {
         ProjectNominalDeclarationKind::Struct => BoundNominalKind::Struct,
         ProjectNominalDeclarationKind::Enum => BoundNominalKind::Enum,
-        ProjectNominalDeclarationKind::TypeAlias => return None,
+        ProjectNominalDeclarationKind::TypeAlias | ProjectNominalDeclarationKind::Action { .. } => {
+            return None;
+        }
     };
     index
         .entry_role_edges()

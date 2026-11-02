@@ -1,6 +1,142 @@
 use super::*;
 
 #[test]
+fn action_payload_publishes_one_nominal_record_from_its_original_declaration() {
+    let (document, project) =
+        project("pub action @action:.feedback.submit submit(value: String, count: i64)\n");
+    let table = ProjectSymbolTable::link(
+        project.view(),
+        &declarations(&document, Vec::new(), "action-payload-record"),
+    )
+    .expect("Action declaration links")
+    .into_table();
+    let action = table
+        .retained_symbols()
+        .find(|symbol| symbol.public_id().as_str() == "action.feedback.submit")
+        .expect("original Action declaration");
+    let payload = table
+        .nominal_symbols()
+        .find(|symbol| symbol.owner() == action.owner())
+        .expect("Action payload retains its defining item instead of a detached schema");
+    assert_eq!(payload.id().module(), action.module());
+    assert_eq!(action.action_payload(), Some(payload.id()));
+    let ProjectTypeTarget::Nominal(resolved) = table
+        .resolve_hir_type_target(
+            action.module(),
+            &type_path("submit"),
+            payload.source().name().clone(),
+        )
+        .expect("the retained binding also resolves in a type context")
+    else {
+        panic!("Action payload type");
+    };
+    assert_eq!(resolved.id(), payload.id());
+    assert_eq!(table.visible_type_bindings(action.module()).count(), 1);
+    let ProjectNominalBody::Struct { fields } = payload.body() else {
+        panic!("Action payload has a declaration-ordered record shape");
+    };
+    assert_eq!(
+        fields
+            .iter()
+            .map(|field| field.name().as_str())
+            .collect::<Vec<_>>(),
+        ["value", "count"],
+    );
+    assert!(
+        fields
+            .iter()
+            .all(|field| field.ty().module() == action.owner().module())
+    );
+    assert_eq!(
+        &document.text()[fields[0].source().whole().range().as_range()],
+        "value: String"
+    );
+    assert_eq!(
+        &document.text()[fields[1].source().name().range().as_range()],
+        "count"
+    );
+}
+
+#[test]
+fn action_payload_empty_record_has_one_retained_binding_and_no_fake_callable() {
+    let (document, project) = project("pub action clicked()\n");
+    let table = ProjectSymbolTable::link(
+        project.view(),
+        &declarations(&document, Vec::new(), "action-empty"),
+    )
+    .unwrap()
+    .into_table();
+    let action = table.retained_symbols().next().unwrap();
+    let payload = table.nominal(action.action_payload().unwrap()).unwrap();
+    assert!(matches!(payload.body(), ProjectNominalBody::Struct { fields } if fields.is_empty()));
+    assert_eq!(table.callable_symbols().count(), 0);
+    assert_eq!(table.nominal_symbols().count(), 1);
+}
+
+#[test]
+fn action_payload_imports_preserve_the_original_channel_and_type_owner() {
+    let (documents, project) = project_modules(&[
+        ("", "mod feedback\nuse crate.feedback.submit as send\n"),
+        ("feedback", "pub action submit(value: String)\n"),
+    ]);
+    let table = ProjectSymbolTable::link(
+        project.view(),
+        &empty_declarations(&documents, "action-import"),
+    )
+    .unwrap()
+    .into_table();
+    let action = table.retained_symbols().next().unwrap();
+    assert_eq!(action.public_id().as_str(), "action.feedback.submit");
+    for spelling in ["send", "crate.feedback.submit"] {
+        let target = table
+            .resolve_hir_type_target(
+                &CanonicalModulePath::crate_root(),
+                &type_path(spelling),
+                action.declaration_span().clone(),
+            )
+            .unwrap();
+        let ProjectTypeTarget::Nominal(payload) = target else {
+            panic!("payload type");
+        };
+        assert_eq!(Some(payload.id()), action.action_payload());
+    }
+    assert_eq!(table.nominal_symbols().count(), 1);
+}
+
+#[test]
+fn action_payload_rejects_patterns_without_one_immutable_named_field() {
+    for source in [
+        "pub action submit((value, other): (i64, i64))\n",
+        "pub action submit(mut value: i64)\n",
+    ] {
+        let name = SourceName::path("invalid-action.arcw");
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-test://invalid-action").unwrap(),
+                name.clone(),
+                source,
+            )
+            .unwrap(),
+        );
+        let mut syntax = SyntaxDatabase::try_new().unwrap();
+        let parsed = syntax
+            .parse_initial(
+                SourceSnapshotId::initial(name),
+                document,
+                ParseOptions::default(),
+            )
+            .unwrap();
+        assert!(
+            parsed
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code() == "syntax.action.invalid_parameter"),
+            "invalid Action field patterns must be rejected at their original syntax boundary"
+        );
+    }
+}
+
+#[test]
 fn nominal_publication_matrix_rejects_family_specific_duplicates() {
     let cases = [
         ("PUB-DUP-ALIAS", "type Thing = i32\ntype Thing = i32\n"),

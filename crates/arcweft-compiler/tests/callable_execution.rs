@@ -116,6 +116,26 @@ entry cli @entry.main { goto @flow.main }
 }
 
 #[test]
+fn action_payload_record_survives_generic_calls_and_capture_in_native_and_decoded_awbc() {
+    const SOURCE: &str = r#"
+entry cli @entry.main { goto @flow.main }
+pub action @action:.feedback.submit submit(value: String, count: i64)
+fn identity<T>(value: T) -> T { value }
+fn result(message: submit) -> i64 {
+    if message.value == "hello" { message.count } else { 0i64 }
+}
+flow main() -> i64 {
+    let message: submit = { count = 42i64, value = "hello" }
+    let retained = identity(message)
+    let callback = || result(retained)
+    return callback()
+}
+"#;
+    assert_native_return(SOURCE, "42");
+    assert_awbc_return(SOURCE, RuntimeValue::i64(42));
+}
+
+#[test]
 fn record_field_reads_preserve_the_owner_in_native_and_decoded_awbc() {
     const SOURCE: &str = r#"
 entry cli @entry.main { goto @flow.main }

@@ -756,6 +756,14 @@ impl ProjectSymbolTable {
                 HirItemKind::Struct(item) => NominalHir::Struct(item),
                 HirItemKind::Enum(item) => NominalHir::Enum(item),
                 HirItemKind::TypeAlias(item) => NominalHir::TypeAlias(item),
+                HirItemKind::Action(item)
+                    if item.header().public_id().resolved().is_some_and(|id| {
+                        self.retained(id)
+                            .is_some_and(|symbol| symbol.owner() == item_ref.id())
+                    }) =>
+                {
+                    NominalHir::Action(item)
+                }
                 _ => continue,
             };
             let source = declaration_span(
@@ -866,13 +874,25 @@ impl ProjectSymbolTable {
             });
             return;
         }
-        if let Some(first) = self
-            .scopes
-            .get(module_path)
-            .and_then(|scope| scope.get(name))
-            .and_then(|bindings| bindings.first())
-            .and_then(|binding| binding.sites.first())
-            .cloned()
+        let action_projection = match nominal.id().kind() {
+            super::super::nominal::ProjectNominalDeclarationKind::Action { public_id } => {
+                let retained = self
+                    .retained(public_id)
+                    .expect("Action nominal publication follows retained admission");
+                assert_eq!(retained.owner(), nominal.owner());
+                assert_eq!(retained.action_payload(), Some(nominal.id()));
+                true
+            }
+            _ => false,
+        };
+        if !action_projection
+            && let Some(first) = self
+                .scopes
+                .get(module_path)
+                .and_then(|scope| scope.get(name))
+                .and_then(|bindings| bindings.first())
+                .and_then(|binding| binding.sites.first())
+                .cloned()
         {
             diagnostics.push(ProjectSymbolLinkError::duplicate_declaration(
                 module_path.clone(),
@@ -883,22 +903,24 @@ impl ProjectSymbolTable {
             return;
         }
         let id = nominal.id().clone();
-        let path = ProjectSymbolPath::new(
-            ModulePathRoot::ImplicitCrate,
-            [ProjectSymbolSegment::try_new(name)
-                .expect("nominal names are valid project symbol segments")],
-        )
-        .expect("one nominal name is a valid implicit project binding");
-        self.insert_scope_binding(
-            module_path,
-            ScopeBinding::new(
-                path,
-                ProjectSymbolTargetId::Nominal(id.clone()),
-                nominal.visibility(),
-                module_path.clone(),
-                [nominal.source().name().clone()],
-            ),
-        );
+        if !action_projection {
+            let path = ProjectSymbolPath::new(
+                ModulePathRoot::ImplicitCrate,
+                [ProjectSymbolSegment::try_new(name)
+                    .expect("nominal names are valid project symbol segments")],
+            )
+            .expect("one nominal name is a valid implicit project binding");
+            self.insert_scope_binding(
+                module_path,
+                ScopeBinding::new(
+                    path,
+                    ProjectSymbolTargetId::Nominal(id.clone()),
+                    nominal.visibility(),
+                    module_path.clone(),
+                    [nominal.source().name().clone()],
+                ),
+            );
+        }
         self.nominal_ids.insert(id.clone());
         self.symbols.insert(
             ProjectDeclarationId::Nominal(id),

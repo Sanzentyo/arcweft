@@ -454,6 +454,11 @@ impl<'a> EntryContractBuilder<'a> {
                             "normalized entry contract type retained an alias identity".to_owned()
                         );
                     }
+                    arcweft_lang_hir::symbol::nominal::ProjectNominalDeclarationKind::Action {
+                        ..
+                    } => {
+                        return Err("an Action payload is not an entry role contract".to_owned());
+                    }
                 };
                 CanonicalType::Nominal(BoundNominalTypeKey::new(
                     self.package.clone(),

@@ -818,7 +818,11 @@ fn resolve_nominal_lookup_rows<'a>(
             let ProjectTypeTarget::Nominal(declaration) = target else {
                 panic!("{test_id}: `{spelling}` must resolve to a nominal declaration");
             };
-            assert_eq!(declaration.id().kind(), kind, "{test_id}: declaration kind");
+            assert_eq!(
+                declaration.id().kind(),
+                &kind,
+                "{test_id}: declaration kind"
+            );
             (test_id, declaration.id().clone())
         })
         .collect()
