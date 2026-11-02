@@ -1023,6 +1023,35 @@ pub struct HirDecimal {
 }
 
 impl HirDecimal {
+    /// Converts the normalized decimal value to a finite IEEE binary32 value.
+    /// The exponent stays compact even at the HIR resource limit.
+    pub fn to_finite_f32(&self) -> Option<f32> {
+        self.scientific_decimal()
+            .parse::<f32>()
+            .ok()
+            .filter(|value| value.is_finite())
+    }
+
+    /// Converts the normalized decimal value to a finite IEEE binary64 value.
+    /// Rounding is owned by the decimal parser, not an accumulated digit sum.
+    pub fn to_finite_f64(&self) -> Option<f64> {
+        self.scientific_decimal()
+            .parse::<f64>()
+            .ok()
+            .filter(|value| value.is_finite())
+    }
+
+    fn scientific_decimal(&self) -> String {
+        let digits = self
+            .coefficient
+            .digits()
+            .iter()
+            .map(|digit| char::from(b'0' + *digit))
+            .collect::<String>();
+        let power = i64::from(self.exponent10) - i64::from(self.scale);
+        format!("{digits}e{power}")
+    }
+
     pub(crate) fn try_new(
         coefficient: HirDecimalDigits,
         scale: u32,

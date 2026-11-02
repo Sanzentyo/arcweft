@@ -20,8 +20,8 @@ bg(@asset:.bg.poster, fit = "intrinsic", alignment.x = "right", alignment.y = "b
 image(
   asset = @asset:.bg.pulse,
   id = "image.sample.pulse_sprite",
-  target = "target.sample.pulse_sprite",
-  layer = "layer.foreground",
+  target = @target.sample.pulse_sprite,
+  layer = @layer.foreground,
   x = 96px,
   y = 72px,
   width = 360px,
@@ -68,11 +68,10 @@ semantic destinations retain both the metadata family and the complete key.
 Argument expressions follow authored source order independently of the compact
 parameter order used by the executable call ABI.
 
-`image @image... { ... }` declares the same bounded image object metadata at
-module scope. `image(@image.id)` expands that declaration into the same
-`ImagePresentationObject` model used by inline bounded calls, so Agent observe,
-hit-test, capture, bundle validation, and native rendering all see the same
-typed object. Call-site named arguments may override declaration fields.
+Reusable image objects use ordinary factory functions that call `image(...)`
+and return the issued `Handle<ImageSurface>`. The call's checked metadata feeds
+the same `ImagePresentationObject` model used by Agent observation, hit-test,
+capture, bundle validation, and native rendering.
 
 Assets are catalog-only. The build adapter enumerates the manifest-selected
 `assets/` root, normalizes each relative `/`-separated virtual path, removes its
@@ -84,9 +83,6 @@ family-relative references such as `bg(@asset:.bg.room)` and
 `@asset.bg.room` remain valid for generated surfaces, manifest/tooling output,
 stored public-id roundtrips, and external interfaces that need the stored public
 id verbatim.
-
-Declared image objects are the canonical reusable object form and use the same
-semantic image object model as ordinary image calls.
 
 ## Object Model
 

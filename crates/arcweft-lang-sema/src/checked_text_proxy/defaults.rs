@@ -135,7 +135,7 @@ fn reduce_literal(
         (
             HirLiteral::Float(HirFloatLiteral::Value { decimal, .. }),
             CheckedCompileTimeScalarKind::Milli,
-        ) => checked_signed_milli(signed_decimal_milli(decimal, negative)?)
+        ) => checked_signed_milli(signed_decimal_milli(decimal, negative, 1)?)
             .map(|value| CheckedCompileTimeScalar::Milli(Milli(value))),
         (
             HirLiteral::Integer(HirIntegerLiteral::Value { magnitude, .. }),
@@ -148,7 +148,7 @@ fn reduce_literal(
         (
             HirLiteral::Float(HirFloatLiteral::Value { decimal, .. }),
             CheckedCompileTimeScalarKind::Ratio,
-        ) if !negative => checked_ratio(signed_decimal_milli(decimal, false)?),
+        ) if !negative => checked_ratio(signed_decimal_milli(decimal, false, 1)?),
         (
             HirLiteral::Integer(HirIntegerLiteral::Value { .. })
             | HirLiteral::Float(HirFloatLiteral::Value { .. }),
@@ -177,7 +177,7 @@ fn reduce_literal(
                 }
             };
             Ok(CheckedCompileTimeScalar::Length(CheckedLength {
-                milli: checked_signed_milli(signed_decimal_milli(decimal, negative)?)?,
+                milli: checked_signed_milli(signed_decimal_milli(decimal, negative, 1)?)?,
                 unit,
             }))
         }
@@ -188,7 +188,7 @@ fn reduce_literal(
             }),
             CheckedCompileTimeScalarKind::Ratio,
         ) if !negative => {
-            let milli = signed_decimal_milli(decimal, false)?;
+            let milli = signed_decimal_milli(decimal, false, 1)?;
             if milli % 100 != 0 {
                 return Err(CompileTimeScalarReductionError::PrecisionLoss);
             }
@@ -197,12 +197,36 @@ fn reduce_literal(
         (
             HirLiteral::UnitNumber(HirUnitNumberLiteral::Value {
                 decimal,
-                unit: HirUnitNumberUnit::Deg,
+                unit: unit @ (HirUnitNumberUnit::Deg | HirUnitNumberUnit::Turn),
             }),
             CheckedCompileTimeScalarKind::Angle,
-        ) => Ok(CheckedCompileTimeScalar::Angle(CheckedAngle {
-            milli_degrees: checked_angle_milli(signed_decimal_milli(decimal, negative)?)?,
-        })),
+        ) => {
+            let multiplier = if *unit == HirUnitNumberUnit::Turn {
+                360
+            } else {
+                1
+            };
+            Ok(CheckedCompileTimeScalar::Angle(CheckedAngle {
+                milli_degrees: checked_angle_milli(signed_decimal_milli(
+                    decimal, negative, multiplier,
+                )?)?,
+            }))
+        }
+        (
+            HirLiteral::UnitNumber(HirUnitNumberLiteral::Value {
+                decimal,
+                unit: HirUnitNumberUnit::Rad,
+            }),
+            CheckedCompileTimeScalarKind::Angle,
+        ) => {
+            let radians = decimal
+                .to_finite_f64()
+                .ok_or(CompileTimeScalarReductionError::Overflow)?;
+            let angle = CheckedAngle::try_from_radians(if negative { -radians } else { radians })
+                .ok_or(CompileTimeScalarReductionError::Overflow)?;
+            checked_angle_milli(i64::from(angle.milli_degrees))?;
+            Ok(CheckedCompileTimeScalar::Angle(angle))
+        }
         (
             HirLiteral::UnitNumber(HirUnitNumberLiteral::Value { .. }),
             CheckedCompileTimeScalarKind::Angle,
@@ -280,6 +304,7 @@ fn signed_i64(value: &HirBigUint, negative: bool) -> Result<i64, CompileTimeScal
 fn signed_decimal_milli(
     decimal: &HirDecimal,
     negative: bool,
+    multiplier: u16,
 ) -> Result<i64, CompileTimeScalarReductionError> {
     let mut coefficient = 0_i128;
     for digit in decimal.coefficient().digits() {
@@ -288,6 +313,9 @@ fn signed_decimal_milli(
             .and_then(|value| value.checked_add(i128::from(*digit)))
             .ok_or(CompileTimeScalarReductionError::Overflow)?;
     }
+    coefficient = coefficient
+        .checked_mul(i128::from(multiplier))
+        .ok_or(CompileTimeScalarReductionError::Overflow)?;
     let power = i64::from(decimal.exponent10()) - i64::from(decimal.scale()) + 3;
     let milli = if power >= 0 {
         coefficient

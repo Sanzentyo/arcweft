@@ -103,9 +103,53 @@ pub struct CheckedAngle {
     pub milli_degrees: i32,
 }
 
+impl CheckedAngle {
+    /// Normalizes finite radians to milli-degrees, rounding ties to even.
+    /// Returns `None` when the normalized value exceeds the signed carrier.
+    #[must_use]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "the value is rounded and checked against the complete i32 range before casting"
+    )]
+    pub fn try_from_radians(radians: f64) -> Option<Self> {
+        let milli = (radians * (180_000.0 / std::f64::consts::PI)).round_ties_even();
+        if !milli.is_finite() || milli < f64::from(i32::MIN) || milli > f64::from(i32::MAX) {
+            return None;
+        }
+        Some(Self {
+            milli_degrees: milli as i32,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn radians_normalize_deterministically_and_reject_nonfinite_or_overflow() {
+        assert_eq!(
+            CheckedAngle::try_from_radians(std::f64::consts::FRAC_PI_2),
+            Some(CheckedAngle {
+                milli_degrees: 90_000
+            })
+        );
+        assert_eq!(
+            CheckedAngle::try_from_radians(1.57),
+            Some(CheckedAngle {
+                milli_degrees: 89_954
+            })
+        );
+        assert_eq!(
+            CheckedAngle::try_from_radians(-1.57),
+            Some(CheckedAngle {
+                milli_degrees: -89_954
+            })
+        );
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, f64::MAX] {
+            assert_eq!(CheckedAngle::try_from_radians(value), None);
+        }
+    }
 
     #[test]
     fn ratio_admission_includes_endpoints_and_rejects_overflow() {

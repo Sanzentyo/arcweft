@@ -145,7 +145,7 @@ fn source_view_computed_callee_keeps_prefix_effects_in_decoded_awbc() {
     );
 }
 
-fn run_flow(native: bool, body: &str, expected: &str) {
+pub(super) fn run_flow(native: bool, body: &str, expected: &str) {
     run_flow_with_declarations(native, "", body, expected);
 }
 
@@ -169,8 +169,8 @@ flow main() -> i64 {{ {body} }}
 entry cli @entry.main {{ goto @flow.main }}
 "#
     );
-    let compiled = super::compile_source(&source)
-        .expect("semantic View aliases compile in their original Flow");
+    let compiled =
+        super::compile_source(&source).expect("semantic values compile in their original Flow");
     let code =
         super::AwbcLowerer::new(&compiled.plan, &compiled.dialogue_content, "view-flow.arcw")
             .lower()

@@ -791,15 +791,15 @@ impl<'hir> FinalExprLowerer<'hir> {
                     format!("checked literal fact is missing for expression {id:?}")
                 })?)
             }
-            HirExprKind::EntityReference(_) => {
-                RuntimeExprSeedKind::EntityRef(self.entity_reference(id)?)
-            }
+            // Accepted reference tokens can denote an entity or a reduced
+            // public-id constant. The checked resolution owns that choice.
+            HirExprKind::EntityReference(_) => self.lower_resolved_value(id)?,
             HirExprKind::Path(_) | HirExprKind::Select(_)
                 if self.expression_variant(id).is_some() =>
             {
                 self.lower_unit_variant(id)?
             }
-            HirExprKind::Path(_) => self.lower_path(id)?,
+            HirExprKind::Path(_) => self.lower_resolved_value(id)?,
             HirExprKind::ShortVariant(_) => self.lower_unit_variant(id)?,
             HirExprKind::Tuple(tuple) => RuntimeExprSeedKind::Tuple(
                 tuple
@@ -2033,7 +2033,7 @@ impl<'hir> FinalExprLowerer<'hir> {
         }
     }
 
-    fn lower_path(&self, id: ExprId) -> Result<RuntimeExprSeedKind, String> {
+    fn lower_resolved_value(&self, id: ExprId) -> Result<RuntimeExprSeedKind, String> {
         match self
             .value(id)
             .ok_or_else(|| format!("checked value fact is missing for expression {id:?}"))?
@@ -2048,6 +2048,9 @@ impl<'hir> FinalExprLowerer<'hir> {
             RuntimeResolvedValue::Entity(entity) => {
                 Ok(RuntimeExprSeedKind::EntityRef(entity.runtime_reference()))
             }
+            RuntimeResolvedValue::DialogueLine(line) => Ok(RuntimeExprSeedKind::EntityRef(
+                arcweft_core::value::RuntimeEntityReference::DialogueLine(line.clone()),
+            )),
             RuntimeResolvedValue::ProjectCallable { target, .. } => {
                 let state = match target {
                     RuntimeProjectCallableValueTarget::Closed(instance) => self
@@ -2081,11 +2084,11 @@ impl<'hir> FinalExprLowerer<'hir> {
                     captures: Box::new([]),
                 })
             }
-            RuntimeResolvedValue::Intrinsic(_)
-            | RuntimeResolvedValue::DialogueLine(_)
-            | RuntimeResolvedValue::Registered(_) => Err(format!(
-                "resolved callable/project value at {id:?} requires a builder-issued runtime function-value identity"
-            )),
+            RuntimeResolvedValue::Intrinsic(_) | RuntimeResolvedValue::Registered(_) => {
+                Err(format!(
+                    "resolved callable/project value at {id:?} requires a builder-issued runtime function-value identity"
+                ))
+            }
         }
     }
 
@@ -3339,7 +3342,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                     | RuntimeResolvedValue::ExternalCallable(_)
             )
         ) {
-            return self.lower_path(id);
+            return self.lower_resolved_value(id);
         }
         let target = if let Some(access) = self.semantic_facts.checked_local_place_access(id)
             && access.mode() == CheckedLocalPlaceMode::Inspect

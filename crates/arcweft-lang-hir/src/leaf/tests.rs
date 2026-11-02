@@ -371,6 +371,25 @@ fn semantic_numeric_values_own_canonical_decimal_formatting() {
 }
 
 #[test]
+fn semantic_decimal_float_conversion_checks_finite_range_with_compact_exponents() {
+    let decimal = |digits: &[u8], scale, exponent| {
+        HirDecimal::try_new(
+            HirDecimalDigits::try_new(digits.to_vec().into_boxed_slice()).unwrap(),
+            scale,
+            exponent,
+        )
+        .unwrap()
+    };
+    let value = decimal(&[1, 2, 3], 2, 0);
+    assert_eq!(value.to_finite_f32(), Some(1.23_f32));
+    assert_eq!(value.to_finite_f64(), Some(1.23_f64));
+    assert_eq!(decimal(&[1], 0, 39).to_finite_f32(), None);
+    assert_eq!(decimal(&[1], 0, 39).to_finite_f64(), Some(1e39_f64));
+    assert_eq!(decimal(&[1], 0, 1_000_000).to_finite_f64(), None);
+    assert_eq!(decimal(&[1], 0, -1_000_000).to_finite_f64(), Some(0.0));
+}
+
+#[test]
 fn decimal_constructor_enforces_every_closed_limit_and_canonical_zero() {
     let coefficient = |count: usize| {
         HirDecimalDigits::try_new(vec![1; count].into_boxed_slice())

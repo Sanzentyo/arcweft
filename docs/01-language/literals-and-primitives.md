@@ -233,6 +233,12 @@ a % b     // remainder
 Formatters should normalize uppercase audio units such as `LUFS` to lowercase
 `lufs`.
 
+`Angle` uses signed milli-degrees as its normalized value. Degree and turn
+literals must be exactly representable at that precision; turns are scaled
+before checking precision. Radians are normalized to the nearest milli-degree,
+with ties rounded to even. Nonfinite values and values outside the checked
+angle range are rejected.
+
 ## Color
 
 Color is not a bare `#fff` token. It is a normal string literal interpreted as

@@ -8448,8 +8448,7 @@ impl RuntimePlanSemanticFacts {
                     | RuntimeResolvedValue::ProjectCallable { .. }
                     | RuntimeResolvedValue::ExternalCallable(_)
                     | RuntimeResolvedValue::Intrinsic(_)
-                    | RuntimeResolvedValue::Registered(_)
-                    | RuntimeResolvedValue::Constant(_),
+                    | RuntimeResolvedValue::Registered(_),
                 ) => {
                     return Err(RuntimeSemanticFactsError::WrongExpressionFamily {
                         expression: *expression,
@@ -8458,7 +8457,9 @@ impl RuntimePlanSemanticFacts {
                 }
                 (
                     HirExprKind::EntityReference(_),
-                    RuntimeResolvedValue::Entity(_) | RuntimeResolvedValue::DialogueLine(_),
+                    RuntimeResolvedValue::Entity(_)
+                    | RuntimeResolvedValue::DialogueLine(_)
+                    | RuntimeResolvedValue::Constant(_),
                 )
                 | (HirExprKind::Path(_), _)
                 | (

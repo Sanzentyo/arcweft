@@ -5908,25 +5908,13 @@ fn big_uint_to_u128(value: &HirBigUint) -> Option<u128> {
 }
 
 fn runtime_decimal(decimal: &HirDecimal, ty: &TypeKind) -> Result<RuntimeValue, String> {
-    let digits = decimal
-        .coefficient()
-        .digits()
-        .iter()
-        .map(|digit| char::from(b'0' + *digit))
-        .collect::<String>();
-    let exponent = i64::from(decimal.exponent10()) - i64::from(decimal.scale());
-    let canonical = format!("{digits}e{exponent}");
     match ty {
-        TypeKind::F32 => canonical
-            .parse::<f32>()
-            .ok()
-            .filter(|value| value.is_finite())
+        TypeKind::F32 => decimal
+            .to_finite_f32()
             .map(RuntimeValue::F32)
             .ok_or_else(|| "decimal literal is outside the finite f32 domain".to_owned()),
-        TypeKind::F64 => canonical
-            .parse::<f64>()
-            .ok()
-            .filter(|value| value.is_finite())
+        TypeKind::F64 => decimal
+            .to_finite_f64()
             .map(RuntimeValue::F64)
             .ok_or_else(|| "decimal literal is outside the finite f64 domain".to_owned()),
         _ => Err(

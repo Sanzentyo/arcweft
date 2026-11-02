@@ -155,3 +155,83 @@ fn generic_negative_image_length_runs_in_native() {
 fn generic_negative_image_length_runs_in_decoded_awbc() {
     generic_negative_length(false);
 }
+
+fn returned_angle_units(native: bool) {
+    run_selected(
+        program_from_source(
+            r#"
+pub fn root() -> (Angle, Angle, Angle, Angle) {
+    (1.57rad, 0.25turn, 1.57079632679rad, 0.0001turn)
+}
+flow main() -> i64 { return 0i64 }
+"#,
+        ),
+        native,
+        |value| {
+            let RuntimeValue::Tuple(values) = value else {
+                panic!("angle tuple")
+            };
+            let angles = values
+                .iter()
+                .map(
+                    |value| match arcweft_core::value::RuntimeQuantity::from_value(value) {
+                        Some(arcweft_core::value::RuntimeQuantity::Angle(angle)) => {
+                            angle.milli_degrees
+                        }
+                        other => panic!("checked Angle, received {other:?}"),
+                    },
+                )
+                .collect::<Vec<_>>();
+            assert_eq!(angles, [89954, 90000, 90000, 36]);
+        },
+    );
+}
+
+#[test]
+fn radian_and_turn_angles_run_in_native() {
+    returned_angle_units(true);
+}
+
+#[test]
+fn radian_and_turn_angles_run_in_decoded_awbc() {
+    returned_angle_units(false);
+}
+
+fn image_flow(native: bool, address_metadata: bool) {
+    let metadata = if address_metadata {
+        "target = @target.sample.surface, layer = @layer.foreground, proxy.layer = @layer.hit,"
+    } else {
+        ""
+    };
+    super::presentation_view_values::run_flow(
+        native,
+        &format!(
+            r#"
+        let handle = image({metadata} x = 96px, width = 360px, height = 180px);
+        handle.release();
+        return 42i64
+    "#
+        ),
+        "42",
+    );
+}
+
+#[test]
+fn image_lengths_run_in_original_native_flow() {
+    image_flow(true, false);
+}
+
+#[test]
+fn image_lengths_run_in_original_awbc_flow() {
+    image_flow(false, false);
+}
+
+#[test]
+fn image_address_metadata_runs_in_original_native_flow() {
+    image_flow(true, true);
+}
+
+#[test]
+fn image_address_metadata_runs_in_original_awbc_flow() {
+    image_flow(false, true);
+}
