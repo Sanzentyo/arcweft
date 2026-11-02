@@ -323,6 +323,21 @@ pub(super) fn seed_item_parameter_types(
             .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)
     };
     match item.kind() {
+        HirItemKind::Action(action) => {
+            for parameter in action.parameters() {
+                // Action payload signatures own fixed declared types, not a
+                // callable body's inferred input-effect parameters.
+                let declared = context.types.get(&parameter.ty()).ok_or(
+                    FinalSemanticAnalysisError::TypeResolutionFailed {
+                        owner: parameter.ty(),
+                    },
+                )?;
+                let declared = context
+                    .environment
+                    .canonical_accepted_type(declared.clone());
+                seed_parameter(parameter, &declared, context, locals, patterns)?;
+            }
+        }
         HirItemKind::Flow(flow) => {
             for (index, parameter) in flow.parameters().iter().enumerate() {
                 seed_parameter(

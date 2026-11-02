@@ -226,6 +226,7 @@ pub enum HirSemanticPathStep {
     DeclarationBody(HirDeclarationBodyRootRole),
     DeclarationContract(HirDeclarationContractRootRole),
     DeclarationItem(HirDeclarationItemRootRole),
+    ItemParameter(HirDeclarationParameterRootRole),
     ExpressionOwned(HirExpressionOwnedBodyRole),
     Body(HirBodyChildRole),
     Statement(HirStatementChildRole),
@@ -993,6 +994,7 @@ impl HirSemanticPathIndex {
                         matches!(
                             step,
                             HirSemanticPathStep::DeclarationItem(_)
+                                | HirSemanticPathStep::ItemParameter(_)
                                 | HirSemanticPathStep::DeclarationMember { .. }
                         )
                     }) && !steps.iter().enumerate().any(|(index, step)| {
@@ -1008,7 +1010,10 @@ impl HirSemanticPathIndex {
                                 (role, steps.first()),
                                 (
                                     HirItemEvaluationEntryRole::Item,
-                                    Some(HirSemanticPathStep::DeclarationMember { .. })
+                                    Some(
+                                        HirSemanticPathStep::DeclarationMember { .. }
+                                            | HirSemanticPathStep::ItemParameter(_)
+                                    )
                                 )
                             );
                     first_valid
@@ -1026,6 +1031,7 @@ impl HirSemanticPathIndex {
                                 && matches!(
                                     step,
                                     HirSemanticPathStep::DeclarationItem(_)
+                                        | HirSemanticPathStep::ItemParameter(_)
                                         | HirSemanticPathStep::DeclarationMember { .. }
                                 ))
                         })
@@ -1586,6 +1592,11 @@ pub struct HirLocalBindingOrigin {
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirBindingSite {
+    ItemParameter {
+        item: ItemId,
+        group: u32,
+        parameter: u32,
+    },
     DeclarationParameter {
         item: ItemId,
         owner: HirCallableSourceOwner,
@@ -1709,6 +1720,7 @@ impl HirLocalBindingOrigin {
                     | HirLocalBindingStatementRole::OnTrigger,
                 ..
             }
+            | HirBindingSite::ItemParameter { .. }
             | HirBindingSite::DeclarationParameter { .. }
             | HirBindingSite::DeclarationAttachedContent { .. }
             | HirBindingSite::Expression { .. }
@@ -1725,7 +1737,8 @@ impl HirLocalBindingOrigin {
     pub const fn statement(&self) -> Option<StmtId> {
         match &self.site {
             HirBindingSite::Statement { statement, .. } => Some(*statement),
-            HirBindingSite::DeclarationParameter { .. }
+            HirBindingSite::ItemParameter { .. }
+            | HirBindingSite::DeclarationParameter { .. }
             | HirBindingSite::DeclarationAttachedContent { .. }
             | HirBindingSite::Expression { .. }
             | HirBindingSite::Member { .. }
@@ -1754,7 +1767,8 @@ impl HirLocalBindingOrigin {
     pub const fn statement_role(&self) -> Option<HirLocalBindingStatementRole> {
         match &self.site {
             HirBindingSite::Statement { role, .. } => Some(*role),
-            HirBindingSite::DeclarationParameter { .. }
+            HirBindingSite::ItemParameter { .. }
+            | HirBindingSite::DeclarationParameter { .. }
             | HirBindingSite::DeclarationAttachedContent { .. }
             | HirBindingSite::Expression { .. }
             | HirBindingSite::Member { .. }
@@ -2445,6 +2459,7 @@ pub struct HirItemEvaluationEntry {
     entry_ordinal: u32,
     role: HirItemEvaluationEntryRole,
     family: HirAcceptedItemFamily,
+    parameter_roots: Box<[HirDeclarationParameterRoot]>,
     roots: Box<[HirItemEvaluationRoot]>,
     paths: HirSemanticPathIndex,
     body: Option<HirDeclarationBodyTopology>,
@@ -2469,6 +2484,12 @@ impl HirItemEvaluationEntry {
 
     pub const fn roots(&self) -> &[HirItemEvaluationRoot] {
         &self.roots
+    }
+
+    /// Signature roots owned by this item rather than an executable callable.
+    /// Action payload bindings retain their original pattern and local IDs here.
+    pub const fn parameter_roots(&self) -> &[HirDeclarationParameterRoot] {
+        &self.parameter_roots
     }
 
     pub const fn paths(&self) -> &HirSemanticPathIndex {
@@ -3121,6 +3142,10 @@ impl HirAnalysisProjectView<'_> {
                 let entry_ordinal = checked_ordinal(entries.len())?;
                 let item_path_checkpoint = builder.path_checkpoint();
                 builder.record_item_member_origins(item)?;
+                let parameter_roots = item_parameter_roots(module, item)?;
+                for root in &parameter_roots {
+                    builder.walk_parameter(root, HirParameterRootOwner::Item { item })?;
+                }
                 let roots = item_evaluation_roots(module, item)?;
                 for root in &roots {
                     builder.walk_item_root(root)?;
@@ -3176,6 +3201,7 @@ impl HirAnalysisProjectView<'_> {
                         .accepted()
                         .ok_or(HirSemanticPathError::UnresolvedOwner)?,
                     roots: roots.into_boxed_slice(),
+                    parameter_roots: parameter_roots.into_boxed_slice(),
                     paths: item_paths,
                     body: item_body,
                 });
@@ -3231,6 +3257,7 @@ impl HirAnalysisProjectView<'_> {
                             .accepted()
                             .ok_or(HirSemanticPathError::UnresolvedOwner)?,
                         roots: roots.into_boxed_slice(),
+                        parameter_roots: Box::new([]),
                         paths: member_paths,
                         body,
                     });
@@ -3882,6 +3909,20 @@ fn flow_contract_roots(
         })
 }
 
+fn item_parameter_roots(
+    module: &HirModule,
+    item: ItemId,
+) -> Result<Vec<HirDeclarationParameterRoot>, HirSemanticPathError> {
+    let item = module
+        .resolve_item(item)
+        .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
+    let mut roots = Vec::new();
+    if let HirItemKind::Action(action) = item.kind() {
+        push_parameters(&mut roots, 0, action.parameters())?;
+    }
+    Ok(roots)
+}
+
 #[allow(
     clippy::match_same_arms,
     reason = "the exhaustive item family matrix intentionally retains the no-root rows"
@@ -4511,6 +4552,35 @@ fn trigger_pattern_id(trigger: &crate::stmt::HirTrigger) -> Option<PatternId> {
     }
 }
 
+#[derive(Clone, Copy)]
+enum HirParameterRootOwner {
+    Item {
+        item: ItemId,
+    },
+    Callable {
+        item: ItemId,
+        owner: HirCallableSourceOwner,
+    },
+}
+
+impl HirParameterRootOwner {
+    const fn binding_site(self, group: u32, parameter: u32) -> HirBindingSite {
+        match self {
+            Self::Item { item } => HirBindingSite::ItemParameter {
+                item,
+                group,
+                parameter,
+            },
+            Self::Callable { item, owner } => HirBindingSite::DeclarationParameter {
+                item,
+                owner,
+                group,
+                parameter,
+            },
+        }
+    }
+}
+
 /// Single snapshot-bound builder for project, item, and declaration
 /// evaluation topology projections.
 ///
@@ -4790,7 +4860,7 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
         self.binding_owner = Some(owner);
         self.record_declaration_result_local()?;
         for root in parameter_roots {
-            self.walk_parameter(root)?;
+            self.walk_parameter(root, HirParameterRootOwner::Callable { item, owner })?;
         }
         for root in attached_content_roots {
             self.walk_attached_content(root)?;
@@ -5299,33 +5369,26 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
     fn walk_parameter(
         &mut self,
         root: &HirDeclarationParameterRoot,
+        source_owner: HirParameterRootOwner,
     ) -> Result<(), HirSemanticPathError> {
-        let path = [match root.role {
-            HirDeclarationParameterRootRole::Pattern { group, parameter } => {
+        let path = [match (source_owner, root.role) {
+            (HirParameterRootOwner::Item { .. }, role) => HirSemanticPathStep::ItemParameter(role),
+            (_, HirDeclarationParameterRootRole::Pattern { group, parameter }) => {
                 HirSemanticPathStep::ParameterPattern { group, parameter }
             }
-            HirDeclarationParameterRootRole::Default { group, parameter } => {
+            (_, HirDeclarationParameterRootRole::Default { group, parameter }) => {
                 HirSemanticPathStep::ParameterDefault { group, parameter }
             }
         }];
         match root.child {
             HirDeclarationParameterRootChild::Pattern(owner) => {
-                let (Some(item), Some(source_owner)) = (self.binding_item, self.binding_owner)
-                else {
-                    return self.walk_pattern(owner, &path, &[]);
-                };
                 let HirDeclarationParameterRootRole::Pattern { group, parameter } = root.role
                 else {
                     return self.walk_pattern(owner, &path, &[]);
                 };
                 self.record_pattern_binding(
                     owner,
-                    HirBindingSite::DeclarationParameter {
-                        item,
-                        owner: source_owner,
-                        group,
-                        parameter,
-                    },
+                    source_owner.binding_site(group, parameter),
                     None,
                     None,
                 )?;

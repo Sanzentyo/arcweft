@@ -75,6 +75,8 @@ use super::{
 };
 #[path = "tests/accepted_rust_nominal.rs"]
 mod accepted_rust_nominal;
+#[path = "tests/action_declaration.rs"]
+mod action_declaration;
 #[path = "tests/call_diagnostics.rs"]
 mod call_diagnostics;
 #[path = "tests/callable_values.rs"]

@@ -44,6 +44,9 @@ use crate::symbol::{
     ProjectExternalDeclarations, ProjectSymbolRevision, ProjectSymbolTable, ProjectSymbolWorldId,
 };
 
+#[path = "tests/action_declaration.rs"]
+mod action_declaration;
+
 fn package() -> CallablePackageId {
     CallablePackageId::try_new("proof-final-project-tests").unwrap()
 }

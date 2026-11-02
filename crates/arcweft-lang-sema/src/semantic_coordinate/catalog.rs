@@ -964,6 +964,7 @@ fn is_binding_local_path(path: &HirSemanticOwnerPath) -> bool {
             HirSemanticPathStep::DeclarationBody(_)
             | HirSemanticPathStep::DeclarationContract(_)
             | HirSemanticPathStep::DeclarationItem(_)
+            | HirSemanticPathStep::ItemParameter(_)
             | HirSemanticPathStep::ExpressionOwned(_)
             | HirSemanticPathStep::Body(_)
             | HirSemanticPathStep::Statement(_)
@@ -1002,6 +1003,7 @@ fn checked_path_from_owner_path(
                 matches!(
                     step,
                     HirSemanticPathStep::DeclarationItem(_)
+                        | HirSemanticPathStep::ItemParameter(_)
                         | HirSemanticPathStep::DeclarationMember { .. }
                 )
             }) && !path.iter().skip(1).any(|step| {
@@ -1024,7 +1026,10 @@ fn checked_path_from_owner_path(
                     (role, first),
                     (
                         HirItemEvaluationEntryRole::Item,
-                        Some(HirSemanticPathStep::DeclarationMember { .. })
+                        Some(
+                            HirSemanticPathStep::DeclarationMember { .. }
+                                | HirSemanticPathStep::ItemParameter(_)
+                        )
                     )
                 );
             first_valid
@@ -1042,6 +1047,7 @@ fn checked_path_from_owner_path(
                         && matches!(
                             step,
                             HirSemanticPathStep::DeclarationItem(_)
+                                | HirSemanticPathStep::ItemParameter(_)
                                 | HirSemanticPathStep::DeclarationMember { .. }
                         ))
                 })
@@ -1068,6 +1074,9 @@ fn checked_path_from_owner_path(
             }
             HirSemanticPathStep::DeclarationItem(role) => {
                 CheckedSemanticPathStep::DeclarationItem(role.clone())
+            }
+            HirSemanticPathStep::ItemParameter(role) => {
+                CheckedSemanticPathStep::ItemParameter(*role)
             }
             HirSemanticPathStep::ExpressionOwned(role) => {
                 CheckedSemanticPathStep::ExpressionOwned(role.clone())

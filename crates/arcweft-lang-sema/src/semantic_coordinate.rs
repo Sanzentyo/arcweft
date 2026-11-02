@@ -17,10 +17,10 @@ use arcweft_lang_hir::{
     pattern::HirPatternChildRole,
     project::{
         HirControlTransferKind, HirDeclarationBodyRootRole, HirDeclarationContractRootRole,
-        HirDeclarationItemRootRole, HirFlowContractRootFamily, HirItemAttributeOwner,
-        HirItemEvaluationEntryRole, HirItemRecoveryRootOwner, HirLayerExpressionRootField,
-        HirLoopTargetFamily, HirSemanticBodyOwner, HirSemanticBodyOwnerRole,
-        HirStyleRootPathSegment,
+        HirDeclarationItemRootRole, HirDeclarationParameterRootRole, HirFlowContractRootFamily,
+        HirItemAttributeOwner, HirItemEvaluationEntryRole, HirItemRecoveryRootOwner,
+        HirLayerExpressionRootField, HirLoopTargetFamily, HirSemanticBodyOwner,
+        HirSemanticBodyOwnerRole, HirStyleRootPathSegment,
     },
     stmt::{HirStatementBodyRole, HirStatementChildRole},
 };
@@ -41,6 +41,7 @@ const CHECKED_DECLARATION_MEMBER_STEP_TAG: u8 = 12;
 const CHECKED_DECLARATION_RESULT_STEP_TAG: u8 = 13;
 const CHECKED_ATTACHED_CONTENT_BINDING_STEP_TAG: u8 = 14;
 const CHECKED_ATTACHED_CONTENT_DEFAULT_STEP_TAG: u8 = 15;
+const CHECKED_ITEM_PARAMETER_STEP_TAG: u8 = 16;
 const CHECKED_BODY_COORDINATE_SUFFIX_TAG: u8 = 0;
 #[allow(dead_code)]
 const CHECKED_OUTPUT_TARGET_COORDINATE_SUFFIX_TAG: u8 = 1;
@@ -547,6 +548,7 @@ pub(crate) enum CheckedSemanticPathStep {
     DeclarationBody(HirDeclarationBodyRootRole),
     DeclarationContract(HirDeclarationContractRootRole),
     DeclarationItem(HirDeclarationItemRootRole),
+    ItemParameter(HirDeclarationParameterRootRole),
     ExpressionOwned(HirExpressionOwnedBodyRole),
     Body(HirBodyChildRole),
     Statement(HirStatementChildRole),
@@ -2078,6 +2080,20 @@ fn write_checked_path_step<W: MatchSourceSink>(
         CheckedSemanticPathStep::DeclarationItem(role) => {
             output.push(CHECKED_DECLARATION_ITEM_STEP_TAG);
             write_declaration_item_role(output, role)?;
+        }
+        CheckedSemanticPathStep::ItemParameter(role) => {
+            output.push(CHECKED_ITEM_PARAMETER_STEP_TAG);
+            let (tag, group, parameter) = match role {
+                HirDeclarationParameterRootRole::Pattern { group, parameter } => {
+                    (0, group, parameter)
+                }
+                HirDeclarationParameterRootRole::Default { group, parameter } => {
+                    (1, group, parameter)
+                }
+            };
+            output.push(tag);
+            output.extend_from_slice(&group.to_le_bytes());
+            output.extend_from_slice(&parameter.to_le_bytes());
         }
         CheckedSemanticPathStep::ExpressionOwned(role) => {
             output.push(CHECKED_EXPRESSION_OWNED_STEP_TAG);
