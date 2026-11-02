@@ -14146,3 +14146,48 @@ Native公開save、reactive default、driver画像反映とNative/Web parityま�
 image参照call、束縛しないHandle例は普通のfactory契約に矛盾するため整理した。
 Luna 6／maxへ限定委譲した旧layered-scene-input例の削除理由と現行例の維持は
 [資料整理記録](documentation-cleanup.md) に残す。実行済み検証やfull SHAを削除する整理ではない。
+
+
+## 2026-11-02 Core frameとdriver投影の公開cut
+
+公開 d4658f9af936188ad2a0ccbdcd8a8b688bae1071（parent a382531e581068fff030c5b381009471563db474）、
+後続 9bd9fe195ec3da493bce853ad644ca0e03e85052（parent d4658f9af936188ad2a0ccbdcd8a8b688bae1071）。
+後続tree 576f45bef6d5a445bb72732a6267d6c419ab1bff、53 path、patch SHA256
+db4cb16273c1f9dc0bbb6a325fb93c547e04ffab8980096f073825308e91d81e。main/originと公開blobを照合した。
+
+元Core bank・body・slot・可視性からdriverへ投影し、著者IDと実行occurrenceを区別した。
+Viewのchecked宣言identity・供給引数・省略default、元SourceとinstantiationによるCopy前admission、
+保存投影と実executorの照合を保持する。文字列effect reader・別Handle lifecycle epochは置換済みのため削除した。
+保存記述だけでHandleを捏造する旧成功テストはCore custodyに矛盾するので拒否・元状態保持の検査へ変更した。
+削除に巻き込まれた動的CharacterDialogue 5テストは公開前に元moduleをbyte単位で復元・照合し、owner runでPASSした。
+旧実測結果は以前のSourceに対する履歴として有効なまま保持する。
+
+最終ownerは42／42 PASS（5 package、2470 skipped）。Source runは6／6 PASS（296 skipped）で、
+Native／canonical-AWBC frame API 2条件とProduct/AWFB/driver 4条件を含む。
+画像metadata・別occurrence・hide/show/release、background置換と旧Handle release、viewport選択/release、
+View明示入力・省略constant default・保存callback captureを確認する。各1-op step・256 tick上限、
+公開save／owned restore、捏造された画像投影の拒否を維持する。View callbackの描画式実行や任意reactive defaultの全受入へは拡張しない。
+
+初期APIの6 Core／2 Source／2 compile-failは当時の原本として保持する。
+public getterがprivate Source型を返す新しいwarningを見落としていたため、後続Sourceで公開program ownerへ訂正した。
+Source consumerからgetterとCopyを利用する2条件も最終6件に含む。
+driver Source2の3 PASS／1 FAILはfixtureのString加算をruntime-planが拒否したもの。
+引数/defaultの別Text値とclosure captureを直接観測する形へ訂正し、String加算の実装・受入は主張しない。
+Source3のtext catalog欠落、Source4のaffine carrierの誤ったCopy admissionも各3 PASS／1 FAILとして保持し、Source5で4 PASSした。
+owner1は検証中のcrate map変更をinput guardが検知したためruntime未実行。owner2は最終入力を固定して42 PASSした。
+初回workspace checkはCLI不足importで101。修復後の全98 package／all-target／all-feature check・Clippy、
+構造gate、対象fmtは終了0。final gateとowner/Source runの差分は当該CLI import 1 pathだけで、再実行と再利用を原本で区別する。
+
+構造は3311 file／3180 Rust／1,792,283 physical LOC、review trigger384／blocking0。
+Core Engine5908 LOC・Product6185 LOCは元orchestrationとcustodyを保ち、Frame157 LOCを借用境界へ分離した。
+Driver投影689 LOC／root入力145 LOCは一時的な投影・admissionを所有する。既存View evaluator2802 LOCはexhaustive評価・mount commit、
+compiler View2959 LOCは同じchecked callable／parameter ABIのloweringを所有するため、そのownerへ追加した。
+session1912 LOC／persistence1087 LOCは実sessionとatomic restore、bundle codec2476 LOCは既存complete-product cross-joinを保つ。
+Source integration359 LOCは同じ公開projection境界の4条件を所有する。実測・Cargo fan-in/outは原本に保持する。
+
+新Sourceの実graphは846 resolved／98 workspace、変更11 ownerの推移的62 package。この62 runtime全件、実CLI画像観測、
+Native/Web capture parityはこのcutでは未実行。旧Source5dfcd9caa087a6d8978829c750ac0fcbd8365877の7987 PASS／CLI652 PASS・40 FAILと
+2／8／32 stepの画像0は元入力の履歴へ移し、新Sourceの現状と同一視しない。
+Generic Matchの受入850534b9e9bc8c8872f6528dd00050a5e6e7699e／公開f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2、
+View値40条件等の既受入は維持し、現状一覧のGeneric行はbyte単位で変更していない。
+原本は[frame/driver checkpoint](acceptance-evidence/task-presentation-frame-driver-checkpoint.json)。
