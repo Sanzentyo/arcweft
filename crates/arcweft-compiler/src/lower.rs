@@ -4098,7 +4098,7 @@ fn lower_content_modifier(
         PresentationContentCallableDefinitionId::Size => {
             let length =
                 lower_checked_length(value(PresentationContentCallableParameterId::Value)?)?;
-            if length.1 != arcweft_lang_sema::checked_rich_text::LengthUnit::Pt {
+            if length.1 != arcweft_primitives::LengthUnit::Pt {
                 return Err(content_modifier_error(
                     owner,
                     "RichText size emission requires a point length",
@@ -4498,7 +4498,7 @@ fn lower_checked_ratio(
     value: &CheckedCompileTimeValue,
 ) -> Result<u16, RuntimeSemanticProjectionError> {
     match value {
-        CheckedCompileTimeValue::Scalar(CheckedCompileTimeScalar::Ratio(value)) => Ok(value.0),
+        CheckedCompileTimeValue::Scalar(CheckedCompileTimeScalar::Ratio(value)) => Ok(value.get()),
         _ => Err(RuntimeSemanticProjectionError::Dialogue {
             owner: None,
             reason: "checked Content modifier ratio parameter has the wrong type".to_owned(),
@@ -4508,8 +4508,7 @@ fn lower_checked_ratio(
 
 fn lower_checked_length(
     value: &CheckedCompileTimeValue,
-) -> Result<(i32, arcweft_lang_sema::checked_rich_text::LengthUnit), RuntimeSemanticProjectionError>
-{
+) -> Result<(i32, arcweft_primitives::LengthUnit), RuntimeSemanticProjectionError> {
     match value {
         CheckedCompileTimeValue::Scalar(CheckedCompileTimeScalar::Length(value)) => {
             Ok((value.milli, value.unit))

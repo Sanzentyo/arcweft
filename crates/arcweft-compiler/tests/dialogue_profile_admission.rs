@@ -118,7 +118,7 @@ pub style Mobile {
         assert_eq!(scalar.length().unwrap().milli, milli);
         assert_eq!(
             scalar.length().unwrap().unit,
-            arcweft_lang_sema::checked_rich_text::LengthUnit::Px
+            arcweft_primitives::LengthUnit::Px
         );
         assert!(matches!(
             scalar.original(),

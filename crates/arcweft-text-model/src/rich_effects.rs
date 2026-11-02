@@ -319,17 +319,7 @@ pub enum RichTextTextProxyScalar {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RichTextTextProxyLength {
     pub milli: i32,
-    pub unit: RichTextTextProxyLengthUnit,
-}
-
-/// Closed unit domain for typed text-proxy lengths.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RichTextTextProxyLengthUnit {
-    Px,
-    Pt,
-    Ch,
-    Em,
+    pub unit: arcweft_primitives::LengthUnit,
 }
 
 /// Presentation metadata resolved for a text run or ruby annotation.

@@ -4,6 +4,7 @@
 //! absent from this module. A checked application is joined to exactly one
 //! project nominal declaration and its declaration-ordered semantic fields.
 
+use arcweft_primitives::{CheckedAngle, CheckedLength, Milli, RatioMilli};
 use std::collections::BTreeMap;
 
 use arcweft_id::PublicId;
@@ -14,10 +15,7 @@ use thiserror::Error;
 
 use crate::callable::CheckedCallApplicationDigest;
 use crate::{
-    checked_rich_text::{
-        CheckedAngle, CheckedColor, CheckedDuration, CheckedLength, CheckedObjectDepth, Milli,
-        RatioMilli,
-    },
+    checked_rich_text::{CheckedColor, CheckedDuration, CheckedObjectDepth},
     record_field::AcceptedRecordFieldSemanticId,
     semantic_coordinate::{SemanticCoordinateEncodingError, StableCheckedValueCoordinate},
     types::{AcceptedVariantCaseSemanticId, ProjectNominalType, SemanticTypeDigest, TypeKind},
@@ -666,17 +664,12 @@ impl CheckedTextProxyDefinitionDigestEncoder {
             }
             CheckedCompileTimeScalar::Ratio(value) => {
                 self.tag(3);
-                self.u16(value.0);
+                self.u16(value.get());
             }
             CheckedCompileTimeScalar::Length(value) => {
                 self.tag(4);
                 self.i32(value.milli);
-                self.tag(match value.unit {
-                    crate::checked_rich_text::LengthUnit::Px => 0,
-                    crate::checked_rich_text::LengthUnit::Pt => 1,
-                    crate::checked_rich_text::LengthUnit::Ch => 2,
-                    crate::checked_rich_text::LengthUnit::Em => 3,
-                });
+                self.tag(value.unit.encoded());
             }
             CheckedCompileTimeScalar::Angle(value) => {
                 self.tag(5);
@@ -882,17 +875,12 @@ impl CheckedTextProxyApplicationSemanticDigestEncoder {
             }
             CheckedCompileTimeScalar::Ratio(value) => {
                 self.tag(3);
-                self.u16(value.0);
+                self.u16(value.get());
             }
             CheckedCompileTimeScalar::Length(value) => {
                 self.tag(4);
                 self.i32(value.milli);
-                self.tag(match value.unit {
-                    crate::checked_rich_text::LengthUnit::Px => 0,
-                    crate::checked_rich_text::LengthUnit::Pt => 1,
-                    crate::checked_rich_text::LengthUnit::Ch => 2,
-                    crate::checked_rich_text::LengthUnit::Em => 3,
-                });
+                self.tag(value.unit.encoded());
             }
             CheckedCompileTimeScalar::Angle(value) => {
                 self.tag(5);

@@ -5,6 +5,7 @@
 //! introduce an application side table or require a compiler consumer to
 //! reconstruct an application from HIR and call facts.
 
+use arcweft_primitives::LengthUnit;
 use std::collections::BTreeMap;
 
 use arcweft_lang_hir::{
@@ -2398,7 +2399,7 @@ pub(crate) fn checked_builtin_fx_binding(
     value: &crate::final_analysis::CheckedCompileTimeValue,
 ) -> Result<crate::final_analysis::CheckedContentFxBinding, ()> {
     use crate::checked_compile_time::CheckedCompileTimeScalar;
-    use crate::checked_rich_text::{CheckedColor, LengthUnit};
+    use crate::checked_rich_text::CheckedColor;
     use crate::final_analysis::CheckedCompileTimeValue;
     use arcweft_presentation::fx::{
         Angle, BuiltinFxParameterType, FiniteF32, FxColor, FxDefinitionArgumentValue, FxResourceId,
@@ -2423,7 +2424,7 @@ pub(crate) fn checked_builtin_fx_binding(
             BuiltinFxParameterType::Ratio,
             CheckedCompileTimeValue::Scalar(CheckedCompileTimeScalar::Ratio(value)),
         ) => FxRuntimeValue::F32(
-            FiniteF32::try_from_f64(f64::from(value.0) / 1_000.0).map_err(|_| ())?,
+            FiniteF32::try_from_f64(f64::from(value.get()) / 1_000.0).map_err(|_| ())?,
         ),
         (
             BuiltinFxParameterType::Length,

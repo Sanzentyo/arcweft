@@ -695,7 +695,7 @@ fn reconstruct_final_definition(
                 let CheckedCompileTimeScalar::Length(value) = value else {
                     return None;
                 };
-                if value.unit != crate::checked_rich_text::LengthUnit::Px {
+                if value.unit != arcweft_primitives::LengthUnit::Px {
                     return None;
                 }
                 checked.metadata_defaults_mut().set_depth(
@@ -1212,7 +1212,7 @@ fn prepared_depth_value(
         else {
             return None;
         };
-        if value.unit != crate::checked_rich_text::LengthUnit::Px {
+        if value.unit != arcweft_primitives::LengthUnit::Px {
             return None;
         }
         return Some(Some(PreparedCheckedTextProxyValue::new(

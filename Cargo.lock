@@ -769,6 +769,7 @@ dependencies = [
  "arcweft-layout",
  "arcweft-manifest-model",
  "arcweft-presentation",
+ "arcweft-primitives",
  "arcweft-project",
  "arcweft-render-text",
  "arcweft-resource-model",
@@ -819,6 +820,7 @@ dependencies = [
  "arcweft-interaction-model",
  "arcweft-manifest-model",
  "arcweft-need",
+ "arcweft-primitives",
  "arcweft-serde-bridge",
  "arcweft-source",
  "blake3",
@@ -1043,6 +1045,7 @@ dependencies = [
  "arcweft-lang-syntax",
  "arcweft-manifest-model",
  "arcweft-presentation",
+ "arcweft-primitives",
  "arcweft-rich-text-schema",
  "arcweft-rust-abi",
  "arcweft-source",
@@ -1297,6 +1300,13 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "arcweft-primitives"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -1575,6 +1585,7 @@ dependencies = [
  "arcweft-lang-hir",
  "arcweft-lang-sema",
  "arcweft-lang-syntax",
+ "arcweft-primitives",
  "arcweft-source",
  "arcweft-text-model",
  "blake3",
@@ -1696,6 +1707,7 @@ dependencies = [
  "arcweft-dialogue",
  "arcweft-id",
  "arcweft-presentation",
+ "arcweft-primitives",
  "arcweft-resource-model",
  "arcweft-rich-text-schema",
  "arcweft-source",

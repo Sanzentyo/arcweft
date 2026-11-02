@@ -8,13 +8,9 @@ use arcweft_lang_hir::{
     module::HirModule,
     symbol::nominal::ProjectNominalDeclarationId,
 };
+use arcweft_primitives::{CheckedAngle, CheckedLength, LengthUnit, Milli, RatioMilli};
 
-use crate::{
-    checked_rich_text::{
-        CheckedAngle, CheckedDuration, CheckedLength, LengthUnit, Milli, RatioMilli,
-    },
-    types::AcceptedVariantCaseSemanticId,
-};
+use crate::{checked_rich_text::CheckedDuration, types::AcceptedVariantCaseSemanticId};
 
 use super::{
     CheckedCompileTimeScalar, CheckedCompileTimeScalarEnum, CheckedCompileTimeScalarEnumValue,
@@ -317,9 +313,12 @@ fn checked_ratio(value: i64) -> Result<CheckedCompileTimeScalar, CompileTimeScal
     if !(0..=1_000).contains(&value) {
         return Err(CompileTimeScalarReductionError::OutOfRange);
     }
-    Ok(CheckedCompileTimeScalar::Ratio(RatioMilli(
-        u16::try_from(value).map_err(|_| CompileTimeScalarReductionError::Overflow)?,
-    )))
+    Ok(CheckedCompileTimeScalar::Ratio(
+        RatioMilli::try_new(
+            u16::try_from(value).map_err(|_| CompileTimeScalarReductionError::Overflow)?,
+        )
+        .ok_or(CompileTimeScalarReductionError::OutOfRange)?,
+    ))
 }
 
 fn limbs_to_u64(limbs: &[u32]) -> Option<u64> {

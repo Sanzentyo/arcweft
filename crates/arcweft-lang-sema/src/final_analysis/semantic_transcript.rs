@@ -2033,18 +2033,10 @@ fn write_checked_dialogue_control(
 
 fn write_checked_length(
     hasher: &mut MatchTranscriptHasher<'_>,
-    value: crate::checked_rich_text::CheckedLength,
+    value: arcweft_primitives::CheckedLength,
 ) -> Result<(), SemanticTranscriptError> {
     transcript_update!(hasher, &value.milli.to_le_bytes());
-    transcript_update!(
-        hasher,
-        &[match value.unit {
-            crate::checked_rich_text::LengthUnit::Px => 0,
-            crate::checked_rich_text::LengthUnit::Pt => 1,
-            crate::checked_rich_text::LengthUnit::Ch => 2,
-            crate::checked_rich_text::LengthUnit::Em => 3,
-        }]
-    );
+    transcript_update!(hasher, &[value.unit.encoded()]);
     Ok(())
 }
 
@@ -2092,7 +2084,7 @@ fn write_checked_rich_text_value(
         }
         CheckedRichTextValue::Ratio(value) => {
             transcript_update!(hasher, &[3]);
-            transcript_update!(hasher, &value.0.to_le_bytes());
+            transcript_update!(hasher, &value.get().to_le_bytes());
         }
         CheckedRichTextValue::Length(value) => {
             transcript_update!(hasher, &[4]);
@@ -3409,20 +3401,12 @@ fn write_compile_time_scalar(
         }
         CheckedCompileTimeScalar::Ratio(value) => {
             transcript_update!(hasher, &[3]);
-            transcript_update!(hasher, &value.0.to_le_bytes());
+            transcript_update!(hasher, &value.get().to_le_bytes());
         }
         CheckedCompileTimeScalar::Length(value) => {
             transcript_update!(hasher, &[4]);
             transcript_update!(hasher, &value.milli.to_le_bytes());
-            transcript_update!(
-                hasher,
-                &[match value.unit {
-                    crate::checked_rich_text::LengthUnit::Px => 0,
-                    crate::checked_rich_text::LengthUnit::Pt => 1,
-                    crate::checked_rich_text::LengthUnit::Ch => 2,
-                    crate::checked_rich_text::LengthUnit::Em => 3,
-                }],
-            );
+            transcript_update!(hasher, &[value.unit.encoded()],);
         }
         CheckedCompileTimeScalar::Angle(value) => {
             transcript_update!(hasher, &[5]);

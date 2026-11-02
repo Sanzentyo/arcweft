@@ -4,6 +4,7 @@ use crate::final_analysis::fx_application::{
     checked_builtin_fx_binding, checked_project_fx_argument,
 };
 use crate::final_analysis::prepared::PreparedDialogueEffectOperation;
+use arcweft_primitives::{CheckedAngle, CheckedLength, LengthUnit, Milli, RatioMilli};
 
 use crate::checked_rich_text::{
     CheckedDialogueHostEvent, PreparedCheckedDialogueToken, PreparedCheckedRichTextAction,
@@ -42,9 +43,7 @@ fn checked_compile_time_default(
     value: arcweft_rich_text_schema::RichTextDefaultValue,
 ) -> Option<crate::final_analysis::CheckedCompileTimeValue> {
     use crate::checked_compile_time::CheckedCompileTimeScalar;
-    use crate::checked_rich_text::{
-        CheckedAngle, CheckedColor, CheckedDuration, CheckedLength, LengthUnit, Milli, RatioMilli,
-    };
+    use crate::checked_rich_text::{CheckedColor, CheckedDuration};
     use crate::final_analysis::{CheckedCompileTimeValue, CheckedCompileTimeVector};
     use arcweft_rich_text_schema::RichTextUnit;
     Some(match value {
@@ -58,7 +57,9 @@ fn checked_compile_time_default(
             CheckedCompileTimeValue::scalar(CheckedCompileTimeScalar::Milli(Milli(value)))
         }
         arcweft_rich_text_schema::RichTextDefaultValue::RatioMilli(value) => {
-            CheckedCompileTimeValue::scalar(CheckedCompileTimeScalar::Ratio(RatioMilli(value)))
+            CheckedCompileTimeValue::scalar(CheckedCompileTimeScalar::Ratio(RatioMilli::try_new(
+                value,
+            )?))
         }
         arcweft_rich_text_schema::RichTextDefaultValue::Length { milli, unit } => {
             let unit = match unit {
@@ -168,30 +169,30 @@ fn integer_to_i64(magnitude: &arcweft_lang_hir::leaf::HirBigUint, negative: bool
 fn typed_milli_from_hir(
     module: &HirModule,
     expression: ExprId,
-) -> Option<crate::checked_rich_text::Milli> {
+) -> Option<arcweft_primitives::Milli> {
     use arcweft_lang_hir::expr::{HirExprKind, HirUnaryOp};
     use arcweft_lang_hir::leaf::{HirIntegerLiteral, HirLiteral, HirUnitNumberLiteral};
     let expression = module.resolve_expr(expression).ok()?;
     match expression.kind() {
         HirExprKind::Literal(HirLiteral::Integer(HirIntegerLiteral::Value {
             magnitude, ..
-        })) => Some(crate::checked_rich_text::Milli(
+        })) => Some(arcweft_primitives::Milli(
             integer_to_i64(magnitude, false)?.try_into().ok()?,
         )),
         HirExprKind::Literal(HirLiteral::Float(
             arcweft_lang_hir::leaf::HirFloatLiteral::Value { decimal, .. },
-        )) => Some(crate::checked_rich_text::Milli(decimal_to_milli(decimal)?)),
+        )) => Some(arcweft_primitives::Milli(decimal_to_milli(decimal)?)),
         HirExprKind::Literal(HirLiteral::UnitNumber(HirUnitNumberLiteral::Value {
             decimal,
             ..
-        })) => Some(crate::checked_rich_text::Milli(decimal_to_milli(decimal)?)),
+        })) => Some(arcweft_primitives::Milli(decimal_to_milli(decimal)?)),
         HirExprKind::Unary(unary) if unary.operator() == HirUnaryOp::Negate => {
             let operand = module.resolve_expr(unary.operand()).ok()?;
             match operand.kind() {
                 HirExprKind::Literal(HirLiteral::Integer(HirIntegerLiteral::Value {
                     magnitude,
                     ..
-                })) => Some(crate::checked_rich_text::Milli(
+                })) => Some(arcweft_primitives::Milli(
                     integer_to_i64(magnitude, true)?.try_into().ok()?,
                 )),
                 HirExprKind::Literal(HirLiteral::Float(
@@ -200,7 +201,7 @@ fn typed_milli_from_hir(
                 | HirExprKind::Literal(HirLiteral::UnitNumber(HirUnitNumberLiteral::Value {
                     decimal,
                     ..
-                })) => Some(crate::checked_rich_text::Milli(
+                })) => Some(arcweft_primitives::Milli(
                     decimal_to_milli(decimal)?.checked_neg()?,
                 )),
                 _ => None,

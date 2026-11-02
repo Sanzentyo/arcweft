@@ -1,5 +1,5 @@
 use arcweft_lang_sema::{
-    checked_rich_text::{CheckedColor, CheckedContentEmission, LengthUnit},
+    checked_rich_text::{CheckedColor, CheckedContentEmission},
     final_analysis::{
         CheckedCompileTimeScalar, CheckedCompileTimeScalarKind, CheckedTextProxyDefinition,
         FinalSemanticAnalysis,
@@ -8,8 +8,7 @@ use arcweft_lang_sema::{
 use arcweft_text_model::{
     Milli, RichTextColor, RichTextObjectProxy, RichTextObjectProxyDeclaration,
     RichTextTextProxyField, RichTextTextProxyFieldKind, RichTextTextProxyFieldSchema,
-    RichTextTextProxyLength, RichTextTextProxyLengthUnit, RichTextTextProxyScalar,
-    RichTextTextProxySchema,
+    RichTextTextProxyLength, RichTextTextProxyScalar, RichTextTextProxySchema,
 };
 
 use super::{ExprId, RuntimeSemanticProjectionError};
@@ -130,16 +129,13 @@ fn lower_scalar(value: &CheckedCompileTimeScalar) -> RichTextTextProxyScalar {
         CheckedCompileTimeScalar::Milli(value) => RichTextTextProxyScalar::Milli {
             value: Milli(value.0),
         },
-        CheckedCompileTimeScalar::Ratio(value) => RichTextTextProxyScalar::Ratio { milli: value.0 },
+        CheckedCompileTimeScalar::Ratio(value) => {
+            RichTextTextProxyScalar::Ratio { milli: value.get() }
+        }
         CheckedCompileTimeScalar::Length(value) => RichTextTextProxyScalar::Length {
             value: RichTextTextProxyLength {
                 milli: value.milli,
-                unit: match value.unit {
-                    LengthUnit::Px => RichTextTextProxyLengthUnit::Px,
-                    LengthUnit::Pt => RichTextTextProxyLengthUnit::Pt,
-                    LengthUnit::Ch => RichTextTextProxyLengthUnit::Ch,
-                    LengthUnit::Em => RichTextTextProxyLengthUnit::Em,
-                },
+                unit: value.unit,
             },
         },
         CheckedCompileTimeScalar::Angle(value) => RichTextTextProxyScalar::Angle {

@@ -250,7 +250,7 @@ fn lower_style_body(
                     let Some(length) = scalar.length() else {
                         return Err(ViewStyleLowerError::MissingCheckedStyleProjection { owner });
                     };
-                    if length.unit != arcweft_lang_sema::checked_rich_text::LengthUnit::Px {
+                    if length.unit != arcweft_primitives::LengthUnit::Px {
                         return Err(ViewStyleLowerError::MissingCheckedStyleProjection { owner });
                     }
                     arcweft_view::style::ViewSpecifiedValue::Length {

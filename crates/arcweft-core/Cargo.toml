@@ -10,6 +10,7 @@ repository.workspace = true
 default = []
 
 [dependencies]
+arcweft-primitives.workspace = true
 arcweft-character.workspace = true
 arcweft-data.workspace = true
 arcweft-manifest-model.workspace = true

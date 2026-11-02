@@ -7,6 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+arcweft-primitives.workspace = true
 arcweft-agent-protocol = { workspace = true }
 arcweft-bundle = { workspace = true, default-features = true }
 arcweft-character = { workspace = true }

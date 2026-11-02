@@ -381,7 +381,7 @@ impl Analyzer<'_, '_, '_> {
                                             FinalSemanticAnalysisError::WrongPayloadFamily,
                                         ));
                                     };
-                                    if value.unit != crate::checked_rich_text::LengthUnit::Px {
+                                    if value.unit != arcweft_primitives::LengthUnit::Px {
                                         diagnostics.push(TextProxyDeclarationDiagnostic::new(
                                             definition.checked().declaration().clone(),
                                             definition.checked().attribute_origin().clone(),

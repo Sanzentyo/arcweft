@@ -1,10 +1,11 @@
+use arcweft_primitives::LengthUnit;
 use std::collections::BTreeSet;
 
 use crate::{
     callable::CheckedCallSemanticOperandSource,
     checked_rich_text::{
         CheckedAttachedContentArgument, CheckedContentEmission, CheckedDialogueToken,
-        CheckedRichTextReport, LengthUnit,
+        CheckedRichTextReport,
     },
     final_analysis::{
         CheckedCompileTimeScalar, CheckedCompileTimeScalarKind, CheckedExpressionResolution,

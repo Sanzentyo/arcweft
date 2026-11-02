@@ -13,11 +13,10 @@ use arcweft_lang_hir::symbol::ImplMethodDeclarationId;
 use arcweft_presentation::rich_text::{
     PresentationContentCallableDefinitionId, PresentationContentCallableParameterId,
 };
+use arcweft_primitives::{CheckedAngle, CheckedLength, Milli};
 use arcweft_rich_text_schema::RichTextCallableSchemaDigest;
 
-use super::{
-    CheckedAngle, CheckedDuration, CheckedLength, CheckedRichTextValue, Milli, RichTextDiagnostic,
-};
+use super::{CheckedDuration, CheckedRichTextValue, RichTextDiagnostic};
 use crate::semantic_coordinate::StableCheckedDialogueMarkCoordinate;
 use crate::{
     callable::{CheckedAttachedContentAdmission, CheckedContentRole},

@@ -22,7 +22,6 @@ use crate::callable::{
 pub use crate::character_dialogue::CharacterDialogueFieldCoordinate;
 use crate::checked_compile_time::CheckedCompileTimeScalar;
 use crate::checked_rich_text::CheckedContentApplicationId;
-use crate::checked_rich_text::Milli;
 use crate::semantic_coordinate::{
     CheckedExpressionCoordinateEvidence, CheckedSemanticPath, SemanticCoordinateIndex,
     StableCheckedValueCoordinate,
@@ -32,6 +31,7 @@ use arcweft_core::value::RuntimeAgentField;
 use arcweft_id::closed_enum::ClosedEnumValueId;
 use arcweft_lang_hir::identity::HirSnapshotId;
 use arcweft_lang_hir::symbol::{CallableDeclarationDigest, ExternalDeclarationId};
+use arcweft_primitives::Milli;
 use arcweft_source::SourceSpan;
 use thiserror::Error;
 
@@ -834,7 +834,7 @@ impl CheckedCompileTimeScalarExpression {
     }
 
     /// Borrows the admitted Length payload without exposing the scalar registry.
-    pub const fn length(&self) -> Option<&crate::checked_rich_text::CheckedLength> {
+    pub const fn length(&self) -> Option<&arcweft_primitives::CheckedLength> {
         match &self.value {
             CheckedCompileTimeScalar::Length(value) => Some(value),
             _ => None,

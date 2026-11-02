@@ -233,6 +233,8 @@ mod presentation_slot_refs;
 mod presentation_commands;
 #[path = "callable_cases/presentation_factories.rs"]
 mod presentation_factories;
+#[path = "callable_cases/presentation_scalar_values.rs"]
+mod presentation_scalar_values;
 #[path = "callable_cases/presentation_view_values.rs"]
 mod presentation_view_values;
 #[path = "callable_cases/standard_map_control.rs"]

@@ -1,40 +1,11 @@
 use arcweft_id::PublicId;
 use arcweft_id::closed_enum::{ClosedEnumDomainId, ClosedEnumValueId};
+use arcweft_primitives::{CheckedAngle, CheckedLength, LengthUnit, Milli, RatioMilli};
 use arcweft_rich_text_schema::{
     RichTextDefaultValue, RichTextPropertySpec, RichTextUnit, RichTextValueKind,
 };
 
 use super::RichTextDiagnosticCode;
-
-/// Checked fixed-point thousandths.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Milli(pub i32);
-
-/// Checked inclusive ratio encoded as thousandths.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct RatioMilli(pub u16);
-
-/// Length unit accepted by the `RichText` authoring boundary.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum LengthUnit {
-    Px,
-    Pt,
-    Ch,
-    Em,
-}
-
-/// Checked fixed-point length.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct CheckedLength {
-    pub milli: i32,
-    pub unit: LengthUnit,
-}
-
-/// Checked angle in milli-degrees.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct CheckedAngle {
-    pub milli_degrees: i32,
-}
 
 /// Checked duration in exact milliseconds.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -128,7 +99,9 @@ pub(crate) fn parse_checked_value<P: Copy + Eq + 'static>(
             }
             enforce_milli_limits(value, spec)?;
             let value = u16::try_from(value).map_err(|_| RichTextDiagnosticCode::Overflow)?;
-            Ok(CheckedRichTextValue::Ratio(RatioMilli(value)))
+            Ok(CheckedRichTextValue::Ratio(
+                RatioMilli::try_new(value).ok_or(RichTextDiagnosticCode::OutOfRange)?,
+            ))
         }
         RichTextValueKind::Length => {
             let (value, unit) = parse_fixed_with_expected_unit(source, spec.limits.units)?;
@@ -191,7 +164,9 @@ pub(crate) fn checked_default(
         RichTextDefaultValue::Bool(value) => CheckedRichTextValue::Bool(value),
         RichTextDefaultValue::Int(value) => CheckedRichTextValue::Int(value),
         RichTextDefaultValue::Milli(value) => CheckedRichTextValue::Milli(Milli(value)),
-        RichTextDefaultValue::RatioMilli(value) => CheckedRichTextValue::Ratio(RatioMilli(value)),
+        RichTextDefaultValue::RatioMilli(value) => CheckedRichTextValue::Ratio(
+            RatioMilli::try_new(value).ok_or(RichTextDiagnosticCode::OutOfRange)?,
+        ),
         RichTextDefaultValue::Length { milli, unit } => {
             let unit = match unit {
                 RichTextUnit::Px => LengthUnit::Px,

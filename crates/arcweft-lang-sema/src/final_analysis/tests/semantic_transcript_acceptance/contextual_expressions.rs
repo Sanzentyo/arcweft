@@ -443,7 +443,7 @@ fn style_length_values_use_registered_roots_and_shared_scalar_reduction() {
                 return None;
             };
             assert!(checked.effects().is_empty());
-            assert_eq!(value.unit, crate::checked_rich_text::LengthUnit::Px);
+            assert_eq!(value.unit, arcweft_primitives::LengthUnit::Px);
             Some(value.milli)
         })
         .collect::<Vec<_>>();

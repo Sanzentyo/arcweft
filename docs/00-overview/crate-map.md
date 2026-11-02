@@ -4,6 +4,9 @@ The current workspace member list is `[workspace].members` in [Cargo.toml](../..
 
 ## 依存ルール
 
+- `arcweft-primitives` は semantic/runtime 間で共有する fixed-point scalar と
+  Length の単位を所有する。Sema、Core、text model は同じ値型を直接使う。
+  宣言 identity、式の評価、layout context による単位解決、I/O は所有しない。
 - `arcweft-manifest-model` は source/HIR/backend に依存しない共通 identity と
   canonical encoding を所有する。標準 callable provider の `StandardEnvironmentId`
   もここで一つの型と provider code を定義し、Sema catalog と runtime linkage が共有する。

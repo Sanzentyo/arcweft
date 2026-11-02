@@ -4683,8 +4683,8 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         expression: &HirExpr,
     ) -> Result<CheckedExpression, AnalyzerExpressionError> {
-        use crate::checked_rich_text::LengthUnit;
         use crate::checked_text_proxy::{CheckedCompileTimeScalar, CheckedCompileTimeScalarKind};
+        use arcweft_primitives::LengthUnit;
 
         let kind = CheckedCompileTimeScalarKind::Length;
         let scalar = crate::checked_text_proxy::reduce_literal_expression(module, owner, &kind)

@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/arcweft-primitives",
     "crates/arcweft-core",
     "crates/arcweft-compiler",
     "crates/arcweft-agent-protocol",
@@ -112,6 +113,7 @@ repository = "https://github.com/Sanzentyo/arcweft"
 debug = "line-tables-only"
 
 [workspace.dependencies]
+arcweft-primitives = { path = "crates/arcweft-primitives" }
 arcweft = { path = "crates/arcweft" }
 arcweft-adapter-context = { path = "crates/arcweft-adapter-context" }
 arcweft-adapter-sema = { path = "crates/arcweft-adapter-sema" }

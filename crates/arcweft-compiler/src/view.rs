@@ -2146,9 +2146,8 @@ impl AuthoredViewBodyLowerer<'_> {
         element: arcweft_view::ViewElementKind,
         arguments: &[arcweft_lang_sema::final_analysis::CheckedViewElementArgument],
     ) -> Result<Vec<arcweft_view::style::ViewStyleApplicationTarget>, ViewProjectLowerError> {
-        use arcweft_lang_sema::{
-            checked_rich_text::LengthUnit, final_analysis::CheckedCompileTimeScalar,
-        };
+        use arcweft_lang_sema::final_analysis::CheckedCompileTimeScalar;
+        use arcweft_primitives::LengthUnit;
         use arcweft_view::{
             ViewElementArgumentRole,
             style::{
