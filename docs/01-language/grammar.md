@@ -148,8 +148,6 @@ ItemDecl     :=
   | FunctionDecl
   | EntryDecl
   | ViewDecl
-  | AssetDecl
-  | ImageDecl
   | ProofDecl
   | TypeDecl
 OuterAttr    := '#[' AttrPath AttrArgs? ']'
@@ -228,11 +226,6 @@ line or balanced block.
 Assets do not have an authored declaration surface. Reconciled project assets
 come from the selected asset catalog; a normalized virtual path such as
 `bg/room.png` deterministically derives the public ID `asset.bg.room`.
-Presentation-object declarations remain ordinary authored declarations:
-
-```text
-ImageDecl := Visibility? 'image' DeclIdentity ImageObjectBody?
-```
 
 Authored asset references should prefer family-relative spelling such as
 `@asset:.bg.room`; this omits the default family from the id path while
@@ -243,14 +236,10 @@ stored public id verbatim. Image payload packaging is handled by the bundle
 image asset table, which records the catalog identity, encoded files, and
 decoded metadata.
 
-`image` declarations establish stable presentation-object ids such as
-`@image.sample.pulse_sprite`. Their bodies use the same flat fields as bounded
-`image(asset = ..., ...)` calls: `asset`, `target`, `layer`, `x`, `y`, `width`,
-`height`, `fit`, `alignment.*`, `opacity`, `playback.*`, `transform.*`,
-`depth`, `enabled`, `visible`, `action`, `param.*`, and `proxy.*`.
-`image(@image.id)` lowers through the same semantic `ImagePresentationObject`
-path as an inline bounded `image(...)` call; it remains a compiled presentation
-object rather than a renderer adapter.
+Image presentation uses ordinary `image(asset = ..., ...)` factory calls that
+return `Handle<ImageSurface>`. Reusable factories are ordinary functions;
+an authored `id` is object metadata. The parameters and ownership rules are
+specified in [Image Presentation Objects](../03-presentation/image-presentation-objects.md).
 
 ## Flow
 

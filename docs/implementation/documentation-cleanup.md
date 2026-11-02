@@ -609,3 +609,21 @@ GPT-6 Luna／maxの3担当へ、受入根拠の照合と維持対象章の削除
 維持対象129文書の相対リンク616件を確認し、欠落・未閉鎖fenceは0。
 現状一覧の32 full commit SHAはGit objectとmainのancestorに一致した。
 既存の検証履歴・原本の変更、識別子の保全漏れ、保持WIP 20実ファイルのhash差分は0。
+
+## 画像factory契約と残存する旧構文例の整理 — 2026-11-02
+
+実装Source `5dfcd9caa087a6d8978829c750ac0fcbd8365877` に照合した。
+現行grammarに残っていた `ImageDecl` と `image(@image.id)` の説明を削除した。
+同じ一覧の `AssetDecl` も、catalog-onlyという所有章・同節の説明に矛盾するため除去した。
+普通のfactory callが `Handle<ImageSurface>` を返す契約へ既に置換済みであり、
+画像章の旧宣言説明・束縛しないHandle例も同じ契約と矛盾していたためである。
+画像metadataの機能や既受入の単位保持を未完了へ戻す変更ではない。
+
+GPT-6 Luna／maxへ `docs/examples/` 内の旧構文例の削除判断を委ねた。
+`layered-scene-input.md` は旧 `layer world: World` 宣言と、
+`image @asset... fit cover`／`sprite @asset... at center` を現行例として掲載していたため削除し、
+examplesのindexからリンクを除去した。現行のlayer仕様が参照する `layers-input.md` と
+`reactive-view.md` は保持した。削除対象に検証結果・commit SHAは含まれていない。
+
+現状一覧は `current-status.md` に維持し、旧検証のSource・件数・失敗と訂正理由は
+収束検証履歴・受入原本に保持する。Generic Matchの受入行は変更しない。

@@ -14072,3 +14072,77 @@ Source b3dc452a041695f7b0184cabfb7b767da63a2548（親f859875408959ec05006c14330b
 初回修復の2 Rust testはSystem InfoがPASS、traverseが旧file.read_text save:path labelの期待でFAILだった。現行typed requestはfs.read_text identityを表示するため、旧formatterを復活させず、実ファイルA/B/Cを順序付きliteral patternで照合してdoneを返す条件へ移行した。1-opのbatch 0／max-in-flight 1と、予算64のbatch 1／IO 2／max-in-flight 2をいずれも正確に検査する。3 reads・3 bytes・6完了（host call 3を含む）・3 submitted／dispatched／completed・失敗／write／別parallel family 0も保持・追加した。native I/O profileの旧5-stepはread 17 byteまででwrite 0。そのprefixと32-step上限の1-op完了を検証し、最終4完了=host call 2＋I/O 2、read／write各17 byte、task event 2、実出力profile-native-okとSource非公開性を確認する。
 
 最終3 Rust testの9 CLI subprocessは3／3 PASS、4,066 Source／case／EXE差分0。全feature／lockedの当該target Clippy・fmtは終了0。前段40 View条件からの入力差分は当該CLI test fileだけで、残り4,065入力は一致する。元の全CLI Source eebe9aee7bbacfd59c51704cdc2ce0a516328e5dの692件・649 PASS／43 FAIL／23 ignoredのうち、traverseとnative I/O profileの元2失敗を限定修復した。未再実行の他結果を元の証拠として保持した有効照合は651 PASS／41 FAILであり、新しい全件run・未選択範囲の新規失敗0とは主張しない。旧全件の失敗ID・結果は保持し、現状の「runの12-step条件は未達」と他owner行の重複CLI43説明は、この契約・実測・修復を理由に訂正した。Generic Matchの受入行・旧履歴prefixは変更していない。[全原本・WIP取り込み・再利用範囲](acceptance-evidence/task-cli-task-prefix-acceptance.json)、[失敗・各profile・検証ZIP](acceptance-evidence/task-cli-task-prefix-acceptance.raw.zip)。
+## 2026-11-02 — scalarの通常call・Angle・参照定数・template登録の実装と全55逆依存
+
+現状の一覧は [current-status.md](current-status.md) に集約する。
+実装Sourceは `5dfcd9caa087a6d8978829c750ac0fcbd8365877`、固定入力は4074件。
+保持した元WIPを含む作業入力の検証であり、Git commit単独のclean treeという記録ではない。
+[受入・全SHA・検証原本](acceptance-evidence/task-source-scalar-acceptance.json) と
+[raw archive](acceptance-evidence/task-source-scalar-acceptance.raw.zip) に各入力・失敗・再試行を保持した。
+
+公開したcoherentなSource cutは次の通り。中間cutを全体正常・最終受入と読み替えない。
+
+- `2f856165296296571edad1b0fc3f57ec98db063b`：共通scalar carrierをSans-I/Oの
+  arcweft-primitivesへ移し、Core／Sema／Compiler／TextModelの依存方向を揃えた。
+- `04c5ab0bc363bd1433c98c36143e9d216e18d1d5`：宣言identityを持つCore quantity producer、
+  型付きpayload検査・negation・保存と、Length／Ratio／AngleのSource投影を実装した。
+  imageのLength literal／typed local、7 Length単位等の実戻り値、generic経由の負のLengthは
+  Native／canonical decoded AWBCの8条件でPASSした。初回のproducer欠落・移行中の失敗も原本へ残す。
+- `53736b6d64954e0c53603b6d849d9ffdaf46da3f`：TextModelの重複Length DTO、
+  Sema unit testのprivate field参照、AWBCのquantity arity条件を揃えた。
+  この入力の全98 check／Clippyと構造gateは成功。54逆依存の通常runは7014 PASS／0 FAIL・16 skipped、
+  全CLIは692件・650 PASS／42 FAIL・23 ignoredだった。元の有効41失敗に対しrad fixtureの
+  新規失敗1を確認した。imageの元Length producerエラーはValue factの拒否へ進んでおり、
+  同じ失敗IDでも原因が同じだとは扱わない。
+- `679c2645fe8a3c74afc04a00ba13c7cd3f7191e6`：HIR decimalが有限f32／f64変換を所有し、
+  deg／turnの正確なmilli-degree化とradの最近接・偶数丸めを共有Angle ownerへ接続した。
+  確認済みpublic-id参照のConstantと実体参照を同じresolved-value loweringへ通し、
+  DialogueLineも保持した。14 Source条件とCLIの有効fixtureはPASS（17件中15 PASS、
+  当時の画像CLI2件は後続のplan構築でFAIL）。角度owner4条件と新HIR／primitive unit2件もPASS。
+- `37cec90978b2ae10ac69a10549c22b318d591d04`：複数entryで訪問順と確定template IDが異なり、
+  ID 1より先に3をCoreへ登録していた実際の原因を修復した。対話とformatterの元manifestを
+  ID順に一度登録し、別identity表を作らない。元の構築診断を後段のpoisonedで失わない。
+  新2件は修復前2 FAIL、修復後2 PASS。9対話templateと9対話＋9 formatter templateを
+  runtime-plan verify／canonical AWBC encode/decodeで確認した。画像CLI2件は非Unit結果の束縛へ進んだ。
+- `5dfcd9caa087a6d8978829c750ac0fcbd8365877`：画像sampleの既存WIPを取り込み、
+  全asset／geometry／playback／action／proxy metadataを保ったままbg／imageのHandleをlocalへ束縛した。
+  残る12 tracked WIPのpatch SHA-256は
+  `57ed4bca2a9e68d4ae2c9c17d5ed4f6e6f051299129cf490e6e333bbb95c44b8`。
+  元13 trackedからsampleを統合しただけで、他の12 trackedと6 actual untrackedを破棄していない。
+
+最終の実測は次の通り。異なるSourceやfeature統合のrunを合算しない。
+
+- 全98 package、全target／全feature／lockedのcheckとClippyは終了0。対象12 Rustのfmt --checkも0。
+  構造3307 file／3176 Rust／1,792,767 physical LOC、review trigger385／blocking0。
+  carrier・HIR数値・Core quantity・template coordinatorのLOC、embedded test LOCとCargo fan-in／fan-outを記録した。
+- 実Cargo graphのrdeps(primitives)とrdeps(HIR)の和集合は55 package。
+  CLI以外54 packageの通常runは **7987 PASS／0 FAIL・24 skipped**、752.505秒。
+  実runtime 51 packageとtestcaseなし3 package（arcweft／bundle-assets／render-web）を区別した。
+  --workspace runのhelper内selectedPackages=0は明示-p引数の個数で、実行package 0という意味ではない。
+- CLIは宣言された全12 target、実caseを持つ11 binaryの **692件・652 PASS／40 FAIL・23 skipped**、495.400秒。
+  直前のSource 53736b6d64954e0c53603b6d849d9ffdaf46da3fと同じ692 IDで、case欠落・追加0、
+  新規失敗ID 0、今回PASSになったIDはrad fixtureとrelease後のmissing-scope確認の2件。
+  後者だけをdriver lifecycleの受入とはしない。生成画像のpositive観測は失敗している。
+  40失敗の当時／現在原因を個別に原本へ保持した。step／op・assertionを下げていない。
+- 両runのSource／catalog case／EXE差分0。check／Clippy／両runtimeの4074入力は完全一致した。
+  既受入Generic Match 151 exact IDとView値40 exact IDは今回の通常runでもすべてPASSした。
+  Generic Matchの受入850534b9e9bc8c8872f6528dd00050a5e6e7699e、
+  公開f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2と、現状一覧の受入行は変更していない。
+
+生成物の不整合はテスト失敗に数えない。Source 53736b6d64954e0c53603b6d849d9ffdaf46da3fの
+初回catalogはbundle rlib欠落で停止し、ユーザー指定の全体cargo cleanで244348 file／272.7 GiBを削除し、
+Source／Git差分を保ったfresh runが7014 PASSした。最新55の初回catalogも同じrlib理由で停止したが、
+同じSource・feature・targetの再試行では追加cleanなしでbuild・7987件実行が成功した。
+このcache障害の根本原因をSource修復したとは主張しない。build artifactは移動・コピーしていない。
+
+画像sampleはbundle作成・asset検査・実行を越えたが、Native observeの
+entry.image_alignment_objectは元2 stepと診断用8／32 stepのすべてで画像object 0
+（CLI成功・診断0・status dialogue）だった。これは保持値からdriverへ投影する境界の未達であり、
+14条件のscalar輸送・元のHandle／slot削除・ViewValue・Generic Matchを未実装へ戻す根拠ではない。
+Native公開save、reactive default、driver画像反映とNative/Web parityまで受け入れた記録にも拡張しない。
+
+旧現在形の検証行を最新runへ置換し、Source 53736b6d64954e0c53603b6d849d9ffdaf46da3fの7014／650・42、
+それ以前の23／71逆依存や限定修復の件数は履歴・原本に保持した。現行grammarと画像章に残った旧ImageDecl、
+image参照call、束縛しないHandle例は普通のfactory契約に矛盾するため整理した。
+Luna 6／maxへ限定委譲した旧layered-scene-input例の削除理由と現行例の維持は
+[資料整理記録](documentation-cleanup.md) に残す。実行済み検証やfull SHAを削除する整理ではない。

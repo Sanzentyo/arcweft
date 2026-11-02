@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "source": "5dfcd9caa087a6d8978829c750ac0fcbd8365877",
+  "inspectedHead": "5dfcd9caa087a6d8978829c750ac0fcbd8365877",
+  "documents": [
+    "docs/implementation/current-status.md",
+    "docs/00-overview/crate-map.md",
+    "docs/01-language/literals-and-primitives.md",
+    "docs/03-presentation/image-presentation-objects.md",
+    "docs/01-language/grammar.md",
+    "docs/examples/README.md",
+    "docs/implementation/documentation-cleanup.md",
+    "docs/implementation/convergence-evidence-history.md"
+  ],
+  "historyScan": "new appended evidence only; old prefix hash checked",
+  "localLinks": 143,
+  "brokenLinks": 0,
+  "fencesBalanced": true,
+  "historicalPrefixBytes": 1748931,
+  "historicalPrefixDrift": 0,
+  "acceptedGenericMatchRowUnchanged": true,
+  "rawEntryCount": 296,
+  "rawPayloadEntries": 295,
+  "rawZipSha256": "1197e9c53248d5b41c177c293c0a2bc1231d0b5f88dd75f8419b48a249001777",
+  "rawEntryDrift": 0,
+  "originalUntracked": 6,
+  "originalUntrackedDrift": 0,
+  "recordedAt": "2026-11-02T03:17:51.4425478Z"
+}
