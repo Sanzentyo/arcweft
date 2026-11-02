@@ -186,6 +186,7 @@ fn view_program() -> ViewProgramResource {
             .expect("fixture program identity"),
         source_refs: Vec::new(),
         definitions: vec![ViewDefinitionResource {
+            construction_identity: None,
             public_id: ViewDefinitionRef::new(
                 ViewId::try_new("view.root.web_ime_player_rendered")
                     .expect("fixture View identity"),
