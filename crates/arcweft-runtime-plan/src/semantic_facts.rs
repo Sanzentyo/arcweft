@@ -2618,6 +2618,21 @@ pub enum RuntimeResolvedValue {
     Constant(RuntimeValue),
 }
 
+impl RuntimeResolvedValue {
+    /// A complete declaration or registered value owns its identity without
+    /// evaluating the source namespace prefix of a selected expression.
+    pub(crate) const fn has_static_qualifier(&self) -> bool {
+        matches!(
+            self,
+            Self::ProjectCallable { .. }
+                | Self::ExternalCallable(_)
+                | Self::Entity(_)
+                | Self::Intrinsic(_)
+                | Self::Registered(_)
+        )
+    }
+}
+
 /// Checked projection selected for one final-HIR member expression.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeResolvedSelect {
@@ -8470,12 +8485,8 @@ impl RuntimePlanSemanticFacts {
                     | RuntimeResolvedValue::DialogueLine(_)
                     | RuntimeResolvedValue::Constant(_),
                 )
-                | (HirExprKind::Path(_), _)
-                | (
-                    HirExprKind::Select(_),
-                    RuntimeResolvedValue::ExternalCallable(_)
-                    | RuntimeResolvedValue::ProjectCallable { .. },
-                ) => {}
+                | (HirExprKind::Path(_), _) => {}
+                (HirExprKind::Select(_), value) if value.has_static_qualifier() => {}
                 _ => {
                     return Err(RuntimeSemanticFactsError::WrongExpressionFamily {
                         expression: *expression,
@@ -14214,11 +14225,7 @@ fn validate_project_function_semantic_catalog(
                         | HirExprKind::ShortVariant(_)
                 ) && !matches!(
                     (hir, value),
-                    (
-                        HirExprKind::Select(_),
-                        RuntimeResolvedValue::ProjectCallable { .. }
-                            | RuntimeResolvedValue::ExternalCallable(_),
-                    )
+                    (HirExprKind::Select(_), value) if value.has_static_qualifier()
                 ) {
                     return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
                 }

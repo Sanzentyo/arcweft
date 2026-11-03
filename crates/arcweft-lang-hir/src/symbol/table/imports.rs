@@ -157,24 +157,23 @@ impl ProjectSymbolTable {
         requester: &CanonicalModulePath,
         path: &SymbolPath,
     ) -> Result<Vec<ScopeBinding>, ImportResolutionError> {
+        if let Some(bindings) = self.symbol_path_scope_bindings(requester, path)? {
+            let visible = bindings
+                .iter()
+                .filter(|binding| Self::binding_visible_from(binding, requester))
+                .cloned()
+                .collect::<Vec<_>>();
+            return if visible.is_empty() {
+                Err(ImportResolutionError::Inaccessible(bindings.to_vec()))
+            } else {
+                Ok(coalesce_bindings(visible))
+            };
+        }
         if matches!(path.root(), ModulePathRoot::ImplicitCrate) && path.qualifiers().is_empty() {
-            let targets = self.visible_bindings(requester, requester, path.leaf());
-            return (!targets.is_empty())
-                .then_some(targets)
-                .ok_or(ImportResolutionError::Unknown);
+            return Err(ImportResolutionError::Unknown);
         }
-
-        if matches!(path.root(), ModulePathRoot::ImplicitCrate) {
-            let canonical = path.canonical_string();
-            let root_targets =
-                self.visible_bindings(requester, &CanonicalModulePath::crate_root(), &canonical);
-            if !root_targets.is_empty() {
-                return Ok(root_targets);
-            }
-        }
-
         let module = Self::qualifier_module(requester, path)?;
-        let mut targets = self.visible_bindings(requester, &module, path.leaf());
+        let mut targets = Vec::new();
         if let Ok(segment) = ModuleSegment::new(path.leaf()) {
             let child = module.join(segment);
             if self.modules.contains(&child) {
@@ -196,24 +195,7 @@ impl ProjectSymbolTable {
         if !targets.is_empty() {
             return Ok(coalesce_bindings(targets));
         }
-        let exists = self
-            .scopes
-            .get(&module)
-            .and_then(|scope| scope.get(path.leaf()))
-            .is_some_and(|bindings| !bindings.is_empty());
-        if exists {
-            let inaccessible = self
-                .scopes
-                .get(&module)
-                .and_then(|scope| scope.get(path.leaf()))
-                .into_iter()
-                .flatten()
-                .cloned()
-                .collect();
-            Err(ImportResolutionError::Inaccessible(inaccessible))
-        } else {
-            Err(ImportResolutionError::Unknown)
-        }
+        Err(ImportResolutionError::Unknown)
     }
 
     pub(super) fn inaccessible_bindings_for_symbol_path(
@@ -221,22 +203,71 @@ impl ProjectSymbolTable {
         requester: &CanonicalModulePath,
         path: &SymbolPath,
     ) -> Vec<ScopeBinding> {
-        if matches!(path.root(), ModulePathRoot::ImplicitCrate) && path.qualifiers().is_empty() {
-            return Vec::new();
-        }
-        let Ok(module) = Self::qualifier_module(requester, path) else {
+        // The ordinary target lookup has already validated this exact path.
+        let Ok(Some(bindings)) = self.symbol_path_scope_bindings(requester, path) else {
             return Vec::new();
         };
-        self.scopes
-            .get(&module)
-            .and_then(|scope| scope.get(path.leaf()))
-            .into_iter()
-            .flatten()
+        bindings
+            .iter()
             .filter(|binding| !Self::binding_visible_from(binding, requester))
             .cloned()
             .collect()
     }
-
+    /// Locates the sole scope row for a typed path. Declaration namespaces and
+    /// module prefixes share the same binding table. Complete local bindings
+    /// precede rooted module traversal, and an inaccessible row is terminal.
+    fn symbol_path_scope_bindings(
+        &self,
+        requester: &CanonicalModulePath,
+        path: &SymbolPath,
+    ) -> Result<Option<&[ScopeBinding]>, ImportResolutionError> {
+        let full_key = path
+            .qualifiers()
+            .iter()
+            .map(ModuleSegment::as_str)
+            .chain(std::iter::once(path.leaf()))
+            .collect::<Vec<_>>()
+            .join(".");
+        let implicit = matches!(path.root(), ModulePathRoot::ImplicitCrate);
+        if implicit {
+            if let Some(bindings) = self
+                .scopes
+                .get(requester)
+                .and_then(|scope| scope.get(&full_key))
+                && !bindings.is_empty()
+            {
+                return Ok(Some(bindings));
+            }
+            if path.qualifiers().is_empty() {
+                return Ok(None);
+            }
+        }
+        let root = if implicit {
+            ModulePathRoot::Crate
+        } else {
+            path.root()
+        };
+        let mut module = ModulePath::new(root, [])
+            .and_then(|root| root.resolve_from(requester))
+            .map_err(ImportResolutionError::InvalidPath)?;
+        for consumed in 0..=path.qualifiers().len() {
+            let key = path.qualifiers()[consumed..]
+                .iter()
+                .map(ModuleSegment::as_str)
+                .chain(std::iter::once(path.leaf()))
+                .collect::<Vec<_>>()
+                .join(".");
+            if let Some(bindings) = self.scopes.get(&module).and_then(|scope| scope.get(&key))
+                && !bindings.is_empty()
+            {
+                return Ok(Some(bindings));
+            }
+            if let Some(component) = path.qualifiers().get(consumed) {
+                module = module.join(component.clone());
+            }
+        }
+        Ok(None)
+    }
     pub(super) fn qualifier_module(
         requester: &CanonicalModulePath,
         path: &SymbolPath,

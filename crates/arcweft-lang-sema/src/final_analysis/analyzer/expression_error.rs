@@ -707,6 +707,12 @@ impl Drop for ActiveCallFrame {
 
 #[derive(Debug, Eq, PartialEq)]
 pub(super) enum AnalyzerExpressionRejection {
+    UnknownMember {
+        owner: ExprId,
+        receiver: Box<crate::types::TypeKind>,
+        member: arcweft_lang_hir::leaf::HirName,
+        member_source: arcweft_source::SourceSpan,
+    },
     Unavailable {
         owner: ExprId,
     },
@@ -827,6 +833,17 @@ impl AnalyzerExpressionError {
     pub(super) fn into_public(self, owner: ExprId) -> FinalSemanticAnalysisError {
         match self {
             Self::Rejected(rejection) => match rejection {
+                AnalyzerExpressionRejection::UnknownMember {
+                    owner,
+                    receiver,
+                    member,
+                    member_source,
+                } => FinalSemanticAnalysisError::UnknownValueMember {
+                    owner,
+                    receiver,
+                    member,
+                    member_source,
+                },
                 AnalyzerExpressionRejection::Unavailable { owner } => {
                     FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner }
                 }

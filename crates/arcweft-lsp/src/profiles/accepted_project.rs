@@ -1133,7 +1133,7 @@ fn import_callable_references(
                 ) else {
                     continue;
                 };
-                let Ok(ProjectValueLookup::Present(callable)) =
+                let Ok(ProjectValueLookup::Callable(callable)) =
                     symbols.resolve_hir_value_target(module_path, path, source.clone())
                 else {
                     continue;

@@ -99,6 +99,21 @@ impl HirModule {
             .expect("accepted module scope graph remains acyclic and complete"))
     }
 
+    /// Looks up the lexical root that can shadow a complete qualified project
+    /// path. Explicit project roots never participate in lexical lookup.
+    pub fn lookup_path_root_local(
+        &self,
+        scope: ScopeId,
+        path: &HirPath,
+        before: &SourceSpan,
+    ) -> Result<LocalLookup, IdResolveError> {
+        let mut root = path.clone();
+        while let Some((prefix, _)) = root.split_terminal_segment() {
+            root = prefix;
+        }
+        self.lookup_path_local(scope, &root, before)
+    }
+
     /// Resolves one expression ID against this exact immutable module revision.
     pub fn resolve_expr(&self, id: ExprId) -> Result<&HirExpr, IdResolveError> {
         self.resolve_arena(&self.arenas.expressions, id)

@@ -65,6 +65,15 @@ path. An explicit public ID supplies identity independently of that binding
 path. Empty components are invalid. Registry-key components remain single
 identifiers and do not acquire this declaration-path grammar.
 
+The same complete path denotes the declaration in value position and, for an
+Action, its nominal payload in type position. A lexical value at the root of an
+implicit path shadows the project declaration. Within a module, its complete
+binding path is considered before crate-root module traversal; explicit
+`crate`, `self`, and `super` roots retain their module meaning. Visibility is
+checked at the selected declaration. Namespace prefixes are metadata, not
+runtime receiver values. Direct calls and first-class aliases use the same
+declaration and payload layout.
+
 `#` is reserved for Rust-like attributes in the `#[...]` form and is not an
 entity-reference marker.
 

@@ -1387,8 +1387,12 @@ impl<'a> EntryCheckContext<'a> {
             .symbols
             .resolve_hir_value_target(module_path, path, source.clone())
         {
-            Ok(ProjectValueLookup::Present(symbol)) => symbol,
-            Ok(ProjectValueLookup::Absent) => {
+            Ok(ProjectValueLookup::Callable(symbol)) => symbol,
+            Ok(
+                ProjectValueLookup::Retained(_)
+                | ProjectValueLookup::External(_)
+                | ProjectValueLookup::Absent,
+            ) => {
                 diagnostics.push(CheckedEntryDiagnostic::new(
                     "sema.entry.unresolved_callable",
                     format!("cannot resolve {role} role in the callable value namespace"),

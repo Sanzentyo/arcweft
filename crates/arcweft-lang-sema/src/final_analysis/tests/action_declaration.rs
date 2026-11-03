@@ -3,6 +3,31 @@ use crate::semantic_coordinate::{CheckedSemanticPathStep, SemanticCoordinateInde
 use arcweft_lang_hir::project::HirDeclarationParameterRootRole;
 
 #[test]
+fn qualified_action_shadowing_reports_the_exact_unknown_member() {
+    let source = "fn invalid(value: i64) -> Unit { let ignored = value.submit; () }\n";
+    let world = fixture(source, None);
+    let error = analyze(&world).expect_err("a lexical value owns its member lookup");
+    let FinalSemanticAnalysisError::UnknownValueMember {
+        receiver,
+        member,
+        member_source,
+        ..
+    } = &error
+    else {
+        panic!("a source rejection retains the selected member: {error:?}")
+    };
+    assert_eq!(receiver.as_ref(), &TypeKind::I64);
+    assert_eq!(member.as_str(), "submit");
+    let start = source.find("submit").unwrap();
+    assert_eq!(
+        member_source.range(),
+        arcweft_source::SourceRange::new(start, start + 6)
+    );
+    assert_eq!(error.diagnostic_code(), "sema.value.unknown_member");
+    assert!(error.source_diagnostic().is_some());
+}
+
+#[test]
 fn action_payload_is_a_checked_nominal_record_with_persistent_channel_identity() {
     let check = |source: &str, name: &str| {
         let world = fixture(source, None);

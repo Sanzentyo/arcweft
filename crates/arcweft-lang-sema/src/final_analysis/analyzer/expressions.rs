@@ -31,9 +31,9 @@ use super::{
     PreparedDialogueApplication, PreparedDialogueEffectPlan, PreparedDialogueEffectSite,
     PreparedExpressionFact, PreparedExpressionShell, PreparedImplicitCallableBody,
     PreparedOwnerBoundExpression, PreparedOwnerBoundResolution, PreparedTryBoundary,
-    ProjectHirSymbolLookupError, ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalType,
-    ProjectSymbolResolutionError, ProjectTypeTarget, ProjectValueLookup, RegisteredSemanticValueId,
-    ResolvedProjectSymbol, ScopeId, SourceSpan, TypeKind, TypeParameterSubstitutions,
+    ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalType, ProjectTypeTarget,
+    ProjectValueLookup, RegisteredSemanticValueId, ScopeId, SourceSpan, TypeKind,
+    TypeParameterSubstitutions,
     calls::{checked_character_dialogue_target, checked_project_nominal, nominal_substitutions},
     expression_types::{
         common_type, expected_item, indexed_item, literal_type, value_resolution_type,
@@ -4228,10 +4228,30 @@ impl Analyzer<'_, '_, '_> {
                     let semantic_type = target_type
                         .semantic_identity_digest()
                         .map_err(|_| AnalyzerExpressionError::rejected(owner))?;
-                    let accepted = environment
+                    let Some(accepted) = environment
                         .nominal_catalog()
                         .environment_record_for_semantic_type(semantic_type)
-                        .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+                    else {
+                        let member_source = self
+                            .module(owner.module())
+                            .map_err(AnalyzerExpressionError::fatal)?
+                            .source_anchor(HirSourceQuery::Expr {
+                                owner,
+                                role: arcweft_lang_hir::source_index::HirExprSourceRole::SelectedMember,
+                            })
+                            .map_err(|_| AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner))?
+                            .ok_or_else(|| {
+                                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+                            })?;
+                        return Err(AnalyzerExpressionError::Rejected(
+                            super::expression_error::AnalyzerExpressionRejection::UnknownMember {
+                                owner,
+                                receiver: Box::new(target_type.clone()),
+                                member: name.clone(),
+                                member_source,
+                            },
+                        ));
+                    };
                     let record = accepted
                         .environment_record()
                         .filter(|record| {
@@ -5364,82 +5384,72 @@ impl Analyzer<'_, '_, '_> {
             }
             LocalLookup::NotFound => {}
         }
-        match self
-            .symbols
-            .resolve_hir_value_target(module.key().path(), path, source)
+        let project_value = match module
+            .lookup_path_root_local(scope, path, &source)
             .map_err(|_| FinalSemanticAnalysisError::ValueResolutionFailed { owner })?
         {
-            ProjectValueLookup::Present(callable) => Ok(Some(
+            LocalLookup::Found(_) => ProjectValueLookup::Absent,
+            LocalLookup::AmbiguousPoisoned(_) => {
+                return Err(FinalSemanticAnalysisError::ValueResolutionFailed { owner });
+            }
+            LocalLookup::NotFound => self
+                .symbols
+                .resolve_hir_value_target(module.key().path(), path, source)
+                .map_err(|_| FinalSemanticAnalysisError::ValueResolutionFailed { owner })?,
+        };
+        match project_value {
+            ProjectValueLookup::Callable(callable) => Ok(Some(
                 CheckedValueResolution::ProjectCallable(super::CheckedProjectCallable::new(
                     callable.declaration().clone(),
                     callable.source_item(),
                 )),
             )),
-            ProjectValueLookup::Absent => {
-                match self.symbols.resolve_hir_symbol_target(
-                    module.key().path(),
-                    path,
-                    expression_span(module, owner)?,
-                ) {
-                    Ok(ResolvedProjectSymbol::Retained(symbol)) => {
-                        let item = CheckedProjectItem::try_new_retained(
-                            symbol.public_id().clone(),
-                            symbol.family(),
-                            symbol.owner(),
-                            self.retained_entity_value_type(symbol.owner())
-                                .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?,
+            ProjectValueLookup::Retained(symbol) => {
+                let item = CheckedProjectItem::try_new_retained(
+                    symbol.public_id().clone(),
+                    symbol.family(),
+                    symbol.owner(),
+                    self.retained_entity_value_type(symbol.owner())
+                        .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?,
+                )
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                return Ok(Some(CheckedValueResolution::ProjectItem(item)));
+            }
+            ProjectValueLookup::External(symbol) => {
+                let owner = self
+                    .catalogs
+                    .world
+                    .environment()
+                    .bound_external_owner(self.symbols, symbol.declaration())
+                    .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                return Ok(Some(match owner {
+                    RegisteredExternalOwner::Character(character) => {
+                        CheckedValueResolution::ProjectItem(
+                            CheckedProjectItem::new_external_character(
+                                symbol.declaration(),
+                                character.clone(),
+                            ),
                         )
-                        .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-                        return Ok(Some(CheckedValueResolution::ProjectItem(item)));
                     }
-                    Ok(ResolvedProjectSymbol::External(symbol)) => {
-                        let owner = self
-                            .catalogs
-                            .world
-                            .environment()
-                            .bound_external_owner(self.symbols, symbol.declaration())
-                            .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
-                        return Ok(Some(match owner {
-                            RegisteredExternalOwner::Character(character) => {
-                                CheckedValueResolution::ProjectItem(
-                                    CheckedProjectItem::new_external_character(
-                                        symbol.declaration(),
-                                        character.clone(),
-                                    ),
-                                )
-                            }
-                            RegisteredExternalOwner::ProjectEntity(entity) => {
-                                CheckedValueResolution::ImportedProjectEntity(
-                                    crate::final_analysis::CheckedImportedProjectEntity::new(
-                                        symbol.declaration(),
-                                        entity.clone(),
-                                        Arc::clone(self.topology.generation()),
-                                    ),
-                                )
-                            }
-                            RegisteredExternalOwner::Environment(environment) => {
-                                CheckedValueResolution::Registered(
-                                    RegisteredSemanticValueId::for_environment_binding(
-                                        environment.value_binding().clone(),
-                                    ),
-                                )
-                            }
-                        }));
+                    RegisteredExternalOwner::ProjectEntity(entity) => {
+                        CheckedValueResolution::ImportedProjectEntity(
+                            crate::final_analysis::CheckedImportedProjectEntity::new(
+                                symbol.declaration(),
+                                entity.clone(),
+                                Arc::clone(self.topology.generation()),
+                            ),
+                        )
                     }
-                    Err(ProjectHirSymbolLookupError::Symbol(
-                        ProjectSymbolResolutionError::Unknown { .. },
-                    )) => {}
-                    Ok(
-                        ResolvedProjectSymbol::Callable(_)
-                        | ResolvedProjectSymbol::StructuralCallable(_)
-                        | ResolvedProjectSymbol::Trait(_)
-                        | ResolvedProjectSymbol::Nominal(_)
-                        | ResolvedProjectSymbol::Module(_),
-                    )
-                    | Err(_) => {
-                        return Err(FinalSemanticAnalysisError::ValueResolutionFailed { owner });
+                    RegisteredExternalOwner::Environment(environment) => {
+                        CheckedValueResolution::Registered(
+                            RegisteredSemanticValueId::for_environment_binding(
+                                environment.value_binding().clone(),
+                            ),
+                        )
                     }
-                }
+                }));
+            }
+            ProjectValueLookup::Absent => {
                 if let Some((receiver_path, member)) = path.split_terminal_segment()
                     && let Some(receiver) =
                         self.resolve_path_value(module, owner, scope, &receiver_path)?

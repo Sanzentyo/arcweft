@@ -523,6 +523,13 @@ pub enum FinalSemanticAnalysisError {
         path: Box<HirPath>,
         path_source: SourceSpan,
     },
+    #[error("unknown member `{}` on type {receiver}", .member.as_str())]
+    UnknownValueMember {
+        owner: ExprId,
+        receiver: Box<TypeKind>,
+        member: arcweft_lang_hir::leaf::HirName,
+        member_source: SourceSpan,
+    },
     #[error("shared callable resolution failed for expression {owner:?}")]
     CallResolutionFailed { owner: ExprId },
     #[error("final call facts could not seal for expression {owner:?}: {error}")]
@@ -737,6 +744,7 @@ impl FinalSemanticAnalysisError {
             Self::StatementOperandTypeMismatch { .. } => "sema.statement.operand_type",
             Self::UnknownCallTarget { .. } => "sema.call.unknown_target",
             Self::UnknownValuePath { .. } => "sema.value.unknown_symbol",
+            Self::UnknownValueMember { .. } => "sema.value.unknown_member",
             Self::PropagationErrorMismatch { .. } => "sema.try.error_mismatch",
             Self::EffectUpperBoundExceeded { .. } => "AWF-EFX-001",
             Self::TargetCapabilityUnavailable { .. } => "AWF-EFX-007",
@@ -761,6 +769,14 @@ impl FinalSemanticAnalysisError {
     /// Source-backed semantic rejection retained by the final analyzer.
     pub fn source_diagnostic(&self) -> Option<Diagnostic> {
         match self {
+            Self::UnknownValueMember { member_source, .. } => Some(
+                Diagnostic::new(DiagnosticSeverity::Error, self.to_string())
+                    .with_code(self.diagnostic_code())
+                    .with_label(DiagnosticLabel::primary(
+                        member_source.clone(),
+                        Some("this value has no such member".to_owned()),
+                    )),
+            ),
             Self::UnknownValuePath { path_source, .. } => Some(
                 Diagnostic::new(DiagnosticSeverity::Error, self.to_string())
                     .with_code(self.diagnostic_code())

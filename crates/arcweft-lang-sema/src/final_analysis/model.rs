@@ -1057,7 +1057,11 @@ impl CheckedExpressionResolution {
             Self::Variant(_)
             | Self::Value(
                 CheckedValueResolution::ProjectCallable(_)
-                | CheckedValueResolution::EnvironmentCallable(_),
+                | CheckedValueResolution::EnvironmentCallable(_)
+                | CheckedValueResolution::ProjectItem(_)
+                | CheckedValueResolution::ImportedProjectEntity(_)
+                | CheckedValueResolution::Registered(_)
+                | CheckedValueResolution::CharacterField { .. },
             ) => {
                 Some(arcweft_lang_hir::project::HirSelectedSelectTargetDisposition::StaticQualifier)
             }

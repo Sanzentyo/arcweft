@@ -87,6 +87,7 @@ where
             nominal_receiver,
             member,
             facts,
+            dialogue_context,
             limits,
         ),
         HirCallCallee::Associated {
@@ -279,12 +280,15 @@ where
             Some(CheckedExpressionResolution::Value(CheckedValueResolution::ProjectCallable(
                 callable,
             ))) => match lookup {
-                ProjectValueLookup::Present(symbol)
+                ProjectValueLookup::Callable(symbol)
                     if symbol.declaration() == callable.declaration() =>
                 {
                     Some(callable.declaration().clone())
                 }
-                ProjectValueLookup::Present(_) | ProjectValueLookup::Absent => {
+                ProjectValueLookup::Callable(_)
+                | ProjectValueLookup::Retained(_)
+                | ProjectValueLookup::External(_)
+                | ProjectValueLookup::Absent => {
                     return Err(PrepareFinalCallCalleeError::ProjectValueFactMismatch {
                         expression: value,
                     });
@@ -292,8 +296,10 @@ where
             },
             Some(CheckedExpressionResolution::Value(_)) => None,
             Some(_) | None => match lookup {
-                ProjectValueLookup::Present(symbol) => Some(symbol.declaration().clone()),
-                ProjectValueLookup::Absent => None,
+                ProjectValueLookup::Callable(symbol) => Some(symbol.declaration().clone()),
+                ProjectValueLookup::Retained(_)
+                | ProjectValueLookup::External(_)
+                | ProjectValueLookup::Absent => None,
             },
         };
         let scope = match path.root() {
@@ -437,8 +443,12 @@ fn prepare_unresolved_dot_callee<'a, P, U>(
     nominal_receiver: &HirAssociatedReceiver,
     member: &arcweft_lang_hir::leaf::HirName,
     facts: FinalCallCalleeFacts<'a, P, U>,
+    dialogue_context: CharacterDialoguePatchContext,
     limits: &CallableLimits,
-) -> Result<PreparedFinalCallCallee<'a>, PrepareFinalCallCalleeError> {
+) -> Result<PreparedFinalCallCallee<'a>, PrepareFinalCallCalleeError>
+where
+    P: PreparedCallPrefixPayload<Unselected = U>,
+{
     let checked = facts.expressions.get(&value_receiver);
     let expression = authority
         .module()
@@ -477,7 +487,7 @@ fn prepare_unresolved_dot_callee<'a, P, U>(
                 });
             }
             match resolve_final_project_value(authority, value_receiver, &full_path)? {
-                ProjectValueLookup::Present(symbol) => {
+                ProjectValueLookup::Callable(symbol) => {
                     if let Some(CheckedExpressionResolution::Value(
                         CheckedValueResolution::ProjectCallable(callable),
                     )) = checked.and_then(PreparedExpressionFact::checked_resolution)
@@ -500,6 +510,36 @@ fn prepare_unresolved_dot_callee<'a, P, U>(
                         context: PreparedFreeCallContext::Ordinary,
                     });
                 }
+                ProjectValueLookup::Retained(symbol) => {
+                    // The staged fact belongs to this complete callee path,
+                    // rather than to a namespace prefix or a selected method.
+                    if !matches!(checked.and_then(PreparedExpressionFact::checked_resolution),
+                        Some(CheckedExpressionResolution::Value(CheckedValueResolution::ProjectItem(item)))
+                            if item.retained_owner() == Some(symbol.owner()))
+                    {
+                        return Err(PrepareFinalCallCalleeError::ProjectValueFactMismatch {
+                            expression: value_receiver,
+                        });
+                    }
+                    return prepare_value_call_callee(
+                        authority,
+                        value_receiver,
+                        facts,
+                        dialogue_context,
+                        PreparedFreeCallContext::Ordinary,
+                        limits,
+                    );
+                }
+                ProjectValueLookup::External(_) => {
+                    return prepare_value_call_callee(
+                        authority,
+                        value_receiver,
+                        facts,
+                        dialogue_context,
+                        PreparedFreeCallContext::Ordinary,
+                        limits,
+                    );
+                }
                 ProjectValueLookup::Absent => {}
             }
             Some(resolve_final_project_value(
@@ -515,7 +555,7 @@ fn prepare_unresolved_dot_callee<'a, P, U>(
     };
 
     match project_lookup {
-        Some(ProjectValueLookup::Present(symbol)) => {
+        Some(ProjectValueLookup::Callable(symbol)) => {
             if let Some(CheckedExpressionResolution::Value(
                 CheckedValueResolution::ProjectCallable(callable),
             )) = checked.and_then(PreparedExpressionFact::checked_resolution)
@@ -548,7 +588,12 @@ fn prepare_unresolved_dot_callee<'a, P, U>(
             }
             return prepare_associated_callee(nominal_receiver, member, facts.nominal_receivers);
         }
-        Some(ProjectValueLookup::Absent) | None => {}
+        Some(
+            ProjectValueLookup::Retained(_)
+            | ProjectValueLookup::External(_)
+            | ProjectValueLookup::Absent,
+        )
+        | None => {}
     }
 
     let checked = checked.ok_or(PrepareFinalCallCalleeError::MissingExpressionFact {
@@ -761,6 +806,21 @@ fn resolve_final_project_value<'a>(
     path: &HirPath,
 ) -> Result<ProjectValueLookup<'a>, PrepareFinalCallCalleeError> {
     let source = required_expression_span(authority.module(), expression)?;
+    let node = authority
+        .module()
+        .resolve_expr(expression)
+        .map_err(|_| PrepareFinalCallCalleeError::InvalidCallExpression { expression })?;
+    match authority
+        .module()
+        .lookup_path_root_local(node.scope(), path, &source)
+        .map_err(|_| PrepareFinalCallCalleeError::InvalidCallExpression { expression })?
+    {
+        arcweft_lang_hir::scope::LocalLookup::Found(_) => return Ok(ProjectValueLookup::Absent),
+        arcweft_lang_hir::scope::LocalLookup::AmbiguousPoisoned(_) => {
+            return Err(PrepareFinalCallCalleeError::ProjectValueFactMismatch { expression });
+        }
+        arcweft_lang_hir::scope::LocalLookup::NotFound => {}
+    }
     authority
         .symbols
         .resolve_hir_value_target(authority.module.key().path(), path, source)
@@ -809,11 +869,9 @@ pub(super) fn classify_prepared_callee(
 ) -> Result<CallCalleeClassificationFact, ResolveCallError> {
     let module_id = module.module_id();
     match (prepared, call.callee()) {
-        (
-            PreparedCallCallee::RecordConstructor { source, .. },
-            HirCallCallee::Value { value },
-        ) if source == value && value.module() == module_id => {
-            Ok(CallCalleeClassificationFact::Value { expression: *value })
+        (PreparedCallCallee::RecordConstructor { source, .. }, callee)
+            if callee.value_expression() == Some(*source) && source.module() == module_id => {
+            Ok(CallCalleeClassificationFact::Value { expression: *source })
         }
         (
             PreparedCallCallee::Free { .. }

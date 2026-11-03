@@ -62,12 +62,8 @@ impl Analyzer<'_, '_, '_> {
             .map_err(AnalyzerExpressionError::fatal)?;
         // A lexical receiver shadows a project namespace before the complete
         // HIR reference is queried. Namespace prefixes themselves are not values.
-        let mut root = reference.path().clone();
-        while let Some((prefix, _)) = root.split_terminal_segment() {
-            root = prefix;
-        }
         match module
-            .lookup_path_local(expression.scope(), &root, &source)
+            .lookup_path_root_local(expression.scope(), reference.path(), &source)
             .map_err(|_| AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner))?
         {
             arcweft_lang_hir::scope::LocalLookup::Found(_) => return Ok(None),
@@ -78,28 +74,29 @@ impl Analyzer<'_, '_, '_> {
             }
             arcweft_lang_hir::scope::LocalLookup::NotFound => {}
         }
-        if let arcweft_lang_hir::symbol::ProjectValueLookup::Present(callable) = self
-            .symbols
-            .resolve_hir_value_target(module.key().path(), reference.path(), source)
-            .map_err(|_| {
-                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ValueResolutionFailed {
-                    owner,
-                })
-            })?
+        if let Some(resolution) = self
+            .resolve_path_value(module, owner, expression.scope(), reference.path())
+            .map_err(AnalyzerExpressionError::fatal)?
         {
-            let callable = crate::final_analysis::CheckedProjectCallable::new(
-                callable.declaration().clone(),
-                callable.source_item(),
-            );
-            let ty = self.prepare_named_callable_value_type(owner, &callable)?;
+            let ty = match &resolution {
+                CheckedValueResolution::ProjectCallable(callable) => {
+                    self.prepare_named_callable_value_type(owner, callable)?
+                }
+                _ => {
+                    super::expression_types::value_resolution_type(self.catalogs.world, &resolution)
+                        .ok_or_else(|| {
+                            AnalyzerExpressionError::fatal(
+                                FinalSemanticAnalysisError::ValueResolutionFailed { owner },
+                            )
+                        })?
+                }
+            };
             return Ok(Some(
                 CheckedExpression::value(
                     ty,
                     CheckedTypeSelection::Inferred,
                     EffectSet::new(),
-                    CheckedExpressionResolution::Value(CheckedValueResolution::ProjectCallable(
-                        callable,
-                    )),
+                    CheckedExpressionResolution::Value(resolution),
                 )
                 .into(),
             ));

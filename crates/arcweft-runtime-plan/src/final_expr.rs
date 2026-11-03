@@ -3372,13 +3372,10 @@ impl<'hir> FinalExprLowerer<'hir> {
      */
 
     fn lower_select(&self, id: ExprId, target_id: ExprId) -> Result<RuntimeExprSeedKind, String> {
-        if matches!(
-            self.value(id),
-            Some(
-                RuntimeResolvedValue::ProjectCallable { .. }
-                    | RuntimeResolvedValue::ExternalCallable(_)
-            )
-        ) {
+        if self
+            .value(id)
+            .is_some_and(RuntimeResolvedValue::has_static_qualifier)
+        {
             return self.lower_resolved_value(id);
         }
         let target = if let Some(access) = self.semantic_facts.checked_local_place_access(id)

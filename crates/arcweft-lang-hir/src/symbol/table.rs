@@ -157,13 +157,15 @@ pub enum ProjectTypeTarget<'a> {
 
 /// Typed result of looking up one project path in value position.
 ///
-/// Nominals, modules, externals, and an unknown path are deliberately
-/// represented by `Absent`: they do not occupy the callable value namespace.
-/// Ambiguous or inaccessible callable bindings are returned as terminal typed
+/// Nominals, modules, and an unknown path are represented by `Absent`.
+/// External declarations retain their identity for the semantic world's value
+/// projection. Ambiguous or inaccessible value bindings are terminal typed
 /// errors so a later type-position lookup cannot silently override them.
 #[derive(Clone, Copy, Debug)]
 pub enum ProjectValueLookup<'a> {
-    Present(&'a CallableSymbol),
+    Callable(&'a CallableSymbol),
+    Retained(&'a ProjectRetainedSymbol),
+    External(&'a ExternalSymbol),
     Absent,
 }
 
@@ -194,7 +196,7 @@ pub enum ProjectValueLookupError {
         reference: HirPath,
         reference_source: SourceSpan,
     },
-    #[error("project value lookup reached a missing accepted callable")]
+    #[error("project value lookup reached a missing accepted declaration")]
     Poisoned {
         reference_source: SourceSpan,
         target: ProjectSymbolTargetId,
@@ -1430,12 +1432,10 @@ impl ProjectSymbolTable {
             .into_boxed_slice()
     }
 
-    /// Resolves a structured project path in the callable value namespace.
-    ///
-    /// This lookup intentionally filters nominal/module/external targets before
-    /// deciding ambiguity. A callable and a same-spelling type therefore select
-    /// the callable in value position, while two callable targets remain a
-    /// terminal ambiguity. No source label is parsed or reconstructed here.
+    /// Resolves one structured path in the project value namespace.
+    /// Types and modules are filtered before deciding ambiguity. Retained View
+    /// constructors project to their canonical callable identity; other retained
+    /// and external values keep their original declaration authority.
     #[allow(
         clippy::result_large_err,
         reason = "value lookup errors retain typed module, path, source, and target evidence"
@@ -1446,8 +1446,8 @@ impl ProjectSymbolTable {
         reference: &SymbolPath,
         source: SourceSpan,
     ) -> Result<ProjectValueLookup<'_>, ProjectValueLookupError> {
-        let bindings = match self.targets_for_symbol_path(module, reference) {
-            Ok(bindings) => bindings,
+        let targets = match self.targets_for_symbol_path(module, reference) {
+            Ok(bindings) => bindings.into_iter().map(|binding| binding.target).collect(),
             Err(ImportResolutionError::Unknown) => return Ok(ProjectValueLookup::Absent),
             Err(ImportResolutionError::InvalidPath(reason)) => {
                 return Err(ProjectValueLookupError::InvalidPath {
@@ -1464,53 +1464,25 @@ impl ProjectSymbolTable {
                 });
             }
             Err(ImportResolutionError::Inaccessible(bindings)) => {
-                let targets = bindings
-                    .into_iter()
-                    .map(|binding| binding.target)
-                    .collect::<Vec<_>>();
-                let callables = self.callable_value_targets(targets);
-                if callables.is_empty() {
-                    return Ok(ProjectValueLookup::Absent);
-                }
-                return Err(ProjectValueLookupError::Inaccessible {
-                    module: module.clone(),
-                    reference: reference.clone(),
-                    reference_source: source,
-                    candidates: callables.into_boxed_slice(),
-                });
+                let targets = self
+                    .value_targets(bindings.into_iter().map(|binding| binding.target).collect());
+                return if targets.is_empty() {
+                    Ok(ProjectValueLookup::Absent)
+                } else {
+                    Err(ProjectValueLookupError::Inaccessible {
+                        module: module.clone(),
+                        reference: reference.clone(),
+                        reference_source: source,
+                        candidates: targets.into_boxed_slice(),
+                    })
+                };
             }
-            Err(ImportResolutionError::Ambiguous(targets)) => {
-                let callables = self.callable_value_targets(targets);
-                match callables.as_slice() {
-                    [] => return Ok(ProjectValueLookup::Absent),
-                    [ProjectSymbolTargetId::Callable(id)] => {
-                        return self.callable(id).map_or_else(
-                            || {
-                                Err(ProjectValueLookupError::Poisoned {
-                                    reference_source: source,
-                                    target: ProjectSymbolTargetId::Callable(id.clone()),
-                                })
-                            },
-                            |callable| Ok(ProjectValueLookup::Present(callable)),
-                        );
-                    }
-                    _ => {
-                        return Err(ProjectValueLookupError::Ambiguous {
-                            module: module.clone(),
-                            reference: reference.clone(),
-                            reference_source: source,
-                            candidates: callables.into_boxed_slice(),
-                        });
-                    }
-                }
-            }
+            Err(ImportResolutionError::Ambiguous(targets)) => targets,
         };
-
-        let callables = self
-            .callable_value_targets(bindings.into_iter().map(|binding| binding.target).collect());
-        match callables.as_slice() {
+        let targets = self.value_targets(targets);
+        match targets.as_slice() {
             [] => {
-                let inaccessible = self.callable_value_targets(
+                let inaccessible = self.value_targets(
                     self.inaccessible_bindings_for_symbol_path(module, reference)
                         .into_iter()
                         .map(|binding| binding.target)
@@ -1527,25 +1499,30 @@ impl ProjectSymbolTable {
                     })
                 }
             }
-            [ProjectSymbolTargetId::Callable(id)] => self.callable(id).map_or_else(
-                || {
-                    Err(ProjectValueLookupError::Poisoned {
-                        reference_source: source,
-                        target: ProjectSymbolTargetId::Callable(id.clone()),
-                    })
-                },
-                |callable| Ok(ProjectValueLookup::Present(callable)),
-            ),
+            [target] => match self.resolve_target(target) {
+                Some(ResolvedProjectSymbol::Callable(symbol)) => {
+                    Ok(ProjectValueLookup::Callable(symbol))
+                }
+                Some(ResolvedProjectSymbol::Retained(symbol)) => {
+                    Ok(ProjectValueLookup::Retained(symbol))
+                }
+                Some(ResolvedProjectSymbol::External(symbol)) => {
+                    Ok(ProjectValueLookup::External(symbol))
+                }
+                _ => Err(ProjectValueLookupError::Poisoned {
+                    reference_source: source,
+                    target: target.clone(),
+                }),
+            },
             _ => Err(ProjectValueLookupError::Ambiguous {
                 module: module.clone(),
                 reference: reference.clone(),
                 reference_source: source,
-                candidates: callables.into_boxed_slice(),
+                candidates: targets.into_boxed_slice(),
             }),
         }
     }
-
-    /// Resolves one final-HIR path in the callable value namespace.
+    /// Resolves one final-HIR path in the project value namespace.
     ///
     /// This is the value-position counterpart of
     /// [`Self::resolve_hir_type_target`]. It preserves the final HIR root and
@@ -1642,16 +1619,20 @@ impl ProjectSymbolTable {
         }
     }
 
-    fn callable_value_targets(
-        &self,
-        targets: Vec<ProjectSymbolTargetId>,
-    ) -> Vec<ProjectSymbolTargetId> {
+    fn value_targets(&self, targets: Vec<ProjectSymbolTargetId>) -> Vec<ProjectSymbolTargetId> {
         let mut targets = targets
             .into_iter()
             .filter_map(|target| {
-                self.callable_value_target(&target)
-                    .cloned()
-                    .map(ProjectSymbolTargetId::Callable)
+                if let Some(callable) = self.callable_value_target(&target) {
+                    Some(ProjectSymbolTargetId::Callable(callable.clone()))
+                } else {
+                    match target {
+                        ProjectSymbolTargetId::Retained(_) | ProjectSymbolTargetId::External(_) => {
+                            Some(target)
+                        }
+                        _ => None,
+                    }
+                }
             })
             .collect::<Vec<_>>();
         targets.sort();

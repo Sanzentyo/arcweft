@@ -145,6 +145,93 @@ flow main() -> i64 {{
 }
 
 #[test]
+fn qualified_action_channels_construct_direct_payloads() {
+    assert_qualified_action_channel_construction(
+        "let message = feedback.submit(count = 42i64, value = \"hello\")",
+    );
+}
+
+#[test]
+fn qualified_action_channels_keep_local_value_aliases() {
+    assert_qualified_action_channel_construction(
+        "let make = feedback.submit; let message = make(count = 42i64, value = \"hello\")",
+    );
+}
+
+#[test]
+fn qualified_action_channels_keep_captured_value_aliases() {
+    assert_qualified_action_channel_construction(
+        "let make = feedback.submit; let build = || make(count = 42i64, value = \"hello\"); let message = build()",
+    );
+}
+
+fn assert_qualified_action_channel_construction(construction: &str) {
+    let source = format!(
+        r#"
+entry cli @entry.main {{ goto @flow.main }}
+pub action feedback.submit(value: String, count: i64)
+fn identity<T>(value: T) -> T {{ value }}
+fn result(message: feedback.submit) -> i64 {{
+    if message.value == "hello" {{ message.count }} else {{ 0i64 }}
+}}
+flow main() -> i64 {{
+    {construction}
+    let retained = identity(message)
+    let callback = || result(retained)
+    return callback()
+}}
+"#
+    );
+    assert_native_return(&source, "42");
+    assert_awbc_return(&source, RuntimeValue::i64(42));
+}
+
+#[test]
+fn qualified_action_channels_construct_inside_specialized_functions() {
+    const SOURCE: &str = r#"
+entry cli @entry.main { goto @flow.main }
+pub action feedback.submit(value: String, count: i64)
+fn make<T>(value: T) -> feedback.submit {
+    let constructor = feedback.submit
+    constructor(value = "hello", count = 42i64)
+}
+flow main() -> i64 {
+    let message = make(0i64)
+    return message.count
+}
+"#;
+    assert_native_return(SOURCE, "42");
+    assert_awbc_return(SOURCE, RuntimeValue::i64(42));
+}
+
+#[test]
+fn qualified_action_channels_respect_lexical_shadowing_and_reject_extra_members() {
+    for body in [
+        "let feedback = 42i64; let message = feedback.submit(value = \"hello\", count = 42i64)",
+        "let feedback = 42i64; let make = feedback.submit",
+        "let make = feedback.submit; let message = make.bogus(value = \"hello\", count = 42i64)",
+        "let message = submit(value = \"hello\", count = 42i64)",
+    ] {
+        let source = format!(
+            "entry cli @entry.main {{ goto @flow.main }}\npub action feedback.submit(value: String, count: i64)\nflow main() -> i64 {{ {body}; return 0i64 }}\n"
+        );
+        let error = compile_source(&source)
+            .expect_err("an unrelated receiver cannot select the Action declaration");
+        assert!(
+            error.project().diagnostics().iter().all(|diagnostic| {
+                diagnostic.stage() == arcweft_compiler::project::ProjectCompileStage::TypeCheck
+                    && diagnostic
+                        .diagnostic()
+                        .code()
+                        .map(arcweft_source::DiagnosticCode::as_str)
+                        != Some("sema.final_analysis")
+            }),
+            "{body}: {error:?}"
+        );
+    }
+}
+
+#[test]
 fn ordinary_named_block_arguments_keep_their_source_order() {
     const SOURCE: &str = r#"
 entry cli @entry.main { goto @flow.main }

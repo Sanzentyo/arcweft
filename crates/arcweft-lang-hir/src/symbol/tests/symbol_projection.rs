@@ -89,7 +89,7 @@ fn view_has_one_retained_binding_and_one_nonbinding_callable_row() {
         .expect("View name source");
     assert!(matches!(
         table.resolve_value_target(&CanonicalModulePath::crate_root(), &symbol_path("Main"), source.clone()),
-        Ok(ProjectValueLookup::Present(callable)) if callable.declaration() == callables[0].declaration()
+        Ok(ProjectValueLookup::Callable(callable)) if callable.declaration() == callables[0].declaration()
     ));
     assert!(matches!(
         table.resolve_callable(
@@ -117,7 +117,7 @@ fn retained_view_value_projection_preserves_import_visibility_and_entity_identit
         .span(SourceRange::new(0, 3))
         .expect("lookup source");
     let root = CanonicalModulePath::crate_root();
-    let ProjectValueLookup::Present(callable) = table
+    let ProjectValueLookup::Callable(callable) = table
         .resolve_value_target(&root, &symbol_path("Imported"), source.clone())
         .expect("imported View value")
     else {
@@ -160,7 +160,7 @@ fn derived_view_ids_separate_same_named_owners_in_distinct_modules() {
     let source = documents[0].span(SourceRange::new(0, 3)).unwrap();
     let mut declarations = Vec::new();
     for (alias, public_id, module) in [("A", "view.a.Card", "a"), ("B", "view.b.Card", "b")] {
-        let ProjectValueLookup::Present(callable) = table
+        let ProjectValueLookup::Callable(callable) = table
             .resolve_value_target(&root, &symbol_path(alias), source.clone())
             .unwrap()
         else {
@@ -1009,7 +1009,7 @@ fn value_lookup_selects_callable_before_same_spelling_type() {
             &reference,
             source.clone(),
         ),
-        Ok(ProjectValueLookup::Present(callable))
+        Ok(ProjectValueLookup::Callable(callable))
             if callable.declaration().name() == "Item"
                 && callable.declaration().module() == &module_path("values")
     ));
@@ -1019,7 +1019,7 @@ fn value_lookup_selects_callable_before_same_spelling_type() {
             &type_path("Shared"),
             source,
         ),
-        Ok(ProjectValueLookup::Present(callable))
+        Ok(ProjectValueLookup::Callable(callable))
             if callable.declaration().name() == "Item"
                 && callable.declaration().module() == &module_path("values")
     ));
@@ -1097,6 +1097,53 @@ fn value_lookup_retains_ambiguous_and_inaccessible_callable_failures() {
         table.resolve_value_target(&root, &inaccessible, source),
         Err(ProjectValueLookupError::Inaccessible { candidates, .. })
             if matches!(candidates.as_ref(), [ProjectSymbolTargetId::Callable(_)])
+    ));
+}
+
+#[test]
+fn value_lookup_preserves_qualified_retained_paths_across_module_roots() {
+    let (documents, project) = project_modules(&[
+        ("", "fn anchor() -> Unit { () }\n"),
+        (
+            "channels",
+            "pub action feedback.submit(value: String)\naction private.send()\n",
+        ),
+    ]);
+    let table = ProjectSymbolTable::link(
+        project.view(),
+        &empty_declarations(&documents, "qualified-retained-values"),
+    )
+    .unwrap()
+    .into_table();
+    let root = CanonicalModulePath::crate_root();
+    let channels = module_path("channels");
+    let source = documents[0].span(SourceRange::new(0, 2)).unwrap();
+    for (requester, reference) in [
+        (&channels, "feedback.submit"),
+        (&channels, "self.feedback.submit"),
+        (&channels, "crate.channels.feedback.submit"),
+        (&root, "channels.feedback.submit"),
+        (&root, "crate.channels.feedback.submit"),
+    ] {
+        let ProjectValueLookup::Retained(symbol) = table
+            .resolve_value_target(requester, &symbol_path(reference), source.clone())
+            .unwrap()
+        else {
+            panic!("the full path selects one retained declaration: {reference}")
+        };
+        assert_eq!(
+            symbol.public_id().as_str(),
+            "action.channels.feedback.submit"
+        );
+        assert_eq!(symbol.module(), &channels);
+    }
+    assert!(matches!(
+        table.resolve_value_target(&channels, &symbol_path("submit"), source.clone(),),
+        Ok(ProjectValueLookup::Absent)
+    ));
+    assert!(matches!(
+        table.resolve_value_target(&root, &symbol_path("channels.private.send"), source,),
+        Err(ProjectValueLookupError::Inaccessible { .. })
     ));
 }
 

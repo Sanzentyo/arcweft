@@ -930,6 +930,9 @@ fn expression_resolution_matches(
     resolution: &CheckedExpressionResolution,
 ) -> bool {
     match (kind, resolution) {
+        (HirExprKind::Select(_), CheckedExpressionResolution::Value(_)) => {
+            resolution.select_target_disposition().is_some()
+        },
         (HirExprKind::ViewBodyApplication(_),
          CheckedExpressionResolution::ViewCall(super::CheckedViewCall::ContainerBody(_))) => true,
         (HirExprKind::Literal(authored), CheckedExpressionResolution::Literal(checked)) => {
@@ -944,13 +947,6 @@ fn expression_resolution_matches(
             CheckedExpressionResolution::Select(CheckedSelectResolution::Field(_)),
         )
         | (HirExprKind::Select(_), CheckedExpressionResolution::Select(_))
-        | (
-            HirExprKind::Select(_),
-            CheckedExpressionResolution::Value(
-                CheckedValueResolution::EnvironmentCallable(_)
-                | CheckedValueResolution::ProjectCallable(_),
-            ),
-        )
         | (
             HirExprKind::Record(_) | HirExprKind::RecordLiteral(_) | HirExprKind::Path(_),
             CheckedExpressionResolution::Nominal(_),
