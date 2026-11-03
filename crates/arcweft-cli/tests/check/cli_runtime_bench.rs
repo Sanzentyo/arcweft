@@ -3059,6 +3059,69 @@ fn bench_json_validates_headless_script_benches() {
     let path = temp_arcw(
         "script-bench",
         r#"
+entry bench @entry.opening { goto @flow.opening }
+
+bench @bench.opening {
+    setup {}
+    measure iterations = 10 { goto @flow.opening }
+    assert { expect.log(.info, contains="opening choices") }
+    report {}
+}
+
+flow opening() -> String {
+    log.info("opening choices")
+    return "done"
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg(&path)
+        .arg("--iterations")
+        .arg("10")
+        .arg("--json")
+        .output()
+        .expect("arcw bench runs");
+
+    assert!(
+        output.status.success(),
+        "bench validation should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let bench = &report["benches"][0];
+    assert_eq!(bench["id"], "bench.opening");
+    assert_eq!(bench["target"]["kind"], "headless");
+    assert_eq!(bench["status"], "measured");
+    assert_eq!(bench["diagnostics"], serde_json::json!([]));
+    let sections = bench["sections"].as_array().unwrap();
+    assert_eq!(sections.len(), 4);
+    for (section, (name, status)) in sections.iter().zip([
+        ("setup", "validated"),
+        ("measure", "measured"),
+        ("assert", "validated"),
+        ("report", "validated"),
+    ]) {
+        assert_eq!(section["name"], name);
+        assert_eq!(section["status"], status);
+        assert_eq!(section["diagnostics"], serde_json::json!([]));
+    }
+    let measurement = &sections[1]["measurement"];
+    assert_eq!(measurement["iterations"], 10);
+    assert_eq!(measurement["steps"], 32);
+    assert_eq!(measurement["warmup"], 0);
+    assert_eq!(measurement["deterministic"]["executed_ops_median"], 2);
+    assert_eq!(measurement["deterministic"]["line_effects_median"], 1);
+    assert_eq!(measurement["deterministic"]["task_requests_median"], 0);
+    assert_eq!(measurement["deterministic"]["diagnostics"], 0);
+}
+
+#[test]
+fn bench_json_rejects_undefined_headless_fixture_commands() {
+    let path = temp_arcw(
+        "script-bench-undefined-commands",
+        r#"
 metric gauge memo_hit_rate: f32 {}
 
 bench @bench.opening {
@@ -3069,27 +3132,28 @@ bench @bench.opening {
 }
 "#,
     );
-
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("bench")
         .arg(&path)
         .arg("--json")
         .output()
-        .expect("arcw bench runs");
-
-    assert!(
-        output.status.success(),
-        "bench validation should succeed, stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("bench.opening")
-            && stdout.contains("\"status\": \"validated\"")
-            && stdout.contains("measure")
-            && stdout.contains("report"),
-        "bench JSON should include headless validation metadata: {stdout}"
-    );
+        .unwrap();
+    assert!(!output.status.success());
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let bench = &report["benches"][0];
+    assert_eq!(bench["status"], "failed");
+    let diagnostics = bench["diagnostics"].as_array().unwrap();
+    for command in ["let", "opening_choices", "assert", "cpu_time"] {
+        assert!(
+            diagnostics
+                .iter()
+                .any(|value| value == &format!("unsupported script command `{command}`")),
+            "undefined commands must remain errors: {diagnostics:?}"
+        );
+    }
+    for section in bench["sections"].as_array().unwrap() {
+        assert!(section["measurement"].is_null());
+    }
 }
 
 #[test]
