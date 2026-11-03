@@ -272,9 +272,7 @@ pub enum FinalSemanticAnalysisError {
     DeclarationDefaultConstraintFailure(super::FinalDeclarationDefaultConstraintFailure),
     #[error("return {owner:?} has no selected enclosing callable frame")]
     ReturnBoundaryUnavailable { owner: StmtId },
-    #[error(
-        "yield statement {owner:?} requires a generator body; item {container:?} is a direct execution frame"
-    )]
+    #[error("yield requires a generator body")]
     YieldOutsideGenerator {
         owner: StmtId,
         container: ItemId,

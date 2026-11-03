@@ -7200,11 +7200,47 @@ fn spec_valid_run_edge_fixture_now_executes() {
 }
 
 #[test]
+fn verify_json_rejects_flow_yield_before_lowering_at_the_authored_statement() {
+    let path = workspace_root()
+        .join("tests/fixtures/arcw/spec_should_fail/016_yield_in_flow_rejected.arcw");
+    let source = fs::read_to_string(&path).expect("read the authored yield fixture");
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("verify")
+        .arg(&path)
+        .arg("--json")
+        .output()
+        .expect("arcw verify checks the Flow frame");
+    assert!(!output.status.success());
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("structured semantic rejection");
+    assert_eq!(report["status"], "denied");
+    assert_eq!(report["stage"], "type-check");
+    let diagnostics = report["diagnostics"].as_array().unwrap();
+    assert_eq!(diagnostics.len(), 1);
+    let diagnostic = &diagnostics[0]["diagnostic"];
+    assert_eq!(diagnostic["code"], "sema.yield.context");
+    assert_eq!(diagnostic["message"], "yield requires a generator body");
+    let start = source.find("yield 1i32").unwrap();
+    assert_eq!(
+        diagnostic["span"]["start"].as_u64(),
+        Some(u64::try_from(start).unwrap())
+    );
+    assert_eq!(
+        diagnostic["span"]["end"].as_u64(),
+        Some(u64::try_from(start + "yield 1i32".len()).unwrap())
+    );
+    let labels = diagnostic["labels"].as_array().unwrap();
+    assert_eq!(labels.len(), 1);
+    assert_eq!(labels[0]["style"], "primary");
+    assert_eq!(labels[0]["span"], diagnostic["span"]);
+}
+
+#[test]
 fn spec_rejected_edge_fixtures_fail_with_diagnostics() {
     for (relative_path, expected) in [
         (
             "tests/fixtures/arcw/spec_should_fail/013_continue_expr_position_rejected.arcw",
-            "semantic value resolution failed",
+            "sema.value.unknown_symbol",
         ),
         (
             "tests/fixtures/arcw/spec_should_fail/014_let_else_non_diverging_rejected.arcw",
@@ -7212,7 +7248,7 @@ fn spec_rejected_edge_fixtures_fail_with_diagnostics() {
         ),
         (
             "tests/fixtures/arcw/spec_should_fail/015_break_value_in_while_rejected.arcw",
-            "break expr",
+            "requires a loop expression target",
         ),
         (
             "tests/fixtures/arcw/spec_should_fail/016_yield_in_flow_rejected.arcw",
@@ -7220,7 +7256,7 @@ fn spec_rejected_edge_fixtures_fail_with_diagnostics() {
         ),
         (
             "tests/fixtures/arcw/spec_should_fail/017_out_in_flow_rejected.arcw",
-            "`out` can only be used",
+            "unresolved Out target",
         ),
         (
             "tests/fixtures/arcw/spec_should_fail/019_unsafe_lifetime_missing_reason_rejected.arcw",
