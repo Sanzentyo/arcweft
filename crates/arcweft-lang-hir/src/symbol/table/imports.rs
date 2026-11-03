@@ -294,22 +294,6 @@ impl ProjectSymbolTable {
             .ok_or(ImportResolutionError::Unknown)
     }
 
-    pub(super) fn visible_bindings(
-        &self,
-        requester: &CanonicalModulePath,
-        module: &CanonicalModulePath,
-        name: &str,
-    ) -> Vec<ScopeBinding> {
-        self.scopes
-            .get(module)
-            .and_then(|scope| scope.get(name))
-            .into_iter()
-            .flatten()
-            .filter(|binding| Self::binding_visible_from(binding, requester))
-            .cloned()
-            .collect()
-    }
-
     pub(super) fn binding_visible_from(
         binding: &ScopeBinding,
         requester: &CanonicalModulePath,
