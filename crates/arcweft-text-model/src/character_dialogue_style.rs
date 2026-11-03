@@ -259,10 +259,10 @@ fn project_layout(
                 )?);
             }
             RichTextLayoutSelector::RubyOver => {
-                layout.ruby_position = Some(RichTextRubyPosition::Over)
+                layout.ruby_position = Some(RichTextRubyPosition::Over);
             }
             RichTextLayoutSelector::RubyUnder => {
-                layout.ruby_position = Some(RichTextRubyPosition::Under)
+                layout.ruby_position = Some(RichTextRubyPosition::Under);
             }
             RichTextLayoutSelector::RubyInterCharacter => {
                 layout.ruby_position = Some(RichTextRubyPosition::InterCharacter);

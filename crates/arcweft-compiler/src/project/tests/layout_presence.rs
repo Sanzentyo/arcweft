@@ -6,6 +6,17 @@ use arcweft_text_model::{
 
 #[test]
 fn source_layout_preserves_omission_and_explicit_default_contributions() {
+    fn visit(nodes: &[RichTextNode], updates: &mut Vec<RichTextLayoutUpdate>) {
+        for node in nodes {
+            if let RichTextNode::Scope { style, body } = node {
+                if let RichTextStyle::Layout { layout } = style.as_ref() {
+                    updates.push(layout.clone());
+                }
+                visit(body, updates);
+            }
+        }
+    }
+
     for (inner, expected) in [
         (
             ".ruby_under, ruby_size=11px",
@@ -33,16 +44,6 @@ fn source_layout_preserves_omission_and_explicit_default_contributions() {
         let compiled = compile_project(&mut session, &project, &parsed, &context).unwrap();
         let templates = compiled.runtime_plan().dialogue_content_catalog.templates();
         let mut updates = Vec::new();
-        fn visit(nodes: &[RichTextNode], updates: &mut Vec<RichTextLayoutUpdate>) {
-            for node in nodes {
-                if let RichTextNode::Scope { style, body } = node {
-                    if let RichTextStyle::Layout { layout } = style.as_ref() {
-                        updates.push(layout.clone());
-                    }
-                    visit(body, updates);
-                }
-            }
-        }
         for template in templates {
             visit(&template.content().nodes, &mut updates);
         }

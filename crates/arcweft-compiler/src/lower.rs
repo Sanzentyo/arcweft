@@ -4314,9 +4314,7 @@ fn lower_layout_modifier(
     layout.jlreq_strictness = authored(RichTextLayoutProperty::Jlreq)
         .map(lower_jlreq)
         .transpose()?;
-    layout.column_gap = authored(RichTextLayoutProperty::ColumnGap)
-        .map(|value| lower_checked_length(value).map(|(milli, _)| Milli(milli)))
-        .transpose()?;
+    layout.column_gap = lower_optional_length(modifier, RichTextLayoutProperty::ColumnGap)?;
     layout.ruby_font_size = lower_optional_length(modifier, RichTextLayoutProperty::RubySize)?;
     layout.ruby_gap = lower_optional_length(modifier, RichTextLayoutProperty::RubyGap)?;
     layout.ruby_overhang = lower_optional_length(modifier, RichTextLayoutProperty::RubyOverhang)?;
