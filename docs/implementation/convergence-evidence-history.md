@@ -14365,3 +14365,15 @@ Source 23df0a9242d5baf528610f78563022300db99949、parent 1567c2427d47ae1a7bd347e
 これは保持境界の検証であり、ソースからのemit／receive・待機・キャンセル、RuntimePlan／Compiler利用側、53 package Core逆依存の最終実行は未完。全workspace compileや実送受信の受入は主張しない。既受入Generic MatchとAction declaration identityは維持する。旧現状の「Core保存復元は未移行」は、この新しい保持境界の実測に基づき現状一覧一か所で更新した。旧失敗・SHA・実測を削除していない。既存12 tracked／6 untracked WIPはhash照合して保持した。
 
 raw 59 entries／2780212 bytes、SHA256 4d807fea6c37cb9b8c5a4d81a2687d31929c2a1709645820af095a9350cd8864、entry hash差分0。[入力・全失敗・修復・構造判断・公開照合](acceptance-evidence/task-action-channel-storage.json)。
+
+## Action送信のowner実行checkpoint — 2026-11-03
+
+Source 7416cd5dfb2d63e2c6c7c2fe8fff402a2c25c608、parent 62af78be9649fb33e44a637217d0883b6ba9086a、tree 58957e7ba1f50714bad779c8f0b5dedf1b665200、35 path／705 insertions／51 deletions、full patch SHA256 270c3580bfa896775c2c2c06b2c1b02339e9755c2241cf40fcac015abfc4d568。EmitActionを共通effect／plan／元Source codecとAWBC typed payload／codec／verifierへ接続し、元Native operationとProductのactual program／sessionが配送する。Host taskやLineEffect proxy、別Action schemaやlegacy readerは追加していない。Nativeのprospective queue capacityはoperand評価前、Productはborrowed value／capacity admission後にregisterを移す。
+
+最初のcheckはverifierのOk(())欠落で101。修正後のquality2は3 ownerのcheck／Clippy／構造0で、初回source2件は2 PASS。その後、追加した拒否2件を含むruntime2の4件は2 PASS／2 FAILだった。同じsemantic ID・producer digest・shape・layoutのままAction PublicIdを変えたprogram置換が通り、missing mailboxがtrap／unwindして元registerを保持できなかった。これは当該新キュー境界の具体的な未達であり、Generic Matchや既受入Action declaration identityを未完了へ戻す理由ではない。初回WIPの実測はbase62af78be9649fb33e44a637217d0883b6ba9086aと4089入力hashへ結び、修復後Sourceの実行として扱わない。
+
+キューのaddress claimへ元RuntimeNominalDeclarationIdを保持し、選択programの既存type rowと照合するよう修復した。version1 inert saveも同じclaimへ直接移行し、旧readerは残さない。Action context／admissionは実行前拒否として元frame／cursor／budgetを保持する。従来のtrapping MissingExecutionContextではなく、専用のnontrapping typed errorをテストし、値／cursor保持のassertionは維持した。runtime3の4件とcore1の2245件はすべてPASS。その後、共通capacity header preflightをNative評価前へ接続した最終入力でruntime4の4／4 PASS（0.201s）、core2の2245／2245 PASS（14.832s）、Core／RuntimePlan／Compiler all-target／all-feature／locked check・Clippyとcanonical構造gateの終了0を新規確認した。4089入力・case／EXE差分0、警告は残る。最終runで以前の成功は再利用していない。
+
+直接送信とeffectful function内の送信はNative／canonical decoded Productが実戻り値42となり、毎stepのJSON保存／cold restoreでも元Actionのpayload42をちょうど一度保持する。session authorityなしのregister／cursor保持と、元宣言差替えprogramへの置換拒否／session保持も確認した。receive・待機／キャンセルと53 package Core逆依存・全workspace受入は未完。保持基盤Source23dfの「2242 PASS＋fixture3再実行」という旧現状説明は、今回の全2245件新規PASSへ置き換えて現状一覧一か所へ集約した。旧実測・SHA・失敗は前節と原本へ保持し、完了項目を戻していない。既存12 tracked／6 untracked WIPもhash照合して保持した。
+
+raw 87 entries／3725174 bytes、SHA256 a50407d2c3efda8542de736b0f15d39ecbb85db676a7d967b8b2f0436501b48c、全entry hash差分0。[入力・失敗・修復・構造判断・最終実測・公開照合](acceptance-evidence/task-action-channel-emit.json)。
