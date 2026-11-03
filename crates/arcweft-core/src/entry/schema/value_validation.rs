@@ -305,8 +305,12 @@ impl<'a> SchemaValueValidation<'a> {
             | (Schema::Color, View::Scalar(Scalar::Color(_)))
             | (Schema::Char, View::Scalar(Scalar::Char(_)))
             | (Schema::Duration, View::Scalar(Scalar::Duration(_)))
-            | (Schema::Progress, View::Scalar(Scalar::Progress { .. }))
-            | (Schema::EntityReference, View::Scalar(Scalar::EntityRef(_))) => Ok(Children::None),
+            | (Schema::Progress, View::Scalar(Scalar::Progress { .. })) => Ok(Children::None),
+            (Schema::EntityReference(expected), View::Scalar(Scalar::EntityRef(value)))
+                if expected.accepts(value) =>
+            {
+                Ok(Children::None)
+            }
             (Schema::DenseNumeric(expected), View::DenseNumeric(value))
                 if value.ty() == *expected =>
             {

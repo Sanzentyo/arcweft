@@ -2331,8 +2331,13 @@ fn actor_look_program() -> AwbcProgram {
             },
         ),
         AwbcRuntimeType::new(
-            RuntimeCheckedType::EntityReference.semantic_identity_digest(),
-            AwbcRuntimeTypeShape::EntityRef,
+            RuntimeCheckedType::EntityReference(
+                crate::value::RuntimeEntityReferenceType::CharacterLook(character.clone()),
+            )
+            .semantic_identity_digest(),
+            AwbcRuntimeTypeShape::EntityRef(
+                crate::value::RuntimeEntityReferenceType::CharacterLook(character.clone()),
+            ),
         ),
         AwbcRuntimeType::new(
             RuntimeCheckedType::Duration.semantic_identity_digest(),

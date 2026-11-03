@@ -151,8 +151,12 @@ fn plan_with_observed_producer_entry(
     let unit_type = arcweft_core::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
     let launch_type = type_id(7);
     let contract = NeedProducerContractDigest::from_bytes([0x63; 32]);
-    let entity_type =
-        arcweft_core::pattern::RuntimeCheckedType::EntityReference.semantic_identity_digest();
+    let entity_type = arcweft_core::pattern::RuntimeCheckedType::EntityReference(
+        arcweft_core::value::RuntimeEntityReferenceType::family_only(
+            arcweft_id::ProjectEntityReferenceFamily::Asset,
+        ),
+    )
+    .semantic_identity_digest();
     let (request, argument_types, arguments) = match asset {
         Some(kind) => (
             NeedProducerRequestProjection::AssetLoad {
@@ -204,7 +208,11 @@ fn plan_with_observed_producer_entry(
             .admit_type_batch(
                 [RuntimePlanTypeSeed::new(
                     entity_type,
-                    RuntimePlanTypeProjection::EntityReference,
+                    RuntimePlanTypeProjection::EntityReference(
+                        arcweft_core::value::RuntimeEntityReferenceType::family_only(
+                            arcweft_id::ProjectEntityReferenceFamily::Asset,
+                        ),
+                    ),
                 )],
                 [],
             )

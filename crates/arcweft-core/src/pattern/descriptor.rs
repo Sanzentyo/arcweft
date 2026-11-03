@@ -94,6 +94,25 @@ impl RuntimeCheckedType {
                 }
                 Self::Signed(_) | Self::Unsigned(_) => visitor.fixed(&[0], next)?,
                 Self::DenseNumeric(dense) => visitor.fixed(&dense.semantic_parts(), next)?,
+                Self::EntityReference(reference) => {
+                    visitor.fixed(
+                        &[
+                            reference.kind_tag(),
+                            u8::from(reference.declaration().is_some()),
+                            u8::from(reference.payload().is_some()),
+                        ],
+                        next,
+                    )?;
+                    if let Some(character) = reference.look_owner() {
+                        visitor.string(character.as_str(), next)?;
+                    }
+                    if let Some(id) = reference.declaration() {
+                        visitor.string(id.as_str(), next)?;
+                    }
+                    if let Some(payload) = reference.payload() {
+                        visitor.fixed(payload.as_bytes(), next)?;
+                    }
+                }
                 Self::Agent(agent) => {
                     visitor.fixed(&[agent.operational_type().semantic_tag()], next)?;
                 }
@@ -107,7 +126,6 @@ impl RuntimeCheckedType {
                 | Self::Char
                 | Self::Duration
                 | Self::Progress
-                | Self::EntityReference
                 | Self::AgentValue
                 | Self::Bytes => {}
             }

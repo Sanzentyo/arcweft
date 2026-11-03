@@ -82,7 +82,9 @@ fn fixture() -> RuntimeTypeSchema {
         S::Never,
         S::Duration,
         S::Progress,
-        S::EntityReference,
+        S::EntityReference(crate::value::RuntimeEntityReferenceType::family_only(
+            arcweft_id::ProjectEntityReferenceFamily::Character,
+        )),
         S::AgentValue,
         S::Color,
     ];
@@ -212,6 +214,21 @@ fn fixture() -> RuntimeTypeSchema {
             }
         }
     }
+    for family in arcweft_id::ProjectEntityReferenceFamily::ALL {
+        schemas.push(S::EntityReference(
+            crate::value::RuntimeEntityReferenceType::try_new(
+                family,
+                Some(semantic(71)),
+                Some(arcweft_id::PublicId::try_new(format!("{}.source", family.prefix())).unwrap()),
+            )
+            .unwrap(),
+        ));
+    }
+    schemas.push(S::EntityReference(
+        crate::value::RuntimeEntityReferenceType::CharacterLook(
+            arcweft_character::id::CharacterId::try_new("character.alice").unwrap(),
+        ),
+    ));
     S::Tuple(schemas.into_boxed_slice())
 }
 

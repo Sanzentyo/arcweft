@@ -2390,7 +2390,11 @@ fn imported_flow_goto_requires_exact_admitted_identity_and_never_falls_back_to_p
                     RuntimePlanTypeSeed::new(string_type(), RuntimePlanTypeProjection::String),
                     RuntimePlanTypeSeed::new(
                         reference_ty,
-                        RuntimePlanTypeProjection::EntityReference,
+                        RuntimePlanTypeProjection::EntityReference(
+                            crate::value::RuntimeEntityReferenceType::family_only(
+                                arcweft_id::ProjectEntityReferenceFamily::Flow,
+                            ),
+                        ),
                     ),
                 ],
                 [],

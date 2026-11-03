@@ -1957,7 +1957,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                     .and_then(|index| type_projection[index].ty());
                 if ty.is_none_or(|ty| {
                     ty.identity().as_bytes() != entity.type_identity().as_bytes()
-                        || !matches!(ty.shape(), RuntimeTypeShape::EntityReference)
+                        || !matches!(ty.shape(), RuntimeTypeShape::EntityReference(_))
                 }) {
                     return Err(RuntimeProjectFunctionFactError::InvalidEntityValueType {
                         expression: row.owner(),
@@ -1984,7 +1984,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                     .and_then(|index| type_projection[index].ty());
                 if ty.is_none_or(|ty| {
                     ty.identity().as_bytes() != entity.type_identity().as_bytes()
-                        || !matches!(ty.shape(), RuntimeTypeShape::EntityReference)
+                        || !matches!(ty.shape(), RuntimeTypeShape::EntityReference(_))
                 }) {
                     return Err(RuntimeProjectFunctionFactError::InvalidEntityPatternType {
                         pattern: row.owner(),

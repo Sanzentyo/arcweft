@@ -216,7 +216,7 @@ fn format_scalar_witness_admits(
             | (Scalar::String, RuntimeTypeShape::String)
             | (Scalar::Char, RuntimeTypeShape::Char)
             | (Scalar::Duration, RuntimeTypeShape::Duration)
-            | (Scalar::Reference(_), RuntimeTypeShape::EntityReference)
+            | (Scalar::Reference(_), RuntimeTypeShape::EntityReference(_))
             | (Scalar::Progress, RuntimeTypeShape::Progress)
     )
 }

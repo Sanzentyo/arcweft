@@ -82,6 +82,14 @@ pub(in crate::plan) enum RuntimeTypeSourceError {
     Utf8,
     #[error("invalid nominal type source identity: {0}")]
     Identity(#[from] crate::entry::RuntimeIdentityError),
+    #[error("invalid entity type declaration: {0}")]
+    EntityId(#[from] arcweft_id::IdError),
+    #[error("invalid entity type family: {0}")]
+    EntityFamily(#[from] arcweft_id::PublicIdFamilyError),
+    #[error("invalid reference type Character owner: {0}")]
+    Character(#[from] arcweft_character::id::CharacterIdError),
+    #[error("invalid entity reference type metadata")]
+    EntityTypeMetadata,
     #[error("invalid type source lexical scope: {0}")]
     Scope(#[from] RuntimeTypeScopeCodecError),
     #[error("invalid bound type source reference: {0}")]

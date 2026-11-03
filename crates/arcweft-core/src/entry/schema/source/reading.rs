@@ -221,7 +221,29 @@ impl<'a> Cursor<'a> {
         let tag = self.byte()?;
         let start = self.offset;
         let children = match tag {
-            1..=18 | 31..=35 | 38 => 0,
+            1..=18 | 31..=33 | 35 | 38 => 0,
+            34 => {
+                let tag = self.byte()?;
+                if tag == crate::value::RuntimeEntityReferenceType::<()>::CHARACTER_LOOK_TAG {
+                    arcweft_character::id::CharacterId::validate_source(self.text(counts)?)?;
+                    if self.flag()? || self.flag()? {
+                        return Err(Error::EntityTypeMetadata);
+                    }
+                } else {
+                    let family = arcweft_id::ProjectEntityReferenceFamily::from_semantic_tag(tag)
+                        .ok_or(Error::Tag {
+                        kind: "entity reference type family",
+                        tag,
+                    })?;
+                    if self.flag()? && !family.accepts_public_id_text(self.text(counts)?) {
+                        return Err(Error::EntityTypeMetadata);
+                    }
+                    if self.flag()? {
+                        self.digest()?;
+                    }
+                }
+                0
+            }
             19 => {
                 self.bytes_format()?;
                 0
@@ -492,7 +514,38 @@ impl Node<'_> {
             31 => S::Never,
             32 => S::Duration,
             33 => S::Progress,
-            34 => S::EntityReference,
+            34 => {
+                let tag = reader.byte()?;
+                let reference = if tag
+                    == crate::value::RuntimeEntityReferenceType::<()>::CHARACTER_LOOK_TAG
+                {
+                    let owner = arcweft_character::id::CharacterId::try_new(reader.string()?)?;
+                    if reader.flag()? || reader.flag()? {
+                        return Err(Error::EntityTypeMetadata);
+                    }
+                    crate::value::RuntimeEntityReferenceType::CharacterLook(owner)
+                } else {
+                    let family = arcweft_id::ProjectEntityReferenceFamily::from_semantic_tag(tag)
+                        .ok_or(Error::Tag {
+                        kind: "entity reference type family",
+                        tag,
+                    })?;
+                    let declaration = if reader.flag()? {
+                        Some(arcweft_id::PublicId::try_new_engine_owned(
+                            reader.string()?,
+                        )?)
+                    } else {
+                        None
+                    };
+                    let payload = if reader.flag()? {
+                        Some(RuntimeSemanticTypeId::from_bytes(reader.digest()?))
+                    } else {
+                        None
+                    };
+                    crate::value::RuntimeEntityReferenceType::try_new(family, payload, declaration)?
+                };
+                S::EntityReference(reference)
+            }
             35 => S::AgentValue,
             36 => {
                 let count = reader.u32()? as usize;

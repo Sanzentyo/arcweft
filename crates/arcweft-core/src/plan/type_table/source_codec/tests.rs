@@ -64,6 +64,28 @@ pub(in crate::plan) fn full_table() -> RuntimePlanTypeTable {
     let mut seeds = Vec::new();
     let unit = add(&mut seeds, P::Unit);
     let payload = add(&mut seeds, P::Tuple(vec![unit].into_boxed_slice()));
+    for family in arcweft_id::ProjectEntityReferenceFamily::ALL {
+        add(
+            &mut seeds,
+            P::EntityReference(
+                crate::value::RuntimeEntityReferenceType::try_new(
+                    family,
+                    Some(unit),
+                    Some(
+                        arcweft_id::PublicId::try_new(format!("{}.source", family.prefix()))
+                            .unwrap(),
+                    ),
+                )
+                .unwrap(),
+            ),
+        );
+    }
+    add(
+        &mut seeds,
+        P::EntityReference(crate::value::RuntimeEntityReferenceType::CharacterLook(
+            arcweft_character::id::CharacterId::try_new("character.alice").unwrap(),
+        )),
+    );
     for projection in [
         P::Never,
         P::Bool,
@@ -75,7 +97,9 @@ pub(in crate::plan) fn full_table() -> RuntimePlanTypeTable {
         P::Bytes,
         P::Duration,
         P::Progress,
-        P::EntityReference,
+        P::EntityReference(crate::value::RuntimeEntityReferenceType::family_only(
+            arcweft_id::ProjectEntityReferenceFamily::Character,
+        )),
         P::AgentValue,
     ] {
         add(&mut seeds, projection);

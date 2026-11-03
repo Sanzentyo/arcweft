@@ -43,7 +43,14 @@ fn dialogue_target_admission_rejects_another_application_target_or_source_type()
     let [(first, target), (_, foreign)] = applications.as_slice() else {
         panic!("two authored dialogue application candidates");
     };
-    let source_type = normalized_type(0x80, RuntimeTypeShape::EntityReference);
+    let source_type = normalized_type(
+        0x80,
+        RuntimeTypeShape::EntityReference(
+            arcweft_core::value::RuntimeEntityReferenceType::family_only(
+                arcweft_id::ProjectEntityReferenceFamily::Character,
+            ),
+        ),
+    );
     let fact = |expression| RuntimeDialogueApplicationTarget::CharacterReference {
         expression,
         source_type: source_type.clone(),

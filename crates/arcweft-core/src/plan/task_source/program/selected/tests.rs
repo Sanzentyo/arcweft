@@ -140,8 +140,17 @@ pub(in crate::plan::task_source) fn executable(request: u8) -> AwbcProgram {
         runtime_types: vec![
             AwbcRuntimeType::new(boolean, AwbcRuntimeTypeShape::Bool),
             AwbcRuntimeType::new(
-                RuntimeCheckedType::EntityReference.semantic_identity_digest(),
-                AwbcRuntimeTypeShape::EntityRef,
+                RuntimeCheckedType::EntityReference(
+                    crate::value::RuntimeEntityReferenceType::family_only(
+                        arcweft_id::ProjectEntityReferenceFamily::Asset,
+                    ),
+                )
+                .semantic_identity_digest(),
+                AwbcRuntimeTypeShape::EntityRef(
+                    crate::value::RuntimeEntityReferenceType::family_only(
+                        arcweft_id::ProjectEntityReferenceFamily::Asset,
+                    ),
+                ),
             ),
         ],
         effect_sets: vec![AwbcEffectSet::default()],

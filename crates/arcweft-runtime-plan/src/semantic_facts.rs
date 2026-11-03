@@ -228,7 +228,7 @@ pub enum RuntimeTypeShape {
     Duration,
     Progress,
     DenseNumeric(arcweft_core::math::RuntimeDenseNumericType),
-    EntityReference,
+    EntityReference(arcweft_core::value::RuntimeEntityReferenceType<Box<RuntimeNormalizedType>>),
     AgentValue,
     Range(Box<RuntimeNormalizedType>),
     Iterator(Box<RuntimeNormalizedType>),
@@ -344,6 +344,7 @@ pub enum RuntimeSequenceKind {
 /// One deterministic descent from a normalized runtime type to a checked leaf.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeTypeProjectionStep {
+    EntityPayload,
     TraversalSource,
     TraversalMapping,
     SequenceItem,
@@ -699,7 +700,11 @@ impl RuntimeNormalizedType {
             RuntimeTypeShape::DenseNumeric(dense) => {
                 RuntimePlanTypeProjection::DenseNumeric(*dense)
             }
-            RuntimeTypeShape::EntityReference => RuntimePlanTypeProjection::EntityReference,
+            RuntimeTypeShape::EntityReference(reference) => {
+                RuntimePlanTypeProjection::EntityReference(
+                    reference.as_ref().map(|payload| payload.identity()),
+                )
+            }
             RuntimeTypeShape::AgentValue => RuntimePlanTypeProjection::AgentValue,
             RuntimeTypeShape::PresentationResource(kind) => {
                 RuntimePlanTypeProjection::PresentationResource(*kind)
@@ -835,6 +840,9 @@ impl RuntimeNormalizedType {
 
     fn children(&self) -> Vec<&RuntimeNormalizedType> {
         match self.shape() {
+            RuntimeTypeShape::EntityReference(reference) => {
+                reference.payload().map(Box::as_ref).into_iter().collect()
+            }
             RuntimeTypeShape::PresentationResource(_) => Vec::new(),
             RuntimeTypeShape::Range(item)
             | RuntimeTypeShape::Iterator(item)
@@ -896,7 +904,6 @@ impl RuntimeNormalizedType {
             | RuntimeTypeShape::Duration
             | RuntimeTypeShape::Progress
             | RuntimeTypeShape::DenseNumeric(_)
-            | RuntimeTypeShape::EntityReference
             | RuntimeTypeShape::AgentValue
             | RuntimeTypeShape::Agent(_) => Vec::new(),
         }
@@ -1104,7 +1111,7 @@ impl RuntimeNormalizedType {
             | RuntimeTypeShape::Duration
             | RuntimeTypeShape::Progress
             | RuntimeTypeShape::DenseNumeric(_)
-            | RuntimeTypeShape::EntityReference
+            | RuntimeTypeShape::EntityReference(_)
             | RuntimeTypeShape::AgentValue
             | RuntimeTypeShape::Range(_)
             | RuntimeTypeShape::Iterator(_)
@@ -1142,7 +1149,11 @@ impl RuntimeNormalizedType {
             RuntimeTypeShape::Duration => Some(RuntimeCheckedType::Duration),
             RuntimeTypeShape::Progress => Some(RuntimeCheckedType::Progress),
             RuntimeTypeShape::DenseNumeric(dense) => Some(RuntimeCheckedType::DenseNumeric(*dense)),
-            RuntimeTypeShape::EntityReference => Some(RuntimeCheckedType::EntityReference),
+            RuntimeTypeShape::EntityReference(reference) => {
+                Some(RuntimeCheckedType::EntityReference(
+                    reference.as_ref().map(|payload| payload.identity()),
+                ))
+            }
             RuntimeTypeShape::AgentValue => Some(RuntimeCheckedType::AgentValue),
             _ => None,
         }
@@ -3464,7 +3475,11 @@ fn dialogue_policy_normalized_type(
         Checked::Bool => RuntimeTypeShape::Bool,
         Checked::String => RuntimeTypeShape::String,
         Checked::Color => RuntimeTypeShape::Color,
-        Checked::EntityReference => RuntimeTypeShape::EntityReference,
+        Checked::EntityReference(reference) => RuntimeTypeShape::EntityReference(
+            reference
+                .as_ref()
+                .try_map(|_| Err(RuntimeResolvedVariantError::InvalidDialoguePolicyType))?,
+        ),
         Checked::Sequence(item) => RuntimeTypeShape::Sequence {
             kind: RuntimeSequenceKind::Seq,
             item: Box::new(dialogue_policy_normalized_type(policy_types, item)?),
@@ -8456,7 +8471,7 @@ impl RuntimePlanSemanticFacts {
                     expression_types
                         .get(expression)
                         .map(RuntimeNormalizedType::shape),
-                    Some(RuntimeTypeShape::EntityReference)
+                    Some(RuntimeTypeShape::EntityReference(_))
                 )
             {
                 return Err(RuntimeSemanticFactsError::WrongExpressionFamily {
@@ -12219,7 +12234,6 @@ fn normalized_type_matches_schema(
             | (RuntimeTypeShape::Char, RuntimeTypeSchema::Char)
             | (RuntimeTypeShape::Duration, RuntimeTypeSchema::Duration)
             | (RuntimeTypeShape::Progress, RuntimeTypeSchema::Progress)
-            | (RuntimeTypeShape::EntityReference, RuntimeTypeSchema::EntityReference)
             | (RuntimeTypeShape::AgentValue, RuntimeTypeSchema::AgentValue)
             | (
                 RuntimeTypeShape::Bytes,
@@ -12227,6 +12241,10 @@ fn normalized_type_matches_schema(
                     format: RuntimeBytesFormat::Binary,
                 },
             ) => {}
+            (
+                RuntimeTypeShape::EntityReference(expected),
+                RuntimeTypeSchema::EntityReference(actual),
+            ) if expected.as_ref().map(|payload| payload.identity()) == *actual => {}
             (RuntimeTypeShape::DenseNumeric(expected), RuntimeTypeSchema::DenseNumeric(actual))
                 if expected == actual => {}
             (RuntimeTypeShape::Sequence { kind, item }, RuntimeTypeSchema::Seq(schema))
@@ -12391,6 +12409,12 @@ fn validate_normalized_type(
     ty: &RuntimeNormalizedType,
 ) -> Result<(), RuntimeSemanticFactsError> {
     match ty.shape() {
+        RuntimeTypeShape::EntityReference(reference) => {
+            if let Some(payload) = reference.payload() {
+                validate_normalized_type(modules, payload)?;
+            }
+            Ok(())
+        }
         RuntimeTypeShape::Range(item)
         | RuntimeTypeShape::Iterator(item)
         | RuntimeTypeShape::Sequence { item, .. }
@@ -12534,7 +12558,6 @@ fn validate_normalized_type(
         | RuntimeTypeShape::Duration
         | RuntimeTypeShape::Progress
         | RuntimeTypeShape::DenseNumeric(_)
-        | RuntimeTypeShape::EntityReference
         | RuntimeTypeShape::AgentValue
         | RuntimeTypeShape::Agent(
             RuntimeAgentTypeShape::DebugStatePath
@@ -12750,7 +12773,7 @@ fn validate_call(
             if receivers.next().is_some()
                 || channel.source() != RuntimeResolvedCallOperandSource::Expression(*receiver)
                 || channel.abi_position() != 0
-                || !matches!(channel.ty().shape(), RuntimeTypeShape::EntityReference)
+                || !matches!(channel.ty().shape(), RuntimeTypeShape::EntityReference(_))
                 || !matches!(
                     channel.projection(),
                     RuntimeResolvedCallOperandProjection::Scalar
@@ -15691,7 +15714,7 @@ fn validate_entity_value(
     }
     if expression_type.is_none_or(|ty| {
         ty.identity().as_bytes() != entity.type_identity().as_bytes()
-            || !matches!(ty.shape(), RuntimeTypeShape::EntityReference)
+            || !matches!(ty.shape(), RuntimeTypeShape::EntityReference(_))
     }) {
         return Err(RuntimeSemanticFactsError::InvalidEntityValueType { expression });
     }
@@ -15705,7 +15728,7 @@ fn validate_entity_pattern_type(
 ) -> Result<(), RuntimeSemanticFactsError> {
     if ty.is_none_or(|ty| {
         ty.identity().as_bytes() != projection.type_identity().as_bytes()
-            || !matches!(ty.shape(), RuntimeTypeShape::EntityReference)
+            || !matches!(ty.shape(), RuntimeTypeShape::EntityReference(_))
     }) {
         return Err(RuntimeSemanticFactsError::InvalidEntityPatternType { pattern });
     }

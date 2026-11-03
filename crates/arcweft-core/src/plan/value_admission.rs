@@ -708,8 +708,12 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
             | (Type::Color, View::Scalar(Scalar::Color(_)))
             | (Type::Char, View::Scalar(Scalar::Char(_)))
             | (Type::Duration, View::Scalar(Scalar::Duration(_)))
-            | (Type::Progress, View::Scalar(Scalar::Progress { .. }))
-            | (Type::EntityReference, View::Scalar(Scalar::EntityRef(_))) => Ok(Children::None),
+            | (Type::Progress, View::Scalar(Scalar::Progress { .. })) => Ok(Children::None),
+            (Type::EntityReference(expected), View::Scalar(Scalar::EntityRef(value)))
+                if expected.accepts(value) =>
+            {
+                Ok(Children::None)
+            }
             (Type::DenseNumeric(expected), View::DenseNumeric(value))
                 if value.ty() == *expected =>
             {

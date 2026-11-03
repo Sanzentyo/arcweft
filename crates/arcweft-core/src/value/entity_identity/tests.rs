@@ -134,7 +134,14 @@ fn common_executable_seal_distinguishes_observable_entity_reference_labels() {
         builder
             .admit_type_batch(
                 [
-                    RuntimePlanTypeSeed::new(ty, RuntimePlanTypeProjection::EntityReference),
+                    RuntimePlanTypeSeed::new(
+                        ty,
+                        RuntimePlanTypeProjection::EntityReference(
+                            crate::value::RuntimeEntityReferenceType::family_only(
+                                arcweft_id::ProjectEntityReferenceFamily::Flow,
+                            ),
+                        ),
+                    ),
                     RuntimePlanTypeSeed::new(boolean, RuntimePlanTypeProjection::Bool),
                 ],
                 [],

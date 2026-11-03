@@ -250,7 +250,7 @@ impl RuntimePlanTypeTable {
             | RuntimePlanTypeProjection::Duration
             | RuntimePlanTypeProjection::Progress
             | RuntimePlanTypeProjection::DenseNumeric(_)
-            | RuntimePlanTypeProjection::EntityReference
+            | RuntimePlanTypeProjection::EntityReference(_)
             | RuntimePlanTypeProjection::AgentValue
             | RuntimePlanTypeProjection::PresentationResource(_)
             | RuntimePlanTypeProjection::Nominal { .. }
@@ -889,7 +889,7 @@ fn validate_codec_uses(
                     | RuntimePlanTypeProjection::Duration
                     | RuntimePlanTypeProjection::Progress
                     | RuntimePlanTypeProjection::DenseNumeric(_)
-                    | RuntimePlanTypeProjection::EntityReference
+                    | RuntimePlanTypeProjection::EntityReference(_)
                     | RuntimePlanTypeProjection::AgentValue,
                     Use::Plain,
                 )

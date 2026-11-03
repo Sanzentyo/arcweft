@@ -4259,7 +4259,11 @@ fn closed_entity_value_constructor_rejects_foreign_owner_and_type_before_publica
     let normalized = |identity| {
         super::RuntimeNormalizedType::new(
             RuntimeSemanticTypeId::from_bytes(identity),
-            RuntimeTypeShape::EntityReference,
+            RuntimeTypeShape::EntityReference(
+                arcweft_core::value::RuntimeEntityReferenceType::family_only(
+                    arcweft_id::ProjectEntityReferenceFamily::Asset,
+                ),
+            ),
         )
     };
     let assemble = |value: arcweft_lang_sema::final_analysis::CheckedEntityValueProjection,
@@ -4361,7 +4365,11 @@ fn checked_entity_value_input(
                 .expect("accepted source entity projection");
             let ty = super::RuntimeNormalizedType::new(
                 RuntimeSemanticTypeId::from_bytes(*entity.type_identity().as_bytes()),
-                RuntimeTypeShape::EntityReference,
+                RuntimeTypeShape::EntityReference(
+                    arcweft_core::value::RuntimeEntityReferenceType::family_only(
+                        arcweft_id::ProjectEntityReferenceFamily::Asset,
+                    ),
+                ),
             );
             replace_projected_type(&mut input, HirValueTypeOwner::Expression(owner), ty);
             input.push_value(owner, RuntimeResolvedValue::Entity(select(owner, entity)));
@@ -4478,7 +4486,11 @@ fn entity_value_public_admission_rejects_wrong_ref_family_or_physical_shape_for_
     for ty in [
         super::RuntimeNormalizedType::new(
             RuntimeSemanticTypeId::from_bytes(*wrong_family.as_bytes()),
-            RuntimeTypeShape::EntityReference,
+            RuntimeTypeShape::EntityReference(
+                arcweft_core::value::RuntimeEntityReferenceType::family_only(
+                    arcweft_id::ProjectEntityReferenceFamily::Flow,
+                ),
+            ),
         ),
         super::RuntimeNormalizedType::new(
             RuntimeSemanticTypeId::from_bytes(*entity.type_identity().as_bytes()),
@@ -4558,7 +4570,11 @@ fn entity_pattern_public_admission_retains_exact_pattern_and_rejects_payload_own
                     HirValueTypeOwner::Pattern(*owner),
                     super::RuntimeNormalizedType::new(
                         RuntimeSemanticTypeId::from_bytes(*identity.as_bytes()),
-                        RuntimeTypeShape::EntityReference,
+                        RuntimeTypeShape::EntityReference(
+                            arcweft_core::value::RuntimeEntityReferenceType::family_only(
+                                arcweft_id::ProjectEntityReferenceFamily::Asset,
+                            ),
+                        ),
                     ),
                 );
                 input.push_pattern_entity(

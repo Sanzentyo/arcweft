@@ -357,7 +357,6 @@ impl AwbcInventory {
         self.intern_type(AwbcRuntimeTypeShape::F32);
         self.intern_type(AwbcRuntimeTypeShape::F64);
         self.intern_type(AwbcRuntimeTypeShape::String);
-        self.intern_type(AwbcRuntimeTypeShape::EntityRef);
     }
 
     pub fn intern_dialogue_content_catalog(
@@ -774,7 +773,11 @@ impl AwbcInventory {
             AwbcRuntimeTypeShape::Char => RuntimeCheckedType::Char,
             AwbcRuntimeTypeShape::Duration => RuntimeCheckedType::Duration,
             AwbcRuntimeTypeShape::Progress => RuntimeCheckedType::Progress,
-            AwbcRuntimeTypeShape::EntityRef => RuntimeCheckedType::EntityReference,
+            AwbcRuntimeTypeShape::EntityRef(reference) => RuntimeCheckedType::EntityReference(
+                reference
+                    .as_ref()
+                    .map(|child| self.program.runtime_types[child.index()].semantic_identity()),
+            ),
             AwbcRuntimeTypeShape::AgentValue => RuntimeCheckedType::AgentValue,
             AwbcRuntimeTypeShape::Bytes => RuntimeCheckedType::Bytes,
             AwbcRuntimeTypeShape::Never => RuntimeCheckedType::Never,
@@ -1305,6 +1308,11 @@ impl AwbcInventory {
                 );
                 self.runtime_value_constant_typed(value, selected)
             }
+            (RuntimeValue::EntityRef(reference), AwbcRuntimeTypeShape::EntityRef(expected))
+                if expected.accepts(reference) =>
+            {
+                self.runtime_value_constant(value)
+            }
             (RuntimeValue::Unit, AwbcRuntimeTypeShape::Unit)
             | (RuntimeValue::Bool(_), AwbcRuntimeTypeShape::Bool)
             | (RuntimeValue::F32(_), AwbcRuntimeTypeShape::F32)
@@ -1313,7 +1321,6 @@ impl AwbcInventory {
             | (RuntimeValue::Color(_), AwbcRuntimeTypeShape::Color)
             | (RuntimeValue::Char(_), AwbcRuntimeTypeShape::Char)
             | (RuntimeValue::Duration(_), AwbcRuntimeTypeShape::Duration)
-            | (RuntimeValue::EntityRef(_), AwbcRuntimeTypeShape::EntityRef)
             | (RuntimeValue::MatrixF32(_), AwbcRuntimeTypeShape::MatrixF32)
             | (RuntimeValue::MatrixF64(_), AwbcRuntimeTypeShape::MatrixF64)
             | (RuntimeValue::TensorF32(_), AwbcRuntimeTypeShape::TensorF32)

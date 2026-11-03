@@ -228,10 +228,21 @@ fn runtime_value_atoms_round_trip_through_version_one_schema_rows() {
         (RuntimeTypeSchema::Never, 30),
         (RuntimeTypeSchema::Duration, 31),
         (RuntimeTypeSchema::Progress, 32),
-        (RuntimeTypeSchema::EntityReference, 33),
+        (
+            RuntimeTypeSchema::EntityReference(
+                crate::value::RuntimeEntityReferenceType::family_only(
+                    arcweft_id::ProjectEntityReferenceFamily::Character,
+                ),
+            ),
+            33,
+        ),
         (RuntimeTypeSchema::AgentValue, 34),
     ] {
-        round_trip(schema, &[tag]);
+        let mut expected = vec![tag];
+        if matches!(&schema, RuntimeTypeSchema::EntityReference(_)) {
+            expected.extend([5, 0, 0]);
+        }
+        round_trip(schema, &expected);
     }
 }
 

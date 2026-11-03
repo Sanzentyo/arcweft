@@ -306,7 +306,14 @@ impl RuntimePlanInventory {
             RuntimePlanTypeProjection::DenseNumeric(dense) => {
                 Some(RuntimeCheckedType::DenseNumeric(*dense))
             }
-            RuntimePlanTypeProjection::EntityReference => Some(RuntimeCheckedType::EntityReference),
+            RuntimePlanTypeProjection::EntityReference(reference) => Some(
+                RuntimeCheckedType::EntityReference(reference.as_ref().try_map(|child| {
+                    self.type_table
+                        .get(*child)
+                        .map(|row| row.semantic_identity())
+                        .ok_or(RuntimePlanTypeResolutionError::UnknownType { ty: *child })
+                })?),
+            ),
             RuntimePlanTypeProjection::AgentValue => Some(RuntimeCheckedType::AgentValue),
             RuntimePlanTypeProjection::Sequence { item, .. } => self
                 .checked_type_inner(*item, memo, visiting)?

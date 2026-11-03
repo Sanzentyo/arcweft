@@ -447,8 +447,12 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
             | (Type::Color, View::Scalar(Scalar::Color(_)))
             | (Type::Char, View::Scalar(Scalar::Char(_)))
             | (Type::Duration, View::Scalar(Scalar::Duration(_)))
-            | (Type::Progress, View::Scalar(Scalar::Progress { .. }))
-            | (Type::EntityRef, View::Scalar(Scalar::EntityRef(_))) => Ok(Children::None),
+            | (Type::Progress, View::Scalar(Scalar::Progress { .. })) => Ok(Children::None),
+            (Type::EntityRef(expected), View::Scalar(Scalar::EntityRef(value)))
+                if expected.accepts(value) =>
+            {
+                Ok(Children::None)
+            }
             (shape, View::DenseNumeric(actual))
                 if shape.dense_numeric_type() == Some(actual.ty()) =>
             {

@@ -163,6 +163,49 @@ pub enum EntityKind {
 }
 
 impl EntityKind {
+    pub fn reference_family(&self) -> Option<arcweft_id::ProjectEntityReferenceFamily> {
+        use arcweft_id::ProjectEntityReferenceFamily as Family;
+        Some(match self {
+            EntityKind::Agent => Family::Agent,
+            EntityKind::Entry => Family::Entry,
+            EntityKind::Flow => Family::Flow,
+            EntityKind::Choice => Family::Choice,
+            EntityKind::ChoiceOption => Family::ChoiceOption,
+            EntityKind::Character => Family::Character,
+            EntityKind::View => Family::View,
+            EntityKind::Action => Family::Action,
+            EntityKind::Activity => Family::Activity,
+            EntityKind::DialogueLine => Family::DialogueLine,
+            EntityKind::Text => Family::Text,
+            EntityKind::Content => Family::Content,
+            EntityKind::Input => Family::Input,
+            EntityKind::Button => Family::Button,
+            EntityKind::Style => Family::Style,
+            EntityKind::Asset => Family::Asset,
+            EntityKind::Image => Family::Image,
+            EntityKind::Animation => Family::Animation,
+            EntityKind::Capture => Family::Capture,
+            EntityKind::Hook => Family::Hook,
+            EntityKind::Signal => Family::Signal,
+            EntityKind::Metric => Family::Metric,
+            EntityKind::Scene => Family::Scene,
+            EntityKind::Test => Family::Test,
+            EntityKind::Bench => Family::Bench,
+            EntityKind::Layer => Family::Layer,
+            EntityKind::Voice => Family::Voice,
+            EntityKind::Se => Family::Se,
+            EntityKind::Bgm => Family::Bgm,
+            EntityKind::AudioBus => Family::AudioBus,
+            EntityKind::MixerSnapshot => Family::MixerSnapshot,
+            EntityKind::Ducking => Family::Ducking,
+            EntityKind::Motion => Family::Motion,
+            EntityKind::Rig => Family::Rig,
+            EntityKind::Slot => Family::Slot,
+            EntityKind::Target => Family::Target,
+            EntityKind::Other(_) => return None,
+        })
+    }
+
     /// Fixed entity families that may appear as contextual authored type atoms.
     pub const AUTHORED_FAMILIES: &'static [Self] = &[
         Self::Agent,
@@ -1141,6 +1184,33 @@ pub(crate) fn direct_type_name(path: &TypePath) -> Option<&str> {
 }
 
 impl EntityType {
+    /// Runtime type metadata, retaining the original Action declaration rather
+    /// than equating channels with structurally identical payload records.
+    pub fn runtime_reference_type(
+        &self,
+    ) -> Option<arcweft_core::value::RuntimeEntityReferenceType<&TypeKind>> {
+        let family = self.kind.reference_family()?;
+        let declaration = match (&self.kind, self.value()) {
+            (EntityKind::Action, Some(TypeKind::ProjectNominal(nominal))) => {
+                match nominal.declaration().kind() {
+                    arcweft_lang_hir::symbol::nominal::ProjectNominalDeclarationKind::Action {
+                        public_id,
+                    } => Some(public_id.clone()),
+                    _ => return None,
+                }
+            }
+            _ => None,
+        };
+        Some(
+            arcweft_core::value::RuntimeEntityReferenceType::try_new(
+                family,
+                self.value(),
+                declaration,
+            )
+            .expect("the HIR Action identity has the Action public-ID family"),
+        )
+    }
+
     pub fn new(kind: EntityKind, value: Option<TypeKind>) -> Self {
         Self {
             kind,

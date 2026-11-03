@@ -268,7 +268,21 @@ impl Writer<'_> {
             S::Never => self.byte(31)?,
             S::Duration => self.byte(32)?,
             S::Progress => self.byte(33)?,
-            S::EntityReference => self.byte(34)?,
+            S::EntityReference(reference) => {
+                self.byte(34)?;
+                self.byte(reference.kind_tag())?;
+                if let Some(character) = reference.look_owner() {
+                    self.text(character.as_str())?;
+                }
+                self.byte(u8::from(reference.declaration().is_some()))?;
+                if let Some(id) = reference.declaration() {
+                    self.text(id.as_str())?;
+                }
+                self.byte(u8::from(reference.payload().is_some()))?;
+                if let Some(payload) = reference.payload() {
+                    self.raw(payload.as_bytes())?;
+                }
+            }
             S::AgentValue => self.byte(35)?,
             S::Choice(items) => {
                 self.byte(36)?;

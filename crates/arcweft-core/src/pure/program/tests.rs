@@ -347,7 +347,14 @@ fn pure_character_dialogue_uses_the_exact_plan_and_ordered_source_row() {
                         arguments: Box::new([]),
                     },
                 ),
-                RuntimePlanTypeSeed::new(target_type, RuntimePlanTypeProjection::EntityReference),
+                RuntimePlanTypeSeed::new(
+                    target_type,
+                    RuntimePlanTypeProjection::EntityReference(
+                        crate::value::RuntimeEntityReferenceType::family_only(
+                            arcweft_id::ProjectEntityReferenceFamily::Character,
+                        ),
+                    ),
+                ),
                 RuntimePlanTypeSeed::new(bool_type, RuntimePlanTypeProjection::Bool),
             ],
             [],

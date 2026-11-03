@@ -1804,7 +1804,7 @@ fn execute_instruction(
                         program.runtime_types.get(ty.index()).is_some_and(|row| {
                             matches!(
                                 row.shape(),
-                                crate::awbc::schema::AwbcRuntimeTypeShape::EntityRef
+                                crate::awbc::schema::AwbcRuntimeTypeShape::EntityRef(_)
                             )
                         }) && layout
                             .slots

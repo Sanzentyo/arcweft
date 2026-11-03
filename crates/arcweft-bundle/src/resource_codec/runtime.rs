@@ -1170,7 +1170,18 @@ fn runtime_type_layout_digest(
         AwbcRuntimeTypeShape::Char => transcript.write_tag(7),
         AwbcRuntimeTypeShape::Duration => transcript.write_tag(8),
         AwbcRuntimeTypeShape::Progress => transcript.write_tag(9),
-        AwbcRuntimeTypeShape::EntityRef => transcript.write_tag(10),
+        AwbcRuntimeTypeShape::EntityRef(reference) => {
+            transcript.write_tag(10);
+            transcript.write_u8(reference.kind_tag());
+            if let Some(character) = reference.look_owner() {
+                transcript.write_str(character.as_str())?;
+            }
+            transcript.write_u8(u8::from(reference.declaration().is_some()));
+            if let Some(id) = reference.declaration() {
+                transcript.write_str(id.as_str())?;
+            }
+            transcript.write_optional_type(program, reference.payload().copied())?;
+        }
         AwbcRuntimeTypeShape::Tuple(items) => {
             transcript.write_tag(11);
             transcript.write_type_list(program, items)?;
@@ -1816,7 +1827,7 @@ fn runtime_value_kind(ty: &AwbcRuntimeType) -> RuntimeValueKind {
         AwbcRuntimeTypeShape::Color => RuntimeValueKind::Color,
         AwbcRuntimeTypeShape::Duration => RuntimeValueKind::Duration,
         AwbcRuntimeTypeShape::Progress => RuntimeValueKind::Progress,
-        AwbcRuntimeTypeShape::EntityRef => RuntimeValueKind::EntityRef,
+        AwbcRuntimeTypeShape::EntityRef(_) => RuntimeValueKind::EntityRef,
         AwbcRuntimeTypeShape::Tuple(_) => RuntimeValueKind::Tuple,
         AwbcRuntimeTypeShape::Sequence { .. } | AwbcRuntimeTypeShape::Bytes => {
             RuntimeValueKind::Sequence

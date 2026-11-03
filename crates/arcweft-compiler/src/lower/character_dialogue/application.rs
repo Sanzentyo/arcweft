@@ -35,7 +35,7 @@ pub(in crate::lower) fn runtime_dialogue_target(
         world,
         analysis,
     )?;
-    if matches!(source_type.shape(), RuntimeTypeShape::EntityReference) {
+    if matches!(source_type.shape(), RuntimeTypeShape::EntityReference(_)) {
         Ok(RuntimeDialogueApplicationTarget::CharacterReference {
             expression,
             source_type,

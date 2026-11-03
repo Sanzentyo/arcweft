@@ -417,7 +417,7 @@ impl RuntimeCodecUse {
             | Schema::Duration
             | Schema::Progress
             | Schema::DenseNumeric(_)
-            | Schema::EntityReference
+            | Schema::EntityReference(_)
             | Schema::AgentValue => Self::Plain,
         })
     }

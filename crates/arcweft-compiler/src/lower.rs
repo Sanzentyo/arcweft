@@ -5325,7 +5325,14 @@ fn runtime_type_scoped_at(
             persistence: RuntimeOpaquePersistence::SnapshotOnly,
             arguments: Box::new([]),
         },
-        TypeKind::Ref(_) => RuntimeTypeShape::EntityReference,
+        TypeKind::Ref(entity) => RuntimeTypeShape::EntityReference(
+            entity
+                .runtime_reference_type()
+                .ok_or_else(|| RuntimeSemanticProjectionError::Type {
+                    reason: "entity family has no runtime reference contract".into(),
+                })?
+                .try_map(|payload| nested_at(payload, RuntimeTypeProjectionStep::EntityPayload))?,
+        ),
         TypeKind::DebugStatePath => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::DebugStatePath),
         TypeKind::ObservationFieldPath => {
             RuntimeTypeShape::Agent(RuntimeAgentTypeShape::ObservationFieldPath)

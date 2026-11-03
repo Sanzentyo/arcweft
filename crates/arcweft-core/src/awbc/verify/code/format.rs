@@ -615,7 +615,7 @@ fn format_operand_result_is_valid(
                 | AwbcRuntimeTypeShape::String
                 | AwbcRuntimeTypeShape::Char
                 | AwbcRuntimeTypeShape::Duration
-                | AwbcRuntimeTypeShape::EntityRef
+                | AwbcRuntimeTypeShape::EntityRef(_)
                 | AwbcRuntimeTypeShape::Progress
         )
     );
@@ -639,7 +639,7 @@ fn format_operand_result_is_valid(
                                     | AwbcRuntimeTypeShape::String
                                     | AwbcRuntimeTypeShape::Char
                                     | AwbcRuntimeTypeShape::Duration
-                                    | AwbcRuntimeTypeShape::EntityRef
+                                    | AwbcRuntimeTypeShape::EntityRef(_)
                                     | AwbcRuntimeTypeShape::Progress
                             )
                         )

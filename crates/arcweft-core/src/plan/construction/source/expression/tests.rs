@@ -333,7 +333,18 @@ fn fixture() -> RuntimePlan {
                 ),
                 RuntimePlanTypeSeed::new(ty(10), P::String),
                 RuntimePlanTypeSeed::new(ty(11), P::F64),
-                RuntimePlanTypeSeed::new(ty(12), P::EntityReference),
+                RuntimePlanTypeSeed::new(
+                    ty(17),
+                    P::EntityReference(crate::value::RuntimeEntityReferenceType::family_only(
+                        arcweft_id::ProjectEntityReferenceFamily::Flow,
+                    )),
+                ),
+                RuntimePlanTypeSeed::new(
+                    ty(12),
+                    P::EntityReference(crate::value::RuntimeEntityReferenceType::family_only(
+                        arcweft_id::ProjectEntityReferenceFamily::Character,
+                    )),
+                ),
                 RuntimePlanTypeSeed::new(
                     ty(13),
                     P::Opaque {
@@ -675,7 +686,7 @@ fn fixture() -> RuntimePlan {
     }
     let entity = || {
         seed(
-            12,
+            17,
             K::EntityRef(RuntimeEntityReference::StructuralFlow(
                 FlowRuntimeId::from_runtime_contract("original.child", "公開名").unwrap(),
             )),

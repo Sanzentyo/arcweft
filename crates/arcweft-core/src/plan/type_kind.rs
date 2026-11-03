@@ -235,7 +235,7 @@ pub enum RuntimePlanTypeProjection<R> {
     Duration,
     Progress,
     DenseNumeric(crate::math::RuntimeDenseNumericType),
-    EntityReference,
+    EntityReference(crate::value::RuntimeEntityReferenceType<R>),
     AgentValue,
     /// Owned, program-bound presentation body. Custody belongs to its handle.
     PresentationResource(arcweft_interaction_model::presentation::PresentationResourceKind),
@@ -437,6 +437,7 @@ impl<R> RuntimePlanTypeProjection<R> {
     /// Counts canonical direct type references without allocating the child list.
     pub(crate) fn child_count(&self) -> Option<usize> {
         Some(match self {
+            Self::EntityReference(reference) => usize::from(reference.payload().is_some()),
             Self::Range(_)
             | Self::Iterator(_)
             | Self::ThreadHandle(_)
@@ -477,7 +478,6 @@ impl<R> RuntimePlanTypeProjection<R> {
             | Self::Duration
             | Self::Progress
             | Self::DenseNumeric(_)
-            | Self::EntityReference
             | Self::AgentValue
             | Self::PresentationResource(_)
             | Self::Agent(_) => 0,
@@ -487,6 +487,7 @@ impl<R> RuntimePlanTypeProjection<R> {
     /// Child references in canonical declaration order.
     pub fn children(&self) -> Box<[&R]> {
         match self {
+            Self::EntityReference(reference) => reference.payload().into_iter().collect(),
             Self::Range(child)
             | Self::Iterator(child)
             | Self::ThreadHandle(child)
@@ -545,7 +546,6 @@ impl<R> RuntimePlanTypeProjection<R> {
             | Self::Duration
             | Self::Progress
             | Self::DenseNumeric(_)
-            | Self::EntityReference
             | Self::AgentValue
             | Self::PresentationResource(_)
             | Self::Agent(_) => Box::new([]),
@@ -576,7 +576,9 @@ impl<R> RuntimePlanTypeProjection<R> {
             Self::Duration => RuntimePlanTypeProjection::Duration,
             Self::Progress => RuntimePlanTypeProjection::Progress,
             Self::DenseNumeric(dense) => RuntimePlanTypeProjection::DenseNumeric(dense),
-            Self::EntityReference => RuntimePlanTypeProjection::EntityReference,
+            Self::EntityReference(reference) => {
+                RuntimePlanTypeProjection::EntityReference(reference.try_map(map)?)
+            }
             Self::AgentValue => RuntimePlanTypeProjection::AgentValue,
             Self::Range(child) => RuntimePlanTypeProjection::Range(map(child)?),
             Self::Iterator(child) => RuntimePlanTypeProjection::Iterator(map(child)?),
@@ -708,7 +710,7 @@ impl<R> RuntimePlanTypeProjection<R> {
             | Self::Duration
             | Self::Progress
             | Self::DenseNumeric(_)
-            | Self::EntityReference
+            | Self::EntityReference(_)
             | Self::AgentValue
             | Self::PresentationResource(_)
             | Self::BuiltinVariant { .. }

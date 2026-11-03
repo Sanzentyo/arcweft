@@ -242,6 +242,14 @@ impl Work {
             }
             RuntimeTypeSchema::Named(name) => self.string(name)?,
             RuntimeTypeSchema::NominalRef(identity) => self.string(identity.nominal.as_str())?,
+            RuntimeTypeSchema::EntityReference(reference) => {
+                if let Some(id) = reference.declaration() {
+                    self.string(id.as_str())?;
+                }
+                if let Some(character) = reference.look_owner() {
+                    self.string(character.as_str())?;
+                }
+            }
             RuntimeTypeSchema::Unit
             | RuntimeTypeSchema::ExecutableRef(_)
             | RuntimeTypeSchema::Bool
@@ -266,7 +274,6 @@ impl Work {
             | RuntimeTypeSchema::Duration
             | RuntimeTypeSchema::Progress
             | RuntimeTypeSchema::DenseNumeric(_)
-            | RuntimeTypeSchema::EntityReference
             | RuntimeTypeSchema::AgentValue
             | RuntimeTypeSchema::Bytes { .. }
             | RuntimeTypeSchema::Seq(_)

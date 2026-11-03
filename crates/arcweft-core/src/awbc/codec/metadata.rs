@@ -1198,7 +1198,10 @@ impl Wire for RuntimeTypeSchema {
                     writer.write_u8(part);
                 }
             }
-            Self::EntityReference => writer.write_u8(33),
+            Self::EntityReference(reference) => {
+                writer.write_u8(33);
+                reference.write_wire(writer)?;
+            }
             Self::AgentValue => writer.write_u8(34),
             Self::Choice(alternatives) => {
                 writer.write_u8(35);
@@ -1284,7 +1287,9 @@ impl Wire for RuntimeTypeSchema {
                 30 => Self::Never,
                 31 => Self::Duration,
                 32 => Self::Progress,
-                33 => Self::EntityReference,
+                33 => Self::EntityReference(crate::value::RuntimeEntityReferenceType::read_wire(
+                    reader,
+                )?),
                 34 => Self::AgentValue,
                 35 => Self::Choice(Vec::<Self>::read_wire(reader)?.into_boxed_slice()),
                 36 => Self::Array {

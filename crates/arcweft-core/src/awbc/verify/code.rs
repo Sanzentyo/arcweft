@@ -1537,7 +1537,7 @@ fn apply_instruction(
                             return invalid_type(&at, "Progress field projection destination");
                         }
                     }
-                    Some(AwbcRuntimeTypeShape::EntityRef) => {
+                    Some(AwbcRuntimeTypeShape::EntityRef(_)) => {
                         let label = program
                             .strings
                             .get(field.index())
@@ -1825,7 +1825,7 @@ fn apply_instruction(
                     || !signature.params.iter().all(|ty| {
                         matches!(
                             runtime_shape(program, *ty),
-                            Some(AwbcRuntimeTypeShape::EntityRef)
+                            Some(AwbcRuntimeTypeShape::EntityRef(_))
                         )
                     })
                     || !signature
@@ -2017,7 +2017,7 @@ fn apply_instruction(
                 CharacterDialogueOperation::Factory => {
                     if !matches!(
                         runtime_shape(program, target_type),
-                        Some(AwbcRuntimeTypeShape::EntityRef)
+                        Some(AwbcRuntimeTypeShape::EntityRef(_))
                     ) {
                         return invalid_type(&at, "CharacterDialogue factory target");
                     }
@@ -3290,7 +3290,7 @@ impl RuntimeAgentTypeContext for AwbcProgram {
     fn is_entity_reference(&self, ty: Self::Type) -> bool {
         matches!(
             runtime_shape(self, ty),
-            Some(AwbcRuntimeTypeShape::EntityRef)
+            Some(AwbcRuntimeTypeShape::EntityRef(_))
         )
     }
 
@@ -5142,7 +5142,7 @@ fn validate_pattern(
         AwbcPattern::Entity(_) => {
             if !matches!(
                 runtime_shape(program, value_ty),
-                Some(AwbcRuntimeTypeShape::EntityRef | AwbcRuntimeTypeShape::Dynamic)
+                Some(AwbcRuntimeTypeShape::EntityRef(_) | AwbcRuntimeTypeShape::Dynamic)
             ) {
                 return invalid_type("entity pattern", "entity reference");
             }
@@ -6098,8 +6098,10 @@ fn constant_matches_type(
         | (AwbcConstant::Color(_), AwbcRuntimeTypeShape::Color)
         | (AwbcConstant::Char(_), AwbcRuntimeTypeShape::Char)
         | (AwbcConstant::DurationNanos(_), AwbcRuntimeTypeShape::Duration)
-        | (AwbcConstant::EntityRef(_), AwbcRuntimeTypeShape::EntityRef)
         | (AwbcConstant::Bytes(_), AwbcRuntimeTypeShape::Bytes) => true,
+        (AwbcConstant::EntityRef(value), AwbcRuntimeTypeShape::EntityRef(expected)) => {
+            expected.accepts(value)
+        }
         (AwbcConstant::DenseNumeric(dense), expected) => {
             expected.dense_numeric_type() == Some(dense.ty())
         }
@@ -6614,7 +6616,7 @@ pub(super) fn runtime_type_permits_copy(
                 | AwbcRuntimeTypeShape::Char
                 | AwbcRuntimeTypeShape::Duration
                 | AwbcRuntimeTypeShape::Progress
-                | AwbcRuntimeTypeShape::EntityRef
+                | AwbcRuntimeTypeShape::EntityRef(_)
                 | AwbcRuntimeTypeShape::Bytes
                 | AwbcRuntimeTypeShape::Never
                 | AwbcRuntimeTypeShape::MatrixF32
@@ -6813,7 +6815,7 @@ fn is_dynamic_target(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
         ty,
         Some(
             AwbcRuntimeTypeShape::String
-                | AwbcRuntimeTypeShape::EntityRef
+                | AwbcRuntimeTypeShape::EntityRef(_)
                 | AwbcRuntimeTypeShape::Dynamic
         )
     )

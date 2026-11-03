@@ -47,6 +47,20 @@ impl Writer<'_> {
             P::Signed(width) => self.tag(width.semantic_tag())?,
             P::Unsigned(width) => self.tag(width.semantic_tag())?,
             P::DenseNumeric(dense) => self.bytes(&dense.semantic_parts())?,
+            P::EntityReference(reference) => {
+                self.tag(reference.kind_tag())?;
+                if let Some(character) = reference.look_owner() {
+                    self.string(character.as_str())?;
+                }
+                self.tag(u8::from(reference.declaration().is_some()))?;
+                if let Some(id) = reference.declaration() {
+                    self.string(id.as_str())?;
+                }
+                self.tag(u8::from(reference.payload().is_some()))?;
+                if let Some(payload) = reference.payload() {
+                    self.reference(*payload)?;
+                }
+            }
             P::Range(item)
             | P::Iterator(item)
             | P::Need(item)
@@ -185,7 +199,6 @@ impl Writer<'_> {
             | P::Bytes
             | P::Duration
             | P::Progress
-            | P::EntityReference
             | P::AgentValue => {}
         }
         Ok(())
@@ -254,7 +267,73 @@ impl Reader<'_, '_> {
             11 => materialize.then_some(P::Bytes),
             12 => materialize.then_some(P::Duration),
             13 => materialize.then_some(P::Progress),
-            14 => materialize.then_some(P::EntityReference),
+            14 => {
+                let tag = self.tag()?;
+                if tag == crate::value::RuntimeEntityReferenceType::<()>::CHARACTER_LOOK_TAG {
+                    let character = self.string()?;
+                    arcweft_character::id::CharacterId::validate_source(character)?;
+                    for _ in 0..2 {
+                        let tag = self.tag()?;
+                        if tag != 0 {
+                            return Err(RuntimeTypeSourceError::Tag {
+                                kind: "Character look project metadata",
+                                tag,
+                            });
+                        }
+                    }
+                    return Ok(materialize.then(|| {
+                        P::EntityReference(crate::value::RuntimeEntityReferenceType::CharacterLook(
+                            arcweft_character::id::CharacterId::try_new(character)
+                                .expect("borrowed Character ID preflighted"),
+                        ))
+                    }));
+                }
+                let family = arcweft_id::ProjectEntityReferenceFamily::from_semantic_tag(tag)
+                    .ok_or(RuntimeTypeSourceError::Tag {
+                        kind: "entity reference family",
+                        tag,
+                    })?;
+                let declaration = match self.tag()? {
+                    0 => None,
+                    1 => {
+                        let id = self.string()?;
+                        if !family.accepts_public_id_text(id) {
+                            return Err(RuntimeTypeSourceError::EntityTypeMetadata);
+                        }
+                        Some(id)
+                    }
+                    tag => {
+                        return Err(RuntimeTypeSourceError::Tag {
+                            kind: "entity declaration presence",
+                            tag,
+                        });
+                    }
+                };
+                let payload = match self.tag()? {
+                    0 => None,
+                    1 => Some(self.reference()?),
+                    tag => {
+                        return Err(RuntimeTypeSourceError::Tag {
+                            kind: "entity payload presence",
+                            tag,
+                        });
+                    }
+                };
+                if materialize {
+                    let declaration = declaration
+                        .map(arcweft_id::PublicId::try_new_engine_owned)
+                        .transpose()?;
+                    Some(P::EntityReference(
+                        crate::value::RuntimeEntityReferenceType::try_new(
+                            family,
+                            payload,
+                            declaration,
+                        )?,
+                    ))
+                } else {
+                    None
+                }
+            }
             15 => materialize.then_some(P::AgentValue),
             16 => {
                 let item = self.reference()?;

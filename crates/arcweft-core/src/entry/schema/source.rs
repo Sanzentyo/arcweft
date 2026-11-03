@@ -51,6 +51,14 @@ pub(crate) enum RuntimeSchemaSourceError {
     Utf8(#[from] std::str::Utf8Error),
     #[error("schema source identity is invalid: {0}")]
     Identity(#[from] crate::entry::RuntimeIdentityError),
+    #[error("schema source entity ID is invalid: {0}")]
+    EntityId(#[from] arcweft_id::IdError),
+    #[error("schema source entity family is invalid: {0}")]
+    EntityFamily(#[from] arcweft_id::PublicIdFamilyError),
+    #[error("schema source Character identity is invalid: {0}")]
+    Character(#[from] arcweft_character::id::CharacterIdError),
+    #[error("schema source entity reference type metadata is invalid")]
+    EntityTypeMetadata,
     #[error("schema source builtin payload inventory is invalid: {0}")]
     Builtin(#[from] super::RuntimeBuiltinSchemaError),
     #[error("schema source needs {required} output bytes, only {remaining} are reserved")]

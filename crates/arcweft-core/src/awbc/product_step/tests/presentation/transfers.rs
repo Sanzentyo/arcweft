@@ -615,8 +615,15 @@ fn goto_fixture(
             .with(AwbcFunctionFlag::HasDynamicTarget);
         let target_type = AwbcTypeId(program.runtime_types.len().try_into().unwrap());
         program.runtime_types.push(AwbcRuntimeType::new(
-            RuntimeCheckedType::EntityReference.semantic_identity_digest(),
-            AwbcRuntimeTypeShape::EntityRef,
+            RuntimeCheckedType::EntityReference(
+                crate::value::RuntimeEntityReferenceType::family_only(
+                    arcweft_id::ProjectEntityReferenceFamily::Flow,
+                ),
+            )
+            .semantic_identity_digest(),
+            AwbcRuntimeTypeShape::EntityRef(crate::value::RuntimeEntityReferenceType::family_only(
+                arcweft_id::ProjectEntityReferenceFamily::Flow,
+            )),
         ));
         program.frame_layouts[0].slots.push(AwbcFrameSlot {
             name: None,

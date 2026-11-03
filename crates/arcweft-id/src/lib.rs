@@ -188,8 +188,12 @@ impl PublicId {
     /// characters; only the reserved-prefix rule differs from [`Self::try_new`].
     pub fn try_new_engine_owned(value: impl Into<String>) -> Result<Self, IdError> {
         let value = value.into();
-        validate_id_text(&value, true, false)?;
+        Self::validate_engine_owned_text(&value)?;
         Ok(Self(value))
+    }
+
+    pub fn validate_engine_owned_text(value: &str) -> Result<(), IdError> {
+        validate_id_text(value, true, false)
     }
 
     pub fn as_str(&self) -> &str {
@@ -1098,7 +1102,7 @@ impl ProjectEntityReferenceFamily {
     }
 
     pub fn validate_public_id(self, id: &PublicId) -> Result<(), PublicIdFamilyError> {
-        if id.as_str().split('.').next() == Some(self.prefix()) {
+        if self.accepts_public_id_text(id.as_str()) {
             Ok(())
         } else {
             Err(PublicIdFamilyError::WrongFamily {
@@ -1106,6 +1110,14 @@ impl ProjectEntityReferenceFamily {
                 id: id.clone(),
             })
         }
+    }
+
+    pub fn accepts_public_id_text(self, value: &str) -> bool {
+        PublicId::validate_engine_owned_text(value).is_ok()
+            && value
+                .strip_prefix(self.prefix())
+                .and_then(|tail| tail.strip_prefix('.'))
+                .is_some_and(|tail| !tail.is_empty())
     }
 
     pub const fn declaration_family(self) -> Option<DeclarationIdentityFamily> {
@@ -1146,6 +1158,22 @@ impl ProjectEntityReferenceFamily {
             | Self::Rig
             | Self::Slot
             | Self::Target => return None,
+        })
+    }
+
+    pub const fn from_declaration_family(family: DeclarationIdentityFamily) -> Option<Self> {
+        Some(match family {
+            DeclarationIdentityFamily::Asset => Self::Asset,
+            DeclarationIdentityFamily::Character => Self::Character,
+            DeclarationIdentityFamily::View => Self::View,
+            DeclarationIdentityFamily::Action => Self::Action,
+            DeclarationIdentityFamily::Activity => Self::Activity,
+            DeclarationIdentityFamily::Signal => Self::Signal,
+            DeclarationIdentityFamily::Metric => Self::Metric,
+            DeclarationIdentityFamily::Layer => Self::Layer,
+            DeclarationIdentityFamily::Flow => Self::Flow,
+            DeclarationIdentityFamily::Style => Self::Style,
+            DeclarationIdentityFamily::Proof => return None,
         })
     }
 }

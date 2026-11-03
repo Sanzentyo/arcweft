@@ -345,6 +345,72 @@ impl Wire for RuntimeEntityReference {
     }
 }
 
+impl<R: Wire> Wire for crate::value::RuntimeEntityReferenceType<R> {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.kind_tag());
+        if let Some(character) = self.look_owner() {
+            writer.write_str(character.as_str())?;
+        }
+        self.declaration().is_some().write_wire(writer)?;
+        if let Some(id) = self.declaration() {
+            writer.write_str(id.as_str())?;
+        }
+        self.payload().is_some().write_wire(writer)?;
+        if let Some(payload) = self.payload() {
+            payload.write_wire(writer)?;
+        }
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        if tag == Self::CHARACTER_LOOK_TAG {
+            let character = arcweft_character::id::CharacterId::read_wire(reader)?;
+            if bool::read_wire(reader)? || bool::read_wire(reader)? {
+                return Err(AwbcCodecError::InvalidMetadata {
+                    kind: "Character look reference type",
+                    message: "look selector cannot carry project declaration metadata".into(),
+                    offset,
+                });
+            }
+            return Ok(Self::CharacterLook(character));
+        }
+        let family = arcweft_id::ProjectEntityReferenceFamily::from_semantic_tag(tag).ok_or(
+            AwbcCodecError::UnknownTag {
+                kind: "entity reference type family",
+                tag,
+                offset,
+            },
+        )?;
+        let declaration = if bool::read_wire(reader)? {
+            Some(
+                PublicId::try_new_engine_owned(reader.read_str()?).map_err(|error| {
+                    AwbcCodecError::InvalidMetadata {
+                        kind: "entity reference type declaration",
+                        message: error.to_string(),
+                        offset,
+                    }
+                })?,
+            )
+        } else {
+            None
+        };
+        let payload = if bool::read_wire(reader)? {
+            Some(R::read_wire(reader)?)
+        } else {
+            None
+        };
+        Self::try_new(family, payload, declaration).map_err(|error| {
+            AwbcCodecError::InvalidMetadata {
+                kind: "entity reference type",
+                message: error.to_string(),
+                offset,
+            }
+        })
+    }
+}
+
 impl Wire for AwbcTableRange {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.start.write_wire(writer)?;
@@ -697,7 +763,9 @@ impl Wire for AwbcRuntimeType {
             6 => AwbcRuntimeTypeShape::String,
             7 => AwbcRuntimeTypeShape::Char,
             8 => AwbcRuntimeTypeShape::Duration,
-            9 => AwbcRuntimeTypeShape::EntityRef,
+            9 => AwbcRuntimeTypeShape::EntityRef(
+                crate::value::RuntimeEntityReferenceType::read_wire(reader)?,
+            ),
             10 => AwbcRuntimeTypeShape::Tuple(Vec::<AwbcTypeId>::read_wire(reader)?),
             11 => AwbcRuntimeTypeShape::Sequence {
                 kind: RuntimePlanSequenceKind::read_wire(reader)?,
@@ -836,8 +904,9 @@ fn write_runtime_type_shape(
             writer.write_u8(8);
             Ok(())
         }
-        AwbcRuntimeTypeShape::EntityRef => {
+        AwbcRuntimeTypeShape::EntityRef(reference) => {
             writer.write_u8(9);
+            reference.write_wire(writer)?;
             Ok(())
         }
         AwbcRuntimeTypeShape::MatrixF32 => {
@@ -1002,7 +1071,7 @@ fn write_runtime_type_composite_shape(
         | AwbcRuntimeTypeShape::Char
         | AwbcRuntimeTypeShape::Bytes
         | AwbcRuntimeTypeShape::Duration
-        | AwbcRuntimeTypeShape::EntityRef
+        | AwbcRuntimeTypeShape::EntityRef(_)
         | AwbcRuntimeTypeShape::MatrixF32
         | AwbcRuntimeTypeShape::MatrixF64
         | AwbcRuntimeTypeShape::TensorF32

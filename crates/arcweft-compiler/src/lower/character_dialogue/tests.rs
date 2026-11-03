@@ -200,7 +200,11 @@ flow main() -> i64 {
             assert_eq!(call.operands().len(), 1);
             assert_eq!(
                 call.operands()[0].ty().shape(),
-                &RuntimeTypeShape::EntityReference
+                &RuntimeTypeShape::EntityReference(
+                    arcweft_core::value::RuntimeEntityReferenceType::family_only(
+                        arcweft_id::ProjectEntityReferenceFamily::Character
+                    )
+                )
             );
             call.operands()[0].source()
         })
@@ -227,7 +231,11 @@ flow main() -> i64 {
     assert_eq!(call.operands().len(), 2);
     assert_eq!(
         call.operands()[0].ty().shape(),
-        &RuntimeTypeShape::EntityReference
+        &RuntimeTypeShape::EntityReference(
+            arcweft_core::value::RuntimeEntityReferenceType::family_only(
+                arcweft_id::ProjectEntityReferenceFamily::Character
+            )
+        )
     );
 }
 

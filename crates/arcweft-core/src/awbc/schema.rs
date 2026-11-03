@@ -631,7 +631,7 @@ fn visit_runtime_type_strings(
         | AwbcRuntimeTypeShape::Char
         | AwbcRuntimeTypeShape::Duration
         | AwbcRuntimeTypeShape::Progress
-        | AwbcRuntimeTypeShape::EntityRef
+        | AwbcRuntimeTypeShape::EntityRef(_)
         | AwbcRuntimeTypeShape::AgentValue
         | AwbcRuntimeTypeShape::Tuple(_)
         | AwbcRuntimeTypeShape::Sequence { .. }
@@ -944,7 +944,7 @@ pub enum AwbcRuntimeTypeShape {
     Char,
     Duration,
     Progress,
-    EntityRef,
+    EntityRef(crate::value::RuntimeEntityReferenceType<AwbcTypeId>),
     Tuple(Vec<AwbcTypeId>),
     Sequence {
         kind: RuntimePlanSequenceKind,
@@ -1056,6 +1056,7 @@ impl AwbcRuntimeTypeShape {
     /// structural. Scanning every row also checks each body's child subgraphs.
     pub(crate) fn visit_structural_type_refs(&self, visit: &mut impl FnMut(AwbcTypeId)) {
         match self {
+            Self::EntityRef(reference) => reference.payload().copied().into_iter().for_each(visit),
             Self::Tuple(items) | Self::Choice(items) => items.iter().copied().for_each(visit),
             Self::Record { fields, .. } => fields.iter().for_each(|field| visit(field.ty)),
             Self::Variant {
@@ -1115,7 +1116,6 @@ impl AwbcRuntimeTypeShape {
             | Self::Char
             | Self::Duration
             | Self::Progress
-            | Self::EntityRef
             | Self::Bytes
             | Self::AgentValue
             | Self::PresentationResource(_)

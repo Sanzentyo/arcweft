@@ -156,6 +156,11 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
             });
         }
         match ty.shape() {
+            AwbcRuntimeTypeShape::EntityRef(reference) => {
+                if let Some(payload) = reference.payload() {
+                    check_index(program.runtime_types.len(), payload.0, "runtime_types", &at)?;
+                }
+            }
             AwbcRuntimeTypeShape::PresentationResource(_) => {}
             AwbcRuntimeTypeShape::Tuple(items) => {
                 for item in items {
@@ -362,7 +367,6 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
             | AwbcRuntimeTypeShape::Char
             | AwbcRuntimeTypeShape::Duration
             | AwbcRuntimeTypeShape::Progress
-            | AwbcRuntimeTypeShape::EntityRef
             | AwbcRuntimeTypeShape::AgentValue
             | AwbcRuntimeTypeShape::MatrixF32
             | AwbcRuntimeTypeShape::MatrixF64
@@ -3034,7 +3038,7 @@ fn is_inline_text_runtime_type(program: &AwbcProgram, ty: AwbcTypeId) -> bool {
                 | AwbcRuntimeTypeShape::String
                 | AwbcRuntimeTypeShape::Char
                 | AwbcRuntimeTypeShape::Duration
-                | AwbcRuntimeTypeShape::EntityRef
+                | AwbcRuntimeTypeShape::EntityRef(_)
                 | AwbcRuntimeTypeShape::Progress
         )
     )

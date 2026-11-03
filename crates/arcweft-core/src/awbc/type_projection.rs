@@ -242,7 +242,14 @@ impl AwbcProgram {
                     .dense_numeric_type()
                     .expect("matched dense type family"),
             )),
-            AwbcRuntimeTypeShape::EntityRef => Ok(RuntimeCheckedType::EntityReference),
+            AwbcRuntimeTypeShape::EntityRef(reference) => Ok(RuntimeCheckedType::EntityReference(
+                reference.as_ref().try_map(|child| {
+                    self.runtime_types
+                        .get(child.index())
+                        .map(|row| row.semantic_identity())
+                        .ok_or(AwbcTypeProjectionError::RuntimeTypeOutOfBounds { index: child.0 })
+                })?,
+            )),
             AwbcRuntimeTypeShape::AgentValue => Ok(RuntimeCheckedType::AgentValue),
             AwbcRuntimeTypeShape::Bytes => Ok(RuntimeCheckedType::Bytes),
             AwbcRuntimeTypeShape::Sequence { item, .. } => self

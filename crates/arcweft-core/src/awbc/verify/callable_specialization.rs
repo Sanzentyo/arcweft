@@ -86,7 +86,9 @@ impl RuntimeCallableSpecializationContext for AwbcProgram {
             AwbcRuntimeTypeShape::Bytes => RuntimePlanTypeProjection::Bytes,
             AwbcRuntimeTypeShape::Duration => RuntimePlanTypeProjection::Duration,
             AwbcRuntimeTypeShape::Progress => RuntimePlanTypeProjection::Progress,
-            AwbcRuntimeTypeShape::EntityRef => RuntimePlanTypeProjection::EntityReference,
+            AwbcRuntimeTypeShape::EntityRef(reference) => {
+                RuntimePlanTypeProjection::EntityReference(reference.clone())
+            }
             AwbcRuntimeTypeShape::AgentValue => RuntimePlanTypeProjection::AgentValue,
             AwbcRuntimeTypeShape::Range(item) => RuntimePlanTypeProjection::Range(*item),
             AwbcRuntimeTypeShape::Iterator(item) => RuntimePlanTypeProjection::Iterator(*item),

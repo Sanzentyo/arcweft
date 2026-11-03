@@ -925,7 +925,14 @@ fn entity_reference_field_fixture() -> (RuntimePlanBuilder, Vec<RuntimeLocalSeed
     let admitted = builder
         .admit_type_batch(
             [
-                RuntimePlanTypeSeed::new(identity(1), RuntimePlanTypeProjection::EntityReference),
+                RuntimePlanTypeSeed::new(
+                    identity(1),
+                    RuntimePlanTypeProjection::EntityReference(
+                        crate::value::RuntimeEntityReferenceType::family_only(
+                            arcweft_id::ProjectEntityReferenceFamily::Character,
+                        ),
+                    ),
+                ),
                 RuntimePlanTypeSeed::new(identity(2), RuntimePlanTypeProjection::String),
                 RuntimePlanTypeSeed::new(identity(3), RuntimePlanTypeProjection::Bool),
                 RuntimePlanTypeSeed::new(

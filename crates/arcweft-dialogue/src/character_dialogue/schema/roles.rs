@@ -191,7 +191,11 @@ impl CharacterDialogueRuntimeRoleTypes<RuntimeSemanticTypeId> {
         }
         let rich_text = rich_text.expect("complete authored role inventory contains RichText");
         let expected = RuntimeCheckedType::Choice(vec![
-            RuntimeCheckedType::EntityReference,
+            RuntimeCheckedType::EntityReference(
+                arcweft_core::value::RuntimeEntityReferenceType::family_only(
+                    arcweft_id::ProjectEntityReferenceFamily::Style,
+                ),
+            ),
             RuntimeCheckedType::Opaque {
                 owner: rich_text.clone(),
             },

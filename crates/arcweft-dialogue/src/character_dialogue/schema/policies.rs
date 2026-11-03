@@ -678,7 +678,11 @@ fn schema_for(
 ) -> RuntimeTypeSchema {
     match schema_type {
         CharacterDialoguePolicyTypeSchema::String => RuntimeTypeSchema::String,
-        CharacterDialoguePolicyTypeSchema::EntityReference => RuntimeTypeSchema::EntityReference,
+        CharacterDialoguePolicyTypeSchema::EntityReference => RuntimeTypeSchema::EntityReference(
+            arcweft_core::value::RuntimeEntityReferenceType::family_only(
+                arcweft_id::ProjectEntityReferenceFamily::Style,
+            ),
+        ),
         CharacterDialoguePolicyTypeSchema::RichText => RuntimeTypeSchema::ExactOpaque {
             owner: rich_text.clone(),
             arguments: Box::new([]),
@@ -715,7 +719,11 @@ fn checked_type_for_seed(
 ) -> Result<RuntimeCheckedType, CharacterDialogueValueError> {
     Ok(match schema_type {
         CharacterDialoguePolicyTypeSchema::String => RuntimeCheckedType::String,
-        CharacterDialoguePolicyTypeSchema::EntityReference => RuntimeCheckedType::EntityReference,
+        CharacterDialoguePolicyTypeSchema::EntityReference => RuntimeCheckedType::EntityReference(
+            arcweft_core::value::RuntimeEntityReferenceType::family_only(
+                arcweft_id::ProjectEntityReferenceFamily::Style,
+            ),
+        ),
         CharacterDialoguePolicyTypeSchema::RichText => RuntimeCheckedType::Opaque {
             owner: rich_text.clone(),
         },
@@ -792,7 +800,11 @@ fn checked_type_for_program(
 ) -> Result<RuntimeCheckedType, CharacterDialogueValueError> {
     Ok(match schema_type {
         CharacterDialoguePolicyTypeSchema::String => RuntimeCheckedType::String,
-        CharacterDialoguePolicyTypeSchema::EntityReference => RuntimeCheckedType::EntityReference,
+        CharacterDialoguePolicyTypeSchema::EntityReference => RuntimeCheckedType::EntityReference(
+            arcweft_core::value::RuntimeEntityReferenceType::family_only(
+                arcweft_id::ProjectEntityReferenceFamily::Style,
+            ),
+        ),
         CharacterDialoguePolicyTypeSchema::RichText => RuntimeCheckedType::Opaque {
             owner: rich_text.clone(),
         },
@@ -870,7 +882,9 @@ fn plan_projection(
     use RuntimePlanTypeProjection as Projection;
     Ok(match checked {
         RuntimeCheckedType::String => Projection::String,
-        RuntimeCheckedType::EntityReference => Projection::EntityReference,
+        RuntimeCheckedType::EntityReference(reference) => {
+            Projection::EntityReference(reference.clone())
+        }
         RuntimeCheckedType::Sequence(item) => Projection::Sequence {
             kind: RuntimePlanSequenceKind::Seq,
             item: seed_identity(item),
@@ -1040,7 +1054,11 @@ mod tests {
         }));
 
         let style_choice = RuntimeCheckedType::Choice(vec![
-            RuntimeCheckedType::EntityReference,
+            RuntimeCheckedType::EntityReference(
+                arcweft_core::value::RuntimeEntityReferenceType::family_only(
+                    arcweft_id::ProjectEntityReferenceFamily::Style,
+                ),
+            ),
             RuntimeCheckedType::Opaque {
                 owner: rich_text.clone(),
             },
@@ -1050,7 +1068,7 @@ mod tests {
             seed.semantic_identity() == style_choice.semantic_identity_digest()
                 && matches!(seed.projection(), Projection::Choice(items)
                 if items.as_ref() == &[
-                    RuntimeCheckedType::EntityReference.semantic_identity_digest(),
+                    RuntimeCheckedType::EntityReference(arcweft_core::value::RuntimeEntityReferenceType::family_only(arcweft_id::ProjectEntityReferenceFamily::Style)).semantic_identity_digest(),
                     rich_text.semantic_identity(),
                 ])
         }));

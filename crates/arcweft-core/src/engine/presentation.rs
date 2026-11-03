@@ -88,7 +88,10 @@ impl Engine {
                     .type_table()
                     .get(argument.value().ty())
                     .is_some_and(|row| {
-                        matches!(row.projection(), RuntimePlanTypeProjection::EntityReference)
+                        matches!(
+                            row.projection(),
+                            RuntimePlanTypeProjection::EntityReference(_)
+                        )
                     })
             {
                 return Err(RuntimePresentationError::SlotReferenceArguments.into());

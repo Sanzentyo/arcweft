@@ -348,8 +348,16 @@ impl<'program, 'work> RuntimeAwbcSourceTypeRelation<'program, 'work> {
             | (P::Bytes, A::Bytes)
             | (P::Duration, A::Duration)
             | (P::Progress, A::Progress)
-            | (P::EntityReference, A::EntityRef)
             | (P::AgentValue, A::AgentValue) => true,
+            (P::EntityReference(expected), A::EntityRef(actual)) => {
+                let metadata_equal = expected.family() == actual.family()
+                    && expected.look_owner() == actual.look_owner()
+                    && expected.declaration() == actual.declaration();
+                let expected_children = expected.payload().copied().into_iter().collect::<Vec<_>>();
+                let actual_children = actual.payload().copied().into_iter().collect::<Vec<_>>();
+                self.children(pair, &expected_children, &actual_children, pending)?;
+                metadata_equal
+            }
             (P::BoundType(expected), A::BoundType(actual)) => expected == actual,
             (P::Signed(expected), A::Int(actual)) => *expected == (*actual).into(),
             (P::Unsigned(expected), A::UInt(actual)) => *expected == (*actual).into(),

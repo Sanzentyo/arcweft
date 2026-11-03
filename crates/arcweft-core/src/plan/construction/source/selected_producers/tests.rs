@@ -22,7 +22,10 @@ fn boolean() -> RuntimeSemanticTypeId {
     RuntimeCheckedType::Bool.semantic_identity_digest()
 }
 fn entity() -> RuntimeSemanticTypeId {
-    RuntimeCheckedType::EntityReference.semantic_identity_digest()
+    RuntimeCheckedType::EntityReference(crate::value::RuntimeEntityReferenceType::family_only(
+        arcweft_id::ProjectEntityReferenceFamily::Asset,
+    ))
+    .semantic_identity_digest()
 }
 fn need() -> RuntimeSemanticTypeId {
     RuntimeSemanticTypeId::from_bytes([0xb7; 32])
@@ -190,7 +193,14 @@ pub(in crate::plan) fn fixture_with_contract(
             [
                 RuntimePlanTypeSeed::new(unit(), RuntimePlanTypeProjection::Unit),
                 RuntimePlanTypeSeed::new(boolean(), RuntimePlanTypeProjection::Bool),
-                RuntimePlanTypeSeed::new(entity(), RuntimePlanTypeProjection::EntityReference),
+                RuntimePlanTypeSeed::new(
+                    entity(),
+                    RuntimePlanTypeProjection::EntityReference(
+                        crate::value::RuntimeEntityReferenceType::family_only(
+                            arcweft_id::ProjectEntityReferenceFamily::Asset,
+                        ),
+                    ),
+                ),
                 RuntimePlanTypeSeed::new(need(), RuntimePlanTypeProjection::Need(boolean())),
             ],
             [],

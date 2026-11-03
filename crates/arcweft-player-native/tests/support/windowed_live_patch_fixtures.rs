@@ -1382,7 +1382,7 @@ fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
             [
                 RuntimePlanTypeSeed::new(
                     entity_reference_type,
-                    RuntimePlanTypeProjection::EntityReference,
+                    RuntimePlanTypeProjection::EntityReference(arcweft_core::value::RuntimeEntityReferenceType::family_only(arcweft_id::ProjectEntityReferenceFamily::Asset)),
                 ),
                 RuntimePlanTypeSeed::new(
                     need_type,
@@ -1562,7 +1562,11 @@ fn await_replacement_bundle(source_label: &str, source: &str) -> ArcweftBundle {
             [
                 RuntimePlanTypeSeed::new(
                     RuntimeSemanticTypeId::from_bytes([0x81; 32]),
-                    RuntimePlanTypeProjection::EntityReference,
+                    RuntimePlanTypeProjection::EntityReference(
+                        arcweft_core::value::RuntimeEntityReferenceType::family_only(
+                            arcweft_id::ProjectEntityReferenceFamily::Asset,
+                        ),
+                    ),
                 ),
                 RuntimePlanTypeSeed::new(
                     RuntimeSemanticTypeId::from_bytes([0x82; 32]),

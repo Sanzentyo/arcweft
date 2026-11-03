@@ -35,7 +35,7 @@ impl<R> RuntimePlanTypeProjection<R> {
             | Self::Duration
             | Self::Progress
             | Self::DenseNumeric(_)
-            | Self::EntityReference
+            | Self::EntityReference(_)
             | Self::AgentValue
             | Self::PresentationResource(_)
             | Self::Range(..)
@@ -77,7 +77,7 @@ impl<R> RuntimePlanTypeProjection<R> {
             Self::Bytes => 11,
             Self::Duration => 12,
             Self::Progress => 13,
-            Self::EntityReference => 14,
+            Self::EntityReference(_) => 14,
             Self::AgentValue => 15,
             Self::Range(..) => 16,
             Self::Iterator(..) => 17,
@@ -113,6 +113,17 @@ impl RuntimePlanTypeProjection<RuntimePlanTypeId> {
     ) -> Result<(), TaskSemanticEncodingError> {
         encoder.status()?;
         match self {
+            Self::EntityReference(reference) => {
+                encoder.tag(reference.kind_tag());
+                if let Some(character) = reference.look_owner() {
+                    encoder.string(character.as_str());
+                }
+                encoder.tag(u8::from(reference.declaration().is_some()));
+                if let Some(id) = reference.declaration() {
+                    encoder.string(id.as_str());
+                }
+                encoder.tag(u8::from(reference.payload().is_some()));
+            }
             Self::PresentationResource(kind) => encoder.tag(kind.semantic_tag()),
             Self::BoundType(reference) => {
                 encoder.ordinal(reference.depth());
@@ -176,7 +187,6 @@ impl RuntimePlanTypeProjection<RuntimePlanTypeId> {
             | Self::Bytes
             | Self::Duration
             | Self::Progress
-            | Self::EntityReference
             | Self::AgentValue
             | Self::Range(_)
             | Self::Iterator(_)

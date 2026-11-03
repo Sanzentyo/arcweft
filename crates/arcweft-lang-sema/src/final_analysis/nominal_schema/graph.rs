@@ -532,7 +532,17 @@ impl<'a> NominalGraphProjection<'a> {
             TypeKind::Duration => Schema::Duration,
             TypeKind::Progress => Schema::Progress,
             TypeKind::DenseNumeric(dense) => Schema::DenseNumeric(*dense),
-            TypeKind::Ref(_) => Schema::EntityReference,
+            TypeKind::Ref(entity) => Schema::EntityReference(
+                entity
+                    .runtime_reference_type()
+                    .ok_or_else(|| {
+                        Error::from(super::NominalSchemaProjectionError::UnsupportedLeaf {
+                            path: super::NominalSchemaPath::default(),
+                            ty: Box::new(ty.clone()),
+                        })
+                    })?
+                    .try_map(|payload| self.semantic_identity(payload).map(Into::into))?,
+            ),
             TypeKind::AgentValue => Schema::AgentValue,
             TypeKind::Vec(item) | TypeKind::Seq(item) | TypeKind::Slice(item) => {
                 Schema::Seq(Box::new(self.schema(item, depth + 1)?))

@@ -77,7 +77,12 @@ fn fixture() -> (RuntimePlanBuilder, Vec<crate::plan::RuntimeLocalSeedId>) {
                         some_payload: PAYLOAD,
                     },
                 ),
-                RuntimePlanTypeSeed::new(ENTITY, P::EntityReference),
+                RuntimePlanTypeSeed::new(
+                    ENTITY,
+                    P::EntityReference(crate::value::RuntimeEntityReferenceType::family_only(
+                        arcweft_id::ProjectEntityReferenceFamily::Flow,
+                    )),
+                ),
             ],
             [BOOL, BOOL, RECORD, SEQUENCE]
                 .into_iter()

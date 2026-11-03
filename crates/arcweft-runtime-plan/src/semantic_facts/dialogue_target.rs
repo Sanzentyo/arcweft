@@ -83,7 +83,7 @@ impl RuntimeDialogueApplicationTarget {
         self.dialogue_type().is_character_dialogue_value()
             && match self {
                 Self::CharacterReference { source_type, .. } => {
-                    matches!(source_type.shape(), RuntimeTypeShape::EntityReference)
+                    matches!(source_type.shape(), RuntimeTypeShape::EntityReference(_))
                 }
                 Self::CharacterDialogue { .. } => true,
             }

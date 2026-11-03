@@ -287,7 +287,7 @@ impl NominalRetention<'_> {
             | Schema::Duration
             | Schema::Progress
             | Schema::DenseNumeric(_)
-            | Schema::EntityReference
+            | Schema::EntityReference(_)
             | Schema::AgentValue => {}
         }
         Ok(())

@@ -30,7 +30,12 @@ fn runtime_scalar_schemas_preserve_families_and_value_allowances() {
             Schema::Progress,
             RuntimeValue::Progress(Progress::new(0.5).unwrap().with_label("load")),
         ),
-        (Schema::EntityReference, reference()),
+        (
+            Schema::EntityReference(crate::value::RuntimeEntityReferenceType::family_only(
+                arcweft_id::ProjectEntityReferenceFamily::Character,
+            )),
+            reference(),
+        ),
         (
             Schema::Color,
             RuntimeValue::Color(RuntimeColor::new(12, 34, 56, 78)),
@@ -112,9 +117,11 @@ fn runtime_scalar_schemas_preserve_families_and_value_allowances() {
             .is_err()
     );
     assert!(
-        Schema::EntityReference
-            .validate_value(&RuntimeValue::String("character.alice".to_owned()), limits)
-            .is_err()
+        Schema::EntityReference(crate::value::RuntimeEntityReferenceType::family_only(
+            arcweft_id::ProjectEntityReferenceFamily::Character
+        ))
+        .validate_value(&RuntimeValue::String("character.alice".to_owned()), limits)
+        .is_err()
     );
 }
 

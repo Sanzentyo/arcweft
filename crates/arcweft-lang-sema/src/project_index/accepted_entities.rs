@@ -320,7 +320,10 @@ impl AcceptedProjectEntity {
     /// # Panics
     /// Panics only if a catalog issued an entity outside its closed family domain.
     pub fn family(&self) -> ProjectEntityReferenceFamily {
-        entity_family(self.symbol().ty().kind())
+        self.symbol()
+            .ty()
+            .kind()
+            .reference_family()
             .expect("target catalog admits only closed entity families")
     }
     /// # Panics
@@ -390,7 +393,7 @@ fn validate_entity(
     documents: &BTreeMap<SourceDocumentId, Arc<SourceDocument>>,
 ) -> Result<(), ProjectEntityPublicationError> {
     let identity = entity.identity().clone();
-    let family = entity_family(entity.ty().kind()).ok_or_else(|| {
+    let family = entity.ty().kind().reference_family().ok_or_else(|| {
         ProjectEntityPublicationError::EntityOwner {
             identity: identity.clone(),
         }
@@ -434,49 +437,6 @@ fn validate_entity(
         return Err(ProjectEntityPublicationError::ValueType { identity });
     }
     Ok(())
-}
-
-pub(crate) fn entity_family(kind: &EntityKind) -> Option<ProjectEntityReferenceFamily> {
-    use ProjectEntityReferenceFamily as Family;
-    Some(match kind {
-        EntityKind::Agent => Family::Agent,
-        EntityKind::Entry => Family::Entry,
-        EntityKind::Flow => Family::Flow,
-        EntityKind::Choice => Family::Choice,
-        EntityKind::ChoiceOption => Family::ChoiceOption,
-        EntityKind::Character => Family::Character,
-        EntityKind::View => Family::View,
-        EntityKind::Action => Family::Action,
-        EntityKind::Activity => Family::Activity,
-        EntityKind::DialogueLine => Family::DialogueLine,
-        EntityKind::Text => Family::Text,
-        EntityKind::Content => Family::Content,
-        EntityKind::Input => Family::Input,
-        EntityKind::Button => Family::Button,
-        EntityKind::Style => Family::Style,
-        EntityKind::Asset => Family::Asset,
-        EntityKind::Image => Family::Image,
-        EntityKind::Animation => Family::Animation,
-        EntityKind::Capture => Family::Capture,
-        EntityKind::Hook => Family::Hook,
-        EntityKind::Signal => Family::Signal,
-        EntityKind::Metric => Family::Metric,
-        EntityKind::Scene => Family::Scene,
-        EntityKind::Test => Family::Test,
-        EntityKind::Bench => Family::Bench,
-        EntityKind::Layer => Family::Layer,
-        EntityKind::Voice => Family::Voice,
-        EntityKind::Se => Family::Se,
-        EntityKind::Bgm => Family::Bgm,
-        EntityKind::AudioBus => Family::AudioBus,
-        EntityKind::MixerSnapshot => Family::MixerSnapshot,
-        EntityKind::Ducking => Family::Ducking,
-        EntityKind::Motion => Family::Motion,
-        EntityKind::Rig => Family::Rig,
-        EntityKind::Slot => Family::Slot,
-        EntityKind::Target => Family::Target,
-        EntityKind::Other(_) => return None,
-    })
 }
 
 fn hash_string(hash: &mut blake3::Hasher, value: &str) {

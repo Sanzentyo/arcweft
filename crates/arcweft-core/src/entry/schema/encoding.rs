@@ -119,7 +119,19 @@ pub(super) fn schema<S: CanonicalSink + ?Sized>(
                     writer.u8(40)?;
                     writer.extend(&dense.semantic_parts())?;
                 }
-                RuntimeTypeSchema::EntityReference => writer.u8(34)?,
+                RuntimeTypeSchema::EntityReference(reference) => {
+                    writer.u8(34)?;
+                    writer.u8(reference.kind_tag())?;
+                    if let Some(character) = reference.look_owner() {
+                        writer.string(character.as_str())?;
+                    }
+                    writer.option(reference.declaration(), |writer, id| {
+                        writer.string(id.as_str())
+                    })?;
+                    writer.option(reference.payload(), |writer, payload| {
+                        writer.extend(payload.as_bytes())
+                    })?;
+                }
                 RuntimeTypeSchema::AgentValue => writer.u8(35)?,
                 RuntimeTypeSchema::Choice(alternatives) => {
                     writer.u8(36)?;

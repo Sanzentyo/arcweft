@@ -22,6 +22,53 @@ fn bytes<T: Wire>(value: &T) -> Vec<u8> {
 }
 
 #[test]
+fn entity_reference_type_wire_preserves_and_validates_all_metadata() {
+    use crate::awbc::schema::AwbcTypeId;
+    use crate::value::RuntimeEntityReferenceType;
+    type Reference = RuntimeEntityReferenceType<AwbcTypeId>;
+    let mut references = ProjectEntityReferenceFamily::ALL
+        .into_iter()
+        .map(|family| {
+            Reference::try_new(
+                family,
+                Some(AwbcTypeId(7)),
+                Some(PublicId::try_new(format!("{}.source", family.prefix())).unwrap()),
+            )
+            .unwrap()
+        })
+        .collect::<Vec<_>>();
+    references.push(Reference::CharacterLook(
+        arcweft_character::id::CharacterId::try_new("character.alice").unwrap(),
+    ));
+    for reference in references {
+        let encoded = bytes(&reference);
+        let budget = AwbcDecodeBudget::default();
+        let mut reader = Reader::new(&encoded, &budget);
+        assert_eq!(Reference::read_wire(&mut reader).unwrap(), reference);
+        reader.finish().unwrap();
+        let json = serde_json::to_vec(&reference).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<Reference>(&json).unwrap(),
+            reference
+        );
+        for end in 0..encoded.len() {
+            assert!(Reference::read_wire(&mut Reader::new(&encoded[..end], &budget)).is_err());
+        }
+    }
+    let action = Reference::try_new(
+        ProjectEntityReferenceFamily::Action,
+        Some(AwbcTypeId(7)),
+        Some(PublicId::try_new("action.submit").unwrap()),
+    )
+    .unwrap();
+    let mut corrupt = bytes(&action);
+    corrupt[0] = ProjectEntityReferenceFamily::Character.semantic_tag();
+    assert!(
+        Reference::read_wire(&mut Reader::new(&corrupt, &AwbcDecodeBudget::default())).is_err()
+    );
+}
+
+#[test]
 fn presentation_address_entity_wire_and_serde_preserve_exact_components() {
     use arcweft_interaction_model::presentation::{
         PresentationAddressIdentity, PresentationAddressIdentityKind as Kind,

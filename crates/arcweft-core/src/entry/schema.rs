@@ -99,7 +99,9 @@ pub enum RuntimeTypeSchema {
     Duration,
     Progress,
     DenseNumeric(crate::math::RuntimeDenseNumericType),
-    EntityReference,
+    EntityReference(
+        crate::value::RuntimeEntityReferenceType<crate::pattern::RuntimeSemanticTypeId>,
+    ),
     AgentValue,
     Choice(Box<[Self]>),
 }
@@ -1144,7 +1146,7 @@ impl RuntimeTypeSchema {
             Self::Duration => "duration",
             Self::Progress => "progress",
             Self::DenseNumeric(dense) => dense.source_label(),
-            Self::EntityReference => "entity reference",
+            Self::EntityReference(_) => "entity reference",
             Self::AgentValue => "AgentValue",
             Self::Choice(_) => "Choice",
         }

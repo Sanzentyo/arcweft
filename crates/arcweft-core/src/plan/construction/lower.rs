@@ -296,7 +296,7 @@ impl RuntimeAgentTypeContext for RuntimePlanBodyConstruction<'_> {
     fn is_entity_reference(&self, ty: Self::Type) -> bool {
         matches!(
             self.projection(ty),
-            Ok(RuntimePlanTypeProjection::EntityReference)
+            Ok(RuntimePlanTypeProjection::EntityReference(_))
         )
     }
 
@@ -448,7 +448,7 @@ impl RuntimePlanBodyConstruction<'_> {
             }
             RuntimeExprSeedKind::EntityRef(entity) => {
                 self.require_projection("entity-reference expression", ty, |projection| {
-                    matches!(projection, RuntimePlanTypeProjection::EntityReference)
+                    matches!(projection, RuntimePlanTypeProjection::EntityReference(expected) if expected.accepts(&entity))
                 })?;
                 RuntimeExprKind::EntityRef(entity)
             }
@@ -521,7 +521,7 @@ impl RuntimePlanBodyConstruction<'_> {
                             "CharacterDialogue factory target",
                             target.ty(),
                             |projection| {
-                                matches!(projection, RuntimePlanTypeProjection::EntityReference)
+                                matches!(projection, RuntimePlanTypeProjection::EntityReference(_))
                             },
                         )?;
                     }
@@ -1077,7 +1077,7 @@ impl RuntimePlanBodyConstruction<'_> {
                         return invalid_projection("slot reference result", ty);
                     }
                     for argument in &args {
-                        if argument.mode() != RuntimeCallArgumentMode::Value || !matches!(self.projection(argument.value().ty())?, RuntimePlanTypeProjection::EntityReference) {
+                        if argument.mode() != RuntimeCallArgumentMode::Value || !matches!(self.projection(argument.value().ty())?, RuntimePlanTypeProjection::EntityReference(_)) {
                             return invalid_projection("slot reference input", argument.value().ty());
                         }
                     }
@@ -1725,7 +1725,7 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
             | RuntimePlanTypeProjection::Duration
             | RuntimePlanTypeProjection::Progress
             | RuntimePlanTypeProjection::DenseNumeric(_)
-            | RuntimePlanTypeProjection::EntityReference => Some(Vec::new()),
+            | RuntimePlanTypeProjection::EntityReference(_) => Some(Vec::new()),
             RuntimePlanTypeProjection::Range(_)
             | RuntimePlanTypeProjection::Sequence { .. }
             | RuntimePlanTypeProjection::Array { .. }
@@ -1859,7 +1859,9 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
                 self.require_projection(
                     "entity-reference field target",
                     target_ty,
-                    |projection| matches!(projection, RuntimePlanTypeProjection::EntityReference),
+                    |projection| {
+                        matches!(projection, RuntimePlanTypeProjection::EntityReference(_))
+                    },
                 )?;
                 if !self.is_string(result_ty)? {
                     return invalid_projection("entity-reference field result", result_ty);
@@ -2689,7 +2691,7 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
                 | RuntimePlanTypeProjection::String
                 | RuntimePlanTypeProjection::Char
                 | RuntimePlanTypeProjection::Duration
-                | RuntimePlanTypeProjection::EntityReference
+                | RuntimePlanTypeProjection::EntityReference(_)
                 | RuntimePlanTypeProjection::Progress
         ))
     }
@@ -2703,7 +2705,9 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
             (RuntimeAgentFieldOwner::Agent(owner), RuntimePlanTypeProjection::Agent(target)) => {
                 target.operational_type() == owner
             }
-            (RuntimeAgentFieldOwner::Reference, RuntimePlanTypeProjection::EntityReference) => true,
+            (RuntimeAgentFieldOwner::Reference, RuntimePlanTypeProjection::EntityReference(_)) => {
+                true
+            }
             _ => false,
         })
     }

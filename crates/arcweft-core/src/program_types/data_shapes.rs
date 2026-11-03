@@ -641,7 +641,7 @@ impl<'a> RuntimeProgramDataShapes<'a> {
                             | PlanType::Never
                             | PlanType::Duration
                             | PlanType::Progress
-                            | PlanType::EntityReference
+                            | PlanType::EntityReference(_)
                             | PlanType::AgentValue,
                         Use::Plain
                     ) | (PlanType::Bytes, Use::Bytes { .. })
@@ -715,7 +715,7 @@ impl<'a> RuntimeProgramDataShapes<'a> {
                         | AwbcType::Never
                         | AwbcType::Duration
                         | AwbcType::Progress
-                        | AwbcType::EntityRef
+                        | AwbcType::EntityRef(_)
                         | AwbcType::AgentValue,
                         Use::Plain,
                     )

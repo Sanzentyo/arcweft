@@ -145,7 +145,7 @@ fn executable(plan: &RuntimePlan) -> AwbcProgram {
             P::Bytes => A::Bytes,
             P::Duration => A::Duration,
             P::Progress => A::Progress,
-            P::EntityReference => A::EntityRef,
+            P::EntityReference(reference) => A::EntityRef(reference),
             P::AgentValue => A::AgentValue,
             P::Signed(width) => A::Int(
                 *AwbcSignedIntKind::ALL

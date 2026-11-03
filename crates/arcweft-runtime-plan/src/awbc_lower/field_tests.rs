@@ -345,6 +345,7 @@ fn nominal_field_inspection_rejects_a_forged_named_awbc_coordinate() {
 
 fn reference_field_program(
     inspect: bool,
+    reference_type: arcweft_core::value::RuntimeEntityReferenceType<RuntimeSemanticTypeId>,
 ) -> (
     RuntimePlan,
     arcweft_id::runtime_program::RuntimePureProgramId,
@@ -360,7 +361,10 @@ fn reference_field_program(
     let admitted = builder
         .admit_type_batch(
             [
-                RuntimePlanTypeSeed::new(identity(1), RuntimePlanTypeProjection::EntityReference),
+                RuntimePlanTypeSeed::new(
+                    identity(1),
+                    RuntimePlanTypeProjection::EntityReference(reference_type),
+                ),
                 RuntimePlanTypeSeed::new(identity(2), RuntimePlanTypeProjection::String),
                 RuntimePlanTypeSeed::new(
                     identity(4),
@@ -445,7 +449,12 @@ fn reference_field_awbc(
     AwbcProgram,
     arcweft_id::runtime_program::RuntimePureProgramId,
 ) {
-    let (plan, program) = reference_field_program(inspect);
+    let (plan, program) = reference_field_program(
+        inspect,
+        arcweft_core::value::RuntimeEntityReferenceType::family_only(
+            arcweft_id::ProjectEntityReferenceFamily::Character,
+        ),
+    );
     let lowered = AwbcLowerer::new(
         &plan,
         &DialogueContentCatalog::new(),
@@ -635,62 +644,79 @@ fn entity_reference_fields_value_and_inspect_preserve_native_awbc_roundtrip_pari
     use arcweft_core::value::RuntimeEntityReference;
     use std::sync::Arc;
     let values = [
-        RuntimeEntityReference::Project {
-            family: arcweft_id::DeclarationIdentityFamily::Character,
-            public_id: arcweft_id::PublicId::try_new("character.alice").unwrap(),
-        },
-        RuntimeEntityReference::DialogueLine(
-            arcweft_core::plan::RuntimeLineId::from_runtime_line_value("line.story.hello").unwrap(),
+        (
+            RuntimeEntityReference::Project {
+                family: arcweft_id::DeclarationIdentityFamily::Character,
+                public_id: arcweft_id::PublicId::try_new("character.alice").unwrap(),
+            },
+            arcweft_core::value::RuntimeEntityReferenceType::family_only(
+                arcweft_id::ProjectEntityReferenceFamily::Character,
+            ),
         ),
-        RuntimeEntityReference::CharacterLook {
-            character: arcweft_character::id::CharacterId::try_new("character.alice").unwrap(),
-            look: arcweft_character::id::CharacterLookId::try_new("normal").unwrap(),
-        },
+        (
+            RuntimeEntityReference::DialogueLine(
+                arcweft_core::plan::RuntimeLineId::from_runtime_line_value("line.story.hello")
+                    .unwrap(),
+            ),
+            arcweft_core::value::RuntimeEntityReferenceType::family_only(
+                arcweft_id::ProjectEntityReferenceFamily::DialogueLine,
+            ),
+        ),
+        (
+            RuntimeEntityReference::CharacterLook {
+                character: arcweft_character::id::CharacterId::try_new("character.alice").unwrap(),
+                look: arcweft_character::id::CharacterLookId::try_new("normal").unwrap(),
+            },
+            arcweft_core::value::RuntimeEntityReferenceType::CharacterLook(
+                arcweft_character::id::CharacterId::try_new("character.alice").unwrap(),
+            ),
+        ),
     ];
     for inspect in [false, true] {
-        let (plan, program) = reference_field_program(inspect);
-        let lowered = AwbcLowerer::new(
-            &plan,
-            &DialogueContentCatalog::new(),
-            "reference-field.arcw",
-        )
-        .lower()
-        .unwrap();
-        assert!(lowered.diagnostics.is_empty());
-        let projects = lowered
-            .program
-            .instructions
-            .iter()
-            .filter_map(|instruction| match instruction {
-                AwbcInstruction::ProjectField {
-                    target,
-                    field: AwbcFieldProjection::Named(_),
-                    ..
-                } => Some(target),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(projects.len(), 3);
-        assert!(
-            projects
-                .iter()
-                .all(|target| matches!(target, AwbcValueTarget::Inspect(_)) == inspect)
-        );
-        let encoded = lowered.program.encode_canonical().unwrap();
-        let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default()).unwrap();
-        assert_eq!(decoded.encode_canonical().unwrap(), encoded);
-        decoded
-            .verify(
-                AwbcVerifyBudget::default(),
-                AwbcVerifyContext {
-                    require_entrypoint: false,
-                    ..Default::default()
-                },
+        for (value, reference_type) in &values {
+            let (plan, program) = reference_field_program(inspect, reference_type.clone());
+            let lowered = AwbcLowerer::new(
+                &plan,
+                &DialogueContentCatalog::new(),
+                "reference-field.arcw",
             )
+            .lower()
             .unwrap();
-        let plan = Arc::new(plan);
-        let awbc = Arc::new(decoded);
-        for value in &values {
+            assert!(lowered.diagnostics.is_empty());
+            let projects = lowered
+                .program
+                .instructions
+                .iter()
+                .filter_map(|instruction| match instruction {
+                    AwbcInstruction::ProjectField {
+                        target,
+                        field: AwbcFieldProjection::Named(_),
+                        ..
+                    } => Some(target),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(projects.len(), 3);
+            assert!(
+                projects
+                    .iter()
+                    .all(|target| matches!(target, AwbcValueTarget::Inspect(_)) == inspect)
+            );
+            let encoded = lowered.program.encode_canonical().unwrap();
+            let decoded =
+                AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default()).unwrap();
+            assert_eq!(decoded.encode_canonical().unwrap(), encoded);
+            decoded
+                .verify(
+                    AwbcVerifyBudget::default(),
+                    AwbcVerifyContext {
+                        require_entrypoint: false,
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            let plan = Arc::new(plan);
+            let awbc = Arc::new(decoded);
             let input = RuntimeValue::EntityRef(value.clone());
             let expected = RuntimeValue::Tuple(vec![
                 RuntimeValue::String(

@@ -402,7 +402,11 @@ fn plan_type_shape(
         RuntimePlanTypeProjection::Duration => AwbcRuntimeTypeShape::Duration,
         RuntimePlanTypeProjection::Progress => AwbcRuntimeTypeShape::Progress,
         RuntimePlanTypeProjection::DenseNumeric(dense) => (*dense).into(),
-        RuntimePlanTypeProjection::EntityReference => AwbcRuntimeTypeShape::EntityRef,
+        RuntimePlanTypeProjection::EntityReference(reference) => AwbcRuntimeTypeShape::EntityRef(
+            reference
+                .as_ref()
+                .try_map(|child| reserved_plan_type(inventory, *child))?,
+        ),
         RuntimePlanTypeProjection::AgentValue => AwbcRuntimeTypeShape::AgentValue,
         RuntimePlanTypeProjection::PresentationResource(kind) => {
             AwbcRuntimeTypeShape::PresentationResource(*kind)
@@ -755,7 +759,13 @@ pub(crate) fn intern_runtime_type(
         RuntimeCheckedType::Duration => AwbcRuntimeTypeShape::Duration,
         RuntimeCheckedType::Progress => AwbcRuntimeTypeShape::Progress,
         RuntimeCheckedType::DenseNumeric(dense) => (*dense).into(),
-        RuntimeCheckedType::EntityReference => AwbcRuntimeTypeShape::EntityRef,
+        RuntimeCheckedType::EntityReference(reference) => {
+            AwbcRuntimeTypeShape::EntityRef(reference.as_ref().map(|child| {
+                inventory
+                    .semantic_type(*child)
+                    .expect("checked reference payload belongs to the admitted type inventory")
+            }))
+        }
         RuntimeCheckedType::AgentValue => AwbcRuntimeTypeShape::AgentValue,
         RuntimeCheckedType::Bytes => AwbcRuntimeTypeShape::Bytes,
         RuntimeCheckedType::Sequence(item) => AwbcRuntimeTypeShape::Sequence {

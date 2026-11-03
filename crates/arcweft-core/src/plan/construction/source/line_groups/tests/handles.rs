@@ -42,7 +42,14 @@ pub(in crate::plan::construction::source) fn fixture() -> RuntimePlan {
                 opaque(RuntimeHandleKind::Cue, ty(0xf4)),
                 opaque(RuntimeHandleKind::Voice, ty(0xf5)),
                 RuntimePlanTypeSeed::new(ty(0xf6), RuntimePlanTypeProjection::Duration),
-                RuntimePlanTypeSeed::new(ty(0xf7), RuntimePlanTypeProjection::EntityReference),
+                RuntimePlanTypeSeed::new(
+                    ty(0xf7),
+                    RuntimePlanTypeProjection::EntityReference(
+                        crate::value::RuntimeEntityReferenceType::CharacterLook(
+                            arcweft_character::id::CharacterId::try_new("character.akane").unwrap(),
+                        ),
+                    ),
+                ),
             ],
             [(0xf8, ty(0xf3)), (0xf9, ty(2))]
                 .into_iter()

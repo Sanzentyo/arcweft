@@ -154,7 +154,14 @@ pub(crate) fn admit_generation_types(builder: &mut RuntimePlanBuilder, character
                 vec![semantic(51), semantic(20 + Role::RichText.canonical_tag())].into(),
             ),
         ),
-        RuntimePlanTypeSeed::new(semantic(51), RuntimePlanTypeProjection::EntityReference),
+        RuntimePlanTypeSeed::new(
+            semantic(51),
+            RuntimePlanTypeProjection::EntityReference(
+                arcweft_core::value::RuntimeEntityReferenceType::family_only(
+                    arcweft_id::ProjectEntityReferenceFamily::Style,
+                ),
+            ),
+        ),
         RuntimePlanTypeSeed::new(
             exact.runtime_semantic_identity(),
             RuntimePlanTypeProjection::Opaque {

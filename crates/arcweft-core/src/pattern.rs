@@ -936,7 +936,7 @@ pub enum RuntimeCheckedType {
     Duration,
     Progress,
     DenseNumeric(crate::math::RuntimeDenseNumericType),
-    EntityReference,
+    EntityReference(crate::value::RuntimeEntityReferenceType<RuntimeSemanticTypeId>),
     AgentValue,
     Bytes,
     Sequence(Box<RuntimeCheckedType>),
@@ -1198,8 +1198,8 @@ impl RuntimeCheckedType {
             | (RuntimeValueView::Scalar(RuntimeScalarView::Color(_)), Self::Color)
             | (RuntimeValueView::Scalar(RuntimeScalarView::Char(_)), Self::Char)
             | (RuntimeValueView::Scalar(RuntimeScalarView::Duration(_)), Self::Duration)
-            | (RuntimeValueView::Scalar(RuntimeScalarView::Progress { .. }), Self::Progress)
-            | (RuntimeValueView::Scalar(RuntimeScalarView::EntityRef(_)), Self::EntityReference) => true,
+            | (RuntimeValueView::Scalar(RuntimeScalarView::Progress { .. }), Self::Progress) => true,
+            (RuntimeValueView::Scalar(RuntimeScalarView::EntityRef(value)), Self::EntityReference(expected)) => expected.accepts(value),
             (value, Self::AgentValue) => runtime_value_view_is_agent_value(value, depth, work),
             (RuntimeValueView::Scalar(RuntimeScalarView::Int(value)), Self::Signed(width)) => value.width() == *width,
             (RuntimeValueView::Scalar(RuntimeScalarView::UInt(value)), Self::Unsigned(width)) => value.width() == *width,
@@ -1390,7 +1390,21 @@ fn write_checked_type_identity(
                 encoder.write_u8(role);
             }
         }
-        RuntimeCheckedType::EntityReference => encoder.write_tag(11),
+        RuntimeCheckedType::EntityReference(reference) => {
+            encoder.write_tag(11);
+            encoder.write_u8(reference.kind_tag());
+            if let Some(character) = reference.look_owner() {
+                encoder.write_str(character.as_str());
+            }
+            encoder.write_u8(u8::from(reference.declaration().is_some()));
+            if let Some(id) = reference.declaration() {
+                encoder.write_str(id.as_str());
+            }
+            encoder.write_u8(u8::from(reference.payload().is_some()));
+            if let Some(payload) = reference.payload() {
+                encoder.write_bytes(payload.as_bytes());
+            }
+        }
         RuntimeCheckedType::Bytes => encoder.write_tag(12),
         RuntimeCheckedType::Sequence(inner) => {
             encoder.write_tag(13);
@@ -2455,8 +2469,10 @@ fn validate_pattern_node(
                 Err(RuntimePatternMatchError::InvalidKind { ty: pattern.ty() })
             }
         }
-        RuntimePatternKind::Entity(_) => match declaration.projection() {
-            RuntimePlanTypeProjection::EntityReference => Ok(()),
+        RuntimePatternKind::Entity(value) => match declaration.projection() {
+            RuntimePlanTypeProjection::EntityReference(expected) if expected.accepts(value) => {
+                Ok(())
+            }
             _ => Err(RuntimePatternMatchError::InvalidKind { ty: pattern.ty() }),
         },
         RuntimePatternKind::Tuple(patterns) => {
@@ -2600,7 +2616,7 @@ fn runtime_record_pattern_domain(
         | RuntimePlanTypeProjection::Duration
         | RuntimePlanTypeProjection::Progress
         | RuntimePlanTypeProjection::DenseNumeric(_)
-        | RuntimePlanTypeProjection::EntityReference
+        | RuntimePlanTypeProjection::EntityReference(_)
         | RuntimePlanTypeProjection::AgentValue
         | RuntimePlanTypeProjection::Range(_)
         | RuntimePlanTypeProjection::Iterator(_)

@@ -93,11 +93,22 @@ fn runtime_value_atoms_have_distinct_version_one_layout_transcripts() {
         (RuntimeTypeSchema::Never, 31),
         (RuntimeTypeSchema::Duration, 32),
         (RuntimeTypeSchema::Progress, 33),
-        (RuntimeTypeSchema::EntityReference, 34),
+        (
+            RuntimeTypeSchema::EntityReference(
+                crate::value::RuntimeEntityReferenceType::family_only(
+                    arcweft_id::ProjectEntityReferenceFamily::Character,
+                ),
+            ),
+            34,
+        ),
         (RuntimeTypeSchema::AgentValue, 35),
         (RuntimeTypeSchema::Color, 38),
     ] {
-        let expected = document(&[tag]);
+        let mut body = vec![tag];
+        if matches!(&schema, RuntimeTypeSchema::EntityReference(_)) {
+            body.extend([5, 0, 0]);
+        }
+        let expected = document(&body);
         assert_eq!(
             canonical_schema_bytes(&schema, expected.len()).unwrap(),
             expected

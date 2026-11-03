@@ -9023,7 +9023,12 @@ fn imported_flow_dynamic_goto_requires_exact_product_binding_despite_colliding_p
             Some(selected.clone()),
         )
         .expect("imported reference");
-        program.runtime_types[1] = runtime_type(2, AwbcRuntimeTypeShape::EntityRef);
+        program.runtime_types[1] = runtime_type(
+            2,
+            AwbcRuntimeTypeShape::EntityRef(crate::value::RuntimeEntityReferenceType::family_only(
+                arcweft_id::ProjectEntityReferenceFamily::Flow,
+            )),
+        );
         program.constants[1] =
             AwbcConstant::EntityRef(RuntimeEntityReference::ImportedProject(reference));
         let target_binding = program

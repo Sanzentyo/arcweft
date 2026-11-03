@@ -123,7 +123,7 @@ impl RuntimeCharacterDialogueCall {
         };
         match self.operation {
             CharacterDialogueOperation::Factory => {
-                matches!(target.ty().shape(), RuntimeTypeShape::EntityReference)
+                matches!(target.ty().shape(), RuntimeTypeShape::EntityReference(_))
             }
             CharacterDialogueOperation::Reconfigure => target.ty() == result,
         }

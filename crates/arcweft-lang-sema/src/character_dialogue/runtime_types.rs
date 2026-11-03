@@ -219,7 +219,11 @@ impl CharacterDialogueRuntimeRoleRegistry {
             rich_text.semantic_type.clone(),
         ]);
         let style_checked = RuntimeCheckedType::Choice(vec![
-            RuntimeCheckedType::EntityReference,
+            RuntimeCheckedType::EntityReference(
+                arcweft_core::value::RuntimeEntityReferenceType::family_only(
+                    arcweft_id::ProjectEntityReferenceFamily::Style,
+                ),
+            ),
             rich_text.checked_type.clone(),
         ]);
         let policy_types = world

@@ -1037,7 +1037,14 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                     arcweft_core::plan::RuntimeAgentTypeProjection::ObservationFieldPath,
                 ))
             }
-            TypeKind::Ref(_) => checked(RuntimeCheckedType::EntityReference),
+            TypeKind::Ref(entity) => {
+                let reference = entity.runtime_reference_type().ok_or_else(|| {
+                    RuntimeOwnershipError::rejected(path, RuntimeOwnershipRejection::UnresolvedType)
+                })?;
+                checked(RuntimeCheckedType::EntityReference(reference.try_map(
+                    |payload| self.exact_runtime_type_identity(payload, path),
+                )?))
+            }
             TypeKind::Probe(result) => {
                 let result = self.classify_at(
                     result,
@@ -2009,7 +2016,7 @@ fn validate_variant_cases(
         | RuntimeCheckedType::Duration
         | RuntimeCheckedType::Progress
         | RuntimeCheckedType::DenseNumeric(_)
-        | RuntimeCheckedType::EntityReference
+        | RuntimeCheckedType::EntityReference(_)
         | RuntimeCheckedType::Bytes
         | RuntimeCheckedType::Sequence(_)
         | RuntimeCheckedType::Map { .. }
@@ -2029,6 +2036,77 @@ fn validate_variant_cases(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn entity_reference_ownership_rejects_other_families() {
+        use arcweft_core::value::RuntimeEntityReference;
+        use arcweft_id::{DeclarationIdentityFamily, PublicId};
+        let classifier = RuntimeProducerArgumentClassifier::for_test();
+        let character = classifier
+            .classify(&TypeKind::entity_ref(EntityKind::Character))
+            .unwrap();
+        let value = |family, id| {
+            RuntimeValue::EntityRef(
+                RuntimeEntityReference::try_project(family, PublicId::try_new(id).unwrap())
+                    .unwrap(),
+            )
+        };
+        character
+            .validate_live_value(&value(
+                DeclarationIdentityFamily::Character,
+                "character.alice",
+            ))
+            .unwrap();
+        assert!(
+            character
+                .validate_live_value(&value(
+                    DeclarationIdentityFamily::Action,
+                    "action.feedback.submit"
+                ))
+                .is_err()
+        );
+        assert!(
+            character
+                .validate_live_value(&value(DeclarationIdentityFamily::Asset, "asset.bg.room"))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn action_channel_ownership_rejects_other_declarations() {
+        use crate::final_analysis::tests::{analyze, fixture};
+        use arcweft_core::value::RuntimeEntityReference;
+        use arcweft_id::{DeclarationIdentityFamily, PublicId};
+        let world = fixture(
+            "pub action feedback.submit(value: String)\npub action feedback.cancel(value: String)\nflow main() -> i64 { let channel = feedback.submit; return 0i64 }\n",
+            None,
+        );
+        let analysis = analyze(&world).unwrap();
+        let ty = analysis.expressions().find_map(|(_, fact)| {
+            fact.value_type().filter(|ty| matches!(ty, TypeKind::Ref(entity) if entity.kind() == &EntityKind::Action))
+        }).unwrap();
+        let admitted = RuntimeProducerArgumentClassifier::try_new(&analysis, &world.registered)
+            .unwrap()
+            .classify(ty)
+            .unwrap();
+        let value = |id| {
+            RuntimeValue::EntityRef(
+                RuntimeEntityReference::try_project(
+                    DeclarationIdentityFamily::Action,
+                    PublicId::try_new(id).unwrap(),
+                )
+                .unwrap(),
+            )
+        };
+        admitted
+            .validate_live_value(&value("action.feedback.submit"))
+            .unwrap();
+        assert!(
+            admitted
+                .validate_live_value(&value("action.feedback.cancel"))
+                .is_err()
+        );
+    }
 
     #[test]
     fn probe_ownership_keeps_its_checked_result_type() {

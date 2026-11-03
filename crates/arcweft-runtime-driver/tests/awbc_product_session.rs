@@ -1786,7 +1786,7 @@ fn restartable_need_awfb_bytes() -> Vec<u8> {
         .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(string_ty, RuntimePlanTypeProjection::String),
-                RuntimePlanTypeSeed::new(asset_ty, RuntimePlanTypeProjection::EntityReference),
+                RuntimePlanTypeSeed::new(asset_ty, RuntimePlanTypeProjection::EntityReference(arcweft_core::value::RuntimeEntityReferenceType::family_only(arcweft_id::ProjectEntityReferenceFamily::Asset))),
                 RuntimePlanTypeSeed::new(need_ty, RuntimePlanTypeProjection::Need(string_ty)),
             ],
             [RuntimeLocalDeclarationSeed::new(

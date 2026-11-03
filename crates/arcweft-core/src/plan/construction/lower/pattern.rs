@@ -292,7 +292,7 @@ impl RuntimePlanBodyConstruction<'_> {
             }
             RuntimePatternSeedKind::Entity(entity) => {
                 self.require_projection("entity-reference pattern", ty, |projection| {
-                    matches!(projection, RuntimePlanTypeProjection::EntityReference)
+                    matches!(projection, RuntimePlanTypeProjection::EntityReference(expected) if expected.accepts(&entity))
                 })?;
                 return Ok(complete(RuntimePatternKind::Entity(entity)));
             }

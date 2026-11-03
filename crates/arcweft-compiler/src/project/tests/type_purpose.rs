@@ -103,7 +103,7 @@ fn assert_entity_family_type_partition(source: &str, family: EntityKind) {
             .ty(HirValueTypeOwner::Type(reference.owner()))
             .unwrap()
             .shape(),
-        RuntimeTypeShape::EntityReference,
+        RuntimeTypeShape::EntityReference(reference) if reference.family() == family.reference_family(),
     ));
     assert_eq!(semantics.ty(HirValueTypeOwner::Type(marker.owner())), None);
     assert_eq!(analysis.ty(marker.owner()), None);
