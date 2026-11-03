@@ -1,0 +1,823 @@
+{
+  "version": 1,
+  "recordedAt": "2026-11-03T15:50:50.4001465Z",
+  "source": "33711cd44846412c4a284fd7eee7ecd1714cd93f",
+  "productionSource": "cd17eba41b99c837432722c6570f60f4287696e3",
+  "workingTree": "main;2 owned paths published, original12 tracked and6 actual untracked WIP retained",
+  "publication": {
+    "version": 1,
+    "commit": "33711cd44846412c4a284fd7eee7ecd1714cd93f",
+    "parent": "c050d902d354b7a79b03f0bc2b7ec1d5e57368b1",
+    "tree": "606a50288b6906e60ddb1223e32c78db6c439348",
+    "remote": "33711cd44846412c4a284fd7eee7ecd1714cd93f",
+    "paths": [
+      {
+        "path": "crates/arcweft-cli/tests/check/agent_observe_native/published_jlreq_units.rs",
+        "blob": "c70dedda9c60b91b402951ec775c95ac012f00a8"
+      },
+      {
+        "path": "docs/03-presentation/text-typesetting.md",
+        "blob": "2a51074cb784b2fd01d30d4ec525fbd93d360507"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "ce794544eb626ecb74446d951d26fc998a362ff98eaa1c72ee4d9232b99002d4",
+    "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-03T15:50:39.5234424Z"
+  },
+  "graph": {
+    "version": 1,
+    "base": "c050d902d354b7a79b03f0bc2b7ec1d5e57368b1",
+    "root": "arcweft-cli",
+    "reversePackages": [
+      {
+        "name": "arcweft-cli",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0"
+      }
+    ],
+    "metadataReusedFrom": "bench-target.metadata.json",
+    "metadataSha256": "48645271823339777421ca9bc282033a87ce735e0a549fa31e564e0606b028fb",
+    "reason": "PrivateCLIhyphen assertion correction and maintainedcontract prose only; Cargo andproductionunchanged, actualresolvedCLIreverseclosure1."
+  },
+  "focused": {
+    "version": 1,
+    "base": "c050d902d354b7a79b03f0bc2b7ec1d5e57368b1",
+    "run": "jlreq-hyphen-owner1-20261104.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  20.202s] 2 tests run: 2 passed, 719 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2,
+    "passed": 2,
+    "failed": 0,
+    "skipped": 719,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4090,
+    "sourceDrift": 0,
+    "held": 12,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-11-03T15:45:40.5313475Z"
+  },
+  "selectedCases": [
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_hyphenated_western_word_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_hyphenated_western_word_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "inputsProof": {
+    "version": 1,
+    "base": "c050d902d354b7a79b03f0bc2b7ec1d5e57368b1",
+    "path": "crates/arcweft-cli/tests/check/agent_observe_native/published_jlreq_units.rs",
+    "scope": "One-off complete-source review. Only two relational assertion calls and their diagnostic messages change; restore them and the complete file is byte-identical after Git line-ending normalization. No permanent source-spelling test.",
+    "originalFixturesAndOptionsExact": true,
+    "atomicWebAndTestGlyphCellsAndRangesUnchanged": true,
+    "hyphenWithPrecedingWebAssertionUnchanged": true,
+    "capturePixelCountsMaskTintAndSourceIdentityUnchanged": true,
+    "assertionsBefore": 4,
+    "assertionsAfter": 4,
+    "old": "Wrongly require no column break after word-internal HYPHEN-MINUS, then require afterTest->人 break",
+    "final": "Strictly require selected break at hyphen->Test in both directions with top restart, then exact samecolumn/downward Test->人. Existing body->Web->hyphen and atomic glyph/range/capture assertions unchanged.",
+    "productionChanges": 0,
+    "dependencyChanges": 0,
+    "currentContract": "UAX14 Unicode15.0HY/BA breakafterthehyphen, repoowned balanced_v1 selects actualbreak; maintain existing typedauthority and version1"
+  },
+  "contractProof": {
+    "version": 1,
+    "source": "c050d902d354b7a79b03f0bc2b7ec1d5e57368b1",
+    "primarySources": [
+      "https://www.unicode.org/reports/tr14/tr14-49.html#HY",
+      "https://www.w3.org/TR/jlreq/#unbreakable_character_sequences"
+    ],
+    "pinnedDependency": "unicode-linebreak0.1.5; UNICODE_VERSION15.0.0 fromcachedsrc/lib.rs:27",
+    "maintainedContract": "docs/03-presentation/text-typesetting.md: balanced_v1 consumes UAX14 opportunities and JLREQ hardconstraints, then minimizes normative objective; vertical_rl/lr share the inlinebreakplan",
+    "observations": [
+      {
+        "name": "hyphenated-vertical_rl",
+        "sizePt": "default",
+        "text": "天Web-Test人",
+        "height": 900,
+        "sourceSha256": "57eab7ddc7ccbe8f074e08832e9f065edbfa3b07217a0cb6a9c0ace6dec46655",
+        "command": [
+          "agent",
+          "observe",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/jlreq-hyphen-frontier1/hyphenated-vertical_rl.arcw",
+          "--entry",
+          "entry.probe",
+          "--json",
+          "--image",
+          "png",
+          "--layer",
+          "dialogue.rich_text",
+          "--viewport-width",
+          "1280",
+          "--viewport-height",
+          "900",
+          "--page",
+          "0",
+          "--mode",
+          "drain",
+          "--steps",
+          "4",
+          "--max-ops",
+          "128"
+        ],
+        "exitCode": 0,
+        "startedAt": "2026-11-03T15:41:49.8283819Z",
+        "finishedAt": "2026-11-03T15:41:52.333673Z",
+        "bodyAndUnitSameColumn": false,
+        "nextColumn": false,
+        "nextRestarts": false,
+        "clusters": [
+          {
+            "text": "天",
+            "range": {
+              "start": 0,
+              "end": 3
+            },
+            "bbox": {
+              "space": "viewport",
+              "x": 1169,
+              "y": 518,
+              "width": 26,
+              "height": 26
+            }
+          },
+          {
+            "text": "Web",
+            "range": {
+              "start": 3,
+              "end": 6
+            },
+            "bbox": {
+              "space": "viewport",
+              "x": 1169,
+              "y": 543,
+              "width": 26,
+              "height": 51
+            }
+          },
+          {
+            "text": "-",
+            "range": {
+              "start": 6,
+              "end": 7
+            },
+            "bbox": {
+              "space": "viewport",
+              "x": 1169,
+              "y": 593,
+              "width": 26,
+              "height": 26
+            }
+          },
+          {
+            "text": "Test",
+            "range": {
+              "start": 7,
+              "end": 11
+            },
+            "bbox": {
+              "space": "viewport",
+              "x": 1127,
+              "y": 518,
+              "width": 26,
+              "height": 49
+            }
+          },
+          {
+            "text": "人",
+            "range": {
+              "start": 11,
+              "end": 14
+            },
+            "bbox": {
+              "space": "viewport",
+              "x": 1127,
+              "y": 566,
+              "width": 26,
+              "height": 26
+            }
+          }
+        ]
+      },
+      {
+        "name": "hyphenated-vertical_lr",
+        "sizePt": "default",
+        "text": "天Web-Test人",
+        "height": 900,
+        "sourceSha256": "2fab2d3bf2e72a6d0623d0046a2f3d818debc5fb952a6b25a1dc4654928926cf",
+        "command": [
+          "agent",
+          "observe",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/jlreq-hyphen-frontier1/hyphenated-vertical_lr.arcw",
+          "--entry",
+          "entry.probe",
+          "--json",
+          "--image",
+          "png",
+          "--layer",
+          "dialogue.rich_text",
+          "--viewport-width",
+          "1280",
+          "--viewport-height",
+          "900",
+          "--page",
+          "0",
+          "--mode",
+          "drain",
+          "--steps",
+          "4",
+          "--max-ops",
+          "128"
+        ],
+        "exitCode": 0,
+        "startedAt": "2026-11-03T15:41:52.3496588Z",
+        "finishedAt": "2026-11-03T15:41:55.0863004Z",
+        "bodyAndUnitSameColumn": false,
+        "nextColumn": false,
+        "nextRestarts": false,
+        "clusters": [
+          {
+            "text": "天",
+            "range": {
+              "start": 0,
+              "end": 3
+            },
+            "bbox": {
+              "space": "viewport",
+              "x": 85,
+              "y": 518,
+              "width": 26,
+              "height": 26
+            }
+          },
+          {
+            "text": "Web",
+            "range": {
+              "start": 3,
+              "end": 6
+            },
+            "bbox": {
+              "space": "viewport",
+              "x": 85,
+              "y": 543,
+              "width": 26,
+              "height": 51
+            }
+          },
+          {
+            "text": "-",
+            "range": {
+              "start": 6,
+              "end": 7
+            },
+            "bbox": {
+              "space": "viewport",
+              "x": 85,
+              "y": 593,
+              "width": 26,
+              "height": 26
+            }
+          },
+          {
+            "text": "Test",
+            "range": {
+              "start": 7,
+              "end": 11
+            },
+            "bbox": {
+              "space": "viewport",
+              "x": 127,
+              "y": 518,
+              "width": 26,
+              "height": 49
+            }
+          },
+          {
+            "text": "人",
+            "range": {
+              "start": 11,
+              "end": 14
+            },
+            "bbox": {
+              "space": "viewport",
+              "x": 127,
+              "y": 566,
+              "width": 26,
+              "height": 26
+            }
+          }
+        ]
+      }
+    ],
+    "decision": "Retain exact originaldefaulttypography/source/viewports/budgets/captures. Correct native expectations from unbreakable whole Web-Test to mandatory no-break withinWeb/Test and beforehyphen, legal selected nextcolumnafterhyphen, Testfollowedby人samecolumn. No productionpolicy or glyphcapturecondition change."
+  },
+  "inputDelta": [
+    {
+      "path": "crates/arcweft-cli/tests/check/agent_observe_native/published_jlreq_units.rs",
+      "bytes": 151060,
+      "sha256": "5731920497c8c31112d09b031b4f765da16343d30e4f215db567a4f790c4f682"
+    }
+  ],
+  "quality": [
+    {
+      "version": 1,
+      "base": "c050d902d354b7a79b03f0bc2b7ec1d5e57368b1",
+      "command": [
+        "check",
+        "-p",
+        "arcweft-cli",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4090,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-03T15:46:17.4771936Z",
+      "finishedAt": "2026-11-03T15:46:27.3801025Z"
+    },
+    {
+      "version": 1,
+      "base": "c050d902d354b7a79b03f0bc2b7ec1d5e57368b1",
+      "command": [
+        "clippy",
+        "-p",
+        "arcweft-cli",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4090,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-03T15:46:28.2739798Z",
+      "finishedAt": "2026-11-03T15:46:43.0681923Z"
+    },
+    {
+      "version": 1,
+      "base": "c050d902d354b7a79b03f0bc2b7ec1d5e57368b1",
+      "command": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking",
+        "--write",
+        "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/jlreq-hyphen-quality1-20261104.structure-report"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4090,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-03T15:46:43.7391136Z",
+      "finishedAt": "2026-11-03T15:46:48.6244778Z"
+    }
+  ],
+  "format": {
+    "version": 1,
+    "base": "c050d902d354b7a79b03f0bc2b7ec1d5e57368b1",
+    "command": [
+      "rustfmt",
+      "--edition",
+      "2024",
+      "--check",
+      "crates/arcweft-cli/tests/check/agent_observe_native/published_jlreq_units.rs"
+    ],
+    "exitCode": 0,
+    "startedAt": "2026-11-03T15:46:14.579875Z",
+    "finishedAt": "2026-11-03T15:46:14.9615099Z"
+  },
+  "structureReview": {
+    "version": 1,
+    "base": "c050d902d354b7a79b03f0bc2b7ec1d5e57368b1",
+    "workingTree": "main;2 owned assertion/spec paths plusoriginal12tracked/6actualuntrackedWIP",
+    "owner": "arcweft-cli native publishedJLREQgeometry/rawcrop helper;sharedplannercontractprose",
+    "path": "crates/arcweft-cli/tests/check/agent_observe_native/published_jlreq_units.rs",
+    "bytes": 151060,
+    "physicalLoc": 4354,
+    "basePhysicalLoc": 4354,
+    "growth": 0,
+    "classification": "test",
+    "sourceSha256": "5731920497c8c31112d09b031b4f765da16343d30e4f215db567a4f790c4f682",
+    "disposition": "Existing unitfixturehelper responsibility preserved. Two strict relational helpercalls change their operands/boundary expectations to the admittedhyphenopportunity; same4x/yassertions, allsourceinput/glyph/capturechecksunchanged. No productionstate/API/dep/schema/table/helper widening; sameexistingcohesionreview andtypedsharedplanner authority. NormativeparagraphclarifiescurrentWesternwordboundarywithpinnedUnicode15primarysource. Exactcanonicalmetricsattachedaftergate.",
+    "canonicalFileMetric": {
+      "path": "crates/arcweft-cli/tests/check/agent_observe_native/published_jlreq_units.rs",
+      "owner": "arcweft-cli",
+      "bytes": "151060",
+      "physical_lines": "4354",
+      "code_lines": "4108",
+      "classification": "test",
+      "is_rust": "true",
+      "embedded_test_lines": "0"
+    },
+    "canonicalPackageMetric": {
+      "package": "arcweft-cli",
+      "manifest": "crates/arcweft-cli/Cargo.toml",
+      "workspace_fan_in": "0",
+      "workspace_fan_out": "54",
+      "development_workspace_fan_in": "0",
+      "development_workspace_fan_out": "2"
+    }
+  },
+  "decision": "Correct obsolete no-break-after-HYPHEN-MINUS expectation to pinned Unicode15.0 UAX14 HY/BA opportunity and existing balanced_v1 actual selection. Preserve original default typography, text, complete commands/options, both vertical directions, atomic Web/Test glyph cells and source ranges, Web->hyphen attachment and every raw crop/pixel/tint assertion. Strict new relations require hyphen->Test nextcolumn/top restart and Test->人 samecolumn/downward. Two relational helper calls still execute four strict assertions; no permissive either/or or dropped check.",
+  "implementationScope": "No renderer, planner, Unicode data, Cargo, runtime, schema or owned version marker changes. Maintained text-typesetting explains the existing admitted boundary; the actual choice remains owned by the shared planner.",
+  "validationScope": "Two existing CLIcases freshly PASS20.202s, all-target/all-feature/locked,4090inputs.719skipped=696unselected+23ignored. No fullCLI or Native/Web parity rerun. Direct unmodified fixture observations are diagnostic evidence, not added nextest cases.",
+  "baseline": {
+    "path": "docs/implementation/acceptance-evidence/task-cli-bench-headless-fixture.json",
+    "source": "06a629f0df1c523b307b51d7946de7693153279e",
+    "fullCli": {
+      "executed": 698,
+      "passed": 676,
+      "failed": 22,
+      "ignored": 23
+    },
+    "earlierFocusedPasses": 6,
+    "currentFocusedPasses": 2,
+    "disjointLaterPasses": 8,
+    "otherBaselineFailureIdsNotRerun": [
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering",
+        "status": "FAIL",
+        "run": "bench-headless-reverse1-20261103",
+        "kind": "fresh-disjoint-selection"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "agent_rag_query_indexes_multiple_sources",
+        "status": "FAIL",
+        "run": "bench-headless-reverse1-20261103",
+        "kind": "fresh-disjoint-selection"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures",
+        "status": "FAIL",
+        "run": "bench-headless-reverse1-20261103",
+        "kind": "fresh-disjoint-selection"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "spec_rejected_edge_fixtures_fail_with_diagnostics",
+        "status": "FAIL",
+        "run": "bench-headless-reverse1-20261103",
+        "kind": "fresh-disjoint-selection"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "plan_json_lists_runtime_task_graph",
+        "status": "FAIL",
+        "run": "bench-headless-reverse1-20261103",
+        "kind": "fresh-disjoint-selection"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs",
+        "status": "FAIL",
+        "run": "bench-headless-reverse1-20261103",
+        "kind": "fresh-disjoint-selection"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_reports_missing_promotion_proof",
+        "status": "FAIL",
+        "run": "bench-headless-reverse1-20261103",
+        "kind": "fresh-disjoint-selection"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_reports_text_presentation_z_index_depth",
+        "status": "FAIL",
+        "run": "bench-headless-reverse1-20261103",
+        "kind": "fresh-disjoint-selection"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_reports_semantic_thread_join_conflict",
+        "status": "FAIL",
+        "run": "bench-headless-reverse1-20261103",
+        "kind": "fresh-disjoint-selection"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry",
+        "status": "FAIL",
+        "run": "bench-headless-reverse1-20261103",
+        "kind": "fresh-disjoint-selection"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "unsafe_json_lists_audit_regions",
+        "status": "FAIL",
+        "run": "bench-headless-reverse1-20261103",
+        "kind": "fresh-disjoint-selection"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_records_required_solver_checks",
+        "status": "FAIL",
+        "run": "bench-headless-reverse1-20261103",
+        "kind": "fresh-disjoint-selection"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "spec_valid_run_edge_fixture_now_executes",
+        "status": "FAIL",
+        "run": "bench-headless-reverse1-20261103",
+        "kind": "fresh-disjoint-selection"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_respects_semantic_defer_cancel_discharge",
+        "status": "FAIL",
+        "run": "bench-headless-reverse1-20261103",
+        "kind": "fresh-disjoint-selection"
+      }
+    ],
+    "scope": "Retain actual full698/676PASS/22FAIL. Later disjoint6+2 of its failure IDs pass, without synthesizing a new full684/14 result. The other14 failure IDs and696 unselected nonignored cases were not rerun in this cut."
+  },
+  "acceptedScope": "Preserve earlier six JLREQ fixture acceptance, Generic Match151, normal5162 and their exact validation epochs. The whole goal, benchmark header retention, static style provenance and other CLI boundaries remain independent.",
+  "sourceInputs": 4090,
+  "sourceDrift": 0,
+  "caseDrift": 0,
+  "executableDrift": 0,
+  "originalWip": {
+    "tracked": 12,
+    "actualUntracked": 6,
+    "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+    "untrackedHashDrift": 0
+  },
+  "historyPrefix": {
+    "bytes": 1824543,
+    "sha256": "3537243c0108ad771bb7a52400dbb92bdace082f7b2a0b9db4d6ff9e6cf5c0a6",
+    "drift": 0
+  },
+  "raw": {
+    "path": "docs/implementation/acceptance-evidence/task-cli-jlreq-hyphen-boundary.raw.zip",
+    "bytes": 1027976,
+    "sha256": "128f618175d1151412ea2aa6acb01aad631a2dca2e4bc1658657df7e0f3666de",
+    "entryDrift": 0,
+    "entries": [
+      {
+        "entry": "audit-nextest-final-result.ps1",
+        "bytes": 5266,
+        "sha256": "9d136f5ff9dbe80e524a8c9adb2f11fc96cce75046e3e1fe3e93ba73888cc0ab"
+      },
+      {
+        "entry": "checkpoint-jlreq-hyphen.message.txt",
+        "bytes": 63,
+        "sha256": "2218a947c3412bc99ece98a78d325f64c8dcea38398369f1cff16a851754f1b5"
+      },
+      {
+        "entry": "checkpoint-jlreq-hyphen.other.txt",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "checkpoint-jlreq-hyphen.owned.txt",
+        "bytes": 120,
+        "sha256": "ce6c2b745c24e3c1d409c09118365be58f83efa5bfb12dc75b0dac3a436c4403"
+      },
+      {
+        "entry": "checkpoint-jlreq-hyphen.pathspec",
+        "bytes": 118,
+        "sha256": "88460bbf422ee25dfaa716ad91946af51f0a1ef5b695622bfede9b29dff7e444"
+      },
+      {
+        "entry": "checkpoint-jlreq-hyphen.prepared.json",
+        "bytes": 1449,
+        "sha256": "4c182e4f0fc364eaed142aad5a289a36f11ba04e2ab635077daf11ca15cf3f0d"
+      },
+      {
+        "entry": "checkpoint-jlreq-hyphen.reviewed.patch",
+        "bytes": 2515,
+        "sha256": "ce794544eb626ecb74446d951d26fc998a362ff98eaa1c72ee4d9232b99002d4"
+      },
+      {
+        "entry": "checkpoint-jlreq-hyphen.verified.json",
+        "bytes": 851,
+        "sha256": "eedf4500eb1424c663b35d94673bc7b421a1a3941272d8de1375c83069c80d98"
+      },
+      {
+        "entry": "jlreq-hyphen-fmt.json",
+        "bytes": 361,
+        "sha256": "d747a299f9e5e13269909b9070b5a3ccac11f8fac92910b9d4ff9c61c4ea3956"
+      },
+      {
+        "entry": "jlreq-hyphen-fmt.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "jlreq-hyphen-frontier1/hyphenated-vertical_lr.arcw",
+        "bytes": 166,
+        "sha256": "2fab2d3bf2e72a6d0623d0046a2f3d818debc5fb952a6b25a1dc4654928926cf"
+      },
+      {
+        "entry": "jlreq-hyphen-frontier1/hyphenated-vertical_lr.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "jlreq-hyphen-frontier1/hyphenated-vertical_lr.stdout.json",
+        "bytes": 1501389,
+        "sha256": "56f901e827141f1c1be3042f52e3fc265620866e54f550614e09f7cb33605cbd"
+      },
+      {
+        "entry": "jlreq-hyphen-frontier1/hyphenated-vertical_rl.arcw",
+        "bytes": 166,
+        "sha256": "57eab7ddc7ccbe8f074e08832e9f065edbfa3b07217a0cb6a9c0ace6dec46655"
+      },
+      {
+        "entry": "jlreq-hyphen-frontier1/hyphenated-vertical_rl.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "jlreq-hyphen-frontier1/hyphenated-vertical_rl.stdout.json",
+        "bytes": 1502156,
+        "sha256": "7a5e6bf693f67103382cdc88e634a749461e1fdbe6d2e9df0e45425b34a6cdb6"
+      },
+      {
+        "entry": "jlreq-hyphen-frontier1/observations.json",
+        "bytes": 5609,
+        "sha256": "74d82581546c0d96c8939bc974d699de72c417263b19bb68b7d4487f8d79f5d7"
+      },
+      {
+        "entry": "jlreq-hyphen-owner1-20261104.binaries-before.json",
+        "bytes": 2892,
+        "sha256": "f24f3cb573570525eb644d079168a6c9437d6d442fac62c0431364e517b489bd"
+      },
+      {
+        "entry": "jlreq-hyphen-owner1-20261104.catalog.inventory.json",
+        "bytes": 173505,
+        "sha256": "bafb18a6bd4b1f08df3a0e9f0937de0e02ef693a7e06290589ec6296c09ef273"
+      },
+      {
+        "entry": "jlreq-hyphen-owner1-20261104.catalog.json",
+        "bytes": 756,
+        "sha256": "b4d4b9d26f85ee6cedd99f7bac20b40903006d3cd360ba436c9c655222fd4310"
+      },
+      {
+        "entry": "jlreq-hyphen-owner1-20261104.catalog.log",
+        "bytes": 219410,
+        "sha256": "f06ab57df42c8b966a62012b25802a840dd79643bd46e5c4bb4a46f3bc69c4e0"
+      },
+      {
+        "entry": "jlreq-hyphen-owner1-20261104.runtime.json",
+        "bytes": 848,
+        "sha256": "e83bf7855644b60d8feed8ba20e5880d9977aaeef8865ebfac5306424ca5c15a"
+      },
+      {
+        "entry": "jlreq-hyphen-owner1-20261104.runtime.log",
+        "bytes": 287558,
+        "sha256": "ffa58a6da3f96552ec302d476011dad59f7777a0e131ca309c3897d501b37c03"
+      },
+      {
+        "entry": "jlreq-hyphen-owner1-20261104.runtime.terminal-audit.json",
+        "bytes": 609,
+        "sha256": "309eceed3351d24c9e5aefb4374f9e7751402845cd69c13d6f140a06d5707797"
+      },
+      {
+        "entry": "jlreq-hyphen-owner1-20261104.source-freeze.json",
+        "bytes": 799574,
+        "sha256": "ee7103787f6c03fbe76a4174f468c4a5b8a5d48672b1560dd83a9bd7c0d4fa1e"
+      },
+      {
+        "entry": "jlreq-hyphen-quality1-20261104-check.json",
+        "bytes": 366,
+        "sha256": "1186d034ac05e0ffb37009b74e879d24cfe9994e7af5f929fe96e418fc4bd817"
+      },
+      {
+        "entry": "jlreq-hyphen-quality1-20261104-check.log",
+        "bytes": 85990,
+        "sha256": "116726d6a5a11e1a142be3d61c9712794ed3b0c02d1cddaf45eb1063a8e39dd7"
+      },
+      {
+        "entry": "jlreq-hyphen-quality1-20261104-clippy.json",
+        "bytes": 367,
+        "sha256": "35629730c83ae1287db932204e53ba395d8545c3da682da977e0675df9dc8b37"
+      },
+      {
+        "entry": "jlreq-hyphen-quality1-20261104-clippy.log",
+        "bytes": 7165231,
+        "sha256": "09b67c73656bc69461c3950386903c31d3231c8d278031ec03d0ba3044a905a4"
+      },
+      {
+        "entry": "jlreq-hyphen-quality1-20261104-structure.json",
+        "bytes": 525,
+        "sha256": "f422d8d33ac027c201c3265221885faec4d683ff614e2a0ca6b1cd42f38d18f9"
+      },
+      {
+        "entry": "jlreq-hyphen-quality1-20261104-structure.log",
+        "bytes": 65604,
+        "sha256": "eff9de89fcf5bc4c0d7a5d675faa52a9987cc65fa892eacfe18075b178d9fcf7"
+      },
+      {
+        "entry": "jlreq-hyphen-quality1-20261104.structure-report/dependency_edges.csv",
+        "bytes": 78114,
+        "sha256": "ed740dc1ecf2341a73101ad5ce67871b803b4a3f24542bda8269119484a3f6b9"
+      },
+      {
+        "entry": "jlreq-hyphen-quality1-20261104.structure-report/file_metrics.csv",
+        "bytes": 336640,
+        "sha256": "4b612354fdc14dc05bfd2cd55369ff3c1b88820e98004a54eead77534648b410"
+      },
+      {
+        "entry": "jlreq-hyphen-quality1-20261104.structure-report/findings.md",
+        "bytes": 123305,
+        "sha256": "7f7f3bc1223e71136546f2c982d07b26a776e65aedbea7d420c8402299e622e9"
+      },
+      {
+        "entry": "jlreq-hyphen-quality1-20261104.structure-report/package_metrics.csv",
+        "bytes": 6508,
+        "sha256": "69980c5bd27ba9dfb87970e4a9528bcbca1747425c46a0fe3fa1acab2135cf5b"
+      },
+      {
+        "entry": "jlreq-hyphen-quality1-20261104.structure-report/public_type_duplicates.csv",
+        "bytes": 17276,
+        "sha256": "bb4d20a2e6819614b15ed1698619f49f53aa1650748d1bc100be27eaa2d6a49f"
+      },
+      {
+        "entry": "jlreq-hyphen.contract-proof.json",
+        "bytes": 6030,
+        "sha256": "b5ae34e4c2adc280e5bb88a11aa293ac44ba17fb0d2f0633cfe80afacc54e0b9"
+      },
+      {
+        "entry": "jlreq-hyphen.graph.json",
+        "bytes": 542,
+        "sha256": "45934ff60d539ae03f34e2c075c0f9657bc818c54158d8ad8852893d9a467788"
+      },
+      {
+        "entry": "jlreq-hyphen.inputs-proof.json",
+        "bytes": 1231,
+        "sha256": "d5124ce2477a24d3a1549865a85d0fae912b1b60adb2c6b45429feb5e75f6575"
+      },
+      {
+        "entry": "jlreq-hyphen.structure-review.json",
+        "bytes": 1652,
+        "sha256": "b6aa3d911a00fe4943dc0aadd2b43d393798d4ff7284fa165146812aa46dba6b"
+      },
+      {
+        "entry": "probe-jlreq-hyphen-current.ps1",
+        "bytes": 3009,
+        "sha256": "39546bb4103f427ec753eca0e0ef1a0024763e636800c6c8c4942361877911c1"
+      },
+      {
+        "entry": "record-jlreq-hyphen.ps1",
+        "bytes": 10244,
+        "sha256": "ada82cd511acbadf9b9ff7492c2176242112e65285e73f15ef936ec729e9aaf7"
+      },
+      {
+        "entry": "run-action-payload-quality.ps1",
+        "bytes": 1729,
+        "sha256": "ca098c1a52ef14e7f767eec068c3a20e5415e73ee4191d81ccbf9aafa8ac339a"
+      },
+      {
+        "entry": "run-presentation-projection-owner.ps1",
+        "bytes": 4134,
+        "sha256": "b60d753498997e4ba3b809b3721e9190ea1860971c755e6a1648a8e213403c58"
+      },
+      {
+        "entry": "update-jlreq-hyphen-current-status.ps1",
+        "bytes": 4790,
+        "sha256": "c494a20f6ce3aea47eee623405ca31ae78b97c67369907ab780362d40c56f5cd"
+      },
+      {
+        "entry": "write-verified-evidence-archive.ps1",
+        "bytes": 1658,
+        "sha256": "2207e2b2972bf69375071a89924e544fce651ec47e8c8486675b902805cb143d"
+      }
+    ]
+  }
+}
