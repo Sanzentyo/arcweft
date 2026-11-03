@@ -4308,6 +4308,10 @@ impl CheckedCallCanonicalEncoder {
                 self.tag(12);
                 self.tag(0);
             }
+            BuiltinCallableId::Action(operation) => {
+                self.tag(13);
+                self.tag(operation.semantic_tag());
+            }
         }
         Ok(())
     }

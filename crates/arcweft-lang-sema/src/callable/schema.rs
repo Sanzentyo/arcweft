@@ -972,6 +972,7 @@ pub enum CallableEvaluatedEffect {
     SignalWrite,
     MetricWrite,
     EmitEvent,
+    EmitAction,
     Panic,
     Fail,
     Bail,
@@ -1005,6 +1006,7 @@ impl CallableEvaluatedEffect {
             Self::SignalWrite => Some(crate::effects::EffectId::signal_write()),
             Self::MetricWrite => Some(crate::effects::EffectId::metric_write()),
             Self::EmitEvent => Some(crate::effects::EffectId::event_emit()),
+            Self::EmitAction => Some(crate::effects::EffectId::action_emit()),
             Self::Panic | Self::Fail | Self::Bail | Self::Ensure | Self::Drop(_) => None,
         };
         EffectRow::closed(effect.into_iter().collect())
@@ -1026,6 +1028,7 @@ impl CallableEvaluatedEffect {
             (Self::SignalWrite | Self::MetricWrite, 0, 0) => Some(Target),
             (Self::SignalWrite | Self::MetricWrite, 0, 1) => Some(Value),
             (Self::EmitEvent, 0, 0) => Some(Event),
+            (Self::EmitAction, 0, 0) => Some(Value),
             (Self::Ensure, 0, 0) => Some(Condition),
             (Self::Ensure, 0, 1) => Some(Message),
             (Self::Drop(DropCallableId::Drop | DropCallableId::DropOptional), 0, 0)
@@ -1036,6 +1039,7 @@ impl CallableEvaluatedEffect {
             | (Self::SignalWrite, _, _)
             | (Self::MetricWrite, _, _)
             | (Self::EmitEvent, _, _)
+            | (Self::EmitAction, _, _)
             | (Self::Panic, _, _)
             | (Self::Fail, _, _)
             | (Self::Bail, _, _)

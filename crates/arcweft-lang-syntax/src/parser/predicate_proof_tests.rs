@@ -1248,7 +1248,7 @@ fn control_statements_and_thread_expression_own_typed_children() {
 
 #[test]
 fn let_statement_variants_share_pattern_and_initializer_authority() {
-    let source = "{ let .Some(x) = value else { return; }; let picked = choice @choice.test { }; let scoped = scope named { 1 }; let repeated = loop { break 1; }; let waited = try await task(); let action = receive action(@action.ok); }\n";
+    let source = "{ let .Some(x) = value else { return; }; let picked = choice @choice.test { }; let scoped = scope named { 1 }; let repeated = loop { break 1; }; let waited = try await task(); let action = receive(channel); }\n";
     let built = parse_test_statement_block(&document(source)).unwrap();
     let kinds = built
         .index()
@@ -1263,12 +1263,28 @@ fn let_statement_variants_share_pattern_and_initializer_authority() {
         SyntaxKind::LetStatement,
         SyntaxKind::LoopExpression,
         SyntaxKind::AwaitExpression,
-        SyntaxKind::LetActionReceiveStatement,
         SyntaxKind::VariantPattern,
         SyntaxKind::Block,
     ] {
         assert!(kinds.contains(&expected), "missing {expected:?}: {kinds:?}");
     }
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn receive_binding_uses_ordinary_call_and_await_grammar() {
+    let source = "{ let pending = receive(channel); let value = await receive(channel); let nested = receive(next(channel)); }\n";
+    let built = parse_test_statement_block(&document(source)).unwrap();
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(green_kind_count(built.green(), SyntaxKind::LetStatement), 3);
+    assert_eq!(
+        green_kind_count(built.green(), SyntaxKind::CallExpression),
+        4
+    );
+    assert_eq!(
+        green_kind_count(built.green(), SyntaxKind::AwaitExpression),
+        1
+    );
     assert_eq!(built.green().to_string(), source);
 }
 

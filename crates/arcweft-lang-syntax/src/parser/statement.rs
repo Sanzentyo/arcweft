@@ -769,8 +769,7 @@ fn emit_statement_kind(
         SyntaxKind::LetStatement
         | SyntaxKind::LetElseStatement
         | SyntaxKind::LetChoiceStatement
-        | SyntaxKind::LetScopeStatement
-        | SyntaxKind::LetActionReceiveStatement => {
+        | SyntaxKind::LetScopeStatement => {
             emit_let_children(parser, child_end, kind, item_kind);
         }
         SyntaxKind::AssertionStatement => {
@@ -1644,7 +1643,6 @@ fn classify_let_statement(parser: &DocumentParser<'_, '_>, end: usize) -> Syntax
     }
     match initializer {
         Some("choice") => SyntaxKind::LetChoiceStatement,
-        Some("receive") => SyntaxKind::LetActionReceiveStatement,
         _ => SyntaxKind::LetStatement,
     }
 }

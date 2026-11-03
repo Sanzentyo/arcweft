@@ -604,6 +604,23 @@ pub enum BuiltinCallableId {
     StdFloat(StdFloatCallableId),
     Capability(CapabilityCallableId),
     Reduction(ReductionConstructorKind),
+    Action(ActionCallableId),
+}
+
+/// Closed language operations on an original typed Action declaration.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ActionCallableId {
+    Emit,
+    Receive,
+}
+
+impl ActionCallableId {
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Emit => 0,
+            Self::Receive => 1,
+        }
+    }
 }
 
 impl BuiltinCallableId {
@@ -618,6 +635,8 @@ impl BuiltinCallableId {
             (&["fail"][..], Self::Fail),
             (&["bail"][..], Self::Bail),
             (&["ensure"][..], Self::Ensure),
+            (&["emit"][..], Self::Action(ActionCallableId::Emit)),
+            (&["receive"][..], Self::Action(ActionCallableId::Receive)),
             (&["rgb"][..], Self::Rgb),
             (&["sin"][..], Self::Sin),
             (&["cos"][..], Self::Cos),

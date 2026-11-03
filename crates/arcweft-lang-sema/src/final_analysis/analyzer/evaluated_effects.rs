@@ -1790,6 +1790,28 @@ impl Analyzer<'_, '_, '_> {
                     .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
                 fields: std::mem::take(&mut operands.fields).into_boxed_slice(),
             },
+            CallableEvaluatedEffect::EmitAction => {
+                let payload = operands
+                    .value
+                    .take()
+                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                if !matches!(payload.ty(), TypeKind::ProjectNominal(nominal)
+                if nominal.arguments().is_empty() && matches!(
+                    nominal.declaration().kind(),
+                    arcweft_lang_hir::symbol::nominal::ProjectNominalDeclarationKind::Action { .. }
+                )) {
+                    let owner = payload.source().owner();
+                    return Err(FinalSemanticAnalysisError::ActionPayloadRequired {
+                        owner,
+                        source_span: super::statements::expression_span(
+                            self.module(owner.module())?,
+                            owner,
+                        )?,
+                        actual: Box::new(payload.ty().clone()),
+                    });
+                }
+                CheckedEvaluatedEffectOperation::EmitAction { payload }
+            }
             CallableEvaluatedEffect::Panic => CheckedEvaluatedEffectOperation::Panic {
                 message: operands
                     .message

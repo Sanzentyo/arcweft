@@ -186,7 +186,6 @@ define_syntax_kinds! {
     LetElseStatement,
     LetChoiceStatement,
     LetScopeStatement,
-    LetActionReceiveStatement,
     ReturnStatement,
     OutStatement,
     GotoStatement,
@@ -613,7 +612,6 @@ impl SyntaxKind {
             | Self::LetElseStatement
             | Self::LetChoiceStatement
             | Self::LetScopeStatement
-            | Self::LetActionReceiveStatement
             | Self::ReturnStatement
             | Self::OutStatement
             | Self::GotoStatement
@@ -820,7 +818,6 @@ impl SyntaxKind {
             | Self::LetElseStatement
             | Self::LetChoiceStatement
             | Self::LetScopeStatement
-            | Self::LetActionReceiveStatement
             | Self::ReturnStatement
             | Self::OutStatement
             | Self::GotoStatement
@@ -1182,7 +1179,6 @@ impl SyntaxKind {
                 | Self::LetElseStatement
                 | Self::LetChoiceStatement
                 | Self::LetScopeStatement
-                | Self::LetActionReceiveStatement
                 | Self::ReturnStatement
                 | Self::OutStatement
                 | Self::GotoStatement

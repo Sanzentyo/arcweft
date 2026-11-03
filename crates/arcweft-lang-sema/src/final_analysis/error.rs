@@ -487,6 +487,12 @@ pub enum FinalSemanticAnalysisError {
         expected: Box<TypeKind>,
         actual: Box<TypeKind>,
     },
+    #[error("Action emission {owner:?} requires an original Action payload, found {actual:?}")]
+    ActionPayloadRequired {
+        owner: ExprId,
+        source_span: SourceSpan,
+        actual: Box<TypeKind>,
+    },
     #[error("postfix-bracket expression {owner:?} has more than one admissible interpretation")]
     AmbiguousPostfixBracket { owner: ExprId },
     #[error("postfix-bracket expression {owner:?} has no admissible interpretation")]
@@ -742,6 +748,7 @@ impl FinalSemanticAnalysisError {
             Self::RecursiveCallableContract { .. } => "sema.callable.recursive_contract",
             Self::BreakValueRequiresLoop { .. } => "sema.break.value_target",
             Self::StatementOperandTypeMismatch { .. } => "sema.statement.operand_type",
+            Self::ActionPayloadRequired { .. } => "sema.action.payload_type",
             Self::UnknownCallTarget { .. } => "sema.call.unknown_target",
             Self::UnknownValuePath { .. } => "sema.value.unknown_symbol",
             Self::UnknownValueMember { .. } => "sema.value.unknown_member",
@@ -769,6 +776,14 @@ impl FinalSemanticAnalysisError {
     /// Source-backed semantic rejection retained by the final analyzer.
     pub fn source_diagnostic(&self) -> Option<Diagnostic> {
         match self {
+            Self::ActionPayloadRequired { source_span, .. } => Some(
+                Diagnostic::new(DiagnosticSeverity::Error, self.to_string())
+                    .with_code(self.diagnostic_code())
+                    .with_label(DiagnosticLabel::primary(
+                        source_span.clone(),
+                        Some("expected a payload constructed by an Action declaration".to_owned()),
+                    )),
+            ),
             Self::UnknownValueMember { member_source, .. } => Some(
                 Diagnostic::new(DiagnosticSeverity::Error, self.to_string())
                     .with_code(self.diagnostic_code())

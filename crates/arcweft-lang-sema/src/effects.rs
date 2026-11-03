@@ -21,6 +21,8 @@ pub(crate) fn engine_provided_effects() -> EffectSet {
     effects.insert(EffectId::signal_write());
     effects.insert(EffectId::metric_write());
     effects.insert(EffectId::event_emit());
+    effects.insert(EffectId::action_emit());
+    effects.insert(EffectId::action_receive());
     effects
 }
 

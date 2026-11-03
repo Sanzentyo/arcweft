@@ -447,6 +447,7 @@ impl CanonicalEncoder {
             CallableEvaluatedEffect::SignalWrite => self.tag(1),
             CallableEvaluatedEffect::MetricWrite => self.tag(2),
             CallableEvaluatedEffect::EmitEvent => self.tag(3),
+            CallableEvaluatedEffect::EmitAction => self.tag(9),
             CallableEvaluatedEffect::Panic => self.tag(4),
             CallableEvaluatedEffect::Fail => self.tag(5),
             CallableEvaluatedEffect::Bail => self.tag(6),

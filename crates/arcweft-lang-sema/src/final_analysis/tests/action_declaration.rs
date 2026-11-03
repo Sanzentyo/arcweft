@@ -3,6 +3,98 @@ use crate::semantic_coordinate::{CheckedSemanticPathStep, SemanticCoordinateInde
 use arcweft_lang_hir::project::HirDeclarationParameterRootRole;
 
 #[test]
+fn action_emit_owns_the_original_nominal_payload_and_exact_effect() {
+    let world = fixture(
+        "pub action @action:.feedback.submit submit(value: i64)\nflow main() -> i64 { let channel = submit; emit(channel(value = 42i64)); return 0 }\n",
+        None,
+    );
+    let report = analyze(&world).expect("typed Action emission is an ordinary checked call");
+    let effect = report
+        .expressions()
+        .filter_map(|(_, expression)| expression.evaluated_effect())
+        .find(|effect| {
+            matches!(
+                effect.operation(),
+                CheckedEvaluatedEffectOperation::EmitAction { .. }
+            )
+        })
+        .expect("the expression retains its checked emission");
+    let CheckedEvaluatedEffectOperation::EmitAction { payload } = effect.operation() else {
+        unreachable!()
+    };
+    let TypeKind::ProjectNominal(nominal) = payload.ty() else {
+        panic!("Action emission retains its exact nominal payload");
+    };
+    assert_eq!(
+        nominal
+            .declaration_identity()
+            .action()
+            .map(arcweft_id::PublicId::as_str),
+        Some("action.feedback.submit"),
+    );
+    assert_eq!(
+        effect.disposition(),
+        crate::callable::CallableEvaluatedEffect::EmitAction
+    );
+    assert_eq!(effect.result(), &TypeKind::Unit);
+}
+
+#[test]
+fn action_emit_rejects_a_non_action_value_at_its_exact_operand_source() {
+    let source = "flow main() -> i64 { emit(42i64); return 0 }\n";
+    let world = fixture(source, None);
+    let error = analyze(&world).expect_err("ordinary values cannot impersonate Action payloads");
+    let FinalSemanticAnalysisError::ActionPayloadRequired {
+        actual,
+        source_span,
+        ..
+    } = &error
+    else {
+        panic!("emission retains a source-backed payload rejection: {error:?}");
+    };
+    assert_eq!(actual.as_ref(), &TypeKind::I64);
+    let start = source.find("42i64").unwrap();
+    assert_eq!(
+        source_span.range(),
+        arcweft_source::SourceRange::new(start, start + 5)
+    );
+    assert_eq!(error.diagnostic_code(), "sema.action.payload_type");
+    assert!(error.source_diagnostic().is_some());
+}
+
+#[test]
+fn action_receive_returns_the_original_payload_in_a_typed_need() {
+    let world = fixture(
+        "pub action @action:.feedback.submit submit(value: i64)\nfn next() -> Need<submit> { receive(submit) }\nflow main() -> i64 { let pending = receive(submit); return 0 }\n",
+        None,
+    );
+    let report =
+        analyze(&world).expect("receive binds its payload through the ordinary call schema");
+    let payloads = report
+        .expressions()
+        .filter_map(|(_, expression)| {
+            let Some(TypeKind::Need(payload)) = expression.value_type() else {
+                return None;
+            };
+            let TypeKind::ProjectNominal(nominal) = payload.as_ref() else {
+                return None;
+            };
+            Some(nominal)
+        })
+        .collect::<Vec<_>>();
+    assert!(!payloads.is_empty());
+    for payload in payloads {
+        assert_eq!(
+            payload
+                .declaration_identity()
+                .action()
+                .map(arcweft_id::PublicId::as_str),
+            Some("action.feedback.submit"),
+        );
+    }
+}
+
+#[test]
 fn qualified_action_shadowing_reports_the_exact_unknown_member() {
     let source = "fn invalid(value: i64) -> Unit { let ignored = value.submit; () }\n";
     let world = fixture(source, None);

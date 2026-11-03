@@ -156,6 +156,9 @@ pub enum CheckedEvaluatedEffectOperation {
         event: CheckedEvaluatedEffectOperand,
         fields: Box<[CheckedEffectField]>,
     },
+    EmitAction {
+        payload: CheckedEvaluatedEffectOperand,
+    },
     Panic {
         message: CheckedEvaluatedEffectOperand,
     },
@@ -245,6 +248,9 @@ impl CheckedEvaluatedEffect {
                 CallableEvaluatedEffect::MetricWrite
             }
             CheckedEvaluatedEffectOperation::EmitEvent { .. } => CallableEvaluatedEffect::EmitEvent,
+            CheckedEvaluatedEffectOperation::EmitAction { .. } => {
+                CallableEvaluatedEffect::EmitAction
+            }
             CheckedEvaluatedEffectOperation::Panic { .. } => CallableEvaluatedEffect::Panic,
             CheckedEvaluatedEffectOperation::Fail { .. } => CallableEvaluatedEffect::Fail,
             CheckedEvaluatedEffectOperation::Bail { .. } => CallableEvaluatedEffect::Bail,

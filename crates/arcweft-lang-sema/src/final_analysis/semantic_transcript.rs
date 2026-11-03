@@ -1682,6 +1682,10 @@ fn write_effect_operation(
             write_effect_operand(hasher, event)?;
             write_effect_fields(hasher, fields)?;
         }
+        CheckedEvaluatedEffectOperation::EmitAction { payload } => {
+            transcript_update!(hasher, &[9]);
+            write_effect_operand(hasher, payload)?;
+        }
         CheckedEvaluatedEffectOperation::Panic { message } => {
             transcript_update!(hasher, &[4]);
             write_effect_operand(hasher, message)?;

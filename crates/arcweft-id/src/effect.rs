@@ -50,6 +50,10 @@ impl EffectId {
     pub const METRIC_WRITE_LABEL: &'static str = "metric.write";
     /// Canonical engine-owned event observation effect label.
     pub const EVENT_EMIT_LABEL: &'static str = "event.emit";
+    /// Canonical engine-owned typed Action delivery capability.
+    pub const ACTION_EMIT_LABEL: &'static str = "action.emit";
+    /// Canonical engine-owned typed Action observation capability.
+    pub const ACTION_RECEIVE_LABEL: &'static str = "action.receive";
     /// Canonical operation for replayable lifetime-registry updates.
     pub const STATE_WRITE_LABEL: &'static str = "state.write";
 
@@ -105,6 +109,16 @@ impl EffectId {
     #[must_use]
     pub fn event_emit() -> Self {
         Self(Self::EVENT_EMIT_LABEL.to_owned())
+    }
+
+    #[must_use]
+    pub fn action_emit() -> Self {
+        Self(Self::ACTION_EMIT_LABEL.to_owned())
+    }
+
+    #[must_use]
+    pub fn action_receive() -> Self {
+        Self(Self::ACTION_RECEIVE_LABEL.to_owned())
     }
 
     pub fn parse(value: impl AsRef<str>) -> Result<Self, EffectIdError> {

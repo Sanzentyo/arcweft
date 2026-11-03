@@ -33,9 +33,9 @@ use super::{
 };
 use crate::callable::PromotionCallableId;
 use crate::callable::{
-    AgentIntrinsicSignatureId, BuiltinCallableId, CallableName, CallableParameterIndex,
-    CallableSchemaError, CapabilityCallableId, CapacityMethodId, CollectionMethodId,
-    DialogueCallableId, DialogueCallableResultContext, DialogueCalleeIdentity,
+    ActionCallableId, AgentIntrinsicSignatureId, BuiltinCallableId, CallableName,
+    CallableParameterIndex, CallableSchemaError, CapabilityCallableId, CapacityMethodId,
+    CollectionMethodId, DialogueCallableId, DialogueCallableResultContext, DialogueCalleeIdentity,
     DialogueSchemaContext, DomainMethodId, FloatWidth, FxSourceConstructor, IntegerMethodId,
     LineContextMethodId, LineScheduleCallableId, MathCallableId, OptionConstructorKind,
     PRODUCTION_CALLABLE_LIMITS, PresentationArgumentRole, PresentationArgumentValuePolicy,
@@ -627,6 +627,7 @@ impl BuiltinCallableId {
             .with_evaluated_effect(CallableEvaluatedEffect::EmitEvent)
             .expect("fixed event schema was sealed before attaching its evaluated effect"),
             Self::Reduction(_) => return None,
+            Self::Action(operation) => return Some(operation.signature_schema()),
         })
     }
 
@@ -675,6 +676,47 @@ impl BuiltinCallableId {
             ));
         }
         self.closed_signature_schema()
+    }
+}
+
+impl ActionCallableId {
+    pub(crate) fn signature_schema(self) -> CallableSignatureSchema {
+        let owner = match self {
+            Self::Emit => LanguageIntrinsicGenericOwner::ActionEmit,
+            Self::Receive => LanguageIntrinsicGenericOwner::ActionReceive,
+        };
+        let payload = generic(GenericParameterOwnerId::LanguageIntrinsic(owner), 0);
+        let (parameter, result, effects) = match self {
+            Self::Emit => (
+                required(0, "payload", payload),
+                TypeKind::Unit,
+                &[EffectId::ACTION_EMIT_LABEL][..],
+            ),
+            Self::Receive => (
+                required(
+                    0,
+                    "channel",
+                    TypeKind::entity_ref_with_value(EntityKind::Action, payload.clone()),
+                ),
+                TypeKind::Need(Box::new(payload)),
+                &[EffectId::ACTION_RECEIVE_LABEL][..],
+            ),
+        };
+        let schema = schema_with_issuer(
+            vec![parameter],
+            result,
+            effects,
+            closed(),
+            CallableValidator::Builtin(BuiltinCallableId::Action(self)),
+            CallableGenericParameterIssuer::language_intrinsic(owner, 1, 0)
+                .expect("Action operations have one payload type parameter"),
+        );
+        match self {
+            Self::Emit => schema
+                .with_evaluated_effect(CallableEvaluatedEffect::EmitAction)
+                .expect("the Action emission schema has its exact delivery effect"),
+            Self::Receive => schema,
+        }
     }
 }
 
