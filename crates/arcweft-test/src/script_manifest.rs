@@ -8,8 +8,8 @@ use arcweft_lang_hir::{
     identity::{ExprId, ItemId, StmtId},
     item::{HirBenchItem, HirItemKind, HirTestItem, HirTestKind},
     leaf::{
-        HirCharacterLiteral, HirFloatLiteral, HirIdRef, HirIdRefValue, HirIntegerLiteral,
-        HirLiteral, HirPath, HirPathRoot, HirPathSegment, HirStringLiteral,
+        HirCharacterLiteral, HirFloatLiteral, HirIdRef, HirIntegerLiteral, HirLiteral, HirPath,
+        HirPathRoot, HirPathSegment, HirStringLiteral,
     },
     module::HirModule,
     project::HirProject,
@@ -95,7 +95,10 @@ pub enum ScriptCommand {
 pub enum ScriptExpectation {
     NoAssertionFailures,
     Signal {
+        /// Canonical runtime target identity, without the source `@` sigil.
         target: String,
+        /// Runtime value label; entity references retain their canonical body
+        /// while string literals retain their authored contents.
         expected: String,
     },
     Log {
@@ -279,7 +282,7 @@ fn thread_item_statement(item: &HirThreadFlowItem) -> Option<StmtId> {
 
 fn script_command(module: &HirModule, statement: &HirStmtKind) -> ScriptCommand {
     match statement {
-        HirStmtKind::Goto { target } => goto_target(module, *target).map_or_else(
+        HirStmtKind::Goto { target } => entity_reference_body(module, *target).map_or_else(
             || ScriptCommand::Other {
                 name: "goto".to_owned(),
             },
@@ -465,7 +468,9 @@ fn pure_helper(module: &HirModule, call: &HirCallInvocation) -> Option<String> {
 
 fn manifest_value_label(module: &HirModule, owner: ExprId) -> Option<String> {
     match module.resolve_expr(owner).ok()?.kind() {
-        HirExprKind::EntityReference(reference) => id_ref_value_label(reference),
+        // Runtime observations label a reference by its canonical identity,
+        // rather than the source token spelling that includes `@`.
+        HirExprKind::EntityReference(_) => entity_reference_body(module, owner),
         HirExprKind::Path(path) => Some(path_label(path.as_resolved()?)),
         HirExprKind::ShortVariant(name) => Some(format!(".{}", name.as_resolved()?.as_str())),
         HirExprKind::Select(_) => expression_label(module, owner),
@@ -534,30 +539,13 @@ fn is_selected_call(module: &HirModule, call: &HirCallInvocation, target: &str) 
     }
 }
 
-fn goto_target(module: &HirModule, owner: ExprId) -> Option<String> {
+fn entity_reference_body(module: &HirModule, owner: ExprId) -> Option<String> {
     let HirExprKind::EntityReference(reference) = module.resolve_expr(owner).ok()?.kind() else {
         return None;
     };
     match reference.as_resolved()? {
         HirIdRef::Absolute(reference) => Some(reference.as_str().to_owned()),
         HirIdRef::Relative(_) | HirIdRef::FamilyRelative(_) => None,
-    }
-}
-
-fn id_ref_value_label(reference: &HirIdRefValue) -> Option<String> {
-    match reference.as_resolved()? {
-        HirIdRef::Absolute(reference) => Some(format!("@{}", reference.as_str())),
-        HirIdRef::Relative(relative) => Some(format!(
-            "@{}{}",
-            ".".repeat(relative.parent_depth().saturating_add(1)),
-            relative.suffix().as_str()
-        )),
-        HirIdRef::FamilyRelative(relative) => Some(format!(
-            "@{}:{}{}",
-            relative.family().as_str(),
-            ".".repeat(relative.relative().parent_depth().saturating_add(1)),
-            relative.relative().suffix().as_str()
-        )),
     }
 }
 
@@ -764,6 +752,8 @@ test @test.opening scenario {
     goto @flow.opening
     expect.signal(@signal.current_flow, true)
     expect.no_assertion_failures()
+    expect.signal(@signal.current_flow, @flow.opening)
+    expect.signal(@signal.literal, "@flow.opening")
 }
 
 bench @bench.opening {
@@ -844,7 +834,7 @@ bench @bench.opening {
             manifest.tests[0].steps[1].command,
             ScriptCommand::Expectation {
                 expectation: ScriptExpectation::Signal {
-                    target: "@signal.current_flow".to_owned(),
+                    target: "signal.current_flow".to_owned(),
                     expected: "true".to_owned(),
                 }
             }
@@ -853,6 +843,24 @@ bench @bench.opening {
             manifest.tests[0].steps[2].command,
             ScriptCommand::Expectation {
                 expectation: ScriptExpectation::NoAssertionFailures
+            }
+        );
+        assert_eq!(
+            manifest.tests[0].steps[3].command,
+            ScriptCommand::Expectation {
+                expectation: ScriptExpectation::Signal {
+                    target: "signal.current_flow".to_owned(),
+                    expected: "flow.opening".to_owned(),
+                }
+            }
+        );
+        assert_eq!(
+            manifest.tests[0].steps[4].command,
+            ScriptCommand::Expectation {
+                expectation: ScriptExpectation::Signal {
+                    target: "signal.literal".to_owned(),
+                    expected: "@flow.opening".to_owned(),
+                }
             }
         );
         assert_eq!(manifest.benches[0].sections[1].name, "measure");

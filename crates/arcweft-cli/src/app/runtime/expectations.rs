@@ -149,7 +149,7 @@ pub(in crate::app) fn evaluate_runtime_expectation(
                 Ok(())
             } else {
                 Err(format!(
-                    "expected signal {target} == {expected}, found {}",
+                    "expected signal @{target} == {expected}, found {}",
                     actual.unwrap_or("<missing>")
                 ))
             }
