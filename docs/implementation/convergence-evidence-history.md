@@ -14312,3 +14312,23 @@ Source bb3d3de5850222a1759ef6730db33b156500700d（親c7e4e24a48dc29c10e8783b554d
 訂正理由: 旧現状行の修飾付き宣言・call構築の未受入という除外は、今回の追加11件と全consumer実測によって置き換えた。直接・別名・capture・特殊化関数内の構築はNative／canonical decoded AWBCで42に到達した。元Action・PublicId・nominal record、共通binderとfield layoutを保持し、namespace用の実行値・暗黙leaf alias・偽のAction関数bodyは作らない。registryの単一componentを広げた初案は既存2 testに拒否され、DeclarationNameを保ってDeclarationPathを別の集約として導入した。旧Bad.Nameは採用文法で有効になったため、回復fixtureをBad..Nameへ移し同じ回復assertionを保持した。lexerのdouble-dot、scopeの空implicit root、callee分類、global／specialized runtime値投影、診断source、test側のAPI／usize誤りの初回失敗は原本へ残す。
 
 emit／receive・元program channel admission／保存復元はこの構築の受入へ含めない。現在のScrollは構文拒否を越えた呼出し解決失敗、RAGはunknown text_styleである。既受入Generic Match行は変更せず、全体goalやCLIの未達を完了機能の未実装へ戻さない。現状は一つの一覧だけを更新し、以前の実測・full SHA・失敗は履歴に保持する。[全実測・訂正理由・159件のrawとhash](acceptance-evidence/task-action-qualified-path.json)。
+
+## Entity参照の型metadata・元Source証明 — 2026-11-03
+
+公開Source: f54050124603e4ace5fa59c87a17f79f9d07f3e5 → 2dbd62719e44c02d794aef4ee484f7715c3150dc → 2c1523bdc2d2159c77b11bfd28ecfa7b988d618a。main、既存12 tracked／6 actual untracked WIP保持。各通常pushのparent／tree／patch／blob照合は原本へ記録した。実入力は4083 pathであり、公開SHAだけから既存CLI WIPの内容を推定しない。
+
+最初のSema回帰2件は2 FAIL。無条件EntityRef投影が異familyと別Action宣言を受理することを再現した。Coreの型ownerへfamily・元宣言・Look owner・payload型edgeを統合し、全producer／consumerをversion 1の最終shapeへ移行した。元Sema証明とのmetadata一致もvalue／pattern／constructorで検査する。inert参照metadataはchannelの実行権限ではない。
+
+owner1／2／3のcatalogは各compile101・runtime未実行。owner4は4623実行／4620 PASS／3 FAILで、旧static AWBC fixtureのdecode失敗だった。現行の元program builderによる明示generatorを1件実行して2 fixtureを再生成し、通常の決定的fixture比較も追加した。generatorのignoredは自動生成時の書込みを避ける指定であり、受入caseの除外ではない。owner5は3908実行／3907 PASS／1 FAIL／generator 1 ignoredで、正例fixtureのCharacterにAsset型を流用していたため修復し、owner6 RuntimePlan library134／134 PASS。Dialogue初回69件中1 FAILは共通admissionで既に拒否された値に古い後段RoleTypeを期待したためで、重複guardを削除し厳密なProgramType拒否へ移行後69／69 PASS。Driver表示filter6／6 PASS。quality1／2は古いunit variant残存でcheck101、後続Clippy／structure未実行。修復後quality3は全98 check／Clippy／structure終了0（警告残存）。
+
+Source 2dbd62719e44c02d794aef4ee484f7715c3150dcの通常逆依存run: Summary [ 824.576s] 9187 tests run: 9164 passed (11 slow), 23 failed, 25 skipped。71 packageの解決済みclosureからCLIを除く70を選択し、66で実行、4はcompileのみ。新7件・Generic Match151・View40・修飾Action11はすべてPASS。23 FAILはNative共通fixtureがStyle型IDをCharacter factory receiverへ流用していた。1 pathのfixture修復後、Native全owner再検証: Summary [   1.360s] 63 tests run: 63 passed, 0 skipped。元23失敗IDがすべて再選択されPASSしたことをcatalogと終端で照合した。初回成功9164件は関連入力の不変を確認して再利用し、修復後の単一9187件runとは表現しない。
+
+Native初回の63 PASSは古いwrapper入力templateにより4031 pathだけを監視していたため、その結果を隠さず保持し、完全な4083 pathを渡して同じ63件を再実行した。後者が今回のNative受入証拠であり、二回の件数を合算しない。
+
+CLI: Summary [ 481.524s] 693 tests run: 660 passed (22 slow), 33 failed, 23 skipped。旧Source6daa0f58c1088c844af85fb7c5c5103d5d8e92b1の693件／660 PASS／33 FAILとのID差分と現在診断を原本へ保持する。ID一致だけで原因同一とはしない。doctest9 crate、Web wasm check、Native owner Clippyも終了0。ユーザーの追加指定による全体cargo cleanは201827 files／227.5 GiBを削除し終了0、4083入力hash／Git状態差分0、ログはtarget外に保持した。
+
+訂正理由: 現状一覧の旧横断件数を今回の実測へ置換し、初回失敗と後続再検証を分離した。旧結果・full SHA・失敗原本は削除せず履歴へ保持する。Generic Matchの既受入を維持し、全体goalやCLIの未達から未完了へ戻さない。Action emit／receive、元program実行channel admission、停止保存はこのinert型cutでは未達の別境界である。
+
+[実測・入力・生成物・全失敗・凝集性レビュー・raw](acceptance-evidence/task-entity-reference-type-admission.json)。現状はcurrent-status.md一か所へ集約する。
+
+再利用件数の監査補足: 初回9164 PASSにはNativeの40 PASSを含む。この40件もfixture修復後の全Native63件で再実行されているため、関連入力不変による再利用はNative以外の9124 PASSである。旧／新Native63件のexact ID差分0をcatalogで照合した。二つの入力で9187の異なるIDを確認した結果であり、9164と63の合算や単一runのPASSとはしない。上記の初回実測9164 PASSは履歴として保持する。
