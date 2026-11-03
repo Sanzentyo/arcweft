@@ -14377,3 +14377,13 @@ Source 7416cd5dfb2d63e2c6c7c2fe8fff402a2c25c608、parent 62af78be9649fb33e44a637
 直接送信とeffectful function内の送信はNative／canonical decoded Productが実戻り値42となり、毎stepのJSON保存／cold restoreでも元Actionのpayload42をちょうど一度保持する。session authorityなしのregister／cursor保持と、元宣言差替えprogramへの置換拒否／session保持も確認した。receive・待機／キャンセルと53 package Core逆依存・全workspace受入は未完。保持基盤Source23dfの「2242 PASS＋fixture3再実行」という旧現状説明は、今回の全2245件新規PASSへ置き換えて現状一覧一か所へ集約した。旧実測・SHA・失敗は前節と原本へ保持し、完了項目を戻していない。既存12 tracked／6 untracked WIPもhash照合して保持した。
 
 raw 87 entries／3725174 bytes、SHA256 a50407d2c3efda8542de736b0f15d39ecbb85db676a7d967b8b2f0436501b48c、全entry hash差分0。[入力・失敗・修復・構造判断・最終実測・公開照合](acceptance-evidence/task-action-channel-emit.json)。
+
+## 2026-11-03 Action受信のowner実行・独立Program本体の権限
+
+Source 163d1c338bff84981158c1de0024f2b6a03686e2、中間Source 50c31c487e22f4f55446b23a20c1832029f526c4。中間commitは既受入送信4件PASS／受信5件FAILの状態を明記して公開し、その後の失敗・修復と原本を保持した。最終owner runはCore2245／2245、Compiler action_channel12／12を新規PASS。全98 check／Clippy・構造gateは終了0。全consumer runtime／doctest／wasmは過去のSource7104の結果と区別する。
+
+宣言placement、子実行中の実際のmain所有者、独立Program本体のeffect、古いfixture bytesと起動権限を修復した。親のlexical型束縛と子の実行権限を分け、元Source templateへ厳密照合する。空待機・thread再開・FIFO・別channel・JSON cold restore・改変拒否・待機fiber cancellationを確認した。Generic MatchとAction宣言identityの既受入は維持する。
+
+現状のAction行は「既受入の宣言」と「送受信owner実行」を分け、長い旧checkpoint列挙を原本へ移した。訂正理由は、全体goalと独立した受入境界を混同せず、最新の検証範囲を一か所で示すため。実測件数・失敗・full SHAは削除せず[原本](acceptance-evidence/task-action-channel-receive.json)へ保持する。
+
+既存履歴の先頭1796168 bytes（SHA256 027319617f0e557eb1ace25b165cd963b3f146c7d081f515b8ad114c5f4aae7f）をbyte一致で保持し、この段落だけを追記する。既存12 tracked／6 actual untracked WIPも保持。
