@@ -14397,3 +14397,12 @@ CLIは693件中660 PASS／33 FAIL、旧Source7104との失敗ID比較は維持33
 現状表はAction ownerの全consumer未検証という一時状態と古い横断件数を今回の実測へ更新し、過去の結果を削除しない。CLI統合と全体goalは未完了であり、それだけでAction・Generic Matchなどの個別受入を未完了へ戻さない。[実graph・全case・CLI差分・raw](acceptance-evidence/task-action-channel-receive-consumers.json)。既存履歴の先頭1797755 bytes（SHA256 79d80561c4a8ebaa0cda8126896743d21361fc5848eaf5fc870466c429ee1214）をbyte一致で保持してこの段落だけを追記。既存12 tracked／6 actual untracked WIPを保持。
 
 現状一覧では、CLI統合状態を下表の全target照合へ集約し、独立した受入境界を持たない重複CLI行を削除した。旧9194件と今回7076件は起点ownerと選択packageが異なるため、過去の件数・Sourceを履歴へ保持した上で、今回のgraph・新規3398件・再利用3678件を明示した。Generic Matchは今回も151件すべて新規PASSし、受入を維持する。
+
+
+## 2026-11-03 direct frameのyield拒否・CLI診断とfixture入力の訂正
+
+Source実装7401429aed2330af3a1cedbe7f276878942b20bd、CLI診断aa96871cce4c88476230f3f90267e5d4a1d14b70、fixture公開4e39fbd5427fd7ec3e8c66bc48613832e84e4fec。Flow／Predicate／Proofのown eager bodyを既存の型付きExecutionBodyRoleFoldで調べ、yieldを元Stmt／Item／Whole SourceSpanを持つsema.yield.contextで拒否する。独立したseq／stream等のbodyへ侵入しない。初回focused 3 PASS／1 FAILはPredicate／Proofのtest文法を合法な式blockへ訂正して4／4 PASS。CLIの実fixture016もtype-check段階と正確な記述位置を検証した。013／015／017の旧診断期待だけを現行契約へ同期し、7 fixtureは保持する。aggregateは019の意図したunsafe auditより前の型拒否へ進んだため、未解消の失敗として記録する。
+
+all-target／all-feature／lockedの全Sema逆依存22 package・4090入力を選択し、初回4094件は4058 PASS／36 FAIL／24 ignoredだった。通常側の3失敗はFlow内のyieldを前提にしたfixture入力であり、Generic Matchの未完了を示すものではない。Yield行だけをStream戻り値fnのgenerator bodyへ移し、exact payload／operand依存digest／P24 producer rowのassertionを保持した。全Sema1395／1395件を新規PASS。残る4088入力と105 consumer EXEのhash一致を確認し、1395新規＋2699再利用の4094 distinct件として照合した。通常3400／3400 PASS、CLI694件中661 PASS／33 FAIL。単一の4094全件新規成功とはしない。Generic Match151件は144新規＋7再利用で151／151 PASS、受入・公開済みを維持する。CLI失敗IDはSource9a比で維持33／追加0／解消0、選択caseは新規回帰1件追加・削除0。ID一致から原因一致を推定しない。
+
+Source 4e39fbd5427fd7ec3e8c66bc48613832e84e4fecの全98 workspace check／Clippyと構造gate、変更7 Rust pathのfmt checkは終了0。警告は残る。以前のSource9aの88 doctest／wasm成功は元の入力の実測として保持し、今回の新規実行へ数えない。明示依頼に従う全体cargo cleanは検証終了後に実行して終了0、対象D:\git\arcweft\target、Source4090／Git statusの前後差分0、空き容量163448033280→244656439296 bytes。EXE再利用のhash証明はcleanより前に完了している。[初回失敗・修復・全case・完全SHA・clean原本](acceptance-evidence/task-cli-yield-context.json)。現状は一つの一覧へ反映し、過去結果や別境界の個別受入を消さない。既存履歴の先頭1800467 bytes（SHA256 8c3fae98551fc694df3be0e2b81054b3d591b94bb01b12521ed5e6d59a0798ef）を保持し、この記録だけを追記する。既存12 tracked／6 actual untracked WIPを保持。
