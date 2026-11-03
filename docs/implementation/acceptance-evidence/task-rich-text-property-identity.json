@@ -1,0 +1,1971 @@
+{
+  "version": 1,
+  "recordedAt": "2026-11-03T23:25:54.1078431Z",
+  "inspectedHead": "4736756c99a102d70ec3090541b6e99024a15c79",
+  "source": {
+    "version": 1,
+    "commit": "4736756c99a102d70ec3090541b6e99024a15c79",
+    "parent": "8a8df077d8755ab44eee35888b607fbfc20c4a59",
+    "tree": "49b31c824f110632e3b65e2fd555e5bd03b01ed3",
+    "remote": "4736756c99a102d70ec3090541b6e99024a15c79",
+    "paths": [
+      {
+        "path": "crates/arcweft-dialogue/src/character_dialogue/schema/role_payload.rs",
+        "blob": "7477c6f3783c65836d573871b45a0c305518a99d"
+      },
+      {
+        "path": "crates/arcweft-presentation/src/rich_text.rs",
+        "blob": "3adafc2569672268799900810466b2edbdf636eb"
+      },
+      {
+        "path": "crates/arcweft-presentation/src/rich_text/content_catalog.rs",
+        "blob": "e1b24912eda9d628f2c7136466dfa9c6e6037e0f"
+      },
+      {
+        "path": "crates/arcweft-presentation/src/rich_text/content_catalog/reusable_style.rs",
+        "blob": "c184018b808f7289e3b8a0c39d9e7b6bfc3064d0"
+      },
+      {
+        "path": "crates/arcweft-runtime-driver/src/display/tests.rs",
+        "blob": "8c553fe2f450dbb0e0e6f7f34df655d12cfd3655"
+      },
+      {
+        "path": "crates/arcweft-text-model/src/character_dialogue_style.rs",
+        "blob": "5065cec47e251fb4a71f4d94db9d3305dc559076"
+      },
+      {
+        "path": "docs/01-language/character-dialogue.md",
+        "blob": "7f6efcabce004bb3b3b2136096447d5af6958e3e"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "271f95feb6d0f8aabcc92dc6a12818415555fcba73b2fbc5520852b3c9d399b8",
+    "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-03T22:51:53.8968003Z"
+  },
+  "state": "Semantic reusable-property storage, merge and projection boundary validated. No whole-engine or source-factory acceptance is claimed.",
+  "workingTree": "Original 12 tracked/6 actual untracked WIP retained; index empty before documentation updates.",
+  "implementation": [
+    "Presentation derives 27 unique semantic settings from canonical content value contracts; conflicts reject instead of selecting a branch.",
+    "Stored descriptors exclude discriminator-only parameters, source names and call defaults. Writing mode and ruby position keep separate allowed variant sets.",
+    "Dialogue codec, complete Core type graph and fingerprint use that semantic projection for live/inert values.",
+    "Text model emits one sparse layout and one combined transform, without grouping by source selectors."
+  ],
+  "validation": {
+    "terminal": {
+      "version": 1,
+      "base": "4736756c99a102d70ec3090541b6e99024a15c79",
+      "run": "semantic-properties-reverse1-20261104.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [1069.035s] 7108 tests run: 7094 passed (70 slow), 14 failed, 48 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 7108,
+      "passed": 7094,
+      "failed": 14,
+      "skipped": 48,
+      "selectedPackages": 47,
+      "matchedPackages": 44,
+      "noMatchingSelectedTests": [
+        "arcweft",
+        "arcweft-bundle-assets",
+        "arcweft-render-web"
+      ],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4091,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_reports_text_presentation_z_index_depth"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_rag_query_indexes_multiple_sources"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "plan_json_lists_runtime_task_graph"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "spec_valid_run_edge_fixture_now_executes"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "unsafe_json_lists_audit_regions"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_records_required_solver_checks"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_reports_missing_promotion_proof"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "spec_rejected_edge_fixtures_fail_with_diagnostics"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_reports_semantic_thread_join_conflict"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_respects_semantic_defer_cancel_discharge"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-11-03T23:24:39.5066259Z"
+    },
+    "graph": {
+      "version": 1,
+      "workspacePackages": 98,
+      "roots": [
+        "arcweft-presentation",
+        "arcweft-dialogue",
+        "arcweft-text-model",
+        "arcweft-runtime-driver"
+      ],
+      "edges": "normal/dev/build; all features; target edges retained",
+      "packages": [
+        "arcweft",
+        "arcweft-adapter-desktop",
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-policy",
+        "arcweft-agent-protocol",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-bundle",
+        "arcweft-bundle-assets",
+        "arcweft-character-view",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-debug-model",
+        "arcweft-debug-sqlite",
+        "arcweft-desktop-native",
+        "arcweft-dialogue",
+        "arcweft-glyphon",
+        "arcweft-lang-hir",
+        "arcweft-lang-sema",
+        "arcweft-lang-syntax",
+        "arcweft-launch",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-text-input",
+        "arcweft-player-web",
+        "arcweft-presentation",
+        "arcweft-project",
+        "arcweft-project-loader",
+        "arcweft-rag",
+        "arcweft-render-text",
+        "arcweft-render-web",
+        "arcweft-render-wgpu",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-text-layout",
+        "arcweft-text-model",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3",
+        "arcweft-view"
+      ]
+    },
+    "comparison": {
+      "version": 1,
+      "base": "4736756c99a102d70ec3090541b6e99024a15c79",
+      "total": 7108,
+      "generic": [
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::body_roots::checked_match_transcript_commits_arm_block_body_meaning",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::body_roots::checked_match_transcript_commits_attached_default_and_ignores_source_revision",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::body_roots::checked_match_transcript_commits_await_pending_body_and_ignores_source_revision",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::body_roots::checked_match_transcript_commits_compact_choice_plan_body_roots",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::body_roots::checked_match_transcript_commits_dialogue_on_body_and_ignores_source_revision",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::body_roots::checked_match_transcript_commits_flow_body_and_ignores_source_revision",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::body_roots::checked_match_transcript_commits_inherent_method_body_and_ignores_source_revision",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::body_roots::checked_match_transcript_commits_nested_statement_body_meaning",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::body_roots::checked_match_transcript_commits_predicate_body_and_ignores_source_revision",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::body_roots::checked_match_transcript_commits_proof_body_and_ignores_source_revision",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::body_roots::checked_match_transcript_commits_trait_impl_method_body_and_ignores_source_revision",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::body_roots::checked_match_transcript_ignores_raw_ids_spans_and_formatting_in_closure_body",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::body_roots::declaration_pattern_transcript_observes_caller_cancellation",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::body_roots::nested_match_semantic_change_reaches_the_outer_match_digest",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::body_roots::nested_non_exhaustive_match_rejects_outer_product_without_poisoning_other_roots",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_corpus::checked_match_expression_corpus_excludes_unrelated_declaration_expressions",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_corpus::checked_match_expression_corpus_tracks_accepted_root_families",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_corpus::checked_match_named_block_commits_checked_namespace_identity",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_corpus::checked_match_ordinary_expression_corpus_retains_families_and_meaning",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_corpus::checked_match_transcript_commits_catalog_asset_identity_without_source_spelling",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_corpus::checked_match_transcript_commits_entry_value_owner",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_corpus::checked_match_transcript_commits_project_item_value_owner",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_corpus::checked_match_transcript_commits_registered_environment_binding_identity",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_corpus::checked_match_transcript_commits_same_typed_sequence_repeat_and_index_values",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_corpus::checked_match_transcript_reaches_dialogue_character_field_values",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_corpus::checked_match_transcript_reaches_dialogue_line_context_values",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_corpus::checked_match_transcript_reaches_pending_progress_field_facts",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_corpus::contextual_expressions::checked_match_contextual_expression_corpus_retains_families_and_meaning",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_corpus::contextual_expressions::lifetime_path_below_match_rejects_before_publication",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_corpus::contextual_expressions::style_length_values_reject_unconverted_units_types_and_overflow_at_the_source",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_corpus::contextual_expressions::style_length_values_use_registered_roots_and_shared_scalar_reduction",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_corpus::contextual_expressions::style_value_fact_is_outside_match_descendants",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_corpus::effect_expression_fact_is_outside_its_function_body_match_path",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_inputs::checked_binding_origin_borrows_exact_declaration_metadata_and_rejects_a_foreign_generation",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_inputs::checked_request_roles_are_formal_owned_and_source_independent",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_inputs::checked_retained_binding_projects_exact_storage_and_mutability",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_inputs::execution_definition_identity_tracks_accepted_origin_across_body_edits",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_inputs::expression_input_abi_callable_creation_stops_before_the_latent_body",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_inputs::expression_input_abi_cleanup_keeps_creation_inputs_outside_the_latent_frame",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_inputs::expression_input_abi_distinguishes_place_mutation_from_value_evaluation",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_inputs::expression_input_abi_does_not_invent_modes_for_an_open_generic_body",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_inputs::expression_input_abi_is_stable_across_source_and_arena_revisions",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_inputs::expression_input_abi_keeps_every_read_and_excludes_inner_bindings",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_inputs::expression_input_abi_records_replacement_without_reading_the_previous_value",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_inputs::expression_input_abi_rejects_a_foreign_generation_owner",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_inputs::expression_input_abi_retains_callable_copy_ingress_obligations",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_shapes::checked_match_transcript_commits_binary_operator_and_range_inclusivity",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_shapes::checked_match_transcript_commits_compact_choice_plan_rows",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_shapes::checked_match_transcript_commits_compact_numeric_values_but_not_radix",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_shapes::checked_match_transcript_commits_explicit_call_type_application",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_shapes::checked_match_transcript_commits_pipe_owner_and_checked_binding",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_shapes::checked_match_transcript_commits_selected_call_argument_passing",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_shapes::checked_match_transcript_commits_try_carrier_and_operand",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_shapes::checked_match_transcript_uses_accepted_project_callable_value_identity",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_shapes::checked_match_transcript_uses_closed_value_and_select_families",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::expression_shapes::checked_match_transcript_uses_structural_method_identity",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::generation_invariance::content_call_match_digest_ignores_unrelated_source_revision",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::generation_invariance::dialogue_effect_call_match_digest_ignores_unrelated_source_revision",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::generation_invariance::evaluated_effect_statement_match_digest_ignores_unrelated_source_revision",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::generation_invariance::project_content_call_match_digest_ignores_unrelated_source_revision",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::generation_invariance::project_fx_content_match_digest_ignores_unrelated_source_revision",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::generation_invariance::view_fx_match_digest_ignores_unrelated_source_revision",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::patterns::checked_match_pattern_corpus_excludes_unrelated_declaration_patterns",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::patterns::checked_match_pattern_corpus_tracks_accepted_root_families",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::patterns::checked_match_pattern_transcript_carries_project_record_variant_owner",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::patterns::checked_match_pattern_transcript_carries_result_and_choice_targets",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::patterns::checked_match_pattern_transcript_carries_sequence_target_and_rest_mode",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::patterns::checked_match_pattern_transcript_carries_tuple_and_or_targets",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::patterns::checked_match_pattern_transcript_commits_mutable_entity_and_whole_binding_owners",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::patterns::checked_match_pattern_transcript_distinguishes_exact_and_rest_sequences",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::return_boundaries::closure_return_keeps_its_frame_and_declared_result",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::return_boundaries::implicit_body_return_uses_the_selected_callable_identity",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::return_boundaries::nested_return_rejects_a_value_of_the_wrong_type",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::return_boundaries::return_targets_the_callable_frame_through_a_carrier_block",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::return_boundaries::returning_an_implicit_callable_value_does_not_invoke_it",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::statements::checked_match_assertions_retain_disposition_and_condition_meaning",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::statements::checked_match_assignments_retain_same_typed_field_identity_and_digest",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::statements::checked_match_defer_retains_capture_meaning",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::statements::checked_match_dialogue_cancel_rule_reaches_exact_trigger_payload",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::statements::checked_match_dialogue_wait_reaches_checked_statement_path_and_changes_digest",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::statements::checked_match_direct_statement_bundle_retains_exact_payloads_and_meaning",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::statements::checked_match_flow_control_bundle_retains_exact_payloads_and_meaning",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::statements::checked_match_for_retains_builtin_iteration_and_iterable_meaning",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::statements::checked_match_if_let_retains_exact_shape_and_input_meaning",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::statements::checked_match_let_else_retains_exact_shapes_and_initializer_meaning",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::statements::checked_match_remaining_statement_families_retain_payloads_and_meaning",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::statements::checked_match_return_retains_exact_shape_and_meaning",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::statements::checked_match_statement_corpus_excludes_unrelated_declaration_statements",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::statements::checked_match_statement_corpus_tracks_accepted_root_families",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::statements::checked_match_thread_include_reaches_exact_flow_target",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::statements::checked_match_thread_scope_retains_accepted_name_and_format_invariance",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::statements::checked_match_thread_source_locale_reaches_exact_payload",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::statements::checked_match_thread_while_candidate_reaches_checked_statement_path",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::statements::checked_match_thread_while_let_candidate_reaches_checked_statement_path",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::statements::checked_match_whole_local_assignment_transcript_retains_target_identity",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::statements::proof_call_statement_is_outside_its_proof_body_match_path",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::view_calls::retained_view_call_transcript_tracks_selected_identity_and_ignores_source_allocation",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::view_calls::retained_view_calls_follow_imports_qualified_paths_and_builtin_shadowing",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::view_calls::retained_view_calls_preserve_supplied_order_default_omission_and_spread_projection",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::view_calls::retained_view_calls_reject_invalid_supply_without_selected_application",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::view_calls::retained_view_calls_use_selected_catalog_binding_for_direct_and_alias_heads",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::view_defaults::deferred_record_shorthand_retains_its_creation_input",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::view_defaults::implicit_inputs_include_nested_creation_and_nominal_selection",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::view_defaults::implicit_record_input_preserves_an_open_generic_binding_type",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::view_defaults::implicit_record_inputs_preserve_mixed_source_order_and_stable_identity",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::view_defaults::view_default_callback_alias_keeps_earlier_effects_rigid_in_its_owned_abi",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::view_defaults::view_default_callback_invocation_retains_the_non_suspending_gate",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::view_defaults::view_default_implicit_record_value_retains_its_input",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::view_defaults::view_default_match_has_a_parameter_root_and_stable_transcript",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::view_defaults::view_default_record_shorthand_preserves_its_parameter_dependency",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::view_defaults::view_parameter_defaults_accept_general_checked_values_and_earlier_inputs",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::view_defaults::view_parameter_defaults_reject_self_later_and_latent_forward_inputs",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::view_defaults::view_parameter_defaults_reject_wrong_types_effect_execution_and_suspension",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::view_roots::checked_match_transcript_preserves_view_handler_capture_meaning",
+          "status": "PASS"
+        },
+        {
+          "group": "transcript",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::semantic_transcript_acceptance::view_roots::checked_match_transcript_preserves_view_parameter_and_value_root_paths",
+          "status": "PASS"
+        },
+        {
+          "group": "coverage",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::match_coverage::tests::duplicate_literals_charge_only_exact_domain_transcript_writes",
+          "status": "PASS"
+        },
+        {
+          "group": "coverage",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::match_coverage::tests::every_checked_match_counter_is_exact_one_over_and_overflow_safe",
+          "status": "PASS"
+        },
+        {
+          "group": "coverage",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::match_coverage::tests::executable_match_paths_honor_exact_and_one_less_for_all_eleven_limits",
+          "status": "PASS"
+        },
+        {
+          "group": "coverage",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::match_coverage::tests::finite_pattern_oracle_agrees_with_matrix_usefulness",
+          "status": "PASS"
+        },
+        {
+          "group": "coverage",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::match_coverage::tests::invalid_checked_constructor_precedes_the_witness_budget",
+          "status": "PASS"
+        },
+        {
+          "group": "coverage",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::match_coverage::tests::recursive_usefulness_distinguishes_covered_cycles_finite_witnesses_and_no_base",
+          "status": "PASS"
+        },
+        {
+          "group": "coverage",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::match_coverage::tests::statement_ingress_domain_has_only_the_closed_opaque_residual_constructor",
+          "status": "PASS"
+        },
+        {
+          "group": "coverage",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::match_coverage::tests::variant_witnesses_preserve_unit_tuple_and_name_free_record_rows",
+          "status": "PASS"
+        },
+        {
+          "group": "coverage",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::match_coverage::checked_drop_policy_record_payload_rejects_unknown_missing_and_tuple_shapes",
+          "status": "PASS"
+        },
+        {
+          "group": "coverage",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::match_coverage::checked_drop_policy_record_payload_rest_keeps_one_internal_product_type",
+          "status": "PASS"
+        },
+        {
+          "group": "coverage",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::match_coverage::checked_match_dynamic_guard_checks_intra_arm_or_without_committing_coverage",
+          "status": "PASS"
+        },
+        {
+          "group": "coverage",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::match_coverage::checked_match_matrix_covers_fixed_and_symbolic_sequence_domains",
+          "status": "PASS"
+        },
+        {
+          "group": "coverage",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::match_coverage::checked_match_matrix_covers_result_payloads_and_choice_injections",
+          "status": "PASS"
+        },
+        {
+          "group": "coverage",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::match_coverage::checked_match_matrix_reports_the_deepest_redundant_or_alternative",
+          "status": "PASS"
+        },
+        {
+          "group": "coverage",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::match_coverage::checked_match_never_domain_is_exhaustive_without_a_witness",
+          "status": "PASS"
+        },
+        {
+          "group": "coverage",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::match_coverage::checked_match_observes_cancellation_and_matrix_limits_atomically",
+          "status": "PASS"
+        },
+        {
+          "group": "coverage",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::match_coverage::checked_match_open_literal_domain_retains_other_witness",
+          "status": "PASS"
+        },
+        {
+          "group": "coverage",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::match_coverage::checked_match_unobserved_closed_domains_use_exact_catalog_shapes",
+          "status": "PASS"
+        },
+        {
+          "group": "coverage",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::match_coverage::checked_match_unobserved_record_domains_use_full_exact_field_order",
+          "status": "PASS"
+        },
+        {
+          "group": "coverage",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::match_coverage::checked_pattern_binding_combo_keeps_inline_variant_record_owner",
+          "status": "PASS"
+        },
+        {
+          "group": "coverage",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::match_coverage::checked_project_record_variant_patterns_keep_direct_record_payloads",
+          "status": "PASS"
+        },
+        {
+          "group": "coverage",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::match_coverage::checked_project_tuple_variant_rejects_record_payload_pattern",
+          "status": "PASS"
+        },
+        {
+          "group": "coverage",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::match_coverage::direct_statement_match_query_keeps_nested_expression_coverage_separate",
+          "status": "PASS"
+        },
+        {
+          "group": "coverage",
+          "binary": "arcweft-lang-sema",
+          "test": "final_analysis::tests::match_coverage::nested_match_keeps_each_owners_literal_and_sequence_coverage_universe",
+          "status": "PASS"
+        },
+        {
+          "group": "query",
+          "binary": "arcweft-lang-sema::checked_match_query",
+          "test": "public_checked_match_coverage_exposes_precise_or_alternative_path",
+          "status": "PASS"
+        },
+        {
+          "group": "query",
+          "binary": "arcweft-lang-sema::checked_match_query",
+          "test": "public_checked_match_query_exposes_only_complete_read_only_facts",
+          "status": "PASS"
+        },
+        {
+          "group": "query",
+          "binary": "arcweft-lang-sema::checked_match_query",
+          "test": "public_checked_match_query_rejects_stale_project_generation",
+          "status": "PASS"
+        },
+        {
+          "group": "query",
+          "binary": "arcweft-lang-sema::checked_match_query",
+          "test": "public_checked_match_query_returns_typed_nonexhaustive_witness",
+          "status": "PASS"
+        },
+        {
+          "group": "query",
+          "binary": "arcweft-lang-sema::checked_match_query",
+          "test": "public_checked_match_witness_exposes_nested_record_children",
+          "status": "PASS"
+        },
+        {
+          "group": "native_awbc",
+          "binary": "arcweft-compiler::generic_continuation_snapshot",
+          "test": "awbc_callable_snapshot_rejects_a_forged_retained_type",
+          "status": "PASS"
+        },
+        {
+          "group": "native_awbc",
+          "binary": "arcweft-compiler::generic_continuation_snapshot",
+          "test": "awbc_verifier_rejects_a_generic_bound_type_at_a_forged_depth",
+          "status": "PASS"
+        },
+        {
+          "group": "native_awbc",
+          "binary": "arcweft-compiler::generic_continuation_snapshot",
+          "test": "awfb_session_save_preserves_a_live_local_before_nested_replacement",
+          "status": "PASS"
+        },
+        {
+          "group": "native_awbc",
+          "binary": "arcweft-compiler::generic_continuation_snapshot",
+          "test": "awfb_session_save_restores_the_generic_prefix_into_its_pinned_program",
+          "status": "PASS"
+        },
+        {
+          "group": "native_awbc",
+          "binary": "arcweft-compiler::generic_continuation_snapshot",
+          "test": "empty_never_statement_match_preserves_let_else_in_native_and_awbc",
+          "status": "PASS"
+        },
+        {
+          "group": "native_awbc",
+          "binary": "arcweft-compiler::generic_continuation_snapshot",
+          "test": "inhabited_empty_statement_match_cannot_publish_a_native_plan",
+          "status": "PASS"
+        },
+        {
+          "group": "native_awbc",
+          "binary": "arcweft-compiler::generic_continuation_snapshot",
+          "test": "native_generic_continuation_keeps_its_scheme_origin_position_and_prefix",
+          "status": "PASS"
+        }
+      ],
+      "critical": [
+        {
+          "package": "arcweft-dialogue",
+          "binary": "arcweft-dialogue",
+          "test": "character_dialogue::schema::role_payload::tests::rich_text_borrowed_codec_rejects_wrong_selector_aspects_and_invalid_resources",
+          "status": "PASS"
+        },
+        {
+          "package": "arcweft-dialogue",
+          "binary": "arcweft-dialogue",
+          "test": "character_dialogue::schema::role_payload::tests::rich_text_configuration_keeps_each_ruby_typography_property_once",
+          "status": "PASS"
+        },
+        {
+          "package": "arcweft-dialogue",
+          "binary": "arcweft-dialogue",
+          "test": "character_dialogue::schema::role_payload::tests::rich_text_configuration_rejects_content_reading_slots",
+          "status": "PASS"
+        },
+        {
+          "package": "arcweft-dialogue",
+          "binary": "arcweft-dialogue",
+          "test": "character_dialogue::schema::role_payload::tests::rich_text_decoder_uses_semantic_coordinates_and_rejects_tampering",
+          "status": "PASS"
+        },
+        {
+          "package": "arcweft-dialogue",
+          "binary": "arcweft-dialogue",
+          "test": "character_dialogue::schema::role_payload::tests::sparse_schema_has_a_complete_option_graph_and_typed_empty_value",
+          "status": "PASS"
+        },
+        {
+          "package": "arcweft-dialogue",
+          "binary": "arcweft-dialogue",
+          "test": "character_dialogue::schema::role_payload::tests::shared_ruby_property_merges_in_incoming_order_across_source_selectors",
+          "status": "PASS"
+        },
+        {
+          "package": "arcweft-presentation",
+          "binary": "arcweft-presentation",
+          "test": "rich_text::content_catalog::reusable_style::tests::conflicting_shared_field_contracts_reject_the_projection",
+          "status": "PASS"
+        },
+        {
+          "package": "arcweft-presentation",
+          "binary": "arcweft-presentation",
+          "test": "rich_text::content_catalog::reusable_style::tests::content_readings_do_not_change_reusable_contract_but_values_do",
+          "status": "PASS"
+        },
+        {
+          "package": "arcweft-presentation",
+          "binary": "arcweft-presentation",
+          "test": "rich_text::content_catalog::reusable_style::tests::reusable_style_projection_requires_body_role_preservation",
+          "status": "PASS"
+        },
+        {
+          "package": "arcweft-presentation",
+          "binary": "arcweft-presentation",
+          "test": "rich_text::content_catalog::reusable_style::tests::shared_layout_and_transform_fields_have_one_semantic_slot",
+          "status": "PASS"
+        },
+        {
+          "package": "arcweft-text-model",
+          "binary": "arcweft-text-model",
+          "test": "character_dialogue_style::tests::projection_preserves_semantic_order_and_typed_style_values",
+          "status": "PASS"
+        },
+        {
+          "package": "arcweft-text-model",
+          "binary": "arcweft-text-model",
+          "test": "character_dialogue_style::tests::sparse_ruby_size_preserves_inherited_placement_and_other_layout_properties",
+          "status": "PASS"
+        },
+        {
+          "package": "arcweft-text-model",
+          "binary": "arcweft-text-model",
+          "test": "character_dialogue_style::tests::transform_properties_combine_without_resetting_other_operations",
+          "status": "PASS"
+        }
+      ],
+      "dynamicDisplay": [
+        {
+          "package": "arcweft-runtime-driver",
+          "binary": "arcweft-runtime-driver",
+          "test": "display::tests::dynamic_character_dialogue_context_tests::presentation_frames_use_one_value_allowance_across_dialogue_and_view",
+          "status": "PASS"
+        },
+        {
+          "package": "arcweft-runtime-driver",
+          "binary": "arcweft-runtime-driver",
+          "test": "display::tests::dynamic_character_dialogue_context_tests::dynamic_context_uses_admitted_config_and_rejects_generation_or_character_mismatch",
+          "status": "PASS"
+        },
+        {
+          "package": "arcweft-runtime-driver",
+          "binary": "arcweft-runtime-driver",
+          "test": "display::tests::dynamic_character_dialogue_context_tests::fallback_style_capture_uses_original_role_schema_and_one_config_wire",
+          "status": "PASS"
+        },
+        {
+          "package": "arcweft-runtime-driver",
+          "binary": "arcweft-runtime-driver",
+          "test": "display::tests::dynamic_character_dialogue_context_tests::presentation_capture_admission_rejects_foreign_lease_and_standalone_downgrade",
+          "status": "PASS"
+        },
+        {
+          "package": "arcweft-runtime-driver",
+          "binary": "arcweft-runtime-driver",
+          "test": "display::tests::dynamic_character_dialogue_context_tests::inert_display_frame_retains_original_roles_and_rejects_forged_configuration",
+          "status": "PASS"
+        }
+      ],
+      "normal": {
+        "executed": 6410,
+        "passed": 6410,
+        "failed": 0
+      },
+      "cli": {
+        "executed": 698,
+        "passed": 684,
+        "failed": 14
+      },
+      "baselineFailedIds": [
+        "arcweft-cli::check\tagent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs",
+        "arcweft-cli::check\tagent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry",
+        "arcweft-cli::check\tagent_observe_native::agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures",
+        "arcweft-cli::check\tagent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering",
+        "arcweft-cli::check\tagent_observe_native::agent_observe_reports_text_presentation_z_index_depth",
+        "arcweft-cli::check\tagent_rag_query_indexes_multiple_sources",
+        "arcweft-cli::check\tplan_json_lists_runtime_task_graph",
+        "arcweft-cli::check\tspec_rejected_edge_fixtures_fail_with_diagnostics",
+        "arcweft-cli::check\tspec_valid_run_edge_fixture_now_executes",
+        "arcweft-cli::check\tunsafe_json_lists_audit_regions",
+        "arcweft-cli::check\tverify_json_records_required_solver_checks",
+        "arcweft-cli::check\tverify_json_reports_missing_promotion_proof",
+        "arcweft-cli::check\tverify_json_reports_semantic_thread_join_conflict",
+        "arcweft-cli::check\tverify_json_respects_semantic_defer_cancel_discharge"
+      ],
+      "currentFailedIds": [
+        "arcweft-cli::check\tagent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs",
+        "arcweft-cli::check\tagent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry",
+        "arcweft-cli::check\tagent_observe_native::agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures",
+        "arcweft-cli::check\tagent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering",
+        "arcweft-cli::check\tagent_observe_native::agent_observe_reports_text_presentation_z_index_depth",
+        "arcweft-cli::check\tagent_rag_query_indexes_multiple_sources",
+        "arcweft-cli::check\tplan_json_lists_runtime_task_graph",
+        "arcweft-cli::check\tspec_rejected_edge_fixtures_fail_with_diagnostics",
+        "arcweft-cli::check\tspec_valid_run_edge_fixture_now_executes",
+        "arcweft-cli::check\tunsafe_json_lists_audit_regions",
+        "arcweft-cli::check\tverify_json_records_required_solver_checks",
+        "arcweft-cli::check\tverify_json_reports_missing_promotion_proof",
+        "arcweft-cli::check\tverify_json_reports_semantic_thread_join_conflict",
+        "arcweft-cli::check\tverify_json_respects_semantic_defer_cancel_discharge"
+      ],
+      "addedFailedIds": [],
+      "removedFailedIds": [],
+      "causeClaim": "ID comparison only; matching IDs do not establish identical causes."
+    },
+    "nativeAuxiliaryTargets": 10,
+    "nativeAuxiliaryDistinctCases": [
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_hit_test_capture_time_updates_unpinned_animated_image_frame_metadata",
+        "status": "PASS"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_captures_clipped_animated_image_object",
+        "status": "PASS"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_text_combine_mask_raw_crop",
+        "status": "PASS"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_text_combine_object_id_raw_crop",
+        "status": "PASS"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_text_combine_mask_raw_crop",
+        "status": "PASS"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_text_combine_object_id_raw_crop",
+        "status": "PASS"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_typewriter_ruby_capture_time_controls_base_and_annotation",
+        "status": "PASS"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_typewriter_ruby_capture_time_controls_object_id",
+        "status": "PASS"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_typewriter_text_combine_capture_time_controls_all_glyphs",
+        "status": "PASS"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_typewriter_text_combine_capture_time_controls_object_id",
+        "status": "PASS"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_vertical_lr_typewriter_ruby_capture_time_controls_base_and_annotation",
+        "status": "PASS"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_vertical_lr_typewriter_ruby_capture_time_controls_object_id",
+        "status": "PASS"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_vertical_lr_typewriter_text_combine_capture_time_controls_all_glyphs",
+        "status": "PASS"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_native_vertical_lr_typewriter_text_combine_capture_time_controls_object_id",
+        "status": "PASS"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_read_uri_preserves_animated_image_layer_frame_pixels",
+        "status": "PASS"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_read_uri_preserves_animated_image_object_frame_metadata",
+        "status": "PASS"
+      }
+    ],
+    "quality": [
+      {
+        "receipt": "semantic-properties-quality2-check",
+        "result": {
+          "version": 1,
+          "base": "8a8df077d8755ab44eee35888b607fbfc20c4a59",
+          "command": [
+            "check",
+            "--workspace",
+            "--all-targets",
+            "--all-features",
+            "--locked"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 4091,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-03T22:42:25.3084269Z",
+          "finishedAt": "2026-11-03T22:43:55.6247216Z"
+        }
+      },
+      {
+        "receipt": "semantic-properties-quality2-clippy",
+        "result": {
+          "version": 1,
+          "base": "8a8df077d8755ab44eee35888b607fbfc20c4a59",
+          "command": [
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--all-features",
+            "--locked"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 4091,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-03T22:43:56.1250361Z",
+          "finishedAt": "2026-11-03T22:45:26.235534Z"
+        }
+      },
+      {
+        "receipt": "semantic-properties-quality2-structure",
+        "result": {
+          "version": 1,
+          "base": "8a8df077d8755ab44eee35888b607fbfc20c4a59",
+          "command": [
+            "+nightly",
+            "-Zscript",
+            "tools/structure-audit.rs",
+            "--root",
+            ".",
+            "--fail-on-blocking",
+            "--write",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/semantic-properties-quality2.structure-report"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 4091,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-03T22:45:26.6956608Z",
+          "finishedAt": "2026-11-03T22:45:31.5508483Z"
+        }
+      },
+      {
+        "receipt": "semantic-properties-quality3-check",
+        "result": {
+          "version": 1,
+          "base": "8a8df077d8755ab44eee35888b607fbfc20c4a59",
+          "command": [
+            "check",
+            "--workspace",
+            "--all-targets",
+            "--all-features",
+            "--locked"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 4091,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-03T22:46:08.9707845Z",
+          "finishedAt": "2026-11-03T22:46:44.0420988Z"
+        }
+      },
+      {
+        "receipt": "semantic-properties-quality3-clippy",
+        "result": {
+          "version": 1,
+          "base": "8a8df077d8755ab44eee35888b607fbfc20c4a59",
+          "command": [
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--all-features",
+            "--locked"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 4091,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-03T22:46:44.519291Z",
+          "finishedAt": "2026-11-03T22:47:34.158366Z"
+        }
+      },
+      {
+        "receipt": "semantic-properties-quality3-structure",
+        "result": {
+          "version": 1,
+          "base": "8a8df077d8755ab44eee35888b607fbfc20c4a59",
+          "command": [
+            "+nightly",
+            "-Zscript",
+            "tools/structure-audit.rs",
+            "--root",
+            ".",
+            "--fail-on-blocking",
+            "--write",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/semantic-properties-quality3.structure-report"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 4091,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-03T22:47:34.6814778Z",
+          "finishedAt": "2026-11-03T22:47:38.5884479Z"
+        }
+      },
+      {
+        "receipt": "semantic-properties-owner4-check",
+        "result": {
+          "version": 1,
+          "base": "8a8df077d8755ab44eee35888b607fbfc20c4a59",
+          "command": [
+            "check",
+            "-p",
+            "arcweft-text-model",
+            "--all-targets",
+            "--all-features",
+            "--locked"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 4091,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-03T22:48:16.8012659Z",
+          "finishedAt": "2026-11-03T22:50:20.302267Z"
+        }
+      },
+      {
+        "receipt": "semantic-properties-owner4-clippy",
+        "result": {
+          "version": 1,
+          "base": "8a8df077d8755ab44eee35888b607fbfc20c4a59",
+          "command": [
+            "clippy",
+            "-p",
+            "arcweft-text-model",
+            "--all-targets",
+            "--all-features",
+            "--locked"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 4091,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-03T22:50:20.3087022Z",
+          "finishedAt": "2026-11-03T22:51:19.5553679Z"
+        }
+      },
+      {
+        "receipt": "semantic-properties-fmt",
+        "result": {
+          "version": 1,
+          "head": "4736756c99a102d70ec3090541b6e99024a15c79",
+          "command": [
+            "rustfmt",
+            "--check",
+            "--edition",
+            "2024",
+            "crates/arcweft-presentation/src/rich_text.rs",
+            "crates/arcweft-presentation/src/rich_text/content_catalog.rs",
+            "crates/arcweft-presentation/src/rich_text/content_catalog/reusable_style.rs",
+            "crates/arcweft-dialogue/src/character_dialogue/schema/role_payload.rs",
+            "crates/arcweft-text-model/src/character_dialogue_style.rs",
+            "crates/arcweft-runtime-driver/src/display/tests.rs"
+          ],
+          "exitCode": 0,
+          "startedAt": "2026-11-03T22:59:51.193799Z",
+          "finishedAt": "2026-11-03T22:59:55.3954223Z"
+        }
+      }
+    ],
+    "sourceCaseExecutableDrift": 0
+  },
+  "qualityScope": "All 98 check/Clippy/structure gates passed on quality3 input hashes. Two final text-model semicolons then passed owner check/Clippy. The last Dialogue changes restore a reading rejection and strengthen typography value assertions; these final test bytes compiled/executed in the 47-package run. No final all-98 rerun is claimed. Existing warnings remain; six owned Rust files passed rustfmt --check.",
+  "testMigration": [
+    "Preserve live/inert full-content-shaped reading rejection and exact values for all four ruby typography settings.",
+    "Old private projector tests for Ruby source definitions and incomplete structural selectors are unrepresentable in admitted semantic rows. Applicable content exclusion/malformed payload boundaries remain covered by Presentation and Dialogue."
+  ],
+  "ownership": {
+    "measurements": [
+      {
+        "path": "crates/arcweft-presentation/src/rich_text.rs",
+        "package": "arcweft-presentation",
+        "bytes": 5313,
+        "physicalLoc": 124,
+        "previousLoc": 122,
+        "classification": "production",
+        "embeddedTestLoc": 0,
+        "fanIn": 23,
+        "fanOut": 8
+      },
+      {
+        "path": "crates/arcweft-presentation/src/rich_text/content_catalog.rs",
+        "package": "arcweft-presentation",
+        "bytes": 51164,
+        "physicalLoc": 1420,
+        "previousLoc": 1416,
+        "classification": "production",
+        "embeddedTestLoc": 38,
+        "fanIn": 23,
+        "fanOut": 8
+      },
+      {
+        "path": "crates/arcweft-presentation/src/rich_text/content_catalog/reusable_style.rs",
+        "package": "arcweft-presentation",
+        "bytes": 17040,
+        "physicalLoc": 430,
+        "previousLoc": 205,
+        "classification": "production",
+        "embeddedTestLoc": 177,
+        "fanIn": 23,
+        "fanOut": 8
+      },
+      {
+        "path": "crates/arcweft-dialogue/src/character_dialogue/schema/role_payload.rs",
+        "package": "arcweft-dialogue",
+        "bytes": 38854,
+        "physicalLoc": 1035,
+        "previousLoc": 1015,
+        "classification": "production",
+        "embeddedTestLoc": 269,
+        "fanIn": 16,
+        "fanOut": 14
+      },
+      {
+        "path": "crates/arcweft-text-model/src/character_dialogue_style.rs",
+        "package": "arcweft-text-model",
+        "bytes": 20401,
+        "physicalLoc": 509,
+        "previousLoc": 923,
+        "classification": "production",
+        "embeddedTestLoc": 202,
+        "fanIn": 17,
+        "fanOut": 14
+      },
+      {
+        "path": "crates/arcweft-runtime-driver/src/display/tests.rs",
+        "package": "arcweft-runtime-driver",
+        "bytes": 40624,
+        "physicalLoc": 976,
+        "previousLoc": 977,
+        "classification": "unit-test-module",
+        "embeddedTestLoc": 0,
+        "fanIn": 7,
+        "fanOut": 23
+      }
+    ],
+    "disposition": "Presentation remains the sole value-contract owner; its existing child derives identities. Dialogue retains one payload codec; text model removes source regrouping. The 1420-LOC catalog has only four new export lines and retains its existing cohesive descriptor responsibility. Driver changes only its consuming fixture. No dependency direction changes or new blocking structural findings."
+  },
+  "acceptanceScope": "Earlier sparse-layout and Generic Match acceptance is preserved. Source factory execution, alias argument-order, full static provenance, dedicated doctest/wasm rerun, complete Native-Web parity and whole-goal completion are not claimed.",
+  "correctionReason": "Remove completed common-property identity from the current remaining range based on this implementation and 18 passing owner/consumer cases. Matching 14 failed IDs do not prove identical causes; failures remain recorded.",
+  "supersededCurrentRows": [
+    "| RichTextの部分layout指定／source factory | **部分layout指定を検証・公開済み。source factory接続は継続中** | Source 726323d1edc63a6a543f7b8b817570ecc2ea2b3e、最終638d6459bf68b4679349f2bfccc03f53d1878d26。authored updateと解決済みlayoutを分け、記述した値とschema defaultを区別する。ruby sizeだけの指定で既存配置・gap・書字方向を保持し、明示horizontal／auto／既定gapを反映する5回帰が5／5新規PASS。empty updateとsparse JSONも検証した。RAGの実失敗はsema.call.unknown_targetのtext_styleであり、accepted-semantic checkerは迂回しない。未登録factoryの登録・構築前admission、selectorを跨ぐ共通property identity、factory aliasの引数順、static inline_stylesを含むRichText出典は別の継続範囲とする。既受入の一般callable／capture条件を未完了へ戻す列挙ではない。初期4 PASS・全件14 FAIL・全SHA・cleanの[原本と受入範囲](acceptance-evidence/task-rich-text-layout-presence.json)を保持する。 |",
+    "| Generic Match `.1.2` C3/C5 | **受入・公開済み** | 受入850534b9e9bc8c8872f6528dd00050a5e6e7699e、公開f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2。115 transcript、24 coverage、5公開query、7 Native／decoded-AWBC継続・保存の151件。完全transcript、uninhabited-domain、Never／let-else継続、exhaustive-only atomic publicationの受入を維持する。[元の受入監査](acceptance-evidence/accepted-generic-c3-c5-closure-audit.json)。Source 638d6459bf68b4679349f2bfccc03f53d1878d26のSema／text-model全35逆依存で、同じ151 IDが151／151新規PASS。[最新のcase照合](acceptance-evidence/task-rich-text-layout-presence.json)。先行cd17eba41b99c837432722c6570f60f4287696e3の151 PASS／再利用証明と以前のfixture移行・初回失敗は各[検証履歴](convergence-evidence-history.md)へ保持する。別境界や全体goalの未達だけで未完了へ戻さない。 |",
+    "| 共有契約／推移的逆依存matrix | **Sema／text-model全35逆依存を終端照合。通常側4117／4117 PASS** | Source 638d6459bf68b4679349f2bfccc03f53d1878d26、4091入力、all-target／all-feature／locked。35 packageを選択し33にRust testがある。bundle-assets／render-webはテスト0件であり、実行PASSへ数えない。全4815件は4801 PASS／14 FAIL・40 skipped、CLIは次行へ集約する。source／case／実EXE driftは0。Native auxiliaryの10 target・16 distinct caseもこの実runで全PASSと照合し、別runとして加算しない。[graph・全case・境界別照合](acceptance-evidence/task-rich-text-layout-presence.json)。先行Syntax全25の通常5162／5162は異なる入力・選択範囲の[当時の原本](acceptance-evidence/task-bench-execution-target.json)へ保持する。 |",
+    "| CLI全target照合 | **統合受入は未完了。最新の全698件は684 PASS／14 FAIL** | Source 638d6459bf68b4679349f2bfccc03f53d1878d26、4091入力、全35逆依存の同じ一回の実runに含むCLI全target／all-feature／locked。CLIは698件684 PASS／14 FAIL・23 ignored。旧「676 PASS／22 FAIL＋後続JLREQ8条件のfocused PASS」という現状説明を、新しい全件実測で置換した。合成値ではない。前回未再実行だった14 failed IDと同一で、追加・解消IDは0。ID一致だけから原因同一とは推定しない。[最新全件・全失敗・訂正理由](acceptance-evidence/task-rich-text-layout-presence.json)。旧headless source、JLREQ sizing／hyphenの初回失敗・修復・公開SHAは[当時の履歴](convergence-evidence-history.md)と各原本へ保持する。RichTextのfactory・出典は専用行で追い、Generic Matchや既受入のtyped ownerを一括して未完了へ戻さない。 |",
+    "| workspace check／Clippy・fmt・構造gate | **全98と最終owner gateは終了0。変更行の新規警告0・既存警告は残存** | Source 726323d1edc63a6a543f7b8b817570ecc2ea2b3eで全98 check／Clippy（all-target／all-feature／locked）とworkspace fmtが終了0。後続3pathはprivate投影の既存helper再利用・セミコロン・test内fn位置のみで、Source 638d6459bf68b4679349f2bfccc03f53d1878d26のCompiler／text-model check／Clippy、Rust3件fmt、canonical構造gateが終了0。全98を最終bytesで再実行したとは扱わず、最終bytesの全35逆依存実行と区別する。[全receipt・警告修復・owner review](acceptance-evidence/task-rich-text-layout-presence.json)。今回doctest／wasm専用検証は未再実行。[以前の実測](acceptance-evidence/task-action-channel-receive-consumers.json)を新規実行へ数えない。 |"
+  ],
+  "historyPrefix": {
+    "bytes": 1827958,
+    "sha256": "a73e6a8169e8cfab51c2618ee1a96743797778f47c9c91f6ba6e55da9c61d964"
+  },
+  "raw": {
+    "path": "docs/implementation/acceptance-evidence/task-rich-text-property-identity.raw.zip",
+    "bytes": 4171475,
+    "sha256": "e00b7eeaf32c7e84dd43fd2b418e2fc29baf108409bfee33580b3a0ba5437918",
+    "entryDrift": 0,
+    "entries": [
+      {
+        "entry": "audit-nextest-final-result.ps1",
+        "bytes": 5266,
+        "sha256": "9d136f5ff9dbe80e524a8c9adb2f11fc96cce75046e3e1fe3e93ba73888cc0ab"
+      },
+      {
+        "entry": "audit-semantic-property-tests.ps1",
+        "bytes": 4632,
+        "sha256": "c9c50e05ed9958db8677c3483b43baea570a5ba41a58c9aa59906b6837b80bc5"
+      },
+      {
+        "entry": "record-semantic-properties.ps1",
+        "bytes": 7521,
+        "sha256": "3d8799ae349d23eccde8d888fc0433f9a1468ec783631457085befad2ee5dce6"
+      },
+      {
+        "entry": "run-action-payload-quality.ps1",
+        "bytes": 1729,
+        "sha256": "ca098c1a52ef14e7f767eec068c3a20e5415e73ee4191d81ccbf9aafa8ac339a"
+      },
+      {
+        "entry": "run-presentation-projection-owner.ps1",
+        "bytes": 4134,
+        "sha256": "b60d753498997e4ba3b809b3721e9190ea1860971c755e6a1648a8e213403c58"
+      },
+      {
+        "entry": "semantic-properties-fmt.json",
+        "bytes": 685,
+        "sha256": "6978a672a39c68ce84af4b3d878a80b26fc54e7c64d582da2c04e67f508e303e"
+      },
+      {
+        "entry": "semantic-properties-fmt.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "semantic-properties-native-aux-coverage.json",
+        "bytes": 3445,
+        "sha256": "45f6603bc143314565931acd33aa0c8d56dc679a02342ca40e5524ff48443e91"
+      },
+      {
+        "entry": "semantic-properties-owner-measurements.json",
+        "bytes": 1802,
+        "sha256": "d139c2f00055228f51704e386e5efcde7bb0c222bee686d83bd12094117c1900"
+      },
+      {
+        "entry": "semantic-properties-owner4-check.json",
+        "bytes": 373,
+        "sha256": "c7806b8951c536af27de3f85aaf343a060c31c1463a34c539abaa760ecd5774d"
+      },
+      {
+        "entry": "semantic-properties-owner4-check.log",
+        "bytes": 72086,
+        "sha256": "cdb657dd67ecc6933bf69ef80732b1d885c697efee8bfd14d670c09e7d2fc68f"
+      },
+      {
+        "entry": "semantic-properties-owner4-clippy.json",
+        "bytes": 374,
+        "sha256": "13b86b26d0f7a259042e2531fd28a65cae359dda8904ee5cd136d9c595a37ee2"
+      },
+      {
+        "entry": "semantic-properties-owner4-clippy.log",
+        "bytes": 4428277,
+        "sha256": "683d452e6d9b2449233b3679895febe7f27b15435f772466464ba5a9a6cc03b4"
+      },
+      {
+        "entry": "semantic-properties-owner4.source-freeze.json",
+        "bytes": 799018,
+        "sha256": "afe0fac020da925500b44981051b1f45125a18773a34d42e844e66e5d8ad05bb"
+      },
+      {
+        "entry": "semantic-properties-quality1-preparation-cancelled.json",
+        "bytes": 208,
+        "sha256": "fbf446a82c1a90615fd9d13ebcbd12d372bedb95fab2d6bf78711a3cb8e7497b"
+      },
+      {
+        "entry": "semantic-properties-quality2-check.json",
+        "bytes": 355,
+        "sha256": "936ad99c37ac81ae317d137105b97558412bf883925954c364012c06d4905580"
+      },
+      {
+        "entry": "semantic-properties-quality2-check.log",
+        "bytes": 108444,
+        "sha256": "114ad6cdd573405c50e2aa7d54ca1ba3e8a12b8057657e33d19f0de0f992bffb"
+      },
+      {
+        "entry": "semantic-properties-quality2-clippy.json",
+        "bytes": 356,
+        "sha256": "35bbbcb6e84603a71db77db9546497853c8e763310d0cb02ca0fde9a97cc17fa"
+      },
+      {
+        "entry": "semantic-properties-quality2-clippy.log",
+        "bytes": 8845810,
+        "sha256": "18b31e6848a17250cd09117d319b51cc6a0bd7a100ce1032076deefae6f38a7d"
+      },
+      {
+        "entry": "semantic-properties-quality2-structure.json",
+        "bytes": 523,
+        "sha256": "d6f43f72471ab8ea4e622e5aa957e3df26d04ddf3586395248f942af9c271415"
+      },
+      {
+        "entry": "semantic-properties-quality2-structure.log",
+        "bytes": 65602,
+        "sha256": "aa61715f3477b14019523d4ec6cc8d0b5f208786926d90177c8efaa7e1e46849"
+      },
+      {
+        "entry": "semantic-properties-quality2.source-freeze.json",
+        "bytes": 799018,
+        "sha256": "af12561cf69f4e3250d1dbe5c27f4e71c47a74988eaf3dcdf250e7653fcec9d8"
+      },
+      {
+        "entry": "semantic-properties-quality2.structure-report/dependency_edges.csv",
+        "bytes": 78114,
+        "sha256": "ed740dc1ecf2341a73101ad5ce67871b803b4a3f24542bda8269119484a3f6b9"
+      },
+      {
+        "entry": "semantic-properties-quality2.structure-report/file_metrics.csv",
+        "bytes": 336742,
+        "sha256": "43824150d5b604ca7e745ec5651e7a41f1c67f975be397070f2b5b5b47ba5c34"
+      },
+      {
+        "entry": "semantic-properties-quality2.structure-report/findings.md",
+        "bytes": 123305,
+        "sha256": "14d66fdaa6d02d3ce6241e82cc83acd4ffb87623a3ea7ce0bcabda830c314637"
+      },
+      {
+        "entry": "semantic-properties-quality2.structure-report/package_metrics.csv",
+        "bytes": 6508,
+        "sha256": "69980c5bd27ba9dfb87970e4a9528bcbca1747425c46a0fe3fa1acab2135cf5b"
+      },
+      {
+        "entry": "semantic-properties-quality2.structure-report/public_type_duplicates.csv",
+        "bytes": 17441,
+        "sha256": "897ce1f491c709b8c0d3424aac3e8a4fc55315dd10f1f1b5ec3562bb17add0e0"
+      },
+      {
+        "entry": "semantic-properties-quality3-check.json",
+        "bytes": 355,
+        "sha256": "ae1e5d3ca09d2aef45b91ab36577270ecae1da51f53ce755e41543a1c422b0d0"
+      },
+      {
+        "entry": "semantic-properties-quality3-check.log",
+        "bytes": 108444,
+        "sha256": "7795d9e4b5529f92af00d8fcdecd277290cde61e28030bfcf2bc00c12687c479"
+      },
+      {
+        "entry": "semantic-properties-quality3-clippy.json",
+        "bytes": 356,
+        "sha256": "dca4fcd58c676d071af0a1770aa402da531146260ed0c5ad72317a29256ab37d"
+      },
+      {
+        "entry": "semantic-properties-quality3-clippy.log",
+        "bytes": 8843513,
+        "sha256": "2b888e1b9973d55f160203a732f0fd7da6e7cb5f81326ac0c1a0594d7ff9c366"
+      },
+      {
+        "entry": "semantic-properties-quality3-structure.json",
+        "bytes": 523,
+        "sha256": "1b1f249458741958bd58cac954abd23b4a581c7ba71d694950041a8a12c44f26"
+      },
+      {
+        "entry": "semantic-properties-quality3-structure.log",
+        "bytes": 65602,
+        "sha256": "f204dca77a4ac93ef15383b6ffb4cd93967ec480f99652cff313db45ce436a45"
+      },
+      {
+        "entry": "semantic-properties-quality3.source-freeze.json",
+        "bytes": 799018,
+        "sha256": "b401c731a6bd21ed76f504edbd7387e3a71f681c54cb1ead764204966b518f2b"
+      },
+      {
+        "entry": "semantic-properties-quality3.structure-report/dependency_edges.csv",
+        "bytes": 78114,
+        "sha256": "ed740dc1ecf2341a73101ad5ce67871b803b4a3f24542bda8269119484a3f6b9"
+      },
+      {
+        "entry": "semantic-properties-quality3.structure-report/file_metrics.csv",
+        "bytes": 336742,
+        "sha256": "aaf393b260a5d913887e396d7c1e316a1b1c72082c1c37d7cbf092b5ead0f66a"
+      },
+      {
+        "entry": "semantic-properties-quality3.structure-report/findings.md",
+        "bytes": 123305,
+        "sha256": "14d66fdaa6d02d3ce6241e82cc83acd4ffb87623a3ea7ce0bcabda830c314637"
+      },
+      {
+        "entry": "semantic-properties-quality3.structure-report/package_metrics.csv",
+        "bytes": 6508,
+        "sha256": "69980c5bd27ba9dfb87970e4a9528bcbca1747425c46a0fe3fa1acab2135cf5b"
+      },
+      {
+        "entry": "semantic-properties-quality3.structure-report/public_type_duplicates.csv",
+        "bytes": 17441,
+        "sha256": "897ce1f491c709b8c0d3424aac3e8a4fc55315dd10f1f1b5ec3562bb17add0e0"
+      },
+      {
+        "entry": "semantic-properties-result-comparison.json",
+        "bytes": 45942,
+        "sha256": "aeca650adbb1c30e8e02b677dc765c98fa310b0c339d2c694e86bfc676398779"
+      },
+      {
+        "entry": "semantic-properties-reverse1-20261104.binaries-before.json",
+        "bytes": 50540,
+        "sha256": "45a3d0876e5643935ebc000d5c11e94add948116448afc904950518034698fbd"
+      },
+      {
+        "entry": "semantic-properties-reverse1-20261104.catalog.inventory.json",
+        "bytes": 1795806,
+        "sha256": "8cf4cb3e78715d6c1566c95223d14c46735fc5e79d5c01ba2fda4abde58108f7"
+      },
+      {
+        "entry": "semantic-properties-reverse1-20261104.catalog.json",
+        "bytes": 2441,
+        "sha256": "e4fb22f5fc0a9753abfe3c10df7c48ed51f16c63b0b26cb4b877127de5dcbe36"
+      },
+      {
+        "entry": "semantic-properties-reverse1-20261104.catalog.log",
+        "bytes": 1307264,
+        "sha256": "36fed62690c8ad8f829dd273f7c474909713672c8547e4076b098045690fa67a"
+      },
+      {
+        "entry": "semantic-properties-reverse1-20261104.runtime.cases.json",
+        "bytes": 1499634,
+        "sha256": "5f7c0ebccfc64f6fa1a1d26a2fdbbe1baf28c26eb2dad056a863fbb6136464d7"
+      },
+      {
+        "entry": "semantic-properties-reverse1-20261104.runtime.json",
+        "bytes": 2535,
+        "sha256": "8932b02d44583bd9d42a795420a66e358e2ebc0bb4ea634bb169c95649692df2"
+      },
+      {
+        "entry": "semantic-properties-reverse1-20261104.runtime.log",
+        "bytes": 5189767,
+        "sha256": "c15a2913057fc10224fcfb527f5bd7ca827826615810f31f78df2bfa544bd67e"
+      },
+      {
+        "entry": "semantic-properties-reverse1-20261104.runtime.terminal-audit.json",
+        "bytes": 2946,
+        "sha256": "9a8b260d6a21f9984e9e9c69c284525b3e9d1e3a7d6eb4d1eb000af120c837f2"
+      },
+      {
+        "entry": "semantic-properties-reverse1-20261104.source-freeze.json",
+        "bytes": 799775,
+        "sha256": "770b163332524c2cfa5cafc1098164fa1db739b8a2658024eb6b0644b215bbc4"
+      },
+      {
+        "entry": "semantic-properties-source.message.txt",
+        "bytes": 687,
+        "sha256": "fa37ec9cd3518f77272676db9101b143110c108ca868e3f8e20a36f5515c9d09"
+      },
+      {
+        "entry": "semantic-properties-source.other.txt",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "semantic-properties-source.owned.txt",
+        "bytes": 407,
+        "sha256": "813981534b7a36c7ef32502fd00b9d7064ef0a6107cf2bcaf9c991831fffa746"
+      },
+      {
+        "entry": "semantic-properties-source.pathspec",
+        "bytes": 400,
+        "sha256": "695bb3f4172894524019376f997ca9fd0d3e05f02b9d197180aa6a818a2ec2e9"
+      },
+      {
+        "entry": "semantic-properties-source.prepared.json",
+        "bytes": 2186,
+        "sha256": "7cd9bb6453b570b447106d371f57606bba9358a2fbd41460dea566d9760e7e16"
+      },
+      {
+        "entry": "semantic-properties-source.reviewed.patch",
+        "bytes": 98748,
+        "sha256": "271f95feb6d0f8aabcc92dc6a12818415555fcba73b2fbc5520852b3c9d399b8"
+      },
+      {
+        "entry": "semantic-properties-source.verified.json",
+        "bytes": 1588,
+        "sha256": "596fe2eb9b125b58cfa418b7d2c0af370807c23c1d026f10588884fc06225a01"
+      },
+      {
+        "entry": "semantic-properties-status-before.json",
+        "bytes": 5194,
+        "sha256": "318e1b24bee0e2b2504edbd79bcc785580abfa942bba65eebe13989411517541"
+      },
+      {
+        "entry": "semantic-properties.graph.json",
+        "bytes": 1533,
+        "sha256": "32c1c22227e80a42e2e0cacb1b7e89ac5af431a8d15ff0fda205a299f3a4cc73"
+      },
+      {
+        "entry": "semantic-properties.metadata.json",
+        "bytes": 4292497,
+        "sha256": "48645271823339777421ca9bc282033a87ce735e0a549fa31e564e0606b028fb"
+      },
+      {
+        "entry": "semantic-properties.tree.txt",
+        "bytes": 23939,
+        "sha256": "731b189ef454f738304f31eb57428ae517ac7efe2d36635322b0ff6617f65d7f"
+      },
+      {
+        "entry": "write-verified-evidence-archive.ps1",
+        "bytes": 1658,
+        "sha256": "2207e2b2972bf69375071a89924e544fce651ec47e8c8486675b902805cb143d"
+      }
+    ]
+  }
+}

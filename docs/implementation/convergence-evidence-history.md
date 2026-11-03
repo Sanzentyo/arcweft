@@ -14497,3 +14497,12 @@ description by this fresh complete run, while its actual results and SHAs remain
 in the earlier evidence. Full clean removes 141,989 files/191.7 GiB with zero
 source/status drift. The raw receipts retain the initial four-case pass and the
 full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-layout-presence.json).
+
+
+## 2026-11-04 — RichText semantic property identity
+
+- Source 4736756c99a102d70ec3090541b6e99024a15c79 (parent 8a8df077d8755ab44eee35888b607fbfc20c4a59) publishes semantic property keys and migrates codec/projection consumers. New implementation and execution evidence completes this boundary; earlier sparse-layout and Generic Match acceptance remains valid.
+- The fresh complete 47-package selection ran 7108 cases: 7094 PASS / 14 FAIL, 48 skipped. Non-CLI 6410/6410 PASS; CLI 684/698 PASS, 14 FAIL, 23 ignored. All 13 property owner and 5 dynamic display cases PASS. The same accepted Generic 151 and Native auxiliary 16 distinct cases PASS within this run; no separate constituent rerun is added.
+- The 14 failed IDs match the earlier full run; added/removed IDs are zero. Cause equivalence is not inferred from IDs. All actual stdout/stderr, source/case/executable pins, graph, superseded rows and quality receipts are retained.
+- All 98 check/Clippy/structure gates passed before the final two semicolons and test-only rejection/value assertions. Final text-model owner check/Clippy and six Rust fmt checks passed. Final test bytes executed in the reverse run. Dedicated doctest/wasm and whole-engine/source-factory/parity acceptance are not claimed.
+- Record: [property identity evidence](acceptance-evidence/task-rich-text-property-identity.json). The sole current list is [current-status.md](current-status.md).
