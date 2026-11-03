@@ -6,6 +6,10 @@
 //! selector branches from source names.
 
 mod reusable_style;
+pub use reusable_style::{
+    PresentationReusableStylePropertyId, PresentationReusableStylePropertySpec,
+    PresentationReusableStyleSchema, PresentationReusableStyleSchemaError,
+};
 
 use arcweft_rich_text_schema::{
     CheckedOutputKind, PropertyPresence, RichTextCallableParameterPassing,

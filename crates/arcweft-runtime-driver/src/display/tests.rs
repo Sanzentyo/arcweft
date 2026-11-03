@@ -76,9 +76,7 @@ mod dynamic_character_dialogue_context_tests {
         CharacterDialoguePatchOperation as Operation,
     };
     use arcweft_presentation::rich_text::{
-        PRESENTATION_CONTENT_CALLABLE_CATALOG,
-        PresentationContentCallableDefinitionId as Definition,
-        PresentationContentCallableParameterId as Parameter,
+        PRESENTATION_CONTENT_CALLABLE_CATALOG, PresentationReusableStylePropertyId,
     };
     use arcweft_render_text::resolve_frame_with_template;
     use arcweft_resource_model::registry::ResourceTypeRegistry;
@@ -553,10 +551,11 @@ mod dynamic_character_dialogue_context_tests {
             let codec = CharacterDialogueRolePayloadCodec::RichTextProperties;
             let mut payload = codec.no_overrides_payload().expect("typed empty RichText");
             let color_slot = PRESENTATION_CONTENT_CALLABLE_CATALOG
-                .reusable_style_parameters()
-                .position(|(definition, parameter)| {
-                    definition == Definition::Color && parameter.id == Parameter::Value
-                })
+                .reusable_style_schema()
+                .expect("reusable style schema")
+                .properties()
+                .iter()
+                .position(|property| property.id == PresentationReusableStylePropertyId::Color)
                 .expect("catalog-owned Color/Value slot");
             let RuntimeValue::Tuple(slots) = &mut payload else {
                 panic!("sparse RichText policy has a typed tuple root");

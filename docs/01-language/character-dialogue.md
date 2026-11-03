@@ -207,6 +207,13 @@ they are not reusable configuration fields. Ruby position, size, gap, overhang,
 and collision gap remain inherited typography. An Fx application retains its
 complete typed graph and is not decomposed into scalar policy fields. The
 configuration payload graph and digest both derive from this same projection.
+Each semantic property has exactly one sparse field, independent of the source
+selector that supplied it. Shared layout settings and transform target/origin
+therefore merge in application order before canonical storage. Branch selectors
+without an independent setting, source parameter names, and call defaults are not
+stored properties. Writing mode and ruby position retain separate accepted
+variant sets within the layout selector domain; ruby readings cannot enter the
+reusable payload.
 
 The four private policy Variant families retain complete nominal headers. Their
 layouts are computed from the complete policy schema graph and the active exact

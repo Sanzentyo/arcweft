@@ -17,7 +17,9 @@ pub use content_catalog::{
     PresentationContentCallableCatalog, PresentationContentCallableDefinition,
     PresentationContentCallableDefinitionId, PresentationContentCallableHead,
     PresentationContentCallableParameterId, PresentationContentCallableParameterSpec,
-    PresentationContentEmissionFamily,
+    PresentationContentEmissionFamily, PresentationReusableStylePropertyId,
+    PresentationReusableStylePropertySpec, PresentationReusableStyleSchema,
+    PresentationReusableStyleSchemaError,
 };
 pub use inventories::{Jlreq, LayoutDirection, TransformOrigin, TransformTarget, VerticalLatin};
 
