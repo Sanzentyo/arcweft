@@ -2215,6 +2215,7 @@ fn observe_native_published_jlreq_numeric_unit_fixture(
     writing_mode: &str,
     case: NativeNumericUnitCase,
 ) -> serde_json::Value {
+    // Fit the body and numeric unit, then exhaust the column before the next ideograph.
     let (path, entry) = temp_main_cli_fixture(
         &format!(
             "agent-observe-native-{writing_mode}-published-jlreq-numeric-unit-{}",
@@ -2225,7 +2226,7 @@ fn observe_native_published_jlreq_numeric_unit_fixture(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[{}][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(36pt)[{}]][p]
 }}
 "#,
             case.text
@@ -2268,7 +2269,7 @@ fn assert_native_published_jlreq_numeric_unit_case_raw_crop(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[{}][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(36pt)[{}]][p]
 }}
 "#,
             case.text
@@ -2968,6 +2969,7 @@ fn assert_native_published_jlreq_accented_latin_word_geometry(writing_mode: &str
 fn observe_native_published_jlreq_accented_latin_word_fixture(
     writing_mode: &str,
 ) -> serde_json::Value {
+    // Author the same column pressure used by the geometry and pixel-crop assertions.
     let (path, entry) = temp_main_cli_fixture(
         &format!("agent-observe-native-{writing_mode}-published-jlreq-accented-latin-word"),
         &format!(
@@ -2975,7 +2977,7 @@ fn observe_native_published_jlreq_accented_latin_word_fixture(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[天café人][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(38pt)[天café人]][p]
 }}
 "#
         ),
@@ -3000,7 +3002,7 @@ fn assert_native_published_jlreq_accented_latin_word_raw_crop(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[天café人][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(38pt)[天café人]][p]
 }}
 "#
         ),
@@ -3135,6 +3137,7 @@ fn assert_native_published_jlreq_greek_latin_unit_geometry(writing_mode: &str) {
 fn observe_native_published_jlreq_greek_latin_unit_fixture(
     writing_mode: &str,
 ) -> serde_json::Value {
+    // Preserve the atomic unit in one column and force the following body to wrap.
     let (path, entry) = temp_main_cli_fixture(
         &format!("agent-observe-native-{writing_mode}-published-jlreq-greek-latin-unit"),
         &format!(
@@ -3142,7 +3145,7 @@ fn observe_native_published_jlreq_greek_latin_unit_fixture(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[天μm人][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(42pt)[天μm人]][p]
 }}
 "#
         ),
@@ -3163,7 +3166,7 @@ fn assert_native_published_jlreq_greek_latin_unit_raw_crop(writing_mode: &str, c
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[天μm人][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(42pt)[天μm人]][p]
 }}
 "#
         ),
@@ -3933,8 +3936,8 @@ fn assert_native_jlreq_paragraph_overview(json: &serde_json::Value) {
         json,
         "天地春夏秋冬月火、山々人「川」あっいおーえ―中・外………終",
     );
-    use arcweft_agent_protocol::text_context::AgentTextContextCatalog;
     use arcweft_agent_protocol::rich_text::AgentRichTextElementKind;
+    use arcweft_agent_protocol::text_context::AgentTextContextCatalog;
     use arcweft_text_model::RichTextRange;
 
     let catalog: AgentTextContextCatalog =
@@ -3954,7 +3957,11 @@ fn assert_native_jlreq_paragraph_overview(json: &serde_json::Value) {
         assert_eq!(glyph.layout_bounds.width, 30.0);
         assert_eq!(
             glyph.advance.height,
-            if matches!(glyph.source_range.start, 24 | 42 | 69) { 15.0 } else { 30.0 }
+            if matches!(glyph.source_range.start, 24 | 42 | 69) {
+                15.0
+            } else {
+                30.0
+            }
         );
         assert_eq!(glyph.layout_bounds.height, glyph.advance.height);
     }
@@ -3962,7 +3969,11 @@ fn assert_native_jlreq_paragraph_overview(json: &serde_json::Value) {
     // capacity are covered by the owning balanced_v1 planner regression.
     let expected_offsets = vec![0, 12, 21, 33, 45, 54, 60, 72, 84];
     assert_eq!(
-        layout.lines.iter().map(|line| line.source_range.start).collect::<Vec<_>>(),
+        layout
+            .lines
+            .iter()
+            .map(|line| line.source_range.start)
+            .collect::<Vec<_>>(),
         expected_offsets
     );
     assert_eq!(
