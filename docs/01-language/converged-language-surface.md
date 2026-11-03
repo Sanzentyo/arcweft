@@ -377,6 +377,9 @@ the channel remains callable through a local binding or closure capture.
 The callee is evaluated before arguments, arguments are evaluated in source
 order, and fields are stored in declaration order. Payloads from different
 Action declarations remain distinct even when their field shapes coincide.
+The payload's nominal declaration identity retains the original Action public
+ID independently of its lexical binding. Alias and capture do not mint a new
+channel identity or replace the original payload declaration.
 
 ## Smaller retained decisions
 

@@ -193,6 +193,14 @@ Nominal rows also retain a source declaration identity independent of their
 instantiated arguments. The source graph supplies it during the same atomic
 type/domain admission; a later proof cannot replace it for an admitted instance.
 Plan-to-AWBC lowering and the version-one row codec preserve this identity.
+An Action declaration identity retains both its producer-owned digest and its
+original validated `action.*` public ID. It identifies exactly one non-generic
+named record payload; a structural variant or generic record cannot substitute
+for that payload. Schema layout, source type rows and semantic body transcripts
+commit the same declaration tuple, and source/wire preflight validates its
+family and shape before materialization. This metadata alone grants no channel
+execution capability; live operations still require their original program.
+
 Relations between instances require the same declaration and domain kind, then
 compare ordered arguments in both directions under their respective scopes.
 This invariant argument relation also applies to callback effect rows.

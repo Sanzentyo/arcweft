@@ -14332,3 +14332,18 @@ CLI: Summary [ 481.524s] 693 tests run: 660 passed (22 slow), 33 failed, 23 skip
 [実測・入力・生成物・全失敗・凝集性レビュー・raw](acceptance-evidence/task-entity-reference-type-admission.json)。現状はcurrent-status.md一か所へ集約する。
 
 再利用件数の監査補足: 初回9164 PASSにはNativeの40 PASSを含む。この40件もfixture修復後の全Native63件で再実行されているため、関連入力不変による再利用はNative以外の9124 PASSである。旧／新Native63件のexact ID差分0をcatalogで照合した。二つの入力で9187の異なるIDを確認した結果であり、9164と63の合算や単一runのPASSとはしない。上記の初回実測9164 PASSは履歴として保持する。
+
+
+## 元Action宣言identityの保持と逆依存検証 — 2026-11-03
+
+公開Sourceは7104b200150b9b85b31cd686c48573b92b2028d3（parent 922d1010f066443a7dbe1a424ecdf5f6266ea9d2、tree 15051b8a9f6c4419c07ac583f1e107e07a7f1a25）。22 path／632 insertions／36 deletionsを通常commit・non-forced pushし、full patch・全blob・remoteを照合した。元の12 tracked／6 actual untracked WIPを保持した入力4083 pathをpinした。
+
+既存nominal declaration identityをproducer digestと元Action PublicIdの組へ完成させた。新たなAction schema表・字句名からの逆引き・互換readerは追加していない。schema graph、Source type table、共通semantic encoder、Native metadata、AWBC row／codecが同じidentityを保持する。Action payloadは一つの非generic named recordへ制限する。metadata自体は実行権限を発行しない。送受信・実channel admission・停止保存の実装完了とはしない。
+
+初回owner1はPublicIdのSerde adapterとborrow／owned移行が不足しcatalog compile終了101、runtime未実行。owner2は3735件中3734 PASS／1 exact-byte golden FAIL。owner3は新Compiler caseのdecode budget引数誤りとWindows E0786／mmap 1455でcatalog compile終了101、runtime未実行。API呼出しを修復し、cache削除・clean・build jobs変更は行わず後続compileを成功させた。callable1は311件中86 PASS／225 FAILで、nominal verifierが正当なstructural variantを除外していた新規不具合を修復した。Action record条件を維持したままcallable2は311／311 PASS。owner4は4631件中4629 PASS／2 exact-byte golden FAILで、共通semantic encoderのordinary markerを期待bytesへ補正した。以後はcfg(test)の2 pathだけが変わり、対象goldens1は3／3 PASS。これらの失敗・入力・終端を消さず原本へ保持する。
+
+最終通常側は70 package／9194件をすべて新規実行し、Summary [ 633.779s] 9194 tests run: 9194 passed (9 slow), 25 skipped。先行成功のSema／RuntimePlan／CompilerとCore対象3件は、全consumer構成の実行ファイルhashが一致しないため再利用しなかった。66 packageに実行対象、4 packageはcompileのみ、25 ignored。Generic Match151／View40／修飾Action11／Entity参照7／新Action identity7の正確なIDを照合し全PASS、Source／case／test EXE差分0。
+
+CLIはSummary [ 524.919s] 693 tests run: 660 passed (30 slow), 33 failed, 23 skipped。直前結果との失敗IDは維持33／追加0／解消0。同じIDだけから原因の同一性は主張しない。workspace全98のcheck／Clippy・canonical構造gateは終了0、警告あり。変更Rust 22 pathのrustfmt checkも終了0。9 crateのdoctestは88件PASS（5 crateは0件）、Web wasm check終了0。raw archiveは118 entries／6347319 bytes、SHA256 d2e133b0ec751b97bc0ff76e7a42f6bc9d0592bb5b8bc412b15b580810a488f3、全entry hash差分0。
+
+訂正理由: 現状一覧の旧Source／9187件とNative63件の説明は今回のfull consumer結果で置き換え、旧実測は旧原本とこの履歴に保持した。Generic Matchの受入・公開は維持し、今回も同じ151件の成功を確認した。全体goalやCLIの未達を受入済み機能の残作業へ戻さない。唯一の現状一覧は[current-status.md](current-status.md)、このcutの全入力・失敗・修復・full SHA・所有レビューは[原本](acceptance-evidence/task-action-original-declaration-identity.json)へ集約する。
