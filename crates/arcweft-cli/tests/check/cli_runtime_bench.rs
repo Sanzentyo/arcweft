@@ -3860,6 +3860,60 @@ flow map_pure() -> String {
     );
 }
 
+fn assert_bench_flow_run(
+    path: &Path,
+    flow: &str,
+    steps: usize,
+    max_ops: usize,
+    expected_ops: &[u64],
+    expected_logs: &[&str],
+) {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run")
+        .arg(path)
+        .arg("--flow")
+        .arg(flow)
+        .arg("--steps")
+        .arg(steps.to_string())
+        .arg("--mode")
+        .arg("drain")
+        .arg("--max-ops")
+        .arg(max_ops.to_string())
+        .arg("--pure-backend")
+        .arg("jit")
+        .arg("--json")
+        .output()
+        .expect("the original benchmark Flow runs under the same budget");
+    assert!(
+        output.status.success(),
+        "benchmark Flow failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["final_status"], "done Return(\"done\")");
+    let observed = report["steps"].as_array().unwrap();
+    let ops = observed
+        .iter()
+        .map(|step| step["stats"]["executed_ops"].as_u64().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(ops, expected_ops);
+    let max_ops = u64::try_from(max_ops).expect("the step budget fits the JSON counter");
+    for step in observed {
+        assert!(step["stats"]["executed_ops"].as_u64().unwrap() <= max_ops);
+        assert!(step["diagnostics"].as_array().unwrap().is_empty());
+    }
+    let completed = observed.last().unwrap();
+    assert_eq!(completed["stop_reason"], "Done");
+    assert_eq!(completed["flow_events"], serde_json::json!(["return done"]));
+    let logs = completed["observations"]["logs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|log| log["message"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(logs, expected_logs);
+}
+
 #[test]
 fn bench_json_measures_branching_for_loop_pure_jit_characteristics() {
     let path = temp_arcw(
@@ -3925,6 +3979,11 @@ flow branch_for_pure() -> String {
         "bench JSON should expose median per-op cost: {measurement}"
     );
     assert_eq!(measurement["deterministic"]["pure_calls_median"], 8);
+    // A compiled body must fit the current dispatch's remaining source-work
+    // allowance; the other calls retain their ordinary budgeted VM frames.
+    assert_eq!(measurement["deterministic"]["pure_jit_calls_median"], 4);
+    assert_eq!(measurement["deterministic"]["pure_vm_calls_median"], 4);
+    assert_eq!(measurement["deterministic"]["pure_fallbacks_median"], 4);
     assert_eq!(
         measurement["deterministic"]["pure_arg_stack_packs_median"],
         0
@@ -3935,11 +3994,19 @@ flow branch_for_pure() -> String {
     );
     assert_eq!(
         measurement["deterministic"]["pure_arg_bytes_borrowed_median"],
-        192
+        96
     );
     assert_eq!(
         measurement["executor_stats"]["pure_compile"]["jit_successes"],
         1
+    );
+    assert_bench_flow_run(
+        &path,
+        "flow.branch_for_pure",
+        48,
+        8,
+        &[8, 8, 8, 8, 8, 8, 8, 7],
+        &["4", "16", "58", "70"],
     );
 }
 
@@ -4016,7 +4083,7 @@ flow fallback() -> String {
         measurement["per_executed_op_ns"].as_u64().is_some(),
         "bench JSON should expose median per-op cost: {measurement}"
     );
-    assert_eq!(measurement["deterministic"]["executed_ops_median"], 7);
+    assert_eq!(measurement["deterministic"]["executed_ops_median"], 9);
     assert_eq!(measurement["deterministic"]["pure_calls_median"], 1);
     assert_eq!(
         measurement["deterministic"]["pure_arg_stack_packs_median"],
@@ -4030,6 +4097,7 @@ flow fallback() -> String {
         measurement["executor_stats"]["pure_compile"]["jit_successes"],
         1
     );
+    assert_bench_flow_run(&path, "flow.match_pure", 24, 8, &[8, 1], &["12"]);
 }
 
 #[test]
@@ -4462,10 +4530,10 @@ fn bench_json_measures_checked_in_scalar_for_pure_jit_perf_guard() {
     assert_observational_bench_timings(measurement);
     assert_eq!(measurement["executor"], "bytecode_vm");
     assert_eq!(measurement["deterministic"]["pure_calls_median"], 16);
-    assert_eq!(measurement["deterministic"]["pure_jit_calls_median"], 16);
+    assert_eq!(measurement["deterministic"]["pure_jit_calls_median"], 15);
     assert_eq!(measurement["deterministic"]["pure_aot_calls_median"], 0);
-    assert_eq!(measurement["deterministic"]["pure_vm_calls_median"], 0);
-    assert_eq!(measurement["deterministic"]["pure_fallbacks_median"], 0);
+    assert_eq!(measurement["deterministic"]["pure_vm_calls_median"], 1);
+    assert_eq!(measurement["deterministic"]["pure_fallbacks_median"], 1);
     assert_eq!(
         measurement["deterministic"]["pure_arg_stack_packs_median"],
         0
@@ -4480,7 +4548,7 @@ fn bench_json_measures_checked_in_scalar_for_pure_jit_perf_guard() {
     );
     assert_eq!(
         measurement["deterministic"]["pure_arg_bytes_borrowed_median"],
-        256
+        240
     );
     assert_eq!(
         measurement["deterministic"]["pure_result_bytes_copied_median"],
@@ -4492,15 +4560,21 @@ fn bench_json_measures_checked_in_scalar_for_pure_jit_perf_guard() {
     assert_eq!(compile["jit_successes"], 1);
     assert_eq!(compile["jit_failures"], 0);
     assert_eq!(compile["cache_misses"], 0);
-    assert!(
-        compile["cache_hits"]
-            .as_u64()
-            .is_some_and(|hits| hits >= 16),
-        "scalar JIT calls should stay cached after compile: {compile}"
-    );
+    assert_eq!(compile["cache_hits"], 15);
     assert!(
         compile["compile_elapsed_ns"].as_u64().is_some(),
         "JIT compile timing should remain observable but threshold-free: {compile}"
+    );
+    assert_bench_flow_run(
+        &path,
+        "flow.for_pure",
+        64,
+        64,
+        &[64, 36],
+        &[
+            "4", "8", "12", "16", "20", "24", "28", "32", "36", "40", "44", "48", "52", "56", "60",
+            "64",
+        ],
     );
 }
 
@@ -4560,9 +4634,9 @@ fn bench_json_measures_checked_in_mixed_for_iter_pure_jit_fixture() {
         measurement["deterministic"]["pure_flat_batch_bytes_borrowed_median"],
         192
     );
-    assert_eq!(measurement["deterministic"]["pure_jit_calls_median"], 40);
-    assert_eq!(measurement["deterministic"]["pure_vm_calls_median"], 0);
-    assert_eq!(measurement["deterministic"]["pure_fallbacks_median"], 0);
+    assert_eq!(measurement["deterministic"]["pure_jit_calls_median"], 39);
+    assert_eq!(measurement["deterministic"]["pure_vm_calls_median"], 1);
+    assert_eq!(measurement["deterministic"]["pure_fallbacks_median"], 1);
     assert_eq!(
         measurement["deterministic"]["pure_arg_stack_packs_median"],
         0
@@ -4577,11 +4651,22 @@ fn bench_json_measures_checked_in_mixed_for_iter_pure_jit_fixture() {
     );
     assert_eq!(
         measurement["deterministic"]["pure_arg_bytes_borrowed_median"],
-        320
+        312
     );
     assert_eq!(
         measurement["deterministic"]["pure_result_bytes_copied_median"],
         96
+    );
+    assert_bench_flow_run(
+        &path,
+        "flow.mixed_for_iter_pure_jit",
+        128,
+        128,
+        &[128, 9],
+        &[
+            "3", "4", "5", "8", "10", "12", "14", "16", "5", "5", "5", "5", "5", "5", "5", "5",
+            "8", "8", "8",
+        ],
     );
 }
 

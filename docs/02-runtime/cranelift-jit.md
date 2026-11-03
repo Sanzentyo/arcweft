@@ -42,6 +42,13 @@ the same threshold family is crossed, so natural `for` loops can become native
 without forcing cold scalar startup to pay JIT compile cost. Unsupported helpers
 stay on the VM. Pinned `--pure-backend jit|aot|vm` runs only that selected
 native/helper tier before falling back to the VM for unsupported helpers.
+An executable scalar body also keeps its caller's source-work allowance. A
+compiled completion may replace that body only when its complete control-work
+cost fits the current owning dispatch's remaining budget. Otherwise the normal
+function frame executes across budget yields through the VM. OneOp retains
+that frame even when `max_ops` is large. Pinning a helper backend does not grant
+additional work or require every invocation to complete in native code; the
+reported JIT, VM and fallback counters retain the actual split.
 `--pure-workers auto|N`
 and `--pure-batch-min-len N` configure the accelerator-owned thread pool used
 for batchable typed AOT helper calls; the batch threshold is interpreted per

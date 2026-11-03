@@ -259,6 +259,9 @@ lets ordinary flow code call lowered pure helpers through the runtime
 accelerator cache. Supported deterministic `i64` helpers start on the cold AOT
 tier, then promote large flat batches to JIT; unsupported helpers stay on the
 VM. `--pure-backend vm|aot|jit` pins that selection for measurement.
+Executable scalar completion still requires its full source-work cost to fit
+the current caller dispatch. Calls that cannot fit, and OneOp calls, retain
+the ordinary budgeted VM frame; a pinned backend does not increase `max_ops`.
 Per-step JSON includes child fiber counts and `stats.pure` counters for scalar
 and batch pure calls, batch item counts, backend call counts, stack-packed
 integer arguments, copied argument/result bytes, thread-pool jobs, Vec argument
