@@ -139,7 +139,8 @@ fn associated_capacity_dependency_direction() {
         .collect::<BTreeSet<_>>();
     assert_eq!(
         external_dependencies(&hir_dependencies, &workspace_ids),
-        BTreeSet::from(["blake3", "num-bigint", "sha2", "thiserror"])
+        // Serde encodes stable benchmark targets, never HIR session or arena IDs.
+        BTreeSet::from(["blake3", "num-bigint", "serde", "sha2", "thiserror"])
     );
     assert_eq!(
         external_dependencies(&sema_dependencies, &workspace_ids),

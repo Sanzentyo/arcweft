@@ -85,7 +85,13 @@ test @test.opening_choices_visual visual {
 
 ```text
 bench ID { ... }
+bench ID ADAPTER_NAME { ... }
 ```
+
+The optional adapter registry name selects the execution owner explicitly;
+omitting it selects headless execution. Tooling retains that target through HIR,
+the manifest, and the JSON report. The headless runner skips named-adapter work
+before execution or measurement; command names do not select a backend.
 
 Bench bodies use structured sections such as `setup`, `measure`, `assert`,
 and `report`. The language layer preserves these sections for tooling; timing,
@@ -110,7 +116,7 @@ bench @bench.opening_pipeline {
 Audio bench:
 
 ```arcw
-bench @bench.bgm_mix_120s {
+bench @bench.bgm_mix_120s audio {
     setup { audio.play(@bgm.alice_theme, section=@music.main) }
     measure duration = 120s { audio.render_offline() }
     report { cpu_time, peak_buffer_bytes, loudness }

@@ -92,6 +92,9 @@ The current workspace member list is `[workspace].members` in [Cargo.toml](../..
   expression／pattern／local／type／capture の共通アドレス `HirValueTypeOwner` もここに置く。
   runtime 表現の有無は Sema の checked projection が決め、RuntimePlan はその区分を
   保持する。semantic callee の prefix 評価と、callable 値を渡す通常の呼出しを区別する。
+  `HirBenchExecutionTarget` は session / arena ID を含まない bench 実行先の値とし、
+  HIR、test manifest、CLI report が同じ型と Serde codec を共有する。
+  この Sans I/O codec の通常依存は HIR session や database の直列化を意味しない。
 - `arcweft-lang-hir` は syntax/CST 由来の typed ID context も所有する。
   `arcweft-tooling`、CLI、LSP は dialogue ID や choice ID を独自 scan
   せず、この context から edit / hint / code action を作る。

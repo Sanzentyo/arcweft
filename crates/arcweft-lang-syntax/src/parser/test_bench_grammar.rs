@@ -50,11 +50,17 @@ pub(super) fn emit_declaration(
     let test_kind = if kind == SyntaxKind::TestItem {
         Some(emit_test_kind(&mut parser))
     } else {
+        if matches!(
+            parser.current_kind(),
+            Some(SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken)
+        ) {
+            parser.start(SyntaxKind::NameReference, SyntaxRole::Kind);
+            parser.bump();
+            parser.finish();
+        }
         None
     };
-    if test_kind.is_some() {
-        parser.bump_trivia();
-    }
+    parser.bump_trivia();
     recover_trailing_header(&mut parser);
     emit_plan_body(&mut parser, keyword);
 

@@ -7189,7 +7189,7 @@ fn bench_json_skips_adapter_only_script_benches() {
     let path = temp_arcw(
         "script-bench-adapter",
         r"
-bench @bench.audio {
+bench @bench.audio audio {
     setup { audio.play(@bgm.alice_theme) }
     measure iterations = 3 { render_audio_offline() }
 }
@@ -7215,6 +7215,77 @@ bench @bench.audio {
             && stdout.contains("adapter-only"),
         "bench JSON should make unsupported headless work explicit: {stdout}"
     );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["benches"][0]["target"]["kind"], "adapter");
+    assert_eq!(report["benches"][0]["target"]["name"], "audio");
+    for section in report["benches"][0]["sections"].as_array().unwrap() {
+        assert_eq!(section["status"], "skipped");
+        assert!(section["measurement"].is_null());
+    }
+}
+
+#[test]
+fn bench_json_does_not_guess_an_adapter_from_unsupported_commands() {
+    let path = temp_arcw(
+        "script-bench-headless-unknown",
+        r"
+bench @bench.audio {
+    setup { audio.play(@bgm.alice_theme) }
+    measure iterations = 3 { render_audio_offline() }
+}
+",
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("bench")
+        .arg(&path)
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let bench = &report["benches"][0];
+    assert_eq!(bench["target"]["kind"], "headless");
+    assert_eq!(bench["status"], "failed");
+    let diagnostics = bench["diagnostics"].as_array().unwrap();
+    assert!(
+        diagnostics
+            .iter()
+            .any(|value| value == "unsupported script command `audio.play`")
+    );
+    assert!(
+        diagnostics
+            .iter()
+            .any(|value| value == "unsupported script command `render_audio_offline`")
+    );
+}
+
+#[test]
+fn bench_json_named_adapter_skips_execution_but_keeps_plan_validation() {
+    for (body, expected_status) in [
+        ("measure { goto @flow.must_not_run }", "skipped"),
+        ("setup {}", "failed"),
+        ("unknown_section()\nmeasure {}", "failed"),
+    ] {
+        let source = format!(
+            "entry bench @entry.adapter {{ goto @flow.must_not_run }}\nbench @bench.adapter studio {{ {body} }}\nflow must_not_run() -> String {{ return \"not-measured\" }}\n"
+        );
+        let path = temp_arcw("script-bench-named-adapter", &source);
+        let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+            .arg("bench")
+            .arg(&path)
+            .arg("--json")
+            .output()
+            .unwrap();
+        assert_eq!(output.status.success(), expected_status == "skipped");
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let bench = &report["benches"][0];
+        assert_eq!(bench["target"]["name"], "studio");
+        assert_eq!(bench["status"], expected_status);
+        for section in bench["sections"].as_array().unwrap() {
+            assert!(section["measurement"].is_null());
+            assert!(section["pure_helper"].is_null());
+        }
+    }
 }
 
 #[test]

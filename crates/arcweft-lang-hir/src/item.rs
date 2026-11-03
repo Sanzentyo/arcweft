@@ -71,13 +71,13 @@ pub use self::flow::{
     HirFlowPoison, HirFlowResultLocal, HirFlowReturn,
 };
 pub use self::host::{
-    HirBenchItem, HirStyleAssignOperation, HirStyleAssignOperationIssue, HirStyleBodyIssue,
-    HirStyleBodyItem, HirStyleCombinator, HirStyleDeclaration, HirStyleEnvironment,
-    HirStyleEnvironmentClause, HirStyleEnvironmentComparison, HirStyleEnvironmentComparisonIssue,
-    HirStyleEnvironmentField, HirStyleEnvironmentFieldIssue, HirStyleItem, HirStyleName,
-    HirStyleNameIssue, HirStyleRule, HirStyleSelector, HirStyleSelectorIssue,
-    HirStyleSelectorSequence, HirStyleToken, HirStyleTokenIssue, HirTestItem, HirTestKind,
-    HirTestKindIssue,
+    HirBenchExecutionTarget, HirBenchItem, HirStyleAssignOperation, HirStyleAssignOperationIssue,
+    HirStyleBodyIssue, HirStyleBodyItem, HirStyleCombinator, HirStyleDeclaration,
+    HirStyleEnvironment, HirStyleEnvironmentClause, HirStyleEnvironmentComparison,
+    HirStyleEnvironmentComparisonIssue, HirStyleEnvironmentField, HirStyleEnvironmentFieldIssue,
+    HirStyleItem, HirStyleName, HirStyleNameIssue, HirStyleRule, HirStyleSelector,
+    HirStyleSelectorIssue, HirStyleSelectorSequence, HirStyleToken, HirStyleTokenIssue,
+    HirTestItem, HirTestKind, HirTestKindIssue,
 };
 pub use self::nominal::{
     HirEnumItem, HirEnumVariant, HirEnumVariantField, HirEnumVariantPayload,

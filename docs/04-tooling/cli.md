@@ -1189,6 +1189,14 @@ are reported as skipped until a player adapter owns those backends.
 `measure` section, accepts `setup`, `measure`, `assert`, and `report` sections,
 measures headless `measure` bodies that name `goto @flow...`, and reports
 per-bench `measured`, `validated`, `skipped`, or `failed` status in JSON.
+An unqualified declaration, `bench @bench.id { ... }`, selects the headless
+runner. An optional adapter registry name after the ID explicitly selects a
+different execution owner, for example `bench @bench.audio audio { ... }`.
+The accepted HIR target is retained directly in the script manifest and JSON
+report. Headless execution reports adapter-targeted sections as `skipped`
+without starting or measuring them. It still rejects malformed section plans
+and missing `measure` sections. Unknown commands in a headless declaration
+remain errors; command names never imply an adapter target.
 `--value name=typed-value` supplies the complete input inventory of each measured
 Flow, using the same parser and plan-owned parameter/type admission as
 `arcw run --flow`. Missing, duplicate, unknown, or incorrectly typed inputs fail

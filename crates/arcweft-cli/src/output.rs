@@ -710,6 +710,7 @@ pub(crate) enum ScriptTestFinalStatus {
 #[derive(serde::Serialize)]
 pub(crate) struct ScriptBenchRunSummary {
     pub(crate) id: String,
+    pub(crate) target: arcweft_lang_hir::item::HirBenchExecutionTarget,
     pub(crate) status: ScriptBenchStatus,
     pub(crate) sections: Vec<ScriptBenchSectionRunSummary>,
     pub(crate) diagnostics: Vec<String>,
@@ -911,6 +912,7 @@ impl ScriptBenchRunSummary {
     ) -> Self {
         Self {
             id: bench.id.clone(),
+            target: bench.target.clone(),
             status,
             sections,
             diagnostics,

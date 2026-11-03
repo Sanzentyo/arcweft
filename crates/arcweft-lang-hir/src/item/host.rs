@@ -300,17 +300,32 @@ pub enum HirTestKindIssue {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirBenchItem {
     id: HirIdRefValue,
+    target: HirBenchExecutionTarget,
     scope: ScopeId,
     body: Box<[StmtId]>,
 }
 
 impl HirBenchItem {
-    pub(crate) const fn new(id: HirIdRefValue, scope: ScopeId, body: Box<[StmtId]>) -> Self {
-        Self { id, scope, body }
+    pub(crate) const fn new(
+        id: HirIdRefValue,
+        target: HirBenchExecutionTarget,
+        scope: ScopeId,
+        body: Box<[StmtId]>,
+    ) -> Self {
+        Self {
+            id,
+            target,
+            scope,
+            body,
+        }
     }
 
     pub const fn id(&self) -> &HirIdRefValue {
         &self.id
+    }
+
+    pub const fn target(&self) -> &HirBenchExecutionTarget {
+        &self.target
     }
 
     pub const fn body(&self) -> &[StmtId] {
@@ -332,6 +347,18 @@ impl HirBenchItem {
         validate_scope(expected, self.scope)?;
         validate_statements(expected, &self.body)
     }
+}
+
+/// The execution owner selected by one benchmark declaration.
+///
+/// This stable value contains no HIR session identity. Script manifests retain
+/// it directly, including validated adapter registry names, rather than
+/// inferring a backend from command names or source text.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum HirBenchExecutionTarget {
+    Headless {},
+    Adapter { name: arcweft_id::DeclarationName },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

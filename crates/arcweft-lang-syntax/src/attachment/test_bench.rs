@@ -170,12 +170,37 @@ impl AttachedTestDeclaration {
     }
 }
 
+/// One authored adapter registry reference in a benchmark header.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AttachedBenchAdapter {
+    syntax: AstNode<NameReferenceKind>,
+    name: SyntaxName,
+}
+
+impl AttachedBenchAdapter {
+    pub const fn syntax(&self) -> &AstNode<NameReferenceKind> {
+        &self.syntax
+    }
+
+    pub const fn name(&self) -> &SyntaxName {
+        &self.name
+    }
+
+    fn attach(syntax: SyntaxNodeHandle) -> Result<Self, SyntaxAccessError> {
+        let syntax = syntax.cast::<NameReferenceKind>()?;
+        let name = SyntaxName::try_new(syntax.source_text())
+            .map_err(|_| SyntaxAccessError::InvalidItemProjection { id: syntax.id() })?;
+        Ok(Self { syntax, name })
+    }
+}
+
 /// Complete attached `bench` declaration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AttachedBenchDeclaration {
     syntax: AstNode<BenchItemKind>,
     prefix: AttachedItemPrefix,
     id: AttachedPlanId,
+    adapter: Option<AttachedBenchAdapter>,
     body: AttachedPlanBody,
     trailing_recoveries: Box<[AstNode<ErrorNodeKind>]>,
 }
@@ -189,6 +214,10 @@ impl AttachedBenchDeclaration {
     }
     pub const fn id(&self) -> &AttachedPlanId {
         &self.id
+    }
+    /// An explicit adapter registry name; absence selects headless execution.
+    pub const fn adapter(&self) -> Option<&AttachedBenchAdapter> {
+        self.adapter.as_ref()
     }
     pub const fn body(&self) -> &AttachedPlanBody {
         &self.body
@@ -229,6 +258,11 @@ impl AstNode<BenchItemKind> {
             syntax: self.clone(),
             prefix: TypedItemNode::Bench(self.clone()).attached_prefix()?,
             id: attached_plan_id(&self.syntax())?,
+            adapter: self
+                .syntax()
+                .optional_unique_child(SyntaxRole::Kind)?
+                .map(AttachedBenchAdapter::attach)
+                .transpose()?,
             body: attached_plan_body(&self.syntax())?,
             trailing_recoveries: self
                 .ordered_exact_children::<ErrorNodeKind>(SyntaxRoleClass::Recovery)?
@@ -393,6 +427,26 @@ mod tests {
             .filter(|node| node.kind() == SyntaxKind::BenchItem)
             .map(|node| node.cast().unwrap())
             .collect()
+    }
+
+    #[test]
+    fn bench_adapter_reference_preserves_default_and_exact_authored_names() {
+        let source = "bench @bench.local { measure {} }\nbench @bench.audio audio { measure {} }\nbench @bench.custom 音声 { measure {} }\n";
+        let snapshot = attach(source);
+        let owners = benches(&snapshot);
+        assert!(owners[0].semantics().unwrap().adapter().is_none());
+        for (owner, expected) in owners[1..].iter().zip(["audio", "音声"]) {
+            let attached = owner.semantics().unwrap();
+            assert!(!attached.has_recovery());
+            let adapter = attached.adapter().unwrap();
+            assert_eq!(adapter.name().as_str(), expected);
+            assert_eq!(adapter.syntax().source_text(), expected);
+            let start = source.find(&format!(" {expected} {{")).unwrap() + 1;
+            assert_eq!(
+                adapter.syntax().range(),
+                arcweft_source::SourceRange::new(start, start + expected.len())
+            );
+        }
     }
 
     #[test]

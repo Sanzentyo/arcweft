@@ -6,7 +6,7 @@ use arcweft_lang_hir::{
         HirNamedBlockExpr, HirNamedBlockName, HirSelectedMember, HirThreadFlowItem,
     },
     identity::{ExprId, ItemId, StmtId},
-    item::{HirBenchItem, HirItemKind, HirTestItem, HirTestKind},
+    item::{HirBenchExecutionTarget, HirBenchItem, HirItemKind, HirTestItem, HirTestKind},
     leaf::{
         HirCharacterLiteral, HirFloatLiteral, HirIdRef, HirIntegerLiteral, HirLiteral, HirPath,
         HirPathRoot, HirPathSegment, HirStringLiteral,
@@ -52,6 +52,7 @@ pub struct ScriptStep {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ScriptBench {
     pub id: String,
+    pub target: HirBenchExecutionTarget,
     pub sections: Vec<BenchSection>,
     pub source: ManifestSpan,
 }
@@ -195,6 +196,7 @@ fn script_test(module: &HirModule, owner: ItemId, item: &HirTestItem) -> Option<
 fn script_bench(module: &HirModule, owner: ItemId, item: &HirBenchItem) -> Option<ScriptBench> {
     Some(ScriptBench {
         id: id_ref_label(item.id().as_resolved()?, "bench"),
+        target: item.target().clone(),
         sections: bench_sections(module, item.body()),
         source: item_source(module, owner)?,
     })
@@ -761,6 +763,10 @@ bench @bench.opening {
     measure iterations = 10 { pure(opening_choices) }
     report { cpu_time }
 }
+
+bench @bench.adapter 音声 {
+    measure { adapter_operation() }
+}
 "#,
             )
             .expect("script manifest fixture source document"),
@@ -865,6 +871,25 @@ bench @bench.opening {
         );
         assert_eq!(manifest.benches[0].sections[1].name, "measure");
         assert_eq!(
+            manifest.benches[0].target,
+            HirBenchExecutionTarget::Headless {}
+        );
+        let HirBenchExecutionTarget::Adapter { name } = &manifest.benches[1].target else {
+            panic!("one explicit adapter selection");
+        };
+        assert_eq!(name.as_str(), "音声");
+        let wire = serde_json::to_value(&manifest).unwrap();
+        assert_eq!(
+            serde_json::from_value::<ScriptTestManifest>(wire.clone()).unwrap(),
+            manifest
+        );
+        let mut missing_target = wire;
+        missing_target["benches"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("target");
+        assert!(serde_json::from_value::<ScriptTestManifest>(missing_target).is_err());
+        assert_eq!(
             manifest.benches[0].sections[1].body,
             [ScriptCommand::Pure {
                 helper: "opening_choices".to_owned()
@@ -874,5 +899,20 @@ bench @bench.opening {
             manifest.benches[0].sections[1].source.document,
             document.identity().clone()
         );
+    }
+
+    #[test]
+    fn bench_execution_target_codec_rejects_invalid_registry_names() {
+        for invalid in [
+            serde_json::json!({"kind":"adapter", "name":"bad name"}),
+            serde_json::json!({"kind":"adapter", "name":""}),
+            serde_json::json!({"kind":"headless", "name":"audio"}),
+            serde_json::json!({"kind":"guessed_from_commands"}),
+        ] {
+            assert!(
+                serde_json::from_value::<HirBenchExecutionTarget>(invalid.clone()).is_err(),
+                "invalid target must be rejected: {invalid}"
+            );
+        }
     }
 }

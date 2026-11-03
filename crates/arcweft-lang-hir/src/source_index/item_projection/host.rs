@@ -10,8 +10,8 @@ use arcweft_lang_syntax::incremental::ParsedSource;
 
 use crate::identity::ItemId;
 use crate::item::{
-    HirBenchItem, HirItem, HirItemIssue, HirItemKind, HirItemPoisonState, HirTestItem, HirTestKind,
-    HirTestKindIssue,
+    HirBenchExecutionTarget, HirBenchItem, HirItem, HirItemIssue, HirItemKind, HirItemPoisonState,
+    HirTestItem, HirTestKind, HirTestKindIssue,
 };
 use crate::leaf::{HirIdRefIssue, HirIdRefRecovery, HirIdRefShape, HirIdRefValue};
 use crate::slot::SlotSnapshot;
@@ -85,6 +85,13 @@ pub(super) fn bench_payload_matches(
     };
     item_prefix_matches(item, attached.prefix(), slots)
         && plan_id_matches(retained.id(), attached.id())
+        && match (retained.target(), attached.adapter()) {
+            (HirBenchExecutionTarget::Headless {}, None) => true,
+            (HirBenchExecutionTarget::Adapter { name }, Some(adapter)) => {
+                adapter.name().as_str() == name.as_str()
+            }
+            _ => false,
+        }
         && plan_id_is_unallocated(attached.id(), slots)
         && item.members().is_empty()
         && item.state() == &bench_item_state(attached, retained, item, slots, statement_recovery)

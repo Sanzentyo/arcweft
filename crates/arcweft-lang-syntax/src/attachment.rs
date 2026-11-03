@@ -203,8 +203,8 @@ pub use style::{
     StyleSyntaxNameIssue,
 };
 pub use test_bench::{
-    AttachedBenchDeclaration, AttachedPlanBody, AttachedPlanId, AttachedTestDeclaration,
-    AttachedTestKind,
+    AttachedBenchAdapter, AttachedBenchDeclaration, AttachedPlanBody, AttachedPlanId,
+    AttachedTestDeclaration, AttachedTestKind,
 };
 pub use thread_body::{
     AttachedFlowStatementBody, AttachedLoopBody, AttachedLoopBodyBlock,

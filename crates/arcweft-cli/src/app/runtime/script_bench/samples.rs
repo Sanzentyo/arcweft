@@ -582,6 +582,7 @@ fn modal_executor_math_label(
 
 pub(in crate::app) fn validate_bench_section(
     section: &BenchSection,
+    target: &arcweft_lang_hir::item::HirBenchExecutionTarget,
 ) -> ScriptBenchSectionRunSummary {
     let mut diagnostics = Vec::new();
     if !is_known_bench_section(&section.name) {
@@ -590,6 +591,15 @@ pub(in crate::app) fn validate_bench_section(
             &section.name,
             ScriptBenchSectionStatus::Unknown,
             diagnostics,
+        );
+    }
+    if let arcweft_lang_hir::item::HirBenchExecutionTarget::Adapter { name } = target {
+        return ScriptBenchSectionRunSummary::new(
+            &section.name,
+            ScriptBenchSectionStatus::Skipped,
+            vec![format!(
+                "adapter-only section requires `{name}` execution; the headless runner has no such adapter"
+            )],
         );
     }
     diagnostics.extend(script_command_diagnostics(&section.body));

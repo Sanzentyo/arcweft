@@ -43,7 +43,7 @@ fn validate_script_bench(bench: &ScriptBench) -> ScriptBenchRunSummary {
     let sections = bench
         .sections
         .iter()
-        .map(validate_bench_section)
+        .map(|section| validate_bench_section(section, &bench.target))
         .collect::<Vec<_>>();
     let mut diagnostics = Vec::new();
     if !bench
@@ -116,7 +116,9 @@ pub(in crate::app) fn run_script_bench(
     let sections = bench
         .sections
         .iter()
-        .map(|section| run_bench_section(section, plan, source_path, options, runtime))
+        .map(|section| {
+            run_bench_section(section, &bench.target, plan, source_path, options, runtime)
+        })
         .collect::<Vec<_>>();
     let section_failures = sections
         .iter()
@@ -273,12 +275,13 @@ fn bench_pure_helper_name(section: &BenchSection) -> Option<String> {
 
 fn run_bench_section(
     section: &BenchSection,
+    target: &arcweft_lang_hir::item::HirBenchExecutionTarget,
     plan: &RuntimePlan,
     source_path: &Path,
     options: &ScriptBenchOptions,
     runtime: BenchRuntimeContext<'_>,
 ) -> ScriptBenchSectionRunSummary {
-    let validated = validate_bench_section(section);
+    let validated = validate_bench_section(section, target);
     if section.name != "measure" || validated.status != ScriptBenchSectionStatus::Validated {
         return validated;
     }

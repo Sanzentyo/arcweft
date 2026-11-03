@@ -7,7 +7,8 @@ use arcweft_lang_syntax::attachment::{
 
 use crate::identity::{ItemId, ScopeId};
 use crate::item::{
-    HirBenchItem, HirItem, HirItemIssue, HirItemKind, HirTestItem, HirTestKind, HirTestKindIssue,
+    HirBenchExecutionTarget, HirBenchItem, HirItem, HirItemIssue, HirItemKind, HirTestItem,
+    HirTestKind, HirTestKindIssue,
 };
 use crate::leaf::{HirIdRefIssue, HirIdRefRecovery, HirIdRefShape, HirIdRefValue};
 use crate::lowering::{HirInvariantFailure, HirLowerFailure};
@@ -75,6 +76,12 @@ impl StagedHirModuleTransaction<'_> {
             .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
         let prefix = self.lower_item_prefix(attached.prefix(), parent_scope)?;
         let id = lower_plan_id(attached.id())?;
+        let target = match attached.adapter() {
+            None => HirBenchExecutionTarget::Headless {},
+            Some(adapter) => HirBenchExecutionTarget::Adapter {
+                name: name_projection::declaration_name(adapter.name())?,
+            },
+        };
         let body = self.lower_plan_body(owner, parent_scope, attached.body())?;
 
         let mut issue = prefix.issue;
@@ -92,7 +99,7 @@ impl StagedHirModuleTransaction<'_> {
             issue.get_or_insert(HirItemIssue::MalformedHeader);
         }
 
-        let kind = HirItemKind::Bench(HirBenchItem::new(id, body.scope, body.statements));
+        let kind = HirItemKind::Bench(HirBenchItem::new(id, target, body.scope, body.statements));
         Ok(LoweredItemProjection {
             item: HirItem::try_new_with_state(
                 owner,

@@ -15,6 +15,14 @@ pub(crate) fn name(value: &SyntaxName) -> Result<HirName, HirLowerFailure> {
         .map_err(|_| HirInvariantFailure::InvalidArenaCommit.into())
 }
 
+pub(crate) fn declaration_name(
+    value: &SyntaxName,
+) -> Result<arcweft_id::DeclarationName, HirLowerFailure> {
+    require_limit(HirLimit::NameBytes, value.as_str().len())?;
+    arcweft_id::DeclarationName::try_new(value.as_str())
+        .map_err(|_| HirInvariantFailure::InvalidArenaCommit.into())
+}
+
 pub(crate) const fn name_issue(_: &SyntaxNameIssue) -> HirNameInvariantError {
     HirNameInvariantError::InvalidIdentifier
 }

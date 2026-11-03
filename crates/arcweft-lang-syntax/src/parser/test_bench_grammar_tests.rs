@@ -173,7 +173,7 @@ fn unclosed_plan_body_synchronizes_before_the_next_declaration() {
 fn unexpected_plan_header_tokens_are_recovered_without_hiding_the_body() {
     let source = concat!(
         "test @test.extra scenario unexpected { expect.no_failures() }\n",
-        "bench @bench.extra unexpected { report { cpu_time } }\n",
+        "bench @bench.extra 1234567890 { report { cpu_time } }\n",
         "proof next() = ()\n",
     );
     let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();

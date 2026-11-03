@@ -3,7 +3,78 @@ use super::*;
 use arcweft_lang_syntax::attachment::TypedItemNode;
 
 use crate::identity::ExprId;
-use crate::item::{HirBenchItem, HirTestItem, HirTestKind};
+use crate::item::{HirBenchExecutionTarget, HirBenchItem, HirTestItem, HirTestKind};
+
+#[test]
+fn bench_target_retains_headless_and_named_adapter_selection() {
+    let parsed = parse(
+        "arcweft-test://proof/final-hir-bench-target",
+        "bench @bench.local { measure {} }\nbench @bench.audio audio { measure {} }\nbench @bench.custom 音声 { measure {} }\n",
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+    assert_eq!(
+        bench_item(&module, 0).2.target(),
+        &HirBenchExecutionTarget::Headless {}
+    );
+    for (ordinal, expected) in [(1, "audio"), (2, "音声")] {
+        let (_, item, bench) = bench_item(&module, ordinal);
+        assert_eq!(item.state(), &HirItemPoisonState::Clean);
+        let HirBenchExecutionTarget::Adapter { name } = bench.target() else {
+            panic!("retain the selected adapter instead of reconstructing it from calls");
+        };
+        assert_eq!(name.as_str(), expected);
+    }
+}
+
+#[test]
+fn bench_freeze_rejects_execution_target_substitution() {
+    let parsed = parse(
+        "arcweft-test://proof/final-hir-bench-target-tamper",
+        "bench @bench.audio audio { measure {} }\n",
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let mut transaction = stage(&database, &parsed, &key);
+    transaction.lower_parsed_source_items(&parsed).unwrap();
+    let owner = transaction.source_ordered_items[0];
+    let (slots, arenas) = transaction.storage_mut();
+    let original = arenas.items().resolve_staged(slots, owner).unwrap().clone();
+    let HirItemKind::Bench(bench) = original.kind() else {
+        panic!("one bench owner")
+    };
+    let replacement = HirItem::try_new_with_state(
+        owner,
+        original.scope(),
+        original.prefix().clone(),
+        HirItemKind::Bench(HirBenchItem::new(
+            bench.id().clone(),
+            HirBenchExecutionTarget::Headless {},
+            bench.scope(),
+            bench.body().into(),
+        )),
+        original.members().into(),
+        *original.state(),
+    )
+    .unwrap();
+    arenas
+        .items()
+        .revise_finalized(slots, owner, replacement)
+        .unwrap();
+    assert!(matches!(
+        transaction.finish(&mut database),
+        Err(HirLowerFailure::Invariant(
+            HirInvariantFailure::InvalidSourceIndex
+        ))
+    ));
+    assert!(database.current(&key).is_none());
+}
 use crate::leaf::{HirEntityReference, HirIdRef, HirIdRefValue};
 use crate::source_index::{
     HirItemSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite, HirTestBenchSourceRole,
