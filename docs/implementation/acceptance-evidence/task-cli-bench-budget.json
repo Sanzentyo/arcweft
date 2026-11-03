@@ -1,0 +1,668 @@
+{
+  "version": 1,
+  "recordedAt": "2026-11-03T13:43:50.0279747Z",
+  "source": "73b0e33021ac3258b08ad7d01ac63cf413f122aa",
+  "productionSource": "cdcda93e5aedb446c88167d6079ab0e5ca48d9c1",
+  "workingTree": "main; original12 tracked and6 actual untracked WIP retained",
+  "scope": "Four existing CLI benchmark expectations and complete original-Flow result checks; clarify source-work admission for executable scalar native completion. No runtime/compiler/workload/budget implementation changed.",
+  "publication": {
+    "version": 1,
+    "commit": "73b0e33021ac3258b08ad7d01ac63cf413f122aa",
+    "parent": "4a72b9a6fdf88656554f455ed5530dea2a486f3d",
+    "tree": "5559c8985487e717829ad452f2b6fd60e9b26227",
+    "remote": "73b0e33021ac3258b08ad7d01ac63cf413f122aa",
+    "paths": [
+      {
+        "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+        "blob": "508d76d23fad8c756a18af57de432b6683afe6d4"
+      },
+      {
+        "path": "docs/02-runtime/cranelift-jit.md",
+        "blob": "5356b5c551efad3ffe4d93af016eac5148de1666"
+      },
+      {
+        "path": "docs/04-tooling/cli.md",
+        "blob": "ad6fbe83444ffe01b78ef87ded151a7575648f3f"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "0aa8fe8f84314308be25024dd8e063249700ffdaf7d1493357111582a0f8156a",
+    "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-03T13:42:29.7348301Z"
+  },
+  "graph": {
+    "version": 1,
+    "base": "4a72b9a6fdf88656554f455ed5530dea2a486f3d",
+    "root": "arcweft-cli",
+    "reversePackages": [
+      {
+        "name": "arcweft-cli",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0"
+      }
+    ],
+    "metadataReusedFrom": "cli-spec-yield-final.metadata.json",
+    "metadataSha256": "0de535b2dc77e7e4b275a4b91a5cb1af5f16bb4197d828202c313f0fedb6e47b",
+    "reason": "Cargo manifests/lockfile and dependency ownership unchanged. CLI is the sole transitive reverse owner of this private integration-test/documentation cut.",
+    "scope": "all resolved normal/dev/build edges; focused4 existing CLI tests under --all-targets --all-features --locked. No new full CLI/workspace runtime claim."
+  },
+  "focused": {
+    "version": 1,
+    "base": "4a72b9a6fdf88656554f455ed5530dea2a486f3d",
+    "run": "bench-budget-owner1-20261103.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [   2.255s] 4 tests run: 4 passed, 714 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 4,
+    "passed": 4,
+    "failed": 0,
+    "skipped": 714,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4090,
+    "sourceDrift": 0,
+    "held": 12,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-11-03T13:39:38.534214Z"
+  },
+  "inputsProof": {
+    "version": 1,
+    "base": "4a72b9a6fdf88656554f455ed5530dea2a486f3d",
+    "productionSource": "cdcda93e5aedb446c88167d6079ab0e5ca48d9c1",
+    "productionChanges": 0,
+    "cases": [
+      {
+        "test": "bench_json_measures_branching_for_loop_pure_jit_characteristics",
+        "commandSha256": "e5aa7ee49c3ed7de10da1085cccf98ac1805b203e3dde8e253046cb228a4b4a6",
+        "commandDrift": 0,
+        "inlineFixture": {
+          "sha256": "b553a6b1015f1b60e396fa68cc75043a771dccec9304b32b26b9d79cf1cc1ff1",
+          "drift": 0
+        }
+      },
+      {
+        "test": "bench_json_measures_runtime_match_to_pure_jit_characteristics",
+        "commandSha256": "e67e1d2eafcbdc071501577b30cea5e3e74625f7fa4f09bcf9e1d73e8e542418",
+        "commandDrift": 0,
+        "inlineFixture": {
+          "sha256": "027274440b932d079b00a4c791305c9a852a69a215147e294f5d59299c570144",
+          "drift": 0
+        }
+      },
+      {
+        "test": "bench_json_measures_checked_in_scalar_for_pure_jit_perf_guard",
+        "commandSha256": "71e2df3b574233801b19cf9f0a7b8c9bd4e0227b60d692490fd93efa9c619393",
+        "commandDrift": 0,
+        "inlineFixture": null
+      },
+      {
+        "test": "bench_json_measures_checked_in_mixed_for_iter_pure_jit_fixture",
+        "commandSha256": "eca1f8a96c6dd75725a9e4f6574cba846a2d61233860c3451e54c7383eb7f317",
+        "commandDrift": 0,
+        "inlineFixture": null
+      }
+    ],
+    "checkedInFixtures": [
+      {
+        "path": "tests/fixtures/arcw/spec_should_pass/bench/003_for_pure_jit.arcw",
+        "sha256": "4644fea302a55e060118e3f325212cf9a93054cfb2e4a90336bb927e44e07424",
+        "drift": 0
+      },
+      {
+        "path": "tests/fixtures/arcw/spec_should_pass/bench/033_mixed_for_iter_pure_jit.arcw",
+        "sha256": "e8b3c7ddb8333680773f70d10c438d9c08ac1dd2ef074c1f94f88128d3f6b9d0",
+        "drift": 0
+      }
+    ],
+    "normalization": "Compare Rust fixture and command source with CRLF normalized to LF; preserve literal content, iterations/warmup/samples/steps/max-ops and backend arguments. Actual emitted fixture hashes and native executable hashes are pinned separately by the direct probes.",
+    "runtimeEvidence": "cli-bench-frontier1 contains original benchmark and Drain run observations. Scalar completes16 calls, all16 logs and done under64op dispatches64+36; mixed completes40 calls,19 logs and done under128+9. Branch8 total calls and4 logs span8+8+8+8+8+8+8+7, match logs12 and returnsdone under8+1.",
+    "ownerReview": {
+      "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+      "crate": "arcweft-cli",
+      "classification": "integration-test responsibility module",
+      "bytes": 325499,
+      "physicalLoc": 9528,
+      "basePhysicalLoc": 9443,
+      "growth": 85,
+      "embeddedTestLoc": 9528,
+      "workspaceFanIn": 0,
+      "workspaceFanOut": 55,
+      "disposition": "Above8000LOC; retain the existing benchmark fixture/result owner. The one private helper is used only by these4 tests to verify the same source workload, exact final logs/return and per-step budgets. No unrelated state, shared production helper, public API widening, dependency or I/O ownership change; growth is below300LOC. Reuse the unchanged dependency disposition while the canonical gate is freshly0."
+    }
+  },
+  "quality": [
+    {
+      "version": 1,
+      "base": "4a72b9a6fdf88656554f455ed5530dea2a486f3d",
+      "command": [
+        "check",
+        "-p",
+        "arcweft-cli",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4090,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-03T13:40:15.3364121Z",
+      "finishedAt": "2026-11-03T13:40:37.2555576Z"
+    },
+    {
+      "version": 1,
+      "base": "4a72b9a6fdf88656554f455ed5530dea2a486f3d",
+      "command": [
+        "clippy",
+        "-p",
+        "arcweft-cli",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4090,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-03T13:40:37.6918541Z",
+      "finishedAt": "2026-11-03T13:41:08.6326511Z"
+    },
+    {
+      "version": 1,
+      "base": "4a72b9a6fdf88656554f455ed5530dea2a486f3d",
+      "command": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking",
+        "--write",
+        "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/bench-budget-quality1-20261103.structure-report"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4090,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-03T13:41:09.067176Z",
+      "finishedAt": "2026-11-03T13:41:12.667191Z"
+    }
+  ],
+  "format": {
+    "version": 1,
+    "base": "4a72b9a6fdf88656554f455ed5530dea2a486f3d",
+    "command": [
+      "rustfmt",
+      "--edition",
+      "2024",
+      "--check",
+      "crates/arcweft-cli/tests/check/cli_runtime_bench.rs"
+    ],
+    "exitCode": 0,
+    "startedAt": "2026-11-03T13:40:13.6136572Z",
+    "finishedAt": "2026-11-03T13:40:13.9587907Z"
+  },
+  "rootCause": {
+    "owner": "Engine::evaluate_budgeted_scalar_function_site in crates/arcweft-core/src/engine/eval/callable.rs",
+    "invariant": "Compiled executable completion must fit its whole control-work cost in the current owning dispatch remaining allowance. OneOp and other ineligible contexts keep the ordinary source function frame. No fresh or uncharged work is granted by the backend selection.",
+    "expectedVsActual": [
+      {
+        "case": "branch",
+        "jit": 4,
+        "totalCalls": 8,
+        "logs": [
+          "4",
+          "16",
+          "58",
+          "70"
+        ],
+        "vm": 4,
+        "stepOps": [
+          8,
+          8,
+          8,
+          8,
+          8,
+          8,
+          8,
+          7
+        ],
+        "nativeBorrowedBytes": 96,
+        "fallbacks": 4
+      },
+      {
+        "stepOps": [
+          64,
+          36
+        ],
+        "logs": "all16 values4..64",
+        "case": "scalar",
+        "nativeCacheHits": 15,
+        "fallbacks": 1,
+        "vm": 1,
+        "jit": 15,
+        "totalCalls": 16,
+        "nativeBorrowedBytes": 240
+      },
+      {
+        "stepOps": [
+          128,
+          9
+        ],
+        "logs": "all19 values, including every original loop result and three collection lengths",
+        "case": "mixed",
+        "fallbacks": 1,
+        "vm": 1,
+        "jit": 39,
+        "batchItems": 24,
+        "batchCalls": 3,
+        "totalCalls": 40,
+        "nativeBorrowedBytes": 312
+      },
+      {
+        "case": "match",
+        "jit": 1,
+        "stepOps": [
+          8,
+          1
+        ],
+        "totalCalls": 1,
+        "executedOps": 9,
+        "logs": [
+          "12"
+        ]
+      }
+    ],
+    "correction": "Retain the observed JIT/VM split and exact counters rather than increasing budgets or deleting source work. Verify original final return and exact complete logs, per-dispatch operations, zero diagnostics and Done for all4 cases. Keep all benchmark command options and source fixtures unchanged."
+  },
+  "validationScope": "Focused4 tests pass in2.255s under actual CLI reverse closure1, all-target/all-feature/locked.714 skipped are691 unselected nonignored cases and23 ignored. Each case also executes its original Flow through CLI run at the same step/operation budget; these extra executions are not new nextest case IDs. No fresh fullCLI/workspace runtime or Generic151 run is claimed.",
+  "baseline": {
+    "path": "docs/implementation/acceptance-evidence/task-thread-indentation.json",
+    "source": "cdcda93e5aedb446c88167d6079ab0e5ca48d9c1",
+    "fullCli": {
+      "executed": 695,
+      "passed": 666,
+      "failed": 29
+    },
+    "normalPassed": 5158,
+    "genericAccepted": 151,
+    "targetedPreviouslyFailedCases": [
+      "bench_json_measures_branching_for_loop_pure_jit_characteristics",
+      "bench_json_measures_runtime_match_to_pure_jit_characteristics",
+      "bench_json_measures_checked_in_scalar_for_pure_jit_perf_guard",
+      "bench_json_measures_checked_in_mixed_for_iter_pure_jit_fixture"
+    ],
+    "laterFocusedPasses": 4,
+    "remainingFullRunFailuresNotRerun": 25,
+    "scope": "Preserve the full695 result with29 failures. Four of its failure IDs now pass in the focused run. Do not relabel the earlier run or synthesize a new fullCLI670/25 result. The MCP repeat1PASS remains a separate timing observation, not a general repair."
+  },
+  "probeScope": "Original frontier outputs pin exact binary/input hashes under the pending Thread source epoch. The first adapter extraction was invalid; adapter-extraction-correction.json explicitly corrects it and verifies the other inline fixtures. Neither adapter probe is part of these4 accepted conditions.",
+  "sourceInputs": 4090,
+  "sourceDrift": 0,
+  "caseDrift": 0,
+  "originalWip": {
+    "tracked": 12,
+    "actualUntracked": 6,
+    "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+    "untrackedHashDrift": 0
+  },
+  "historyPrefix": {
+    "bytes": 1812105,
+    "sha256": "107262651a3d86f6c3e86edf8c155b26f9f17c325638db3436d76297776946a3",
+    "drift": 0
+  },
+  "raw": {
+    "path": "docs/implementation/acceptance-evidence/task-cli-bench-budget.raw.zip",
+    "bytes": 982705,
+    "sha256": "4ed012c463db069f70676ed3b0f06c671ca4c639acfe4ab7d6c4fb923d73bd8a",
+    "entryDrift": 0,
+    "entries": [
+      {
+        "entry": "audit-nextest-final-result.ps1",
+        "bytes": 5266,
+        "sha256": "9d136f5ff9dbe80e524a8c9adb2f11fc96cce75046e3e1fe3e93ba73888cc0ab"
+      },
+      {
+        "entry": "bench-budget-fmt.json",
+        "bytes": 336,
+        "sha256": "c2a0021caf2953f443529b66ef7417357588d22bdb739d31f6b11e0ba9ea866e"
+      },
+      {
+        "entry": "bench-budget-fmt.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "bench-budget-owner1-20261103.binaries-before.json",
+        "bytes": 2892,
+        "sha256": "81285ef2f6d0add8a0744c6aaebe9c401dbf64a0a4a1468656b56b73ddedfb2f"
+      },
+      {
+        "entry": "bench-budget-owner1-20261103.catalog.inventory.json",
+        "bytes": 172844,
+        "sha256": "74ad97255b643c38703def67965978b03abddf15a30bcd69153bd8c58dbe79c2"
+      },
+      {
+        "entry": "bench-budget-owner1-20261103.catalog.json",
+        "bytes": 855,
+        "sha256": "8029870592338ea9562bb6f711a159d42313f8ba2c42aec06e3bb6e88f85a782"
+      },
+      {
+        "entry": "bench-budget-owner1-20261103.catalog.log",
+        "bytes": 218969,
+        "sha256": "3b0f111dcb3d4954a6ec5e00faff2bf13841531adb86bc4483c5573b91fcb338"
+      },
+      {
+        "entry": "bench-budget-owner1-20261103.runtime.json",
+        "bytes": 947,
+        "sha256": "63e9b2401556dc0b2c49934d1b432b392494a93a271e08cccf7dbaeb7259418f"
+      },
+      {
+        "entry": "bench-budget-owner1-20261103.runtime.log",
+        "bytes": 286822,
+        "sha256": "66d350610aaa1f6e00bdd20ae0e9ea640aa1a759c968bb9b35353fc209bc972a"
+      },
+      {
+        "entry": "bench-budget-owner1-20261103.runtime.terminal-audit.json",
+        "bytes": 609,
+        "sha256": "02d5d8e603e883fb81bd28d88d13df583a6a9cdc0de12793ea569235a6191c22"
+      },
+      {
+        "entry": "bench-budget-owner1-20261103.source-freeze.json",
+        "bytes": 799574,
+        "sha256": "962551af839b1bc93436be2aef2344f80d9115a95ef9f5037b1d5a3365dd65a3"
+      },
+      {
+        "entry": "bench-budget-quality1-20261103-check.json",
+        "bytes": 366,
+        "sha256": "7dd300fa3e08bd437a38f29c349a72bc16a4898dc99898c006abf67f496d8d46"
+      },
+      {
+        "entry": "bench-budget-quality1-20261103-check.log",
+        "bytes": 87457,
+        "sha256": "8e6f29edf22b23a2d07d1d3be544e6ce3b05b8c62192d920040eff71ef52332e"
+      },
+      {
+        "entry": "bench-budget-quality1-20261103-clippy.json",
+        "bytes": 367,
+        "sha256": "74887184cde1119202bd1efce7ac1bf19a6a31fe22877aeeb37e729ef5b7e8cc"
+      },
+      {
+        "entry": "bench-budget-quality1-20261103-clippy.log",
+        "bytes": 7165927,
+        "sha256": "043bba5847c8a0849983c96855d40b19c3028e1d297aa0faee498fbf1989eba2"
+      },
+      {
+        "entry": "bench-budget-quality1-20261103-structure.json",
+        "bytes": 525,
+        "sha256": "a004eaa15cf2d9c492a41e3498384187c064b4699be1e118e045d340111b943b"
+      },
+      {
+        "entry": "bench-budget-quality1-20261103-structure.log",
+        "bytes": 65604,
+        "sha256": "063c1e8b05d840569170232823d62b8bccb811e8da04e7cd3dedd634c206c579"
+      },
+      {
+        "entry": "bench-budget-quality1-20261103.structure-report/dependency_edges.csv",
+        "bytes": 78119,
+        "sha256": "8d27cdabb4f2610e5d539a44cf10f652970bb66ea952c76ce4ec68ce11cfa255"
+      },
+      {
+        "entry": "bench-budget-quality1-20261103.structure-report/file_metrics.csv",
+        "bytes": 336640,
+        "sha256": "64f35248295c17a5b10bd21a9e3b5a12b009651bdf72c84c819a7d10c2538cbb"
+      },
+      {
+        "entry": "bench-budget-quality1-20261103.structure-report/findings.md",
+        "bytes": 123305,
+        "sha256": "467cade13c2e134694a93d3678c1fe74c54f5ffd03d718be88eb84cca1769e27"
+      },
+      {
+        "entry": "bench-budget-quality1-20261103.structure-report/package_metrics.csv",
+        "bytes": 6508,
+        "sha256": "69980c5bd27ba9dfb87970e4a9528bcbca1747425c46a0fe3fa1acab2135cf5b"
+      },
+      {
+        "entry": "bench-budget-quality1-20261103.structure-report/public_type_duplicates.csv",
+        "bytes": 17276,
+        "sha256": "bb4d20a2e6819614b15ed1698619f49f53aa1650748d1bc100be27eaa2d6a49f"
+      },
+      {
+        "entry": "bench-budget.graph.json",
+        "bytes": 733,
+        "sha256": "c6fa3024465e6ef3c88887aa04e610ef78e4fdcb640aa23e7ae5205ebdca6d8a"
+      },
+      {
+        "entry": "bench-budget.inputs-proof.json",
+        "bytes": 3229,
+        "sha256": "d60c4e98d87a8702641259c65c486c8e4fa56d487877a54488b669811caf4568"
+      },
+      {
+        "entry": "checkpoint-cli-bench-budget.message.txt",
+        "bytes": 71,
+        "sha256": "d04723351da8de679af7d56da0659e446c007de3965510cca46f9fb39e21b5a5"
+      },
+      {
+        "entry": "checkpoint-cli-bench-budget.other.txt",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "checkpoint-cli-bench-budget.owned.txt",
+        "bytes": 111,
+        "sha256": "860ff7092312e0f2df51475b209d82d348d80aecbf2a9bd4309deec40ab5ae84"
+      },
+      {
+        "entry": "checkpoint-cli-bench-budget.pathspec",
+        "bytes": 108,
+        "sha256": "3c92a36b5a26055d0cf07311333955b77eb9b18ac636b289ae7a74b5cbe4a743"
+      },
+      {
+        "entry": "checkpoint-cli-bench-budget.prepared.json",
+        "bytes": 1530,
+        "sha256": "ba9853f427491d5d66a5acad22f461f09eb4e77db276904ff48c54bb93fdc7d0"
+      },
+      {
+        "entry": "checkpoint-cli-bench-budget.reviewed.patch",
+        "bytes": 10091,
+        "sha256": "0aa8fe8f84314308be25024dd8e063249700ffdaf7d1493357111582a0f8156a"
+      },
+      {
+        "entry": "checkpoint-cli-bench-budget.verified.json",
+        "bytes": 932,
+        "sha256": "16621c39fd3463a4c65b17d1eeb83b66802fdc7a41ab7f24df5e5fa471ca247e"
+      },
+      {
+        "entry": "cli-bench-frontier1/adapter-correct.arcw",
+        "bytes": 121,
+        "sha256": "5b00f6e8e8a823bf04868f6531d6bc2dc2d71e678e3c3bbd7fcc9798573dd466"
+      },
+      {
+        "entry": "cli-bench-frontier1/adapter-correct.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "cli-bench-frontier1/adapter-correct.stdout.json",
+        "bytes": 2796,
+        "sha256": "1a3373b33486cd2dffa5be50e1618e95a9994fca625f03ba429eef6cf4f77a3b"
+      },
+      {
+        "entry": "cli-bench-frontier1/adapter-extraction-correction.json",
+        "bytes": 3893,
+        "sha256": "78fb0d9b8137d980c68c8b5e2c4f1dbd1696b0f7f3e5fb80dc5acce1d68b7418"
+      },
+      {
+        "entry": "cli-bench-frontier1/adapter.arcw",
+        "bytes": 133,
+        "sha256": "0b2937bb0cb340b06cff975624b020b20b25e4d2df9f50ba674db9257b38fc19"
+      },
+      {
+        "entry": "cli-bench-frontier1/adapter.stderr.log",
+        "bytes": 745,
+        "sha256": "21e6542e8e2e01c6b7b172696e8f8c1b387c6d283add6635614653404d5944d7"
+      },
+      {
+        "entry": "cli-bench-frontier1/adapter.stdout.json",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "cli-bench-frontier1/branch-run.observation.json",
+        "bytes": 604,
+        "sha256": "65c2f2c1d9aa4ed34e0bc9865d671ac7bdce4a38b88a0afc320028d3882606c6"
+      },
+      {
+        "entry": "cli-bench-frontier1/branch-run.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "cli-bench-frontier1/branch-run.stdout.json",
+        "bytes": 18422,
+        "sha256": "b2bc104f6baeb3c29481a7eb637de75c41a978e9430ecbcaf9cb7e113322ad19"
+      },
+      {
+        "entry": "cli-bench-frontier1/branch.arcw",
+        "bytes": 592,
+        "sha256": "b553a6b1015f1b60e396fa68cc75043a771dccec9304b32b26b9d79cf1cc1ff1"
+      },
+      {
+        "entry": "cli-bench-frontier1/branch.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "cli-bench-frontier1/branch.stdout.json",
+        "bytes": 9722,
+        "sha256": "5516aa0705941c790805a475a1ef43f124ca9a621061c4cb0fd4da124de199cb"
+      },
+      {
+        "entry": "cli-bench-frontier1/match-run.observation.json",
+        "bytes": 598,
+        "sha256": "7fa22c94c86f8969c486e986cf41d28ab77b234501e3c61e6aa546acadabf18f"
+      },
+      {
+        "entry": "cli-bench-frontier1/match-run.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "cli-bench-frontier1/match-run.stdout.json",
+        "bytes": 7513,
+        "sha256": "a655ddb23135c28b7fabf1eb746ae9eee2ab38704b665e83bc1eff4d59a0d61c"
+      },
+      {
+        "entry": "cli-bench-frontier1/match.arcw",
+        "bytes": 583,
+        "sha256": "027274440b932d079b00a4c791305c9a852a69a215147e294f5d59299c570144"
+      },
+      {
+        "entry": "cli-bench-frontier1/match.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "cli-bench-frontier1/match.stdout.json",
+        "bytes": 9717,
+        "sha256": "e7ded0bdc0453a96f3a37f69fdc479aa9f4212fdf8ce7aa49bd6238f72f5e892"
+      },
+      {
+        "entry": "cli-bench-frontier1/mixed-run.observation.json",
+        "bytes": 599,
+        "sha256": "1fc08344b441d07bb03cf4d6e78a0c2b95d598ae8c66013f32e3c06400007299"
+      },
+      {
+        "entry": "cli-bench-frontier1/mixed-run.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "cli-bench-frontier1/mixed-run.stdout.json",
+        "bytes": 10455,
+        "sha256": "6b6e6a41cd9f94e687eb6bceaa7a55f427662c90cb71e55441aa3ebab08c704d"
+      },
+      {
+        "entry": "cli-bench-frontier1/mixed.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "cli-bench-frontier1/mixed.stdout.json",
+        "bytes": 9828,
+        "sha256": "44891f22bf385b77a75fb556f5caf8dd010d32bff454d9b092023633b5ea34ed"
+      },
+      {
+        "entry": "cli-bench-frontier1/observations.json",
+        "bytes": 56835,
+        "sha256": "8c8ea379851c0f315ca0237f73ed14ab9372ae9e375e7d3f42f6b047d8eeec84"
+      },
+      {
+        "entry": "cli-bench-frontier1/scalar-run.observation.json",
+        "bytes": 426,
+        "sha256": "9fd74c4ba2dfa4ce6455354769a9e109b6cfec8f37245cb920f3f7010a97def9"
+      },
+      {
+        "entry": "cli-bench-frontier1/scalar-run.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "cli-bench-frontier1/scalar-run.stdout.json",
+        "bytes": 9759,
+        "sha256": "1777f6ee2d867f74c2e41ca29150e4e89b63702f40d4769f6c66f195e7660a45"
+      },
+      {
+        "entry": "cli-bench-frontier1/scalar.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "cli-bench-frontier1/scalar.stdout.json",
+        "bytes": 9776,
+        "sha256": "5ab7678c0947c2ce9f34c66e7036fbab3eabe87d0b3cf683f61bf7f7255e4cec"
+      },
+      {
+        "entry": "cli-bench-frontier1/validate.arcw",
+        "bytes": 253,
+        "sha256": "0914961da15ac9c4aed6e5412264db4ec8376dc531ddc91f552f563a380b0ce3"
+      },
+      {
+        "entry": "cli-bench-frontier1/validate.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "cli-bench-frontier1/validate.stdout.json",
+        "bytes": 3329,
+        "sha256": "d5df83b8acf807b509fdb954d70947ebf6d15f69a01ec32021ab18fcc3d840e7"
+      },
+      {
+        "entry": "probe-cli-bench-frontier.ps1",
+        "bytes": 3658,
+        "sha256": "3123bb4a42f7d90fc10d843f6be4da1b4ad9d8ddb8fc87301a7ceb401e2a3857"
+      },
+      {
+        "entry": "prove-bench-budget-inputs.ps1",
+        "bytes": 4688,
+        "sha256": "0dec506bb4f0ec365997d33ac6df306d7ca625317a31806534cdb9e989357462"
+      },
+      {
+        "entry": "record-cli-bench-budget.ps1",
+        "bytes": 11331,
+        "sha256": "4f89de9c3e6f3b6d89b24a328ec68388d631cb5616630fbae20d61a57a868c5e"
+      },
+      {
+        "entry": "run-action-payload-quality.ps1",
+        "bytes": 1729,
+        "sha256": "ca098c1a52ef14e7f767eec068c3a20e5415e73ee4191d81ccbf9aafa8ac339a"
+      },
+      {
+        "entry": "run-presentation-projection-owner.ps1",
+        "bytes": 4134,
+        "sha256": "b60d753498997e4ba3b809b3721e9190ea1860971c755e6a1648a8e213403c58"
+      }
+    ]
+  }
+}

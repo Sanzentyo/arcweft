@@ -14434,3 +14434,14 @@ Source cdcda93e5aedb446c88167d6079ab0e5ca48d9c1、parent89f18f9e2d2896ff21853e8e
 新規のCLI失敗1件は、source変更0のMCP transport testが100msの終了grace内でCompleteを期待したところChildExitDeadlineを返したもの。250ms request／50ms shutdown response／100ms graceとstderr32byteを変えず、単独で1件再確認した結果は1 PASS／0 FAIL。これは全件runの29 FAILを置き換えず、transportの一般的なtiming reliabilityの受入にも使わない。Thread構文・HIRを呼び出さない独立条件として実測を残す。再利用監査の初回guardはCLI checkだけがrebuildされるとの誤った仮定で停止したが、実際にはCLI12 executableがrebuildされていた。CLI全件は新規実行しており再利用せず、再利用4件だけのSyntax／HIR実EXE一致と、最後のCLI／complement間全EXE一致を確認した。
 
 全98 workspace check／Clippy、変更Rust10件fmt、canonical構造gateは終了0、警告は残る。実LOC・byte・base growth・test・fan-in/outとowner cohesionを原本に記録し、statement suite、typed attachment、HIR source manifest、CLI planの責任を維持する。[全case・実測・途中失敗・公開full SHA・gate・raw](acceptance-evidence/task-thread-indentation.json)。元planの廃止済みCharacter設定／View field／cascade期待と、実際のstatic inline_styles欠落は別境界の具体的未達として保持し、assertionを消して合格にはしない。既存履歴先頭1808396 bytes（SHA256 f3350974163ffb38f67af5aeb0d590b03e5086fe5486c517cab70c81c8b14de4）を保持して追記し、12 tracked／6 actual untracked WIPは変更しない。
+
+
+## 2026-11-03 CLIベンチ4件のcaller budget・完全結果の照合
+
+Source 73b0e33021ac3258b08ad7d01ac63cf413f122aa、parent4a72b9a6fdf88656554f455ed5530dea2a486f3d。productionはcdcda93e5aedb446c88167d6079ab0e5ca48d9c1のまま。通常function frameはsource workのcaller allowanceを維持し、native scalar completionは現在のdispatchの残りに本体全control workが収まるときだけ置き換えられる。OneOpや残量不足でVM frameを保持する既存の型付き境界を維持した。元benchmarkの入力、2 inline fixture、2 checked-in fixture、4つの元commandのiterations／warmup／samples／steps／max-ops／backend引数は差分0。旧期待の全件JITや旧operation数を、実際のbudgeted frameでの内訳へ訂正し、runtimeを変更して上限を飛び越えたり単にbudgetを増やすことはしない。
+
+branchは総8呼出しの4JIT／4VM、native借用96bytes、4つの結果logを維持する。scalarは総16の15JIT／1VM・借用240・cache hit15で、64＋36操作の2 dispatchから全16 logとdoneへ到達する。mixedは総40の39JIT／1VM、3 batch／24 items、借用312、128＋9操作で全19 logとdone。matchは1JIT、8＋1の計9操作、log12とdone。追加のCLI run検査は全件で完全な元log・戻り値・予算以内のstep・診断0をassertし、観測を失敗しない件数へ縮める修復ではない。維持仕様のJIT／CLI章へ、backend指定が追加budgetを与えない条件を明記した。
+
+実CLI逆依存1 package、all-target／all-feature／locked、4090入力。既存4 IDが4／4 PASS、2.255秒、714 skippedは691選択外＋23 ignored。各test内の追加Flow実行をnextestの新規case数へ加算しない。CLI check／Clippy、変更fmt、canonical構造gateは終了0、警告は残る。test ownerは9528 LOC、base9443、増加85、埋込test9528、fan-in0／fan-out55。private helperはこの4件だけの元Flowとbudget／結果を照合し、既存のベンチ責任を維持する。構造や公開APIを広げるための分割は行わない。
+
+最新の全件runは前SourceのCLI695件666 PASS／29 FAIL・通常5158 PASS・Generic151 PASSのまま履歴へ保持し、その29失敗中の4 IDが今回focusedでPASSした事実を追記する。残る25 IDの新規実行や合成の全CLI670／25を主張しない。元adapter probeの抽出ミスと訂正も原出力ごと保持し、4件の受入へ転用しない。[元失敗・入力差分0・追加結果assertion・公開full SHA・gate・raw](acceptance-evidence/task-cli-bench-budget.json)。既存履歴先頭1812105 bytes（SHA256 107262651a3d86f6c3e86edf8c155b26f9f17c325638db3436d76297776946a3）を保持して追記する。元12 tracked／6 actual untracked WIPのhash差分0。
