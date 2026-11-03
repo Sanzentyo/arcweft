@@ -187,6 +187,48 @@ flow main() -> i64 {{
 }
 
 #[test]
+fn action_payload_type_retains_the_original_declaration_in_plan_and_decoded_awbc() {
+    const SOURCE: &str = r#"
+pub action @action:.feedback.submit feedback.send(value: i64)
+flow main() -> i64 { let value = feedback.send(value = 42i64); return value.value }
+entry cli @entry.main { goto @flow.main }
+"#;
+    let compiled = compile_source(SOURCE).expect("the renamed Action payload compiles");
+    let original = compiled
+        .plan
+        .type_table()
+        .declarations()
+        .filter_map(|row| {
+            row.nominal_declaration()
+                .and_then(|declaration| declaration.action())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(original.len(), 1);
+    assert_eq!(original[0].as_str(), "action.feedback.submit");
+    let program = AwbcLowerer::new(&compiled.plan, &compiled.dialogue_content, "action.arcw")
+        .lower()
+        .unwrap()
+        .program;
+    let bytes = program.encode_canonical().unwrap();
+    let decoded = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+        &bytes,
+        arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+    )
+    .unwrap();
+    let retained = decoded
+        .runtime_types
+        .iter()
+        .filter_map(|row| {
+            row.nominal_declaration()
+                .and_then(|declaration| declaration.action())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(retained, original);
+    assert_native_return(SOURCE, "42");
+    assert_awbc_return(SOURCE, RuntimeValue::i64(42));
+}
+
+#[test]
 fn qualified_action_channels_construct_inside_specialized_functions() {
     const SOURCE: &str = r#"
 entry cli @entry.main { goto @flow.main }

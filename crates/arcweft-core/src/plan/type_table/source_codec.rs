@@ -90,6 +90,8 @@ pub(in crate::plan) enum RuntimeTypeSourceError {
     Character(#[from] arcweft_character::id::CharacterIdError),
     #[error("invalid entity reference type metadata")]
     EntityTypeMetadata,
+    #[error("invalid Action payload nominal declaration")]
+    ActionPayload,
     #[error("invalid type source lexical scope: {0}")]
     Scope(#[from] RuntimeTypeScopeCodecError),
     #[error("invalid bound type source reference: {0}")]
@@ -449,6 +451,10 @@ impl<'a> Writer<'a> {
             self.tag(u8::from(row.nominal_declaration().is_some()))?;
             if let Some(nominal) = row.nominal_declaration() {
                 self.bytes(nominal.as_bytes())?;
+                self.tag(u8::from(nominal.action().is_some()))?;
+                if let Some(action) = nominal.action() {
+                    self.string(action.as_str())?;
+                }
             }
             let prepared = if let Some(meter) = &mut self.meter {
                 row.scope()
@@ -573,8 +579,28 @@ impl<'a, 'meter> Reader<'a, 'meter> {
                 return Err(RuntimeTypeSourceError::Ordinal { expected, actual });
             }
             let semantic_identity = RuntimeSemanticTypeId::from_bytes(self.digest()?);
+            let mut action_payload = false;
             let nominal_declaration = if self.boolean()? {
-                Some(RuntimeNominalDeclarationId::from_bytes(self.digest()?))
+                let digest = self.digest()?;
+                if self.boolean()? {
+                    action_payload = true;
+                    let action = self.string()?;
+                    if !arcweft_id::ProjectEntityReferenceFamily::Action
+                        .accepts_public_id_text(action)
+                    {
+                        return Err(RuntimeTypeSourceError::ActionPayload);
+                    }
+                    if materialize {
+                        Some(RuntimeNominalDeclarationId::try_action(
+                            digest,
+                            arcweft_id::PublicId::try_new_engine_owned(action)?,
+                        )?)
+                    } else {
+                        None
+                    }
+                } else {
+                    Some(RuntimeNominalDeclarationId::from_bytes(digest))
+                }
             } else {
                 None
             };
@@ -585,7 +611,7 @@ impl<'a, 'meter> Reader<'a, 'meter> {
             )?;
             self.counts.storage(scope.storage_bytes())?;
             self.counts.elements(scope.as_scope_ref().binder_count())?;
-            let projection = self.projection(materialize, scope.as_scope_ref())?;
+            let projection = self.projection(materialize, scope.as_scope_ref(), action_payload)?;
             let data_codec = if self.boolean()? {
                 self.policy(materialize, 0)?
             } else {

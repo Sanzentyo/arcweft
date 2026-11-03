@@ -20,7 +20,7 @@ impl RuntimePlanTypeDeclaration {
         encoder.digest(self.semantic_identity().as_bytes());
         encoder.tag(u8::from(self.nominal_declaration().is_some()));
         if let Some(declaration) = self.nominal_declaration() {
-            encoder.digest(declaration.as_bytes());
+            encoder.nominal_declaration(declaration);
         }
         self.scope().encode_semantic_scope(&mut encoder)?;
         self.projection().encode_executable_shape(&mut encoder)?;

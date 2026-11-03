@@ -139,6 +139,7 @@ fn verify_strings(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
 
 fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
     let mut nominal_records = BTreeMap::new();
+    let mut action_declarations = BTreeSet::new();
     let mut semantic_identities = BTreeSet::new();
     for (index, ty) in program.runtime_types.iter().enumerate() {
         let at = format!("runtime type {index}");
@@ -154,6 +155,34 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                 at,
                 message: "runtime semantic type identity is duplicated".to_owned(),
             });
+        }
+        if let Some(declaration) = ty.nominal_declaration() {
+            if !matches!(
+                ty.shape(),
+                AwbcRuntimeTypeShape::Nominal { .. }
+                    | AwbcRuntimeTypeShape::NominalRecord { .. }
+                    | AwbcRuntimeTypeShape::Variant {
+                        owner: crate::awbc::schema::AwbcVariantIdentity::Nominal { .. },
+                        ..
+                    }
+            ) {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at,
+                    message: "nominal declaration belongs to a non-nominal type".to_owned(),
+                });
+            }
+            if let Some(action) = declaration.action()
+                && (!matches!(ty.shape(), AwbcRuntimeTypeShape::NominalRecord {
+                    shape: RuntimeNominalRecordShape::Record, arguments, ..
+                } if arguments.is_empty())
+                    || !action_declarations.insert(action))
+            {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at,
+                    message: "Action declaration must own one non-generic record payload"
+                        .to_owned(),
+                });
+            }
         }
         match ty.shape() {
             AwbcRuntimeTypeShape::EntityRef(reference) => {
@@ -388,6 +417,91 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
             at: "runtime type codec uses".to_owned(),
             message: error.to_string(),
         })
+}
+
+#[cfg(test)]
+mod declaration_tests {
+    use super::*;
+
+    fn action_row(semantic: u8, shape: AwbcRuntimeTypeShape) -> AwbcRuntimeType {
+        AwbcRuntimeType::new(
+            crate::pattern::RuntimeSemanticTypeId::from_bytes([semantic; 32]),
+            shape,
+        )
+        .with_nominal_declaration(
+            crate::entry::RuntimeNominalDeclarationId::try_action(
+                [17; 32],
+                arcweft_id::PublicId::try_new_engine_owned("action.feedback.submit").unwrap(),
+            )
+            .unwrap(),
+        )
+    }
+
+    fn record(arguments: Vec<AwbcTypeId>) -> AwbcRuntimeTypeShape {
+        AwbcRuntimeTypeShape::NominalRecord {
+            public_id: AwbcStringId(0),
+            layout: [9; 32],
+            arguments,
+            shape: RuntimeNominalRecordShape::Record,
+            fields: vec![],
+        }
+    }
+
+    #[test]
+    fn action_declarations_require_one_exact_non_generic_record_payload() {
+        let mut program = AwbcProgram::default();
+        program.strings.push("Payload".to_owned());
+        program.runtime_types.push(action_row(1, record(vec![])));
+        verify_runtime_types(&program).unwrap();
+        for shape in [
+            AwbcRuntimeTypeShape::Unit,
+            AwbcRuntimeTypeShape::Variant {
+                owner: crate::awbc::schema::AwbcVariantIdentity::Nominal {
+                    public_id: AwbcStringId(0),
+                    layout: [9; 32],
+                },
+                arguments: vec![],
+                cases: vec![],
+            },
+            AwbcRuntimeTypeShape::Nominal {
+                public_id: AwbcStringId(0),
+                layout: [9; 32],
+                arguments: vec![],
+            },
+            record(vec![AwbcTypeId(0)]),
+        ] {
+            program.runtime_types[0] = action_row(1, shape);
+            assert!(verify_runtime_types(&program).is_err());
+        }
+        program.runtime_types[0] = action_row(1, record(vec![]));
+        program.runtime_types.push(action_row(2, record(vec![])));
+        assert!(verify_runtime_types(&program).is_err());
+    }
+
+    #[test]
+    fn structural_nominal_variants_keep_their_declaration_identity() {
+        let program = AwbcProgram {
+            strings: vec!["Empty".to_owned()],
+            runtime_types: vec![
+                AwbcRuntimeType::new(
+                    crate::pattern::RuntimeSemanticTypeId::from_bytes([1; 32]),
+                    AwbcRuntimeTypeShape::Variant {
+                        owner: crate::awbc::schema::AwbcVariantIdentity::Nominal {
+                            public_id: AwbcStringId(0),
+                            layout: [9; 32],
+                        },
+                        arguments: vec![],
+                        cases: vec![],
+                    },
+                )
+                .with_nominal_declaration(
+                    crate::entry::RuntimeNominalDeclarationId::from_bytes([17; 32]),
+                ),
+            ],
+            ..AwbcProgram::default()
+        };
+        verify_runtime_types(&program).unwrap();
+    }
 }
 
 fn verify_runtime_type_scopes(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {

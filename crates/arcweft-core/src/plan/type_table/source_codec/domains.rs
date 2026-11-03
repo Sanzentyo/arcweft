@@ -363,6 +363,15 @@ impl Reader<'_, '_> {
                 kind: "nominal record shape",
                 tag,
             })?;
+            if types
+                .and_then(|types| types.get(owner))
+                .and_then(|row| row.nominal_declaration())
+                .and_then(|declaration| declaration.action())
+                .is_some()
+                && shape != RuntimeNominalRecordShape::Record
+            {
+                return Err(Error::ActionPayload);
+            }
             let count = self.count()?;
             self.counts
                 .array::<RuntimeNominalRecordDomainField>(count)?;
@@ -404,6 +413,14 @@ impl Reader<'_, '_> {
         previous = None;
         for _ in 0..variants {
             let owner = self.domain_owner(&mut previous, types)?;
+            if types
+                .and_then(|types| types.get(owner))
+                .and_then(|row| row.nominal_declaration())
+                .and_then(|declaration| declaration.action())
+                .is_some()
+            {
+                return Err(Error::ActionPayload);
+            }
             let nominal = self.string()?;
             crate::entry::RuntimeNominalTypeId::validate_source(nominal)?;
             let layout = crate::entry::TypeLayoutHash::from_bytes(self.digest()?);

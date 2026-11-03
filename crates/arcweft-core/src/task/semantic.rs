@@ -253,6 +253,17 @@ impl<'a> TaskSemanticEncoder<'a> {
         self.write(value.as_bytes());
     }
 
+    pub(crate) fn nominal_declaration(
+        &mut self,
+        declaration: &crate::entry::RuntimeNominalDeclarationId,
+    ) {
+        self.digest(declaration.as_bytes());
+        self.tag(u8::from(declaration.action().is_some()));
+        if let Some(action) = declaration.action() {
+            self.string(action.as_str());
+        }
+    }
+
     fn length(&mut self, value: usize, error: TaskSemanticEncodingError) {
         if self.meter.error.is_some() {
             return;

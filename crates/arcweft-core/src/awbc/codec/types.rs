@@ -728,7 +728,10 @@ impl Wire for AwbcRuntimeType {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.semantic_identity().write_wire(writer)?;
         self.scope().write_wire(writer)?;
-        self.nominal_declaration().write_wire(writer)?;
+        writer.write_u8(u8::from(self.nominal_declaration().is_some()));
+        if let Some(declaration) = self.nominal_declaration() {
+            declaration.write_wire(writer)?;
+        }
         write_runtime_type_shape(self.shape(), writer)?;
         match self.data_codec() {
             Some(codec) => {
@@ -1835,6 +1838,54 @@ mod map_kind_wire_tests {
             .finish()
             .expect("consume empty codec arguments");
         assert_eq!(decoded_empty.data_codec_arguments(), Some(&[][..]));
+    }
+
+    #[test]
+    fn action_nominal_wire_retains_the_original_declaration_and_rejects_foreign_families() {
+        let declaration = crate::entry::RuntimeNominalDeclarationId::try_action(
+            [0x72; 32],
+            PublicId::try_new_engine_owned("action.feedback.submit").unwrap(),
+        )
+        .unwrap();
+        let ty = AwbcRuntimeType::new(
+            RuntimeSemanticTypeId::from_bytes([0x6b; 32]),
+            AwbcRuntimeTypeShape::NominalRecord {
+                public_id: AwbcStringId(0),
+                layout: [0x3c; 32],
+                arguments: vec![],
+                shape: RuntimeNominalRecordShape::Record,
+                fields: vec![],
+            },
+        )
+        .with_nominal_declaration(declaration);
+        let mut writer = Writer::default();
+        ty.write_wire(&mut writer).unwrap();
+        let bytes = writer.into_bytes();
+        let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+        assert_eq!(AwbcRuntimeType::read_wire(&mut reader).unwrap(), ty);
+        reader.finish().unwrap();
+        for end in 0..bytes.len() {
+            assert!(
+                AwbcRuntimeType::read_wire(&mut Reader::new(
+                    &bytes[..end],
+                    &AwbcDecodeBudget::default(),
+                ))
+                .is_err()
+            );
+        }
+        let mut wrong = bytes;
+        let offset = wrong
+            .windows(b"action.feedback.submit".len())
+            .position(|part| part == b"action.feedback.submit")
+            .unwrap();
+        wrong[offset..offset + 6].copy_from_slice(b"signal");
+        assert!(matches!(
+            AwbcRuntimeType::read_wire(&mut Reader::new(&wrong, &AwbcDecodeBudget::default(),)),
+            Err(AwbcCodecError::InvalidMetadata {
+                kind: "Action nominal declaration",
+                ..
+            })
+        ));
     }
 }
 

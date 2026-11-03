@@ -805,8 +805,8 @@ impl AwbcRuntimeType {
         self
     }
 
-    pub const fn nominal_declaration(&self) -> Option<crate::entry::RuntimeNominalDeclarationId> {
-        self.nominal_declaration
+    pub const fn nominal_declaration(&self) -> Option<&crate::entry::RuntimeNominalDeclarationId> {
+        self.nominal_declaration.as_ref()
     }
 
     /// Attaches the incoming lexical scope for bound references in this row.

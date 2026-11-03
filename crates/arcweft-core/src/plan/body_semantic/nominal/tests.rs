@@ -215,6 +215,7 @@ fn unit_record_row_has_exact_owner_layout_and_empty_domain_bytes() {
     expected.extend([2, 0]);
     expected.extend([1; 32]);
     expected.extend([71; 32]);
+    expected.push(0); // Ordinary declaration without an Action public ID.
     expected.extend(u32::try_from(nominal.as_str().len()).unwrap().to_le_bytes());
     expected.extend(nominal.as_str().as_bytes());
     expected.extend(layout.as_bytes());
@@ -252,6 +253,7 @@ fn variant_row_has_exact_case_identity_and_optional_payload_coordinates() {
     expected.extend([3, 0]);
     expected.extend([1; 32]);
     expected.extend([72; 32]);
+    expected.push(0); // Ordinary declaration without an Action public ID.
     expected.extend(u32::try_from(nominal.as_str().len()).unwrap().to_le_bytes());
     expected.extend(nominal.as_str().as_bytes());
     expected.extend(layout.as_bytes());

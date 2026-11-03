@@ -632,7 +632,7 @@ impl AwbcInventory {
         plan_type: RuntimePlanTypeId,
         shape: AwbcRuntimeTypeShape,
         scope: arcweft_core::plan::RuntimeTypeScope,
-        nominal_declaration: Option<arcweft_core::entry::RuntimeNominalDeclarationId>,
+        nominal_declaration: Option<&arcweft_core::entry::RuntimeNominalDeclarationId>,
         data_codec: Option<arcweft_core::entry::RuntimeCodecUse>,
         data_codec_arguments: Option<Vec<arcweft_core::entry::RuntimeCodecUse>>,
     ) -> Result<(), AwbcLowerDiagnostic> {
@@ -660,7 +660,7 @@ impl AwbcInventory {
                         "plan semantic identity conflicts with its canonical AWBC nominal declaration",
                     ));
                 }
-                updated = updated.with_nominal_declaration(declaration);
+                updated = updated.with_nominal_declaration(declaration.clone());
             }
             if let Some(codec) = data_codec {
                 if updated.data_codec().is_some_and(|actual| actual != &codec) {
@@ -702,7 +702,7 @@ impl AwbcInventory {
             })?;
         let mut row = AwbcRuntimeType::new(semantic_identity, shape).with_scope(scope);
         if let Some(declaration) = nominal_declaration {
-            row = row.with_nominal_declaration(declaration);
+            row = row.with_nominal_declaration(declaration.clone());
         }
         if let Some(codec) = data_codec {
             row = row.with_data_codec(codec);

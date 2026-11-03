@@ -30,8 +30,18 @@ pub(super) fn admit(
         .sort_by_key(|definition| definition.identity.semantic_identity);
     let mut nominal_owners = BTreeMap::new();
     let mut semantic_owners = BTreeMap::new();
+    let mut action_owners = BTreeMap::new();
     for definition in &graph.definitions {
         let identity = &definition.identity;
+        if let Some(action) = definition.declaration.action() {
+            if let Some(first) = action_owners.insert(action, identity.semantic_identity) {
+                return Err(Error::ConflictingActionPayload {
+                    public_id: action.clone(),
+                    first,
+                    second: identity.semantic_identity,
+                });
+            }
+        }
         super::RuntimeNominalTypeId::try_new(identity.nominal.as_str().to_owned()).map_err(
             |source| Error::InvalidIdentity {
                 path: "definition.nominal".to_owned(),
@@ -117,6 +127,9 @@ impl Work {
     ) -> Result<(), Error> {
         self.node(0)?;
         self.string(definition.identity.nominal.as_str())?;
+        if let Some(action) = definition.declaration.action() {
+            self.string(action.as_str())?;
+        }
         self.collection(definition.arguments.len())?;
         if let Some(codec) = &definition.data_codec {
             codec.walk(|codec, depth| {
@@ -287,6 +300,20 @@ impl Work {
 impl RuntimeNominalSchemaDefinition {
     fn validate(&self, graph: &RuntimeNominalSchemaGraph) -> Result<(), Error> {
         let root = self.identity.nominal.as_str();
+        if self.declaration.action().is_some()
+            && (!self.arguments.is_empty()
+                || !matches!(
+                    &self.body,
+                    RuntimeNominalSchemaBody::Record {
+                        shape: RuntimeNominalRecordShape::Record,
+                        ..
+                    }
+                ))
+        {
+            return Err(Error::InvalidActionPayload {
+                identity: self.identity.clone(),
+            });
+        }
         match &self.body {
             RuntimeNominalSchemaBody::Record { shape, fields } => {
                 shape

@@ -614,8 +614,45 @@ wire_digest!(
     FlowContractHash,
     AgentPolicyHash,
     RuntimeSemanticTypeId,
-    crate::entry::RuntimeNominalDeclarationId,
 );
+
+impl Wire for crate::entry::RuntimeNominalDeclarationId {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.as_bytes().write_wire(writer)?;
+        writer.write_u8(u8::from(self.action().is_some()));
+        if let Some(action) = self.action() {
+            writer.write_str(action.as_str())?;
+        }
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let digest = <[u8; 32]>::read_wire(reader)?;
+        let offset = reader.offset();
+        match reader.read_u8()? {
+            0 => Ok(Self::from_bytes(digest)),
+            1 => {
+                let text = reader.read_str()?;
+                if !arcweft_id::ProjectEntityReferenceFamily::Action.accepts_public_id_text(text) {
+                    return Err(AwbcCodecError::InvalidMetadata {
+                        kind: "Action nominal declaration",
+                        message: "invalid Action public ID".to_owned(),
+                        offset,
+                    });
+                }
+                let public_id = arcweft_id::PublicId::try_new_engine_owned(text)
+                    .expect("the borrowed Action public ID was validated");
+                Ok(Self::try_action(digest, public_id)
+                    .expect("the borrowed Action public ID has the Action family"))
+            }
+            tag => Err(AwbcCodecError::UnknownTag {
+                kind: "nominal declaration Action identity",
+                tag,
+                offset,
+            }),
+        }
+    }
+}
 
 impl Wire for RuntimeNominalTypeId {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {

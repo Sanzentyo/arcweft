@@ -170,6 +170,9 @@ fn document<'a, S: CanonicalSink + ?Sized>(
     writer.len(definitions.len())?;
     for definition in definitions {
         writer.extend(definition.declaration.as_bytes())?;
+        writer.option(definition.declaration.action(), |writer, id| {
+            writer.string(id.as_str())
+        })?;
         writer.string(definition.identity.nominal.as_str())?;
         writer.extend(definition.identity.semantic_identity.as_bytes())?;
         writer.len(definition.arguments.len())?;

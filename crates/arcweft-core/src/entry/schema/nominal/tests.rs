@@ -58,6 +58,99 @@ fn hash(graph: &RuntimeNominalSchemaGraph, byte: u8) -> TypeLayoutHash {
 }
 
 #[test]
+fn action_declaration_retains_its_original_public_identity_through_serde_and_layout() {
+    let original = RuntimeNominalDeclarationId::try_action(
+        [1; 32],
+        arcweft_id::PublicId::try_new_engine_owned("action.feedback.submit").unwrap(),
+    )
+    .unwrap();
+    assert_ne!(original, RuntimeNominalDeclarationId::from_bytes([1; 32]));
+    let encoded = serde_json::to_value(&original).unwrap();
+    assert_eq!(
+        serde_json::from_value::<RuntimeNominalDeclarationId>(encoded.clone()).unwrap(),
+        original
+    );
+    let mut wrong = encoded.clone();
+    wrong["public_id"] = serde_json::json!("style.feedback.submit");
+    assert!(serde_json::from_value::<RuntimeNominalDeclarationId>(wrong).is_err());
+    let mut wrong = encoded;
+    wrong["extra"] = serde_json::json!(true);
+    assert!(serde_json::from_value::<RuntimeNominalDeclarationId>(wrong).is_err());
+
+    let structural = record(1, RuntimeNominalRecordShape::Record, vec![], vec![]);
+    let mut action = structural.clone();
+    action.declaration = original;
+    let mut other = action.clone();
+    other.declaration = RuntimeNominalDeclarationId::try_action(
+        [1; 32],
+        arcweft_id::PublicId::try_new_engine_owned("action.feedback.cancel").unwrap(),
+    )
+    .unwrap();
+    let encode = |declaration: &RuntimeNominalDeclarationId, maximum: u64| {
+        let mut meter = crate::task::semantic::TaskSemanticMeter::new(u64::MAX, maximum);
+        let mut encoder = crate::task::semantic::TaskSemanticEncoder::new(
+            b"arcweft.nominal-declaration-test.v1\0",
+            &mut meter,
+        );
+        encoder.nominal_declaration(declaration);
+        let result = encoder.finish();
+        (result, meter.totals())
+    };
+    let (semantic, (_, bytes)) = encode(&action.declaration, u64::MAX);
+    assert_eq!(encode(&action.declaration, bytes).0, semantic);
+    assert!(encode(&action.declaration, bytes - 1).0.is_err());
+    assert_ne!(semantic, encode(&structural.declaration, u64::MAX).0);
+    assert_ne!(semantic, encode(&other.declaration, u64::MAX).0);
+    assert_ne!(
+        hash(&graph(vec![structural]), 1),
+        hash(&graph(vec![action.clone()]), 1)
+    );
+    assert_ne!(hash(&graph(vec![action]), 1), hash(&graph(vec![other]), 1));
+}
+
+#[test]
+fn action_declaration_admits_one_non_generic_record_payload_and_bounds_its_identity() {
+    let declaration = RuntimeNominalDeclarationId::try_action(
+        [1; 32],
+        arcweft_id::PublicId::try_new_engine_owned("action.feedback.submit").unwrap(),
+    )
+    .unwrap();
+    let mut valid = record(1, RuntimeNominalRecordShape::Record, vec![], vec![]);
+    valid.declaration = declaration.clone();
+    let mut duplicate = record(2, RuntimeNominalRecordShape::Record, vec![], vec![]);
+    duplicate.declaration = declaration;
+    assert!(matches!(
+        RuntimeNominalSchemaGraph::try_new(
+            vec![valid.clone(), duplicate],
+            RuntimeSchemaLimits::engine_default()
+        ),
+        Err(RuntimeNominalSchemaGraphError::ConflictingActionPayload { .. })
+    ));
+    let mut generic = valid.clone();
+    generic.arguments = vec![RuntimeTypeSchema::Bool].into();
+    assert!(matches!(
+        RuntimeNominalSchemaGraph::try_new(vec![generic], RuntimeSchemaLimits::engine_default()),
+        Err(RuntimeNominalSchemaGraphError::InvalidActionPayload { .. })
+    ));
+    let mut variant = valid.clone();
+    variant.body = RuntimeNominalSchemaBody::Variant {
+        cases: Box::default(),
+    };
+    assert!(matches!(
+        RuntimeNominalSchemaGraph::try_new(vec![variant], RuntimeSchemaLimits::engine_default()),
+        Err(RuntimeNominalSchemaGraphError::InvalidActionPayload { .. })
+    ));
+    let mut limits = RuntimeSchemaLimits::engine_default();
+    limits.max_string_bytes = 3;
+    assert!(matches!(
+        RuntimeNominalSchemaGraph::try_new(vec![valid], limits),
+        Err(RuntimeNominalSchemaGraphError::BudgetExceeded {
+            budget: "string_bytes"
+        })
+    ));
+}
+
+#[test]
 #[expect(
     clippy::too_many_lines,
     reason = "one admitted source graph exercises record shapes, ordered variant cases and their shared rejection matrix"
@@ -846,6 +939,7 @@ fn unit_graph_has_an_exact_version_one_document() {
     expected.extend_from_slice(&[1; 32]);
     expected.push(1); // One definition.
     expected.extend_from_slice(&[1; 32]); // Stable declaration identity.
+    expected.push(0); // Ordinary declaration, without an Action public ID.
     expected.extend_from_slice(&[2, b'n', b'1']);
     expected.extend_from_slice(&[1; 32]);
     // Version one commits the optional codec policy after the nominal body;

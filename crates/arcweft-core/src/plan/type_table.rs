@@ -100,8 +100,8 @@ impl RuntimePlanTypeDeclaration {
             }
         }
     }
-    pub const fn nominal_declaration(&self) -> Option<crate::entry::RuntimeNominalDeclarationId> {
-        self.nominal_declaration
+    pub const fn nominal_declaration(&self) -> Option<&crate::entry::RuntimeNominalDeclarationId> {
+        self.nominal_declaration.as_ref()
     }
     #[must_use]
     pub const fn scope(&self) -> &super::RuntimeTypeScope {
@@ -354,7 +354,7 @@ impl PreparedRuntimePlanTypeBatch {
     ) {
         for row in &mut self.candidate_rows {
             if let Some(definition) = graph.definition(row.semantic_identity) {
-                row.nominal_declaration = Some(definition.declaration());
+                row.nominal_declaration = Some(definition.declaration().clone());
             }
         }
     }
@@ -377,6 +377,10 @@ impl PreparedRuntimePlanTypeBatch {
 /// Failure to admit one atomic semantic type graph batch.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimePlanTypeTableError {
+    #[error("semantic type {semantic_identity:?} has an invalid nominal declaration")]
+    InvalidNominalDeclaration {
+        semantic_identity: RuntimeSemanticTypeId,
+    },
     #[error("semantic type {semantic_identity:?} has an invalid lexical scope: {source}")]
     Scope {
         semantic_identity: RuntimeSemanticTypeId,
@@ -551,7 +555,8 @@ impl RuntimePlanTypeTableBuilder {
                     .by_semantic_identity
                     .get(&seed.semantic_identity)
                     .and_then(|id| self.get(*id))
-                    .and_then(RuntimePlanTypeDeclaration::nominal_declaration),
+                    .and_then(RuntimePlanTypeDeclaration::nominal_declaration)
+                    .cloned(),
                 semantic_identity: seed.semantic_identity,
                 scope: seed.scope.clone(),
                 projection,
@@ -714,6 +719,14 @@ fn validate_candidate_graph(
     let mut edges = vec![Vec::<usize>::new(); rows.len()];
     let mut incoming = vec![0_usize; rows.len()];
     for (owner, row) in rows.iter().enumerate() {
+        if let Some(declaration) = row.nominal_declaration()
+            && !matches!(row.projection(), RuntimePlanTypeProjection::Nominal { arguments, .. }
+                if declaration.action().is_none() || arguments.is_empty())
+        {
+            return Err(RuntimePlanTypeTableError::InvalidNominalDeclaration {
+                semantic_identity: row.semantic_identity,
+            });
+        }
         if let RuntimePlanTypeProjection::BuiltinVariant { owner, cases } = &row.projection
             && (cases.len() != owner.cases().len()
                 || cases

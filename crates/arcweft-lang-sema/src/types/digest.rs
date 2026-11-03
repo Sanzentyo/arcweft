@@ -512,9 +512,17 @@ impl super::ProjectNominalType {
         encoder.tag(64);
         encoder.project_nominal_declaration(self.declaration());
         encoder.len(0);
-        arcweft_core::entry::RuntimeNominalDeclarationId::from_bytes(
-            *encoder.bytes.finish().as_bytes(),
-        )
+        let digest = *encoder.bytes.finish().as_bytes();
+        match self.declaration().kind() {
+            arcweft_lang_hir::symbol::nominal::ProjectNominalDeclarationKind::Action {
+                public_id,
+            } => arcweft_core::entry::RuntimeNominalDeclarationId::try_action(
+                digest,
+                public_id.clone(),
+            )
+            .expect("the HIR Action declaration retains a valid Action public ID"),
+            _ => arcweft_core::entry::RuntimeNominalDeclarationId::from_bytes(digest),
+        }
     }
 }
 

@@ -253,7 +253,7 @@ fn executable(plan: &RuntimePlan) -> AwbcProgram {
         let mut ty =
             AwbcRuntimeType::new(row.semantic_identity(), shape).with_scope(row.scope().clone());
         if let Some(declaration) = row.nominal_declaration() {
-            ty = ty.with_nominal_declaration(declaration);
+            ty = ty.with_nominal_declaration(declaration.clone());
         }
         if let Some(codec) = plan
             .nominal_record_domains()

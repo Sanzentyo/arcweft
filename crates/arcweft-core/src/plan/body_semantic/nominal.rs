@@ -29,7 +29,7 @@ impl RuntimeBodySemanticContext<'_> {
             return Err(RuntimeBodySemanticError::InvalidNominalDomainOwner { owner });
         };
         encoder.digest(row.semantic_identity().as_bytes());
-        encoder.digest(declaration.as_bytes());
+        encoder.nominal_declaration(declaration);
         encoder.string(nominal.as_str());
         encoder.digest(layout.as_bytes());
         encoder.status().map_err(Into::into)

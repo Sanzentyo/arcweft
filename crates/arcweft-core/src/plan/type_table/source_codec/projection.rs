@@ -18,6 +18,7 @@ use crate::value::{
 };
 
 type Projection = RuntimePlanTypeProjection<RuntimePlanTypeId>;
+const NOMINAL_SOURCE_TAG: u8 = 30;
 
 impl Writer<'_> {
     fn references(&mut self, items: &[RuntimePlanTypeId]) -> Result<(), RuntimeTypeSourceError> {
@@ -209,8 +210,12 @@ impl Reader<'_, '_> {
     fn references(
         &mut self,
         materialize: bool,
+        exact_count: Option<usize>,
     ) -> Result<Option<Box<[RuntimePlanTypeId]>>, RuntimeTypeSourceError> {
         let count = self.count()?;
+        if exact_count.is_some_and(|expected| count != expected) {
+            return Err(RuntimeTypeSourceError::ActionPayload);
+        }
         self.counts.array::<RuntimePlanTypeId>(count)?;
         let mut items = materialize.then(|| Vec::with_capacity(count));
         for _ in 0..count {
@@ -226,10 +231,15 @@ impl Reader<'_, '_> {
         &mut self,
         materialize: bool,
         scope: RuntimeTypeScopeRef<'_>,
+        action_payload: bool,
     ) -> Result<Option<Projection>, RuntimeTypeSourceError> {
         use RuntimePlanTypeProjection as P;
         self.counts.scope_admission(scope.binder_count())?;
-        Ok(match self.tag()? {
+        let tag = self.tag()?;
+        if action_payload && tag != NOMINAL_SOURCE_TAG {
+            return Err(RuntimeTypeSourceError::ActionPayload);
+        }
+        Ok(match tag {
             0 => {
                 let reference =
                     RuntimeBoundTypeReference::from_coordinates(self.u32()?, self.u16()?);
@@ -460,7 +470,7 @@ impl Reader<'_, '_> {
                 }
                 self.counts.storage(prepared.storage_bytes())?;
                 self.counts.elements(prepared.elements())?;
-                let parameters = self.references(materialize)?;
+                let parameters = self.references(materialize, None)?;
                 let result = self.reference()?;
                 if let Some(parameters) = parameters {
                     Some(P::Function {
@@ -472,11 +482,11 @@ impl Reader<'_, '_> {
                     None
                 }
             }
-            30 => {
+            NOMINAL_SOURCE_TAG => {
                 let nominal = self.string()?;
                 RuntimeNominalTypeId::validate_source(nominal)?;
                 let layout = TypeLayoutHash::from_bytes(self.digest()?);
-                let arguments = self.references(materialize)?;
+                let arguments = self.references(materialize, action_payload.then_some(0))?;
                 if let Some(arguments) = arguments {
                     Some(P::Nominal {
                         nominal: RuntimeNominalTypeId::try_new(nominal)?,
@@ -487,7 +497,7 @@ impl Reader<'_, '_> {
                     None
                 }
             }
-            31 => self.references(materialize)?.map(P::Tuple),
+            31 => self.references(materialize, None)?.map(P::Tuple),
             32 => {
                 let count = self.count()?;
                 self.counts
@@ -502,7 +512,7 @@ impl Reader<'_, '_> {
                 }
                 fields.map(|fields| P::Record(fields.into_boxed_slice()))
             }
-            33 => self.references(materialize)?.map(P::Choice),
+            33 => self.references(materialize, None)?.map(P::Choice),
             34 => {
                 let producer = self.string()?;
                 RuntimeNominalTypeId::validate_source(producer)?;
@@ -527,7 +537,7 @@ impl Reader<'_, '_> {
                         tag,
                     },
                 )?;
-                let arguments = self.references(materialize)?;
+                let arguments = self.references(materialize, None)?;
                 if let Some(arguments) = arguments {
                     Some(P::Opaque {
                         producer: RuntimeOpaqueTypeProducerId::try_new(producer)?,

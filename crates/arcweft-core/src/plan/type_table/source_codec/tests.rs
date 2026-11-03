@@ -52,6 +52,65 @@ fn add(
 fn one() -> RuntimePlanTypeTable {
     table(vec![RuntimePlanTypeSeed::new(identity(1), P::Unit)])
 }
+
+#[test]
+fn action_nominal_source_preserves_identity_and_preflights_payload_shape_before_materializing() {
+    let declaration = RuntimeNominalDeclarationId::try_action(
+        [17; 32],
+        arcweft_id::PublicId::try_new_engine_owned("action.feedback.submit").unwrap(),
+    )
+    .unwrap();
+    let mut original = table(vec![RuntimePlanTypeSeed::new(
+        identity(1),
+        P::Nominal {
+            nominal: RuntimeNominalTypeId::try_new("Payload").unwrap(),
+            layout: TypeLayoutHash::from_bytes([9; 32]),
+            arguments: Box::default(),
+        },
+    )]);
+    original.rows[0].declaration.nominal_declaration = Some(declaration.clone());
+    let bytes = original.encode_sources(limits(), &mut meter()).unwrap();
+    let decoded = RuntimePlanTypeTable::decode_sources(&bytes, limits(), &mut meter()).unwrap();
+    assert_eq!(
+        decoded.declarations().next().unwrap().nominal_declaration(),
+        Some(&declaration)
+    );
+    assert_eq!(
+        decoded.encode_sources(limits(), &mut meter()).unwrap(),
+        bytes
+    );
+    for end in 0..bytes.len() {
+        assert!(
+            RuntimePlanTypeTable::preflight_sources(&bytes[..end], limits(), &mut meter()).is_err()
+        );
+    }
+    let mut wrong = bytes;
+    let offset = wrong
+        .windows(b"action.feedback.submit".len())
+        .position(|part| part == b"action.feedback.submit")
+        .unwrap();
+    wrong[offset..offset + 6].copy_from_slice(b"signal");
+    assert!(matches!(
+        RuntimePlanTypeTable::preflight_sources(&wrong, limits(), &mut meter()),
+        Err(RuntimeTypeSourceError::ActionPayload)
+    ));
+    original.rows[0].declaration.projection = P::Unit;
+    let wrong = original.encode_sources(limits(), &mut meter()).unwrap();
+    assert!(matches!(
+        RuntimePlanTypeTable::preflight_sources(&wrong, limits(), &mut meter()),
+        Err(RuntimeTypeSourceError::ActionPayload)
+    ));
+    original.rows[0].declaration.projection = P::Nominal {
+        nominal: RuntimeNominalTypeId::try_new("Payload").unwrap(),
+        layout: TypeLayoutHash::from_bytes([9; 32]),
+        arguments: vec![original.rows[0].id].into(),
+    };
+    let wrong = original.encode_sources(limits(), &mut meter()).unwrap();
+    assert!(matches!(
+        RuntimePlanTypeTable::preflight_sources(&wrong, limits(), &mut meter()),
+        Err(RuntimeTypeSourceError::ActionPayload)
+    ));
+}
 struct Algebra;
 impl DecisionControl for Algebra {
     type Error = std::convert::Infallible;
@@ -815,10 +874,11 @@ fn nominal_source_identity_is_preserved_and_invalid_identity_source_is_rejected(
     let mut declared = bytes.clone();
     declared[row + 36] = 1;
     declared.splice(row + 37..row + 37, [17; 32]);
+    declared.insert(row + 69, 0);
     let decoded = RuntimePlanTypeTable::decode_sources(&declared, limits(), &mut meter()).unwrap();
     assert_eq!(
         decoded.declarations().next().unwrap().nominal_declaration(),
-        Some(RuntimeNominalDeclarationId::from_bytes([17; 32]))
+        Some(&RuntimeNominalDeclarationId::from_bytes([17; 32]))
     );
     assert_eq!(
         decoded.encode_sources(limits(), &mut meter()).unwrap(),

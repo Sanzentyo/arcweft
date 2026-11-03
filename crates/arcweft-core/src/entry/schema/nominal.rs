@@ -19,15 +19,85 @@ mod validation;
 mod tests;
 
 /// Stable source declaration identity shared by its nominal instances.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-pub struct RuntimeNominalDeclarationId([u8; 32]);
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(
+    try_from = "NominalDeclarationSource",
+    into = "NominalDeclarationSource"
+)]
+pub struct RuntimeNominalDeclarationId {
+    digest: [u8; 32],
+    action: Option<arcweft_id::PublicId>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(tag = "kind", deny_unknown_fields)]
+enum NominalDeclarationSource {
+    Structural {
+        digest: [u8; 32],
+    },
+    Action {
+        digest: [u8; 32],
+        #[serde(with = "crate::value::runtime_public_id")]
+        public_id: arcweft_id::PublicId,
+    },
+}
+
+impl TryFrom<NominalDeclarationSource> for RuntimeNominalDeclarationId {
+    type Error = arcweft_id::PublicIdFamilyError;
+
+    fn try_from(source: NominalDeclarationSource) -> Result<Self, Self::Error> {
+        match source {
+            NominalDeclarationSource::Structural { digest } => Ok(Self::from_bytes(digest)),
+            NominalDeclarationSource::Action { digest, public_id } => {
+                Self::try_action(digest, public_id)
+            }
+        }
+    }
+}
+
+impl From<RuntimeNominalDeclarationId> for NominalDeclarationSource {
+    fn from(id: RuntimeNominalDeclarationId) -> Self {
+        match id.action {
+            Some(public_id) => Self::Action {
+                digest: id.digest,
+                public_id,
+            },
+            None => Self::Structural { digest: id.digest },
+        }
+    }
+}
 
 impl RuntimeNominalDeclarationId {
     pub const fn from_bytes(bytes: [u8; 32]) -> Self {
-        Self(bytes)
+        Self {
+            digest: bytes,
+            action: None,
+        }
+    }
+
+    /// Retains the original Action declaration on its implicit payload record.
+    /// The semantic digest remains the producer's declaration identity; both
+    /// fields participate in equality and the source/canonical transcripts.
+    ///
+    /// # Errors
+    /// Rejects a malformed public ID or a family other than Action.
+    pub fn try_action(
+        digest: [u8; 32],
+        public_id: arcweft_id::PublicId,
+    ) -> Result<Self, arcweft_id::PublicIdFamilyError> {
+        arcweft_id::ProjectEntityReferenceFamily::Action.validate_public_id(&public_id)?;
+        Ok(Self {
+            digest,
+            action: Some(public_id),
+        })
+    }
+
+    #[must_use]
+    pub const fn action(&self) -> Option<&arcweft_id::PublicId> {
+        self.action.as_ref()
     }
     pub const fn as_bytes(&self) -> &[u8; 32] {
-        &self.0
+        &self.digest
     }
 }
 
@@ -210,8 +280,8 @@ impl RuntimeNominalSchemaDefinition {
         }
     }
 
-    pub const fn declaration(&self) -> RuntimeNominalDeclarationId {
-        self.declaration
+    pub const fn declaration(&self) -> &RuntimeNominalDeclarationId {
+        &self.declaration
     }
 
     #[must_use]
@@ -377,6 +447,16 @@ impl Eq for RuntimeNominalSchemaGraph {}
 /// A nominal schema graph cannot be admitted or canonically encoded.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeNominalSchemaGraphError {
+    #[error("Action payload {identity:?} must be a non-generic record")]
+    InvalidActionPayload {
+        identity: RuntimeNominalSchemaIdentity,
+    },
+    #[error("Action declaration {public_id} owns conflicting payload identities")]
+    ConflictingActionPayload {
+        public_id: arcweft_id::PublicId,
+        first: RuntimeSemanticTypeId,
+        second: RuntimeSemanticTypeId,
+    },
     #[error("nominal codec-use admission failed: {0}")]
     CodecUse(#[from] super::RuntimeCodecUseError),
     #[error("source proofs disagree on the definition of {semantic_identity:?}")]

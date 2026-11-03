@@ -412,7 +412,7 @@ fn nominal_arguments_preserve_declaration_identity_and_invariant_effects() {
                 None,
             )),
         ),
-        row(4, nominal(AwbcTypeId(1))).with_nominal_declaration(declaration),
+        row(4, nominal(AwbcTypeId(1))).with_nominal_declaration(declaration.clone()),
         row(5, nominal(AwbcTypeId(2))).with_nominal_declaration(declaration),
         row(6, nominal(AwbcTypeId(1))).with_nominal_declaration(
             crate::entry::RuntimeNominalDeclarationId::from_bytes([0x83; 32]),
@@ -481,7 +481,8 @@ fn nominal_origin_is_independent_of_destination_effect_bindings() {
             )),
         )
         .with_scope(scope.clone()),
-        AwbcRuntimeType::new(id(4), nominal(AwbcTypeId(1))).with_nominal_declaration(declaration),
+        AwbcRuntimeType::new(id(4), nominal(AwbcTypeId(1)))
+            .with_nominal_declaration(declaration.clone()),
         AwbcRuntimeType::new(id(5), nominal(AwbcTypeId(2)))
             .with_scope(scope)
             .with_nominal_declaration(declaration),
@@ -706,7 +707,7 @@ fn partial_nominal_places_correlate_original_rows_and_independent_effect_origins
             )
             .with_scope(scope.clone()),
             AwbcRuntimeType::new(id(4), record(AwbcTypeId(1), [0x82; 32]))
-                .with_nominal_declaration(declaration),
+                .with_nominal_declaration(declaration.clone()),
             AwbcRuntimeType::new(id(5), record(AwbcTypeId(2), [0x83; 32]))
                 .with_scope(scope)
                 .with_nominal_declaration(declaration),
