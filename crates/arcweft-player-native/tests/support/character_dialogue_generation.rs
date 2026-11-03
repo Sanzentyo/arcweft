@@ -72,7 +72,7 @@ pub(crate) fn factory_expression(character: &CharacterId) -> RuntimeExprSeed {
         RuntimeExprSeedKind::CharacterDialogue {
             operation: arcweft_interaction_model::dialogue::CharacterDialogueOperation::Factory,
             target: Box::new(RuntimeExprSeed::new(
-                semantic(51),
+                semantic(57),
                 RuntimeExprSeedKind::EntityRef(RuntimeEntityReference::Project {
                     family: DeclarationIdentityFamily::Character,
                     public_id: PublicId::try_new(character.as_str())
@@ -159,6 +159,14 @@ pub(crate) fn admit_generation_types(builder: &mut RuntimePlanBuilder, character
             RuntimePlanTypeProjection::EntityReference(
                 arcweft_core::value::RuntimeEntityReferenceType::family_only(
                     arcweft_id::ProjectEntityReferenceFamily::Style,
+                ),
+            ),
+        ),
+        RuntimePlanTypeSeed::new(
+            semantic(57),
+            RuntimePlanTypeProjection::EntityReference(
+                arcweft_core::value::RuntimeEntityReferenceType::family_only(
+                    arcweft_id::ProjectEntityReferenceFamily::Character,
                 ),
             ),
         ),
