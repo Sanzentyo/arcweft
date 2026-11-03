@@ -523,6 +523,7 @@ fn execution_checkpoint_restores_the_original_bank_body_grant_and_cursors() {
         .restore(
             &mut executor.fiber,
             &mut executor.presentation,
+            &mut executor.actions,
             &executor.program,
         )
         .unwrap();
@@ -543,6 +544,7 @@ fn execution_checkpoint_rejects_a_foreign_program_without_mutating_the_live_grap
             .restore(
                 &mut executor.fiber,
                 &mut executor.presentation,
+                &mut executor.actions,
                 &foreign.program
             )
             .is_err()
@@ -637,7 +639,12 @@ fn execution_checkpoint_includes_root_and_the_actual_withdrawn_dialogue_grants()
         )
         .unwrap();
     checkpoint
-        .restore(fiber, &mut executor.presentation, &executor.program)
+        .restore(
+            fiber,
+            &mut executor.presentation,
+            &mut executor.actions,
+            &executor.program,
+        )
         .unwrap();
     executor.dialogues.restore_transaction(transaction).unwrap();
     assert_eq!(executor.snapshot().unwrap(), before);
@@ -744,6 +751,7 @@ fn product_one_op_lexical_exit_retires_only_its_actual_scope_and_checkpoint_rest
         .restore(
             &mut executor.fiber,
             &mut executor.presentation,
+            &mut executor.actions,
             &executor.program,
         )
         .unwrap();

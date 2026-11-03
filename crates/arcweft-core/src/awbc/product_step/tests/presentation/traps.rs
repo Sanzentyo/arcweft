@@ -215,6 +215,7 @@ fn trap_unwinds_actual_callee_lexical_and_caller_scopes_and_checkpoint_restores_
         .restore(
             &mut executor.fiber,
             &mut executor.presentation,
+            &mut executor.actions,
             &executor.program,
         )
         .unwrap();
@@ -302,6 +303,7 @@ fn standalone_trap_refuses_real_grants_without_a_borrowed_ledger() {
         .restore(
             &mut executor.fiber,
             &mut executor.presentation,
+            &mut executor.actions,
             &executor.program,
         )
         .unwrap();

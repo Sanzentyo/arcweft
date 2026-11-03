@@ -2672,9 +2672,12 @@ impl AwbcProductStepExecutor {
         let admission = match committed {
             Ok((admission, ())) => admission,
             Err(error) => {
-                if let Err(restore_error) =
-                    checkpoint.restore(&mut self.fiber, &mut self.presentation, &self.program)
-                {
+                if let Err(restore_error) = checkpoint.restore(
+                    &mut self.fiber,
+                    &mut self.presentation,
+                    &mut self.actions,
+                    &self.program,
+                ) {
                     self.fail_with_error(ProductStepError::Fiber(restore_error), output);
                 } else {
                     self.fail_with_error(ProductStepError::Internal(error.to_string()), output);
@@ -2766,6 +2769,7 @@ impl AwbcProductStepExecutor {
                 if let Err(restore_error) = checkpoint.restore(
                     &mut self.child_fibers[index].fiber,
                     &mut self.presentation,
+                    &mut self.actions,
                     &self.program,
                 ) {
                     self.fail_with_error(ProductStepError::Fiber(restore_error), output);

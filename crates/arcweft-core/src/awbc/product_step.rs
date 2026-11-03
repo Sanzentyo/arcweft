@@ -1634,6 +1634,7 @@ pub struct AwbcProductStepExecutor {
         crate::task::RuntimeNeedPublicationCursor,
     >,
     need_producers: NeedProducerRegistry,
+    actions: crate::action::RuntimeActionMailbox,
     presentation: Option<
         crate::presentation::resources::PresentationBanks<
             crate::presentation::resources::PresentationBody<RuntimePayload>,
@@ -2311,6 +2312,7 @@ impl AwbcProductStepExecutor {
             task_publications: BTreeMap::new(),
             need_publications: BTreeMap::new(),
             need_producers: NeedProducerRegistry::default(),
+            actions: crate::action::RuntimeActionMailbox::default(),
             presentation: None,
             remaining_new_task_requests: usize::MAX,
             queued_task_events: VecDeque::new(),
@@ -2976,9 +2978,12 @@ impl AwbcProductStepExecutor {
         output: &mut RuntimeStepOutput,
         executed: u64,
     ) -> usize {
-        if let Err(restore_error) =
-            checkpoint.restore(&mut self.fiber, &mut self.presentation, &self.program)
-        {
+        if let Err(restore_error) = checkpoint.restore(
+            &mut self.fiber,
+            &mut self.presentation,
+            &mut self.actions,
+            &self.program,
+        ) {
             self.fail_with_error(ProductStepError::Fiber(restore_error), output);
         } else if error.is_presentation_refusal() {
             // Custody refusal leaves the original continuation retryable. A
@@ -3146,7 +3151,12 @@ impl AwbcProductStepExecutor {
         }
         journal.rollback(self);
         child.pending_host_call = pending_host_call_before;
-        let restore = checkpoint.restore(&mut child.fiber, &mut self.presentation, &self.program);
+        let restore = checkpoint.restore(
+            &mut child.fiber,
+            &mut self.presentation,
+            &mut self.actions,
+            &self.program,
+        );
         self.child_fibers.push_front(child);
         if let Err(error) = restore {
             self.fail_with_error(error.into(), output);

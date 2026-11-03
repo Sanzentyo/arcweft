@@ -20,6 +20,7 @@ use crate::{
     value::RuntimeValue,
 };
 
+mod action;
 mod construction;
 pub(crate) use construction::ProgramVariantCase;
 mod function_contract;
@@ -110,6 +111,10 @@ pub enum RuntimeProgramTypeError {
     },
     #[error("active semantic type {semantic_type:?} has no structural nominal body")]
     NotNominal {
+        semantic_type: RuntimeSemanticTypeId,
+    },
+    #[error("active semantic type {semantic_type:?} is not an original Action payload")]
+    NotActionPayload {
         semantic_type: RuntimeSemanticTypeId,
     },
     #[error(

@@ -46,6 +46,10 @@ pub enum AwbcRuntimeValueSnapshotError {
     ProgramOwnerRequired { expected: RuntimeSemanticTypeId },
     #[error("retained type {expected:?} belongs to another original program owner")]
     ProgramOwnerMismatch { expected: RuntimeSemanticTypeId },
+    #[error("retained collection length overflowed")]
+    RetainedCollectionLengthOverflow,
+    #[error("retained collection cannot reserve storage for {count} entries")]
+    RetainedCollectionAllocation { count: usize },
     #[error(
         "presentation scope {scope} in execution {execution} requires its owning resource ledger"
     )]

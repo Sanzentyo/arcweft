@@ -329,6 +329,7 @@ fn commit_test_dialogue_transaction(
     executor.dialogues.commit_prepared(transaction, proof)
 }
 
+mod actions;
 #[path = "tests/context.rs"]
 mod context;
 mod dialogue_handoff;

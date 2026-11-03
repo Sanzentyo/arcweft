@@ -397,6 +397,7 @@ pub struct AwbcProductExecutorSnapshot {
         crate::task::RuntimeNeedPublicationCursor,
     >,
     pub need_producers: NeedProducerRegistrySaveSnapshot,
+    pub(crate) actions: crate::action::RuntimeActionMailbox<AwbcRuntimeValueSnapshot>,
     pub queued_task_events: VecDeque<AwbcProductTaskEventSaveSnapshot>,
     pub emitted_content: BTreeSet<AwbcContentUnitId>,
     pub stream_sequences: BTreeMap<AwbcStreamPlanId, u64>,
@@ -435,6 +436,10 @@ pub struct AwbcProductExecutorSaveSnapshot {
     pub task_publications: BTreeMap<TaskId, TaskPublicationCursor>,
     pub need_publications: Vec<AwbcNeedPublicationSaveSnapshot>,
     pub need_producers: AwbcNeedProducerRegistrySaveSnapshot,
+    pub actions: Vec<(
+        crate::pattern::RuntimeSemanticTypeId,
+        AwbcRuntimeValueSnapshot,
+    )>,
     pub queued_task_events: VecDeque<AwbcProductTaskEventSaveSnapshot>,
     pub emitted_content: BTreeSet<AwbcContentUnitId>,
     pub stream_sequences: BTreeMap<AwbcStreamPlanId, u64>,
@@ -1766,6 +1771,7 @@ impl AwbcProductExecutorSnapshot {
             line.visit_saved_value_roots(&mut root)
         })?;
         self.need_producers.visit_saved_value_roots(&mut root)?;
+        self.actions.visit_value_roots(&mut root)?;
         for event in &self.queued_task_events {
             if let AwbcProductTaskEventKindSaveSnapshot::Ready(value) = &event.kind {
                 root(value)?;
@@ -1908,6 +1914,12 @@ impl AwbcProductExecutorSnapshot {
             });
         }
         validate_task_publications(snapshot, admission)?;
+        snapshot
+            .actions
+            .admit_retained(admission)
+            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                message: error.to_string(),
+            })?;
         if let Err(error) = snapshot.need_producers.admit_retained(admission) {
             return Err(AwbcProductStepBuildError::RestoreSnapshot {
                 message: format!("invalid Need producer registry snapshot: {error}"),
@@ -2850,6 +2862,9 @@ impl AwbcProductExecutorSaveSnapshot {
             banks.visit_value_roots(visit)?;
         }
         self.fiber.visit_saved_value_roots(&mut *visit)?;
+        for (_, payload) in &self.actions {
+            visit(payload)?;
+        }
         for child in &self.child_fibers {
             child.fiber.visit_saved_value_roots(&mut *visit)?;
         }
@@ -2968,6 +2983,7 @@ impl AwbcProductExecutorSaveSnapshot {
                 .collect(),
             need_producers: save_need_producer_registry(&snapshot.need_producers)
                 .map_err(|message| AwbcProductSaveError::InvalidSnapshot { message })?,
+            actions: snapshot.actions.snapshot_rows_admitted(),
             queued_task_events: snapshot.queued_task_events.clone(),
             emitted_content: snapshot.emitted_content.clone(),
             stream_sequences: snapshot.stream_sequences.clone(),
@@ -2988,6 +3004,10 @@ impl AwbcProductExecutorSaveSnapshot {
         let mut admission =
             program.retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default());
         self.admit_presentation_execution(program, &mut admission)?;
+        let actions = crate::action::RuntimeActionMailbox::from_rows(self.actions, &mut admission)
+            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                message: error.to_string(),
+            })?;
         let owner = crate::task::RuntimeProgramOwner::Awbc(program.program_arc());
         let presentation = self.presentation.map(|banks| {
             banks.retain_program(
@@ -3081,6 +3101,7 @@ impl AwbcProductExecutorSaveSnapshot {
             task_publications: self.task_publications,
             need_publications,
             need_producers,
+            actions,
             queued_task_events,
             emitted_content: self.emitted_content,
             stream_sequences: self.stream_sequences,
@@ -3486,6 +3507,9 @@ impl AwbcProductStepExecutor {
             banks.visit_value_roots(&mut |payload| visitor(payload.value()))?;
         }
         self.fiber.visit_runtime_values(&mut visitor)?;
+        self.actions.visit_value_roots(|payload| {
+            visit_runtime_value_graph(payload.value(), &mut visitor)
+        })?;
         for child in &self.child_fibers {
             child.fiber.visit_runtime_values(&mut visitor)?;
         }
@@ -3530,7 +3554,8 @@ impl AwbcProductStepExecutor {
         for event in &self.queued_task_events {
             event.admit_retained(self.need_producers.task_spec(event.correlation), admission)?;
         }
-        self.need_producers.admit_retained(admission)
+        self.need_producers.admit_retained(admission)?;
+        self.actions.admit_retained(admission)
     }
 
     pub(super) fn admit_fiber_state(
@@ -3653,6 +3678,11 @@ impl AwbcProductStepExecutor {
             task_publications: self.task_publications.clone(),
             need_publications: self.need_publications.clone(),
             need_producers,
+            actions: self.actions.snapshot_admitted(&owner).map_err(|error| {
+                AwbcProductSaveError::InvalidSnapshot {
+                    message: error.to_string(),
+                }
+            })?,
             queued_task_events,
             emitted_content: self.emitted_content.clone(),
             stream_sequences: self.stream_sequences.clone(),
@@ -3773,6 +3803,12 @@ impl AwbcProductStepExecutor {
                 message: error.to_string(),
             })?;
         executor.format_context = format_context;
+        executor.actions = snapshot
+            .actions
+            .into_live_admitted(materialization)
+            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                message: error.to_string(),
+            })?;
         executor.child_fibers = snapshot
             .child_fibers
             .into_iter()

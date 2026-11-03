@@ -1109,6 +1109,7 @@ impl Engine {
         self.admit_presentation_state_for_slot_removal(admission, removal)?;
         self.admit_metadata(admission)?;
         self.need_producers.admit_retained(admission)?;
+        self.actions.admit_retained(admission)?;
         self.admit_publications(admission)?;
         if let Some(root) = &self.root {
             root.admit_retained(admission)?;
@@ -1164,6 +1165,9 @@ impl NativeEngineRollbackImage {
         self.admit_metadata(&mut admission)
             .map_err(|error| error.to_string())?;
         self.need_producers
+            .admit_retained(&mut admission)
+            .map_err(|error| error.to_string())?;
+        self.actions
             .admit_retained(&mut admission)
             .map_err(|error| error.to_string())?;
         self.admit_publications(&mut admission)

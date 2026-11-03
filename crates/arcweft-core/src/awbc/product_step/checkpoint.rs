@@ -47,6 +47,7 @@ impl<'a> ProductCheckpointTarget<'a> {
 pub(super) struct ProductExecutionCheckpoint {
     fiber: AwbcFiberStateSnapshot,
     presentation: Option<PresentationBanks<PresentationBody<AwbcRuntimeValueSnapshot>>>,
+    actions: crate::action::RuntimeActionMailbox<AwbcRuntimeValueSnapshot>,
     admission: RuntimeRetainedValueAdmission,
 }
 
@@ -102,6 +103,7 @@ impl ProductExecutionCheckpoint {
         self,
         fiber: &mut FiberState,
         presentation: &mut Option<PresentationBanks<PresentationBody<RuntimePayload>>>,
+        actions: &mut crate::action::RuntimeActionMailbox,
         program: &AwbcProductProgram,
     ) -> Result<(), FiberStateError> {
         let owner = self
@@ -129,8 +131,10 @@ impl ProductExecutionCheckpoint {
             .presentation
             .map(|banks| banks.into_admitted_live(context))
             .transpose()?;
+        let candidate_actions = self.actions.into_live_admitted(context)?;
         *fiber = candidate;
         *presentation = banks;
+        *actions = candidate_actions;
         Ok(())
     }
 }
@@ -153,6 +157,7 @@ impl AwbcProductStepExecutor {
         Ok(ProductExecutionCheckpoint {
             fiber,
             presentation,
+            actions: self.actions.snapshot_admitted(owner)?,
             admission,
         })
     }

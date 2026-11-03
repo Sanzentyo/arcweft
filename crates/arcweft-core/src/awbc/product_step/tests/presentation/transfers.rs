@@ -421,6 +421,7 @@ fn root_return_retains_the_original_handle_and_drops_exited_storage_before_snaps
         .restore(
             &mut executor.fiber,
             &mut executor.presentation,
+            &mut executor.actions,
             &executor.program,
         )
         .unwrap();
@@ -687,6 +688,7 @@ fn static_and_dynamic_goto_move_the_original_handle_into_the_actual_new_root() {
             .restore(
                 &mut executor.fiber,
                 &mut executor.presentation,
+                &mut executor.actions,
                 &executor.program,
             )
             .unwrap();

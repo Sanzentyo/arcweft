@@ -123,6 +123,7 @@ pub struct Engine<
     format_context: crate::value::RuntimeFormatContext,
     generation: GenerationId,
     need_producers: N,
+    actions: crate::action::RuntimeActionMailbox<P>,
     presentation: Option<
         crate::presentation::resources::PresentationBanks<
             crate::presentation::resources::PresentationBody<P>,
@@ -178,6 +179,7 @@ impl Clone for NativeEngineRollbackImage {
             format_context: self.format_context.clone(),
             generation: self.generation,
             need_producers: self.need_producers.clone(),
+            actions: self.actions.clone(),
             presentation: self.presentation.clone(),
             task_request_quota_remaining: self.task_request_quota_remaining,
             scalar_step_charge: self.scalar_step_charge,
@@ -2064,6 +2066,10 @@ impl Engine {
                 .need_producers
                 .snapshot_admitted(&owner)
                 .map_err(|error| error.to_string())?,
+            actions: self
+                .actions
+                .snapshot_admitted(&owner)
+                .map_err(|error| error.to_string())?,
             presentation: self
                 .presentation
                 .as_ref()
@@ -2139,6 +2145,10 @@ impl Engine {
                 image.need_producers,
                 owner,
             )?,
+            actions: image
+                .actions
+                .into_live_admitted(owner)
+                .map_err(|error| error.to_string())?,
             presentation: image
                 .presentation
                 .map(|ledger| ledger.into_admitted_live(owner))
@@ -2305,6 +2315,7 @@ impl Engine {
             format_context: crate::value::RuntimeFormatContext::default(),
             generation,
             need_producers: NeedProducerRegistry::default(),
+            actions: crate::action::RuntimeActionMailbox::default(),
             presentation: None,
             task_request_quota_remaining: usize::MAX,
             scalar_step_charge: None,

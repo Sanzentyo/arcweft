@@ -1512,6 +1512,7 @@ impl super::AwbcProductStepExecutor {
                         .restore(
                             candidate.as_mut().expect("activation fiber remains owned"),
                             &mut self.presentation,
+                            &mut self.actions,
                             &self.program,
                         )
                         .expect("accepted activation checkpoint restores in its original program");
@@ -1583,6 +1584,7 @@ impl super::AwbcProductStepExecutor {
                     .restore(
                         candidate.as_mut().expect("activation fiber remains owned"),
                         &mut self.presentation,
+                        &mut self.actions,
                         &self.program,
                     )
                     .expect("accepted activation checkpoint restores in its original program");
@@ -1602,6 +1604,7 @@ impl super::AwbcProductStepExecutor {
                     .restore(
                         candidate.as_mut().expect("activation fiber remains owned"),
                         &mut self.presentation,
+                        &mut self.actions,
                         &self.program,
                     )
                     .expect("accepted activation checkpoint restores in its original program");
@@ -1735,6 +1738,7 @@ impl super::AwbcProductStepExecutor {
                             .restore(
                                 candidate.as_mut().expect("activation fiber remains owned"),
                                 &mut self.presentation,
+                                &mut self.actions,
                                 &self.program,
                             )
                             .expect(
