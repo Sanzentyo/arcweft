@@ -2563,6 +2563,15 @@ fn execute_instruction(
                 .active_frame_mut()?
                 .set_register(*destination, value)?;
         }
+        AwbcInstruction::ReceiveAction { dst, channel } => {
+            if let Some(payload) = execution.receive_action(program, fiber, *channel, *dst)? {
+                fiber.suspend(FiberSuspension {
+                    resume: FiberResumeTarget::Exact(fiber.cursor),
+                    reason: FiberSuspensionReason::ActionReceive { payload },
+                })?;
+                return Ok(InstructionControl::Yield);
+            }
+        }
         AwbcInstruction::EmitEffect { effect, args } => {
             if let Some(super::schema::AwbcEffectPayload::EmitAction { payload_type }) = program
                 .effect_plans

@@ -4745,6 +4745,25 @@ impl PartialOrd for RuntimeEntityReference {
 }
 
 impl RuntimeEntityReference {
+    /// Borrows the typed declaration identity without projecting or parsing a
+    /// display label. Executable authority remains with the selected program.
+    pub(crate) fn project_public_id(
+        &self,
+        expected: DeclarationIdentityFamily,
+    ) -> Option<&PublicId> {
+        if self.project_family() != Some(expected) {
+            return None;
+        }
+        match self {
+            Self::Project { public_id, .. } => Some(public_id),
+            Self::ImportedProject(entity) => Some(entity.public_id()),
+            Self::StructuralFlow(_)
+            | Self::PresentationAddress(_)
+            | Self::DialogueLine(_)
+            | Self::CharacterLook { .. } => None,
+        }
+    }
+
     /// Borrows the admitted public label for an exact declaration family.
     /// Imported provenance and structural Flow identity remain in this value;
     /// a presentation consumer cannot turn this label into execution authority.

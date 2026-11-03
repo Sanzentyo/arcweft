@@ -242,6 +242,7 @@ impl FlowOp {
             Self::ExitScopeBind { .. } => 45,
             Self::Noop => 46,
             Self::StandardMap(_) => 49,
+            Self::ReceiveAction { .. } => 50,
         }
     }
 }
@@ -456,7 +457,8 @@ impl FlowOp {
             | FlowOp::CancelCleanup { .. }
             | FlowOp::EnterScope { .. }
             | FlowOp::ExitScope
-            | FlowOp::Noop => {}
+            | FlowOp::Noop
+            | FlowOp::ReceiveAction { .. } => {}
         }
         Ok(())
     }
@@ -535,7 +537,8 @@ impl FlowOp {
             | FlowOp::EnterScope { .. }
             | FlowOp::ExitScope
             | FlowOp::ExitScopeBind { .. }
-            | FlowOp::Noop => Schema::Empty,
+            | FlowOp::Noop
+            | FlowOp::ReceiveAction { .. } => Schema::Empty,
         }
     }
 

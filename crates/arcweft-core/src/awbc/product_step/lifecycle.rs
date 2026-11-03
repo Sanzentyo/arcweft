@@ -431,6 +431,11 @@ impl AwbcProductStepExecutor {
             return FlowFiberStatus::Running;
         };
         match &suspension.reason {
+            FiberSuspensionReason::ActionReceive { payload } => {
+                FlowFiberStatus::ActionWaiting(crate::engine::ActionWaitingStatus::Observed {
+                    payload: *payload,
+                })
+            }
             FiberSuspensionReason::DurationWait(wait) => FlowFiberStatus::DurationWaiting(*wait),
             FiberSuspensionReason::Dialogue { .. }
             | FiberSuspensionReason::DialogueActive { .. } => self.dialogues.active_frame().map_or(

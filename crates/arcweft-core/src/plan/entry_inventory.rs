@@ -1064,7 +1064,8 @@ impl super::RuntimePlanInventory {
                     return Err(RuntimePlanError::InvalidDeferCaptureAbi { site: *site });
                 }
             }
-            FlowOp::LetElse { .. }
+            FlowOp::ReceiveAction { .. }
+            | FlowOp::LetElse { .. }
             | FlowOp::StandardMap(_)
             | FlowOp::FormatOperandAttempt { .. }
             | FlowOp::ProgramTask { .. }

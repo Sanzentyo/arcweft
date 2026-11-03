@@ -8,6 +8,8 @@ mod environment_callables;
 use arcweft_lang_hir::identity::HirValueTypeOwner;
 pub(crate) use environment_callables::{ExternalCallableKey, ExternalCallableStates};
 
+#[path = "final_flow/action_receive.rs"]
+mod action_receive;
 #[path = "final_flow/control_locals.rs"]
 mod control_locals;
 #[path = "final_flow/defer.rs"]
@@ -7797,6 +7799,9 @@ impl<'a> FinalFlowLowerer<'a> {
             )));
         }
         let plan = match producer.execution() {
+            crate::semantic_facts::RuntimeResolvedNeedProducerExecution::ProgramActionReceive => {
+                return self.lower_action_receive_value(expression, call, continuation, overrides);
+            }
             crate::semantic_facts::RuntimeResolvedNeedProducerExecution::Host { plan, .. } => {
                 plan.clone()
             }

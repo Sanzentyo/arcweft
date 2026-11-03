@@ -1049,6 +1049,12 @@ pub enum RuntimeDeferOwner {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum FlowOp {
+    /// Consumes one original Action payload into a new owned local, or parks
+    /// this operation without transferring channel or message custody.
+    ReceiveAction {
+        channel: RuntimeLocalDeclarationId,
+        result: RuntimeLocalDeclarationId,
+    },
     Let {
         pattern: RuntimePattern,
         expr: RuntimeExpr,

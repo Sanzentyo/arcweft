@@ -972,7 +972,8 @@ impl<'a> RuntimeBodySemanticContext<'a> {
             Op::StartNeedProducer { .. } => &[EndpointKind::MakeNeed],
             Op::AwaitMany { .. } => &[EndpointKind::AwaitManyBase, EndpointKind::AwaitManyChild],
             Op::Dialogue { .. } => &[EndpointKind::LineTask],
-            Op::StandardMap(_)
+            Op::ReceiveAction { .. }
+            | Op::StandardMap(_)
             | Op::Let { .. }
             | Op::FormatOperandAttempt { .. }
             | Op::LetElse { .. }

@@ -3714,6 +3714,14 @@ pub enum RuntimeResolvedNeedProducerExecution {
     /// Retains its checked call producer definition in the common executable
     /// fact view; live capture admission belongs to the original Program source.
     ProgramFanout,
+    ProgramActionReceive,
+}
+
+/// Selected ordinary Program producer, independent of Host task families.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeProgramNeedKind {
+    Fanout,
+    ActionReceive,
 }
 
 /// Borrowed exact types from an admitted fanout call, without a second schema.
@@ -3772,6 +3780,18 @@ impl RuntimeResolvedNeedProducer {
 
     pub const fn need_type(&self) -> &RuntimeNormalizedType {
         &self.need_type
+    }
+
+    pub fn try_program_action_receive(
+        need_type: RuntimeNormalizedType,
+    ) -> Result<Self, RuntimeResolvedCallError> {
+        if !matches!(need_type.shape(), RuntimeTypeShape::Need(_)) {
+            return Err(RuntimeResolvedCallError::NeedProducerResultNotNeed);
+        }
+        Ok(Self {
+            execution: RuntimeResolvedNeedProducerExecution::ProgramActionReceive,
+            need_type,
+        })
     }
 
     pub const fn execution(&self) -> &RuntimeResolvedNeedProducerExecution {
@@ -4225,11 +4245,26 @@ impl RuntimeResolvedCall {
                     }
                 }
             }
+            RuntimeResolvedNeedProducerExecution::ProgramActionReceive => {
+                if !matches!(
+                    self.dispatch(),
+                    RuntimeResolvedCallDispatch::Static(
+                        RuntimeResolvedStaticCallTarget::ProgramNeed(
+                            RuntimeProgramNeedKind::ActionReceive
+                        )
+                    )
+                ) || self.action_receive_contract(producer.need_type()).is_none()
+                {
+                    return Err(RuntimeResolvedCallError::NeedProducerDispatch);
+                }
+            }
             RuntimeResolvedNeedProducerExecution::ProgramFanout => {
                 if !matches!(
                     self.dispatch(),
                     RuntimeResolvedCallDispatch::Static(
-                        RuntimeResolvedStaticCallTarget::ProgramNeed
+                        RuntimeResolvedStaticCallTarget::ProgramNeed(
+                            RuntimeProgramNeedKind::Fanout
+                        )
                     )
                 ) || self.program_fanout_contract(producer.need_type()).is_none()
                 {
@@ -4351,7 +4386,7 @@ impl RuntimeResolvedCall {
             self.dispatch,
             RuntimeResolvedCallDispatch::Static(
                 RuntimeResolvedStaticCallTarget::Host(_)
-                    | RuntimeResolvedStaticCallTarget::ProgramNeed
+                    | RuntimeResolvedStaticCallTarget::ProgramNeed(_)
             )
         )
     }
@@ -4373,6 +4408,53 @@ impl RuntimeResolvedCall {
             return None;
         }
         self.program_fanout_contract(producer.need_type())
+    }
+
+    pub(crate) fn action_receive(
+        &self,
+    ) -> Option<(&RuntimeNormalizedType, &RuntimeNormalizedType)> {
+        let producer = self.need_producer()?;
+        if !matches!(
+            producer.execution(),
+            RuntimeResolvedNeedProducerExecution::ProgramActionReceive
+        ) {
+            return None;
+        }
+        self.action_receive_contract(producer.need_type())
+    }
+
+    fn action_receive_contract<'a>(
+        &'a self,
+        need: &'a RuntimeNormalizedType,
+    ) -> Option<(&'a RuntimeNormalizedType, &'a RuntimeNormalizedType)> {
+        let [channel] = self.operands() else {
+            return None;
+        };
+        let RuntimeTypeShape::Need(payload) = need.shape() else {
+            return None;
+        };
+        let RuntimeTypeShape::EntityReference(reference) = channel.ty().shape() else {
+            return None;
+        };
+        if self.completed_group.get() != 0
+            || !matches!(
+                channel.origin(),
+                RuntimeResolvedCallOperandOrigin::Argument {
+                    argument: 0,
+                    slot: 0
+                }
+            )
+            || channel.parameter() != Some(RuntimeCallParameterCoordinate::new(0, 0))
+            || !matches!(
+                channel.projection(),
+                RuntimeResolvedCallOperandProjection::Scalar
+            )
+            || reference.family() != Some(arcweft_id::ProjectEntityReferenceFamily::Action)
+            || reference.payload().map(|ty| ty.as_ref()) != Some(payload.as_ref())
+        {
+            return None;
+        }
+        Some((channel.ty(), payload))
     }
 
     fn program_fanout_contract<'a>(
@@ -4591,7 +4673,7 @@ impl RuntimeResolvedCallDispatch {
                 | RuntimeResolvedStaticCallTarget::StandardMapPrefix(_)
                 | RuntimeResolvedStaticCallTarget::Traverse
                 | RuntimeResolvedStaticCallTarget::TraitMethod { .. }
-                | RuntimeResolvedStaticCallTarget::ProgramNeed
+                | RuntimeResolvedStaticCallTarget::ProgramNeed(_)
                 | RuntimeResolvedStaticCallTarget::Registered(_)
                 | RuntimeResolvedStaticCallTarget::Line(_),
             )
@@ -4651,7 +4733,7 @@ pub enum RuntimeResolvedStaticCallTarget {
     /// Owns the checked collection and unary Need-returning function value.
     Traverse,
     /// An ordinary Need whose executable kernel is owned by its producer fact.
-    ProgramNeed,
+    ProgramNeed(RuntimeProgramNeedKind),
     Agent(crate::agent::RuntimeAgentIntrinsic),
     AgentProbeComparison(arcweft_core::value::RuntimeAgentCompareOp),
     AgentDiagnosticsHasError,
@@ -8798,7 +8880,7 @@ impl RuntimePlanSemanticFacts {
                     | RuntimeResolvedStaticCallTarget::StandardMap(_)
                     | RuntimeResolvedStaticCallTarget::StandardMapPrefix(_)
                     | RuntimeResolvedStaticCallTarget::Traverse
-                    | RuntimeResolvedStaticCallTarget::ProgramNeed
+                    | RuntimeResolvedStaticCallTarget::ProgramNeed(_)
                     | RuntimeResolvedStaticCallTarget::CharacterDialogue(_)
                     | RuntimeResolvedStaticCallTarget::Line(_)
                     | RuntimeResolvedStaticCallTarget::Registered(_)
@@ -12689,8 +12771,8 @@ fn validate_call(
         return Err(RuntimeSemanticFactsError::MissingProjectFunctionCallPlan);
     }
     match call.dispatch() {
-        RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::ProgramNeed) => {
-            if call.program_fanout().is_none() {
+        RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::ProgramNeed(_)) => {
+            if call.program_fanout().is_none() && call.action_receive().is_none() {
                 return Err(RuntimeSemanticFactsError::InvalidNeedProducerFact { expression });
             }
         }
@@ -13951,7 +14033,7 @@ fn validate_project_function_instance(
                 | RuntimeResolvedStaticCallTarget::StandardMap(_)
                 | RuntimeResolvedStaticCallTarget::StandardMapPrefix(_)
                 | RuntimeResolvedStaticCallTarget::Traverse
-                | RuntimeResolvedStaticCallTarget::ProgramNeed
+                | RuntimeResolvedStaticCallTarget::ProgramNeed(_)
                 | RuntimeResolvedStaticCallTarget::CharacterDialogue(_)
                 | RuntimeResolvedStaticCallTarget::Line(_)
                 | RuntimeResolvedStaticCallTarget::Registered(_)

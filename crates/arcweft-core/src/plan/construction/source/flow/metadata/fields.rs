@@ -316,6 +316,10 @@ pub(super) fn preflight(
                 return Err(Error::Prefix);
             }
         }
+        50 => {
+            reader.local()?;
+            reader.local()?;
+        }
         tag => {
             return Err(Error::Tag {
                 kind: "operation",

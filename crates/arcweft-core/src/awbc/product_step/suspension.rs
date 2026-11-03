@@ -34,6 +34,7 @@ enum AwaitNeedPublicationKind {
 }
 
 enum DeferredSuspensionDispatch {
+    ActionReceive(crate::pattern::RuntimeSemanticTypeId),
     DurationWait,
     BudgetYield,
     AwaitNeed {
@@ -54,6 +55,7 @@ enum DeferredSuspensionDispatch {
 impl DeferredSuspensionDispatch {
     fn from_reason(reason: &FiberSuspensionReason) -> Self {
         match reason {
+            FiberSuspensionReason::ActionReceive { payload } => Self::ActionReceive(*payload),
             FiberSuspensionReason::DurationWait(_) => Self::DurationWait,
             FiberSuspensionReason::BudgetYield => Self::BudgetYield,
             FiberSuspensionReason::Await {
@@ -1602,6 +1604,7 @@ impl AwbcProductStepExecutor {
         }
         match dispatch {
             DeferredSuspensionDispatch::AwaitNeed { .. }
+            | DeferredSuspensionDispatch::ActionReceive(_)
             | DeferredSuspensionDispatch::DurationWait
             | DeferredSuspensionDispatch::BudgetYield => {}
             DeferredSuspensionDispatch::AwaitMany => {
@@ -1675,6 +1678,14 @@ impl AwbcProductStepExecutor {
         let dispatch = DeferredSuspensionDispatch::from_reason(&suspension.reason);
         let Some(resume) = resume else {
             return match dispatch {
+                DeferredSuspensionDispatch::ActionReceive(payload) => {
+                    if !self.actions.has_message(payload) {
+                        return Ok(false);
+                    }
+                    child.fiber.resume_action_receive(&self.program)?;
+                    child.fiber.replenish_budget();
+                    Ok(true)
+                }
                 DeferredSuspensionDispatch::DurationWait => Ok(false),
                 DeferredSuspensionDispatch::BudgetYield => {
                     child
@@ -1744,9 +1755,9 @@ impl AwbcProductStepExecutor {
                 "deferred child suspended on a product-owned dialogue or choice boundary"
                     .to_owned(),
             )),
-            DeferredSuspensionDispatch::DurationWait | DeferredSuspensionDispatch::BudgetYield => {
-                Ok(false)
-            }
+            DeferredSuspensionDispatch::ActionReceive(_)
+            | DeferredSuspensionDispatch::DurationWait
+            | DeferredSuspensionDispatch::BudgetYield => Ok(false),
         }
     }
 

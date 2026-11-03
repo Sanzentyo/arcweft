@@ -114,7 +114,8 @@ impl AotLinearOp {
                 expr: expr.clone(),
             }),
             FlowOp::Noop => Some(Self::Noop),
-            FlowOp::StandardMap(_)
+            FlowOp::ReceiveAction { .. }
+            | FlowOp::StandardMap(_)
             | FlowOp::LetElse { .. }
             | FlowOp::FormatOperandAttempt { .. }
             | FlowOp::LineOperation { .. }
@@ -273,7 +274,8 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
             | RuntimeEffectExpr::EmitAction { .. }
             | RuntimeEffectExpr::Assert { .. } => false,
         },
-        FlowOp::StandardMap(_)
+        FlowOp::ReceiveAction { .. }
+        | FlowOp::StandardMap(_)
         | FlowOp::LetElse { .. }
         | FlowOp::FormatOperandAttempt { .. }
         | FlowOp::LineOperation { .. }
@@ -349,7 +351,8 @@ impl AotOpClass {
             | FlowOp::CommitDialogueResult { .. } => Self::Effect,
             FlowOp::SelectDialogueResult { .. } => Self::Effect,
             FlowOp::LineOperation { .. } => Self::Await,
-            FlowOp::Await { .. }
+            FlowOp::ReceiveAction { .. }
+            | FlowOp::Await { .. }
             | FlowOp::StartNeedProducer { .. }
             | FlowOp::AwaitMany { .. }
             | FlowOp::HostCall { .. }
@@ -410,6 +413,7 @@ impl AotProgramStats {
                 | FlowOp::SelectDialogueResult { .. }
                 | FlowOp::Dialogue { .. }
                 | FlowOp::Choice { .. }
+                | FlowOp::ReceiveAction { .. }
                 | FlowOp::AwaitMany { .. }
                 | FlowOp::StartNeedProducer { .. }
                 | FlowOp::HostCall { .. }

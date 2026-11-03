@@ -143,6 +143,50 @@ impl<V, O, N> FiberSuspension<V, O, N> {
         if cursor.function != frame.function {
             return Err(FiberStateError::InvalidFrame);
         }
+        if let FiberSuspensionReason::ActionReceive { payload } = self.reason {
+            if self.resume != FiberResumeTarget::Exact(cursor) {
+                return Err(FiberStateError::InvalidFrame);
+            }
+            let super::super::schema::AwbcInstruction::ReceiveAction { dst, channel } =
+                super::instruction_at_site(frame.program, cursor)?
+            else {
+                return Err(FiberStateError::InvalidFrame);
+            };
+            if !frame
+                .registers
+                .get(dst.index())
+                .is_some_and(crate::value::RuntimePlaceStorage::is_vacant)
+            {
+                return Err(FiberStateError::InvalidFrame);
+            }
+            let semantic = |register: super::super::schema::AwbcRegisterId| {
+                frame
+                    .layout
+                    .slots
+                    .get(register.index())
+                    .and_then(|slot| frame.program.runtime_types.get(slot.ty.index()))
+                    .map(|ty| ty.semantic_identity())
+                    .ok_or(FiberStateError::InvalidFrame)
+            };
+            let channel_value = frame
+                .registers
+                .get(channel.index())
+                .and_then(|value| value.as_ref())
+                .ok_or(FiberStateError::InvalidFrame)?;
+            let actual = crate::program_types::RuntimeProgramTypes::Awbc(frame.program)
+                .action_receive_payload(
+                    view(channel_value),
+                    semantic(*channel)?,
+                    semantic(*dst)?,
+                    frame.binding,
+                    resources,
+                )
+                .map_err(|error| FiberStateError::Snapshot(error.into()))?;
+            if actual != payload {
+                return Err(FiberStateError::InvalidFrame);
+            }
+            return Ok(());
+        }
         let resume = match self.resume {
             FiberResumeTarget::Exact(exact) => {
                 if matches!(self.reason, FiberSuspensionReason::DurationWait(_)) {
@@ -798,6 +842,9 @@ impl FiberSuspensionReason {
                 args: args.iter().map(value).collect::<Result<_, _>>()?,
                 destination: *destination,
             },
+            Self::ActionReceive { payload } => {
+                FiberSuspensionReason::ActionReceive { payload: *payload }
+            }
             Self::DurationWait(wait) => FiberSuspensionReason::DurationWait(*wait),
             Self::BudgetYield => FiberSuspensionReason::BudgetYield,
         })
@@ -933,6 +980,7 @@ impl
                 args: args.into_iter().map(value).collect::<Result<_, _>>()?,
                 destination,
             },
+            Self::ActionReceive { payload } => FiberSuspensionReason::ActionReceive { payload },
             Self::DurationWait(wait) => FiberSuspensionReason::DurationWait(wait),
             Self::BudgetYield => FiberSuspensionReason::BudgetYield,
         })
@@ -1008,6 +1056,7 @@ where
                 args: args.clone(),
                 destination: *destination,
             },
+            Self::ActionReceive { payload } => Self::ActionReceive { payload: *payload },
             Self::DurationWait(wait) => Self::DurationWait(*wait),
             Self::BudgetYield => Self::BudgetYield,
         }

@@ -375,6 +375,23 @@ where
         if let Self::WaitingMany(WaitingManyStatus::Program(state)) = self {
             state.admit_frame_context(env, admission)?;
         }
+        if let Self::ActionWaiting(state) = self {
+            let crate::engine::ActionWaitingStatus::Native(state) = state else {
+                return Err(invalid(
+                    "native Action wait requires its original Plan operation",
+                ));
+            };
+            let payload = crate::engine::NativeActionReceiveState::admit_frame(
+                &state.source,
+                env,
+                admission,
+            )?;
+            if payload != state.payload {
+                return Err(invalid(
+                    "Action receive source differs from its retained original channel",
+                ));
+            }
+        }
         Ok(())
     }
 
@@ -384,6 +401,15 @@ where
         binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         match self {
+            Self::ActionWaiting(state) => {
+                let crate::engine::ActionWaitingStatus::Native(state) = state else {
+                    return Err(invalid(
+                        "native Action wait requires its original Plan operation",
+                    ));
+                };
+                state.source.admit_retained(admission)?;
+                admission.validate_metadata(&state.payload)
+            }
             Self::NeedWaiting(state) => state.admit_suspended_values(admission, binding),
             Self::WaitingMany(WaitingManyStatus::Native(state)) => {
                 state.admit_suspended_values(admission, binding)

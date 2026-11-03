@@ -256,6 +256,7 @@ fn stop_reason(reason: RuntimeStepStopReason) -> &'static str {
 
 fn fiber_status(status: &FlowFiberStatus) -> String {
     match status {
+        FlowFiberStatus::ActionWaiting(_) => "action_waiting".to_owned(),
         FlowFiberStatus::DurationWaiting(wait) => {
             format!("duration_waiting:{}", wait.remaining().as_nanos())
         }

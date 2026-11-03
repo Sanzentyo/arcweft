@@ -4,7 +4,7 @@ use super::{
     AwbcProgram, AwbcRegisterId, FiberState, FiberStateError, VmError, VmExecutionContext,
 };
 use crate::presentation::resources::{PresentationBanks, PresentationBody};
-use crate::value::RuntimePayload;
+use crate::value::{RuntimePayload, RuntimeStoredValue};
 
 pub(super) struct VmExecutionResources<'execution> {
     pub(super) context: Option<&'execution VmExecutionContext>,
@@ -14,6 +14,92 @@ pub(super) struct VmExecutionResources<'execution> {
 }
 
 impl VmExecutionResources<'_> {
+    pub(super) fn receive_action(
+        &mut self,
+        program: &AwbcProgram,
+        fiber: &mut FiberState,
+        channel: AwbcRegisterId,
+        dst: AwbcRegisterId,
+    ) -> Result<Option<crate::pattern::RuntimeSemanticTypeId>, VmError> {
+        let admitted = self
+            .context
+            .ok_or(VmError::ActionContextRequired)?
+            .admitted_program(program)
+            .map_err(|_| VmError::ActionContextRequired)?;
+        let mailbox = self
+            .actions
+            .as_deref_mut()
+            .ok_or(VmError::ActionContextRequired)?;
+        let frame = fiber.active_frame()?;
+        let layout = program
+            .frame_layouts
+            .get(frame.layout.index())
+            .ok_or(FiberStateError::InvalidFrame)?;
+        let semantic = |register: AwbcRegisterId| {
+            layout
+                .slots
+                .get(register.index())
+                .and_then(|slot| program.runtime_types.get(slot.ty.index()))
+                .map(|ty| ty.semantic_identity())
+                .ok_or(FiberStateError::InvalidFrame)
+        };
+        let channel_type = semantic(channel)?;
+        let destination = semantic(dst)?;
+        if !frame
+            .registers
+            .get(dst.index())
+            .is_some_and(crate::value::RuntimePlaceStorage::is_vacant)
+        {
+            return Err(FiberStateError::InvalidFrame.into());
+        }
+        let mut admission =
+            admitted.retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default());
+        let channel_value = frame.register(channel)?.view();
+        let payload = admission
+            .admit_composite(
+                crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
+                |owner, resources| {
+                    owner
+                        .expect("admitted execution owns its original program")
+                        .types()
+                        .action_receive_payload(
+                            channel_value,
+                            channel_type,
+                            destination,
+                            frame.type_instantiation.as_deref(),
+                            resources,
+                        )
+                        .map_err(Into::into)
+                },
+            )
+            .map_err(|cause| VmError::ActionAdmission(Box::new(cause)))?;
+        fiber
+            .admit_retained(&mut admission)
+            .map_err(|cause| VmError::ActionAdmission(Box::new(cause)))?;
+        if let Some(value) = mailbox.peek(payload) {
+            admission
+                .validate_owned_typed_borrowed_in_invocation(
+                    value.borrowed_value(),
+                    destination,
+                    frame.type_instantiation.as_deref(),
+                )
+                .map_err(|cause| VmError::ActionAdmission(Box::new(cause)))?;
+        }
+        let value = mailbox
+            .receive(payload, &mut admission)
+            .map_err(|cause| VmError::ActionAdmission(Box::new(cause)))?;
+        match value {
+            Some(value) => {
+                // The vacant destination and exclusive frame were checked before dequeue.
+                fiber
+                    .active_frame_mut()?
+                    .set_register(dst, value.into_value())?;
+                Ok(None)
+            }
+            None => Ok(Some(payload)),
+        }
+    }
+
     pub(super) fn emit_action(
         &mut self,
         program: &AwbcProgram,

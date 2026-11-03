@@ -165,6 +165,13 @@ impl PreparedActionEmission<'_> {
 }
 
 impl RuntimeActionMailbox {
+    pub(crate) fn peek(&self, payload_type: RuntimeSemanticTypeId) -> Option<&RuntimePayload> {
+        self.messages
+            .iter()
+            .find(|message| message.payload_type == payload_type)
+            .map(|message| &message.payload)
+    }
+
     pub(crate) fn has_message(&self, payload_type: RuntimeSemanticTypeId) -> bool {
         self.messages
             .iter()

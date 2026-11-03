@@ -839,6 +839,9 @@ pub enum FiberSuspensionReason<
     O = crate::value::RuntimeOpaqueValue,
     N = crate::task::RuntimeNeedHandle,
 > {
+    ActionReceive {
+        payload: crate::pattern::RuntimeSemanticTypeId,
+    },
     /// The cursor remains on the original Wait instruction until its exact
     /// following instruction is resumed by later logical-time ingress.
     DurationWait(crate::time::LogicalWait),
@@ -885,6 +888,7 @@ pub struct FiberSuspensionNotice {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FiberSuspensionKind {
+    ActionReceive,
     DurationWait,
     Dialogue,
     Choice,
@@ -909,6 +913,7 @@ impl<V, O, N> FiberSuspensionReason<V, O, N> {
     #[must_use]
     pub const fn kind(&self) -> FiberSuspensionKind {
         match self {
+            Self::ActionReceive { .. } => FiberSuspensionKind::ActionReceive,
             Self::DurationWait(_) => FiberSuspensionKind::DurationWait,
             Self::Dialogue { .. } | Self::DialogueActive { .. } => FiberSuspensionKind::Dialogue,
             Self::Choice { .. } => FiberSuspensionKind::Choice,
@@ -1225,7 +1230,8 @@ impl AwbcFiberStateSnapshot {
                         visit(value)?;
                     }
                 }
-                FiberSuspensionReason::DurationWait(_)
+                FiberSuspensionReason::ActionReceive { .. }
+                | FiberSuspensionReason::DurationWait(_)
                 | FiberSuspensionReason::DialogueActive { .. }
                 | FiberSuspensionReason::Choice { .. }
                 | FiberSuspensionReason::BudgetYield => {}
@@ -2089,7 +2095,8 @@ impl FiberState {
                         visit_value_graph(value, &mut visitor)?;
                     }
                 }
-                FiberSuspensionReason::DurationWait(_)
+                FiberSuspensionReason::ActionReceive { .. }
+                | FiberSuspensionReason::DurationWait(_)
                 | FiberSuspensionReason::DialogueActive { .. }
                 | FiberSuspensionReason::Choice { .. }
                 | FiberSuspensionReason::BudgetYield => {}
@@ -3442,6 +3449,31 @@ impl FiberState {
     }
 
     /// Resumes a budget yield at its declared or exact preemption target.
+    pub(crate) fn resume_action_receive(
+        &mut self,
+        program: &AwbcProgram,
+    ) -> Result<(), FiberStateError> {
+        self.require_status(FiberStatus::Suspended)?;
+        let suspension = self
+            .suspension
+            .as_ref()
+            .ok_or(FiberStateError::InvalidFrame)?;
+        if !matches!(
+            suspension.reason,
+            FiberSuspensionReason::ActionReceive { .. }
+        ) || suspension.resume != FiberResumeTarget::Exact(self.cursor)
+            || !matches!(
+                instruction_at_site(program, self.cursor)?,
+                super::schema::AwbcInstruction::ReceiveAction { .. }
+            )
+        {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        self.status = FiberStatus::Running;
+        self.suspension = None;
+        Ok(())
+    }
+
     pub fn resume_budget_yield(&mut self, program: &AwbcProgram) -> Result<(), FiberStateError> {
         self.require_status(FiberStatus::Suspended)?;
         let suspension = self

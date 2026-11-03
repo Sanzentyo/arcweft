@@ -238,6 +238,7 @@ fn run_script_test(
         | FlowFiberStatus::DurationWaiting(_)
         | FlowFiberStatus::Dialogue(_)
         | FlowFiberStatus::NeedWaiting(_)
+        | FlowFiberStatus::ActionWaiting(_)
         | FlowFiberStatus::WaitingMany(_)
         | FlowFiberStatus::HostCall(_)
         | FlowFiberStatus::Choice(_) => diagnostics.push(format!(

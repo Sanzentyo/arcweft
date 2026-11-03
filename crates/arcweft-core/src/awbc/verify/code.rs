@@ -2054,6 +2054,32 @@ fn apply_instruction(
                 &format!("effect plan {}", effect.kind().encoded()),
             )?;
         }
+        AwbcInstruction::ReceiveAction { dst, channel } => {
+            read_register(verifier, function, block, *channel, state)?;
+            let source = register_type(verifier, function, block, *channel)?;
+            let destination = register_type(verifier, function, block, *dst)?;
+            let AwbcRuntimeTypeShape::EntityRef(reference) =
+                program.runtime_types[source.index()].shape()
+            else {
+                return invalid_type(&at, "Action receive channel");
+            };
+            if reference.family() != Some(arcweft_id::ProjectEntityReferenceFamily::Action)
+                || reference.payload() != Some(&destination)
+            {
+                return invalid_type(&at, "Action receive payload destination");
+            }
+            let effects = &program.effect_sets[program.signatures
+                [program.functions[function].signature.index()]
+            .effects
+            .index()];
+            if !effects.effects.iter().any(|id| {
+                arcweft_id::EffectId::parse(&program.strings[id.index()])
+                    .is_ok_and(|effect| effect.covers(&arcweft_id::EffectId::action_receive()))
+            }) {
+                return invalid_type(&at, "Action receive engine effect");
+            }
+            write_register(verifier, function, block, *dst, state)?;
+        }
         AwbcInstruction::RegisterCleanup { key, effect, args } => {
             check_string(program, *key, &at)?;
             check_index(program.effect_plans.len(), effect.0, "effect_plans", &at)?;
@@ -2939,6 +2965,9 @@ fn apply_instruction_copy_and_move_effects(
                 AwbcInstruction::StartNeed { dst, .. } => outputs.push(*dst),
                 _ => {}
             }
+        }
+        AwbcInstruction::ReceiveAction { dst, .. } => {
+            outputs.push(*dst);
         }
         AwbcInstruction::StartProgram { dst, plan, args } => {
             let crate::awbc::schema::AwbcTaskPlanExecution::Program(body) =

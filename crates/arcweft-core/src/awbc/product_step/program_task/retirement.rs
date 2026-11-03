@@ -20,7 +20,8 @@ impl AwbcProductStepExecutor {
         &self,
         child: &ProductChildFiber,
     ) -> bool {
-        child.has_internal_work()
+        (child.has_internal_work() || child.fiber.suspension.as_ref().is_some_and(|suspension| matches!(
+            suspension.reason, crate::awbc::fiber::FiberSuspensionReason::ActionReceive { payload } if self.actions.has_message(payload))))
             && !(matches!(
                 child.fiber.status,
                 FiberStatus::Returned | FiberStatus::Cancelled | FiberStatus::Trapped

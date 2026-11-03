@@ -26,6 +26,7 @@ pub(super) struct ControlLocals {
     pub(super) map_frames: BTreeMap<ExprId, MapFrameLocalSeeds>,
     pub(super) map_functions: BTreeMap<ExprId, arcweft_core::plan::RuntimeFunctionSiteSeedId>,
     pub(super) fanouts: BTreeMap<ExprId, FanoutLocalSeeds>,
+    pub(super) action_receivers: BTreeMap<ExprId, (RuntimeLocalSeedId, RuntimeLocalSeedId)>,
 }
 #[derive(Clone)]
 pub(super) struct FanoutLocalSeeds {
@@ -71,6 +72,11 @@ impl ValueRole {
     }
 }
 enum RequestKind<'a> {
+    ActionReceive {
+        owner: ExprId,
+        channel: &'a RuntimeNormalizedType,
+        payload: &'a RuntimeNormalizedType,
+    },
     Fanout {
         owner: ExprId,
         contract: crate::semantic_facts::RuntimeProgramFanoutContract<'a>,
@@ -113,7 +119,8 @@ struct LocalRequest<'a> {
 impl LocalRequest<'_> {
     const fn owner(&self) -> RuntimeScopeOwner {
         match &self.kind {
-            RequestKind::Value { owner, .. }
+            RequestKind::ActionReceive { owner, .. }
+            | RequestKind::Value { owner, .. }
             | RequestKind::Try { owner, .. }
             | RequestKind::Map { owner, .. } => RuntimeScopeOwner::Expression(*owner),
             RequestKind::MapFrame { owner, .. } => RuntimeScopeOwner::Expression(*owner),
@@ -123,6 +130,7 @@ impl LocalRequest<'_> {
     }
     const fn first_role(&self) -> Role {
         match &self.kind {
+            RequestKind::ActionReceive { .. } => Role::ActionChannel,
             RequestKind::Value { role, .. } => role.semantic_role(),
             RequestKind::Try { .. } => Role::TrySuccess,
             RequestKind::Map { .. } => Role::MapCallable,
@@ -133,6 +141,7 @@ impl LocalRequest<'_> {
     }
     fn count(&self) -> u64 {
         match &self.kind {
+            RequestKind::ActionReceive { .. } => 2,
             RequestKind::Value { .. } => 1,
             RequestKind::Fanout { .. } => 6,
             RequestKind::MapFrame { .. } => 2,
@@ -191,6 +200,12 @@ impl LocalRequest<'_> {
             )
         };
         match &self.kind {
+            RequestKind::ActionReceive {
+                channel, payload, ..
+            } => {
+                visit(channel, Role::ActionChannel)?;
+                visit(payload, Role::ActionPayload)?;
+            }
             RequestKind::MapFrame { .. } => unreachable!("frame declarations were emitted above"),
             RequestKind::Fanout { contract, .. } => {
                 visit(contract.source, Role::FanoutSource)?;
@@ -258,6 +273,9 @@ impl LocalRequest<'_> {
             })
         };
         match &self.kind {
+            RequestKind::ActionReceive { owner, .. } => {
+                result.action_receivers.insert(*owner, (next()?, next()?));
+            }
             RequestKind::Fanout { owner, .. } => {
                 result.fanouts.insert(
                     *owner,
@@ -531,6 +549,18 @@ impl<'a> ControlLocalInventory<'a> {
             self.requests.push(LocalRequest {
                 coordinate,
                 kind: RequestKind::Fanout { owner, contract },
+            });
+        }
+        if let Some(call) = facts.call(owner)
+            && let Some((channel, payload)) = call.action_receive()
+        {
+            self.requests.push(LocalRequest {
+                coordinate,
+                kind: RequestKind::ActionReceive {
+                    owner,
+                    channel,
+                    payload,
+                },
             });
         }
         if let Some(call) = facts.call(owner)

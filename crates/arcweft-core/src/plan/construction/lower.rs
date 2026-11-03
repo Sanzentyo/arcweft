@@ -4119,6 +4119,21 @@ impl RuntimePlanBodyConstruction<'_> {
                 }
                 FlowOp::StandardMap(control)
             }
+            RuntimeFlowOpSeed::ReceiveAction { channel, result } => {
+                let (channel, channel_type) = self.resolve_local(&channel)?;
+                let (result, result_type) = self.resolve_local(&result)?;
+                let RuntimePlanTypeProjection::EntityReference(reference) =
+                    self.projection(channel_type)?
+                else {
+                    return invalid_projection("Action receive channel", channel_type);
+                };
+                if reference.family() != Some(arcweft_id::ProjectEntityReferenceFamily::Action)
+                    || reference.payload() != Some(&result_type)
+                {
+                    return invalid_projection("Action receive payload", channel_type);
+                }
+                FlowOp::ReceiveAction { channel, result }
+            }
             RuntimeFlowOpSeed::Scope { identity, body } => FlowOp::Scope {
                 identity,
                 body: self.lower_flow_ops(body)?,
@@ -5297,6 +5312,11 @@ impl RuntimePlanBodyConstruction<'_> {
     ) -> Result<(), RuntimePlanBuildError> {
         for op in ops {
             match op {
+                FlowOp::ReceiveAction { channel, result } => {
+                    require_local_in_scope(*channel, scope)?;
+                    used.insert(*channel);
+                    *scope = extend_scope(scope, [*result].into_iter())?;
+                }
                 FlowOp::StandardMap(control) => {
                     require_local_in_scope(control.source(), scope)?;
                     require_local_in_scope(control.mapping(), scope)?;

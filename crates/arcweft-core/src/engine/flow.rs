@@ -1081,6 +1081,13 @@ impl Engine {
                     self.advance_if_needed(next_op_index);
                 }
             }
+            FlowOp::ReceiveAction { .. } => {
+                if let Err(error) = self.execute_action_receive(&source_site) {
+                    self.fail_eval(error, output);
+                    return;
+                }
+                self.advance_if_needed(next_op_index);
+            }
             FlowOp::RegisterDefer { site, .. } => {
                 self.fail_eval(
                     RuntimeEvalError::UnknownDeferredSite { site: *site },

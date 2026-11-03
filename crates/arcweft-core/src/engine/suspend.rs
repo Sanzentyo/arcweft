@@ -106,6 +106,18 @@ impl Engine {
     ) -> bool {
         let status = std::mem::replace(&mut self.fiber.frame.status, FlowFiberStatus::Running);
         match status {
+            FlowFiberStatus::ActionWaiting(super::ActionWaitingStatus::Native(state)) => {
+                if !self.actions.has_message(state.payload) {
+                    self.fiber.frame.status =
+                        FlowFiberStatus::ActionWaiting(super::ActionWaitingStatus::Native(state));
+                    return false;
+                }
+                if let Err(error) = self.execute_action_receive(&state.source) {
+                    self.fail_eval(error, output);
+                }
+                true
+            }
+            FlowFiberStatus::ActionWaiting(super::ActionWaitingStatus::Observed { .. }) => false,
             FlowFiberStatus::Dialogue(activation) => {
                 let transaction =
                     match self.begin_dialogue_activation_transaction(activation.activation()) {

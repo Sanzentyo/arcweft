@@ -144,6 +144,56 @@ impl super::RuntimeProgramValueType<'_> {
         }
     }
 
+    /// Relates a nominal result before its owner moves a value into this
+    /// destination. The original frame binding and shared work remain final.
+    pub(crate) fn require_nominal_type(
+        self,
+        actual: RuntimeSemanticTypeId,
+        binding: Option<&RuntimeFunctionEffectInstantiation>,
+        work: &ValidationWork,
+    ) -> Result<(), super::RuntimeProgramTypeError> {
+        match self {
+            Self::Plan { program, ty } => {
+                Self::require_authority_nominal(program, ty, actual, binding, work)
+            }
+            Self::Awbc { program, ty } => {
+                Self::require_authority_nominal(program, ty, actual, binding, work)
+            }
+        }
+    }
+
+    fn require_authority_nominal<A: FunctionTypeAuthority>(
+        program: &A,
+        expected: A::Type,
+        actual: RuntimeSemanticTypeId,
+        binding: Option<&RuntimeFunctionEffectInstantiation>,
+        work: &ValidationWork,
+    ) -> Result<(), super::RuntimeProgramTypeError> {
+        let found = program
+            .by_semantic(actual)
+            .ok_or(super::RuntimeProgramTypeError::Missing {
+                semantic_type: actual,
+            })?;
+        let related = RuntimeFunctionEffectInstantiation::with_value_relation(
+            program,
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
+            binding,
+            work,
+            |relation| {
+                Ok::<_, super::RuntimeProgramTypeError>(relation.nominal(expected, found, None))
+            },
+        )?;
+        if related == Some(true) {
+            return Ok(());
+        }
+        Err(super::RuntimeProgramTypeError::NominalTypeRelation {
+            expected: program
+                .semantic(expected)
+                .expect("original destination type"),
+            actual,
+        })
+    }
+
     /// Selects a builtin case's original unary field row while checking the
     /// source and tuple scopes against the caller's immutable binding.
     pub(crate) fn builtin_case_payload(

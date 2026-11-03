@@ -355,6 +355,10 @@ impl Writer {
                     }
                 }
             }
+            FlowOp::ReceiveAction { channel, result } => {
+                self.local(*channel)?;
+                self.local(*result)?;
+            }
             FlowOp::FormatOperandAttempt {
                 attempt, parameter, ..
             } => {

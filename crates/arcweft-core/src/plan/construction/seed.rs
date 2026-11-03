@@ -435,6 +435,10 @@ impl RuntimeFlowSeed {
 /// finished plan.
 #[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeFlowOpSeed {
+    ReceiveAction {
+        channel: RuntimeLocalSeedId,
+        result: RuntimeLocalSeedId,
+    },
     Let {
         pattern: RuntimePatternSeed,
         expr: RuntimeExprSeed,
@@ -1061,6 +1065,10 @@ fn collect_terminal_or_effect_free_locals(
     locals: &mut Vec<RuntimeLocalSeedId>,
 ) {
     match op {
+        RuntimeFlowOpSeed::ReceiveAction { channel, result } => {
+            push_free_local(channel, bound, locals);
+            bound.push(result.clone());
+        }
         RuntimeFlowOpSeed::Continue { .. }
         | RuntimeFlowOpSeed::Goto(_)
         | RuntimeFlowOpSeed::Return(_)

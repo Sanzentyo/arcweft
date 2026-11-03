@@ -136,6 +136,119 @@ fn source_action_emission_in_an_effectful_function_keeps_its_original_payload() 
     );
 }
 
+fn assert_source_receive(body: &str, expected: &str, require_wait: bool) {
+    use arcweft_core::awbc::fiber::FiberSuspensionReason;
+    let (compiled, program) = compile(body);
+    let decoded =
+        AwbcProgram::decode_canonical(&program.encode_canonical().unwrap(), Default::default())
+            .unwrap();
+    let flow = compiled.plan.flows()[0].id.clone();
+    let mut native = Engine::for_flow(compiled.plan, &flow).unwrap();
+    for _ in 0..512 {
+        let result = native.step(RuntimeStepInput::default(), options());
+        assert!(
+            result.output.diagnostics.is_empty(),
+            "Native: {:?}",
+            result.output.diagnostics
+        );
+        assert!(result.output.requests.tasks.is_empty());
+        assert!(result.output.effects.line.is_empty());
+        if matches!(native.fiber().frame.status, FlowFiberStatus::Done(_)) {
+            break;
+        }
+    }
+    assert_eq!(
+        native.fiber().frame.status,
+        FlowFiberStatus::Done(FlowExit::Return(expected.into()))
+    );
+    let mut product = AwbcProductStepExecutor::for_entry(decoded, AwbcEntryId(0), 64).unwrap();
+    let mut waited = false;
+    let mut finished = false;
+    for _ in 0..512 {
+        let result = product.step(RuntimeStepInput::default(), options());
+        assert!(
+            result.output.diagnostics.is_empty(),
+            "Product: {:?}",
+            result.output.diagnostics
+        );
+        assert!(result.output.requests.tasks.is_empty());
+        assert!(result.output.effects.line.is_empty());
+        let image = product.snapshot().unwrap();
+        waited |= image.child_fibers.iter().any(|child| {
+            child.fiber.suspension.as_ref().is_some_and(|suspension| {
+                matches!(
+                    suspension.reason,
+                    FiberSuspensionReason::ActionReceive { .. }
+                )
+            })
+        });
+        let saved =
+            AwbcProductExecutorSaveSnapshot::from_live(&image, product.admitted_program()).unwrap();
+        let saved = serde_json::from_slice(&serde_json::to_vec(&saved).unwrap()).unwrap();
+        finished = matches!(result.fiber_status, FlowFiberStatus::Done(_));
+        product = product
+            .restore_inert_snapshot_owned(saved)
+            .unwrap_or_else(|(_, error)| panic!("receive cold restore: {error}"));
+        if finished {
+            assert_eq!(
+                result.fiber_status,
+                FlowFiberStatus::Done(FlowExit::Return(expected.into()))
+            );
+            break;
+        }
+    }
+    assert!(finished, "bounded Product receive finishes");
+    assert!(
+        !require_wait || waited,
+        "an actual receiver must park before the sender publishes"
+    );
+}
+
+#[test]
+fn source_action_receive_consumes_the_exact_emitted_payload() {
+    assert_source_receive(
+        "flow main() -> i64 { emit(submit(value = 42i64)); let received = await receive(submit); return received.value }",
+        "42",
+        false,
+    );
+}
+
+#[test]
+fn source_action_receive_is_fifo_across_consecutive_needs() {
+    assert_source_receive(
+        "flow main() -> i64 { emit(submit(value = 20i64)); emit(submit(value = 22i64)); let a = await receive(submit); let b = await receive(submit); return a.value * 100i64 + b.value }",
+        "2022",
+        false,
+    );
+}
+
+#[test]
+fn source_action_receiver_waits_for_a_thread_sender_and_survives_cold_restore() {
+    assert_source_receive(
+        "flow main() -> i64 { let pending = receive(submit); thread sender { let a = 1i64; let b = 2i64; let c = a + b; emit(submit(value = 42i64)) }; let received = await pending; return received.value }",
+        "42",
+        true,
+    );
+}
+
+#[test]
+fn source_action_receive_captures_an_aliased_channel_in_a_function() {
+    assert_source_receive(
+        "fn next() -> Need<submit> effects { action.receive } { let channel = submit; receive(channel) }\nflow main() -> i64 { emit(submit(value = 42i64)); let received = await next(); return received.value }",
+        "42",
+        false,
+    );
+}
+
+#[test]
+fn source_action_receive_keeps_equal_shaped_channels_separate() {
+    assert_source_receive(
+        "pub action @action:.feedback.other other(value: i64)\nflow main() -> i64 { emit(other(value = 99i64)); emit(submit(value = 42i64)); let received = await receive(submit); let unrelated = await receive(other); return received.value * 100i64 + unrelated.value }",
+        "4299",
+        false,
+    );
+}
+
 #[test]
 fn action_emission_without_session_authority_preserves_the_original_operand_register() {
     use arcweft_core::{

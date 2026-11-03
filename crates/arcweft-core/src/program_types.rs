@@ -121,6 +121,13 @@ pub enum RuntimeProgramTypeError {
     ActionDeclarationMismatch {
         semantic_type: RuntimeSemanticTypeId,
     },
+    #[error("active value does not select one original Action payload declaration")]
+    InvalidActionChannel,
+    #[error("nominal type {actual:?} does not satisfy the original destination {expected:?}")]
+    NominalTypeRelation {
+        expected: RuntimeSemanticTypeId,
+        actual: RuntimeSemanticTypeId,
+    },
     #[error(
         "nominal role {semantic_type:?} expects identity {expected:?}, program declares {actual:?}"
     )]

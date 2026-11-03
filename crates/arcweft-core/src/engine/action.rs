@@ -9,7 +9,130 @@ use crate::pure::RuntimeCallBackend;
 use crate::task::RuntimeProgramOwner;
 use crate::value::{RuntimePayload, RuntimeRetainedValueAdmission};
 
+/// A parked original receive operation owns no message or reconstructed code.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NativeActionReceiveState {
+    pub(super) source: NativeSourceOperation,
+    pub(super) payload: crate::pattern::RuntimeSemanticTypeId,
+}
+
+/// Native custody or an observation of a Product-owned suspended instruction.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ActionWaitingStatus {
+    Native(NativeActionReceiveState),
+    Observed {
+        payload: crate::pattern::RuntimeSemanticTypeId,
+    },
+}
+
+impl ActionWaitingStatus {
+    pub(crate) const fn payload(&self) -> crate::pattern::RuntimeSemanticTypeId {
+        match self {
+            Self::Native(state) => state.payload,
+            Self::Observed { payload } => *payload,
+        }
+    }
+}
+
+impl NativeActionReceiveState {
+    pub(super) fn admit_frame<V: crate::value::RuntimeStoredValue>(
+        source: &NativeSourceOperation,
+        env: &crate::value::RuntimeEnv<V>,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<crate::pattern::RuntimeSemanticTypeId, crate::value::AwbcRuntimeValueSnapshotError>
+    {
+        source.admit_retained(admission)?;
+        let owner = admission
+            .program_owner()
+            .expect("source admitted its program")
+            .clone();
+        let RuntimeProgramOwner::Plan(plan) = &owner else {
+            unreachable!("Native source owns a Plan");
+        };
+        let Some(FlowOp::ReceiveAction { channel, result }) = source.operation(plan) else {
+            return Err(crate::program_types::RuntimeProgramTypeError::InvalidActionChannel.into());
+        };
+        let declaration = |local| {
+            plan.local_declarations()
+                .get(local)
+                .and_then(|row| plan.type_table().get(row.ty()))
+                .map(|row| row.semantic_identity())
+                .ok_or(crate::program_types::RuntimeProgramTypeError::InvalidActionChannel)
+        };
+        let channel_type = declaration(*channel)?;
+        let result_type = declaration(*result)?;
+        let channel = env
+            .get_stored(*channel)
+            .ok_or(crate::program_types::RuntimeProgramTypeError::InvalidActionChannel)?;
+        let payload = admission.admit_composite(V::admission_origin(), |_, resources| {
+            owner
+                .types()
+                .action_receive_payload(
+                    channel.borrowed_view(),
+                    channel_type,
+                    result_type,
+                    env.function_instantiation(),
+                    resources,
+                )
+                .map_err(Into::into)
+        })?;
+        if env.get_stored(*result).is_some() {
+            return Err(crate::program_types::RuntimeProgramTypeError::InvalidActionChannel.into());
+        }
+        Ok(payload)
+    }
+}
+
 impl Engine {
+    pub(super) fn execute_action_receive(
+        &mut self,
+        source: &NativeSourceOperation,
+    ) -> Result<(), RuntimeEffectExecutionError> {
+        use crate::value::RuntimeStoredValue;
+        let owner = RuntimeProgramOwner::Plan(self.plan.clone());
+        let mut admission = RuntimeRetainedValueAdmission::for_program(
+            owner,
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        self.admit_live_retained_values(&mut admission)?;
+        let payload =
+            NativeActionReceiveState::admit_frame(source, &self.fiber.frame.env, &mut admission)?;
+        let Some(FlowOp::ReceiveAction { result, .. }) = source.operation(&self.plan) else {
+            unreachable!("admitted receive source");
+        };
+        let result = *result;
+        let ty = self
+            .plan
+            .type_table()
+            .get(
+                self.plan
+                    .local_declarations()
+                    .get(result)
+                    .expect("original result")
+                    .ty(),
+            )
+            .expect("original type")
+            .semantic_identity();
+        if let Some(value) = self.actions.peek(payload) {
+            admission.validate_owned_typed_borrowed_in_invocation(
+                value.borrowed_value(),
+                ty,
+                self.fiber.frame.env.function_instantiation(),
+            )?;
+        }
+        if let Some(value) = self.actions.receive(payload, &mut admission)? {
+            self.fiber.frame.env.set(result, value.into_value());
+        } else {
+            self.fiber.frame.status = super::FlowFiberStatus::ActionWaiting(
+                ActionWaitingStatus::Native(NativeActionReceiveState {
+                    source: source.clone(),
+                    payload,
+                }),
+            );
+        }
+        Ok(())
+    }
+
     pub(super) fn execute_action_emit(
         &mut self,
         source: &NativeSourceOperation,

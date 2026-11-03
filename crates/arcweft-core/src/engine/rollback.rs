@@ -320,19 +320,19 @@ impl<N, P, Q, FV, FP, O, C, A, AS, MS, D>
     where
         C: ScopeControl<O>,
     {
-        if !matches!(self.fiber.owner, FlowFiberOwner::Executor) {
+        if !matches!(self.main_fiber().owner, FlowFiberOwner::Executor) {
             return Err("native main fiber does not have its executor owner".into());
         }
         crate::presentation::resources::PresentationExecutionRole::Root
-            .validate_registration_bank(self.fiber.frame.presentation_bank)
+            .validate_registration_bank(self.main_fiber().frame.presentation_bank)
             .map_err(|error| error.to_string())?;
-        self.fiber.frame.admit_root_phase(
+        self.main_fiber().frame.admit_root_phase(
             self.root.as_ref(),
-            &self.fiber.owner,
-            matches!(self.fiber.frame.status, FlowFiberStatus::Failed(_)),
+            &self.main_fiber().owner,
+            matches!(self.main_fiber().frame.status, FlowFiberStatus::Failed(_)),
         )?;
         let mut reducer_count = 0;
-        for child in &self.child_fibers {
+        for child in self.session_children() {
             let root = if matches!(child.owner, FlowFiberOwner::RootReducer { .. }) {
                 if !matches!(child.frame.status, FlowFiberStatus::Running) {
                     return Err("native Root reducer is not a running pure frame".into());
@@ -360,8 +360,8 @@ impl<N, P, Q, FV, FP, O, C, A, AS, MS, D>
         }
         if evaluating
             && !self
-                .child_fibers
-                .front()
+                .session_children()
+                .next()
                 .is_some_and(|child| matches!(child.owner, FlowFiberOwner::RootReducer { .. }))
         {
             return Err("native Root reducer lost its executor priority".into());
@@ -803,7 +803,7 @@ impl<N, P, R, FV, FP, O, C, A, S, D>
     {
         // Bound the complete borrowed inventory before constructing validation
         // sets. Saved rows remain inert throughout these same scope laws.
-        for fiber in std::iter::once(&self.fiber).chain(&self.child_fibers) {
+        for fiber in self.session_fibers() {
             admission
                 .validate_metadata_collection(fiber.frame.pending_ops.len())
                 .map_err(|error| error.to_string())?;
@@ -826,7 +826,7 @@ impl<N, P, R, FV, FP, O, C, A, S, D>
         }
         let mut opened = BTreeSet::new();
         let mut closed = BTreeSet::new();
-        for fiber in std::iter::once(&self.fiber).chain(&self.child_fibers) {
+        for fiber in self.session_fibers() {
             let valid = |token: crate::scope::RuntimeScheduledScopeToken| {
                 token.belongs_to(fiber.execution, fiber.persistent_id)
                     && token.ordinal().get() < self.next_scheduled_scope_sequence
@@ -948,14 +948,14 @@ impl<N, P, R, F, D> Engine<N, P, R, F, D> {
         let invalid_identity = || crate::value::AwbcRuntimeValueSnapshotError::Message {
             message: "native fiber identities do not follow their original allocator".into(),
         };
-        if self.fiber.id.0 != 0
-            || self.fiber.parent.is_some()
-            || self.fiber.launch != super::FlowFiberLaunch::Local
+        if self.main_fiber().id.0 != 0
+            || self.main_fiber().parent.is_some()
+            || self.main_fiber().launch != super::FlowFiberLaunch::Local
         {
             return Err(invalid_identity());
         }
         let mut fiber_ids = BTreeSet::new();
-        for fiber in std::iter::once(&self.fiber).chain(&self.child_fibers) {
+        for fiber in self.session_fibers() {
             admission.validate_metadata(&(
                 fiber.id,
                 fiber.parent,
@@ -972,7 +972,7 @@ impl<N, P, R, F, D> Engine<N, P, R, F, D> {
                 return Err(invalid_identity());
             }
         }
-        for child in &self.child_fibers {
+        for child in self.session_children() {
             if let FlowFiberOwner::DialogueEffectCallback { activation, .. } = &child.owner
                 && !self
                     .dialogue_effect_callback_activations
@@ -1066,7 +1066,7 @@ impl<N, P, R, F, D> Engine<N, P, R, F, D> {
         String,
     > {
         let mut expected_deferred_children = BTreeMap::new();
-        for child in &self.child_fibers {
+        for child in self.session_children() {
             let FlowFiberOwner::LineTask(child_owner) = &child.owner else {
                 continue;
             };
@@ -1118,7 +1118,7 @@ impl Engine {
             .map_err(|message| AwbcRuntimeValueSnapshotError::Message { message })?;
         self.validate_scheduled_scope_state(admission)
             .map_err(|message| AwbcRuntimeValueSnapshotError::Message { message })?;
-        for fiber in std::iter::once(&self.fiber).chain(&self.child_fibers) {
+        for fiber in self.session_fibers() {
             fiber.frame.admit_owned_values(admission)?;
             fiber.frame.env.validate_presentation_context(
                 &fiber.frame.program,
@@ -1178,7 +1178,7 @@ impl NativeEngineRollbackImage {
         }
         self.admit_root_execution()?;
         self.validate_scheduled_scope_state(&mut admission)?;
-        for fiber in std::iter::once(&self.fiber).chain(&self.child_fibers) {
+        for fiber in self.session_fibers() {
             fiber
                 .frame
                 .admit_owned_values(&mut admission)

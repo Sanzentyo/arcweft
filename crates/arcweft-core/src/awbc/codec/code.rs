@@ -873,6 +873,10 @@ impl Wire for AwbcInstruction {
             }
             Self::Clear { register } => register.write_wire(writer)?,
             Self::RequireUnrestricted { value } => value.write_wire(writer)?,
+            Self::ReceiveAction { dst, channel } => {
+                dst.write_wire(writer)?;
+                channel.write_wire(writer)?;
+            }
             Self::Drop { register, policy } => {
                 register.write_wire(writer)?;
                 policy.write_wire(writer)?;
@@ -1422,6 +1426,10 @@ impl Wire for AwbcInstruction {
             AwbcOpcode::EmitEffect => Self::EmitEffect {
                 effect: AwbcEffectPlanId::read_wire(reader)?,
                 args: Vec::<AwbcRegisterId>::read_wire(reader)?,
+            },
+            AwbcOpcode::ReceiveAction => Self::ReceiveAction {
+                dst: AwbcRegisterId::read_wire(reader)?,
+                channel: AwbcRegisterId::read_wire(reader)?,
             },
             AwbcOpcode::StartNeed => Self::StartNeed {
                 dst: AwbcRegisterId::read_wire(reader)?,
@@ -1979,6 +1987,7 @@ impl Wire for AwbcTerminator {
             | AwbcOpcode::CompleteFormatOperand
             | AwbcOpcode::AbandonFormatAttempt
             | AwbcOpcode::EmitEffect
+            | AwbcOpcode::ReceiveAction
             | AwbcOpcode::StartNeed
             | AwbcOpcode::StartProgram
             | AwbcOpcode::StreamYield

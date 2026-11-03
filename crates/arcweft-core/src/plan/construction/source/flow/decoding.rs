@@ -1106,6 +1106,10 @@ impl Reader<'_, '_, '_> {
                 expr: self.expression()?,
             },
             46 => Op::Noop,
+            50 => Op::ReceiveAction {
+                channel: self.local()?,
+                result: self.local()?,
+            },
             49 => {
                 let tag = self.metadata.byte()?;
                 let family =

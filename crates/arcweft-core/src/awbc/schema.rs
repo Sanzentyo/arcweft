@@ -1836,6 +1836,7 @@ pub enum AwbcOpcode {
     CancelCleanup = 0x48,
     RegisterDefer = 0x49,
     RequireUnrestricted = 0x4a,
+    ReceiveAction = 0x4b,
     Jump = 0x80,
     Branch = 0x81,
     Match = 0x82,
@@ -1916,6 +1917,7 @@ impl AwbcOpcode {
         Self::CancelCleanup,
         Self::RegisterDefer,
         Self::RequireUnrestricted,
+        Self::ReceiveAction,
         Self::Jump,
         Self::Branch,
         Self::Match,
@@ -2008,6 +2010,7 @@ impl AwbcOpcode {
             | Self::CompleteFormatOperand
             | Self::AbandonFormatAttempt
             | Self::EmitEffect
+            | Self::ReceiveAction
             | Self::StartNeed
             | Self::StartProgram => AwbcOpcodeFamily::CallTask,
             Self::StreamYield
@@ -2077,6 +2080,10 @@ impl<'de> Deserialize<'de> for AwbcOpcode {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub enum AwbcInstruction {
+    ReceiveAction {
+        dst: AwbcRegisterId,
+        channel: AwbcRegisterId,
+    },
     Nop,
     LoadConst {
         dst: AwbcRegisterId,
@@ -2439,6 +2446,7 @@ impl AwbcInstruction {
             Self::CompleteFormatOperand { .. } => AwbcOpcode::CompleteFormatOperand,
             Self::AbandonFormatAttempt { .. } => AwbcOpcode::AbandonFormatAttempt,
             Self::EmitEffect { .. } => AwbcOpcode::EmitEffect,
+            Self::ReceiveAction { .. } => AwbcOpcode::ReceiveAction,
             Self::StartNeed { .. } => AwbcOpcode::StartNeed,
             Self::StartProgram { .. } => AwbcOpcode::StartProgram,
             Self::StreamYield { .. } => AwbcOpcode::StreamYield,

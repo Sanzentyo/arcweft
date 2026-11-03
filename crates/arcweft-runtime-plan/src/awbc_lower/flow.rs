@@ -1159,6 +1159,12 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         path: &str,
     ) {
         match op {
+            FlowOp::ReceiveAction { channel, result } => {
+                let channel = frame.local(*channel, self.local_type(*channel));
+                let dst = frame.local(*result, self.local_type(*result));
+                self.inventory
+                    .push_instruction(AwbcInstruction::ReceiveAction { dst, channel });
+            }
             FlowOp::StandardMap(control) => {
                 let mapping = frame.local(control.mapping(), self.local_type(control.mapping()));
                 self.inventory

@@ -120,6 +120,10 @@ impl RuntimeBodySemanticContext<'_> {
     ) -> Result<(), RuntimeBodySemanticError> {
         encoder.tag(op.semantic_tag());
         match op {
+            FlowOp::ReceiveAction { channel, result } => {
+                self.write_local(encoder, *channel)?;
+                self.write_local(encoder, *result)?;
+            }
             FlowOp::StandardMap(control) => {
                 encoder.tag(control.family().semantic_tag());
                 self.write_local(encoder, control.source())?;

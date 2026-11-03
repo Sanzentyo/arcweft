@@ -2762,6 +2762,8 @@ impl AwbcProductStepExecutor {
     fn has_internal_work(&self) -> bool {
         self.root_has_pending_reduction()
             || self.fiber.status == FiberStatus::Running
+            || self.fiber.suspension.as_ref().is_some_and(|suspension| matches!(
+                suspension.reason, FiberSuspensionReason::ActionReceive { payload } if self.actions.has_message(payload)))
             || (matches!(
                 self.fiber
                     .suspension
@@ -4319,9 +4321,9 @@ impl AwbcProductStepExecutor {
                         Dispatch::InvalidHostCall
                     }
                 }
-                FiberSuspensionReason::DurationWait(_) | FiberSuspensionReason::BudgetYield => {
-                    Dispatch::Other
-                }
+                FiberSuspensionReason::ActionReceive { .. }
+                | FiberSuspensionReason::DurationWait(_)
+                | FiberSuspensionReason::BudgetYield => Dispatch::Other,
             };
             (suspension.declared_resume(), dispatch)
         }) else {
@@ -4442,6 +4444,21 @@ impl AwbcProductStepExecutor {
         let Some(suspension) = self.fiber.suspension.as_ref() else {
             return false.into();
         };
+        if let FiberSuspensionReason::ActionReceive { payload } = suspension.reason {
+            if !self.actions.has_message(payload) {
+                return false.into();
+            }
+            return match self.fiber.resume_action_receive(&self.program) {
+                Ok(()) => {
+                    self.fiber.replenish_budget();
+                    true.into()
+                }
+                Err(error) => {
+                    self.fail_with_error(error.into(), output);
+                    false.into()
+                }
+            };
+        }
         let declared_resume = suspension.declared_resume();
         let dispatch = match &suspension.reason {
             FiberSuspensionReason::Choice {
@@ -4464,6 +4481,7 @@ impl AwbcProductStepExecutor {
                 call, destination, ..
             } => Dispatch::HostCall(*call, *destination),
             FiberSuspensionReason::DurationWait(_)
+            | FiberSuspensionReason::ActionReceive { .. }
             | FiberSuspensionReason::Dialogue { .. }
             | FiberSuspensionReason::DialogueActive { .. } => Dispatch::Other,
             FiberSuspensionReason::BudgetYield => Dispatch::BudgetYield,

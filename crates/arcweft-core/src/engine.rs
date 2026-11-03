@@ -43,6 +43,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 use thiserror::Error;
 mod action;
+pub use action::{ActionWaitingStatus, NativeActionReceiveState};
 pub mod aot;
 pub mod audio;
 #[cfg(test)]
@@ -139,6 +140,9 @@ pub struct Engine<
     main_started: bool,
     root: Option<R>,
     fiber: FlowFiber<F>,
+    /// The actual main owner remains in the session while a selected child
+    /// occupies the execution slot. It participates in admission and rollback.
+    parked_main: Option<FlowFiber<F>>,
     child_fibers: VecDeque<FlowFiber<F>>,
     next_fiber_id: u64,
     next_scheduled_scope_sequence: u64,
@@ -172,6 +176,16 @@ type NativeEngineRollbackImage = Engine<
     dialogue::DialogueActivationStoreRollbackImage,
 >;
 
+impl<N, P, R, F, D> Engine<N, P, R, F, D> {
+    fn main_fiber(&self) -> &FlowFiber<F> { self.parked_main.as_ref().unwrap_or(&self.fiber) }
+    fn session_fibers(&self) -> impl Iterator<Item = &FlowFiber<F>> {
+        std::iter::once(&self.fiber).chain(&self.parked_main).chain(&self.child_fibers)
+    }
+    fn session_children(&self) -> impl Iterator<Item = &FlowFiber<F>> {
+        self.session_fibers().filter(|fiber| fiber.id.0 != 0)
+    }
+}
+
 impl Clone for NativeEngineRollbackImage {
     fn clone(&self) -> Self {
         Self {
@@ -190,6 +204,7 @@ impl Clone for NativeEngineRollbackImage {
             main_started: self.main_started,
             root: self.root.clone(),
             fiber: self.fiber.clone(),
+            parked_main: self.parked_main.clone(),
             child_fibers: self.child_fibers.clone(),
             next_fiber_id: self.next_fiber_id,
             next_scheduled_scope_sequence: self.next_scheduled_scope_sequence,
@@ -305,10 +320,11 @@ pub(crate) enum FlowFiberLaunch {
 fn validate_program_task_launches<V, P, O, C, A, S>(
     active: &FlowFiber<NativeFlowExecutionFrame<V, P, O, C, A, S>>,
     children: &VecDeque<FlowFiber<NativeFlowExecutionFrame<V, P, O, C, A, S>>>,
+    parked_main: Option<&FlowFiber<NativeFlowExecutionFrame<V, P, O, C, A, S>>>,
     mut accepted_program: impl FnMut(&crate::task::ProgramTaskLaunch) -> bool,
 ) -> Result<(), String> {
     let mut tasks = BTreeSet::new();
-    for child in std::iter::once(active).chain(children) {
+    for child in std::iter::once(active).chain(parked_main).chain(children) {
         if let FlowFiberLaunch::Program(launch) = &child.launch
             && (!tasks.insert(launch.handle().correlation.task_id) || !accepted_program(launch))
         {
@@ -1395,6 +1411,7 @@ impl DialogueExecutionStatus {
 #[derive(Debug, PartialEq)]
 pub enum FlowFiberStatus<A = AwaitState, M = WaitingManyStatus> {
     Running,
+    ActionWaiting(ActionWaitingStatus),
     DurationWaiting(crate::time::LogicalWait),
     Dialogue(DialogueExecutionStatus),
     NeedWaiting(Box<A>),
@@ -1424,6 +1441,7 @@ impl Clone for FlowFiberStatusRollbackImage {
     fn clone(&self) -> Self {
         match self {
             Self::Running => Self::Running,
+            Self::ActionWaiting(state) => Self::ActionWaiting(state.clone()),
             Self::DurationWaiting(wait) => Self::DurationWaiting(*wait),
             Self::Dialogue(activation) => Self::Dialogue(activation.clone()),
             Self::NeedWaiting(state) => Self::NeedWaiting(state.clone()),
@@ -1443,6 +1461,9 @@ impl FlowFiberStatus {
     ) -> Result<FlowFiberStatusRollbackImage, String> {
         Ok(match self {
             Self::Running => FlowFiberStatusRollbackImage::Running,
+            Self::ActionWaiting(state) => {
+                FlowFiberStatusRollbackImage::ActionWaiting(state.clone())
+            }
             Self::DurationWaiting(wait) => FlowFiberStatusRollbackImage::DurationWaiting(*wait),
             Self::Dialogue(activation) => {
                 FlowFiberStatusRollbackImage::Dialogue(activation.clone())
@@ -1478,6 +1499,7 @@ impl FlowFiberStatus {
     ) -> Result<Self, String> {
         Ok(match image {
             FlowFiberStatusRollbackImage::Running => Self::Running,
+            FlowFiberStatusRollbackImage::ActionWaiting(state) => Self::ActionWaiting(state),
             FlowFiberStatusRollbackImage::DurationWaiting(wait) => Self::DurationWaiting(wait),
             FlowFiberStatusRollbackImage::Dialogue(activation) => Self::Dialogue(activation),
             FlowFiberStatusRollbackImage::NeedWaiting(state) => Self::NeedWaiting(Box::new(
@@ -1936,6 +1958,7 @@ impl FlowFiberStatus {
     fn runtime_status_label(&self) -> String {
         match self {
             Self::Running => "running".to_owned(),
+            Self::ActionWaiting(_) => "action_waiting".to_owned(),
             Self::DurationWaiting(wait) => {
                 format!("duration_waiting {}ns", wait.remaining().as_nanos())
             }
@@ -1954,6 +1977,7 @@ impl FlowFiberStatus {
     fn debug_status_label(&self) -> String {
         match self {
             Self::Running => "running".to_owned(),
+            Self::ActionWaiting(_) => "action_waiting".to_owned(),
             Self::DurationWaiting(wait) => {
                 format!("duration_waiting {}ns", wait.remaining().as_nanos())
             }
@@ -1972,6 +1996,7 @@ impl FlowFiberStatus {
     fn compact_status_label(&self) -> String {
         match self {
             Self::Running => "running".to_owned(),
+            Self::ActionWaiting(_) => "action_waiting".to_owned(),
             Self::DurationWaiting(_) => "duration_waiting".to_owned(),
             Self::Dialogue(_) => "dialogue".to_owned(),
             Self::NeedWaiting(_) => "need_waiting".to_owned(),
@@ -2037,7 +2062,7 @@ fn pure_helper_i64_call_shapes(plan: &RuntimePlan) -> Vec<bool> {
 
 impl Engine {
     fn inert_rollback_image(&self) -> Result<NativeEngineRollbackImage, String> {
-        validate_program_task_launches(&self.fiber, &self.child_fibers, |launch| {
+        validate_program_task_launches(&self.fiber, &self.child_fibers, self.parked_main.as_ref(), |launch| {
             self.need_producers
                 .accepted_task_spec(launch.handle())
                 .is_some_and(|spec| {
@@ -2101,6 +2126,7 @@ impl Engine {
                 .map(|root| root.snapshot_admitted(&owner))
                 .transpose()?,
             fiber: self.fiber.snapshot_with_admitted_values(&owner)?,
+            parked_main: self.parked_main.as_ref().map(|fiber| fiber.snapshot_with_admitted_values(&owner)).transpose()?,
             child_fibers: self
                 .child_fibers
                 .iter()
@@ -2125,7 +2151,7 @@ impl Engine {
         image: NativeEngineRollbackImage,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<Self, String> {
-        validate_program_task_launches(&image.fiber, &image.child_fibers, |launch| {
+        validate_program_task_launches(&image.fiber, &image.child_fibers, image.parked_main.as_ref(), |launch| {
             image
                 .need_producers
                 .task_spec(launch.handle().correlation)
@@ -2183,6 +2209,7 @@ impl Engine {
                 .map(|root| RootRuntime::from_admitted_rollback_image(root, owner))
                 .transpose()?,
             fiber: FlowFiber::from_rollback_image(image.fiber, owner)?,
+            parked_main: image.parked_main.map(|fiber| FlowFiber::from_rollback_image(fiber, owner)).transpose()?,
             child_fibers: image
                 .child_fibers
                 .into_iter()
@@ -2352,6 +2379,7 @@ impl Engine {
             },
             child_fibers: VecDeque::new(),
             next_fiber_id: 1,
+            parked_main: None,
             next_scheduled_scope_sequence: 1,
             dialogue_occurrences: BTreeMap::new(),
             dialogue_activations: dialogue::DialogueActivationStore::default(),
@@ -3406,8 +3434,7 @@ impl Engine {
     }
 
     fn pending_ops_len(&self) -> usize {
-        std::iter::once(&self.fiber)
-            .chain(&self.child_fibers)
+        self.session_fibers()
             .try_fold(0_usize, |total, fiber| {
                 total.checked_add(fiber.frame.pending_operation_count())
             })
@@ -4272,7 +4299,7 @@ impl Engine {
         let Some(index) = self.next_child_fiber_index() else {
             return Ok(false);
         };
-        let mut child = self
+        let child = self
             .child_fibers
             .remove(index)
             .expect("selected child remains in the scheduling queue");
@@ -4280,11 +4307,13 @@ impl Engine {
         let before_tokens = matches!(&owner, FlowFiberOwner::LineTask(_))
             .then(|| flow_fiber_line_handle_tokens(&child))
             .transpose()?;
-        std::mem::swap(&mut self.fiber, &mut child);
+        assert!(self.parked_main.is_none(), "child selection cannot nest");
+        self.parked_main = Some(std::mem::replace(&mut self.fiber, child));
         let mut drop_policy = None;
         self.step_active_child_fiber(input, events, output, pure_backend, &mut drop_policy);
         self.finish_active_child_if_exhausted(output, pure_backend);
-        std::mem::swap(&mut self.fiber, &mut child);
+        let main = self.parked_main.take().expect("selected child retains its main owner");
+        let mut child = std::mem::replace(&mut self.fiber, main);
         let live_tokens = matches!(&owner, FlowFiberOwner::LineTask(_))
             .then(|| flow_fiber_line_handle_tokens(&child))
             .transpose()?;
@@ -4293,7 +4322,7 @@ impl Engine {
         if let FlowFiberOwner::RootReducer { entry } = &owner {
             let failure = match &child.frame.status {
                 FlowFiberStatus::Failed(message) => Some(message.clone()),
-                FlowFiberStatus::Done(_)
+                FlowFiberStatus::Done(_) | FlowFiberStatus::ActionWaiting(_)
                     if self
                         .root
                         .as_ref()
@@ -4846,6 +4875,9 @@ impl Engine {
         } else {
             match &self.fiber.frame.status {
                 FlowFiberStatus::Running => FlowFiberStatus::Running,
+                FlowFiberStatus::ActionWaiting(state) => {
+                    FlowFiberStatus::ActionWaiting(state.clone())
+                }
                 FlowFiberStatus::DurationWaiting(wait) => FlowFiberStatus::DurationWaiting(*wait),
                 FlowFiberStatus::Dialogue(activation) => {
                     FlowFiberStatus::Dialogue(activation.clone())
@@ -4946,9 +4978,9 @@ impl Engine {
                     RuntimeStepStopReason::Blocked
                 })
             }
-            FlowFiberStatus::NeedWaiting(_) | FlowFiberStatus::DurationWaiting(_) => {
-                Some(RuntimeStepStopReason::Blocked)
-            }
+            FlowFiberStatus::NeedWaiting(_)
+            | FlowFiberStatus::DurationWaiting(_)
+            | FlowFiberStatus::ActionWaiting(_) => Some(RuntimeStepStopReason::Blocked),
             FlowFiberStatus::Running if self.fiber_waits_for_join(&self.fiber) => Some(
                 if output.has_presentation_visible_output() || output.has_host_requests() {
                     RuntimeStepStopReason::Output
@@ -4991,6 +5023,7 @@ impl Engine {
                 self.has_joined_dialogue_work(activation.activation()),
             ),
             FlowFiberStatus::NeedWaiting(state) => self.await_has_pending_work(state),
+            FlowFiberStatus::ActionWaiting(state) => self.actions.has_message(state.payload()),
             FlowFiberStatus::WaitingMany(WaitingManyStatus::Program(state)) => {
                 self.program_fanout_has_pending_work(state)
             }

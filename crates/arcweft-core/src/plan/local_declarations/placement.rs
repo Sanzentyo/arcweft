@@ -66,6 +66,8 @@ pub enum RuntimeLocalInitialization {
     MatchCandidate,
     /// A fanout worker receives each owned source item at its checked ingress.
     AwaitManyItem,
+    /// The original receive instruction initializes its vacant result slot.
+    ActionReceive,
 }
 
 /// Complete immutable execution placement of one final declaration.
@@ -104,6 +106,7 @@ impl RuntimeLocalPlacement {
             | RuntimeLocalInitialization::ProjectCallResult
             | RuntimeLocalInitialization::ScheduledCapture
             | RuntimeLocalInitialization::MatchCandidate
+            | RuntimeLocalInitialization::ActionReceive
             | RuntimeLocalInitialization::AwaitManyItem => None,
         }
     }
@@ -247,6 +250,16 @@ impl RuntimeLocalDeclarationTableBuilder {
             let crate::plan::RuntimeFlowTreeEvent::EnterOperation { op, .. } = event else {
                 return Ok(());
             };
+            if let FlowOp::ReceiveAction { result, .. } = op {
+                self.claim(
+                    *result,
+                    RuntimeLocalPlacement {
+                        owner,
+                        initialization: RuntimeLocalInitialization::ActionReceive,
+                        mutable: false,
+                    },
+                )?;
+            }
             if let FlowOp::ProjectCall { site } = op {
                 let call = calls
                     .get(*site)
@@ -638,6 +651,7 @@ impl RuntimeLocalInitialization {
             RuntimeLocalInitialization::ScheduledCapture => encoder.tag(6),
             RuntimeLocalInitialization::MatchCandidate => encoder.tag(7),
             RuntimeLocalInitialization::AwaitManyItem => encoder.tag(8),
+            RuntimeLocalInitialization::ActionReceive => encoder.tag(9),
         }
     }
 }

@@ -7152,17 +7152,22 @@ fn runtime_call(
             });
         }
     }
-    let call = if matches!(
-        call.dispatch(),
-        RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::ProgramNeed)
-    ) {
-        let producer =
-            RuntimeResolvedNeedProducer::try_program_fanout(need_type).map_err(|error| {
-                RuntimeSemanticProjectionError::Call {
-                    owner,
-                    reason: error.to_string(),
-                }
-            })?;
+    let call = if let RuntimeResolvedCallDispatch::Static(
+        RuntimeResolvedStaticCallTarget::ProgramNeed(kind),
+    ) = call.dispatch()
+    {
+        let producer = match kind {
+            arcweft_runtime_plan::semantic_facts::RuntimeProgramNeedKind::Fanout => {
+                RuntimeResolvedNeedProducer::try_program_fanout(need_type)
+            }
+            arcweft_runtime_plan::semantic_facts::RuntimeProgramNeedKind::ActionReceive => {
+                RuntimeResolvedNeedProducer::try_program_action_receive(need_type)
+            }
+        }
+        .map_err(|error| RuntimeSemanticProjectionError::Call {
+            owner,
+            reason: error.to_string(),
+        })?;
         call.try_with_need_producer(producer).map_err(|error| {
             RuntimeSemanticProjectionError::Call {
                 owner,
@@ -10033,7 +10038,19 @@ fn runtime_call_target(
         selected_id,
         CallableCandidateId::CollectionMethod(CollectionMethodId::Parallel { .. })
     ) {
-        return Ok(RuntimeResolvedStaticCallTarget::ProgramNeed);
+        return Ok(RuntimeResolvedStaticCallTarget::ProgramNeed(
+            arcweft_runtime_plan::semantic_facts::RuntimeProgramNeedKind::Fanout,
+        ));
+    }
+    if matches!(
+        selected_id,
+        CallableCandidateId::Builtin(arcweft_lang_sema::callable::BuiltinCallableId::Action(
+            arcweft_lang_sema::callable::ActionCallableId::Receive
+        ))
+    ) {
+        return Ok(RuntimeResolvedStaticCallTarget::ProgramNeed(
+            arcweft_runtime_plan::semantic_facts::RuntimeProgramNeedKind::ActionReceive,
+        ));
     }
     if let Some(intrinsic) = runtime_intrinsic(selected_id) {
         return Ok(RuntimeResolvedStaticCallTarget::Intrinsic(intrinsic));
