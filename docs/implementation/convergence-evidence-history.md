@@ -14387,3 +14387,13 @@ Source 163d1c338bff84981158c1de0024f2b6a03686e2、中間Source 50c31c487e22f4f55
 現状のAction行は「既受入の宣言」と「送受信owner実行」を分け、長い旧checkpoint列挙を原本へ移した。訂正理由は、全体goalと独立した受入境界を混同せず、最新の検証範囲を一か所で示すため。実測件数・失敗・full SHAは削除せず[原本](acceptance-evidence/task-action-channel-receive.json)へ保持する。
 
 既存履歴の先頭1796168 bytes（SHA256 027319617f0e557eb1ace25b165cd963b3f146c7d081f515b8ad114c5f4aae7f）をbyte一致で保持し、この段落だけを追記する。既存12 tracked／6 actual untracked WIPも保持。
+
+## 2026-11-03 Action送受信の全Core逆依存終端照合
+
+Source 9a75564dc58d4c844f2c25a45958a1d081682934、検査head 9a75564dc58d4c844f2c25a45958a1d081682934、4090入力。実Cargo graphの53 packageを通常52とCLI1へ分け、all-target／all-feature／lockedで実行。初回は7076件中7074 PASS／2 FAIL、ignored 17件。Semaの不正Thread factのpanicと非公開field fixtureを修復し、同じ失敗2件は2／2 PASS。その後のSema全21通常逆依存3398件を新規PASS、影響外3678件は入力と元EXEの完全hash一致で成功結果を再利用し、合計7076件を終端照合した。一つの全件新規成功runとはしない。実行対象49 packageとcompile-only 3 packageを区別し、Source／case／EXE差分0。Generic Match151件とView40件も同じIDですべてPASS。修飾ActionのSyntax側5件は今回のCore逆依存範囲外であり、新規実行へ数えていない。
+
+CLIは693件中660 PASS／33 FAIL、旧Source7104との失敗ID比較は維持33／追加0／解消0。ID一致から原因一致を推定せず、今回の全stderrを保持する。CLI入口の追加実行はbytecode VM／AOTともFIFO結果2022、27 step、各step最大1操作、正規Program通知1件、Host呼出し0を確認。これはnextest件数へ合算しない。最初のobserverが正規delivery診断も拒否したため、元task IDとsequence1に一致する通知だけを許すよう訂正し、実行自体は再実行していない。doctest 88件PASS、wasm check終了0。最新Sourceの全98 check／Clippy・構造gateも終了0。owner検証の以前の実測は元の記録を維持する。
+
+現状表はAction ownerの全consumer未検証という一時状態と古い横断件数を今回の実測へ更新し、過去の結果を削除しない。CLI統合と全体goalは未完了であり、それだけでAction・Generic Matchなどの個別受入を未完了へ戻さない。[実graph・全case・CLI差分・raw](acceptance-evidence/task-action-channel-receive-consumers.json)。既存履歴の先頭1797755 bytes（SHA256 79d80561c4a8ebaa0cda8126896743d21361fc5848eaf5fc870466c429ee1214）をbyte一致で保持してこの段落だけを追記。既存12 tracked／6 actual untracked WIPを保持。
+
+現状一覧では、CLI統合状態を下表の全target照合へ集約し、独立した受入境界を持たない重複CLI行を削除した。旧9194件と今回7076件は起点ownerと選択packageが異なるため、過去の件数・Sourceを履歴へ保持した上で、今回のgraph・新規3398件・再利用3678件を明示した。Generic Matchは今回も151件すべて新規PASSし、受入を維持する。
