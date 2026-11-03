@@ -1,0 +1,769 @@
+{
+  "version": 1,
+  "recordedAt": "2026-11-03T12:02:17.1078249Z",
+  "source": "6d6dc42e1adf9ec142cf3c4775a3c7f7ca22b15b",
+  "workingTree": "main; only original12 tracked and6 actual untracked WIP before evidence cut",
+  "scope": "CLI integration assertions only; production, Cargo, source workload, steps, budgets, iteration/warmup and output contracts unchanged",
+  "publication": {
+    "version": 1,
+    "commit": "6d6dc42e1adf9ec142cf3c4775a3c7f7ca22b15b",
+    "parent": "7fc7307cbdcf9253e905c9c296b7d82e4b5e3b18",
+    "tree": "fb53ad449662d015ed171c0b0c3a31bda9df058c",
+    "remote": "6d6dc42e1adf9ec142cf3c4775a3c7f7ca22b15b",
+    "paths": [
+      {
+        "path": "crates/arcweft-cli/tests/check.rs",
+        "blob": "7397346e5aa6d0b49356d19f389e6e30704d92c1"
+      },
+      {
+        "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+        "blob": "2ec066806684acba834fef7d42b5d9dd84dd6904"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "f3551bf0ce0365421c9427097fdfdb92e3a36c2b0b6cdf92e95d1a520b6c1d40",
+    "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-03T12:02:14.699256Z"
+  },
+  "graph": {
+    "version": 1,
+    "source": "7fc7307cbdcf9253e905c9c296b7d82e4b5e3b18",
+    "root": "arcweft-cli",
+    "reversePackages": [
+      "arcweft-cli"
+    ],
+    "metadataReusedFrom": "cli-spec-yield-final.metadata.json",
+    "reason": "Only CLI integration assertions changed; manifests, lockfile, feature and production bytes are unchanged",
+    "freshBehaviorScope": "Three corrected CLI cases plus AOT companion and accepted yield diagnostic regression; full previous CLI failures remain recorded separately"
+  },
+  "baseline": {
+    "version": 1,
+    "source": "aa96871cce4c88476230f3f90267e5d4a1d14b70",
+    "run": "cli-spec-yield-reverse1-20261103.runtime",
+    "logSha256": "d30d1914400720b22f5b3a1f4771ab7469095bd0d4782dda6adde90fdaf8a989",
+    "retainedAt": "docs/implementation/acceptance-evidence/task-cli-yield-context.raw.zip",
+    "profile": {
+      "originalExpectedOps": 3,
+      "actualExecutedOps": 2,
+      "finalStatus": "done Return(\"done\")",
+      "stepCount": 1,
+      "stopReason": "Done",
+      "observations": {
+        "signals": [],
+        "metrics": [],
+        "logs": [
+          {
+            "level": "info",
+            "message": "profile"
+          }
+        ],
+        "events": []
+      },
+      "flowEvents": [
+        "return done"
+      ],
+      "lineEffects": [
+        "log.info"
+      ]
+    },
+    "bench": {
+      "originalExpectedOps": 3,
+      "status": "measured",
+      "measurement": {
+        "host_system": {
+          "physical_cores": 12,
+          "logical_threads": 20,
+          "available_parallelism": 20
+        },
+        "executor": "bytecode_vm",
+        "executor_stats": {
+          "aot_fast_path_ops": 0,
+          "pure_config": {
+            "backend": "auto",
+            "workers": "auto",
+            "resolved_workers": 20,
+            "worker_pool_active": false,
+            "batch_min_len": 1024,
+            "emit_object_artifacts": false,
+            "math_backend": "auto",
+            "math_wgpu_min_elements": 67108864
+          },
+          "pure_acceleration": {
+            "annotated": 0,
+            "inferred": 0,
+            "jit": 0,
+            "aot": 0,
+            "vm": 0
+          },
+          "pure_compile": {
+            "jit_attempts": 0,
+            "jit_successes": 0,
+            "jit_failures": 0,
+            "aot_attempts": 0,
+            "aot_successes": 0,
+            "aot_failures": 0,
+            "auto_jit_selected": 0,
+            "auto_aot_selected": 0,
+            "auto_vm_selected": 0,
+            "auto_jit_deferred": 0,
+            "auto_jit_promotions": 0,
+            "auto_jit_skipped_small": 0,
+            "cache_hits": 0,
+            "cache_misses": 0,
+            "object_attempts": 0,
+            "object_successes": 0,
+            "object_failures": 0,
+            "object_bytes": 0,
+            "compile_elapsed_ns": 38800
+          },
+          "math": {
+            "scalar_calls": 0,
+            "glam_calls": 0,
+            "ndarray_calls": 0,
+            "wgpu_calls": 0,
+            "fused_matmul_bias_add_calls": 0,
+            "fallback_calls": 0,
+            "bytes_borrowed": 0,
+            "bytes_copied": 0,
+            "bytes_uploaded": 0,
+            "bytes_downloaded": 0,
+            "gpu_buffer_creations": 0,
+            "gpu_buffer_reuse_hits": 0,
+            "gpu_staging_buffer_creations": 0,
+            "gpu_staging_buffer_reuse_hits": 0,
+            "gpu_reused_dispatches": 0,
+            "last_backend": null,
+            "last_auto_reason": null
+          }
+        },
+        "native_io": {
+          "completed_tasks": 0,
+          "completed_host_calls": 0,
+          "failed_tasks": 0,
+          "read_ops": 0,
+          "write_ops": 0,
+          "system_info_ops": 0,
+          "bytes_read": 0,
+          "bytes_written": 0,
+          "parallel_batches": 0,
+          "parallel_tasks": 0,
+          "parallel_io_tasks": 0,
+          "parallel_system_info_tasks": 0,
+          "program_task_terminals": 0,
+          "parallel_workers": 0,
+          "scheduler_submit_elapsed_ns": 0,
+          "scheduler_dispatch_elapsed_ns": 0,
+          "host_complete_elapsed_ns": 0,
+          "event_build_elapsed_ns": 0,
+          "scheduler_complete_elapsed_ns": 0,
+          "scheduler": {
+            "submitted": 0,
+            "joined": 0,
+            "dispatched": 0,
+            "completed": 0,
+            "failed": 0,
+            "cancelled": 0,
+            "cancel_requested": 0,
+            "in_flight": 0,
+            "max_in_flight": 0,
+            "dispatch_sorts": 0,
+            "dispatch_sort_items": 0,
+            "completion_sorts": 0,
+            "completion_sort_items": 0,
+            "completion_normalization_passes": 0,
+            "completion_normalization_checks": 0,
+            "completion_events_in": 0,
+            "completion_events_out": 0,
+            "completion_sort_skipped_items": 0,
+            "completion_sort_performed_items": 0,
+            "submitted_by_class": {
+              "local_view": 0,
+              "io": 0,
+              "cpu": 0,
+              "gpu_prepare": 0,
+              "shader_compile": 0,
+              "wasm_call": 0,
+              "asset_decode": 0,
+              "audio_decode": 0,
+              "audio_render": 0,
+              "tts_synthesis": 0,
+              "bgm_precompose": 0,
+              "lsp": 0,
+              "background": 0
+            },
+            "dispatched_by_class": {
+              "local_view": 0,
+              "io": 0,
+              "cpu": 0,
+              "gpu_prepare": 0,
+              "shader_compile": 0,
+              "wasm_call": 0,
+              "asset_decode": 0,
+              "audio_decode": 0,
+              "audio_render": 0,
+              "tts_synthesis": 0,
+              "bgm_precompose": 0,
+              "lsp": 0,
+              "background": 0
+            },
+            "completed_by_class": {
+              "local_view": 0,
+              "io": 0,
+              "cpu": 0,
+              "gpu_prepare": 0,
+              "shader_compile": 0,
+              "wasm_call": 0,
+              "asset_decode": 0,
+              "audio_decode": 0,
+              "audio_render": 0,
+              "tts_synthesis": 0,
+              "bgm_precompose": 0,
+              "lsp": 0,
+              "background": 0
+            }
+          }
+        },
+        "warmup": 1,
+        "iterations": 2,
+        "steps": 1,
+        "per_executed_op_ns": 193000,
+        "elapsed_ns": {
+          "min": 307000,
+          "median": 386000,
+          "max": 386000
+        },
+        "deterministic": {
+          "executed_ops_median": 2,
+          "child_fiber_ticks_median": 0,
+          "max_child_fibers_median": 0,
+          "line_effects_median": 1,
+          "task_requests_median": 0,
+          "task_events_in_median": 0,
+          "pure_calls_median": 0,
+          "math_calls_median": 0,
+          "math_accelerated_calls_median": 0,
+          "pure_batch_calls_median": 0,
+          "pure_batch_items_median": 0,
+          "pure_flat_batch_calls_median": 0,
+          "pure_flat_batch_items_median": 0,
+          "pure_flat_batch_bytes_borrowed_median": 0,
+          "pure_flatten_materializations_median": 0,
+          "pure_flatten_bytes_copied_median": 0,
+          "pure_jit_calls_median": 0,
+          "pure_aot_calls_median": 0,
+          "pure_vm_calls_median": 0,
+          "pure_parallel_policy_checks_median": 0,
+          "pure_parallel_work_units_median": 0,
+          "pure_parallel_batches_median": 0,
+          "pure_parallel_skipped_backend_median": 0,
+          "pure_parallel_skipped_small_median": 0,
+          "pure_thread_pool_jobs_median": 0,
+          "pure_thread_pool_build_elapsed_ns_median": 0,
+          "pure_arg_stack_packs_median": 0,
+          "pure_arg_vec_allocations_median": 0,
+          "pure_arg_bytes_copied_median": 0,
+          "pure_arg_bytes_borrowed_median": 0,
+          "pure_result_bytes_copied_median": 0,
+          "pure_fallbacks_median": 0,
+          "diagnostics": 0
+        }
+      }
+    },
+    "bundle": {
+      "originalExpected": "dialogue image.static_png",
+      "observed": "dialogue",
+      "reason": "FlowFiberStatus::debug_status_label yields the stable dialogue status; the line identity belongs to the FlowEvent::DialogueLine projection. The replacement assertion must retain that identity check on real flow_events, not drop it."
+    },
+    "changeScope": "Existing integration tests only. Preserve source workload, exact operation count, iterations, warmup, steps, max_ops and no-recompilation/no-path-leak/asset checks. Strengthen actual log, return and once-only dialogue-event assertions; remove a duplicated identical profile assertion."
+  },
+  "runs": [
+    {
+      "stem": "cli-observation-contract-owner1-20261103",
+      "execution": {
+        "version": 1,
+        "base": "7fc7307cbdcf9253e905c9c296b7d82e4b5e3b18",
+        "command": [
+          "nextest",
+          "run",
+          "-p",
+          "arcweft-cli",
+          "--all-targets",
+          "--all-features",
+          "--locked",
+          "-E",
+          "test(=profile_json_reports_phase_timings_and_runtime_stats_without_absolute_source) or test(=bench_json_measures_headless_runtime_sections) or test(=bundle_json_packages_image_animation_sample_assets_and_run_bundle_validates_them) or test(=bench_json_can_measure_aot_executor_sections) or test(=verify_json_rejects_flow_yield_before_lowering_at_the_authored_statement)",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast",
+          "--status-level",
+          "all",
+          "--final-status-level",
+          "all"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/cli-observation-contract-owner1-20261103.runtime.log",
+        "exitCode": 100,
+        "sourceInputs": 4090,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-03T11:55:09.9538428Z",
+        "finishedAt": "2026-11-03T11:55:14.95322Z"
+      },
+      "terminal": {
+        "version": 1,
+        "base": "7fc7307cbdcf9253e905c9c296b7d82e4b5e3b18",
+        "run": "cli-observation-contract-owner1-20261103.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   2.263s] 5 tests run: 4 passed, 1 failed, 712 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 5,
+        "passed": 4,
+        "failed": 1,
+        "skipped": 712,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4090,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "bundle_json_packages_image_animation_sample_assets_and_run_bundle_validates_them"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-03T11:55:16.9544746Z"
+      },
+      "catalog": {
+        "matched": 5,
+        "ignored": 23,
+        "filterMismatch": 689
+      }
+    },
+    {
+      "stem": "cli-observation-contract-owner2-20261103",
+      "execution": {
+        "version": 1,
+        "base": "7fc7307cbdcf9253e905c9c296b7d82e4b5e3b18",
+        "command": [
+          "nextest",
+          "run",
+          "-p",
+          "arcweft-cli",
+          "--all-targets",
+          "--all-features",
+          "--locked",
+          "-E",
+          "test(=profile_json_reports_phase_timings_and_runtime_stats_without_absolute_source) or test(=bench_json_measures_headless_runtime_sections) or test(=bundle_json_packages_image_animation_sample_assets_and_run_bundle_validates_them) or test(=bench_json_can_measure_aot_executor_sections) or test(=verify_json_rejects_flow_yield_before_lowering_at_the_authored_statement)",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast",
+          "--status-level",
+          "all",
+          "--final-status-level",
+          "all"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/cli-observation-contract-owner2-20261103.runtime.log",
+        "exitCode": 100,
+        "sourceInputs": 4090,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-03T11:57:32.925013Z",
+        "finishedAt": "2026-11-03T11:57:38.3559796Z"
+      },
+      "terminal": {
+        "version": 1,
+        "base": "7fc7307cbdcf9253e905c9c296b7d82e4b5e3b18",
+        "run": "cli-observation-contract-owner2-20261103.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   2.571s] 5 tests run: 4 passed, 1 failed, 712 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 5,
+        "passed": 4,
+        "failed": 1,
+        "skipped": 712,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4090,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "bundle_json_packages_image_animation_sample_assets_and_run_bundle_validates_them"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-03T11:57:40.5763921Z"
+      },
+      "catalog": {
+        "matched": 5,
+        "ignored": 23,
+        "filterMismatch": 689
+      }
+    },
+    {
+      "stem": "cli-observation-contract-owner3-20261103",
+      "execution": {
+        "version": 1,
+        "base": "7fc7307cbdcf9253e905c9c296b7d82e4b5e3b18",
+        "command": [
+          "nextest",
+          "run",
+          "-p",
+          "arcweft-cli",
+          "--all-targets",
+          "--all-features",
+          "--locked",
+          "-E",
+          "test(=bundle_json_packages_image_animation_sample_assets_and_run_bundle_validates_them)",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast",
+          "--status-level",
+          "all",
+          "--final-status-level",
+          "all"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/cli-observation-contract-owner3-20261103.runtime.log",
+        "exitCode": 0,
+        "sourceInputs": 4090,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-03T11:58:55.2114798Z",
+        "finishedAt": "2026-11-03T11:59:00.2488549Z"
+      },
+      "terminal": {
+        "version": 1,
+        "base": "7fc7307cbdcf9253e905c9c296b7d82e4b5e3b18",
+        "run": "cli-observation-contract-owner3-20261103.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   2.244s] 1 test run: 1 passed, 716 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 716,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4090,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-03T11:59:02.1463383Z"
+      },
+      "catalog": {
+        "matched": 1,
+        "ignored": 23,
+        "filterMismatch": 693
+      }
+    }
+  ],
+  "finalInputProof": {
+    "version": 1,
+    "base": "7fc7307cbdcf9253e905c9c296b7d82e4b5e3b18",
+    "unchangedInputs": 4089,
+    "changedPath": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+    "before": "8f1d780f9aef6dfa2033d7b39a606a970248ba37f43a539c89a5242328050bb0",
+    "after": "90e579733de40597e94886b66368df1340af50a5292989223aac7edcfafd66db",
+    "verifiedChange": "Only the private bundle assertion expected canonical ID changed from image.static_png to the authored say.image.static_png; exact previous source bytes verified against owner2 pinned SHA256",
+    "freshBundleRun": "cli-observation-contract-owner3-20261103.runtime",
+    "retainedPassingRun": "cli-observation-contract-owner2-20261103.runtime",
+    "retainedCaseCount": 4,
+    "retainedReason": "The four other test bodies, their inputs, production, toolchain, target, features and host environment are unchanged. No identical-executable claim is made because the integration test binary was relinked.",
+    "distinctPassingCases": 5,
+    "sourceDrift": 0
+  },
+  "distinctPassingCases": 5,
+  "freshFinalBundleCases": 1,
+  "reusedUnchangedCaseResults": 4,
+  "reusedExecutableClaim": false,
+  "clippy": {
+    "version": 1,
+    "base": "7fc7307cbdcf9253e905c9c296b7d82e4b5e3b18",
+    "command": [
+      "clippy",
+      "-p",
+      "arcweft-cli",
+      "--all-targets",
+      "--all-features",
+      "--locked"
+    ],
+    "exitCode": 0,
+    "sourceInputs": 4090,
+    "sourceDrift": 0,
+    "startedAt": "2026-11-03T11:59:15.4908539Z",
+    "finishedAt": "2026-11-03T12:01:47.1686577Z"
+  },
+  "format": {
+    "version": 1,
+    "base": "7fc7307cbdcf9253e905c9c296b7d82e4b5e3b18",
+    "paths": [
+      "crates/arcweft-cli/tests/check.rs",
+      "crates/arcweft-cli/tests/check/cli_runtime_bench.rs"
+    ],
+    "exitCode": 0,
+    "sourceDrift": 0,
+    "checkedAt": "2026-11-03T11:59:15.4790714Z"
+  },
+  "corrections": [
+    "Profile and headless bench expected 3 operations for log plus return; actual typed runtime reports 2. Preserve exact2, one step and original measurement work; strengthen exact returned value, actual log, effect and return event. Remove one duplicate profile assertion.",
+    "Bundle final_status is the stable dialogue state. Preserve actual line identity using a separate execution of the same AWFB through the public typed bundle runner at the original2-step/64-op budget. Typed FlowEvents are intentionally omitted from JSON; the initial new JSON-based assertion failed, was corrected, and remains in history.",
+    "The typed event retains the authored canonical say.image.static_png, including its family. The initial shortened-ID expectation failed and was corrected to the exact authored declaration; old/new bytes were hash verified. This does not change runtime IDs or output to match an obsolete label."
+  ],
+  "cliFullSuite": {
+    "latestFullSource": "aa96871cce4c88476230f3f90267e5d4a1d14b70",
+    "latestFixtureSource": "4e39fbd5427fd7ec3e8c66bc48613832e84e4fec",
+    "executed": 694,
+    "passed": 661,
+    "failed": 33,
+    "record": "task-cli-yield-context.json",
+    "afterThisCut": "The three affected previously failing IDs pass in this focused scope; the other30 failed IDs were not re-executed here. This is not a fresh694-case pass or a claimed full CLI integration acceptance."
+  },
+  "acceptedFeatures": "Generic Match and all independent accepted boundaries remain accepted; no Sema, Core, runtime, codec, source fixture, dependency or specification bytes changed",
+  "sourceInputs": 4090,
+  "sourceDrift": 0,
+  "caseDrift": 0,
+  "originalWip": {
+    "tracked": 12,
+    "actualUntracked": 6,
+    "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+    "untrackedHashDrift": 0
+  },
+  "historyPrefix": {
+    "bytes": 1803300,
+    "sha256": "6feff55b2da1bfff43f3e4db86e8a5ca9c3e9a66eb0a7d38725229752ed48ca9",
+    "drift": 0
+  },
+  "raw": {
+    "path": "docs/implementation/acceptance-evidence/task-cli-observation-contract.raw.zip",
+    "bytes": 1441244,
+    "sha256": "33070145fb3a0fd3cdb8023273a93631ef2c601e5cf9fbef4a5ce4e762a125c2",
+    "entryDrift": 0,
+    "entries": [
+      {
+        "entry": "audit-nextest-final-result.ps1",
+        "bytes": 5266,
+        "sha256": "9d136f5ff9dbe80e524a8c9adb2f11fc96cce75046e3e1fe3e93ba73888cc0ab"
+      },
+      {
+        "entry": "checkpoint-cli-observation-contract.message.txt",
+        "bytes": 281,
+        "sha256": "947578ec62a21c9cf9a7208bb41c466d8b6f0a9a8b95ce222bfaf42b639bebfe"
+      },
+      {
+        "entry": "checkpoint-cli-observation-contract.other.txt",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "checkpoint-cli-observation-contract.owned.txt",
+        "bytes": 88,
+        "sha256": "825ea0c6c227b7d335dd56afee17adf8ab403a956b7e52bab1f62f336a5f21d1"
+      },
+      {
+        "entry": "checkpoint-cli-observation-contract.pathspec",
+        "bytes": 86,
+        "sha256": "a85f702e1a946f10df29fafa991659f84e287861faec6c4af66c58a6f012dfd4"
+      },
+      {
+        "entry": "checkpoint-cli-observation-contract.prepared.json",
+        "bytes": 1417,
+        "sha256": "eb4a5a72a06113a3a27d609e79a715958c853336f4f44fc694a3cb618533b48c"
+      },
+      {
+        "entry": "checkpoint-cli-observation-contract.reviewed.patch",
+        "bytes": 5580,
+        "sha256": "f3551bf0ce0365421c9427097fdfdb92e3a36c2b0b6cdf92e95d1a520b6c1d40"
+      },
+      {
+        "entry": "checkpoint-cli-observation-contract.verified.json",
+        "bytes": 819,
+        "sha256": "95fcf5804c3c3e6520e470aa8c0498084f512e2bc8dcc9a5109fe6a86397169e"
+      },
+      {
+        "entry": "cli-observation-contract-bundle1.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "cli-observation-contract-bundle1.stdout.json",
+        "bytes": 5135,
+        "sha256": "0a6ae6be0fc9e473ba8fe334c005bf4a77aa144c4d8af979be2cb25381af2860"
+      },
+      {
+        "entry": "cli-observation-contract-clippy.json",
+        "bytes": 367,
+        "sha256": "980e18b90c2fe5c157d789fd3f9c48f24b229d21dfe4f0b26871770b047ae020"
+      },
+      {
+        "entry": "cli-observation-contract-clippy.log",
+        "bytes": 7185716,
+        "sha256": "5e38589cf1e1cfc9130e7c102d3704c293cc2ec092ffdc46b70aa9dc9943e990"
+      },
+      {
+        "entry": "cli-observation-contract-fmt.json",
+        "bytes": 285,
+        "sha256": "48c88e13394cebae5682e3346c15d6e2cbfbdf001828ec0fd936f620dea2fccc"
+      },
+      {
+        "entry": "cli-observation-contract-fmt.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "cli-observation-contract-owner1-20261103.binaries-before.json",
+        "bytes": 2892,
+        "sha256": "e255968824ad5bf23772cf6862f94135b14a708b2d99c64f6c320c9c508db755"
+      },
+      {
+        "entry": "cli-observation-contract-owner1-20261103.catalog.inventory.json",
+        "bytes": 172635,
+        "sha256": "87323394b6aa895e214eb91e0d8764c3896e0894694f4bd0af3f9afaf9ba88f4"
+      },
+      {
+        "entry": "cli-observation-contract-owner1-20261103.catalog.json",
+        "bytes": 948,
+        "sha256": "bf62163719782a5254a9cee2ae7c33b5cf87ac719b2b97e0d6a8de459f4b9a72"
+      },
+      {
+        "entry": "cli-observation-contract-owner1-20261103.catalog.log",
+        "bytes": 242475,
+        "sha256": "345cba7ca01085a672662f3270559b35b85c3d9e7738d11e6641ffe4b1decf50"
+      },
+      {
+        "entry": "cli-observation-contract-owner1-20261103.runtime.json",
+        "bytes": 1042,
+        "sha256": "c3610d99dfec47b3e8f3e4fa486a5c6a19e2642a891fe39ad9445c1a0b58d1b5"
+      },
+      {
+        "entry": "cli-observation-contract-owner1-20261103.runtime.log",
+        "bytes": 287312,
+        "sha256": "83f15e843dd42ec1809e56227f47c2f6a3c7e7e8b8b1c256f77f4fb75bcb97fa"
+      },
+      {
+        "entry": "cli-observation-contract-owner1-20261103.runtime.terminal-audit.json",
+        "bytes": 814,
+        "sha256": "151db1fb7c54a2793aa421620367d9957d16a7a9f3fd2704800d94f55eda00fd"
+      },
+      {
+        "entry": "cli-observation-contract-owner1-20261103.source-freeze.json",
+        "bytes": 799574,
+        "sha256": "bc427c654bf8c8eeb17bea2992d77195e54c51d16e8be51384c14aab2ed24b4b"
+      },
+      {
+        "entry": "cli-observation-contract-owner2-20261103.binaries-before.json",
+        "bytes": 2892,
+        "sha256": "0e2343d7ccd2fd39cb98559107f03a0e5045c15ac273e4dc280ccfedffb76ef7"
+      },
+      {
+        "entry": "cli-observation-contract-owner2-20261103.catalog.inventory.json",
+        "bytes": 172635,
+        "sha256": "87323394b6aa895e214eb91e0d8764c3896e0894694f4bd0af3f9afaf9ba88f4"
+      },
+      {
+        "entry": "cli-observation-contract-owner2-20261103.catalog.json",
+        "bytes": 948,
+        "sha256": "6f23a035ca23a7107e6d687f6e3fd2929c59ed4c6bfba3cea4ac49c160470f47"
+      },
+      {
+        "entry": "cli-observation-contract-owner2-20261103.catalog.log",
+        "bytes": 218734,
+        "sha256": "8c928493c89a4bef206ba85ecd8df45b9e72a2e8e821c3aa6d3b1806a1860038"
+      },
+      {
+        "entry": "cli-observation-contract-owner2-20261103.runtime.json",
+        "bytes": 1042,
+        "sha256": "6d2c0c5b1645e1d217d0673d1ce889d7e510b17b286dddbe039cd668585ac896"
+      },
+      {
+        "entry": "cli-observation-contract-owner2-20261103.runtime.log",
+        "bytes": 287398,
+        "sha256": "234cf59770075b6641f46488fd37a557a420bfa29d5eac279a5c63ab860d54b2"
+      },
+      {
+        "entry": "cli-observation-contract-owner2-20261103.runtime.terminal-audit.json",
+        "bytes": 814,
+        "sha256": "ca0847b2a8931ff7525c619f1ef2f1712e2c8349d777bf89124c34ae1a0f50c1"
+      },
+      {
+        "entry": "cli-observation-contract-owner2-20261103.source-freeze.json",
+        "bytes": 799574,
+        "sha256": "cec0d1d37fadbacd85712d29250a944856ad5df207c5f6241c31a8d48f217986"
+      },
+      {
+        "entry": "cli-observation-contract-owner3-20261103.binaries-before.json",
+        "bytes": 2892,
+        "sha256": "e4480b71705d201f1bf23f9e92069bf1fee92efd4df4b6c19c211c73db4c1617"
+      },
+      {
+        "entry": "cli-observation-contract-owner3-20261103.catalog.inventory.json",
+        "bytes": 172639,
+        "sha256": "12754ea2028d7d09255a593e7c48596415354a524b8e205ceb2107560541cc05"
+      },
+      {
+        "entry": "cli-observation-contract-owner3-20261103.catalog.json",
+        "bytes": 667,
+        "sha256": "e458df563118b0b5581876d168cbd8a7297e7bc6b476b8b7db11e67c468f1ef2"
+      },
+      {
+        "entry": "cli-observation-contract-owner3-20261103.catalog.log",
+        "bytes": 218826,
+        "sha256": "2cbe4d1641dd811cd1265d4a53973cd58e7bb699f10311c88b4b06839bff4eba"
+      },
+      {
+        "entry": "cli-observation-contract-owner3-20261103.runtime.json",
+        "bytes": 759,
+        "sha256": "25323d13ceb9e2d6dc8b3bf1be9cdd1d004e0132116280b46dc039c010514bab"
+      },
+      {
+        "entry": "cli-observation-contract-owner3-20261103.runtime.log",
+        "bytes": 286642,
+        "sha256": "21df4a442dd8dd18de943497f05e55f42ea2b7f3d493d5ce3224e73b9b0b3be0"
+      },
+      {
+        "entry": "cli-observation-contract-owner3-20261103.runtime.terminal-audit.json",
+        "bytes": 620,
+        "sha256": "0c067148dfbd950539a1316dd72def0bc7a2ee0a5709b5dfed42fd089a21dc10"
+      },
+      {
+        "entry": "cli-observation-contract-owner3-20261103.source-freeze.json",
+        "bytes": 799574,
+        "sha256": "4623287928d0d3ea3d8f4412951b7409d98d04fae9806a786124e835274f613e"
+      },
+      {
+        "entry": "cli-observation-contract.baseline.json",
+        "bytes": 7884,
+        "sha256": "f459186e92c8b5f6524f8cef730e3c8f70062bae252bde72b149d396b7e2d9a2"
+      },
+      {
+        "entry": "cli-observation-contract.final-correction-proof.json",
+        "bytes": 1011,
+        "sha256": "8834aa16b9422bfa93d53c5807973de15ba83120d652f1fdd4ad28086ddc8934"
+      },
+      {
+        "entry": "cli-observation-contract.graph.json",
+        "bytes": 507,
+        "sha256": "c13ebd1f37215dcce0ac5acd09dd1801b011459316d08fa0b81bf051342e8750"
+      },
+      {
+        "entry": "record-cli-observation-contract.ps1",
+        "bytes": 10075,
+        "sha256": "fa46b2fa21d615b486b2f720e464007960714769e36d2509ab023a38fa44f549"
+      },
+      {
+        "entry": "run-presentation-projection-owner.ps1",
+        "bytes": 4134,
+        "sha256": "b60d753498997e4ba3b809b3721e9190ea1860971c755e6a1648a8e213403c58"
+      }
+    ]
+  },
+  "validationScope": "CLI reverse closure contains only CLI. All-target/all-feature/locked nextest build compiles consumers; scoped Clippy and changed-file fmt pass. No full workspace, doctest, structural or wasm rerun is required by these integration assertion changes. Previous results remain evidence for their own source bytes."
+}
