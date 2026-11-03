@@ -272,6 +272,14 @@ pub enum FinalSemanticAnalysisError {
     DeclarationDefaultConstraintFailure(super::FinalDeclarationDefaultConstraintFailure),
     #[error("return {owner:?} has no selected enclosing callable frame")]
     ReturnBoundaryUnavailable { owner: StmtId },
+    #[error(
+        "yield statement {owner:?} requires a generator body; item {container:?} is a direct execution frame"
+    )]
+    YieldOutsideGenerator {
+        owner: StmtId,
+        container: ItemId,
+        source_span: SourceSpan,
+    },
     #[error("return {owner:?} has type {actual:?}, but its callable frame returns {expected:?}")]
     ReturnValueTypeMismatch {
         owner: StmtId,
@@ -742,6 +750,7 @@ impl FinalSemanticAnalysisError {
             Self::AssertionModeNotAllowed { .. } => "sema.assert.context",
             Self::SignalObservableType { .. } => "sema.signal.observable_type",
             Self::ReturnBoundaryUnavailable { .. } => "sema.return.boundary",
+            Self::YieldOutsideGenerator { .. } => "sema.yield.context",
             Self::ReturnValueTypeMismatch { .. } => "sema.return.value_type",
             Self::AssertionConditionNotBool { .. } => "sema.assert.condition_not_bool",
             Self::AssertionConditionNotPure { .. } => "sema.assert.condition_not_pure",
@@ -776,6 +785,17 @@ impl FinalSemanticAnalysisError {
     /// Source-backed semantic rejection retained by the final analyzer.
     pub fn source_diagnostic(&self) -> Option<Diagnostic> {
         match self {
+            Self::YieldOutsideGenerator { source_span, .. } => Some(
+                Diagnostic::new(DiagnosticSeverity::Error, self.to_string())
+                    .with_code(self.diagnostic_code())
+                    .with_label(DiagnosticLabel::primary(
+                        source_span.clone(),
+                        Some(
+                            "yield requires seq, stream, or a Stream-returning function body"
+                                .to_owned(),
+                        ),
+                    )),
+            ),
             Self::ActionPayloadRequired { source_span, .. } => Some(
                 Diagnostic::new(DiagnosticSeverity::Error, self.to_string())
                     .with_code(self.diagnostic_code())

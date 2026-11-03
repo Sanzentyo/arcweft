@@ -1329,8 +1329,8 @@ fn source_callable_execution(
         }
         _ => return Err(FinalSemanticAnalysisError::InvalidCallableOwner),
     };
-    let (yields, _) = function_body_roles(module, body, expressions)?;
-    checked_function_execution(symbol.source_item(), result, types, yields)
+    let roles = function_body_roles(module, body, expressions)?;
+    checked_function_execution(symbol.source_item(), result, types, roles.yields)
         .map(CheckedCallableExecution::Runtime)
 }
 
@@ -1341,6 +1341,28 @@ fn item_role(
     types: &BTreeMap<TypeId, TypeKind>,
     expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
 ) -> Result<CheckedItemRole, FinalSemanticAnalysisError> {
+    let direct_body = match item.kind() {
+        HirItemKind::Flow(flow) => Some(flow.body().try_body_projection()),
+        HirItemKind::Predicate(predicate) => Some(predicate.body().try_body_projection()),
+        HirItemKind::Proof(proof) => Some(proof.body().try_body_projection()),
+        _ => None,
+    };
+    if let Some(body) = direct_body {
+        let body = body.map_err(|_| FinalSemanticAnalysisError::RecoveredOwner)?;
+        if let Some(statement) = execution_body_roles(module, &body, expressions)?.first_yield {
+            return Err(FinalSemanticAnalysisError::YieldOutsideGenerator {
+                owner: statement,
+                container: owner,
+                source_span: source_span(
+                    module,
+                    HirSourceQuery::Stmt {
+                        owner: statement,
+                        role: arcweft_lang_hir::source_index::HirStmtSourceRole::Whole,
+                    },
+                )?,
+            });
+        }
+    }
     Ok(match item.kind() {
         HirItemKind::Module(_) => CheckedItemRole::Module,
         HirItemKind::Use(_) => CheckedItemRole::Use,
@@ -1348,13 +1370,12 @@ fn item_role(
             identity: flow.identity().clone(),
         },
         HirItemKind::Function(function) => {
-            let (yield_count, suspension) =
-                function_body_roles(module, function.body(), expressions)?;
+            let roles = function_body_roles(module, function.body(), expressions)?;
             let execution =
-                checked_function_execution(owner, function.return_type(), types, yield_count)?;
+                checked_function_execution(owner, function.return_type(), types, roles.yields)?;
             CheckedItemRole::Function {
                 execution,
-                suspension: if suspension {
+                suspension: if roles.suspension {
                     CheckedSuspensionRole::MaySuspend
                 } else {
                     CheckedSuspensionRole::NonSuspending
@@ -1404,39 +1425,59 @@ fn item_role(
     })
 }
 
+pub(super) struct ExecutionBodyRoles {
+    pub(super) yields: u32,
+    first_yield: Option<super::StmtId>,
+    suspension: bool,
+}
+
 pub(super) fn function_body_roles(
     module: &HirModule,
     body: &HirFunctionBody,
     expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
-) -> Result<(u32, bool), FinalSemanticAnalysisError> {
+) -> Result<ExecutionBodyRoles, FinalSemanticAnalysisError> {
     let body = body
         .try_body_projection()
         .map_err(|_| FinalSemanticAnalysisError::RecoveredOwner)?;
-    let mut fold = FunctionBodyRoleFold {
+    execution_body_roles(module, &body, expressions)
+}
+
+fn execution_body_roles(
+    module: &HirModule,
+    body: &HirBodyProjection,
+    expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
+) -> Result<ExecutionBodyRoles, FinalSemanticAnalysisError> {
+    let mut fold = ExecutionBodyRoleFold {
         module,
         expressions,
         statements: std::collections::BTreeSet::new(),
         visited_expressions: std::collections::BTreeSet::new(),
         yields: 0,
+        first_yield: None,
         suspension: false,
     };
-    fold.fold_body(&body)?;
-    Ok((fold.yields, fold.suspension))
+    fold.fold_body(body)?;
+    Ok(ExecutionBodyRoles {
+        yields: fold.yields,
+        first_yield: fold.first_yield,
+        suspension: fold.suspension,
+    })
 }
 
-/// Typed top-level execution traversal used only for function execution-role
-/// classification. It follows the same eager/latent boundaries as the final
+/// Typed execution traversal shared by generator classification and direct
+/// frame admission. It follows the same eager/latent boundaries as the final
 /// expression/statement effect fold and never infers membership from scopes.
-struct FunctionBodyRoleFold<'a> {
+struct ExecutionBodyRoleFold<'a> {
     module: &'a HirModule,
     expressions: &'a BTreeMap<ExprId, super::PreparedExpressionFact>,
     statements: std::collections::BTreeSet<super::StmtId>,
     visited_expressions: std::collections::BTreeSet<ExprId>,
     yields: u32,
+    first_yield: Option<super::StmtId>,
     suspension: bool,
 }
 
-impl FunctionBodyRoleFold<'_> {
+impl ExecutionBodyRoleFold<'_> {
     fn fold_body(&mut self, body: &HirBodyProjection) -> Result<(), FinalSemanticAnalysisError> {
         for edge in body.children() {
             match edge.child() {
@@ -1461,6 +1502,7 @@ impl FunctionBodyRoleFold<'_> {
         let kind = statement.kind();
         match kind {
             HirStmtKind::Yield { .. } => {
+                self.first_yield.get_or_insert(owner);
                 self.yields = self
                     .yields
                     .checked_add(1)

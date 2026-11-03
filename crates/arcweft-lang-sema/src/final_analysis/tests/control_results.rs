@@ -1,6 +1,66 @@
 use super::*;
 
 #[test]
+fn direct_execution_frames_reject_own_yields_at_the_authored_statement() {
+    for source in [
+        "flow root() { yield 1i64\n }",
+        "flow root() { if false { yield 1i64\n } }",
+        "flow root() { loop { yield 1i64\n break } }",
+        "flow root() { { yield 1i64\n } }",
+        "predicate root() = { yield 1i64\n true }",
+        "proof root() = { yield 1i64\n () }",
+    ] {
+        let world = fixture(source, None);
+        let error = analyze(&world).expect_err("direct execution is not a generator");
+        let FinalSemanticAnalysisError::YieldOutsideGenerator {
+            owner,
+            container,
+            source_span,
+        } = &error
+        else {
+            panic!("{source}: expected the source-backed yield rejection, got {error:?}");
+        };
+        let project = world.project.analysis_view().unwrap();
+        let module = project.module(&CanonicalModulePath::crate_root()).unwrap();
+        assert!(matches!(
+            module.resolve_stmt(*owner).unwrap().kind(),
+            HirStmtKind::Yield { .. }
+        ));
+        assert!(matches!(
+            module.resolve_item(*container).unwrap().kind(),
+            HirItemKind::Flow(_) | HirItemKind::Predicate(_) | HirItemKind::Proof(_)
+        ));
+        let start = source.find("yield 1i64").unwrap();
+        assert_eq!(
+            source_span.range(),
+            arcweft_source::SourceRange::new(start, start + "yield 1i64".len()),
+            "{source}"
+        );
+        assert_eq!(error.diagnostic_code(), "sema.yield.context");
+        assert!(error.source_diagnostic().is_some());
+    }
+}
+
+#[test]
+fn flow_frame_admission_keeps_nested_generation_in_its_independent_body() {
+    let world = fixture(
+        "flow root() { let sequence = seq { yield 1i64 }; let live = stream { yield 2i64 }; }",
+        None,
+    );
+    let analysis = analyze(&world).expect("generation bodies do not yield from the Flow frame");
+    let project = world.project.analysis_view().unwrap();
+    let module = project.module(&CanonicalModulePath::crate_root()).unwrap();
+    let (owner, _) = module
+        .items()
+        .find(|(_, item)| matches!(item.kind(), HirItemKind::Flow(_)))
+        .unwrap();
+    assert!(matches!(
+        analysis.item(owner).unwrap().role(),
+        CheckedItemRole::Flow { .. }
+    ));
+}
+
+#[test]
 fn unannotated_control_results_share_context_in_both_branch_orders() {
     for expression in [
         "if flag { [] } else { values }",

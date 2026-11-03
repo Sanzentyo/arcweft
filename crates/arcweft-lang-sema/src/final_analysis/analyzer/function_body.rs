@@ -168,7 +168,7 @@ impl Analyzer<'_, '_, '_> {
             completion.continues().then_some(expected),
         )?;
         function_body_roles(module, body, self.facts.expressions())
-            .map(|(yields, _)| yields)
+            .map(|roles| roles.yields)
             .map_err(AnalyzerExpressionError::fatal)
     }
 
