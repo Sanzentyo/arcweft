@@ -432,6 +432,25 @@ fn flow_match_statement_source(statement: &str) -> String {
     )
 }
 
+fn generator_match_statement_source(statement: &str) -> String {
+    let statement = statement
+        .lines()
+        .map(|line| format!("                     {line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "fn root(flag: bool, other: bool) -> Stream<bool, Unit> {{\n\
+             let selected = match flag {{\n\
+                 true => {{\n\
+{statement}\n\
+                     1i64\n\
+                 }}\n\
+                 false => 0i64\n\
+             }}\n\
+         }}\n"
+    )
+}
+
 fn flow_match_defer_source(capture: &str) -> String {
     flow_match_statement_source(&format!("defer {{\n    let captured = {capture};\n}}"))
 }
@@ -611,8 +630,8 @@ fn checked_match_statement_corpus_tracks_accepted_root_families() {
             payloads: &[StatementPayloadFamily::Structural],
         },
         Row {
-            name: "Yield in Flow Match arm block",
-            source: flow_match_statement_source("yield flag"),
+            name: "Yield in generator Match arm block",
+            source: generator_match_statement_source("yield flag"),
             shapes: &[StatementShapeFamily::Yield],
             payloads: &[StatementPayloadFamily::Yield],
         },
@@ -1131,7 +1150,7 @@ fn checked_match_flow_control_bundle_retains_exact_payloads_and_meaning() {
         },
         Row {
             name: "Yield flag operand",
-            source: flow_match_statement_source("yield flag"),
+            source: generator_match_statement_source("yield flag"),
             expected: BTreeSet::from([(
                 StatementShapeFamily::Yield,
                 StatementPayloadFamily::Yield,
@@ -1139,7 +1158,7 @@ fn checked_match_flow_control_bundle_retains_exact_payloads_and_meaning() {
         },
         Row {
             name: "Yield other operand",
-            source: flow_match_statement_source("yield other"),
+            source: generator_match_statement_source("yield other"),
             expected: BTreeSet::from([(
                 StatementShapeFamily::Yield,
                 StatementPayloadFamily::Yield,

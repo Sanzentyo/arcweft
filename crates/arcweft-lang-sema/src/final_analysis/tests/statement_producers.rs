@@ -394,7 +394,7 @@ const CALL_FREE_ROWS: &[SourceRow] = &[
     },
     SourceRow {
         matrix: MATRIX[8],
-        source: "flow row { yield () }\n",
+        source: "fn row() -> Stream<Unit, Unit> { yield () }\n",
     },
     SourceRow {
         matrix: MATRIX[9],
