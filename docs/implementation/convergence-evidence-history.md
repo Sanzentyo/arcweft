@@ -14483,3 +14483,17 @@ Source 33711cd44846412c4a284fd7eee7ecd1714cd93f、parent c050d902d354b7a79b03f0b
 元source・default typography・viewport1280×900・steps／max-ops・capture kindは差分0。WebとTestの原子glyph／Source範囲、先行Webとhyphenの非分割、raw mask／object-idのcrop identity・pixel数・tintは全て保持する。renderer／planner／Unicode表／Cargo／owned version markerの変更はなく、現行仕様章を同じ既存境界へ明確化した。実CLI逆依存1、all-target／all-feature／locked、4090入力、2／2 PASS・20.202秒、719 skippedは696選択外＋23 ignored。CLI check／Clippy、変更Rust1件fmt、canonical構造gateは終了0、警告は残る。
 
 最新全件runはSource06a629f0df1c523b307b51d7946de7693153279eの698件676 PASS／22 FAILを履歴へ保持する。その後のSource15888388a085ab08849f6cc8bdb18d4f5bd39ec4の6 IDと今回2 IDは非重複で8件がfocused PASS。他の失敗14 ID・今回選択外696件は新規実行せず、合成の全CLI684／14を記さない。先の6条件、通常5162、Generic151の受入は保持し、別境界や全体goalの未達で戻さない。[一次規則・原入力観測・旧期待の理由付き訂正・2条件・公開full SHA・raw](acceptance-evidence/task-cli-jlreq-hyphen-boundary.json)。履歴先頭1824543 bytes（SHA256 3537243c0108ad771bb7a52400dbb92bdace082f7b2a0b9db4d6ff9e6cf5c0a6）を保持し追記する。元12 tracked／6 actual untracked WIPのhash差分0。
+
+## 2026-11-04 — sparse RichText layout presence
+
+Source checkpoint 726323d1edc63a6a543f7b8b817570ecc2ea2b3e and final refinement
+638d6459bf68b4679349f2bfccc03f53d1878d26 separate authored presence from resolved
+layout. The fresh 35-package reverse run finishes 4,815 cases: 4,801 PASS,
+14 CLI FAIL and 40 skipped; normal cases are 4,117/4,117 and CLI is 684/698.
+The five new regressions and the same accepted Generic Match 151 IDs all pass.
+The failed-ID set remains the prior 14; no cause equivalence is inferred.
+The old latest 676/22 plus eight focused passes is superseded as a current
+description by this fresh complete run, while its actual results and SHAs remain
+in the earlier evidence. Full clean removes 141,989 files/191.7 GiB with zero
+source/status drift. The raw receipts retain the initial four-case pass and the
+full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-layout-presence.json).
