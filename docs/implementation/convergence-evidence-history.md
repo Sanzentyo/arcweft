@@ -14355,3 +14355,13 @@ Source b014d31e8976bb9f902f707c3b9f73c7851467a5、parent 837481f8a5cc63ec83f33e7
 前段Sema library checkは終了0。初回新規3件は2 PASS／1 FAILで、receiveはSemaより前のHIR stagingでInvalidArenaCommitとなった。parserがletのreceive初期値を旧LetActionReceiveStatementへ分類していたため、専用kind・AST marker・分類分岐を削除した。元の失敗を保持したまま、通常call／await／nested call grammarへ移行し、Syntax全736件と同じ新Sema3件の739／739 PASSを確認した。1366件はfilter外のSema caseでありignoredとはしない。4083入力・case／Source／test EXE差分0。Sourceと公開blob／full patch、既存12 tracked WIPの保持を照合し、元6 untracked WIPも保持している。
 
 raw 29 entries／1025165 bytes、SHA256 654638850bbab260a82873d87da1f8fb9b3585a2758de539fc54a48018c9ca19、全entry hash差分0。直近の全consumer検証Source7104の実測は前節・旧原本へ保持する。現状一覧の最新Sourceだけをこの前段checkpointへ更新し、既受入機能を未完了には戻していない。[入力・初回失敗・修復・公開照合](acceptance-evidence/task-action-channel-front.json)。
+
+## Actionキュー・保持・保存の中間checkpoint — 2026-11-03
+
+Source 23df0a9242d5baf528610f78563022300db99949、parent 1567c2427d47ae1a7bd347e08b224b9c9f9133b4、tree 4d22e639eabfe153d62e4703e6b8beed11b7b1f2、full patch SHA256 21d18f349d14d59b08bbc688e873dc97ae5da4ba8de9e09084976e34bd3e7139。元programのAction declaration／payload schemaを唯一のauthorityとして、キューのFIFO・異channel隔離・拒否時のpayload保持と、Native rollback／Product保持・visitor・checkpoint・version 1 inert saveを接続した。live queueのClone／Serdeや別channel catalogは導入していない。Productは元Sourceのrestore contextも保持する。
+
+初回mailbox catalogはfixtureの上限field名を誤りcompile101、修正後のmailbox3件は3 PASS。storage1 catalogはcheckpoint呼出し2か所とfixtureのlayout型変換2か所でcompile101、修正後のCore library全2245件は2242 PASS／3 FAIL（19.998s）。新Product fixtureの文字列表正規化を修正したstorage3の3件は、dense型indexの誤りで0 PASS／3 FAIL。actual semantic rowから選ぶfixtureへ修正したstorage4は同3 IDが3 PASS（0.043s）。full runから変わった入力は孤立した新Product test moduleだけで、production bytesは同じ。2242 PASSを再利用し、3件を再実行した証拠であって、2245件の一回の新規PASSとはしない。4087入力、Source／case／test EXE差分0。Core all-target／all-feature／locked check・Clippyとcanonical構造gateは終了0、警告は残る。
+
+これは保持境界の検証であり、ソースからのemit／receive・待機・キャンセル、RuntimePlan／Compiler利用側、53 package Core逆依存の最終実行は未完。全workspace compileや実送受信の受入は主張しない。既受入Generic MatchとAction declaration identityは維持する。旧現状の「Core保存復元は未移行」は、この新しい保持境界の実測に基づき現状一覧一か所で更新した。旧失敗・SHA・実測を削除していない。既存12 tracked／6 untracked WIPはhash照合して保持した。
+
+raw 59 entries／2780212 bytes、SHA256 4d807fea6c37cb9b8c5a4d81a2687d31929c2a1709645820af095a9350cd8864、entry hash差分0。[入力・全失敗・修復・構造判断・公開照合](acceptance-evidence/task-action-channel-storage.json)。

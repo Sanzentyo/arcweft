@@ -1,0 +1,1541 @@
+{
+  "version": 1,
+  "recordedAt": "2026-11-03T06:37:56.0251181Z",
+  "status": "intermediate-source-checkpoint",
+  "source": "23df0a9242d5baf528610f78563022300db99949",
+  "publication": {
+    "version": 1,
+    "commit": "23df0a9242d5baf528610f78563022300db99949",
+    "parent": "1567c2427d47ae1a7bd347e08b224b9c9f9133b4",
+    "tree": "4d22e639eabfe153d62e4703e6b8beed11b7b1f2",
+    "remote": "23df0a9242d5baf528610f78563022300db99949",
+    "paths": [
+      {
+        "path": "crates/arcweft-core/src/action.rs",
+        "blob": "3cc09a1463b09e5f31a4e36edc0e44d50525a035"
+      },
+      {
+        "path": "crates/arcweft-core/src/action/tests.rs",
+        "blob": "97e150dcc27b2d030312a4b1f772dc4a65e50591"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step.rs",
+        "blob": "3e79a2147d2fd9d9575f210d139c8f6496614eb0"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/checkpoint.rs",
+        "blob": "72d949088eacaa905cc07cd503e60a67c7cf9195"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+        "blob": "de1b1f06b4d828afbea23dc8f90d7c4170fe49df"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+        "blob": "37a6d160f24047672042f25d631538dc564e53b6"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+        "blob": "ae83caa501de76aeb45237ccdafa765eb50392a6"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+        "blob": "c4ed011765a46ede947f28777ab7c86d51110c80"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/actions.rs",
+        "blob": "782caca618019c1cedd6e5bb298b468ff9e4d3c4"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+        "blob": "c4511ccc605536982de1e94e1b8a03d9f79c19b5"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+        "blob": "d56301b3ea1b85af09dd572fc7590c1e165a2ea5"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+        "blob": "115a1f4c507c71ecaa12fe33548d7a68c34aafcb"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine.rs",
+        "blob": "9a5597fab6a73576e3f9f674ab6fa45f5adfdb1b"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/rollback.rs",
+        "blob": "b16c0a7590d0d827e1715b6c474582fe5fd732eb"
+      },
+      {
+        "path": "crates/arcweft-core/src/lib.rs",
+        "blob": "96ef2d7d5f8833d6d323dd161b088a1b3f05355e"
+      },
+      {
+        "path": "crates/arcweft-core/src/program_types.rs",
+        "blob": "8a90e48882ffe52f480af793117a61e13bff8b90"
+      },
+      {
+        "path": "crates/arcweft-core/src/program_types/action.rs",
+        "blob": "8ed3803279b6e5a5cde12310bd95d4c2f06ffc2c"
+      },
+      {
+        "path": "crates/arcweft-core/src/value/awbc_save.rs",
+        "blob": "1dd4ec550079828994d2af5dd500a1830be70a63"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "21d18f349d14d59b08bbc688e873dc97ae5da4ba8de9e09084976e34bd3e7139",
+    "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-03T06:37:42.9834248Z"
+  },
+  "scope": "Private bounded Action message storage integrated into Native rollback and Product retained admission, visitors, execution/session checkpoints and version-one inert save/restore. This is substrate validation, not source emit/receive execution acceptance.",
+  "ownership": "The selected immutable program type table remains the sole original Action declaration/payload schema authority. A queue owns semantic payload keys and values only. No parallel channel catalog, live Clone/Serde, fallback or legacy reader. Inert row validation precedes queue construction; complete retained admission precedes snapshot copying and live materialization. Product restores retain the original Source restore context.",
+  "preliminaryCoreCheck": {
+    "version": 1,
+    "base": "1567c2427d47ae1a7bd347e08b224b9c9f9133b4",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "arcweft-core",
+      "--lib",
+      "--all-features",
+      "--locked"
+    ],
+    "exitCode": 0,
+    "sourceInputs": 4085,
+    "sourceDrift": 0,
+    "startedAt": "2026-11-03T05:56:51.6854237Z",
+    "finishedAt": "2026-11-03T05:57:33.1772603Z"
+  },
+  "initialMailboxCompile": {
+    "version": 1,
+    "base": "1567c2427d47ae1a7bd347e08b224b9c9f9133b4",
+    "command": [
+      "nextest",
+      "list",
+      "-p",
+      "arcweft-core",
+      "--lib",
+      "--all-features",
+      "--locked",
+      "-E",
+      "test(=action::tests::original_action_messages_keep_fifo_and_isolate_other_channels) | test(=action::tests::refused_action_emission_preserves_the_candidate_and_mailbox_and_first_failure) | test(=action::tests::inert_action_messages_require_original_roles_before_restore_materialization)",
+      "--message-format",
+      "json"
+    ],
+    "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/action-channel-core-mailbox1-20261103.catalog.log",
+    "exitCode": 101,
+    "sourceInputs": 4086,
+    "sourceDrift": 0,
+    "startedAt": "2026-11-03T06:03:15.9571487Z",
+    "finishedAt": "2026-11-03T06:03:59.4774764Z"
+  },
+  "mailboxTests": {
+    "version": 1,
+    "base": "1567c2427d47ae1a7bd347e08b224b9c9f9133b4",
+    "run": "action-channel-core-mailbox2-20261103.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [   0.037s] 3 tests run: 3 passed, 2239 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 3,
+    "passed": 3,
+    "failed": 0,
+    "skipped": 2239,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4086,
+    "sourceDrift": 0,
+    "held": 12,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-11-03T06:07:16.2109836Z"
+  },
+  "initialStorageCompile": {
+    "version": 1,
+    "base": "1567c2427d47ae1a7bd347e08b224b9c9f9133b4",
+    "command": [
+      "nextest",
+      "list",
+      "-p",
+      "arcweft-core",
+      "--lib",
+      "--all-features",
+      "--locked",
+      "--message-format",
+      "json"
+    ],
+    "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/action-channel-storage1-20261103.catalog.log",
+    "exitCode": 101,
+    "sourceInputs": 4087,
+    "sourceDrift": 0,
+    "startedAt": "2026-11-03T06:29:13.6448139Z",
+    "finishedAt": "2026-11-03T06:29:37.8232847Z"
+  },
+  "fullCoreRun": {
+    "version": 1,
+    "base": "1567c2427d47ae1a7bd347e08b224b9c9f9133b4",
+    "run": "action-channel-storage2-20261103.runtime",
+    "actualExitCode": 100,
+    "summary": "Summary [  19.998s] 2245 tests run: 2242 passed, 3 failed, 0 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 2245,
+    "passed": 2242,
+    "failed": 3,
+    "skipped": 0,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4087,
+    "sourceDrift": 0,
+    "held": 12,
+    "failureSet": [
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "awbc::product_step::tests::actions::action_checkpoint_restores_consumed_and_added_messages_together_with_the_fiber"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "awbc::product_step::tests::actions::action_messages_survive_product_wire_save_and_cold_restore_in_order"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "awbc::product_step::tests::actions::forged_action_row_is_rejected_without_changing_the_live_session"
+      }
+    ],
+    "isPassingRun": false,
+    "recordedAt": "2026-11-03T06:31:35.4138137Z"
+  },
+  "fixtureStringRepairRun": {
+    "version": 1,
+    "base": "1567c2427d47ae1a7bd347e08b224b9c9f9133b4",
+    "run": "action-channel-storage3-20261103.runtime",
+    "actualExitCode": 100,
+    "summary": "Summary [   0.034s] 3 tests run: 0 passed, 3 failed, 2242 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 3,
+    "passed": 0,
+    "failed": 3,
+    "skipped": 2242,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4087,
+    "sourceDrift": 0,
+    "held": 12,
+    "failureSet": [
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "awbc::product_step::tests::actions::action_checkpoint_restores_consumed_and_added_messages_together_with_the_fiber"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "awbc::product_step::tests::actions::action_messages_survive_product_wire_save_and_cold_restore_in_order"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-core",
+        "test": "awbc::product_step::tests::actions::forged_action_row_is_rejected_without_changing_the_live_session"
+      }
+    ],
+    "isPassingRun": false,
+    "recordedAt": "2026-11-03T06:32:35.6713772Z"
+  },
+  "finalProductCases": {
+    "version": 1,
+    "base": "1567c2427d47ae1a7bd347e08b224b9c9f9133b4",
+    "run": "action-channel-storage4-20261103.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [   0.043s] 3 tests run: 3 passed, 2242 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 3,
+    "passed": 3,
+    "failed": 0,
+    "skipped": 2242,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4087,
+    "sourceDrift": 0,
+    "held": 12,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-11-03T06:33:53.9160394Z"
+  },
+  "reuse": {
+    "passedCases": 2242,
+    "from": "action-channel-storage2-20261103.runtime",
+    "changedInputs": [
+      "crates/arcweft-core/src/awbc/product_step/tests/actions.rs"
+    ],
+    "reason": "Only the isolated new Product fixture changed: canonical string-table normalization and actual type-row selection replaced erroneous dense index assumptions. Production bytes, feature/target selection and the other test inputs are identical. Three formerly failing IDs rerun and pass; this is not one fresh 2245-case pass.",
+    "ignored": 0,
+    "finalFilterExcluded": 2242
+  },
+  "repairs": [
+    "Mailbox fixture used a nonexistent max_collection_len field; corrected to max_sequence_items before mailbox2.",
+    "Storage1 compile101: two original Product checkpoint callers omitted the new queue, and two fixture layout conversions used the wrong Rust wrapper.",
+    "Storage2 new three cases failed canonical string ordering; storage3 then exposed incorrect dense runtime type indices in the fixture. Original failures retained; no production validation was weakened."
+  ],
+  "quality": [
+    {
+      "version": 1,
+      "base": "1567c2427d47ae1a7bd347e08b224b9c9f9133b4",
+      "command": [
+        "check",
+        "-p",
+        "arcweft-core",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4087,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-03T06:34:24.284804Z",
+      "finishedAt": "2026-11-03T06:35:33.6966064Z"
+    },
+    {
+      "version": 1,
+      "base": "1567c2427d47ae1a7bd347e08b224b9c9f9133b4",
+      "command": [
+        "clippy",
+        "-p",
+        "arcweft-core",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4087,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-03T06:35:34.1518256Z",
+      "finishedAt": "2026-11-03T06:36:49.5802736Z"
+    },
+    {
+      "version": 1,
+      "base": "1567c2427d47ae1a7bd347e08b224b9c9f9133b4",
+      "command": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking",
+        "--write",
+        "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/action-channel-storage-quality1-20261103.structure-report"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4087,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-03T06:36:50.0403431Z",
+      "finishedAt": "2026-11-03T06:36:54.6986985Z"
+    }
+  ],
+  "sourceInputs": 4087,
+  "sourceDrift": 0,
+  "reverseGraph": {
+    "version": 1,
+    "root": "arcweft-core",
+    "rootId": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0",
+    "packages": [
+      {
+        "name": "arcweft",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft#0.1.0"
+      },
+      {
+        "name": "arcweft-adapter-desktop",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-adapter-desktop#0.1.0"
+      },
+      {
+        "name": "arcweft-adapter-sema",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-adapter-sema#0.1.0"
+      },
+      {
+        "name": "arcweft-agent-mcp",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp#0.1.0"
+      },
+      {
+        "name": "arcweft-agent-mcp-client",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-mcp-client#0.1.0"
+      },
+      {
+        "name": "arcweft-agent-policy",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-policy#0.1.0"
+      },
+      {
+        "name": "arcweft-agent-protocol",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-protocol#0.1.0"
+      },
+      {
+        "name": "arcweft-agent-repl",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-repl#0.1.0"
+      },
+      {
+        "name": "arcweft-agent-runner",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-agent-runner#0.1.0"
+      },
+      {
+        "name": "arcweft-browser-bench",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-browser-bench#0.1.0"
+      },
+      {
+        "name": "arcweft-bundle",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-bundle#0.1.0"
+      },
+      {
+        "name": "arcweft-bundle-assets",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-bundle-assets#0.1.0"
+      },
+      {
+        "name": "arcweft-character-view",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-character-view#0.1.0"
+      },
+      {
+        "name": "arcweft-cli",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0"
+      },
+      {
+        "name": "arcweft-compiler",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-compiler#0.1.0"
+      },
+      {
+        "name": "arcweft-core",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-core#0.1.0"
+      },
+      {
+        "name": "arcweft-debug-model",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-debug-model#0.1.0"
+      },
+      {
+        "name": "arcweft-debug-sqlite",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-debug-sqlite#0.1.0"
+      },
+      {
+        "name": "arcweft-dialogue",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-dialogue#0.1.0"
+      },
+      {
+        "name": "arcweft-glyphon",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-glyphon#0.1.0"
+      },
+      {
+        "name": "arcweft-host-adapter",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-host-adapter#0.1.0"
+      },
+      {
+        "name": "arcweft-lang-jit-cranelift",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-lang-jit-cranelift#0.1.0"
+      },
+      {
+        "name": "arcweft-lang-sema",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-lang-sema#0.1.0"
+      },
+      {
+        "name": "arcweft-launch",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-launch#0.1.0"
+      },
+      {
+        "name": "arcweft-lsp",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-lsp#0.1.0"
+      },
+      {
+        "name": "arcweft-player-native",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-player-native#0.1.0"
+      },
+      {
+        "name": "arcweft-player-scene",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-player-scene#0.1.0"
+      },
+      {
+        "name": "arcweft-player-text-input",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-player-text-input#0.1.0"
+      },
+      {
+        "name": "arcweft-player-web",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-player-web#0.1.0"
+      },
+      {
+        "name": "arcweft-project",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-project#0.1.0"
+      },
+      {
+        "name": "arcweft-project-loader",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-project-loader#0.1.0"
+      },
+      {
+        "name": "arcweft-rag",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-rag#0.1.0"
+      },
+      {
+        "name": "arcweft-render-text",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-render-text#0.1.0"
+      },
+      {
+        "name": "arcweft-render-web",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-render-web#0.1.0"
+      },
+      {
+        "name": "arcweft-render-wgpu",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-render-wgpu#0.1.0"
+      },
+      {
+        "name": "arcweft-resource-manifest",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-resource-manifest#0.1.0"
+      },
+      {
+        "name": "arcweft-resource-model",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-resource-model#0.1.0"
+      },
+      {
+        "name": "arcweft-runtime-accelerator",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-accelerator#0.1.0"
+      },
+      {
+        "name": "arcweft-runtime-codegen",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-codegen#0.1.0"
+      },
+      {
+        "name": "arcweft-runtime-driver",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-driver#0.1.0"
+      },
+      {
+        "name": "arcweft-runtime-host",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-host#0.1.0"
+      },
+      {
+        "name": "arcweft-runtime-plan",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-plan#0.1.0"
+      },
+      {
+        "name": "arcweft-runtime-scheduler",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-runtime-scheduler#0.1.0"
+      },
+      {
+        "name": "arcweft-save",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-save#0.1.0"
+      },
+      {
+        "name": "arcweft-test",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-test#0.1.0"
+      },
+      {
+        "name": "arcweft-text-layout",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-text-layout#0.1.0"
+      },
+      {
+        "name": "arcweft-text-model",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-text-model#0.1.0"
+      },
+      {
+        "name": "arcweft-tooling",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-tooling#0.1.0"
+      },
+      {
+        "name": "arcweft-verify",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-verify#0.1.0"
+      },
+      {
+        "name": "arcweft-verify-lsp",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-lsp#0.1.0"
+      },
+      {
+        "name": "arcweft-verify-oxiz",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-oxiz#0.1.0"
+      },
+      {
+        "name": "arcweft-verify-z3",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-verify-z3#0.1.0"
+      },
+      {
+        "name": "arcweft-view",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-view#0.1.0"
+      }
+    ],
+    "count": 53,
+    "resolvedMetadata": "presentation-frame-driver.metadata.json",
+    "graphInputDrift": 0,
+    "graphInputs": [
+      {
+        "path": "Cargo.lock",
+        "bytes": 219155,
+        "sha256": "5041c441d62b2d90f1d9f8dfdc058c6778e2d5a24856a76760c1eb18ba5ef357"
+      },
+      {
+        "path": "Cargo.toml",
+        "bytes": 13015,
+        "sha256": "cc8cd0b1581030d3b3d1ac13f8bbedec6297148fc28324b50309cab4714d78db"
+      },
+      {
+        "path": "crates/arcweft-adapter-context/Cargo.toml",
+        "bytes": 471,
+        "sha256": "c1fa89cef41d4a3f9d6b913ab5d3128148af84bf5f5d5d3de8377353bcb7b6fa"
+      },
+      {
+        "path": "crates/arcweft-adapter-desktop/Cargo.toml",
+        "bytes": 564,
+        "sha256": "b0f68e7c7b22216b32dd14e8c21e8e58d9e188f392956142ffcbb41e2a7ee911"
+      },
+      {
+        "path": "crates/arcweft-adapter-metadata/Cargo.toml",
+        "bytes": 366,
+        "sha256": "ea548990289f194de5b881a4e153c35715863bc42c2be9ffbe94560bd2b9f057"
+      },
+      {
+        "path": "crates/arcweft-adapter-sema/Cargo.toml",
+        "bytes": 571,
+        "sha256": "51b2b951ce1108a30a6ee2b588778db089350fed409f58f3b9b5393df303a53b"
+      },
+      {
+        "path": "crates/arcweft-adt/Cargo.toml",
+        "bytes": 210,
+        "sha256": "eb4d514ee056867d74d1de2e0b4d3a7880bdc950890529ecbdce24ba7a2af2fd"
+      },
+      {
+        "path": "crates/arcweft-agent-mcp-client/Cargo.toml",
+        "bytes": 462,
+        "sha256": "2b2c046bf870a7b8786fcd070e3d198b8eaf11f4052189d9e9fc137d21355146"
+      },
+      {
+        "path": "crates/arcweft-agent-mcp/Cargo.toml",
+        "bytes": 758,
+        "sha256": "48723bbd679cc189d962f9c9ff1bd767fe0d237a3588db9a6db9ce80df1d3081"
+      },
+      {
+        "path": "crates/arcweft-agent-policy/Cargo.toml",
+        "bytes": 513,
+        "sha256": "f6ac162ae26ec94f1be8e1b3aa07976f6eb2c47667dac1be1f91395f6d7f70b4"
+      },
+      {
+        "path": "crates/arcweft-agent-protocol/Cargo.toml",
+        "bytes": 805,
+        "sha256": "f28584e17e3d107cd828a8849ec63ed226fd8f1456e87df8c1e40cd94b83da6a"
+      },
+      {
+        "path": "crates/arcweft-agent-repl/Cargo.toml",
+        "bytes": 1129,
+        "sha256": "f8466e6fd547dee4d8949144be1bf1892f5a695d6e7da7b0ee59dbf25ffe7428"
+      },
+      {
+        "path": "crates/arcweft-agent-runner/Cargo.toml",
+        "bytes": 731,
+        "sha256": "fc85d7388021cb1f849961b6823c121371b00e6dabc8290d8e2e92860fd888e1"
+      },
+      {
+        "path": "crates/arcweft-audio-codec/Cargo.toml",
+        "bytes": 616,
+        "sha256": "262f243913d939ae54d91f57e78b694eca13d85be93ec90a8c452ef832ac082a"
+      },
+      {
+        "path": "crates/arcweft-audio-core/Cargo.toml",
+        "bytes": 390,
+        "sha256": "d70e2b9a50dab58311c83c9f70edb27face75c36f41d78b3be845095066725a6"
+      },
+      {
+        "path": "crates/arcweft-audio-device-cpal/Cargo.toml",
+        "bytes": 1466,
+        "sha256": "63b920d334efa39b2ce239bf0144d55a1d9480692cca261d97dc157f733e3b72"
+      },
+      {
+        "path": "crates/arcweft-audio-mixer/Cargo.toml",
+        "bytes": 362,
+        "sha256": "1bb235c34d9d27e339cc15b2f6b76c8a9086c3d4f36ce1bbc41e5a550636d998"
+      },
+      {
+        "path": "crates/arcweft-browser-bench/Cargo.toml",
+        "bytes": 908,
+        "sha256": "3b11549ca3203d8c46a0546c186aa571d739c18ee26570be52f197723970c40d"
+      },
+      {
+        "path": "crates/arcweft-bundle-assets/Cargo.toml",
+        "bytes": 459,
+        "sha256": "977c683c5cbc208a87bd9c8ef99f5eaa4fe8051df0b8a81efa2f579388d3268a"
+      },
+      {
+        "path": "crates/arcweft-bundle/Cargo.toml",
+        "bytes": 1775,
+        "sha256": "abf5f084b5de2a010e6e0f62b5996afb880d647720f1d20c9d4c6cad8e707a5a"
+      },
+      {
+        "path": "crates/arcweft-character-psd/Cargo.toml",
+        "bytes": 386,
+        "sha256": "57e32f7c057d95c7cc50fa64592f606b8595daefba0a2ddf3dd4c56a9a198867"
+      },
+      {
+        "path": "crates/arcweft-character-view/Cargo.toml",
+        "bytes": 481,
+        "sha256": "cb4bf9950d6faff602cf4d112a577e8bafe77c40cfd9ec5cff1fbce889359983"
+      },
+      {
+        "path": "crates/arcweft-character/Cargo.toml",
+        "bytes": 443,
+        "sha256": "65d433bab694f47bf5af653beea78336d876a214b4baf9be226370b250fec0a4"
+      },
+      {
+        "path": "crates/arcweft-cli/Cargo.toml",
+        "bytes": 3655,
+        "sha256": "98233c14ea88afabb8b4bf8b10f0aadb30f21e052eff6cfb1871e0e92df56434"
+      },
+      {
+        "path": "crates/arcweft-codec-arrow/Cargo.toml",
+        "bytes": 366,
+        "sha256": "b4e37abbdebd430a205e6e0ab4ae566cb6a648eb866522a6c1b0c11ee5331f0e"
+      },
+      {
+        "path": "crates/arcweft-codec-avro/Cargo.toml",
+        "bytes": 372,
+        "sha256": "40be5a6999f6cec6fc23100d9c61bc2857f687cda25dfd04aeb23c889f4f7755"
+      },
+      {
+        "path": "crates/arcweft-codec-binary/Cargo.toml",
+        "bytes": 568,
+        "sha256": "469ca885fcdc7fff485fd76abfa668de187e7d0446b12d18ca8e980e55ead7fe"
+      },
+      {
+        "path": "crates/arcweft-codec-cbor/Cargo.toml",
+        "bytes": 351,
+        "sha256": "eb4a6fa90dc1f4b7dad7117fc754d24823a6dd846a6c26f9443201b72734a1c4"
+      },
+      {
+        "path": "crates/arcweft-codec-csv/Cargo.toml",
+        "bytes": 340,
+        "sha256": "3550c9fb328c0e547fce36e43a3e151640b183fe5030c956bc4b714a4f831776"
+      },
+      {
+        "path": "crates/arcweft-codec-json/Cargo.toml",
+        "bytes": 379,
+        "sha256": "32a8de49fb5cb258dd370783e7080454034a516b71c155c1a2d9775a199a15f2"
+      },
+      {
+        "path": "crates/arcweft-codec-msgpack/Cargo.toml",
+        "bytes": 316,
+        "sha256": "8f7ad1516850313150645abedd19381cda0448204d1efc9a47c088ceecf752ae"
+      },
+      {
+        "path": "crates/arcweft-codec-toml/Cargo.toml",
+        "bytes": 385,
+        "sha256": "63986cf4e70025ad54148b1f95ba42200dcee18566795e0175958ff6e836db96"
+      },
+      {
+        "path": "crates/arcweft-codec-yaml/Cargo.toml",
+        "bytes": 319,
+        "sha256": "18d271030aad8d31a317527a834c4b7ec09abb3209368471dae89a5e59efad54"
+      },
+      {
+        "path": "crates/arcweft-compiler/Cargo.toml",
+        "bytes": 1838,
+        "sha256": "c7c284f8902bcd3d36757fe562504bc499c07419a0e551ebb55bcc341d4420f2"
+      },
+      {
+        "path": "crates/arcweft-config/Cargo.toml",
+        "bytes": 275,
+        "sha256": "398af8609e81eee972ecb0ae0c745609b055777cfb20afdc37a0aac7ca587804"
+      },
+      {
+        "path": "crates/arcweft-content-policy/Cargo.toml",
+        "bytes": 313,
+        "sha256": "490da5d1803ac020e64b9ccccadd8f17e48584a0b3fc7352d583c5ae8162c810"
+      },
+      {
+        "path": "crates/arcweft-core/Cargo.toml",
+        "bytes": 1066,
+        "sha256": "3d9c65437451c702ab25edb02666ec24336cd5f9539fa3f0d59eae0ab5a0222b"
+      },
+      {
+        "path": "crates/arcweft-data-derive-support/Cargo.toml",
+        "bytes": 402,
+        "sha256": "ad81c2b2d33785a22491de7ba6c301e963b3aa6bf917f2a89dd32a524e3614f4"
+      },
+      {
+        "path": "crates/arcweft-data-derive/Cargo.toml",
+        "bytes": 500,
+        "sha256": "4cb2417d8ff076ab4bbdd66401274714b8ad0a2ffcdbd82d82905f072d6373cd"
+      },
+      {
+        "path": "crates/arcweft-data/Cargo.toml",
+        "bytes": 408,
+        "sha256": "c9fcaa6f84153224481e2fe106ec184301c928e951978b286411cc426d42bab6"
+      },
+      {
+        "path": "crates/arcweft-debug-model/Cargo.toml",
+        "bytes": 319,
+        "sha256": "d655dcb965ec0963c9022a0edd563f3f84b52b6ed19364cb05c539a58b74c4ad"
+      },
+      {
+        "path": "crates/arcweft-debug-sqlite/Cargo.toml",
+        "bytes": 401,
+        "sha256": "24a00ef6ad4a0f4cfdbe69ecadaa5da5a70179c4b7196da0accc5d0015e7927c"
+      },
+      {
+        "path": "crates/arcweft-desktop-contract/Cargo.toml",
+        "bytes": 310,
+        "sha256": "cdea30b4301e9d1bba019cc91931368e3eb2a4970cacfcdaf90cfc3eb81342c1"
+      },
+      {
+        "path": "crates/arcweft-desktop-host/Cargo.toml",
+        "bytes": 256,
+        "sha256": "90ae48d4f444e6a06d2cfe6363397933970f3106cd8d1c907ab9f82e8eabcb3a"
+      },
+      {
+        "path": "crates/arcweft-desktop-native/Cargo.toml",
+        "bytes": 1767,
+        "sha256": "be8c973953db7967e5c005017d6f4014272816dabbb553849b79760d3d18bcd9"
+      },
+      {
+        "path": "crates/arcweft-dialogue/Cargo.toml",
+        "bytes": 770,
+        "sha256": "af86042433bf6d4052b26f3ce8d8161dc9d5e83a948cdb2549dc6e5ff0e3237b"
+      },
+      {
+        "path": "crates/arcweft-glyphon/Cargo.toml",
+        "bytes": 484,
+        "sha256": "6dc8b193f3cb5097b14152161716bfc938f62474b3dd274fe44c1bd66ba95827"
+      },
+      {
+        "path": "crates/arcweft-host-adapter/Cargo.toml",
+        "bytes": 318,
+        "sha256": "f4f74414448a89a6b6c96f074745d6684970743e63a49c81844ffafc999f94f6"
+      },
+      {
+        "path": "crates/arcweft-http-codec/Cargo.toml",
+        "bytes": 313,
+        "sha256": "682c0a456c257ac432ee4626225fee6b7c84d97ffafa2f7bd348496afadbc90e"
+      },
+      {
+        "path": "crates/arcweft-id/Cargo.toml",
+        "bytes": 402,
+        "sha256": "26956290534245daa0422aa80c58535fa16a5288dffdec24e6b79967f3c411ab"
+      },
+      {
+        "path": "crates/arcweft-image/Cargo.toml",
+        "bytes": 378,
+        "sha256": "712fc6225922b77d7541deeb70abda0058bf2328673965251c57ff1325610c5f"
+      },
+      {
+        "path": "crates/arcweft-interaction-model/Cargo.toml",
+        "bytes": 387,
+        "sha256": "a7e203539fb85e01625755dc336a990a42262e8934eebc307c984599d3f67ff2"
+      },
+      {
+        "path": "crates/arcweft-lang-hir/Cargo.toml",
+        "bytes": 516,
+        "sha256": "295b4168ac38e9c3788feebcee3d145871d965e1beb9e63153f9aa2f9ec647ec"
+      },
+      {
+        "path": "crates/arcweft-lang-jit-cranelift/Cargo.toml",
+        "bytes": 649,
+        "sha256": "fc6571885fe6cbe3d76455a0cd0b7766dac0eafb71458b93dc87442e97946d34"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/Cargo.toml",
+        "bytes": 923,
+        "sha256": "47c3ca017e89395f4be79ce06b3a200fc3609ac37c51d4c87fa5ecdc44f2fd3b"
+      },
+      {
+        "path": "crates/arcweft-lang-syntax/Cargo.toml",
+        "bytes": 493,
+        "sha256": "2afe87428ada9770a6cb3f7f0c7cbe9301961eeb9b05c05945e05a544d95cb87"
+      },
+      {
+        "path": "crates/arcweft-launch/Cargo.toml",
+        "bytes": 574,
+        "sha256": "5a4e8f268fe1d77adce4c391e80215e531e8f53f094a6921cf5e89fcb8fac68a"
+      },
+      {
+        "path": "crates/arcweft-layout/Cargo.toml",
+        "bytes": 336,
+        "sha256": "e3c26ebbd36e6c1418e9bec42077ebf1cb5c93c0dbfa7a8680b55aaf3bce76dc"
+      },
+      {
+        "path": "crates/arcweft-lsp/Cargo.toml",
+        "bytes": 1769,
+        "sha256": "9adbaa1535ae4232d0c86f6bd4bdc74af87303fc4a77270d0f15af04e1666033"
+      },
+      {
+        "path": "crates/arcweft-manifest-model/Cargo.toml",
+        "bytes": 370,
+        "sha256": "619a0d8f7c720dd9157c75efa3320b5a7a379471db06b00a8c73c65f1510bdaa"
+      },
+      {
+        "path": "crates/arcweft-memory/Cargo.toml",
+        "bytes": 213,
+        "sha256": "d8fe9fa92305c08fb4b53458d2e23e4b732d71b23643c2bc6a5fdcf8ec3e963e"
+      },
+      {
+        "path": "crates/arcweft-need/Cargo.toml",
+        "bytes": 325,
+        "sha256": "6153ab36cd7d6ab8639e88cc37c501a55446fac993bc79331bdefa9677a65104"
+      },
+      {
+        "path": "crates/arcweft-player-native/Cargo.toml",
+        "bytes": 2516,
+        "sha256": "43875992fc090ce210fc3d142ab75371533d2289793e96fdb196585f3f7cb8e3"
+      },
+      {
+        "path": "crates/arcweft-player-scene/Cargo.toml",
+        "bytes": 1183,
+        "sha256": "ad800e09409d3690be930e096cdb5e450e3f0e8cad2b21f45eefa8632baea954"
+      },
+      {
+        "path": "crates/arcweft-player-text-input/Cargo.toml",
+        "bytes": 401,
+        "sha256": "857f6cd5833300f38617f7317042add6aab939d137af42a4c8395969f67774e6"
+      },
+      {
+        "path": "crates/arcweft-player-web/Cargo.toml",
+        "bytes": 1978,
+        "sha256": "608975f178ea4d53e95c8040074be326ab9526dace69ccc3c3a5ba8f661c9a9a"
+      },
+      {
+        "path": "crates/arcweft-presentation/Cargo.toml",
+        "bytes": 525,
+        "sha256": "c4a4921cdcaeb9e06272b8a3889dc4d4174187c3498f463b8a1b73ec7f61a1d4"
+      },
+      {
+        "path": "crates/arcweft-primitives/Cargo.toml",
+        "bytes": 256,
+        "sha256": "a00aeaba7d26eac5d984552eed283996951ae912beac16af19e9a176940ec7e6"
+      },
+      {
+        "path": "crates/arcweft-project-loader/Cargo.toml",
+        "bytes": 1308,
+        "sha256": "4b3f0320ffd6519d5670c6c4c1fc5c0b0c73882a0ac25992adba9e904da66b48"
+      },
+      {
+        "path": "crates/arcweft-project/Cargo.toml",
+        "bytes": 518,
+        "sha256": "4f60bec416f2daeb69c5770789987f51b37185d8a2583e10322f7eb64fc0aa7d"
+      },
+      {
+        "path": "crates/arcweft-rag/Cargo.toml",
+        "bytes": 257,
+        "sha256": "485e11c67baa26ebf02438664c2c1c913490e0eb2ae9f2eaa976af5e1f0c000f"
+      },
+      {
+        "path": "crates/arcweft-ref/Cargo.toml",
+        "bytes": 260,
+        "sha256": "756435e5c633d809d345b4a8734cef3fb78f949ee354b881dea717f170a73759"
+      },
+      {
+        "path": "crates/arcweft-render-text/Cargo.toml",
+        "bytes": 735,
+        "sha256": "1c54223ba6a0f5dc4bec8e15e755d53b3afc7e3cc6c94edf7d72a9b0510d9a16"
+      },
+      {
+        "path": "crates/arcweft-render-web/Cargo.toml",
+        "bytes": 499,
+        "sha256": "1f7afc441a36291c28234e6920b170ffeaae47558f26bfdbea8090c1dd26491f"
+      },
+      {
+        "path": "crates/arcweft-render-wgpu/Cargo.toml",
+        "bytes": 1056,
+        "sha256": "1e93150af4218eb3ebe5e7dad5bcb646bc864343fe331c11c863eeddb43ee75c"
+      },
+      {
+        "path": "crates/arcweft-resource-manifest/Cargo.toml",
+        "bytes": 599,
+        "sha256": "6551c8b18f994af912cdf4cc3c23283cd56ed6877b03f07ac5aa78bb50ac0023"
+      },
+      {
+        "path": "crates/arcweft-resource-model/Cargo.toml",
+        "bytes": 587,
+        "sha256": "dc488745726746d2a3708e9ae3d3762498d19ae5c3cdf85d966b524c367bc692"
+      },
+      {
+        "path": "crates/arcweft-rich-text-schema/Cargo.toml",
+        "bytes": 297,
+        "sha256": "b7e426a26e20225f162dcdf71dc5563216fb9180c7446fec894d28bd3336e1f2"
+      },
+      {
+        "path": "crates/arcweft-runtime-accelerator/Cargo.toml",
+        "bytes": 2102,
+        "sha256": "63e650c655d69f9003946960a0924b81eacc80ace4980745e8db27087fbc1ab3"
+      },
+      {
+        "path": "crates/arcweft-runtime-codegen/Cargo.toml",
+        "bytes": 361,
+        "sha256": "7bf1f9f68525db0039644e752403af469cd1b759acfbcebb527060e608ff2bed"
+      },
+      {
+        "path": "crates/arcweft-runtime-driver/Cargo.toml",
+        "bytes": 1180,
+        "sha256": "6089dd4bcacc09f96ab38ed446a1a7aa3d3076eff08e9bd9c991f84a6048f5d9"
+      },
+      {
+        "path": "crates/arcweft-runtime-host/Cargo.toml",
+        "bytes": 1347,
+        "sha256": "e38a8f282dc1de34c1307bc81aa1744225cf1c6585dbe7804a54f337a14c618b"
+      },
+      {
+        "path": "crates/arcweft-runtime-plan/Cargo.toml",
+        "bytes": 781,
+        "sha256": "ddbc53d77771880439596906c4f59537449efb36424afb535839a7f31a442df7"
+      },
+      {
+        "path": "crates/arcweft-runtime-scheduler/Cargo.toml",
+        "bytes": 276,
+        "sha256": "491a222e45c470d5639bbfacbeaf62073113e602175afc17cb7c6486035e5cad"
+      },
+      {
+        "path": "crates/arcweft-rust-abi-build/Cargo.toml",
+        "bytes": 301,
+        "sha256": "831ddc454401dba25dfd22bd0e2aacf72fba0dd1f8c3d9ba9b2b885f970e0bb6"
+      },
+      {
+        "path": "crates/arcweft-rust-abi-macros/Cargo.toml",
+        "bytes": 461,
+        "sha256": "a7378d1a69dedcd68332824bc30439c18aa7e3dff4aa853b456949f8ec92637e"
+      },
+      {
+        "path": "crates/arcweft-rust-abi/Cargo.toml",
+        "bytes": 399,
+        "sha256": "cb548aa5ac4ca59fea4ede57a57239d5d632c81f417a476479873cbfed66eb7c"
+      },
+      {
+        "path": "crates/arcweft-save/Cargo.toml",
+        "bytes": 509,
+        "sha256": "29136a6ec2564f916ed5f9df0bbf99a553d801cb2649f797dbad2815f6962b3c"
+      },
+      {
+        "path": "crates/arcweft-serde-bridge/Cargo.toml",
+        "bytes": 441,
+        "sha256": "970a35d6640d2bcda6c5746687c1d9a375ba01f5c9baf7ace094efa3ac13e1a4"
+      },
+      {
+        "path": "crates/arcweft-source/Cargo.toml",
+        "bytes": 414,
+        "sha256": "78c056664ca58f705e00d18a3f801481b671c1b5cb74f4ffc75a255c7826e2a6"
+      },
+      {
+        "path": "crates/arcweft-test/Cargo.toml",
+        "bytes": 550,
+        "sha256": "7426e2de75c2ae682bffe6c4884c2920225e9a963b4853ceb5da1248d7de4205"
+      },
+      {
+        "path": "crates/arcweft-text-layout/Cargo.toml",
+        "bytes": 517,
+        "sha256": "ff0f7e7295ba558fe5252623d99936ad7deb47b4dae35b95a7b811cd2ec8b321"
+      },
+      {
+        "path": "crates/arcweft-text-model/Cargo.toml",
+        "bytes": 790,
+        "sha256": "18f0f481941b7b8cb874212bb1d9e1702f12f702cee9a756d1765f32bcfe4f78"
+      },
+      {
+        "path": "crates/arcweft-tooling/Cargo.toml",
+        "bytes": 641,
+        "sha256": "815a42c42b381e304a5c5ca18aaa4ecbfe006526918da3c9487596c2b402cd96"
+      },
+      {
+        "path": "crates/arcweft-verify-lsp/Cargo.toml",
+        "bytes": 583,
+        "sha256": "3373ed4abfdc54cc679bbc9a081db75b9348130aaa29b4b4eabe4b0beb10b539"
+      },
+      {
+        "path": "crates/arcweft-verify-oxiz/Cargo.toml",
+        "bytes": 348,
+        "sha256": "2406f28520ef7737f58d8227c13556ffe45bdb81aa22af0358bf0f2bb387db80"
+      },
+      {
+        "path": "crates/arcweft-verify-z3/Cargo.toml",
+        "bytes": 297,
+        "sha256": "6ff99c7088d32bce5b22f9efcdb6ad8bec9c4c0b45a53a612c2f288dfe1e290c"
+      },
+      {
+        "path": "crates/arcweft-verify/Cargo.toml",
+        "bytes": 470,
+        "sha256": "474d57f0ca3bfe45828706daaaab7882cc28c7005d10226f40342c7c4104f426"
+      },
+      {
+        "path": "crates/arcweft-view/Cargo.toml",
+        "bytes": 616,
+        "sha256": "3ab59e15e40dd17ecc54618cd50f96fe713a5230d7a127d63d8550a024ef365d"
+      },
+      {
+        "path": "crates/arcweft/Cargo.toml",
+        "bytes": 645,
+        "sha256": "202f79748ca64b1165897317ea6311dce25823730f401c965589a03e5003fc4d"
+      },
+      {
+        "path": "vendor/glyphon/Cargo.toml",
+        "bytes": 1790,
+        "sha256": "7c0b81f441c7f63ea4cef99d864c11501f04263feced1dda37513803b4086357"
+      }
+    ],
+    "edgeSelection": "All edges retained in the pinned all-feature resolved metadata, including normal/dev/build and optional/target edges present there; no platform execution claim.",
+    "scope": "Core storage owner validated now; reverse consumer integration remains in the continuing Action execution migration."
+  },
+  "validationLimit": "Core owner gates only in this checkpoint. Source emit/receive, Compiler/RuntimePlan consumers, pending receive/cancellation, original operation/source capture authorization and their full 53-package Core reverse closure remain part of the continuing implementation. No full-workspace compile or actual source delivery claim.",
+  "structuralReview": {
+    "measurements": [
+      {
+        "path": "crates/arcweft-core/src/action.rs",
+        "owner": "arcweft-core",
+        "bytes": 8987,
+        "physicalLoc": 259,
+        "baseLoc": 0,
+        "classification": "production"
+      },
+      {
+        "path": "crates/arcweft-core/src/action/tests.rs",
+        "owner": "arcweft-core",
+        "bytes": 8155,
+        "physicalLoc": 241,
+        "baseLoc": 0,
+        "classification": "test"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step.rs",
+        "owner": "arcweft-core",
+        "bytes": 250323,
+        "physicalLoc": 6195,
+        "baseLoc": 6185,
+        "classification": "production"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/checkpoint.rs",
+        "owner": "arcweft-core",
+        "bytes": 8556,
+        "physicalLoc": 218,
+        "baseLoc": 213,
+        "classification": "production"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+        "owner": "arcweft-core",
+        "bytes": 194547,
+        "physicalLoc": 4566,
+        "baseLoc": 4562,
+        "classification": "production"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+        "owner": "arcweft-core",
+        "bytes": 182762,
+        "physicalLoc": 4297,
+        "baseLoc": 4261,
+        "classification": "production"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+        "owner": "arcweft-core",
+        "bytes": 120904,
+        "physicalLoc": 2918,
+        "baseLoc": 2914,
+        "classification": "production"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+        "owner": "arcweft-core",
+        "bytes": 320134,
+        "physicalLoc": 8145,
+        "baseLoc": 8144,
+        "classification": "test"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/actions.rs",
+        "owner": "arcweft-core",
+        "bytes": 6372,
+        "physicalLoc": 166,
+        "baseLoc": 0,
+        "classification": "test"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation.rs",
+        "owner": "arcweft-core",
+        "bytes": 36714,
+        "physicalLoc": 956,
+        "baseLoc": 948,
+        "classification": "test"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+        "owner": "arcweft-core",
+        "bytes": 25121,
+        "physicalLoc": 723,
+        "baseLoc": 721,
+        "classification": "test"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/traps.rs",
+        "owner": "arcweft-core",
+        "bytes": 15325,
+        "physicalLoc": 424,
+        "baseLoc": 422,
+        "classification": "test"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine.rs",
+        "owner": "arcweft-core",
+        "bytes": 238755,
+        "physicalLoc": 5919,
+        "baseLoc": 5908,
+        "classification": "production"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/rollback.rs",
+        "owner": "arcweft-core",
+        "bytes": 50033,
+        "physicalLoc": 1231,
+        "baseLoc": 1227,
+        "classification": "production"
+      },
+      {
+        "path": "crates/arcweft-core/src/lib.rs",
+        "owner": "arcweft-core",
+        "bytes": 507,
+        "physicalLoc": 31,
+        "baseLoc": 30,
+        "classification": "production"
+      },
+      {
+        "path": "crates/arcweft-core/src/program_types.rs",
+        "owner": "arcweft-core",
+        "bytes": 25510,
+        "physicalLoc": 657,
+        "baseLoc": 652,
+        "classification": "production"
+      },
+      {
+        "path": "crates/arcweft-core/src/program_types/action.rs",
+        "owner": "arcweft-core",
+        "bytes": 2433,
+        "physicalLoc": 52,
+        "baseLoc": 0,
+        "classification": "production"
+      },
+      {
+        "path": "crates/arcweft-core/src/value/awbc_save.rs",
+        "owner": "arcweft-core",
+        "bytes": 67195,
+        "physicalLoc": 1601,
+        "baseLoc": 1597,
+        "classification": "production"
+      }
+    ],
+    "disposition": "The private mailbox owns only bounded typed payload custody. Native Engine and Product executor own session state; their existing admission/rollback/save modules include that state under the same owner and allowance. Existing large execution and snapshot owners retain their responsibility; the cut adds no dependency, schema authority, source reconstruction or I/O. New behavior tests follow the mailbox and Product persistence owners."
+  },
+  "priorCompleteConsumerSource": "7104b200150b9b85b31cd686c48573b92b2028d3",
+  "genericMatch": "Accepted and published; unchanged acceptance.",
+  "originalWip": {
+    "tracked": 12,
+    "untracked": 6,
+    "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+    "untrackedHashDrift": 0
+  },
+  "raw": {
+    "path": "docs/implementation/acceptance-evidence/task-action-channel-storage.raw.zip",
+    "bytes": 2780212,
+    "sha256": "4d807fea6c37cb9b8c5a4d81a2687d31929c2a1709645820af095a9350cd8864",
+    "entries": [
+      {
+        "entry": "action-channel-core-mailbox1-20261103.catalog.json",
+        "bytes": 857,
+        "sha256": "93fb605b855db15d3413f6b929259fb7ee4fd5634ea911882abc9e1b7ddba00b"
+      },
+      {
+        "entry": "action-channel-core-mailbox1-20261103.catalog.log",
+        "bytes": 11129,
+        "sha256": "f0d8b7d8c5a2bb4e5cadc4e06c2bc4330e5a4e9550d85d68edb0695b4d90700e"
+      },
+      {
+        "entry": "action-channel-core-mailbox1-20261103.source-freeze.json",
+        "bytes": 798791,
+        "sha256": "8412fcd27f8221e740dcaadf5090308733ba86a09f4ac6f94e114fb2d05ea5b6"
+      },
+      {
+        "entry": "action-channel-core-mailbox2-20261103.binaries-before.json",
+        "bytes": 202,
+        "sha256": "f173637b10a1f451e928fb940ae4f72d8578c6deedebd4a1554c7d8a14d52722"
+      },
+      {
+        "entry": "action-channel-core-mailbox2-20261103.catalog.inventory.json",
+        "bytes": 572954,
+        "sha256": "e91b2a5a017840b8a6be98395a2607e1b025b300247a83f6c7ba7d829107f880"
+      },
+      {
+        "entry": "action-channel-core-mailbox2-20261103.catalog.json",
+        "bytes": 855,
+        "sha256": "dce695b09be1f9ccea8fd08e6ea8bd63d9d4065260418ca95a673cd9ce39c4a3"
+      },
+      {
+        "entry": "action-channel-core-mailbox2-20261103.catalog.log",
+        "bytes": 471109,
+        "sha256": "78f6356ca7fab7c4687f7db90e37fe0e9a32aa55f482130e876a07cb163c0a62"
+      },
+      {
+        "entry": "action-channel-core-mailbox2-20261103.runtime.json",
+        "bytes": 947,
+        "sha256": "1de0411162882b0aab32b59b43da7e904b40c253ef7cbb582090fee3c124fb9c"
+      },
+      {
+        "entry": "action-channel-core-mailbox2-20261103.runtime.log",
+        "bytes": 720349,
+        "sha256": "6045eab00c2c3da90acc3eee1266062e369fa9dbd8ac5458980f121a3bbeedd1"
+      },
+      {
+        "entry": "action-channel-core-mailbox2-20261103.runtime.terminal-audit.json",
+        "bytes": 620,
+        "sha256": "7ee8f600ae90a9d14b414115e98d3ea3259c0de45b1b0a039a1dff66a20ce26e"
+      },
+      {
+        "entry": "action-channel-core-mailbox2-20261103.source-freeze.json",
+        "bytes": 798791,
+        "sha256": "7141ad4de32bc812742129ba2a331beaf4020997a7bcd5d051fbf0df29951336"
+      },
+      {
+        "entry": "action-channel-core-owner1-20261103.check.json",
+        "bytes": 373,
+        "sha256": "db1f30274292b1119ae38ebacf27054ab048d008ab2e231486143170dd8a5a60"
+      },
+      {
+        "entry": "action-channel-core-owner1-20261103.check.log",
+        "bytes": 72157,
+        "sha256": "e6877bc34507e42f3c312b66779fd7b64f6ad0c7c2493780235823c37e4e2fee"
+      },
+      {
+        "entry": "action-channel-core-owner1-20261103.source-freeze.json",
+        "bytes": 797806,
+        "sha256": "c331155d9a8d1e26069a2cdbf46fb9b08561cb9bfea4c5218b358241ae122a6f"
+      },
+      {
+        "entry": "action-channel-storage-quality1-20261103-check.json",
+        "bytes": 367,
+        "sha256": "55413941b650d37b13b47ce742be5ffd015d7eda1d60b931ceb9a6f719552172"
+      },
+      {
+        "entry": "action-channel-storage-quality1-20261103-check.log",
+        "bytes": 83977,
+        "sha256": "bfa61428885df17d76786c61ec381bcbd2c285bd3618c89940db15e6dbb2f801"
+      },
+      {
+        "entry": "action-channel-storage-quality1-20261103-clippy.json",
+        "bytes": 368,
+        "sha256": "86785114e328a22a0f51f3f297b87e094bfd737e8d64c6dcbfd323f59cb43fc1"
+      },
+      {
+        "entry": "action-channel-storage-quality1-20261103-clippy.log",
+        "bytes": 4690987,
+        "sha256": "8f1888f00878743c00eafccea479dacf4154f3986f0497a26da4648c69463f8a"
+      },
+      {
+        "entry": "action-channel-storage-quality1-20261103-structure.json",
+        "bytes": 535,
+        "sha256": "83690a7603c4c20d4b29956c13d80ca250fba4be34d5df981cce8aa325e3e916"
+      },
+      {
+        "entry": "action-channel-storage-quality1-20261103-structure.log",
+        "bytes": 65614,
+        "sha256": "bcb4383c2babceaf6298ad7ded20553a1ee193e7ac2182af0ad831adf3872a9f"
+      },
+      {
+        "entry": "action-channel-storage.reverse-graph.json",
+        "bytes": 25039,
+        "sha256": "ab42b1ed6d0b224dc1f0dcf6aa91bcbac430fbf75e6433759a28d20bb92f7866"
+      },
+      {
+        "entry": "action-channel-storage1-20261103.catalog.json",
+        "bytes": 547,
+        "sha256": "4ba3bd9aaab303dac5889e08d7c4fb42d2a93f0c045c679acda8b8a7ec8f3a23"
+      },
+      {
+        "entry": "action-channel-storage1-20261103.catalog.log",
+        "bytes": 13684,
+        "sha256": "cc3cee624a61d5a1740a9a8e099c2a03fbbade70018ce1421a475b19c076f480"
+      },
+      {
+        "entry": "action-channel-storage1-20261103.source-freeze.json",
+        "bytes": 798989,
+        "sha256": "85bc5246b6d397feee23776c96c26df47ad2b2e44c258d2debe65266055bcb95"
+      },
+      {
+        "entry": "action-channel-storage2-20261103.binaries-before.json",
+        "bytes": 202,
+        "sha256": "8ee7c9dc7bc3853e24c5b2066af85b3d8cdc032dafd5544a89e202921716cdc5"
+      },
+      {
+        "entry": "action-channel-storage2-20261103.catalog.inventory.json",
+        "bytes": 571487,
+        "sha256": "b8e7cdcea1d459595213459159adaf5b5b1bf22eb311873418981ce2231b92e2"
+      },
+      {
+        "entry": "action-channel-storage2-20261103.catalog.json",
+        "bytes": 545,
+        "sha256": "0e8f7e335818fb2a92d14dcb70287cdef3e3deee338f3ae494b77f4a738c12f5"
+      },
+      {
+        "entry": "action-channel-storage2-20261103.catalog.log",
+        "bytes": 420141,
+        "sha256": "6f20b55d405edf13c5d49acbcbfa19a19377baf5773a8acd6e915c44f224b913"
+      },
+      {
+        "entry": "action-channel-storage2-20261103.runtime.json",
+        "bytes": 639,
+        "sha256": "07464e1c567908fd41dd3ec361d590efb6ab2bbbb1f7a4dbc7d3659aaae5453e"
+      },
+      {
+        "entry": "action-channel-storage2-20261103.runtime.log",
+        "bytes": 723970,
+        "sha256": "8715b43666eaf9c87f31bcdf488b3e36bb55e22b28f5de3af5384a2afb1980a0"
+      },
+      {
+        "entry": "action-channel-storage2-20261103.runtime.terminal-audit.json",
+        "bytes": 1226,
+        "sha256": "fdde318f3fb52c5ced745bef1113e3cf170ce45f1e34b7e8df27021dfc0de7fe"
+      },
+      {
+        "entry": "action-channel-storage2-20261103.source-freeze.json",
+        "bytes": 798989,
+        "sha256": "6a49bc3039a448654af48e019030b604170281d00095d1e1d74efcedce3f814b"
+      },
+      {
+        "entry": "action-channel-storage3-20261103.binaries-before.json",
+        "bytes": 202,
+        "sha256": "08f63cc0d2d6e62b66d7b9a599e69df6653f7c28e5769c8fe81cc884c84e475f"
+      },
+      {
+        "entry": "action-channel-storage3-20261103.catalog.inventory.json",
+        "bytes": 573732,
+        "sha256": "0323293a8898117abdf469d7cf411990037c843755eebdc4f0caae48ba40747e"
+      },
+      {
+        "entry": "action-channel-storage3-20261103.catalog.json",
+        "bytes": 607,
+        "sha256": "a417335c3d9576abd2cdbecb36216e1807a2226e050f0e9a2b1f0aa12ebfcaf6"
+      },
+      {
+        "entry": "action-channel-storage3-20261103.catalog.log",
+        "bytes": 471707,
+        "sha256": "be27767e729574d7b4b5e25cb64ea4561642af9bb8257c5168d1f5bf4c410bad"
+      },
+      {
+        "entry": "action-channel-storage3-20261103.runtime.json",
+        "bytes": 701,
+        "sha256": "1af1f9a7133bb598bd10e7f828a215742280a3a1a48df87438e240554e27c44e"
+      },
+      {
+        "entry": "action-channel-storage3-20261103.runtime.log",
+        "bytes": 723634,
+        "sha256": "4e55898529cdb2c7c395181424689bc62ea25c88abf854025b5dd89bde439f65"
+      },
+      {
+        "entry": "action-channel-storage3-20261103.runtime.terminal-audit.json",
+        "bytes": 1220,
+        "sha256": "043882f654e3409adfa53ccdc0c6b8d4e9aeeef06c665eaccb7ab4564a55fa90"
+      },
+      {
+        "entry": "action-channel-storage3-20261103.source-freeze.json",
+        "bytes": 798989,
+        "sha256": "18317bccd05b004cebe046bf70a9f380c9c3f24496e3da31d59a8b535246c258"
+      },
+      {
+        "entry": "action-channel-storage4-20261103.binaries-before.json",
+        "bytes": 202,
+        "sha256": "b32990870355e695227d6a6550f6fa537fa2c14ceefcda49cc41e375117e80c8"
+      },
+      {
+        "entry": "action-channel-storage4-20261103.catalog.inventory.json",
+        "bytes": 573732,
+        "sha256": "0323293a8898117abdf469d7cf411990037c843755eebdc4f0caae48ba40747e"
+      },
+      {
+        "entry": "action-channel-storage4-20261103.catalog.json",
+        "bytes": 607,
+        "sha256": "57a7b9230ec126f0a58c64ee751fd653b959292433969812c676661bfc768c73"
+      },
+      {
+        "entry": "action-channel-storage4-20261103.catalog.log",
+        "bytes": 471707,
+        "sha256": "133e40223dc601e410efea90a5c617ebb3ed25afd3995255db2e80eba73cb11d"
+      },
+      {
+        "entry": "action-channel-storage4-20261103.runtime.json",
+        "bytes": 699,
+        "sha256": "1a9532bf4b853360d4f76af7f37a5cea7e41b4bfc7034664ddd2919199bcf96d"
+      },
+      {
+        "entry": "action-channel-storage4-20261103.runtime.log",
+        "bytes": 721293,
+        "sha256": "f2702e14471a4dc326215d388742afa4a8534518036c55f45bdca2382405961c"
+      },
+      {
+        "entry": "action-channel-storage4-20261103.runtime.terminal-audit.json",
+        "bytes": 615,
+        "sha256": "976bedbb972573e2b068912bb186f2b9d9160516e002203305d4fb148a094f01"
+      },
+      {
+        "entry": "action-channel-storage4-20261103.source-freeze.json",
+        "bytes": 798989,
+        "sha256": "e8d24d3bdb94cb1bab788a2c2934421ab73170479aab0f122ae01b0eb39d4ac7"
+      },
+      {
+        "entry": "audit-nextest-final-result.ps1",
+        "bytes": 5266,
+        "sha256": "9d136f5ff9dbe80e524a8c9adb2f11fc96cce75046e3e1fe3e93ba73888cc0ab"
+      },
+      {
+        "entry": "checkpoint-action-channel-storage.message.txt",
+        "bytes": 1359,
+        "sha256": "5e0fd41821ce9e8a213e7b0dfd43fb71de5bcc823f5136e3609669b46db3c5dd"
+      },
+      {
+        "entry": "checkpoint-action-channel-storage.other.txt",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "checkpoint-action-channel-storage.owned.txt",
+        "bytes": 911,
+        "sha256": "e6b4a5f84bd9030492a74022c87c6f1fc48ed32c7f183370e8c23962de300b8f"
+      },
+      {
+        "entry": "checkpoint-action-channel-storage.pathspec",
+        "bytes": 893,
+        "sha256": "4ac863df222a78de9425856cc8797371a09fe78ad102b46f23bac944857339d1"
+      },
+      {
+        "entry": "checkpoint-action-channel-storage.prepared.json",
+        "bytes": 3680,
+        "sha256": "51aca277357a7d4084b916f7681d79e99de2068eabf85ab80c4cf1f15eda7a46"
+      },
+      {
+        "entry": "checkpoint-action-channel-storage.reviewed.patch",
+        "bytes": 51655,
+        "sha256": "21d18f349d14d59b08bbc688e873dc97ae5da4ba8de9e09084976e34bd3e7139"
+      },
+      {
+        "entry": "checkpoint-action-channel-storage.verified.json",
+        "bytes": 3082,
+        "sha256": "41c1b1c59457e44c3cbf7cd24a00608eb3b6d10a763ff9e905bf67a9bc646cd5"
+      },
+      {
+        "entry": "record-action-channel-storage.ps1",
+        "bytes": 12800,
+        "sha256": "a487c6d1acc7cb799c4a59d3d8091bd8ce972875cf23ce2a405dcb370fc7bd60"
+      },
+      {
+        "entry": "run-action-payload-quality.ps1",
+        "bytes": 1729,
+        "sha256": "ca098c1a52ef14e7f767eec068c3a20e5415e73ee4191d81ccbf9aafa8ac339a"
+      },
+      {
+        "entry": "run-presentation-projection-owner.ps1",
+        "bytes": 4134,
+        "sha256": "b60d753498997e4ba3b809b3721e9190ea1860971c755e6a1648a8e213403c58"
+      }
+    ],
+    "entryDrift": 0
+  }
+}
