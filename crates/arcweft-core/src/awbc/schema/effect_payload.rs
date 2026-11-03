@@ -30,6 +30,9 @@ pub enum AwbcEffectPayload {
         key: LifetimeRegistryKey,
         value_type: AwbcTypeId,
     },
+    EmitAction {
+        payload_type: AwbcTypeId,
+    },
 }
 
 /// One typed Duration source. Static packets (including Choice effects) have
@@ -109,7 +112,7 @@ impl TryFrom<(AwbcEffectKind, Vec<AwbcConstantId>)> for AwbcEffectPayload {
             AwbcEffectKind::Select => Self::Select(args),
             AwbcEffectKind::Break => Self::Break(args),
             AwbcEffectKind::Continue => Self::Continue(args),
-            AwbcEffectKind::Audio | AwbcEffectKind::RegistryWrite => {
+            AwbcEffectKind::Audio | AwbcEffectKind::RegistryWrite | AwbcEffectKind::EmitAction => {
                 return Err(AwbcEffectPayloadError { kind });
             }
         })
@@ -125,6 +128,9 @@ impl AwbcEffectPayload {
         match self {
             Self::RegistryWrite { .. } => {
                 Err(crate::effect::RuntimeEffectMaterializeError::RegistryContextRequired)
+            }
+            Self::EmitAction { .. } => {
+                Err(crate::effect::RuntimeEffectMaterializeError::ActionContextRequired)
             }
             Self::Wait(_)
             | Self::Audio(_)
@@ -171,6 +177,7 @@ impl AwbcEffectPayload {
             Self::Break(_) => AwbcEffectKind::Break,
             Self::Continue(_) => AwbcEffectKind::Continue,
             Self::RegistryWrite { .. } => AwbcEffectKind::RegistryWrite,
+            Self::EmitAction { .. } => AwbcEffectKind::EmitAction,
         }
     }
 
@@ -195,9 +202,10 @@ impl AwbcEffectPayload {
             | Self::Select(args)
             | Self::Break(args)
             | Self::Continue(args) => args,
-            Self::Wait(AwbcWaitDuration::Input) | Self::Audio(_) | Self::RegistryWrite { .. } => {
-                &[]
-            }
+            Self::Wait(AwbcWaitDuration::Input)
+            | Self::Audio(_)
+            | Self::RegistryWrite { .. }
+            | Self::EmitAction { .. } => &[],
         }
     }
 }

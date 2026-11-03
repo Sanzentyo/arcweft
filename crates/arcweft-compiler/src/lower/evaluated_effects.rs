@@ -50,6 +50,11 @@ pub(super) fn runtime_evaluated_effect_under(
                 fields: lower_fields(fields)?,
             }
         }
+        CheckedEvaluatedEffectOperation::EmitAction { payload } => {
+            RuntimeEvaluatedEffect::EmitAction {
+                payload: operand(payload)?,
+            }
+        }
         CheckedEvaluatedEffectOperation::Panic { message } => RuntimeEvaluatedEffect::Panic {
             message: operand(message)?,
         },

@@ -480,7 +480,7 @@ fn actual_activation_host_failure_retains_receipt_and_custody_until_unwind_is_ad
                         &mut crate::pure::VmRuntimePureCallBackend::default(),
                         &mut crate::awbc::product_step::ProductStepBudgets::default(),
                     );
-                    assert!(matches!(result, Err(ref error) if error.is_presentation_refusal()));
+                    assert!(matches!(result, Err(ref error) if error.is_execution_refusal()));
                     executor.dialogues.restore_transaction(transaction).unwrap();
                     assert_eq!(executor.snapshot().unwrap(), before);
                     assert_eq!(host_results.len(), 1);

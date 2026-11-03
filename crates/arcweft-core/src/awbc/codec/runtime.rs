@@ -1039,6 +1039,7 @@ impl Wire for AwbcEffectPlan {
                 writer.write_registry_key(key)?;
                 value_type.write_wire(writer)?;
             }
+            AwbcEffectPayload::EmitAction { payload_type } => payload_type.write_wire(writer)?,
             _ => writer.write_table(self.static_args())?,
         }
         self.resources.write_wire(writer)
@@ -1070,6 +1071,9 @@ impl Wire for AwbcEffectPlan {
             AwbcEffectKind::RegistryWrite => AwbcEffectPayload::RegistryWrite {
                 key: reader.read_registry_key()?,
                 value_type: AwbcTypeId::read_wire(reader)?,
+            },
+            AwbcEffectKind::EmitAction => AwbcEffectPayload::EmitAction {
+                payload_type: AwbcTypeId::read_wire(reader)?,
             },
             kind => AwbcEffectPayload::try_from((kind, Vec::<AwbcConstantId>::read_wire(reader)?))
                 .expect("non-context effect kind has a constant payload"),

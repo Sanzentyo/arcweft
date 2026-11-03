@@ -10,9 +10,56 @@ pub(super) struct VmExecutionResources<'execution> {
     pub(super) context: Option<&'execution VmExecutionContext>,
     pub(super) presentation:
         Option<&'execution mut Option<PresentationBanks<PresentationBody<RuntimePayload>>>>,
+    pub(super) actions: Option<&'execution mut crate::action::RuntimeActionMailbox>,
 }
 
 impl VmExecutionResources<'_> {
+    pub(super) fn emit_action(
+        &mut self,
+        program: &AwbcProgram,
+        fiber: &mut FiberState,
+        payload_type: crate::awbc::schema::AwbcTypeId,
+        args: &[AwbcRegisterId],
+    ) -> Result<(), VmError> {
+        use crate::value::RuntimeStoredValue;
+        let context = self.context.ok_or(VmError::ActionContextRequired)?;
+        let admitted = context
+            .admitted_program(program)
+            .map_err(|_| VmError::ActionContextRequired)?;
+        let mailbox = self
+            .actions
+            .as_deref_mut()
+            .ok_or(VmError::ActionContextRequired)?;
+        let [source] = args else {
+            return Err(VmError::Runtime(
+                "Action emission needs one original operand".into(),
+            ));
+        };
+        let ty = program
+            .runtime_types
+            .get(payload_type.index())
+            .ok_or(VmError::MissingExecutionContext)?
+            .semantic_identity();
+        let mut admission =
+            admitted.retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default());
+        // Admission and capacity allocation finish before the owning register
+        // can be moved. The VM retains this frame exclusively through commit.
+        let prepared = mailbox
+            .prepare_emit(
+                ty,
+                fiber.active_frame()?.register(*source)?.borrowed_value(),
+                &mut admission,
+            )
+            .map_err(|error| VmError::ActionAdmission(Box::new(error)))?;
+        let mut values = fiber
+            .active_frame_mut()?
+            .take_register_values(program, args)?;
+        prepared.commit(RuntimePayload::new(
+            values.pop().expect("the admitted unary operand"),
+        ));
+        Ok(())
+    }
+
     pub(super) fn remove_presentation_slot(
         &mut self,
         program: &AwbcProgram,

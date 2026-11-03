@@ -5057,6 +5057,23 @@ impl RuntimePlanBodyConstruction<'_> {
         // Boolean policies remain at their original conversion point: failure
         // cannot lower a later message or change the first diagnostic.
         match effect {
+            RuntimeEvaluatedEffectSeed::EmitAction { payload } => {
+                let ty = self.resolve_seed_type("Action payload", payload.ty())?;
+                let row = self.types.get(ty).expect("resolved original type");
+                if !matches!(row.projection(), RuntimePlanTypeProjection::Nominal { arguments, .. } if arguments.is_empty())
+                    || !row
+                        .nominal_declaration()
+                        .is_some_and(|declaration| declaration.action().is_some())
+                {
+                    return Err(RuntimePlanBuildError::InvalidTypeProjection {
+                        context: "Action payload",
+                        ty,
+                    });
+                }
+                Ok(RuntimeEffectExpr::EmitAction {
+                    payload: self.lower_expression(payload)?,
+                })
+            }
             RuntimeEvaluatedEffectSeed::Wait(duration) => {
                 let ty = self.resolve_seed_type("wait Duration operand", duration.ty())?;
                 self.require_projection("wait Duration operand", ty, |projection| {

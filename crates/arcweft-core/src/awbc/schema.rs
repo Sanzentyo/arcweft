@@ -3287,6 +3287,7 @@ awbc_u8_enum! {
         Break = 17,
         Continue = 18,
         RegistryWrite = 19,
+        EmitAction = 20,
     }
 }
 

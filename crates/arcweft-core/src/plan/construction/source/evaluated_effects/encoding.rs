@@ -211,6 +211,10 @@ fn emit(
             writer.expression(event, counts, resources, meter)?;
             writer.fields(fields, counts, resources, meter)?;
         }
+        Effect::EmitAction { payload } => {
+            writer.byte(12)?;
+            writer.expression(payload, counts, resources, meter)?;
+        }
         Effect::Panic(message) | Effect::Fail(message) | Effect::Bail(message) => {
             writer.byte(match effect {
                 Effect::Panic(_) => 4,

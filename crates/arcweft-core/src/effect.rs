@@ -85,6 +85,9 @@ pub enum RuntimeEffectExpr<Expression = RuntimeExpr> {
         event: Expression,
         fields: Vec<RuntimeEffectFieldExpr<Expression>>,
     },
+    EmitAction {
+        payload: Expression,
+    },
     Panic(Expression),
     Fail(Expression),
     Bail(Expression),
@@ -122,6 +125,8 @@ pub enum RuntimeEffectMaterializeError {
     WaitTargetNotDuration,
     #[error("registry writes require their original program and owning execution context")]
     RegistryContextRequired,
+    #[error("Action delivery requires its original program and owning execution context")]
+    ActionContextRequired,
     #[error(transparent)]
     Assignment(#[from] RuntimeAssignmentError),
 }
@@ -240,6 +245,7 @@ impl<Expression> RuntimeEffectExpr<Expression> {
                 visit(value);
             }
             Self::RegistryWrite { value, .. } => visit(value),
+            Self::EmitAction { payload } => visit(payload),
             Self::EmitEvent { event, fields } => {
                 visit(event);
                 for field in fields {
@@ -277,6 +283,7 @@ impl<Expression> RuntimeEffectExpr<Expression> {
                 vec![target, value]
             }
             Self::RegistryWrite { value, .. } => vec![value],
+            Self::EmitAction { payload } => vec![payload],
             Self::EmitEvent { event, fields } => {
                 let mut expressions = Vec::with_capacity(fields.len().saturating_add(1));
                 expressions.push(event);
@@ -327,6 +334,9 @@ impl<Expression> RuntimeEffectExpr<Expression> {
             Self::RegistryWrite { key, value } => RuntimeEffectExpr::RegistryWrite {
                 key,
                 value: map(value)?,
+            },
+            Self::EmitAction { payload } => RuntimeEffectExpr::EmitAction {
+                payload: map(payload)?,
             },
             Self::EmitEvent { event, fields } => RuntimeEffectExpr::EmitEvent {
                 event: map(event)?,
@@ -389,7 +399,10 @@ impl RuntimeEffectExpr {
     /// their owning execution context.
     pub fn host_descriptor(&self) -> Option<LineEffectRequest> {
         let descriptor = match self {
-            Self::Wait(_) | Self::Drop { .. } | Self::RegistryWrite { .. } => return None,
+            Self::Wait(_)
+            | Self::Drop { .. }
+            | Self::RegistryWrite { .. }
+            | Self::EmitAction { .. } => return None,
             Self::Log { level, fields, .. } => LineEffectRequest::Log(RuntimeLog {
                 level: level.clone(),
                 message: String::new(),
@@ -487,6 +500,9 @@ impl RuntimeEffectExpr {
             Self::RegistryWrite { .. } => {
                 return Err(RuntimeEffectMaterializeError::RegistryContextRequired);
             }
+            Self::EmitAction { .. } => {
+                return Err(RuntimeEffectMaterializeError::ActionContextRequired);
+            }
             Self::Assert {
                 guard,
                 message,
@@ -508,6 +524,7 @@ impl RuntimeEffectExpr {
             Self::RegistryWrite { .. } => {
                 Err(RuntimeEffectMaterializeError::RegistryContextRequired)
             }
+            Self::EmitAction { .. } => Err(RuntimeEffectMaterializeError::ActionContextRequired),
             Self::Wait(_)
             | Self::Log { .. }
             | Self::SignalWrite { .. }
@@ -787,6 +804,7 @@ impl RuntimeEffectExpr {
             Self::Drop { .. } => 8,
             Self::Assert { .. } => 9,
             Self::RegistryWrite { .. } => 10,
+            Self::EmitAction { .. } => 12,
         });
         match self {
             Self::Log { level, fields, .. } => {
@@ -834,6 +852,7 @@ impl RuntimeEffectExpr {
                 });
             }
             Self::Wait(_)
+            | Self::EmitAction { .. }
             | Self::SignalWrite { .. }
             | Self::MetricWrite { .. }
             | Self::Panic(_)

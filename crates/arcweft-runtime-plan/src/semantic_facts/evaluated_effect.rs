@@ -110,6 +110,9 @@ pub enum RuntimeEvaluatedEffect {
         event: RuntimeEvaluatedEffectOperandFact,
         fields: Box<[RuntimeEffectFieldFact]>,
     },
+    EmitAction {
+        payload: RuntimeEvaluatedEffectOperandFact,
+    },
     Panic {
         message: RuntimeEvaluatedEffectOperandFact,
     },
@@ -195,6 +198,7 @@ impl RuntimeEvaluatedEffect {
             Self::Panic { message } | Self::Fail { message } | Self::Bail { message } => {
                 visit(message.ty());
             }
+            Self::EmitAction { payload } => visit(payload.ty()),
             Self::Ensure { condition, message } => {
                 visit(condition.ty());
                 visit(message.ty());
@@ -302,6 +306,7 @@ fn validate_effect_operands(
         RuntimeEvaluatedEffect::Panic { message }
         | RuntimeEvaluatedEffect::Fail { message }
         | RuntimeEvaluatedEffect::Bail { message } => valid(message),
+        RuntimeEvaluatedEffect::EmitAction { payload } => valid(payload),
         RuntimeEvaluatedEffect::Ensure { condition, message } => {
             valid(condition)
                 && matches!(condition.ty().shape(), RuntimeTypeShape::Bool)

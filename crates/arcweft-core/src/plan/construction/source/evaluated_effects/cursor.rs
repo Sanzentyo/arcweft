@@ -13,6 +13,7 @@ pub(super) enum Kind<'a> {
     Metric,
     Registry(RegistryKeySource<'a>),
     Event,
+    Action,
     Panic,
     Fail,
     Bail,
@@ -128,6 +129,7 @@ impl<'a> Cursor<'a> {
                 (fields, field_count) = self.fields()?;
                 (Kind::Event, first)
             }
+            12 => (Kind::Action, self.frame()?),
             4 => (Kind::Panic, self.frame()?),
             5 => (Kind::Fail, self.frame()?),
             6 => (Kind::Bail, self.frame()?),

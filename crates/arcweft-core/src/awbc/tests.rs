@@ -7623,8 +7623,12 @@ fn fiber_checkpoint_and_serde_preserve_cleanup_stacks() {
 }
 
 #[test]
-fn typed_effect_payload_rejects_contextless_audio_and_registry_arguments() {
-    for kind in [AwbcEffectKind::Audio, AwbcEffectKind::RegistryWrite] {
+fn typed_effect_payload_rejects_contextless_audio_registry_and_action_arguments() {
+    for kind in [
+        AwbcEffectKind::Audio,
+        AwbcEffectKind::RegistryWrite,
+        AwbcEffectKind::EmitAction,
+    ] {
         assert_eq!(
             crate::awbc::schema::AwbcEffectPayload::try_from((kind, Vec::new())),
             Err(crate::awbc::schema::AwbcEffectPayloadError { kind }),

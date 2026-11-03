@@ -117,6 +117,10 @@ pub enum RuntimeProgramTypeError {
     NotActionPayload {
         semantic_type: RuntimeSemanticTypeId,
     },
+    #[error("Action payload {semantic_type:?} belongs to a different original declaration")]
+    ActionDeclarationMismatch {
+        semantic_type: RuntimeSemanticTypeId,
+    },
     #[error(
         "nominal role {semantic_type:?} expects identity {expected:?}, program declares {actual:?}"
     )]

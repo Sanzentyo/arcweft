@@ -231,12 +231,13 @@ fn suspend_fixture_dialogue(executor: &mut AwbcProductStepExecutor, captures: Ve
         executor.artifact_fingerprint,
         executor.program.clone(),
     );
-    let output = crate::awbc::vm::step_with_presentation(
+    let output = crate::awbc::vm::step_with_execution_resources(
         &executor.program,
         &mut executor.fiber,
         crate::awbc::vm::VmStepOptions { max_instructions },
         &context,
         &mut executor.presentation,
+        &mut executor.actions,
         &mut host,
     )
     .unwrap();
@@ -5489,6 +5490,7 @@ fn effect_mapping_table_covers_every_awbc_effect_kind() {
         (AwbcEffectKind::Break, true),
         (AwbcEffectKind::Continue, true),
         (AwbcEffectKind::RegistryWrite, false),
+        (AwbcEffectKind::EmitAction, false),
     ];
 
     assert_eq!(cases.map(|(kind, _)| kind).as_slice(), AwbcEffectKind::ALL);
@@ -7653,7 +7655,7 @@ fn await_many_product_program_with_thread(
 
 fn push_effect_plan(program: &mut AwbcProgram, kind: AwbcEffectKind) -> AwbcEffectPlanId {
     let static_arg_count = match kind {
-        AwbcEffectKind::Audio | AwbcEffectKind::RegistryWrite => 0,
+        AwbcEffectKind::Audio | AwbcEffectKind::RegistryWrite | AwbcEffectKind::EmitAction => 0,
         AwbcEffectKind::Call
         | AwbcEffectKind::SignalWrite
         | AwbcEffectKind::MetricWrite
@@ -7704,6 +7706,9 @@ fn push_effect_plan(program: &mut AwbcProgram, kind: AwbcEffectKind) -> AwbcEffe
                 Box::new([]),
             ),
             value_type: AwbcTypeId(0),
+        },
+        AwbcEffectKind::EmitAction => crate::awbc::schema::AwbcEffectPayload::EmitAction {
+            payload_type: AwbcTypeId(0),
         },
         kind => crate::awbc::schema::AwbcEffectPayload::try_from((kind, static_args))
             .expect("constant effect kind has a static payload"),

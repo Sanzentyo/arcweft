@@ -16,10 +16,12 @@ mod tests;
 #[derive(Debug, PartialEq)]
 struct ActionMessage<P> {
     payload_type: RuntimeSemanticTypeId,
+    declaration: crate::entry::RuntimeNominalDeclarationId,
     payload: P,
 }
 
-/// The mailbox owns values, never declarations or a second channel catalog.
+/// The mailbox owns values and original address claims. Declaration schemas
+/// remain in the selected program; this is not a second channel catalog.
 /// Global insertion order also preserves FIFO order within each channel.
 #[derive(Debug, PartialEq)]
 pub(crate) struct RuntimeActionMailbox<P = RuntimePayload> {
@@ -42,6 +44,7 @@ impl Clone for RuntimeActionMailbox<AwbcRuntimeValueSnapshot> {
                 .iter()
                 .map(|message| ActionMessage {
                     payload_type: message.payload_type,
+                    declaration: message.declaration.clone(),
                     payload: message.payload.clone(),
                 })
                 .collect(),
@@ -74,7 +77,7 @@ impl<P: RuntimeStoredValue> RuntimeActionMailbox<P> {
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         for message in &self.messages {
-            Self::validate_destination(message.payload_type, admission)?;
+            Self::validate_declaration(message.payload_type, &message.declaration, admission)?;
             admission.validate_owned_typed_borrowed(
                 message.payload.borrowed_value(),
                 message.payload_type,
@@ -106,6 +109,31 @@ impl<P: RuntimeStoredValue> RuntimeActionMailbox<P> {
         }
         result
     }
+
+    /// A retained address is a claim against the selected program, never an
+    /// alternate declaration catalog. Semantic IDs alone cannot authorize a
+    /// replacement that substituted an original Action declaration.
+    fn validate_declaration(
+        payload_type: RuntimeSemanticTypeId,
+        declaration: &crate::entry::RuntimeNominalDeclarationId,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        Self::validate_destination(payload_type, admission)?;
+        admission.validate_metadata(declaration)?;
+        let owner = admission
+            .program_owner()
+            .expect("destination admitted its owner");
+        if owner.types().action_declaration(payload_type)? != declaration {
+            let error: AwbcRuntimeValueSnapshotError =
+                crate::program_types::RuntimeProgramTypeError::ActionDeclarationMismatch {
+                    semantic_type: payload_type,
+                }
+                .into();
+            admission.retain_failure(error.clone());
+            return Err(error);
+        }
+        Ok(())
+    }
 }
 
 /// Failed emission retains the candidate payload and leaves the mailbox intact.
@@ -115,6 +143,25 @@ pub(crate) struct RuntimeActionEmitError {
     #[source]
     pub(crate) error: AwbcRuntimeValueSnapshotError,
     pub(crate) payload: RuntimePayload,
+}
+
+/// Exclusive queue reservation after borrowed value and capacity preflight.
+/// The execution owner transfers the very operand it admitted; it cannot run
+/// another queue operation while this reservation is held.
+pub(crate) struct PreparedActionEmission<'queue> {
+    mailbox: &'queue mut RuntimeActionMailbox,
+    payload_type: RuntimeSemanticTypeId,
+    declaration: crate::entry::RuntimeNominalDeclarationId,
+}
+
+impl PreparedActionEmission<'_> {
+    pub(crate) fn commit(self, payload: RuntimePayload) {
+        self.mailbox.messages.push_back(ActionMessage {
+            payload_type: self.payload_type,
+            declaration: self.declaration,
+            payload,
+        });
+    }
 }
 
 impl RuntimeActionMailbox {
@@ -130,7 +177,39 @@ impl RuntimeActionMailbox {
         payload: RuntimePayload,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<(), RuntimeActionEmitError> {
-        let prepared = (|| {
+        match self.prepare_emit(payload_type, payload.borrowed_value(), admission) {
+            Ok(prepared) => {
+                prepared.commit(payload);
+                Ok(())
+            }
+            Err(error) => Err(RuntimeActionEmitError { error, payload }),
+        }
+    }
+
+    pub(crate) fn prepare_emit(
+        &mut self,
+        payload_type: RuntimeSemanticTypeId,
+        payload: crate::value::RuntimeBorrowedValue<'_>,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<PreparedActionEmission<'_>, AwbcRuntimeValueSnapshotError> {
+        let declaration = self.preflight_emission_header(payload_type, admission)?;
+        admission.validate_owned_typed_borrowed(payload, payload_type)?;
+        Ok(PreparedActionEmission {
+            mailbox: self,
+            payload_type,
+            declaration,
+        })
+    }
+
+    /// Bounds the destination, retained group and prospective capacity before
+    /// the Native owner evaluates an operand. The later borrowed-value
+    /// preparation repeats this header check in the same original allowance.
+    pub(crate) fn preflight_emission_header(
+        &mut self,
+        payload_type: RuntimeSemanticTypeId,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<crate::entry::RuntimeNominalDeclarationId, AwbcRuntimeValueSnapshotError> {
+        let result = (|| {
             Self::validate_destination(payload_type, admission)?;
             let count = self
                 .messages
@@ -139,21 +218,22 @@ impl RuntimeActionMailbox {
                 .ok_or(AwbcRuntimeValueSnapshotError::RetainedCollectionLengthOverflow)?;
             admission.validate_metadata_collection(count)?;
             self.admit_messages(admission)?;
-            admission.validate_owned_typed_borrowed(payload.borrowed_value(), payload_type)?;
             self.messages.try_reserve(1).map_err(|_| {
                 AwbcRuntimeValueSnapshotError::RetainedCollectionAllocation { count }
             })?;
-            Ok::<(), AwbcRuntimeValueSnapshotError>(())
+            let owner = admission
+                .program_owner()
+                .expect("destination admitted its owner")
+                .clone();
+            let declaration = owner.types().action_declaration(payload_type)?;
+            admission.validate_metadata(declaration)?;
+            Ok::<_, AwbcRuntimeValueSnapshotError>(declaration.clone())
         })();
-        if let Err(error) = prepared {
+        let declaration = result.map_err(|error| {
             admission.retain_failure(error.clone());
-            return Err(RuntimeActionEmitError { error, payload });
-        }
-        self.messages.push_back(ActionMessage {
-            payload_type,
-            payload,
-        });
-        Ok(())
+            error
+        })?;
+        Ok(declaration)
     }
 
     /// Validates the complete retained group before moving the first matching
@@ -192,6 +272,7 @@ impl RuntimeActionMailbox {
                 .map(|message| {
                     Ok(ActionMessage {
                         payload_type: message.payload_type,
+                        declaration: message.declaration.clone(),
                         payload: AwbcRuntimeValueSnapshot::from_admitted_runtime_value(
                             message.payload.value(),
                             owner,
@@ -206,19 +287,24 @@ impl RuntimeActionMailbox {
 impl RuntimeActionMailbox<AwbcRuntimeValueSnapshot> {
     /// Inert transport has no authority to activate a payload.
     pub(crate) fn from_rows(
-        rows: Vec<(RuntimeSemanticTypeId, AwbcRuntimeValueSnapshot)>,
+        rows: Vec<(
+            RuntimeSemanticTypeId,
+            crate::entry::RuntimeNominalDeclarationId,
+            AwbcRuntimeValueSnapshot,
+        )>,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
         admission.validate_metadata_collection(rows.len())?;
-        for (payload_type, payload) in &rows {
-            Self::validate_destination(*payload_type, admission)?;
+        for (payload_type, declaration, payload) in &rows {
+            Self::validate_declaration(*payload_type, declaration, admission)?;
             admission.validate_owned_typed_borrowed(payload.borrowed_value(), *payload_type)?;
         }
         Ok(Self {
             messages: rows
                 .into_iter()
-                .map(|(payload_type, payload)| ActionMessage {
+                .map(|(payload_type, declaration, payload)| ActionMessage {
                     payload_type,
+                    declaration,
                     payload,
                 })
                 .collect(),
@@ -228,10 +314,20 @@ impl RuntimeActionMailbox<AwbcRuntimeValueSnapshot> {
     /// Only called after the enclosing image's complete retained preflight.
     pub(crate) fn snapshot_rows_admitted(
         &self,
-    ) -> Vec<(RuntimeSemanticTypeId, AwbcRuntimeValueSnapshot)> {
+    ) -> Vec<(
+        RuntimeSemanticTypeId,
+        crate::entry::RuntimeNominalDeclarationId,
+        AwbcRuntimeValueSnapshot,
+    )> {
         self.messages
             .iter()
-            .map(|message| (message.payload_type, message.payload.clone()))
+            .map(|message| {
+                (
+                    message.payload_type,
+                    message.declaration.clone(),
+                    message.payload.clone(),
+                )
+            })
             .collect()
     }
 
@@ -248,6 +344,7 @@ impl RuntimeActionMailbox<AwbcRuntimeValueSnapshot> {
                 .map(|message| {
                     Ok(ActionMessage {
                         payload_type: message.payload_type,
+                        declaration: message.declaration,
                         payload: RuntimePayload::new(
                             message.payload.into_admitted_runtime_value(context)?,
                         ),

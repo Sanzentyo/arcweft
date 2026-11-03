@@ -438,6 +438,7 @@ pub struct AwbcProductExecutorSaveSnapshot {
     pub need_producers: AwbcNeedProducerRegistrySaveSnapshot,
     pub actions: Vec<(
         crate::pattern::RuntimeSemanticTypeId,
+        crate::entry::RuntimeNominalDeclarationId,
         AwbcRuntimeValueSnapshot,
     )>,
     pub queued_task_events: VecDeque<AwbcProductTaskEventSaveSnapshot>,
@@ -2862,7 +2863,7 @@ impl AwbcProductExecutorSaveSnapshot {
             banks.visit_value_roots(visit)?;
         }
         self.fiber.visit_saved_value_roots(&mut *visit)?;
-        for (_, payload) in &self.actions {
+        for (_, _, payload) in &self.actions {
             visit(payload)?;
         }
         for child in &self.child_fibers {

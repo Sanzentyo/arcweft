@@ -1492,7 +1492,7 @@ impl super::AwbcProductStepExecutor {
                     trap,
                 )
             } else {
-                crate::awbc::vm::step_with_presentation(
+                crate::awbc::vm::step_with_execution_resources(
                     &self.program,
                     candidate.as_mut().expect("activation fiber remains owned"),
                     VmStepOptions {
@@ -1500,6 +1500,7 @@ impl super::AwbcProductStepExecutor {
                     },
                     &context,
                     &mut self.presentation,
+                    &mut self.actions,
                     &mut host,
                 )
             };

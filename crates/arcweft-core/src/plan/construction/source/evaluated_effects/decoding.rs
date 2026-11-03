@@ -65,6 +65,7 @@ impl PreparedRuntimeEvaluatedEffectSource<'_> {
                     event: first,
                     fields,
                 },
+                Kind::Action => Effect::EmitAction { payload: first },
                 Kind::Panic => Effect::Panic(first),
                 Kind::Fail => Effect::Fail(first),
                 Kind::Bail => Effect::Bail(first),

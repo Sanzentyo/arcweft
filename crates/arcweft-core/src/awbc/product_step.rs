@@ -56,8 +56,8 @@ use crate::awbc::schema::{
 };
 use crate::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext};
 use crate::awbc::vm::{
-    VmExecutionContext, VmExit, VmObservation, VmStepOptions, step_with_host_context,
-    step_with_presentation,
+    VmExecutionContext, VmExit, VmObservation, VmStepOptions, step_with_execution_resources,
+    step_with_host_context,
 };
 use crate::engine::{
     AwaitState, ChoiceState, FlowExit, FlowFiber, FlowFiberId, FlowFiberOwner, FlowFiberStatus,
@@ -315,9 +315,9 @@ impl From<crate::presentation::RuntimeCommandQueueError> for ProductStepError {
 
 impl ProductStepError {
     /// A refused custody transition must retain its continuation for retry.
-    fn is_presentation_refusal(&self) -> bool {
+    fn is_execution_refusal(&self) -> bool {
         if let Self::Vm(error) = self {
-            return error.is_presentation_refusal();
+            return error.is_execution_refusal();
         }
         matches!(
             self,
@@ -2843,7 +2843,7 @@ impl AwbcProductStepExecutor {
             fallback_stats: &mut candidate_stats,
             context: &context,
         };
-        match step_with_presentation(
+        match step_with_execution_resources(
             &self.program,
             &mut self.fiber,
             VmStepOptions {
@@ -2851,6 +2851,7 @@ impl AwbcProductStepExecutor {
             },
             &context,
             &mut self.presentation,
+            &mut self.actions,
             &mut host,
         ) {
             Ok(mut vm_output) => {
@@ -2985,7 +2986,7 @@ impl AwbcProductStepExecutor {
             &self.program,
         ) {
             self.fail_with_error(ProductStepError::Fiber(restore_error), output);
-        } else if error.is_presentation_refusal() {
+        } else if error.is_execution_refusal() {
             // Custody refusal leaves the original continuation retryable. A
             // second terminal transition would repeat the refused unwind.
             self.record_error(error, output);
@@ -3409,7 +3410,7 @@ impl AwbcProductStepExecutor {
         } else {
             terminal_exit.map_or_else(
                 || {
-                    step_with_presentation(
+                    step_with_execution_resources(
                         &self.program,
                         &mut child.fiber,
                         VmStepOptions {
@@ -3417,6 +3418,7 @@ impl AwbcProductStepExecutor {
                         },
                         &context,
                         &mut self.presentation,
+                        &mut self.actions,
                         &mut host,
                     )
                 },
@@ -3433,7 +3435,7 @@ impl AwbcProductStepExecutor {
             Ok(vm_output) => vm_output,
             Err(error) => {
                 let error = ProductStepError::Vm(error);
-                if error.is_presentation_refusal() {
+                if error.is_execution_refusal() {
                     if self.rollback_selected_child_step(
                         child,
                         checkpoint,
@@ -4848,7 +4850,7 @@ impl AwbcProductStepExecutor {
                 budgets,
             ) {
                 Ok(progress) => progress,
-                Err(error) if error.is_presentation_refusal() => {
+                Err(error) if error.is_execution_refusal() => {
                     if let Err(restore_error) = self.dialogues.restore_transaction(transaction) {
                         self.fail_with_error(restore_error.into(), output);
                     } else {
@@ -5235,7 +5237,7 @@ impl AwbcProductStepExecutor {
                             line::ProductLineTaskCommit::Commands,
                         ) {
                             Ok(prepared) => prepared,
-                            Err(error) if error.is_presentation_refusal() => {
+                            Err(error) if error.is_execution_refusal() => {
                                 drop(transaction);
                                 drop(command_batch);
                                 if let Err(restore_error) = publication_checkpoint
@@ -5292,7 +5294,7 @@ impl AwbcProductStepExecutor {
                             line::ProductLineTaskCommit::Publication(publication),
                         ) {
                             Ok(prepared) => prepared,
-                            Err(error) if error.is_presentation_refusal() => {
+                            Err(error) if error.is_execution_refusal() => {
                                 drop(transaction);
                                 drop(command_batch);
                                 if let Err(restore_error) = publication_checkpoint

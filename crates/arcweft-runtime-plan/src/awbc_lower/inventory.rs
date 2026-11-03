@@ -1626,6 +1626,17 @@ impl AwbcInventory {
                 resources: Vec::new(),
             }));
         }
+        if let RuntimeEffectExpr::EmitAction { payload } = effect {
+            let payload_type = self.plan_type(payload.ty())?;
+            let effect_set = self.intern_effect_set(declared_effects);
+            let signature = self.intern_signature(vec![payload_type], None, effect_set);
+            return Some(self.intern_effect_plan(AwbcEffectPlan {
+                signature,
+                capability: None,
+                payload: arcweft_core::awbc::schema::AwbcEffectPayload::EmitAction { payload_type },
+                resources: Vec::new(),
+            }));
+        }
         if let RuntimeEffectExpr::RegistryWrite { key, value } = effect {
             let Some(value_type) = self.plan_type(value.ty()) else {
                 self.diagnostic(AwbcLowerDiagnostic::error(

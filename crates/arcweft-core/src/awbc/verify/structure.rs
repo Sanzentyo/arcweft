@@ -1881,6 +1881,38 @@ fn verify_effect_payload_shape(
                 ))
             }
         }
+        AwbcEffectKind::EmitAction => {
+            let AwbcEffectPayload::EmitAction { payload_type } = effect.payload else {
+                unreachable!("kind follows the typed payload");
+            };
+            check_index(
+                program.runtime_types.len(),
+                payload_type.0,
+                "runtime_types",
+                &format!("effect plan {effect_index}"),
+            )?;
+            let semantic = program.runtime_types[payload_type.index()].semantic_identity();
+            let signature = &program.signatures[effect.signature.index()];
+            let declared = &program.effect_sets[signature.effects.index()];
+            if RuntimeProgramTypes::Awbc(program)
+                .action_declaration(semantic)
+                .is_err()
+                || signature.params.as_slice() != [payload_type]
+                || signature.result.is_some()
+                || effect.capability.is_some()
+                || !declared.effects.iter().any(|id| {
+                    EffectId::parse(&program.strings[id.index()])
+                        .is_ok_and(|effect| effect.covers(&EffectId::action_emit()))
+                })
+            {
+                return Err(malformed_effect_payload(
+                    effect_index,
+                    effect.kind(),
+                    "Action emission requires its original Action payload, exact unary signature and engine action.emit effect",
+                ));
+            }
+            Ok(())
+        }
         AwbcEffectKind::RegistryWrite => {
             let AwbcEffectPayload::RegistryWrite { key, value_type } = &effect.payload else {
                 unreachable!("effect kind is derived from its payload");

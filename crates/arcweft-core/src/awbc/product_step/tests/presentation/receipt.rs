@@ -325,7 +325,7 @@ fn fixture(
     ))));
     let context =
         VmExecutionContext::for_program(executor.artifact_fingerprint, executor.program.clone());
-    let output = crate::awbc::vm::step_with_presentation(
+    let output = crate::awbc::vm::step_with_execution_resources(
         &executor.program,
         &mut executor.child_fibers[index].fiber,
         VmStepOptions {
@@ -333,6 +333,7 @@ fn fixture(
         },
         &context,
         &mut executor.presentation,
+        &mut executor.actions,
         &mut host,
     )
     .unwrap();

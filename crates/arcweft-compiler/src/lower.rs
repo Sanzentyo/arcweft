@@ -10620,6 +10620,7 @@ fn runtime_intrinsic(
         | BuiltinCallableId::Cos
         | BuiltinCallableId::Vector { .. }
         | BuiltinCallableId::Capability(_)
-        | BuiltinCallableId::Reduction(_) => return None,
+        | BuiltinCallableId::Reduction(_)
+        | BuiltinCallableId::Action(_) => return None,
     })
 }

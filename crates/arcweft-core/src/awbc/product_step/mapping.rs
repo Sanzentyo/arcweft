@@ -95,6 +95,12 @@ impl AwbcProgram {
             RuntimeAssertionGuardId::try_from_bytes(bytes).ok()
         };
         let mapped = match plan.kind() {
+            AwbcEffectKind::EmitAction => {
+                return MappedEffect::Unsupported(RuntimeDiagnostic::categorized(
+                    RuntimeDiagnosticCategory::Internal,
+                    "Action delivery requires its original program and execution context",
+                ));
+            }
             AwbcEffectKind::RegistryWrite => {
                 return MappedEffect::Unsupported(RuntimeDiagnostic::categorized(
                     RuntimeDiagnosticCategory::Internal,

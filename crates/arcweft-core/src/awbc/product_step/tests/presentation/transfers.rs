@@ -301,7 +301,7 @@ fn awbc_handle_retirement_capacity_rejects_before_moving_its_register_or_bank() 
             executor.artifact_fingerprint,
             executor.program.clone(),
         );
-        let error = crate::awbc::vm::step_with_presentation(
+        let error = crate::awbc::vm::step_with_execution_resources(
             &executor.program,
             &mut executor.fiber,
             crate::awbc::vm::VmStepOptions {
@@ -309,6 +309,7 @@ fn awbc_handle_retirement_capacity_rejects_before_moving_its_register_or_bank() 
             },
             &context,
             &mut executor.presentation,
+            &mut executor.actions,
             &mut crate::awbc::vm::RejectingVmHost,
         )
         .unwrap_err();

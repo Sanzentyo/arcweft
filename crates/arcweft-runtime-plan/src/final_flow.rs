@@ -9783,6 +9783,9 @@ fn lower_evaluated_effect(
         RuntimeEvaluatedEffect::Panic { message } => {
             RuntimeEvaluatedEffectSeed::Panic(lower(message)?)
         }
+        RuntimeEvaluatedEffect::EmitAction { payload } => RuntimeEvaluatedEffectSeed::EmitAction {
+            payload: lower(payload)?,
+        },
         RuntimeEvaluatedEffect::Fail { message } => {
             RuntimeEvaluatedEffectSeed::Fail(lower(message)?)
         }

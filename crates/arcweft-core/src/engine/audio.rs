@@ -22,6 +22,12 @@ mod tests;
 #[derive(Clone, Debug, Error, PartialEq)]
 pub(super) enum RuntimeEffectExecutionError {
     #[error(transparent)]
+    Admission(#[from] crate::value::AwbcRuntimeValueSnapshotError),
+    #[error("Action execution checkpoint failed: {message}")]
+    Checkpoint { message: String },
+    #[error("{cause}; Action rollback failed: {message}")]
+    Rollback { cause: Box<Self>, message: String },
+    #[error(transparent)]
     Evaluation(#[from] RuntimeEvalError),
     #[error(transparent)]
     Materialization(#[from] RuntimeEffectMaterializeError),

@@ -365,6 +365,10 @@ pub enum VmError {
     MissingString(AwbcStringId),
     #[error("AWBC instruction requires an artifact-bound VM execution context")]
     MissingExecutionContext,
+    #[error("Action delivery requires its original program and session mailbox")]
+    ActionContextRequired,
+    #[error("Action delivery admission failed: {0}")]
+    ActionAdmission(Box<crate::value::AwbcRuntimeValueSnapshotError>),
     #[error("AWBC pattern {0:?} does not exist")]
     MissingPattern(AwbcPatternId),
     #[error("AWBC runtime type {0:?} does not exist")]
@@ -530,6 +534,7 @@ pub(crate) fn trap_fiber(
             &mut VmExecutionResources {
                 context: None,
                 presentation: None,
+                actions: None,
             },
             trap.code,
             trap.message,
@@ -551,7 +556,7 @@ pub fn step_with_host(
     options: VmStepOptions,
     host: &mut impl VmHost,
 ) -> Result<VmStepOutput, VmError> {
-    step_with_host_context_optional(program, fiber, options, None, None, None, host)
+    step_with_host_context_optional(program, fiber, options, None, None, None, None, host)
 }
 
 /// Executes a bounded AWBC slice with the exact artifact context used for
@@ -563,7 +568,16 @@ pub fn step_with_host_context(
     context: &VmExecutionContext,
     host: &mut impl VmHost,
 ) -> Result<VmStepOutput, VmError> {
-    step_with_host_context_optional(program, fiber, options, Some(context), None, None, host)
+    step_with_host_context_optional(
+        program,
+        fiber,
+        options,
+        Some(context),
+        None,
+        None,
+        None,
+        host,
+    )
 }
 
 /// Executes only the current function's slice. A call, tail transfer, callback,
@@ -585,6 +599,7 @@ pub fn step_function_with_host_context(
         options,
         Some(context),
         None,
+        None,
         Some(function),
         host,
     )
@@ -592,12 +607,13 @@ pub fn step_function_with_host_context(
 
 /// Borrows the Product execution's actual resource owner for this VM slice.
 /// Resource-free callers keep the public standalone boundary above.
-pub(crate) fn step_with_presentation(
+pub(crate) fn step_with_execution_resources(
     program: &AwbcProgram,
     fiber: &mut FiberState,
     options: VmStepOptions,
     context: &VmExecutionContext,
     presentation: &mut Option<PresentationBanks<PresentationBody<crate::value::RuntimePayload>>>,
+    actions: &mut crate::action::RuntimeActionMailbox,
     host: &mut impl VmHost,
 ) -> Result<VmStepOutput, VmError> {
     step_with_host_context_optional(
@@ -606,6 +622,7 @@ pub(crate) fn step_with_presentation(
         options,
         Some(context),
         Some(presentation),
+        Some(actions),
         None,
         host,
     )
@@ -619,12 +636,14 @@ fn step_with_host_context_optional(
     presentation: Option<
         &mut Option<PresentationBanks<PresentationBody<crate::value::RuntimePayload>>>,
     >,
+    actions: Option<&mut crate::action::RuntimeActionMailbox>,
     function_boundary: Option<AwbcFunctionId>,
     host: &mut impl VmHost,
 ) -> Result<VmStepOutput, VmError> {
     let mut execution = VmExecutionResources {
         context,
         presentation,
+        actions,
     };
     let mut observations = Vec::new();
     let mut executed = 0_u64;
@@ -680,7 +699,7 @@ fn step_with_host_context_optional(
             ) {
                 Ok(control) => control,
                 Err(error) => {
-                    if error.is_presentation_refusal() {
+                    if error.is_execution_refusal() {
                         fiber.budget = budget_before;
                         return Err(error);
                     }
@@ -773,7 +792,7 @@ fn step_with_host_context_optional(
         ) {
             Ok(exit) => exit,
             Err(error) => {
-                if error.is_presentation_refusal() {
+                if error.is_execution_refusal() {
                     fiber.budget = budget_before;
                     return Err(error);
                 }
@@ -2545,6 +2564,14 @@ fn execute_instruction(
                 .set_register(*destination, value)?;
         }
         AwbcInstruction::EmitEffect { effect, args } => {
+            if let Some(super::schema::AwbcEffectPayload::EmitAction { payload_type }) = program
+                .effect_plans
+                .get(effect.index())
+                .map(|plan| &plan.payload)
+            {
+                execution.emit_action(program, fiber, *payload_type, args)?;
+                return Ok(InstructionControl::Continue);
+            }
             if let Some(plan) = program.effect_plans.get(effect.index()) {
                 plan.payload.require_context_free()?;
             }
@@ -5841,11 +5868,13 @@ fn format_primary_kind_for_type(
 }
 
 impl VmError {
-    pub(crate) fn is_presentation_refusal(&self) -> bool {
+    pub(crate) fn is_execution_refusal(&self) -> bool {
         matches!(
             self,
             Self::Presentation(_)
                 | Self::PresentationAdmission(_)
+                | Self::ActionContextRequired
+                | Self::ActionAdmission(_)
                 | Self::Fiber(FiberStateError::Snapshot(
                     crate::value::AwbcRuntimeValueSnapshotError::Presentation(_)
                 ))
@@ -5889,6 +5918,8 @@ impl VmError {
             Self::MissingExecutionContext | Self::Fiber(_) => Some(AwbcTrapCode::InternalInvariant),
             Self::Presentation(_)
             | Self::PresentationAdmission(_)
+            | Self::ActionContextRequired
+            | Self::ActionAdmission(_)
             | Self::MissingFunction(_)
             | Self::MissingBlock(_)
             | Self::MissingInstruction(_)

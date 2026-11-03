@@ -201,6 +201,16 @@ commit the same declaration tuple, and source/wire preflight validates its
 family and shape before materialization. This metadata alone grants no channel
 execution capability; live operations still require their original program.
 
+Action delivery uses the owning program and session, without a Host task or
+LineEffect packet. A queued message retains its semantic payload type and
+original nominal declaration identity as an address claim. Before checkpoint
+copying, restore materialization or program replacement, that claim must match
+the selected program's existing type authority; an unchanged semantic type ID
+and layout cannot authorize a different Action declaration. Queues participate
+in the session's retained allowance and owning rollback/save image. Destination
+and capacity admission precede operand transfer. Execution refusal preserves
+message and operand custody.
+
 Relations between instances require the same declaration and domain kind, then
 compare ordered arguments in both directions under their respective scopes.
 This invariant argument relation also applies to callback effect rows.

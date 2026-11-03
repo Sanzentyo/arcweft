@@ -1066,6 +1066,14 @@ impl Engine {
                 }
             }
             FlowOp::EvaluatedEffect(effect) => {
+                if matches!(effect, crate::effect::RuntimeEffectExpr::EmitAction { .. }) {
+                    if let Err(error) = self.execute_action_emit(&source_site, pure_backend) {
+                        self.fail_eval(error, output);
+                        return;
+                    }
+                    self.advance_if_needed(next_op_index);
+                    return;
+                }
                 if !self.execute_evaluated_effect(effect, drop_policy, output, pure_backend) {
                     return;
                 }
