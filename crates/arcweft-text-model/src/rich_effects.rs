@@ -142,7 +142,77 @@ pub enum RichTextParam {
     Color { value: [u8; 4] },
 }
 
-/// Layout directive applied while resolving visual text.
+/// Sparse authored layout contribution. `None` inherits the active value;
+/// `Some` applies even when its value equals the resolved layout's default.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RichTextLayoutUpdate {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub writing_mode: Option<RichTextWritingMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direction: Option<RichTextInlineDirection>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vertical_latin: Option<RichTextVerticalLatinMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ruby_position: Option<RichTextRubyPosition>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jlreq_strictness: Option<RichTextJlreqStrictness>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column_gap: Option<Milli>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ruby_font_size: Option<Milli>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ruby_gap: Option<Milli>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ruby_overhang: Option<Milli>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ruby_collision_gap: Option<Milli>,
+}
+
+impl RichTextLayoutUpdate {
+    /// Whether this contribution leaves every inherited property untouched.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self == &Self::default()
+    }
+
+    /// Applies only present properties, in cascade order. The resolved state
+    /// owns defaults; authored contributions never infer presence from them.
+    pub fn apply_to(&self, layout: &mut RichTextLayout) {
+        if let Some(value) = self.writing_mode {
+            layout.writing_mode = value;
+        }
+        if let Some(value) = self.direction {
+            layout.direction = value;
+        }
+        if let Some(value) = self.vertical_latin {
+            layout.vertical_latin = value;
+        }
+        if let Some(value) = self.ruby_position {
+            layout.ruby_position = value;
+        }
+        if let Some(value) = self.jlreq_strictness {
+            layout.jlreq_strictness = value;
+        }
+        if let Some(value) = self.column_gap {
+            layout.column_gap = value;
+        }
+        if let Some(value) = self.ruby_font_size {
+            layout.ruby_font_size = Some(value);
+        }
+        if let Some(value) = self.ruby_gap {
+            layout.ruby_gap = Some(value);
+        }
+        if let Some(value) = self.ruby_overhang {
+            layout.ruby_overhang = Some(value);
+        }
+        if let Some(value) = self.ruby_collision_gap {
+            layout.ruby_collision_gap = Some(value);
+        }
+    }
+}
+
+/// Resolved layout state after authored contributions have been applied.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RichTextLayout {
     #[serde(default)]

@@ -19,13 +19,13 @@ pub use diagnostic::{
 pub use model::{
     CheckedAttachedContentArgument, CheckedContentApplicationId, CheckedContentApplicationSite,
     CheckedContentEmission, CheckedContentInsertion, CheckedContentModifier,
-    CheckedContentParameter, CheckedContentRuby, CheckedDialogueContent, CheckedDialogueControl,
-    CheckedDialogueHostEvent, CheckedDialogueMark, CheckedDialogueToken, CheckedDisplayConformance,
-    CheckedDisplayFloatWidth, CheckedDisplayInstantiationError, CheckedDisplayIntegerWidth,
-    CheckedDisplayScalar, CheckedDisplayWitness, CheckedExpressionValueSource, CheckedField,
-    CheckedFieldOrigin, CheckedObjectDepth, CheckedOwnerFields, CheckedRichTextAction,
-    CheckedRichTextOwner, CheckedRichTextProperty, CheckedRichTextReport, CheckedVoiceSource,
-    RichTextDefaultId,
+    CheckedContentParameter, CheckedContentParameterOrigin, CheckedContentRuby,
+    CheckedDialogueContent, CheckedDialogueControl, CheckedDialogueHostEvent, CheckedDialogueMark,
+    CheckedDialogueToken, CheckedDisplayConformance, CheckedDisplayFloatWidth,
+    CheckedDisplayInstantiationError, CheckedDisplayIntegerWidth, CheckedDisplayScalar,
+    CheckedDisplayWitness, CheckedExpressionValueSource, CheckedField, CheckedFieldOrigin,
+    CheckedObjectDepth, CheckedOwnerFields, CheckedRichTextAction, CheckedRichTextOwner,
+    CheckedRichTextProperty, CheckedRichTextReport, CheckedVoiceSource, RichTextDefaultId,
 };
 pub(crate) use prepared::{
     PreparedCheckedContentCatalog, PreparedCheckedDialogueContent, PreparedCheckedDialogueMark,

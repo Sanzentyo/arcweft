@@ -584,8 +584,8 @@ fn body_capture_text_fixture(text: &str) -> PreparedFrame {
     // ResolvedTextStyle consumes the authored style stack. Presentation is
     // retained metadata derived from that same stack, not a second flow input.
     let styles = vec![arcweft_text_model::RichTextStyle::Layout {
-        layout: arcweft_text_model::RichTextLayout {
-            writing_mode: arcweft_text_model::RichTextWritingMode::VerticalRl,
+        layout: arcweft_text_model::RichTextLayoutUpdate {
+            writing_mode: Some(arcweft_text_model::RichTextWritingMode::VerticalRl),
             ..Default::default()
         },
     }];

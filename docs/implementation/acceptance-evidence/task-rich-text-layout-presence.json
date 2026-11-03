@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "recordedAt": "2026-11-03T16:45:06.5452677Z",
+  "inspectedHead": "c7b4b1c471ab25c1c839f325922ad06822e5d2ba",
+  "state": "implementation checkpoint; final validation pending",
+  "implemented": [
+    "distinct sparse authored RichTextLayoutUpdate and resolved RichTextLayout",
+    "authored/defaulted checked Content parameter origin",
+    "inherit omitted layout fields; apply explicit defaults",
+    "selector-free reusable ruby typography projection"
+  ],
+  "initialValidation": {
+    "sourceEpoch": "layout-presence-owner1-20261104",
+    "executed": 4,
+    "passed": 4,
+    "failed": 0,
+    "durationSeconds": 0.297,
+    "sourceInputs": 4091,
+    "sourceDrift": 0,
+    "caseDrift": 0,
+    "qualifier": "Before final owner-query extraction, empty-update identity, and sparse JSON refinements; final bytes not accepted by this receipt"
+  },
+  "finalValidation": {
+    "state": "pending",
+    "reversePackages": 35,
+    "workspaceCheck": "not run",
+    "workspaceClippy": "not run",
+    "nextest": "not run",
+    "structure": "not run"
+  },
+  "clean": {
+    "version": 1,
+    "base": "c7b4b1c471ab25c1c839f325922ad06822e5d2ba",
+    "target": "D:\\git\\arcweft\\target",
+    "command": [
+      "cargo",
+      "clean",
+      "--manifest-path",
+      "D:/git/arcweft/Cargo.toml"
+    ],
+    "exitCode": 0,
+    "startedAt": "2026-11-03T16:43:27.7403027Z",
+    "finishedAt": "2026-11-03T16:44:21.1867116Z",
+    "sourceInputs": 4091,
+    "sourceDrift": 0,
+    "statusDrift": false,
+    "freeBefore": 19670269952,
+    "freeAfter": 216311476224
+  },
+  "heldWip": {
+    "trackedPaths": 12,
+    "patchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac"
+  },
+  "genericMatch": {
+    "state": "accepted and published; unchanged",
+    "acceptance": "850534b9e9bc8c8872f6528dd00050a5e6e7699e",
+    "publication": "f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2"
+  },
+  "acceptanceScope": "This checkpoint does not accept source factory execution, canonical selector-independent property storage, first-class argument ordering, provenance, or RAG indexing. The sole current list is docs/implementation/current-status.md."
+}

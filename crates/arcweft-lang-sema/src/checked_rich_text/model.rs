@@ -181,18 +181,27 @@ impl CheckedObjectDepth {
 }
 
 /// One typed parameter of a presentation Content callable.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CheckedContentParameterOrigin {
+    Authored { expression: ExprId },
+    Defaulted,
+}
+
+/// A parameter's checked value and its contribution to authored presence.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedContentParameter {
     id: PresentationContentCallableParameterId,
     value: crate::final_analysis::CheckedCompileTimeValue,
+    origin: CheckedContentParameterOrigin,
 }
 
 impl CheckedContentParameter {
     pub(crate) const fn new(
         id: PresentationContentCallableParameterId,
         value: crate::final_analysis::CheckedCompileTimeValue,
+        origin: CheckedContentParameterOrigin,
     ) -> Self {
-        Self { id, value }
+        Self { id, value, origin }
     }
 
     pub const fn id(&self) -> PresentationContentCallableParameterId {
@@ -201,6 +210,10 @@ impl CheckedContentParameter {
 
     pub const fn value(&self) -> &crate::final_analysis::CheckedCompileTimeValue {
         &self.value
+    }
+
+    pub const fn origin(&self) -> CheckedContentParameterOrigin {
+        self.origin
     }
 }
 
@@ -235,6 +248,21 @@ impl CheckedContentModifier {
 
     pub const fn parameters(&self) -> &[CheckedContentParameter] {
         &self.parameters
+    }
+
+    /// Returns an explicitly supplied parameter. Materialized schema defaults
+    /// remain available in `parameters` but do not overwrite inherited style.
+    pub fn authored_parameter(
+        &self,
+        id: PresentationContentCallableParameterId,
+    ) -> Option<&CheckedContentParameter> {
+        self.parameters.iter().find(|parameter| {
+            parameter.id() == id
+                && matches!(
+                    parameter.origin(),
+                    CheckedContentParameterOrigin::Authored { .. }
+                )
+        })
     }
 }
 

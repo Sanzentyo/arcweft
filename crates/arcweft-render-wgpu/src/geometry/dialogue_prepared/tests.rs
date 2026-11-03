@@ -32,7 +32,7 @@ use arcweft_source::{
 use arcweft_text_model::{
     CharacterDialoguePresentationConfig, DialogueContentFragmentTemplate, DialogueContentSpec,
     DialoguePresentationCharacter, LineDisplayFrame, RichTextControl, RichTextDocument,
-    RichTextLayout, RichTextNode, RichTextStyle, RichTextWritingMode,
+    RichTextLayoutUpdate, RichTextNode, RichTextStyle, RichTextWritingMode,
 };
 use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
 
@@ -203,9 +203,9 @@ fn resolver(
 fn vertical_ruby_stage_uses_canonical_layout_and_prepared_glyphs() {
     let frame = frame(vec![RichTextNode::Scope {
         style: Box::new(RichTextStyle::Layout {
-            layout: RichTextLayout {
-                writing_mode: RichTextWritingMode::VerticalRl,
-                ..RichTextLayout::default()
+            layout: RichTextLayoutUpdate {
+                writing_mode: Some(RichTextWritingMode::VerticalRl),
+                ..RichTextLayoutUpdate::default()
             },
         }),
         body: vec![

@@ -167,6 +167,15 @@ Layout selectors accept `jlreq=.loose`, `jlreq=.normal`, or `jlreq=.strict` to c
 Japanese punctuation-pair planning preset for that span. Omitting it keeps the
 host View/default layout preset.
 
+Layout modifiers contribute only the properties explicitly supplied by their
+selector and named arguments. Omitted properties inherit the active outer
+layout; schema defaults do not reset them at each nested scope. Explicit values
+still override when they equal a default: `.horizontal_tb` can reset vertical
+writing, `latin=.mixed` can reset upright Latin, and `column_gap=8px` can replace
+an inherited gap. A ruby-size-only reusable contribution changes neither ruby
+placement nor writing mode. Defaults are resolved once from the effective
+layout authority.
+
 Ruby typography belongs to the selected presentation style/default authority;
 it is not a body-bearing inferred selector. Use the typed ruby call for content:
 

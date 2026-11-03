@@ -56,8 +56,8 @@ pub use reveal::{
 };
 pub use rich_effects::{
     Milli, RichTextAngle, RichTextInlineDirection, RichTextJlreqStrictness, RichTextLayout,
-    RichTextObjectProxy, RichTextObjectProxyDeclaration, RichTextParam, RichTextPresentation,
-    RichTextRubyPosition, RichTextTextProxyField, RichTextTextProxyFieldKind,
+    RichTextLayoutUpdate, RichTextObjectProxy, RichTextObjectProxyDeclaration, RichTextParam,
+    RichTextPresentation, RichTextRubyPosition, RichTextTextProxyField, RichTextTextProxyFieldKind,
     RichTextTextProxyFieldSchema, RichTextTextProxyScalar, RichTextTextProxySchema,
     RichTextTransform, RichTextTransformOrigin, RichTextVec2, RichTextVerticalLatinMode,
     RichTextWritingMode,

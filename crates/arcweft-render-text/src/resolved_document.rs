@@ -6,8 +6,7 @@ use arcweft_text_model::{
     LineDisplayFrame, LineDisplayFrameValidationError, LineDisplayStage, RichTextAngle,
     RichTextColor, RichTextControl, RichTextDocument, RichTextFontFamily, RichTextInlineDirection,
     RichTextNode, RichTextNodeIndex, RichTextNodeRange, RichTextPresentation, RichTextRange,
-    RichTextRubyPosition, RichTextStyle, RichTextTextRunRange, RichTextWritingMode,
-    presentation_from_styles,
+    RichTextStyle, RichTextTextRunRange, RichTextWritingMode, presentation_from_styles,
 };
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Write};
@@ -371,13 +370,11 @@ impl ResolvedTextStyle {
                 }
             }
             RichTextStyle::Layout { layout } => {
-                if !matches!(layout.writing_mode, RichTextWritingMode::HorizontalTb)
-                    || matches!(layout.ruby_position, RichTextRubyPosition::Auto)
-                {
-                    self.writing_mode = layout.writing_mode;
+                if let Some(writing_mode) = layout.writing_mode {
+                    self.writing_mode = writing_mode;
                 }
-                if !matches!(layout.direction, RichTextInlineDirection::Auto) {
-                    self.direction = layout.direction;
+                if let Some(direction) = layout.direction {
+                    self.direction = direction;
                 }
             }
             RichTextStyle::Speed { .. }

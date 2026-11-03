@@ -2,6 +2,7 @@ use super::*;
 use arcweft_lang_hir::identity::HirValueTypeOwner;
 
 mod analysis_lease;
+mod layout_presence;
 mod producer_slots;
 mod type_purpose;
 use arcweft_lang_hir::symbol::{

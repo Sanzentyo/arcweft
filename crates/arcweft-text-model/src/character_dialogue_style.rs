@@ -3,7 +3,7 @@
 
 use crate::{
     Milli, RichTextAngle, RichTextColor, RichTextFontFamily, RichTextInlineDirection,
-    RichTextJlreqStrictness, RichTextLayout, RichTextPresentationStyle, RichTextRubyPosition,
+    RichTextJlreqStrictness, RichTextLayoutUpdate, RichTextPresentationStyle, RichTextRubyPosition,
     RichTextStyle, RichTextTransform, RichTextTransformOrigin, RichTextVerticalLatinMode,
     RichTextWritingMode,
 };
@@ -231,37 +231,42 @@ fn project_layout(
     let mut allowed = vec![Parameter::Selector];
     allowed.extend(RichTextLayoutProperty::ALL.map(Parameter::Layout));
     require_only(properties, &allowed)?;
-    require_selector(
-        definition,
-        properties,
-        Parameter::Selector,
-        selector.schema_id(),
-        selector.ordinal(),
-    )?;
-
-    let mut layout = RichTextLayout::default();
-    match selector {
-        RichTextLayoutSelector::HorizontalTb => {
-            layout.writing_mode = RichTextWritingMode::HorizontalTb;
-        }
-        RichTextLayoutSelector::VerticalRl => {
-            layout.writing_mode = RichTextWritingMode::VerticalRl;
-        }
-        RichTextLayoutSelector::VerticalLr => {
-            layout.writing_mode = RichTextWritingMode::VerticalLr;
-        }
-        RichTextLayoutSelector::Direction => {
-            let parameter = Parameter::Layout(RichTextLayoutProperty::Direction);
-            layout.direction = layout_direction(
-                definition,
-                parameter,
-                required_value(definition, properties, parameter)?,
-            )?;
-        }
-        RichTextLayoutSelector::RubyOver => layout.ruby_position = RichTextRubyPosition::Over,
-        RichTextLayoutSelector::RubyUnder => layout.ruby_position = RichTextRubyPosition::Under,
-        RichTextLayoutSelector::RubyInterCharacter => {
-            layout.ruby_position = RichTextRubyPosition::InterCharacter;
+    let mut layout = RichTextLayoutUpdate::default();
+    if optional_value(properties, Parameter::Selector).is_some() {
+        require_selector(
+            definition,
+            properties,
+            Parameter::Selector,
+            selector.schema_id(),
+            selector.ordinal(),
+        )?;
+        match selector {
+            RichTextLayoutSelector::HorizontalTb => {
+                layout.writing_mode = Some(RichTextWritingMode::HorizontalTb);
+            }
+            RichTextLayoutSelector::VerticalRl => {
+                layout.writing_mode = Some(RichTextWritingMode::VerticalRl);
+            }
+            RichTextLayoutSelector::VerticalLr => {
+                layout.writing_mode = Some(RichTextWritingMode::VerticalLr);
+            }
+            RichTextLayoutSelector::Direction => {
+                let parameter = Parameter::Layout(RichTextLayoutProperty::Direction);
+                layout.direction = Some(layout_direction(
+                    definition,
+                    parameter,
+                    required_value(definition, properties, parameter)?,
+                )?);
+            }
+            RichTextLayoutSelector::RubyOver => {
+                layout.ruby_position = Some(RichTextRubyPosition::Over)
+            }
+            RichTextLayoutSelector::RubyUnder => {
+                layout.ruby_position = Some(RichTextRubyPosition::Under)
+            }
+            RichTextLayoutSelector::RubyInterCharacter => {
+                layout.ruby_position = Some(RichTextRubyPosition::InterCharacter);
+            }
         }
     }
 
@@ -269,23 +274,29 @@ fn project_layout(
         match property.parameter() {
             Parameter::Selector => {}
             Parameter::Layout(RichTextLayoutProperty::Direction) => {
-                layout.direction =
-                    layout_direction(definition, property.parameter(), property.value())?;
-            }
-            Parameter::Layout(RichTextLayoutProperty::Latin) => {
-                layout.vertical_latin =
-                    vertical_latin(definition, property.parameter(), property.value())?;
-            }
-            Parameter::Layout(RichTextLayoutProperty::Jlreq) => {
-                layout.jlreq_strictness =
-                    jlreq(definition, property.parameter(), property.value())?;
-            }
-            Parameter::Layout(RichTextLayoutProperty::ColumnGap) => {
-                layout.column_gap = Milli(length_milli(
+                layout.direction = Some(layout_direction(
                     definition,
                     property.parameter(),
                     property.value(),
                 )?);
+            }
+            Parameter::Layout(RichTextLayoutProperty::Latin) => {
+                layout.vertical_latin = Some(vertical_latin(
+                    definition,
+                    property.parameter(),
+                    property.value(),
+                )?);
+            }
+            Parameter::Layout(RichTextLayoutProperty::Jlreq) => {
+                layout.jlreq_strictness =
+                    Some(jlreq(definition, property.parameter(), property.value())?);
+            }
+            Parameter::Layout(RichTextLayoutProperty::ColumnGap) => {
+                layout.column_gap = Some(Milli(length_milli(
+                    definition,
+                    property.parameter(),
+                    property.value(),
+                )?));
             }
             Parameter::Layout(RichTextLayoutProperty::RubySize) => {
                 layout.ruby_font_size = Some(Milli(length_milli(
@@ -812,11 +823,11 @@ mod tests {
                 },
             },
             RichTextStyle::Layout {
-                layout: RichTextLayout {
-                    writing_mode: RichTextWritingMode::VerticalRl,
-                    vertical_latin: RichTextVerticalLatinMode::Upright,
-                    column_gap: Milli(9_500),
-                    ..RichTextLayout::default()
+                layout: RichTextLayoutUpdate {
+                    writing_mode: Some(RichTextWritingMode::VerticalRl),
+                    vertical_latin: Some(RichTextVerticalLatinMode::Upright),
+                    column_gap: Some(Milli(9_500)),
+                    ..RichTextLayoutUpdate::default()
                 },
             },
             RichTextStyle::Transform {
@@ -867,5 +878,46 @@ mod tests {
                 parameter: Parameter::Layout(RichTextLayoutProperty::Direction),
             })
         );
+    }
+
+    #[test]
+    fn sparse_ruby_size_preserves_inherited_placement_and_other_layout_properties() {
+        let properties = policy_with([(
+            Definition::Layout(RichTextLayoutSelector::RubyOver),
+            Parameter::Layout(RichTextLayoutProperty::RubySize),
+            length(11_000, 1),
+        )]);
+        let styles = project_character_dialogue_rich_text_properties(&properties).unwrap();
+        assert_eq!(
+            styles,
+            vec![RichTextStyle::Layout {
+                layout: RichTextLayoutUpdate {
+                    ruby_font_size: Some(Milli(11_000)),
+                    ..RichTextLayoutUpdate::default()
+                }
+            }]
+        );
+        for position in [
+            RichTextRubyPosition::Under,
+            RichTextRubyPosition::InterCharacter,
+        ] {
+            let inherited = RichTextStyle::Layout {
+                layout: RichTextLayoutUpdate {
+                    writing_mode: Some(RichTextWritingMode::VerticalLr),
+                    ruby_position: Some(position),
+                    ruby_gap: Some(Milli(3_000)),
+                    column_gap: Some(Milli(15_000)),
+                    ..RichTextLayoutUpdate::default()
+                },
+            };
+            let presentation =
+                crate::presentation_from_styles(std::iter::once(&inherited).chain(&styles));
+            let resolved = presentation.layout.unwrap();
+            assert_eq!(resolved.writing_mode, RichTextWritingMode::VerticalLr);
+            assert_eq!(resolved.ruby_position, position);
+            assert_eq!(resolved.ruby_gap, Some(Milli(3_000)));
+            assert_eq!(resolved.column_gap, Milli(15_000));
+            assert_eq!(resolved.ruby_font_size, Some(Milli(11_000)));
+        }
     }
 }

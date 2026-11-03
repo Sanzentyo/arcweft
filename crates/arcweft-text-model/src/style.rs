@@ -1,9 +1,8 @@
 //! Authored rich-text styles and deterministic presentation cascade.
 
 use crate::{
-    Milli, RichTextAngle, RichTextInlineDirection, RichTextJlreqStrictness, RichTextLayout,
-    RichTextObjectProxy, RichTextPresentation, RichTextRubyPosition, RichTextTransform,
-    RichTextVerticalLatinMode, RichTextWritingMode,
+    Milli, RichTextAngle, RichTextLayoutUpdate, RichTextObjectProxy, RichTextPresentation,
+    RichTextTransform,
 };
 use arcweft_presentation::fx::FxApplication;
 use serde::{Deserialize, Serialize};
@@ -31,7 +30,7 @@ pub enum RichTextStyle {
         milli_cps: Milli,
     },
     Layout {
-        layout: RichTextLayout,
+        layout: RichTextLayoutUpdate,
     },
     Transform {
         transform: RichTextTransform,
@@ -117,40 +116,92 @@ pub fn presentation_from_styles<'a>(
         })
 }
 
-fn merge_layout_presentation(out: &mut RichTextPresentation, layout: &RichTextLayout) {
+fn merge_layout_presentation(out: &mut RichTextPresentation, layout: &RichTextLayoutUpdate) {
+    if layout.is_empty() {
+        return;
+    }
     let mut merged = out.layout.clone().unwrap_or_default();
-    if !matches!(layout.writing_mode, RichTextWritingMode::HorizontalTb)
-        || out.layout.is_none()
-        || matches!(layout.ruby_position, RichTextRubyPosition::Auto)
-    {
-        merged.writing_mode = layout.writing_mode;
-    }
-    if !matches!(layout.direction, RichTextInlineDirection::Auto) {
-        merged.direction = layout.direction;
-    }
-    if !matches!(layout.vertical_latin, RichTextVerticalLatinMode::Mixed) {
-        merged.vertical_latin = layout.vertical_latin;
-    }
-    if !matches!(layout.ruby_position, RichTextRubyPosition::Auto) {
-        merged.ruby_position = layout.ruby_position;
-    }
-    if !matches!(layout.jlreq_strictness, RichTextJlreqStrictness::Auto) {
-        merged.jlreq_strictness = layout.jlreq_strictness;
-    }
-    if layout.column_gap != RichTextLayout::default().column_gap {
-        merged.column_gap = layout.column_gap;
-    }
-    if layout.ruby_font_size.is_some() {
-        merged.ruby_font_size = layout.ruby_font_size;
-    }
-    if layout.ruby_gap.is_some() {
-        merged.ruby_gap = layout.ruby_gap;
-    }
-    if layout.ruby_overhang.is_some() {
-        merged.ruby_overhang = layout.ruby_overhang;
-    }
-    if layout.ruby_collision_gap.is_some() {
-        merged.ruby_collision_gap = layout.ruby_collision_gap;
-    }
+    layout.apply_to(&mut merged);
     out.layout = Some(merged);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        RichTextInlineDirection, RichTextJlreqStrictness, RichTextRubyPosition,
+        RichTextVerticalLatinMode, RichTextWritingMode,
+    };
+
+    #[test]
+    fn empty_layout_update_preserves_absent_or_inherited_layout() {
+        let empty = RichTextStyle::Layout {
+            layout: RichTextLayoutUpdate::default(),
+        };
+        assert!(presentation_from_styles([&empty]).layout.is_none());
+        let inherited = RichTextStyle::Layout {
+            layout: RichTextLayoutUpdate {
+                writing_mode: Some(RichTextWritingMode::VerticalLr),
+                ruby_position: Some(RichTextRubyPosition::Under),
+                ..RichTextLayoutUpdate::default()
+            },
+        };
+        assert_eq!(
+            presentation_from_styles([&inherited, &empty]),
+            presentation_from_styles([&inherited])
+        );
+        let json = serde_json::to_value(&empty).unwrap();
+        assert_eq!(json["layout"], serde_json::json!({}));
+        assert_eq!(
+            serde_json::from_value::<RichTextStyle>(json).unwrap(),
+            empty
+        );
+    }
+
+    #[test]
+    fn explicit_layout_defaults_override_inherited_nondefaults() {
+        let inherited = RichTextStyle::Layout {
+            layout: RichTextLayoutUpdate {
+                writing_mode: Some(RichTextWritingMode::VerticalRl),
+                direction: Some(RichTextInlineDirection::Rtl),
+                vertical_latin: Some(RichTextVerticalLatinMode::Upright),
+                ruby_position: Some(RichTextRubyPosition::Under),
+                jlreq_strictness: Some(RichTextJlreqStrictness::Strict),
+                column_gap: Some(Milli(15_000)),
+                ruby_gap: Some(Milli(3_000)),
+                ..RichTextLayoutUpdate::default()
+            },
+        };
+        let reset = RichTextStyle::Layout {
+            layout: RichTextLayoutUpdate {
+                writing_mode: Some(RichTextWritingMode::HorizontalTb),
+                direction: Some(RichTextInlineDirection::Auto),
+                vertical_latin: Some(RichTextVerticalLatinMode::Mixed),
+                ruby_position: Some(RichTextRubyPosition::Auto),
+                jlreq_strictness: Some(RichTextJlreqStrictness::Auto),
+                column_gap: Some(Milli(8_000)),
+                ruby_gap: Some(Milli::ZERO),
+                ..RichTextLayoutUpdate::default()
+            },
+        };
+        let encoded = serde_json::to_vec(&reset).unwrap();
+        let decoded: RichTextStyle = serde_json::from_slice(&encoded).unwrap();
+        assert_eq!(decoded, reset);
+        let resolved = presentation_from_styles([&inherited, &decoded])
+            .layout
+            .unwrap();
+        assert_eq!(resolved.writing_mode, RichTextWritingMode::HorizontalTb);
+        assert_eq!(resolved.direction, RichTextInlineDirection::Auto);
+        assert_eq!(resolved.vertical_latin, RichTextVerticalLatinMode::Mixed);
+        assert_eq!(resolved.ruby_position, RichTextRubyPosition::Auto);
+        assert_eq!(resolved.jlreq_strictness, RichTextJlreqStrictness::Auto);
+        assert_eq!(resolved.column_gap, Milli(8_000));
+        assert_eq!(resolved.ruby_gap, Some(Milli::ZERO));
+        let reversed = presentation_from_styles([&decoded, &inherited])
+            .layout
+            .unwrap();
+        assert_eq!(reversed.writing_mode, RichTextWritingMode::VerticalRl);
+        assert_eq!(reversed.ruby_position, RichTextRubyPosition::Under);
+        assert_eq!(reversed.column_gap, Milli(15_000));
+    }
 }

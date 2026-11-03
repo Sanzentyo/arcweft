@@ -254,7 +254,7 @@ use arcweft_text_model::{
     DialogueContentTemplateMark, DialogueContentTemplateSlot, DialogueHostEvent,
     DialoguePresentationSnapshot, DialogueVoiceSource, Milli, RichTextAngle, RichTextColor,
     RichTextControl, RichTextDocument, RichTextFontFamily, RichTextInlineDirection,
-    RichTextJlreqStrictness, RichTextLayout, RichTextNode, RichTextPresentationStyle,
+    RichTextJlreqStrictness, RichTextLayoutUpdate, RichTextNode, RichTextPresentationStyle,
     RichTextRubyPosition, RichTextStyle, RichTextTransform, RichTextTransformOrigin, RichTextVec2,
     RichTextVerticalLatinMode, RichTextWritingMode,
 };
@@ -4277,44 +4277,46 @@ fn lower_layout_modifier(
     modifier: &CheckedContentModifier,
 ) -> Result<RichTextStyle, RuntimeSemanticProjectionError> {
     let value = |id| required_modifier_value(owner, modifier, id);
-    let mut layout = RichTextLayout::default();
+    let mut layout = RichTextLayoutUpdate::default();
     match selector {
         RichTextLayoutSelector::HorizontalTb => {
-            layout.writing_mode = RichTextWritingMode::HorizontalTb;
+            layout.writing_mode = Some(RichTextWritingMode::HorizontalTb);
         }
         RichTextLayoutSelector::VerticalRl => {
-            layout.writing_mode = RichTextWritingMode::VerticalRl;
+            layout.writing_mode = Some(RichTextWritingMode::VerticalRl);
         }
         RichTextLayoutSelector::VerticalLr => {
-            layout.writing_mode = RichTextWritingMode::VerticalLr;
+            layout.writing_mode = Some(RichTextWritingMode::VerticalLr);
         }
         RichTextLayoutSelector::Direction => {
-            layout.direction = lower_layout_direction(value(
+            layout.direction = Some(lower_layout_direction(value(
                 PresentationContentCallableParameterId::Layout(RichTextLayoutProperty::Direction),
-            )?)?;
+            )?)?);
         }
         RichTextLayoutSelector::RubyOver => {
-            layout.ruby_position = RichTextRubyPosition::Over;
+            layout.ruby_position = Some(RichTextRubyPosition::Over);
         }
         RichTextLayoutSelector::RubyUnder => {
-            layout.ruby_position = RichTextRubyPosition::Under;
+            layout.ruby_position = Some(RichTextRubyPosition::Under);
         }
         RichTextLayoutSelector::RubyInterCharacter => {
-            layout.ruby_position = RichTextRubyPosition::InterCharacter;
+            layout.ruby_position = Some(RichTextRubyPosition::InterCharacter);
         }
     }
-    layout.vertical_latin = lower_vertical_latin(value(
-        PresentationContentCallableParameterId::Layout(RichTextLayoutProperty::Latin),
-    )?)?;
-    layout.jlreq_strictness = lower_jlreq(value(PresentationContentCallableParameterId::Layout(
-        RichTextLayoutProperty::Jlreq,
-    ))?)?;
-    layout.column_gap = Milli(
-        lower_checked_length(value(PresentationContentCallableParameterId::Layout(
-            RichTextLayoutProperty::ColumnGap,
-        ))?)?
-        .0,
-    );
+    let authored = |property| {
+        modifier
+            .authored_parameter(PresentationContentCallableParameterId::Layout(property))
+            .map(CheckedContentParameter::value)
+    };
+    layout.vertical_latin = authored(RichTextLayoutProperty::Latin)
+        .map(lower_vertical_latin)
+        .transpose()?;
+    layout.jlreq_strictness = authored(RichTextLayoutProperty::Jlreq)
+        .map(lower_jlreq)
+        .transpose()?;
+    layout.column_gap = authored(RichTextLayoutProperty::ColumnGap)
+        .map(|value| lower_checked_length(value).map(|(milli, _)| Milli(milli)))
+        .transpose()?;
     layout.ruby_font_size = lower_optional_length(modifier, RichTextLayoutProperty::RubySize)?;
     layout.ruby_gap = lower_optional_length(modifier, RichTextLayoutProperty::RubyGap)?;
     layout.ruby_overhang = lower_optional_length(modifier, RichTextLayoutProperty::RubyOverhang)?;
@@ -4395,11 +4397,7 @@ fn lower_optional_length(
     property: RichTextLayoutProperty,
 ) -> Result<Option<Milli>, RuntimeSemanticProjectionError> {
     modifier
-        .parameters()
-        .iter()
-        .find(|parameter| {
-            parameter.id() == PresentationContentCallableParameterId::Layout(property)
-        })
+        .authored_parameter(PresentationContentCallableParameterId::Layout(property))
         .map(|parameter| lower_checked_length(parameter.value()).map(|(value, _)| Milli(value)))
         .transpose()
 }

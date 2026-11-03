@@ -29,7 +29,7 @@ use arcweft_runtime_driver::view_runtime::{
     BundleViewStyleNodeKind, BundleViewTextOutput, BundleViewTextTarget, BundleViewTextValue,
 };
 use arcweft_text_model::{
-    RichTextDocument, RichTextInlineDirection, RichTextLayout, RichTextNode, RichTextStyle,
+    RichTextDocument, RichTextInlineDirection, RichTextLayoutUpdate, RichTextNode, RichTextStyle,
 };
 use arcweft_view::style::{
     ComputedViewStyle, ComputedViewStyleBuilder, ComputedViewStyleRevision,
@@ -462,9 +462,9 @@ fn rich_text_direction_and_theme_never_infer_a_different_axis_provider() {
     presentation.view.mounts[0].text[0].value = BundleViewTextValue::RichTextDocument {
         document: Box::new(RichTextDocument::new(vec![RichTextNode::Scope {
             style: Box::new(RichTextStyle::Layout {
-                layout: RichTextLayout {
-                    direction: RichTextInlineDirection::Rtl,
-                    ..RichTextLayout::default()
+                layout: RichTextLayoutUpdate {
+                    direction: Some(RichTextInlineDirection::Rtl),
+                    ..RichTextLayoutUpdate::default()
                 },
             }),
             body: vec![RichTextNode::Text {

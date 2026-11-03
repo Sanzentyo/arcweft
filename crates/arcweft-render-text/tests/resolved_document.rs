@@ -13,7 +13,7 @@ use arcweft_source::{ProductSourceRef, SourceDocument, SourceDocumentId, SourceN
 use arcweft_text_model::{
     CharacterDialoguePresentationConfig, DialogueContentFragmentTemplate, DialogueContentSpec,
     DialoguePresentationCharacter, Milli, RichTextColor, RichTextControl, RichTextDocument,
-    RichTextFontFamily, RichTextInlineDirection, RichTextLayout, RichTextNode,
+    RichTextFontFamily, RichTextInlineDirection, RichTextLayoutUpdate, RichTextNode,
     RichTextPresentation, RichTextPresentationStyle, RichTextRange, RichTextRubyPosition,
     RichTextStyle, RichTextWritingMode,
 };
@@ -280,10 +280,10 @@ fn document_projection_rebases_runs_and_ruby_without_cloning_text() {
 
 #[test]
 fn direct_rich_text_resolution_preserves_ruby_style_and_presentation() {
-    let layout = RichTextLayout {
-        writing_mode: RichTextWritingMode::VerticalRl,
-        direction: RichTextInlineDirection::Rtl,
-        ..RichTextLayout::default()
+    let layout = RichTextLayoutUpdate {
+        writing_mode: Some(RichTextWritingMode::VerticalRl),
+        direction: Some(RichTextInlineDirection::Rtl),
+        ..RichTextLayoutUpdate::default()
     };
     let document = RichTextDocument::new(vec![RichTextNode::Scope {
         style: Box::new(RichTextStyle::Strong),
@@ -386,16 +386,16 @@ fn cascade_applies_closed_color_and_font_values_without_losing_presentation() {
 fn nested_ruby_layout_does_not_reset_the_inherited_vertical_flow() {
     let document = RichTextDocument::new(vec![RichTextNode::Scope {
         style: Box::new(RichTextStyle::Layout {
-            layout: RichTextLayout {
-                writing_mode: RichTextWritingMode::VerticalRl,
-                ..RichTextLayout::default()
+            layout: RichTextLayoutUpdate {
+                writing_mode: Some(RichTextWritingMode::VerticalRl),
+                ..RichTextLayoutUpdate::default()
             },
         }),
         body: vec![RichTextNode::Scope {
             style: Box::new(RichTextStyle::Layout {
-                layout: RichTextLayout {
-                    ruby_position: RichTextRubyPosition::Under,
-                    ..RichTextLayout::default()
+                layout: RichTextLayoutUpdate {
+                    ruby_position: Some(RichTextRubyPosition::Under),
+                    ..RichTextLayoutUpdate::default()
                 },
             }),
             body: vec![RichTextNode::Text {
@@ -416,6 +416,41 @@ fn nested_ruby_layout_does_not_reset_the_inherited_vertical_flow() {
         .expect("layout presentation is retained");
     assert_eq!(layout.writing_mode, RichTextWritingMode::VerticalRl);
     assert_eq!(layout.ruby_position, RichTextRubyPosition::Under);
+}
+
+#[test]
+fn nested_explicit_horizontal_layout_resets_the_resolved_vertical_flow() {
+    let document = RichTextDocument::new(vec![RichTextNode::Scope {
+        style: Box::new(RichTextStyle::Layout {
+            layout: RichTextLayoutUpdate {
+                writing_mode: Some(RichTextWritingMode::VerticalRl),
+                direction: Some(RichTextInlineDirection::Rtl),
+                ..RichTextLayoutUpdate::default()
+            },
+        }),
+        body: vec![RichTextNode::Scope {
+            style: Box::new(RichTextStyle::Layout {
+                layout: RichTextLayoutUpdate {
+                    writing_mode: Some(RichTextWritingMode::HorizontalTb),
+                    direction: Some(RichTextInlineDirection::Auto),
+                    ..RichTextLayoutUpdate::default()
+                },
+            }),
+            body: vec![RichTextNode::Text {
+                text: "夢".to_owned(),
+            }],
+        }],
+    }]);
+    let resolved = resolve_document(&document, &TextStyleCascade::default()).unwrap();
+    let run = &resolved.runs()[0];
+    assert_eq!(
+        run.style().writing_mode(),
+        RichTextWritingMode::HorizontalTb
+    );
+    assert_eq!(run.style().direction(), RichTextInlineDirection::Auto);
+    let layout = run.presentation().layout.as_ref().unwrap();
+    assert_eq!(layout.writing_mode, RichTextWritingMode::HorizontalTb);
+    assert_eq!(layout.direction, RichTextInlineDirection::Auto);
 }
 
 #[test]

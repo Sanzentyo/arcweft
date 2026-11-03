@@ -38,7 +38,7 @@ use arcweft_text_model::PreparedTextOwnerKind;
 use arcweft_text_model::{
     CharacterDialoguePresentationConfig, DialogueContentSpec, DialoguePresentationCharacter,
     DialogueRevealPolicy, LineDisplayFrame, RichTextDocument, RichTextInlineDirection,
-    RichTextLayout, RichTextNode, RichTextStyle, RichTextWritingMode,
+    RichTextLayoutUpdate, RichTextNode, RichTextStyle, RichTextWritingMode,
 };
 use std::sync::Arc;
 
@@ -427,10 +427,10 @@ fn vertical_ruby_frame(line: &RuntimeLineId) -> LineDisplayFrame {
                 InlineFailurePolicy::FailLine,
             ),
             vec![RichTextStyle::Layout {
-                layout: RichTextLayout {
-                    writing_mode: RichTextWritingMode::VerticalRl,
-                    direction: RichTextInlineDirection::Rtl,
-                    ..RichTextLayout::default()
+                layout: RichTextLayoutUpdate {
+                    writing_mode: Some(RichTextWritingMode::VerticalRl),
+                    direction: Some(RichTextInlineDirection::Rtl),
+                    ..RichTextLayoutUpdate::default()
                 },
             }],
             Vec::new(),

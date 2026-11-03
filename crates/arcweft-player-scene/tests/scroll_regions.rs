@@ -39,7 +39,7 @@ use arcweft_runtime_driver::view_runtime::{
 use arcweft_source::{ProductSourceRef, SourceDocument, SourceDocumentId, SourceName};
 use arcweft_text_model::{
     CharacterDialoguePresentationConfig, DialogueContentSpec, DialoguePresentationCharacter,
-    RichTextControl, RichTextDocument, RichTextInlineDirection, RichTextLayout, RichTextNode,
+    RichTextControl, RichTextDocument, RichTextInlineDirection, RichTextLayoutUpdate, RichTextNode,
     RichTextStyle, RichTextWritingMode,
 };
 use arcweft_view::ViewMountId;
@@ -544,10 +544,10 @@ fn mounted_view_rich_text_preserves_vertical_ruby_in_prepared_painter_order() {
     presentation.view.mounts[0].text[0].value = BundleViewTextValue::RichTextDocument {
         document: Box::new(RichTextDocument::new(vec![RichTextNode::Scope {
             style: Box::new(RichTextStyle::Layout {
-                layout: RichTextLayout {
-                    writing_mode: RichTextWritingMode::VerticalRl,
-                    direction: RichTextInlineDirection::Rtl,
-                    ..RichTextLayout::default()
+                layout: RichTextLayoutUpdate {
+                    writing_mode: Some(RichTextWritingMode::VerticalRl),
+                    direction: Some(RichTextInlineDirection::Rtl),
+                    ..RichTextLayoutUpdate::default()
                 },
             }),
             body: vec![RichTextNode::Ruby {

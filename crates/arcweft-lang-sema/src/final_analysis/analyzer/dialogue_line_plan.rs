@@ -616,7 +616,7 @@ impl Analyzer<'_, '_, '_> {
                             if *actual == coordinate
                     )
                 });
-            let value = if let Some(slot) = slot {
+            let (value, origin) = if let Some(slot) = slot {
                 let crate::callable::CheckedCallArgumentSlotSource::Expression(source) =
                     slot.source().raw()
                 else {
@@ -650,7 +650,12 @@ impl Analyzer<'_, '_, '_> {
                         AnalyzerExpressionError::rejected(application.core().site().expression())
                     })?;
                 }
-                value
+                (
+                    value,
+                    crate::checked_rich_text::CheckedContentParameterOrigin::Authored {
+                        expression: source,
+                    },
+                )
             } else {
                 let default = match spec.presence {
                     arcweft_rich_text_schema::RichTextCallableParameterPresence::Defaulted(
@@ -696,12 +701,16 @@ impl Analyzer<'_, '_, '_> {
                     }
                     continue;
                 };
-                checked_compile_time_default(spec.kind, default).ok_or_else(|| {
+                let value = checked_compile_time_default(spec.kind, default).ok_or_else(|| {
                     AnalyzerExpressionError::rejected(application.core().site().expression())
-                })?
+                })?;
+                (
+                    value,
+                    crate::checked_rich_text::CheckedContentParameterOrigin::Defaulted,
+                )
             };
             values.push(crate::checked_rich_text::CheckedContentParameter::new(
-                spec.id, value,
+                spec.id, value, origin,
             ));
         }
         Ok(values)
