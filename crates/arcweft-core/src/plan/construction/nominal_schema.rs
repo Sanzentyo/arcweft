@@ -319,12 +319,10 @@ impl SchemaVisitor<'_> for DefinitionComparison<'_, '_> {
             | (Schema::Progress, Type::Progress)
             | (Schema::AgentValue, Type::AgentValue)
             | (Schema::Seq(_), Type::Sequence { .. }) => true,
-            (Schema::EntityReference(expected), Type::EntityReference(actual)) => {
-                *expected
-                    == actual
-                        .as_ref()
-                        .map(|child| self.tables.declaration(*child).semantic_identity())
-            }
+            (Schema::EntityReference(expected), Type::EntityReference(actual)) => expected
+                .matches_type(actual, |expected, actual| {
+                    *expected == self.tables.declaration(*actual).semantic_identity()
+                }),
             (Schema::Map { kind: expected, .. }, Type::Map { kind: actual, .. }) => {
                 expected == actual
             }

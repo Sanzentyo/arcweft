@@ -200,7 +200,9 @@ fn append_policy_awbc_types(
     for seed in &seeds {
         let shape = match seed.projection() {
             Type::String => AwbcType::String,
-            Type::EntityReference => AwbcType::EntityRef,
+            Type::EntityReference(reference) => {
+                AwbcType::EntityRef(reference.as_ref().map(|child| id(*child)))
+            }
             Type::Sequence { kind, item } => AwbcType::Sequence {
                 kind: *kind,
                 item: id(*item),
@@ -445,7 +447,14 @@ impl Types {
                 semantic(50),
                 Type::Choice(vec![semantic(51), role_semantic(Role::RichText)].into()),
             ),
-            RuntimePlanTypeSeed::new(semantic(51), Type::EntityReference),
+            RuntimePlanTypeSeed::new(
+                semantic(51),
+                Type::EntityReference(
+                    arcweft_core::value::RuntimeEntityReferenceType::family_only(
+                        arcweft_id::ProjectEntityReferenceFamily::Style,
+                    ),
+                ),
+            ),
             RuntimePlanTypeSeed::new(semantic(53), Type::String),
             RuntimePlanTypeSeed::new(
                 semantic(54),
@@ -547,7 +556,14 @@ impl Types {
                 semantic(50),
                 AwbcType::Choice(vec![AwbcTypeId(7), AwbcTypeId(5)]),
             ),
-            AwbcRuntimeType::new(semantic(51), AwbcType::EntityRef),
+            AwbcRuntimeType::new(
+                semantic(51),
+                AwbcType::EntityRef(
+                    arcweft_core::value::RuntimeEntityReferenceType::family_only(
+                        arcweft_id::ProjectEntityReferenceFamily::Style,
+                    ),
+                ),
+            ),
             AwbcRuntimeType::new(semantic(53), AwbcType::String),
             AwbcRuntimeType::new(
                 semantic(54),
@@ -1054,13 +1070,17 @@ fn role_payload_admission_rejects_nested_nominal_type_and_header_mismatches() {
             .unwrap(),
         )
         .unwrap();
-        assert!(matches!(
-            schema.encode(&bad),
-            Err(CharacterDialogueValueError::RoleType {
-                role: Role::Style,
-                ..
-            })
-        ));
+        let result = schema.encode(&bad);
+        assert!(
+            matches!(
+                result,
+                Err(CharacterDialogueValueError::ProgramType(
+                    arcweft_core::program_types::RuntimeProgramTypeError::PlanValue(_)
+                        | arcweft_core::program_types::RuntimeProgramTypeError::AwbcValue(_)
+                ))
+            ),
+            "wrong-family Style is rejected by the shared program type: {result:?}"
+        );
     }
 }
 

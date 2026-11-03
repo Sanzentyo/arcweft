@@ -4343,6 +4343,18 @@ fn closed_entity_value_constructor_rejects_foreign_owner_and_type_before_publica
         Err(RuntimeProjectFunctionFactError::InvalidEntityValueType { expression }) if expression == owner));
 }
 
+fn entity_reference_shape(ty: &arcweft_lang_sema::types::TypeKind) -> RuntimeTypeShape {
+    let arcweft_lang_sema::types::TypeKind::Ref(entity) = ty else {
+        panic!("accepted reference type");
+    };
+    RuntimeTypeShape::EntityReference(
+        entity
+            .runtime_reference_type()
+            .unwrap()
+            .map(|_| panic!("these fixtures have payload-free entity types")),
+    )
+}
+
 fn checked_entity_value_input(
     project: &HirProject,
     analysis: &arcweft_lang_sema::final_analysis::FinalSemanticAnalysis,
@@ -4365,11 +4377,7 @@ fn checked_entity_value_input(
                 .expect("accepted source entity projection");
             let ty = super::RuntimeNormalizedType::new(
                 RuntimeSemanticTypeId::from_bytes(*entity.type_identity().as_bytes()),
-                RuntimeTypeShape::EntityReference(
-                    arcweft_core::value::RuntimeEntityReferenceType::family_only(
-                        arcweft_id::ProjectEntityReferenceFamily::Asset,
-                    ),
-                ),
+                entity_reference_shape(entity.ty()),
             );
             replace_projected_type(&mut input, HirValueTypeOwner::Expression(owner), ty);
             input.push_value(owner, RuntimeResolvedValue::Entity(select(owner, entity)));
@@ -4485,6 +4493,14 @@ fn entity_value_public_admission_rejects_wrong_ref_family_or_physical_shape_for_
             .expect("closed Ref<Flow>");
     for ty in [
         super::RuntimeNormalizedType::new(
+            RuntimeSemanticTypeId::from_bytes(*entity.type_identity().as_bytes()),
+            RuntimeTypeShape::EntityReference(
+                arcweft_core::value::RuntimeEntityReferenceType::family_only(
+                    arcweft_id::ProjectEntityReferenceFamily::Flow,
+                ),
+            ),
+        ),
+        super::RuntimeNormalizedType::new(
             RuntimeSemanticTypeId::from_bytes(*wrong_family.as_bytes()),
             RuntimeTypeShape::EntityReference(
                 arcweft_core::value::RuntimeEntityReferenceType::family_only(
@@ -4570,11 +4586,7 @@ fn entity_pattern_public_admission_retains_exact_pattern_and_rejects_payload_own
                     HirValueTypeOwner::Pattern(*owner),
                     super::RuntimeNormalizedType::new(
                         RuntimeSemanticTypeId::from_bytes(*identity.as_bytes()),
-                        RuntimeTypeShape::EntityReference(
-                            arcweft_core::value::RuntimeEntityReferenceType::family_only(
-                                arcweft_id::ProjectEntityReferenceFamily::Asset,
-                            ),
-                        ),
+                        entity_reference_shape(entity.ty()),
                     ),
                 );
                 input.push_pattern_entity(
@@ -4591,6 +4603,23 @@ fn entity_pattern_public_admission_retains_exact_pattern_and_rejects_payload_own
     let admitted = runtime_facts(&project, input_with(alice, false))
         .expect("actual source pattern projections");
     assert_eq!(admitted.pattern_entity(*first), Some(alice));
+    let mut wrong_metadata = input_with(alice, false);
+    replace_projected_type(
+        &mut wrong_metadata,
+        HirValueTypeOwner::Pattern(*first),
+        super::RuntimeNormalizedType::new(
+            RuntimeSemanticTypeId::from_bytes(*alice.type_identity().as_bytes()),
+            RuntimeTypeShape::EntityReference(
+                arcweft_core::value::RuntimeEntityReferenceType::family_only(
+                    arcweft_id::ProjectEntityReferenceFamily::Flow,
+                ),
+            ),
+        ),
+    );
+    assert_eq!(
+        runtime_facts(&project, wrong_metadata).unwrap_err(),
+        RuntimeSemanticFactsError::InvalidEntityPatternType { pattern: *first }
+    );
     assert_eq!(
         runtime_facts(&project, input_with(bob, false))
             .expect_err("another accepted pattern cannot replace this source owner"),

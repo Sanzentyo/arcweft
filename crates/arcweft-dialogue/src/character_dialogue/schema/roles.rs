@@ -11,7 +11,6 @@ use arcweft_core::{
         RuntimeRetainedValueAdmission, RuntimeScalarView, RuntimeValue,
     },
 };
-use arcweft_id::DeclarationIdentityFamily;
 
 use super::super::{CharacterDialogueRuntimeRole as Role, CharacterDialogueValueError};
 use super::CharacterDialogueRuntimeSchema;
@@ -256,16 +255,10 @@ impl CharacterDialogueRuntimeSchema {
                 .ok_or(CharacterDialogueValueError::ForeignProgramOwner)?,
         )?;
         let authored = if role == Role::Style {
-            if let Some(RuntimeScalarView::EntityRef(reference)) = value.scalar() {
+            if let Some(RuntimeScalarView::EntityRef(_)) = value.scalar() {
                 admission
                     .validate_typed_borrowed(value, self.roles.value_type(role))
                     .map_err(CharacterDialogueValueError::from)?;
-                if reference.project_family() != Some(DeclarationIdentityFamily::Style) {
-                    return Err(Box::new(CharacterDialogueValueError::RoleType {
-                        role,
-                        reason: "Style reference has another entity family",
-                    }));
-                }
                 return Ok(());
             }
             Role::RichText

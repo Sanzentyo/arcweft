@@ -5139,10 +5139,13 @@ fn validate_pattern(
                 return invalid_type("literal pattern", "constant compatible with scrutinee");
             }
         }
-        AwbcPattern::Entity(_) => {
+        AwbcPattern::Entity(value) => {
             if !matches!(
                 runtime_shape(program, value_ty),
-                Some(AwbcRuntimeTypeShape::EntityRef(_) | AwbcRuntimeTypeShape::Dynamic)
+                Some(AwbcRuntimeTypeShape::EntityRef(expected)) if expected.accepts(value)
+            ) && !matches!(
+                runtime_shape(program, value_ty),
+                Some(AwbcRuntimeTypeShape::Dynamic)
             ) {
                 return invalid_type("entity pattern", "entity reference");
             }

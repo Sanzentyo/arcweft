@@ -167,7 +167,14 @@ mod dynamic_character_dialogue_context_tests {
         let style_entity_type = semantic(51);
         let style_type = *roles.style_ref();
         seeds.extend([
-            RuntimePlanTypeSeed::new(style_entity_type, Type::EntityReference),
+            RuntimePlanTypeSeed::new(
+                style_entity_type,
+                Type::EntityReference(
+                    arcweft_core::value::RuntimeEntityReferenceType::family_only(
+                        arcweft_id::ProjectEntityReferenceFamily::Style,
+                    ),
+                ),
+            ),
             RuntimePlanTypeSeed::new(
                 style_type,
                 Type::Choice(vec![style_entity_type, role_semantic(Role::RichText)].into()),

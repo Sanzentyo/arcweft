@@ -147,6 +147,29 @@ impl<R> RuntimeEntityReferenceType<R> {
             Self::CharacterLook(character) => RuntimeEntityReferenceType::CharacterLook(character),
         }
     }
+
+    /// Exact metadata equality across representations of the payload type edge.
+    pub fn matches_type<T>(
+        &self,
+        other: &RuntimeEntityReferenceType<T>,
+        payload_matches: impl FnOnce(&R, &T) -> bool,
+    ) -> bool {
+        match (self, other) {
+            (Self::Project(expected), RuntimeEntityReferenceType::Project(actual)) => {
+                expected.family == actual.family
+                    && expected.declaration == actual.declaration
+                    && match (&expected.payload, &actual.payload) {
+                        (None, None) => true,
+                        (Some(expected), Some(actual)) => payload_matches(expected, actual),
+                        _ => false,
+                    }
+            }
+            (Self::CharacterLook(expected), RuntimeEntityReferenceType::CharacterLook(actual)) => {
+                expected == actual
+            }
+            _ => false,
+        }
+    }
     /// Checks typed identity without interpreting display labels as IDs.
     /// Original-program consumers additionally admit the payload type edge.
     pub fn accepts(&self, value: &RuntimeEntityReference) -> bool {

@@ -7,6 +7,10 @@ use arcweft_core::plan::*;
 use arcweft_core::task::*;
 use arcweft_core::value::RuntimeSeq;
 fn fixture(items: &[bool], limit: u32) -> RuntimePlan {
+    fanout_fixture(items, limit, false, false)
+}
+
+fn fanout_fixture(items: &[bool], limit: u32, nested: bool, entry: bool) -> RuntimePlan {
     let mut builder = RuntimePlanBuilder::new();
     let unit = RuntimeCheckedType::Unit.semantic_identity_digest();
     let boolean = RuntimeCheckedType::Bool.semantic_identity_digest();
@@ -38,6 +42,7 @@ fn fixture(items: &[bool], limit: u32) -> RuntimePlan {
             ],
             [vector, unsigned, need_vector, boolean, vector]
                 .into_iter()
+                .chain(nested.then_some([need_bool, boolean]).into_iter().flatten())
                 .enumerate()
                 .map(|(index, ty)| {
                     RuntimeLocalDeclarationSeed::new(
@@ -59,6 +64,16 @@ fn fixture(items: &[bool], limit: u32) -> RuntimePlan {
     let handle = batch.local_ids()[2].clone();
     let item = batch.local_ids()[3].clone();
     let result = batch.local_ids()[4].clone();
+    let nested_worker = nested.then(|| {
+        (
+            batch.local_ids()[5].clone(),
+            batch.local_ids()[6].clone(),
+            builder
+                .task_plan_construction()
+                .reserve_original_source()
+                .unwrap(),
+        )
+    });
     let pattern = |ty, local: &RuntimeLocalSeedId| {
         RuntimePatternSeed::new(
             ty,
@@ -101,6 +116,48 @@ fn fixture(items: &[bool], limit: u32) -> RuntimePlan {
             policy: TaskPolicy::AlwaysStart,
             debug_label: "original Program fanout".into(),
         };
+    let mut worker_body = vec![RuntimeFlowOpSeed::If {
+        condition: RuntimeExprSeed::new(
+            boolean,
+            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                item.clone(),
+                RuntimeLocalReadMode::Copy,
+            )),
+        ),
+        then_ops: vec![RuntimeFlowOpSeed::Noop; 5],
+        else_ops: vec![],
+    }];
+    if let Some((worker_need, worker_result, inner_coordinate)) = nested_worker {
+        worker_body.extend([
+            RuntimeFlowOpSeed::ProgramTask {
+                template: RuntimeProgramTaskTemplate {
+                    producer: producer(
+                        inner_coordinate,
+                        NeedProducerFamily::StructuredTaskPlan,
+                        boolean,
+                        0xd4,
+                    ),
+                    delivery: ProgramTaskDelivery::LocalOnly,
+                    captures: vec![RuntimeProgramTaskCapture::moved(item.clone())],
+                    body: RuntimeProgramTaskBody::Flow(vec![RuntimeFlowOpSeed::ReturnExpr(read(
+                        boolean, &item,
+                    ))]),
+                },
+                name: None,
+                binding: pattern(need_bool, &worker_need),
+            },
+            RuntimeFlowOpSeed::Await {
+                binding: Some(pattern(boolean, &worker_result)),
+                target: RuntimeAwaitTargetSeed {
+                    source: read(need_bool, &worker_need),
+                },
+                observers: vec![],
+            },
+            RuntimeFlowOpSeed::ReturnExpr(read(boolean, &worker_result)),
+        ]);
+    } else {
+        worker_body.push(RuntimeFlowOpSeed::ReturnExpr(read(boolean, &item)));
+    }
     let flow = FlowRuntimeId::canonical("native_program_fanout").unwrap();
     builder
         .push_flow_executable(flow_executable(&flow))
@@ -171,22 +228,7 @@ fn fixture(items: &[bool], limit: u32) -> RuntimePlan {
                                     ),
                                     delivery: ProgramTaskDelivery::LocalOnly,
                                     captures: vec![RuntimeProgramTaskCapture::moved(item.clone())],
-                                    body: vec![
-                                        RuntimeFlowOpSeed::If {
-                                            condition: RuntimeExprSeed::new(
-                                                boolean,
-                                                RuntimeExprSeedKind::Local(
-                                                    RuntimeLocalReadSeed::new(
-                                                        item.clone(),
-                                                        RuntimeLocalReadMode::Copy,
-                                                    ),
-                                                ),
-                                            ),
-                                            then_ops: vec![RuntimeFlowOpSeed::Noop; 5],
-                                            else_ops: vec![],
-                                        },
-                                        RuntimeFlowOpSeed::ReturnExpr(read(boolean, &item)),
-                                    ],
+                                    body: worker_body,
                                 },
                             })),
                         },
@@ -209,7 +251,57 @@ fn fixture(items: &[bool], limit: u32) -> RuntimePlan {
             },
         ))
         .unwrap();
+    if entry {
+        builder
+            .push_entry(super::flow_entry(
+                if nested {
+                    "presentation_nested_need"
+                } else {
+                    "presentation_fanout"
+                },
+                flow,
+            ))
+            .unwrap();
+    }
     builder.finish().unwrap()
+}
+
+fn presentation_fixture_bytes(nested: bool) -> Vec<u8> {
+    let report = lower_plan(&fanout_fixture(&[false, true], 2, nested, true));
+    report
+        .program
+        .verify(Default::default(), Default::default())
+        .unwrap();
+    assert_eq!(report.program.header.abi_version, 1);
+    let encoded = report.program.encode_canonical().unwrap();
+    let decoded = AwbcProgram::decode_canonical(&encoded, Default::default()).unwrap();
+    assert_eq!(decoded, report.program);
+    encoded
+}
+
+#[test]
+fn presentation_cancellation_fixtures_match_the_original_program() {
+    for (nested, expected) in [
+        (false, include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../arcweft-core/src/awbc/product_step/tests/presentation/fanout-cancellation.awbc")).as_slice()),
+        (true, include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../arcweft-core/src/awbc/product_step/tests/presentation/fanout-need-cancellation.awbc")).as_slice()),
+    ] {
+        assert_eq!(presentation_fixture_bytes(nested), expected, "regenerate the Core fixture from its original Program builder; nested={nested}");
+    }
+}
+
+#[test]
+#[ignore = "explicit artifact generation writes the two shipped Core AWBC fixtures"]
+fn regenerate_presentation_cancellation_fixtures() {
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../arcweft-core/src/awbc/product_step/tests/presentation");
+    for (nested, name) in [
+        (false, "fanout-cancellation.awbc"),
+        (true, "fanout-need-cancellation.awbc"),
+    ] {
+        let bytes = presentation_fixture_bytes(nested);
+        std::fs::write(directory.join(name), &bytes).unwrap();
+        eprintln!("generated {name}: {} bytes", bytes.len());
+    }
 }
 
 #[test]

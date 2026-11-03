@@ -552,6 +552,22 @@ impl RuntimeNormalizedType {
         &self.shape
     }
 
+    fn matches_entity_type(&self, expected: &arcweft_lang_sema::types::TypeKind) -> bool {
+        let RuntimeTypeShape::EntityReference(actual) = self.shape() else {
+            return false;
+        };
+        let arcweft_lang_sema::types::TypeKind::Ref(entity) = expected else {
+            return false;
+        };
+        entity.runtime_reference_type().is_some_and(|expected| {
+            expected.matches_type(actual, |expected, actual| {
+                expected
+                    .semantic_identity_digest()
+                    .is_ok_and(|identity| identity.as_bytes() == actual.identity().as_bytes())
+            })
+        })
+    }
+
     /// Borrows the result of the accepted awaitable constructor, preserving
     /// the distinction between a Need and a scoped Thread handle.
     pub(crate) fn awaited_payload(&self) -> Option<&Self> {
@@ -12749,11 +12765,18 @@ fn validate_call(
             validate_nominal_record(modules, record)?;
             let invalid =
                 || RuntimeSemanticFactsError::InvalidRuntimeCallDisposition { expression };
-            if !matches!(record.nominal().source(),
-                RuntimeResolvedNominalSource::Project { declaration, .. }
-                if matches!(declaration.kind(),
-                    arcweft_lang_hir::symbol::nominal::ProjectNominalDeclarationKind::Action { .. }))
-                || hir_call.callee().value_expression() != Some(*receiver)
+            let RuntimeResolvedNominalSource::Project { declaration, .. } =
+                record.nominal().source()
+            else {
+                return Err(invalid());
+            };
+            let arcweft_lang_hir::symbol::nominal::ProjectNominalDeclarationKind::Action {
+                public_id,
+            } = declaration.kind()
+            else {
+                return Err(invalid());
+            };
+            if hir_call.callee().value_expression() != Some(*receiver)
                 || call.completed_group.get() != 0
                 || call.result() != RuntimeCallResultShape::Value
                 || call.attached_content().is_some()
@@ -12773,7 +12796,10 @@ fn validate_call(
             if receivers.next().is_some()
                 || channel.source() != RuntimeResolvedCallOperandSource::Expression(*receiver)
                 || channel.abi_position() != 0
-                || !matches!(channel.ty().shape(), RuntimeTypeShape::EntityReference(_))
+                || !matches!(channel.ty().shape(), RuntimeTypeShape::EntityReference(reference)
+                    if reference.family() == Some(arcweft_id::ProjectEntityReferenceFamily::Action)
+                    && reference.declaration() == Some(public_id)
+                    && reference.payload().is_some_and(|payload| payload.identity() == record.nominal().identity()))
                 || !matches!(
                     channel.projection(),
                     RuntimeResolvedCallOperandProjection::Scalar
@@ -15714,7 +15740,7 @@ fn validate_entity_value(
     }
     if expression_type.is_none_or(|ty| {
         ty.identity().as_bytes() != entity.type_identity().as_bytes()
-            || !matches!(ty.shape(), RuntimeTypeShape::EntityReference(_))
+            || !ty.matches_entity_type(entity.ty())
     }) {
         return Err(RuntimeSemanticFactsError::InvalidEntityValueType { expression });
     }
@@ -15728,7 +15754,7 @@ fn validate_entity_pattern_type(
 ) -> Result<(), RuntimeSemanticFactsError> {
     if ty.is_none_or(|ty| {
         ty.identity().as_bytes() != projection.type_identity().as_bytes()
-            || !matches!(ty.shape(), RuntimeTypeShape::EntityReference(_))
+            || !ty.matches_entity_type(projection.ty())
     }) {
         return Err(RuntimeSemanticFactsError::InvalidEntityPatternType { pattern });
     }
