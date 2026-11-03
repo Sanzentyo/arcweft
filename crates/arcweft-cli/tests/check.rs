@@ -567,11 +567,9 @@ fn assert_profile_json_summary(stdout: &str) {
 
     let runtime = &json["runtime"];
     assert_eq!(runtime["executor"], "bytecode_vm");
-    assert!(
-        runtime["final_status"]
-            .as_str()
-            .is_some_and(|status| status.contains("Return")),
-        "runtime should finish by returning from the profiled flow: {runtime}"
+    assert_eq!(
+        runtime["final_status"], "done Return(\"done\")",
+        "{runtime}"
     );
     assert!(
         runtime["steps"]
@@ -582,12 +580,21 @@ fn assert_profile_json_summary(stdout: &str) {
     assert!(
         runtime["steps"][0]["stats"]["executed_ops"]
             .as_u64()
-            .is_some_and(|value| value == 3)
+            .is_some_and(|value| value == 2)
             && runtime["executor_stats"]["aot_fast_path_ops"]
                 .as_u64()
                 .is_some()
             && runtime["native_io"]["completed_tasks"].as_u64().is_some(),
         "runtime execution counters should be populated: {runtime}"
+    );
+    // The authored log and return are the two executed operations.
+    let step = &runtime["steps"][0];
+    assert_eq!(step["stop_reason"], "Done", "{runtime}");
+    assert_eq!(step["line_effects"], serde_json::json!(["log.info"]));
+    assert_eq!(step["flow_events"], serde_json::json!(["return done"]));
+    assert_eq!(
+        step["observations"]["logs"],
+        serde_json::json!([{ "level": "info", "message": "profile" }])
     );
 }
 

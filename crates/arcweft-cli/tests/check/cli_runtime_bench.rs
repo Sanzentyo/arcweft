@@ -1353,7 +1353,6 @@ flow profile() -> String {
         !stdout.contains(&std::env::temp_dir().display().to_string()),
         "profile json must not record absolute temp paths: {stdout}"
     );
-    assert_profile_json_summary(&stdout);
 }
 
 #[test]
@@ -1897,6 +1896,39 @@ fn bundle_json_packages_image_animation_sample_assets_and_run_bundle_validates_t
     );
     let run_stdout = String::from_utf8_lossy(&run_output.stdout);
     assert_image_animation_run_bundle_output(&run_stdout);
+
+    // The bundle JSON intentionally omits typed FlowEvents. Check the line
+    // identity on the same decoded product through the public runner API.
+    let typed_run = arcweft_runtime_host::run_bundle_file_with_native_adapters(
+        &bundle_path,
+        &arcweft_runtime_host::BundleRunnerOptions {
+            entry: Some(
+                arcweft_core::plan::EntryRuntimeId::from_source_entity_body(
+                    "entry.image_static_png",
+                )
+                .expect("sample entry is canonical"),
+            ),
+            steps: 2,
+            mode: arcweft_runtime_host::BundleRunnerStepMode::Drain,
+            max_ops: 64,
+            ..arcweft_runtime_host::BundleRunnerOptions::default()
+        },
+        &[],
+    )
+    .expect("the same decoded image bundle runs through the typed API");
+    assert_eq!(typed_run.final_status, "dialogue");
+    let dialogue_lines = typed_run
+        .steps
+        .iter()
+        .flat_map(|step| &step.flow_events)
+        .filter_map(|event| match event {
+            arcweft_core::plan::FlowEvent::DialogueLine { line, .. } => {
+                Some(line.public_label().to_string())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(dialogue_lines, ["say.image.static_png"]);
 }
 
 fn assert_image_animation_bundle_assets(bundle_json: &serde_json::Value) {
@@ -1953,7 +1985,7 @@ fn assert_image_animation_run_bundle_output(run_stdout: &str) {
         "run-bundle should explicitly validate bundled image assets: {run_stdout}"
     );
     assert_eq!(run_json["executor"], "awbc_product");
-    assert_eq!(run_json["final_status"], "dialogue image.static_png");
+    assert_eq!(run_json["final_status"], "dialogue");
     assert!(
         !run_stdout.contains(&workspace_root().display().to_string()),
         "run-bundle JSON must not leak workspace paths: {run_stdout}"
@@ -3061,13 +3093,16 @@ flow measured() -> String {
             && stdout.contains("\"iterations\": 2")
             && stdout.contains("\"warmup\": 1")
             && stdout.contains("\"host_system\"")
-            && stdout.contains("\"executed_ops_median\": 3")
+            && stdout.contains("\"executed_ops_median\": 2")
             && stdout.contains("\"compiler\"")
             && stdout.contains("\"phases\""),
         "bench JSON should include headless measurement and compiler profiling: {stdout}"
     );
     let json: serde_json::Value =
         serde_json::from_str(&stdout).expect("bench output is structured JSON");
+    let measurement = &json["benches"][0]["sections"][0]["measurement"];
+    assert_eq!(measurement["deterministic"]["line_effects_median"], 1);
+    assert_eq!(measurement["deterministic"]["task_requests_median"], 0);
     assert_semantic_metrics(&json["compiler"]["semantic"]);
     assert_syntax_metrics(&json["compiler"]["syntax"]);
     assert_phase_timings_include(
