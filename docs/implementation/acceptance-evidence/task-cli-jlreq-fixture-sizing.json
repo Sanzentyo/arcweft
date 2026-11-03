@@ -1,0 +1,837 @@
+{
+  "version": 1,
+  "recordedAt": "2026-11-03T15:38:12.0263553Z",
+  "source": "15888388a085ab08849f6cc8bdb18d4f5bd39ec4",
+  "productionSource": "cd17eba41b99c837432722c6570f60f4287696e3",
+  "workingTree": "main; private fixture helper1path published; original12 tracked and6 actual untracked WIP retained",
+  "publication": {
+    "version": 1,
+    "commit": "15888388a085ab08849f6cc8bdb18d4f5bd39ec4",
+    "parent": "09117c45f110322ab546aa57ad981d92a63b0482",
+    "tree": "bfad2701a7914cb729ec55fc516167ff63195b0a",
+    "remote": "15888388a085ab08849f6cc8bdb18d4f5bd39ec4",
+    "paths": [
+      {
+        "path": "crates/arcweft-cli/tests/check/agent_observe_native/published_jlreq_units.rs",
+        "blob": "979c01c254094d47ab47bee2917ad2d369b81313"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "d8b783035411f350b092976c753643234a644a96b65a6c3db6e0e02aec56c5d9",
+    "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-03T15:37:18.1728905Z"
+  },
+  "graph": {
+    "version": 1,
+    "base": "09117c45f110322ab546aa57ad981d92a63b0482",
+    "root": "arcweft-cli",
+    "reversePackages": [
+      {
+        "name": "arcweft-cli",
+        "id": "path+file:///D:/git/arcweft/crates/arcweft-cli#0.1.0"
+      }
+    ],
+    "metadataReusedFrom": "bench-target.metadata.json",
+    "metadataSha256": "48645271823339777421ca9bc282033a87ce735e0a549fa31e564e0606b028fb",
+    "reason": "No production/Cargo change. Only three families of authored typography in a private CLI fixture helper; CLI is the sole actual transitive reverse package."
+  },
+  "focused": {
+    "version": 1,
+    "base": "09117c45f110322ab546aa57ad981d92a63b0482",
+    "run": "jlreq-sizing-owner2-20261104.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  52.995s] 6 tests run: 6 passed, 715 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 6,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 715,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4090,
+    "sourceDrift": 0,
+    "held": 12,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-11-03T15:34:53.428371Z"
+  },
+  "selectedCases": [
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_accented_latin_word_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_greek_latin_unit_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_numeric_unit_geometry",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_accented_latin_word_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_greek_latin_unit_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    },
+    {
+      "package": "arcweft-cli",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_unit_raw_crops",
+      "ignored": false,
+      "status": "matches"
+    }
+  ],
+  "initialFocused": {
+    "version": 1,
+    "base": "09117c45f110322ab546aa57ad981d92a63b0482",
+    "run": "jlreq-sizing-owner1-20261104.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  43.645s] 6 tests run: 6 passed, 715 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 6,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 715,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4090,
+    "sourceDrift": 0,
+    "held": 12,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-11-03T15:30:22.1038866Z"
+  },
+  "inputsProof": {
+    "version": 1,
+    "base": "09117c45f110322ab546aa57ad981d92a63b0482",
+    "path": "crates/arcweft-cli/tests/check/agent_observe_native/published_jlreq_units.rs",
+    "changes": [
+      {
+        "after": "[#size(36pt)[{}]][p]",
+        "family": "numeric Latin and Greek",
+        "before": "[{}][p]",
+        "sizePt": 36
+      },
+      {
+        "after": "[#size(38pt)[天café人]][p]",
+        "family": "accented Latin",
+        "before": "[天café人][p]",
+        "sizePt": 38
+      },
+      {
+        "after": "[#size(42pt)[天μm人]][p]",
+        "family": "Greek+Latin",
+        "before": "[天μm人][p]",
+        "sizePt": 42
+      }
+    ],
+    "sourceReviewAid": "Rustfmt applies the same canonical formatter to committed baseline and current source. After removing only six reviewed size wrappers and three comments, complete current source is identical to the formatted baseline. Preserve initial proof and fmt failure, preformat source, and formatted baseline. No assertion, input text, range, command option or budget changed.",
+    "allAssertionsUnchanged": true,
+    "textAndSourceRangesUnchanged": true,
+    "budgetsViewportsCaptureModesAndCaseInventoryUnchanged": true,
+    "productionChanges": 0,
+    "originalFailureEvidence": "task-cli-bench-headless-fixture.json: all6 exact IDs among the latest fullCLI22 failures",
+    "reason": "A short source with default typography need not wrap. Use authored typography to create the intended whole-unit-first-column and following-ideograph-next-column precondition. Preserve atomic words, numeric keep-together, exact source ranges, two writing modes, mask/object-id raw pixel and capture identity assertions. Hyphenated word behavior is independent and unchanged.",
+    "preexistingFormatFix": "3 existing noncanonical regions: reorder2 local imports, expand conditional whitespace, split iterator chain; no behavior changes. The first6PASS remains history, and all6 are rerun on final formatted source."
+  },
+  "inputDelta": [
+    {
+      "path": "crates/arcweft-cli/tests/check/agent_observe_native/published_jlreq_units.rs",
+      "bytes": 151062,
+      "sha256": "d211f6a748d4e3aac2c07a4b85a5d5d89f9849f453eec4a77c7e1df5b70af19c"
+    }
+  ],
+  "quality": [
+    {
+      "version": 1,
+      "base": "09117c45f110322ab546aa57ad981d92a63b0482",
+      "command": [
+        "check",
+        "-p",
+        "arcweft-cli",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4090,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-03T15:35:14.2830232Z",
+      "finishedAt": "2026-11-03T15:35:24.5401869Z"
+    },
+    {
+      "version": 1,
+      "base": "09117c45f110322ab546aa57ad981d92a63b0482",
+      "command": [
+        "clippy",
+        "-p",
+        "arcweft-cli",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4090,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-03T15:35:25.1265804Z",
+      "finishedAt": "2026-11-03T15:35:40.8677048Z"
+    },
+    {
+      "version": 1,
+      "base": "09117c45f110322ab546aa57ad981d92a63b0482",
+      "command": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking",
+        "--write",
+        "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/jlreq-sizing-quality1-20261104.structure-report"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4090,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-03T15:35:41.4461556Z",
+      "finishedAt": "2026-11-03T15:35:47.6743282Z"
+    }
+  ],
+  "format": {
+    "version": 1,
+    "base": "09117c45f110322ab546aa57ad981d92a63b0482",
+    "command": [
+      "rustfmt",
+      "--edition",
+      "2024",
+      "--check",
+      "crates/arcweft-cli/tests/check/agent_observe_native/published_jlreq_units.rs"
+    ],
+    "exitCode": 0,
+    "startedAt": "2026-11-03T15:35:12.1569074Z",
+    "finishedAt": "2026-11-03T15:35:12.4771222Z"
+  },
+  "initialFormat": {
+    "version": 1,
+    "base": "09117c45f110322ab546aa57ad981d92a63b0482",
+    "command": [
+      "rustfmt",
+      "--edition",
+      "2024",
+      "--check",
+      "crates/arcweft-cli/tests/check/agent_observe_native/published_jlreq_units.rs"
+    ],
+    "exitCode": 1,
+    "startedAt": "2026-11-03T15:31:27.4608861Z",
+    "finishedAt": "2026-11-03T15:31:27.9392545Z"
+  },
+  "structureReview": {
+    "version": 1,
+    "base": "09117c45f110322ab546aa57ad981d92a63b0482",
+    "workingTree": "main;1ownedprivateNativefixturehelper plus12originaltracked/6actualuntrackedWIP",
+    "owner": "arcweft-cli native published JLREQ unit geometry and raw crop fixtures",
+    "path": "crates/arcweft-cli/tests/check/agent_observe_native/published_jlreq_units.rs",
+    "bytes": 151062,
+    "physicalLoc": 4354,
+    "basePhysicalLoc": 4343,
+    "growth": 11,
+    "classification": "test",
+    "sourceSha256": "d211f6a748d4e3aac2c07a4b85a5d5d89f9849f453eec4a77c7e1df5b70af19c",
+    "disposition": "Above2500LOC integration helper remains cohesive around nativeJLREQ units, exactsource/glyph geometry and rawmask/object-id pixels. This cut authors only typography for3 families inbothgeometry/rawsources and appliesexisting rustfmt normalization. No assertion, input text, source range, case, budget, viewport or capture kind changes; no production/API/dependency/state cluster added. Existing sharedunit/capturehelpers and owner boundary remain. Canonicalreport suppliesexactembeddedtestLOC andpackagefanin/out.",
+    "canonicalFileMetric": {
+      "path": "crates/arcweft-cli/tests/check/agent_observe_native/published_jlreq_units.rs",
+      "owner": "arcweft-cli",
+      "bytes": "151062",
+      "physical_lines": "4354",
+      "code_lines": "4108",
+      "classification": "test",
+      "is_rust": "true",
+      "embedded_test_lines": "0"
+    },
+    "canonicalPackageMetric": {
+      "package": "arcweft-cli",
+      "manifest": "crates/arcweft-cli/Cargo.toml",
+      "workspace_fan_in": "0",
+      "workspace_fan_out": "54",
+      "development_workspace_fan_in": "0",
+      "development_workspace_fan_out": "2"
+    }
+  },
+  "rootCause": "The column-transition assertions require the body and whole unit to fit one column and the following ideograph to exceed its remainder. Default typography did not author that pressure; the actual original Greek fixture fit one column. Select explicit36pt numeric units,38pt accented Latin and42pt Greek+Latin, using the same declared View/container and original text. The maintained balanced_v1 policy consumes shaped physical metrics; no paragraph break is implied merely by a word or unit.",
+  "coverage": "All6 existing cases pass after final formatting. Preserve both numeric cases (3kg/3μm), both vertical directions, source ranges, atomic word/glyph cells, exact column direction/restart, mask and object-id raw crops, content pixel counts and object-id tint checks. No assertion, input text, budget, viewport, capture kind or case is removed.",
+  "formatCorrection": "Initial6 passed43.645s. Whole-file fmt then exposed3 pre-existing formatting regions. Apply only canonical rustfmt import/whitespace normalization, verify inverse source review against a separately formatted committed baseline, and rerun all6 on final bytes. Initial formatting failure and both passing runs remain history; only6 distinct cases are accepted.",
+  "probeScope": "Preserve the original same-column observation and all proposed sizing observations, including failed32pt accented and24/21pt hyphen proposals. Probes are diagnostics, not extra nextest passes. Hyphenated-word behavior is unchanged and excluded from this6-case acceptance.",
+  "baseline": {
+    "path": "docs/implementation/acceptance-evidence/task-cli-bench-headless-fixture.json",
+    "source": "06a629f0df1c523b307b51d7946de7693153279e",
+    "fullCli": {
+      "executed": 698,
+      "passed": 676,
+      "failed": 22,
+      "ignored": 23
+    },
+    "subsequentFocusedPasses": 6,
+    "targetedPreviouslyFailedCases": [
+      "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_accented_latin_word_geometry",
+      "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_greek_latin_unit_geometry",
+      "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_numeric_unit_geometry",
+      "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_accented_latin_word_raw_crops",
+      "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_greek_latin_unit_raw_crops",
+      "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_unit_raw_crops"
+    ],
+    "otherBaselineFailureIdsNotRerun": 16,
+    "scope": "Keep actual full698/676PASS/22FAIL result. Six of those failure IDs now pass in the focused run. No new fullCLI682/16 result is synthesized; other692 nonignored cases were not rerun in this cut."
+  },
+  "acceptanceLimits": "Private Native fixture preconditions only, not a renderer/planner implementation change, full Native/Web image parity, hyphenated-word policy resolution, unavailable adapter execution, declared benchmark-header iterations, or static style provenance completion. Accepted Generic Match151 and normal5162 retain their earlier exact evidence and are not reopened.",
+  "sourceInputs": 4090,
+  "sourceDrift": 0,
+  "caseDrift": 0,
+  "executableDrift": 0,
+  "originalWip": {
+    "tracked": 12,
+    "actualUntracked": 6,
+    "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+    "untrackedHashDrift": 0
+  },
+  "historyPrefix": {
+    "bytes": 1821725,
+    "sha256": "35be5eaedc719a391ffc585186b7901ffb127e76a2f4b08345ea675ede368903",
+    "drift": 0
+  },
+  "raw": {
+    "path": "docs/implementation/acceptance-evidence/task-cli-jlreq-fixture-sizing.raw.zip",
+    "bytes": 1776011,
+    "sha256": "69a29c56df842a55bc035222a0a89297f7930a630b673e3b5794ca31c212de6b",
+    "entryDrift": 0,
+    "entries": [
+      {
+        "entry": "audit-nextest-final-result.ps1",
+        "bytes": 5266,
+        "sha256": "9d136f5ff9dbe80e524a8c9adb2f11fc96cce75046e3e1fe3e93ba73888cc0ab"
+      },
+      {
+        "entry": "checkpoint-jlreq-sizing.message.txt",
+        "bytes": 69,
+        "sha256": "a96d1cd6e693c3221d9fc8fec92385fb2b37a204f70d029395d97c91fd269cea"
+      },
+      {
+        "entry": "checkpoint-jlreq-sizing.other.txt",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "checkpoint-jlreq-sizing.owned.txt",
+        "bytes": 78,
+        "sha256": "46b4d842b0f071fec4c2b3112313e0c9cd86322e518080defecf00d8851d3592"
+      },
+      {
+        "entry": "checkpoint-jlreq-sizing.pathspec",
+        "bytes": 77,
+        "sha256": "9ebeaa0df28c8c3ed4f2f57e7b13e57a520151f7390062a9ba3dc612054f5278"
+      },
+      {
+        "entry": "checkpoint-jlreq-sizing.prepared.json",
+        "bytes": 1317,
+        "sha256": "c1967eaa3986e426c73c3867a110b7b0e0e2d2b8c3128321c49b791d1560c97d"
+      },
+      {
+        "entry": "checkpoint-jlreq-sizing.reviewed.patch",
+        "bytes": 5217,
+        "sha256": "d8b783035411f350b092976c753643234a644a96b65a6c3db6e0e02aec56c5d9"
+      },
+      {
+        "entry": "checkpoint-jlreq-sizing.verified.json",
+        "bytes": 719,
+        "sha256": "0059957ae1e343ddaec928fb22a7e0f62ae9e8146420278f2f56c5680057f6b8"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/accented-vertical_lr.arcw",
+        "bytes": 176,
+        "sha256": "651a93c6164a39279e564d86bffc2554422a90e943b0f9bb0949ef6b5b0d0af6"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/accented-vertical_lr.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/accented-vertical_lr.stdout.json",
+        "bytes": 1299305,
+        "sha256": "309287e52dedf3942a22b15f20992e4df52bc4c1f7b3c692f8fb6a4a1854f370"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/accented-vertical_rl.arcw",
+        "bytes": 176,
+        "sha256": "b92774a171fe792447a334fcbcb80069b3f6924ab1a790af8f61969f50ca62fe"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/accented-vertical_rl.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/accented-vertical_rl.stdout.json",
+        "bytes": 1299958,
+        "sha256": "dbc1c2471c8c4a45ea6c42795d113bcecea42b17269ee4d639292201b011c32f"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/greek-vertical_lr.arcw",
+        "bytes": 174,
+        "sha256": "538d927ff86f942324f31f7442072b6ffeb8d1fd05004146058974bb6638fafe"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/greek-vertical_lr.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/greek-vertical_lr.stdout.json",
+        "bytes": 1239864,
+        "sha256": "2829df7a0e5bd13411c40d824d8cf2a93e119a9ff1433a9ece5815b3296cbcba"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/greek-vertical_rl.arcw",
+        "bytes": 174,
+        "sha256": "380820cdffb24af0c902aba50960b54bbc67b564b380a25d36c71b0fad596221"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/greek-vertical_rl.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/greek-vertical_rl.stdout.json",
+        "bytes": 1240352,
+        "sha256": "c39e2e58cb433aac6f14acadd90767ae5b172bf7d9d6a11d285b449a7b69854e"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/hyphenated-vertical_lr.arcw",
+        "bytes": 179,
+        "sha256": "912ca366dbc15939b44338c5798de03ce25a8633f363c490dee3c428c275c105"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/hyphenated-vertical_lr.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/hyphenated-vertical_lr.stdout.json",
+        "bytes": 1501399,
+        "sha256": "6b82b39d07888aab6ef407f122a16928ea30280ca2635899da3e038dd41fe290"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/hyphenated-vertical_rl.arcw",
+        "bytes": 179,
+        "sha256": "23b49553dc676a98bc535939fd02392f1ba742f56452e0cee350200df527815f"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/hyphenated-vertical_rl.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/hyphenated-vertical_rl.stdout.json",
+        "bytes": 1502176,
+        "sha256": "efaf90e833f91187a96885d7132d7217bf76f89e3b37303b6b7a25d9193c6c62"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/numeric-greek-vertical_lr.arcw",
+        "bytes": 175,
+        "sha256": "d545bd05d99ac63d10a1388d4185a992d04d63f27c1efcc5ea1cc1dd9725cde4"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/numeric-greek-vertical_lr.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/numeric-greek-vertical_lr.stdout.json",
+        "bytes": 1304111,
+        "sha256": "a4ed339f5cebf3db89780a75570deef0b647b7cbf0637d078e2b135a02d0a0a3"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/numeric-greek-vertical_rl.arcw",
+        "bytes": 175,
+        "sha256": "f1f190330c77b7a0b45aa8f0864634b9c3db07502e4924675a3ba8b8c9f846a2"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/numeric-greek-vertical_rl.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/numeric-greek-vertical_rl.stdout.json",
+        "bytes": 1304713,
+        "sha256": "a1f68560b41aa1834416bcc751cc429c20cf87528c5aba1921f54b593e3db0bd"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/numeric-latin-vertical_lr.arcw",
+        "bytes": 174,
+        "sha256": "81607b254cbf2c33492723c34f0b7b7016329962afbeeff9fab4176304cbf3c3"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/numeric-latin-vertical_lr.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/numeric-latin-vertical_lr.stdout.json",
+        "bytes": 1303998,
+        "sha256": "a2c0dc8724baf445d889161d23f2b5d0a38f171dbc05a41389daddb30fac5815"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/numeric-latin-vertical_rl.arcw",
+        "bytes": 174,
+        "sha256": "56f2a3a16c7d3bb81dbde6b3a5d1322d6866abf5d76a1e06acf1f5ca0f4429f1"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/numeric-latin-vertical_rl.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/numeric-latin-vertical_rl.stdout.json",
+        "bytes": 1304559,
+        "sha256": "abc7674e406ebdc37cd2bc71899646ea3afbcb9d538f16138f3e4464d57460d9"
+      },
+      {
+        "entry": "jlreq-authored-sizing1/observations.json",
+        "bytes": 22402,
+        "sha256": "39beb180dc2229d2c5f9c85986227cb53a18ae6d20472fec0835a040e8f0abf6"
+      },
+      {
+        "entry": "jlreq-authored-sizing2/accented-vertical_lr.arcw",
+        "bytes": 176,
+        "sha256": "2cbb5cdb3a6970a0132219623a449262ece85058e33a88b167ec6f8fd0115cc0"
+      },
+      {
+        "entry": "jlreq-authored-sizing2/accented-vertical_lr.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "jlreq-authored-sizing2/accented-vertical_lr.stdout.json",
+        "bytes": 1306357,
+        "sha256": "3e8bc4aaa5501092d1c58386cc59888a97e30348b3c6f18c20c975c99c52fed0"
+      },
+      {
+        "entry": "jlreq-authored-sizing2/accented-vertical_rl.arcw",
+        "bytes": 176,
+        "sha256": "127cef862ab0b9281454c6382e209c7b2bf80226cdf36786d4380a8e9b7fa531"
+      },
+      {
+        "entry": "jlreq-authored-sizing2/accented-vertical_rl.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "jlreq-authored-sizing2/accented-vertical_rl.stdout.json",
+        "bytes": 1306919,
+        "sha256": "4a892a9db7b5339e4a4508f3d18e201a1e7aba983e798d34f3a08681f2afeaf4"
+      },
+      {
+        "entry": "jlreq-authored-sizing2/hyphenated-vertical_lr.arcw",
+        "bytes": 179,
+        "sha256": "4616bba82efd32339b1eaf7a5ba871352e8cee1e5472db9fcfd4598f91ceb7d3"
+      },
+      {
+        "entry": "jlreq-authored-sizing2/hyphenated-vertical_lr.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "jlreq-authored-sizing2/hyphenated-vertical_lr.stdout.json",
+        "bytes": 1501434,
+        "sha256": "004ae572afba2349669777d7ffab150078807d4d20f214325e96a8a560b8b7d9"
+      },
+      {
+        "entry": "jlreq-authored-sizing2/hyphenated-vertical_rl.arcw",
+        "bytes": 179,
+        "sha256": "612709b0016ed0d25b00337f7009f1a13f04f8b0462fd38fdf9bf6514429f331"
+      },
+      {
+        "entry": "jlreq-authored-sizing2/hyphenated-vertical_rl.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "jlreq-authored-sizing2/hyphenated-vertical_rl.stdout.json",
+        "bytes": 1502210,
+        "sha256": "38a98c9a72d0e3f91f83b3d20c7050b0c2833ebf0bf1cd3f8b3c5e6576b78329"
+      },
+      {
+        "entry": "jlreq-authored-sizing2/observations.json",
+        "bytes": 9500,
+        "sha256": "83dd8c1dc523aaf2201b8cb8822a5f552cee659d51d81b3d51b622ea1c1684bf"
+      },
+      {
+        "entry": "jlreq-sizing-baseline.rs",
+        "bytes": 150724,
+        "sha256": "c1b839eb362417f38afcb61bf1ba5463a27cc23b92dbd32448ddb1ea3fa77dfd"
+      },
+      {
+        "entry": "jlreq-sizing-before-fmt.rs",
+        "bytes": 150954,
+        "sha256": "a4612c6c91c22ead40bef985813c01a29b5eaf59f3ed2b586e4ebf2ba9f1b686"
+      },
+      {
+        "entry": "jlreq-sizing-fmt.json",
+        "bytes": 361,
+        "sha256": "807ed9cf6696f3d7e68978a4b3d40f9c08e070eae99c0395d207999112d6ef92"
+      },
+      {
+        "entry": "jlreq-sizing-fmt.log",
+        "bytes": 1669,
+        "sha256": "86641db5a5e7c21a8bfb9de3b0d3b0308c45cbca21ac935c533c5b4d28b1311e"
+      },
+      {
+        "entry": "jlreq-sizing-fmt2.json",
+        "bytes": 361,
+        "sha256": "697f951d08802a74497911b3bb32d129fca3acd0867889edfe1826709ffd9ef7"
+      },
+      {
+        "entry": "jlreq-sizing-fmt2.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "jlreq-sizing-format-repair.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "jlreq-sizing-owner1-20261104.binaries-before.json",
+        "bytes": 2892,
+        "sha256": "75cd1f48259700613c91f7967c3875b4dfb43e28b387547bfaa774a359ccfceb"
+      },
+      {
+        "entry": "jlreq-sizing-owner1-20261104.catalog.inventory.json",
+        "bytes": 173501,
+        "sha256": "ef76a2f86109c9dc12bb6eefdcaa736b14002f25af5ed46d7f0829446292cc72"
+      },
+      {
+        "entry": "jlreq-sizing-owner1-20261104.catalog.json",
+        "bytes": 1096,
+        "sha256": "12725b7ee01c6d90eac8aac13b7ab5cb283efc98c4ef98b024a8606a24d9344a"
+      },
+      {
+        "entry": "jlreq-sizing-owner1-20261104.catalog.log",
+        "bytes": 219318,
+        "sha256": "178ffa42a92e20d90e686f625d9f6d1afebb344b9f99d3389d14f1af4cc656f9"
+      },
+      {
+        "entry": "jlreq-sizing-owner1-20261104.runtime.json",
+        "bytes": 1188,
+        "sha256": "29d676f56f1e79b4bdb3fdd073e92a77ce808be82dabcc15e31885c572b74fe4"
+      },
+      {
+        "entry": "jlreq-sizing-owner1-20261104.runtime.log",
+        "bytes": 287510,
+        "sha256": "89ad84bf236fbba1f7556f2268cb1e0bf566d56f2fba7e17c5e4ce435c26144d"
+      },
+      {
+        "entry": "jlreq-sizing-owner1-20261104.runtime.terminal-audit.json",
+        "bytes": 609,
+        "sha256": "47adfb5c22e24cf834d355cbf9b7533e6e94ad707e4b6a16db8adadc47b8aa1f"
+      },
+      {
+        "entry": "jlreq-sizing-owner1-20261104.source-freeze.json",
+        "bytes": 799574,
+        "sha256": "74ae225cbb826f3f439131cb7fc3545cc451c4b184d8600768c6288ae0fed06b"
+      },
+      {
+        "entry": "jlreq-sizing-owner2-20261104.binaries-before.json",
+        "bytes": 2892,
+        "sha256": "694622dd3856fb25f9cd642cff678b3ff2fc97c59747243611b7d7a590ba142b"
+      },
+      {
+        "entry": "jlreq-sizing-owner2-20261104.catalog.inventory.json",
+        "bytes": 173501,
+        "sha256": "ef76a2f86109c9dc12bb6eefdcaa736b14002f25af5ed46d7f0829446292cc72"
+      },
+      {
+        "entry": "jlreq-sizing-owner2-20261104.catalog.json",
+        "bytes": 1096,
+        "sha256": "e3097b190ca6afe7430ad8b0944b6df7aef5b8b82b6016ecfc1c2cb4e728a31c"
+      },
+      {
+        "entry": "jlreq-sizing-owner2-20261104.catalog.log",
+        "bytes": 219318,
+        "sha256": "a296e90a5ce0262c16932314ab6ab5d0fa01ca840f65cddc47be316c9e0f6974"
+      },
+      {
+        "entry": "jlreq-sizing-owner2-20261104.runtime.json",
+        "bytes": 1188,
+        "sha256": "834daec21999e192ec1efb493c2a5389144c781f65996ded7b48dbffa606162a"
+      },
+      {
+        "entry": "jlreq-sizing-owner2-20261104.runtime.log",
+        "bytes": 287510,
+        "sha256": "f24cb1c7ccaf0604fb18389d351de1e8a2cce208ec5bf3d6d043add7e106afe8"
+      },
+      {
+        "entry": "jlreq-sizing-owner2-20261104.runtime.terminal-audit.json",
+        "bytes": 609,
+        "sha256": "44d6094c61390e07e1f0864de2a3d1c1db9168acd151f9a0b778b7506e8a59a6"
+      },
+      {
+        "entry": "jlreq-sizing-owner2-20261104.source-freeze.json",
+        "bytes": 799574,
+        "sha256": "85df8b1a4e9b34618c2ebc66e059d76042d2a958b7adc48efe8f4e9e451904e0"
+      },
+      {
+        "entry": "jlreq-sizing-quality1-20261104-check.json",
+        "bytes": 366,
+        "sha256": "3a7c7dfca586a151768354ecb5f17c4485b040408cbe8cc2b41337803850d6eb"
+      },
+      {
+        "entry": "jlreq-sizing-quality1-20261104-check.log",
+        "bytes": 85990,
+        "sha256": "0c68f12b17f2cc84b31e8daeb65fca9092c2844256a5340fc7b40895b280bef6"
+      },
+      {
+        "entry": "jlreq-sizing-quality1-20261104-clippy.json",
+        "bytes": 367,
+        "sha256": "af71e707bf387d5ff591ec2407d751fa9f31c9d77d35fcc567f197660ec4bf95"
+      },
+      {
+        "entry": "jlreq-sizing-quality1-20261104-clippy.log",
+        "bytes": 7165231,
+        "sha256": "bd7a8758bd51adc2610c701e5a938f8effebf7bcf6f7ebb111a537e31002648b"
+      },
+      {
+        "entry": "jlreq-sizing-quality1-20261104-structure.json",
+        "bytes": 525,
+        "sha256": "86bfc5c8579d326dbe0d950df319d0c83949f85479005c0add632d1aa93dd359"
+      },
+      {
+        "entry": "jlreq-sizing-quality1-20261104-structure.log",
+        "bytes": 65604,
+        "sha256": "f14cfaa364ca5d5ad437679e90f7b129b4c658aa738e349b3a0e062908eb017d"
+      },
+      {
+        "entry": "jlreq-sizing-quality1-20261104.structure-report/dependency_edges.csv",
+        "bytes": 78114,
+        "sha256": "ed740dc1ecf2341a73101ad5ce67871b803b4a3f24542bda8269119484a3f6b9"
+      },
+      {
+        "entry": "jlreq-sizing-quality1-20261104.structure-report/file_metrics.csv",
+        "bytes": 336640,
+        "sha256": "380cbb5083eb745fcaf4bd1b288fbde05091722cfb0bdd13f228d18c6d9a9b53"
+      },
+      {
+        "entry": "jlreq-sizing-quality1-20261104.structure-report/findings.md",
+        "bytes": 123305,
+        "sha256": "7f7f3bc1223e71136546f2c982d07b26a776e65aedbea7d420c8402299e622e9"
+      },
+      {
+        "entry": "jlreq-sizing-quality1-20261104.structure-report/package_metrics.csv",
+        "bytes": 6508,
+        "sha256": "69980c5bd27ba9dfb87970e4a9528bcbca1747425c46a0fe3fa1acab2135cf5b"
+      },
+      {
+        "entry": "jlreq-sizing-quality1-20261104.structure-report/public_type_duplicates.csv",
+        "bytes": 17276,
+        "sha256": "bb4d20a2e6819614b15ed1698619f49f53aa1650748d1bc100be27eaa2d6a49f"
+      },
+      {
+        "entry": "jlreq-sizing.graph.json",
+        "bytes": 560,
+        "sha256": "76e4cc79efb3f6dd452209dec6fa246109e40e16d8c10d87db8e1322ab237f64"
+      },
+      {
+        "entry": "jlreq-sizing.inputs-proof-final.json",
+        "bytes": 1953,
+        "sha256": "28a924a4a86065970591c2994aee2447cec8a3db0aa95fc683e9402dfbb582de"
+      },
+      {
+        "entry": "jlreq-sizing.inputs-proof.json",
+        "bytes": 1591,
+        "sha256": "01f41f67ffcdce1d966e0626b4b97a8b8e996ae4ac3eedbd5dc069c840ee4430"
+      },
+      {
+        "entry": "jlreq-sizing.structure-review.json",
+        "bytes": 1684,
+        "sha256": "6e8d1ab5f13bc2982e5b080ce5be79033dcb3e8803d2f3ae1510f78f260a9fce"
+      },
+      {
+        "entry": "jlreq-unit-frontier1/greek.arcw",
+        "bytes": 161,
+        "sha256": "d47135534ed57d7010af203bf8f3e28a58db35b616e18725b965573becff7c68"
+      },
+      {
+        "entry": "jlreq-unit-frontier1/observation.json",
+        "bytes": 1280,
+        "sha256": "e6e829081f48f6b05debc3bc623afa83123062b70dbed3b3b68886b3a38d0b81"
+      },
+      {
+        "entry": "jlreq-unit-frontier1/stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "jlreq-unit-frontier1/stdout.json",
+        "bytes": 1233023,
+        "sha256": "916c26bfb4fcb03b317cd559cbf46e5fc5f47baa4639da8c05a2f09fb3e7829d"
+      },
+      {
+        "entry": "probe-jlreq-authored-sizing.ps1",
+        "bytes": 3246,
+        "sha256": "459b046fb97537d9a6bda8c7e112bbc46f808fd16465e1b86b2f6c50c5ed4343"
+      },
+      {
+        "entry": "probe-jlreq-authored-sizing2.ps1",
+        "bytes": 3073,
+        "sha256": "5b7b1a857605c7da64ead43c1a0ce6e7a9c5ca07bf119928fd14f032d1ed792d"
+      },
+      {
+        "entry": "probe-jlreq-unit-frontier.ps1",
+        "bytes": 2355,
+        "sha256": "c6def539abc312bf9aee4bc9643a8578abf3fa6dd8ddbaebc8586c7683a03e14"
+      },
+      {
+        "entry": "record-jlreq-sizing.ps1",
+        "bytes": 11790,
+        "sha256": "158b52c3e3362e4c7494a8853709ef47664b1d3b89a0270297bca8e3f29d590f"
+      },
+      {
+        "entry": "run-action-payload-quality.ps1",
+        "bytes": 1729,
+        "sha256": "ca098c1a52ef14e7f767eec068c3a20e5415e73ee4191d81ccbf9aafa8ac339a"
+      },
+      {
+        "entry": "run-presentation-projection-owner.ps1",
+        "bytes": 4134,
+        "sha256": "b60d753498997e4ba3b809b3721e9190ea1860971c755e6a1648a8e213403c58"
+      },
+      {
+        "entry": "update-jlreq-sizing-current-status.ps1",
+        "bytes": 4690,
+        "sha256": "53bc909f1b9718a9d67149c8f5ed523d645922f5ac1a6a6c972784a71bea7690"
+      }
+    ]
+  }
+}
