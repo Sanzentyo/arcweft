@@ -98,6 +98,7 @@ fn engine_with_carrier(explicit_return: bool, ordinary_need: bool) -> Engine {
                     RuntimeFlowOpSeed::ProgramTask {
                         template: crate::plan::RuntimeProgramTaskTemplate {
                             delivery: crate::task::ProgramTaskDelivery::HostMetadata,
+                            effects: crate::plan::RuntimeEffectSet::empty(),
                             captures: vec![],
                             producer: NeedProducerDefinition {
                                 function: definition,

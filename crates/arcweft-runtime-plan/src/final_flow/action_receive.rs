@@ -87,6 +87,10 @@ impl FinalFlowLowerer<'_> {
                 template: RuntimeProgramTaskTemplate {
                     producer,
                     delivery: ProgramTaskDelivery::LocalOnly,
+                    effects: RuntimeEffectSet::try_from_effects([
+                        arcweft_id::EffectId::action_receive(),
+                    ])
+                    .expect("one engine effect"),
                     captures: vec![RuntimeProgramTaskCapture::copy(channel.clone())],
                     body: arcweft_core::plan::RuntimeProgramTaskBody::Flow(vec![
                         RuntimeFlowOpSeed::ReceiveAction {

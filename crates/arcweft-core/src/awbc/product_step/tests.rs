@@ -7039,6 +7039,7 @@ fn await_many_original_program_with_thread(
             RuntimeFlowOpSeed::ProgramTask {
                 template: crate::plan::RuntimeProgramTaskTemplate {
                     delivery: crate::task::ProgramTaskDelivery::HostMetadata,
+                    effects: crate::plan::RuntimeEffectSet::empty(),
                     captures: vec![crate::plan::RuntimeProgramTaskCapture::copy(source.clone())],
                     producer: NeedProducerDefinition {
                         function: RuntimeFunctionDefinitionIdentity::from_accepted_identity(
@@ -7103,6 +7104,12 @@ fn await_many_original_program_with_thread(
             }],
         })
         .unwrap();
+    let launch_effects = if threaded {
+        RuntimeEffectSet::try_from_effects([arcweft_id::EffectId::parse("control.spawn").unwrap()])
+            .unwrap()
+    } else {
+        RuntimeEffectSet::empty()
+    };
     builder.push_flow_seed(RuntimeFlowSeed::new(
         flow,
         RuntimeFunctionSiteDeclarationSeed::flow(
@@ -7118,10 +7125,10 @@ fn await_many_original_program_with_thread(
                 unrestricted_bindings: Box::new([]),
             }]),
             unit,
-            RuntimeEffectSet::empty(),
+            launch_effects.clone(),
         ),
         RuntimeExecutableBodySeed {
-            effects: RuntimeEffectSet::empty(),
+            effects: launch_effects,
             ops: ops.into_boxed_slice(),
         },
     )).unwrap();
@@ -7648,6 +7655,16 @@ fn await_many_product_program_with_thread(
         program.entries[0].target = crate::awbc::schema::AwbcEntryTarget::Function {
             function: AwbcFunctionId(3),
         };
+        let spawn = AwbcStringId(program.strings.len().try_into().unwrap());
+        program.strings.push("control.spawn".into());
+        let effects = AwbcEffectSetId(program.effect_sets.len().try_into().unwrap());
+        program
+            .effect_sets
+            .push(crate::awbc::schema::AwbcEffectSet {
+                effects: vec![spawn],
+            });
+        let caller = program.functions[3].signature;
+        program.signatures[caller.index()].effects = effects;
     }
     program.canonicalize_string_table();
     program

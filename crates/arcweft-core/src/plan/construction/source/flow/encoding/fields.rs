@@ -522,6 +522,7 @@ impl Writer {
                     crate::plan::RuntimeProgramTaskTemplate {
                         producer,
                         delivery,
+                        effects,
                         captures,
                         body,
                     },
@@ -530,6 +531,10 @@ impl Writer {
                 self.optional_text(name.as_deref())?;
                 self.producer_definition(producer, plan)?;
                 self.byte(delivery.semantic_tag())?;
+                self.count(effects.len())?;
+                for effect in effects.iter() {
+                    self.text(effect.as_str())?;
+                }
                 self.count(captures.len())?;
                 for capture in captures {
                     self.byte(capture.mode.semantic_tag())?;
@@ -544,6 +549,10 @@ impl Writer {
                         self.local(fanout.item)?;
                         self.producer_definition(&fanout.worker.producer, plan)?;
                         self.byte(fanout.worker.delivery.semantic_tag())?;
+                        self.count(fanout.worker.effects.len())?;
+                        for effect in fanout.worker.effects.iter() {
+                            self.text(effect.as_str())?;
+                        }
                         self.count(fanout.worker.captures.len())?;
                         for capture in &fanout.worker.captures {
                             self.byte(capture.mode.semantic_tag())?;

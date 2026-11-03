@@ -1590,6 +1590,7 @@ pub struct CheckedThread {
     body: arcweft_lang_hir::identity::ScopeId,
     mode: arcweft_lang_hir::expr::HirThreadMode,
     result: TypeKind,
+    body_effects: EffectSet,
 }
 
 impl CheckedThread {
@@ -1601,6 +1602,7 @@ impl CheckedThread {
             body: thread.scope(),
             mode: thread.mode(),
             result,
+            body_effects: EffectSet::new(),
         }
     }
 
@@ -1614,6 +1616,10 @@ impl CheckedThread {
 
     pub const fn result(&self) -> &TypeKind {
         &self.result
+    }
+
+    pub const fn body_effects(&self) -> &EffectSet {
+        &self.body_effects
     }
 
     pub fn matches_source(&self, thread: &arcweft_lang_hir::expr::HirThreadExpr) -> bool {
@@ -2740,6 +2746,14 @@ impl CheckedExpression {
     #[must_use]
     pub(crate) fn with_completed_effects(mut self, effects: EffectSet) -> Self {
         self.data.effects = effects;
+        self
+    }
+
+    pub(super) fn with_completed_thread_body_effects(mut self, effects: EffectSet) -> Self {
+        let CheckedExpressionResolution::Thread(thread) = &mut self.data.resolution else {
+            unreachable!("the completed Thread body fold owns a Thread expression");
+        };
+        thread.body_effects = effects;
         self
     }
 

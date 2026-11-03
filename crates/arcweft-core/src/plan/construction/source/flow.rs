@@ -98,6 +98,10 @@ pub(in crate::plan) enum RuntimeFlowSourceError {
     },
     #[error("Flow Source text is invalid UTF-8: {0}")]
     Utf8(#[from] std::str::Utf8Error),
+    #[error("Flow Source effect is invalid: {0}")]
+    Effect(#[from] arcweft_id::EffectIdError),
+    #[error("Flow Source effect set is invalid: {0}")]
+    EffectSet(#[from] crate::plan::RuntimeEffectSetError),
     #[error("Flow Source path is invalid: {0}")]
     Path(#[from] crate::runtime_id::RuntimeIdError),
     #[error("Flow Source identity is invalid: {0}")]

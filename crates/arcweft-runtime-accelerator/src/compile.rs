@@ -845,6 +845,7 @@ fn runtime_ops_work_units(ops: &[arcweft_core::plan::FlowOp]) -> usize {
             | FlowOp::Dialogue { .. }
             | FlowOp::Choice { .. }
             | FlowOp::Await { .. }
+            | FlowOp::ReceiveAction { .. }
             | FlowOp::StartNeedProducer { .. }
             | FlowOp::AwaitMany { .. }
             | FlowOp::HostCall { .. }

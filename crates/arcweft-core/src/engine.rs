@@ -177,9 +177,13 @@ type NativeEngineRollbackImage = Engine<
 >;
 
 impl<N, P, R, F, D> Engine<N, P, R, F, D> {
-    fn main_fiber(&self) -> &FlowFiber<F> { self.parked_main.as_ref().unwrap_or(&self.fiber) }
+    fn main_fiber(&self) -> &FlowFiber<F> {
+        self.parked_main.as_ref().unwrap_or(&self.fiber)
+    }
     fn session_fibers(&self) -> impl Iterator<Item = &FlowFiber<F>> {
-        std::iter::once(&self.fiber).chain(&self.parked_main).chain(&self.child_fibers)
+        std::iter::once(&self.fiber)
+            .chain(&self.parked_main)
+            .chain(&self.child_fibers)
     }
     fn session_children(&self) -> impl Iterator<Item = &FlowFiber<F>> {
         self.session_fibers().filter(|fiber| fiber.id.0 != 0)
@@ -2062,13 +2066,18 @@ fn pure_helper_i64_call_shapes(plan: &RuntimePlan) -> Vec<bool> {
 
 impl Engine {
     fn inert_rollback_image(&self) -> Result<NativeEngineRollbackImage, String> {
-        validate_program_task_launches(&self.fiber, &self.child_fibers, self.parked_main.as_ref(), |launch| {
-            self.need_producers
-                .accepted_task_spec(launch.handle())
-                .is_some_and(|spec| {
-                    launch.matches_spec(spec) && launch.source().belongs_to(&self.plan)
-                })
-        })?;
+        validate_program_task_launches(
+            &self.fiber,
+            &self.child_fibers,
+            self.parked_main.as_ref(),
+            |launch| {
+                self.need_producers
+                    .accepted_task_spec(launch.handle())
+                    .is_some_and(|spec| {
+                        launch.matches_spec(spec) && launch.source().belongs_to(&self.plan)
+                    })
+            },
+        )?;
         self.dialogue_activations
             .validate_parent_allocations(self.next_fiber_id)?;
         let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&self.plan));
@@ -2126,7 +2135,11 @@ impl Engine {
                 .map(|root| root.snapshot_admitted(&owner))
                 .transpose()?,
             fiber: self.fiber.snapshot_with_admitted_values(&owner)?,
-            parked_main: self.parked_main.as_ref().map(|fiber| fiber.snapshot_with_admitted_values(&owner)).transpose()?,
+            parked_main: self
+                .parked_main
+                .as_ref()
+                .map(|fiber| fiber.snapshot_with_admitted_values(&owner))
+                .transpose()?,
             child_fibers: self
                 .child_fibers
                 .iter()
@@ -2151,14 +2164,19 @@ impl Engine {
         image: NativeEngineRollbackImage,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<Self, String> {
-        validate_program_task_launches(&image.fiber, &image.child_fibers, image.parked_main.as_ref(), |launch| {
-            image
-                .need_producers
-                .task_spec(launch.handle().correlation)
-                .is_some_and(|spec| {
-                    launch.matches_spec(spec) && launch.source().belongs_to(&image.plan)
-                })
-        })?;
+        validate_program_task_launches(
+            &image.fiber,
+            &image.child_fibers,
+            image.parked_main.as_ref(),
+            |launch| {
+                image
+                    .need_producers
+                    .task_spec(launch.handle().correlation)
+                    .is_some_and(|spec| {
+                        launch.matches_spec(spec) && launch.source().belongs_to(&image.plan)
+                    })
+            },
+        )?;
         image
             .dialogue_activations
             .validate_parent_allocations(image.next_fiber_id)?;
@@ -2209,7 +2227,10 @@ impl Engine {
                 .map(|root| RootRuntime::from_admitted_rollback_image(root, owner))
                 .transpose()?,
             fiber: FlowFiber::from_rollback_image(image.fiber, owner)?,
-            parked_main: image.parked_main.map(|fiber| FlowFiber::from_rollback_image(fiber, owner)).transpose()?,
+            parked_main: image
+                .parked_main
+                .map(|fiber| FlowFiber::from_rollback_image(fiber, owner))
+                .transpose()?,
             child_fibers: image
                 .child_fibers
                 .into_iter()
@@ -4312,7 +4333,10 @@ impl Engine {
         let mut drop_policy = None;
         self.step_active_child_fiber(input, events, output, pure_backend, &mut drop_policy);
         self.finish_active_child_if_exhausted(output, pure_backend);
-        let main = self.parked_main.take().expect("selected child retains its main owner");
+        let main = self
+            .parked_main
+            .take()
+            .expect("selected child retains its main owner");
         let mut child = std::mem::replace(&mut self.fiber, main);
         let live_tokens = matches!(&owner, FlowFiberOwner::LineTask(_))
             .then(|| flow_fiber_line_handle_tokens(&child))

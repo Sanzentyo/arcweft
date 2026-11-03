@@ -194,6 +194,7 @@ pub(super) fn preflight(
                 kind: "Program task delivery",
                 tag,
             })?;
+            reader.program_effects()?;
             let count = reader.metadata.u32()? as usize;
             reader
                 .counts
@@ -228,6 +229,7 @@ pub(super) fn preflight(
                         kind: "Program worker delivery",
                         tag,
                     })?;
+                    reader.program_effects()?;
                     let count = reader.metadata.u32()? as usize;
                     reader.counts.array::<crate::plan::RuntimeProgramTaskCapture<crate::plan::RuntimeLocalSeedId>>(count)?;
                     for _ in 0..count {
@@ -354,6 +356,22 @@ impl Reader<'_, '_> {
         let text = self.metadata.text()?;
         self.counts.text(text)?;
         Ok(text)
+    }
+    fn program_effects(&mut self) -> Result<(), Error> {
+        let count = self.metadata.u32()? as usize;
+        self.counts.array::<arcweft_id::EffectId>(count)?;
+        let mut previous = None;
+        for _ in 0..count {
+            let effect = arcweft_id::EffectId::parse(self.text()?)?;
+            if previous
+                .as_ref()
+                .is_some_and(|previous| previous >= &effect)
+            {
+                return Err(Error::Prefix);
+            }
+            previous = Some(effect);
+        }
+        Ok(())
     }
     fn optional_text(&mut self) -> Result<(), Error> {
         if self.metadata.flag("optional text")? {

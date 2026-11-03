@@ -246,6 +246,15 @@ impl Reader<'_, '_, '_> {
             tag,
         })
     }
+    fn program_effects(&mut self) -> Result<crate::plan::RuntimeEffectSet, Error> {
+        let count = self.metadata.u32()? as usize;
+        self.counts.array::<arcweft_id::EffectId>(count)?;
+        let mut effects = Vec::with_capacity(count);
+        for _ in 0..count {
+            effects.push(arcweft_id::EffectId::parse(&self.text()?)?);
+        }
+        Ok(crate::plan::RuntimeEffectSet::try_from_effects(effects)?)
+    }
     fn body(&mut self) -> Result<Vec<RuntimeFlowOpSeed>, Error> {
         let count = self.bodies.u32()? as usize;
         if count > self.seeds.len() {
@@ -981,6 +990,7 @@ impl Reader<'_, '_, '_> {
                 template: crate::plan::RuntimeProgramTaskTemplate {
                     producer: self.producer_definition()?,
                     delivery: self.program_task_delivery()?,
+                    effects: self.program_effects()?,
                     captures: self.program_task_captures()?,
                     body: match self.metadata.byte()? {
                         0 => crate::plan::RuntimeProgramTaskBody::Flow(self.body()?),
@@ -998,6 +1008,7 @@ impl Reader<'_, '_, '_> {
                             let item = self.local()?;
                             let producer = self.producer_definition()?;
                             let delivery = self.program_task_delivery()?;
+                            let effects = self.program_effects()?;
                             let captures = self.program_task_captures()?;
                             crate::plan::RuntimeProgramTaskBody::Fanout(Box::new(
                                 crate::plan::RuntimeProgramFanout {
@@ -1007,6 +1018,7 @@ impl Reader<'_, '_, '_> {
                                     worker: crate::plan::RuntimeProgramTaskTemplate {
                                         producer,
                                         delivery,
+                                        effects,
                                         captures,
                                         body: self.body()?,
                                     },

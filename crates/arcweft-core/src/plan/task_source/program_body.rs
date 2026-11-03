@@ -103,6 +103,11 @@ impl RuntimeProgramTaskBodyRef<'_> {
     }
 
     #[must_use]
+    pub const fn effects(&self) -> &crate::plan::RuntimeEffectSet {
+        self.template.effects()
+    }
+
+    #[must_use]
     pub const fn captures(&self) -> &[crate::plan::RuntimeProgramTaskCapture] {
         self.template.captures()
     }

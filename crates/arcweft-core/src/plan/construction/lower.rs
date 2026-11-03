@@ -4045,6 +4045,7 @@ impl RuntimePlanBodyConstruction<'_> {
                     crate::plan::RuntimeProgramTaskTemplate {
                         producer,
                         delivery,
+                        effects,
                         captures,
                         body,
                     },
@@ -4076,6 +4077,7 @@ impl RuntimePlanBodyConstruction<'_> {
                     template: crate::plan::RuntimeProgramTaskTemplate {
                         producer,
                         delivery,
+                        effects,
                         captures,
                         body,
                     },

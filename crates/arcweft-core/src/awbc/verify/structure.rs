@@ -1026,11 +1026,15 @@ fn verify_parameter_layout(
                     .map(|effect| program.strings[effect.index()].as_str()),
             )
             .map_err(|_| invalid_context("function effect set contains an invalid identity"))?;
+            // A Program body borrows this lexical binder. Its independent
+            // signature and effects are authenticated by its original Source
+            // template before task admission, rather than inherited here.
             if !row.scope().is_root()
                 || (!lexical_body
-                    && (parameters != &signature.params || Some(*result) != signature.result))
-                || contract.invocation()
-                    != &crate::effect_row::EffectFormula::literal(effects, None)
+                    && (parameters != &signature.params
+                        || Some(*result) != signature.result
+                        || contract.invocation()
+                            != &crate::effect_row::EffectFormula::literal(effects, None)))
             {
                 return Err(invalid_context(
                     "function context does not authenticate its exact signature",

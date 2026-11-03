@@ -144,6 +144,7 @@ fn fixture(items: &[bool], limit: u32) -> Engine {
                                 0xc0,
                             ),
                             delivery: ProgramTaskDelivery::LocalOnly,
+                            effects: crate::plan::RuntimeEffectSet::empty(),
                             captures: vec![
                                 RuntimeProgramTaskCapture::moved(source.clone()),
                                 RuntimeProgramTaskCapture::copy(bound.clone()),
@@ -160,6 +161,7 @@ fn fixture(items: &[bool], limit: u32) -> Engine {
                                         0xc4,
                                     ),
                                     delivery: ProgramTaskDelivery::LocalOnly,
+                                    effects: crate::plan::RuntimeEffectSet::empty(),
                                     captures: vec![RuntimeProgramTaskCapture::moved(item.clone())],
                                     body: vec![
                                         RuntimeFlowOpSeed::If {

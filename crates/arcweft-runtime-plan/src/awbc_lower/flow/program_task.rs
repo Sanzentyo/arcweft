@@ -87,9 +87,7 @@ impl AwbcFlowLowerer<'_, '_> {
         }
         let mut body =
             FlowBodyBuilder::new(self.inventory, owner, AwbcSafePointKind::CallableBoundary);
-        let previous_effects = self
-            .active_effect_set
-            .replace(source.function().invocation_effects().clone());
+        let previous_effects = self.active_effect_set.replace(source.effects().clone());
         match source.body() {
             arcweft_core::plan::RuntimeProgramTaskKernelRef::Flow(ops) => {
                 self.lower_ops(&mut frame, &mut body, ops, path)
@@ -112,9 +110,7 @@ impl AwbcFlowLowerer<'_, '_> {
         for resume in &body.resume_points {
             self.inventory.program.resume_points[resume.index()].frame_layout = layout;
         }
-        let effects = self
-            .inventory
-            .intern_effect_set(source.function().invocation_effects());
+        let effects = self.inventory.intern_effect_set(source.effects());
         let signature = self
             .inventory
             .intern_signature(params, Some(result_type), effects);

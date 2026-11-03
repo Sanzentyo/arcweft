@@ -893,6 +893,7 @@ pub(crate) fn owned_program_need_fixture(
                 ops: Box::new([
                     RuntimeFlowOpSeed::ProgramTask {
                         template: crate::plan::RuntimeProgramTaskTemplate {
+                            effects: crate::plan::RuntimeEffectSet::empty(),
                             delivery,
                             producer: crate::task::NeedProducerDefinition {
                                 function: first_definition,
@@ -932,6 +933,7 @@ pub(crate) fn owned_program_need_fixture(
                     },
                     RuntimeFlowOpSeed::ProgramTask {
                         template: crate::plan::RuntimeProgramTaskTemplate {
+                            effects: crate::plan::RuntimeEffectSet::empty(),
                             delivery,
                             producer: crate::task::NeedProducerDefinition {
                                 function: definition,
@@ -1087,6 +1089,7 @@ fn program_context(
         .collect::<Vec<_>>();
     ops.push(RuntimeFlowOpSeed::ProgramTask {
         template: crate::plan::RuntimeProgramTaskTemplate {
+            effects: crate::plan::RuntimeEffectSet::empty(),
             delivery: crate::task::ProgramTaskDelivery::HostMetadata,
             captures: captures
                 .into_iter()

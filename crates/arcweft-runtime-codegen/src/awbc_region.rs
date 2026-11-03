@@ -237,6 +237,7 @@ fn opcode_eligible(opcode: AwbcOpcode, options: &AwbcRegionLowerOptions) -> bool
         | AwbcOpcode::VecPop
         | AwbcOpcode::ReadPlace
         | AwbcOpcode::Await
+        | AwbcOpcode::ReceiveAction
         | AwbcOpcode::AwaitMany
         | AwbcOpcode::BudgetYield
         | AwbcOpcode::FormatContent

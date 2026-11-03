@@ -298,15 +298,11 @@ impl RuntimeTaskSourceProgram {
             .ok_or_else(|| mismatch(Field::Effects))?;
         check(
             Field::Effects,
-            effects.effects.len() == enclosing.invocation_effects().len(),
+            effects.effects.len() == template.effects().len(),
             meter,
         )?;
         meter.charge_work(effects.effects.len() as u64)?;
-        for (actual, expected) in effects
-            .effects
-            .iter()
-            .zip(enclosing.invocation_effects().iter())
-        {
+        for (actual, expected) in effects.effects.iter().zip(template.effects().iter()) {
             let actual = executable
                 .strings
                 .get(actual.index())

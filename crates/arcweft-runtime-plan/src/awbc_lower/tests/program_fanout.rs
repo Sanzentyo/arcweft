@@ -138,6 +138,7 @@ fn fanout_fixture(items: &[bool], limit: u32, nested: bool, entry: bool) -> Runt
                         0xd4,
                     ),
                     delivery: ProgramTaskDelivery::LocalOnly,
+                    effects: arcweft_core::plan::RuntimeEffectSet::empty(),
                     captures: vec![RuntimeProgramTaskCapture::moved(item.clone())],
                     body: RuntimeProgramTaskBody::Flow(vec![RuntimeFlowOpSeed::ReturnExpr(read(
                         boolean, &item,
@@ -211,6 +212,7 @@ fn fanout_fixture(items: &[bool], limit: u32, nested: bool, entry: bool) -> Runt
                                 0xc0,
                             ),
                             delivery: ProgramTaskDelivery::LocalOnly,
+                            effects: arcweft_core::plan::RuntimeEffectSet::empty(),
                             captures: vec![
                                 RuntimeProgramTaskCapture::moved(source.clone()),
                                 RuntimeProgramTaskCapture::copy(bound.clone()),
@@ -227,6 +229,7 @@ fn fanout_fixture(items: &[bool], limit: u32, nested: bool, entry: bool) -> Runt
                                         0xc4,
                                     ),
                                     delivery: ProgramTaskDelivery::LocalOnly,
+                                    effects: arcweft_core::plan::RuntimeEffectSet::empty(),
                                     captures: vec![RuntimeProgramTaskCapture::moved(item.clone())],
                                     body: worker_body,
                                 },

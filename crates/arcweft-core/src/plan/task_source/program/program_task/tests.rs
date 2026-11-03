@@ -169,6 +169,13 @@ fn program_destination_verifier_checks_the_row_carrier_and_payload() {
     code.functions.push(caller);
     let mut signature = code.signatures[0].clone();
     signature.result = None;
+    let spawn = AwbcStringId(code.strings.len().try_into().unwrap());
+    code.strings.push("control.spawn".into());
+    signature.effects =
+        crate::awbc::schema::AwbcEffectSetId(code.effect_sets.len().try_into().unwrap());
+    code.effect_sets.push(crate::awbc::schema::AwbcEffectSet {
+        effects: vec![spawn],
+    });
     code.signatures.push(signature);
     let mut frame = code.frame_layouts[0].clone();
     frame.slots[1].ty = AwbcTypeId(2);
@@ -214,6 +221,7 @@ fn program_destination_verifier_checks_the_row_carrier_and_payload() {
                 crate::pattern::RuntimeSemanticTypeId::from_bytes([0x64; 32]),
                 destination,
             );
+            code.canonicalize_string_table();
             let result = code.verify(AwbcVerifyBudget::default(), context());
             if expected {
                 result.unwrap();

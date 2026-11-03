@@ -179,6 +179,7 @@ fn fixture(
         RuntimeFlowOpSeed::ProgramTask {
             template: crate::plan::RuntimeProgramTaskTemplate {
                 delivery: crate::task::ProgramTaskDelivery::HostMetadata,
+                effects: crate::plan::RuntimeEffectSet::empty(),
                 captures: vec![],
                 producer: producer_definition(
                     builder.task_coordinate_owner(1).resolve(0).unwrap(),

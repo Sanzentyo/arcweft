@@ -1232,6 +1232,8 @@ pub struct RuntimeProgramTaskTemplate<
 > {
     pub producer: crate::task::NeedProducerDefinition,
     pub delivery: crate::task::ProgramTaskDelivery,
+    /// Permissions of this independently executed body, not its parent.
+    pub effects: RuntimeEffectSet,
     pub captures: Vec<RuntimeProgramTaskCapture<Local>>,
     pub body: Body,
 }
@@ -1278,6 +1280,12 @@ pub(crate) enum RuntimeProgramTaskTemplateRef<'a> {
 }
 
 impl<'a> RuntimeProgramTaskTemplateRef<'a> {
+    pub(crate) const fn effects(self) -> &'a RuntimeEffectSet {
+        match self {
+            Self::Root(template) => &template.effects,
+            Self::Worker(template) => &template.effects,
+        }
+    }
     pub(crate) const fn producer(self) -> &'a crate::task::NeedProducerDefinition {
         match self {
             Self::Root(template) => &template.producer,

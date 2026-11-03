@@ -3194,6 +3194,7 @@ fn opcode_owner_exhaustively_seals_every_v1_byte_and_family() {
         (AwbcOpcode::CancelCleanup, 0x48, Ownership),
         (AwbcOpcode::RegisterDefer, 0x49, Ownership),
         (AwbcOpcode::RequireUnrestricted, 0x4a, Ownership),
+        (AwbcOpcode::ReceiveAction, 0x4b, CallTask),
         (AwbcOpcode::Jump, 0x80, Terminator),
         (AwbcOpcode::Branch, 0x81, Terminator),
         (AwbcOpcode::Match, 0x82, Terminator),

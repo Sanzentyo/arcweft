@@ -211,6 +211,24 @@ in the session's retained allowance and owning rollback/save image. Destination
 and capacity admission precede operand transfer. Execution refusal preserves
 message and operand custody.
 
+`receive(channel)` creates an ordinary LocalOnly Program Need. The caller
+evaluates the channel once and captures that typed reference. Its original
+receive instruction relates the selected Action declaration to its result
+slot under the frame's lexical type binding. It moves the first matching
+message only after complete admission, preserving other channels and FIFO
+order. An empty queue parks the original instruction without a Host request
+or repeated operand evaluation. A matching message makes that owner runnable.
+Save/restore authenticates the stored wait key against the original instruction,
+captured channel and result type before constructing a live continuation.
+
+Every Program task template owns the effects of its independently executed
+body. A Thread launch requires `control.spawn`; it does not invoke the child's
+body in the parent. The child's effect signature must match its actual original
+Source template. A Program body's enclosing function context supplies lexical
+type/effect bindings, while the body template supplies execution permissions.
+Native child selection retains the actual main fiber inside the session, so
+whole-session admission and rollback include both owners during child execution.
+
 Relations between instances require the same declaration and domain kind, then
 compare ordered arguments in both directions under their respective scopes.
 This invariant argument relation also applies to callback effect rows.

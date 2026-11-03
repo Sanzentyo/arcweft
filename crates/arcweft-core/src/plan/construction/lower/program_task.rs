@@ -118,6 +118,7 @@ impl RuntimePlanBodyConstruction<'_> {
                         worker: RuntimeProgramTaskTemplate {
                             producer: self.lower_producer_definition(worker.producer)?,
                             delivery: worker.delivery,
+                            effects: worker.effects,
                             captures: worker_captures,
                             body: self.lower_flow_ops(worker.body)?,
                         },

@@ -202,7 +202,8 @@ fn admit_ops(ops: &[FlowOp], depth: usize) -> Result<(), CraneliftCodegenError> 
             }
             FlowOp::Goto(_) | FlowOp::GotoExpr(_) => Some("flow transfer"),
             FlowOp::Return(_) => Some("flow label return"),
-            FlowOp::Effect(_)
+            FlowOp::ReceiveAction { .. }
+            | FlowOp::Effect(_)
             | FlowOp::EvaluatedEffect(_)
             | FlowOp::RegisterDefer { .. }
             | FlowOp::RegisterCleanup { .. }

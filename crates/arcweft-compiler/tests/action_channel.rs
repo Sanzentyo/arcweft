@@ -144,6 +144,7 @@ fn assert_source_receive(body: &str, expected: &str, require_wait: bool) {
             .unwrap();
     let flow = compiled.plan.flows()[0].id.clone();
     let mut native = Engine::for_flow(compiled.plan, &flow).unwrap();
+    let mut native_program_launches = 0;
     for _ in 0..512 {
         let result = native.step(RuntimeStepInput::default(), options());
         assert!(
@@ -151,7 +152,11 @@ fn assert_source_receive(body: &str, expected: &str, require_wait: bool) {
             "Native: {:?}",
             result.output.diagnostics
         );
-        assert!(result.output.requests.tasks.is_empty());
+        native_program_launches += result.output.requests.tasks.len();
+        assert!(result.output.requests.tasks.iter().all(|task| matches!(
+            task.spec().request,
+            arcweft_core::task::TaskRequest::Program(_)
+        )));
         assert!(result.output.effects.line.is_empty());
         if matches!(native.fiber().frame.status, FlowFiberStatus::Done(_)) {
             break;
@@ -161,9 +166,11 @@ fn assert_source_receive(body: &str, expected: &str, require_wait: bool) {
         native.fiber().frame.status,
         FlowFiberStatus::Done(FlowExit::Return(expected.into()))
     );
+    assert_eq!(native_program_launches, usize::from(require_wait));
     let mut product = AwbcProductStepExecutor::for_entry(decoded, AwbcEntryId(0), 64).unwrap();
     let mut waited = false;
     let mut finished = false;
+    let mut product_program_launches = 0;
     for _ in 0..512 {
         let result = product.step(RuntimeStepInput::default(), options());
         assert!(
@@ -171,7 +178,11 @@ fn assert_source_receive(body: &str, expected: &str, require_wait: bool) {
             "Product: {:?}",
             result.output.diagnostics
         );
-        assert!(result.output.requests.tasks.is_empty());
+        product_program_launches += result.output.requests.tasks.len();
+        assert!(result.output.requests.tasks.iter().all(|task| matches!(
+            task.spec().request,
+            arcweft_core::task::TaskRequest::Program(_)
+        )));
         assert!(result.output.effects.line.is_empty());
         let image = product.snapshot().unwrap();
         waited |= image.child_fibers.iter().any(|child| {
@@ -198,6 +209,7 @@ fn assert_source_receive(body: &str, expected: &str, require_wait: bool) {
         }
     }
     assert!(finished, "bounded Product receive finishes");
+    assert_eq!(product_program_launches, usize::from(require_wait));
     assert!(
         !require_wait || waited,
         "an actual receiver must park before the sender publishes"
@@ -246,6 +258,158 @@ fn source_action_receive_keeps_equal_shaped_channels_separate() {
         "pub action @action:.feedback.other other(value: i64)\nflow main() -> i64 { emit(other(value = 99i64)); emit(submit(value = 42i64)); let received = await receive(submit); let unrelated = await receive(other); return received.value * 100i64 + unrelated.value }",
         "4299",
         false,
+    );
+}
+
+fn parked_receiver() -> AwbcProductStepExecutor {
+    use arcweft_core::awbc::fiber::FiberSuspensionReason;
+    let (_, program) = compile(
+        "flow main() -> i64 { let received = await receive(submit); return received.value }",
+    );
+    let program =
+        AwbcProgram::decode_canonical(&program.encode_canonical().unwrap(), Default::default())
+            .unwrap();
+    let mut product = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 64).unwrap();
+    for _ in 0..64 {
+        let result = product.step(RuntimeStepInput::default(), options());
+        assert!(
+            result.output.diagnostics.is_empty(),
+            "{:?}",
+            result.output.diagnostics
+        );
+        let image = product.snapshot().unwrap();
+        if matches!(result.fiber_status, FlowFiberStatus::NeedWaiting(_))
+            && image.child_fibers.iter().any(|child| {
+                child.fiber.suspension.as_ref().is_some_and(|suspension| {
+                    matches!(
+                        suspension.reason,
+                        FiberSuspensionReason::ActionReceive { .. }
+                    )
+                })
+            })
+        {
+            return product;
+        }
+    }
+    panic!("the original receiver must park");
+}
+
+#[test]
+fn empty_action_receive_stays_blocked_without_replaying_or_requesting_host_work() {
+    use arcweft_core::step::RuntimeStepStopReason;
+    let mut product = parked_receiver();
+    for _ in 0..8 {
+        let result = product.step(RuntimeStepInput::default(), options());
+        assert_eq!(result.stop_reason, RuntimeStepStopReason::Blocked);
+        assert_eq!(result.stats.executed_ops, 0);
+        assert!(result.output.diagnostics.is_empty());
+        assert!(result.output.requests.tasks.is_empty());
+        let saved = AwbcProductExecutorSaveSnapshot::from_live(
+            &product.snapshot().unwrap(),
+            product.admitted_program(),
+        )
+        .unwrap();
+        assert!(saved.actions.is_empty());
+        let saved = serde_json::from_slice(&serde_json::to_vec(&saved).unwrap()).unwrap();
+        product = product
+            .restore_inert_snapshot_owned(saved)
+            .unwrap_or_else(|(_, error)| panic!("parked receive restore: {error}"));
+    }
+}
+
+#[test]
+fn altered_action_wait_key_or_source_is_rejected_without_replacing_the_session() {
+    use arcweft_core::awbc::fiber::FiberSuspensionReason;
+    let mut product = parked_receiver();
+    let saved = AwbcProductExecutorSaveSnapshot::from_live(
+        &product.snapshot().unwrap(),
+        product.admitted_program(),
+    )
+    .unwrap();
+    for change_key in [true, false] {
+        let mut forged = saved.clone();
+        let child = forged
+            .child_fibers
+            .iter_mut()
+            .find(|child| {
+                child.fiber.suspension.as_ref().is_some_and(|suspension| {
+                    matches!(
+                        suspension.reason,
+                        FiberSuspensionReason::ActionReceive { .. }
+                    )
+                })
+            })
+            .unwrap();
+        if change_key {
+            let FiberSuspensionReason::ActionReceive { payload } =
+                &mut child.fiber.suspension.as_mut().unwrap().reason
+            else {
+                unreachable!()
+            };
+            *payload = arcweft_core::pattern::RuntimeSemanticTypeId::from_bytes([255; 32]);
+        } else {
+            child.fiber.cursor.instruction_offset += 1;
+        }
+        let (unchanged, _) = product
+            .restore_inert_snapshot_owned(forged)
+            .expect_err("the original instruction owns this wait");
+        product = unchanged;
+        let after = AwbcProductExecutorSaveSnapshot::from_live(
+            &product.snapshot().unwrap(),
+            product.admitted_program(),
+        )
+        .unwrap();
+        assert_eq!(after, saved);
+    }
+}
+
+#[test]
+fn cancellation_of_a_source_parked_action_receiver_never_fabricates_a_payload() {
+    use arcweft_core::{
+        awbc::{
+            fiber::{FiberStatus, FiberSuspensionReason, FiberTerminalValue},
+            vm,
+        },
+        task::RuntimeProgramOwner,
+    };
+    let product = parked_receiver();
+    let program = std::sync::Arc::new(product.program().clone());
+    let saved = AwbcProductExecutorSaveSnapshot::from_live(
+        &product.snapshot().unwrap(),
+        product.admitted_program(),
+    )
+    .unwrap();
+    drop(product);
+    let child = saved
+        .child_fibers
+        .into_iter()
+        .find(|child| {
+            child.fiber.suspension.as_ref().is_some_and(|suspension| {
+                matches!(
+                    suspension.reason,
+                    FiberSuspensionReason::ActionReceive { .. }
+                )
+            })
+        })
+        .unwrap();
+    let mut fiber = child
+        .fiber
+        .into_live_for_program(&RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)))
+        .unwrap();
+    let cancelled = vm::cancel_fiber(&program, &mut fiber).unwrap();
+    assert_eq!(cancelled.executed, 0);
+    assert!(cancelled.observations.is_empty());
+    assert_eq!(fiber.status, FiberStatus::Cancelled);
+    assert!(fiber.suspension.is_none());
+    assert!(matches!(
+        fiber.terminal,
+        Some(FiberTerminalValue::Cancelled)
+    ));
+    assert!(
+        vm::cancel_fiber(&program, &mut fiber)
+            .unwrap()
+            .observations
+            .is_empty()
     );
 }
 

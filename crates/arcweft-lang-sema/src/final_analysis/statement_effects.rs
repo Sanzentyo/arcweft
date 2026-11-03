@@ -1586,7 +1586,7 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
         if !self.selected_owners.contains(&owner) || !self.active_expressions.insert(owner) {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
-        let checked = self
+        let mut checked = self
             .pending_expressions
             .remove(&owner)
             .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
@@ -1660,6 +1660,9 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
             .map_err(|_| FinalSemanticAnalysisError::RecoveredOwner)?
         {
             let body_effects = self.fold_body(&body)?;
+            if matches!(kind, HirExprKind::Thread(_)) {
+                checked = checked.with_completed_thread_body_effects(body_effects.clone());
+            }
             if !matches!(kind, HirExprKind::Thread(_))
                 && !latent_callable
                 && !independent_computation

@@ -164,6 +164,10 @@ impl FinalFlowLowerer<'_> {
                 template: RuntimeProgramTaskTemplate {
                     producer: base,
                     delivery: ProgramTaskDelivery::LocalOnly,
+                    effects: RuntimeEffectSet::try_from_effects([
+                        arcweft_id::EffectId::control_suspend(),
+                    ])
+                    .expect("one scheduler effect"),
                     captures: vec![
                         RuntimeProgramTaskCapture::moved(locals.source.clone()),
                         RuntimeProgramTaskCapture::copy(locals.limit.clone()),
@@ -176,6 +180,21 @@ impl FinalFlowLowerer<'_> {
                         worker: RuntimeProgramTaskTemplate {
                             producer: worker,
                             delivery: ProgramTaskDelivery::LocalOnly,
+                            effects: match contract.mapping.shape() {
+                                crate::semantic_facts::RuntimeTypeShape::Function {
+                                    contract,
+                                    ..
+                                } => RuntimeEffectSet::try_from_effects(
+                                    contract
+                                        .invocation()
+                                        .constant_effects()
+                                        .into_iter()
+                                        .chain([arcweft_id::EffectId::control_suspend()])
+                                        .collect::<std::collections::BTreeSet<_>>(),
+                                )
+                                .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
+                                _ => unreachable!("checked mapping function"),
+                            },
                             captures: vec![
                                 RuntimeProgramTaskCapture::moved(locals.callable),
                                 RuntimeProgramTaskCapture::moved(locals.item),

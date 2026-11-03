@@ -2288,16 +2288,33 @@ fn apply_instruction(
                 return invalid_type(&at, "original Program task execution contract");
             };
             let signature = program.functions[task_body.kernel.index()].signature;
-            verify_call_args(
-                verifier,
-                function,
-                block,
-                signature,
-                args,
-                state,
-                &at,
-                &format!("Program task {}", plan.0),
-            )?;
+            verify_args(verifier, function, block, signature, args, state, &at)?;
+            match task.handle_type {
+                crate::task::TaskHandleType::ThreadHandle { .. } => {
+                    let caller = &program.signatures[program.functions[function].signature.index()];
+                    let spawn =
+                        arcweft_id::EffectId::parse("control.spawn").expect("engine effect");
+                    if !program.effect_sets[caller.effects.index()]
+                        .effects
+                        .iter()
+                        .any(|effect| {
+                            arcweft_id::EffectId::parse(&program.strings[effect.index()])
+                                .is_ok_and(|permission| permission.covers(&spawn))
+                        })
+                    {
+                        return Err(AwbcVerifyError::EffectSetMismatch {
+                            caller: function,
+                            callee: format!("Thread launch {}", plan.0),
+                        });
+                    }
+                }
+                crate::task::TaskHandleType::Need { .. } => require_effects(
+                    verifier,
+                    function,
+                    program.signatures[signature.index()].effects,
+                    &format!("Program task {}", plan.0),
+                )?,
+            }
             let destination = register_type(verifier, function, block, *dst)?;
             let matches = match (
                 task.handle_type,

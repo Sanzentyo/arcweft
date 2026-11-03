@@ -206,6 +206,7 @@ impl RuntimeBodySemanticContext<'_> {
                     crate::plan::RuntimeProgramTaskTemplate {
                         producer,
                         delivery,
+                        effects,
                         captures,
                         body,
                         ..
@@ -221,6 +222,11 @@ impl RuntimeBodySemanticContext<'_> {
                     task_owner,
                 )?;
                 encoder.tag(delivery.semantic_tag());
+                encoder.count(effects.len());
+                for effect in effects.iter() {
+                    encoder.enter_element();
+                    encoder.string(effect.as_str());
+                }
                 encoder.count(captures.len());
                 for capture in captures {
                     encoder.enter_element();
@@ -231,6 +237,11 @@ impl RuntimeBodySemanticContext<'_> {
                     plan::RuntimeProgramTaskBody::Flow(_) => encoder.tag(0),
                     plan::RuntimeProgramTaskBody::Fanout(fanout) => {
                         encoder.tag(1);
+                        encoder.count(fanout.worker.effects.len());
+                        for effect in fanout.worker.effects.iter() {
+                            encoder.enter_element();
+                            encoder.string(effect.as_str());
+                        }
                         self.write_local(encoder, fanout.source)?;
                         self.write_local(encoder, fanout.limit)?;
                         self.write_local(encoder, fanout.item)?;

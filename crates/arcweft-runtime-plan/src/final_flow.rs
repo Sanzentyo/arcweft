@@ -8521,6 +8521,8 @@ impl<'a> FinalFlowLowerer<'a> {
             template: arcweft_core::plan::RuntimeProgramTaskTemplate {
                 producer,
                 delivery: arcweft_core::task::ProgramTaskDelivery::HostMetadata,
+                effects: RuntimeEffectSet::try_from_effects(checked.body_effects().iter().cloned())
+                    .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
                 captures: captures
                     .into_iter()
                     .map(arcweft_core::plan::RuntimeProgramTaskCapture::copy)
