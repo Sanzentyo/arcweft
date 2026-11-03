@@ -192,6 +192,12 @@ own static punctuation classes, pair keep-together rules, and pair penalties.
 The same JLREQ classification owner derives contextual numeric-unit boundaries;
 the shared planner consumes both through that owner.
 
+Within a Western word, U+002D HYPHEN-MINUS keeps an allowed break after
+the hyphen, as specified by [UAX #14](https://www.unicode.org/reports/tr14/tr14-49.html#HY).
+The hyphen stays with the preceding fragment, and the uninterrupted letter
+runs on each side remain atomic. `balanced_v1` selects the actual column break
+from these admitted opportunities using the same objective as other text.
+
 European numeral sequences keep their decimal or place separator (`.`, `,`,
 or U+0020 space) with the digit clusters on both sides, as required by
 [JLREQ 3.1.10](https://www.w3.org/TR/jlreq/#unbreakable_character_sequences).

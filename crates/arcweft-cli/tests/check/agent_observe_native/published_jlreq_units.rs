@@ -2661,16 +2661,16 @@ fn assert_native_published_jlreq_hyphenated_western_word_objects<'report>(
         hyphen,
         "published JLREQ word-internal hyphen should stay with preceding letters",
     );
-    assert_vertical_cluster_after(
+    assert_next_paragraph_column(
         hyphen,
         after_hyphen,
-        "published JLREQ letters after a word-internal hyphen should stay attached",
+        next_column_moves_right,
+        "published JLREQ word-internal hyphen permits the following fragment to restart",
     );
-    assert_next_paragraph_column(
+    assert_vertical_cluster_after(
         after_hyphen,
         next_body,
-        next_column_moves_right,
-        "body text after the hyphenated Western word should continue in the next column",
+        "body text should follow the final hyphenated fragment within its column",
     );
     assert_rich_text_object_has_mask_capture(
         hyphen,
