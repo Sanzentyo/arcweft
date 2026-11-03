@@ -1,0 +1,327 @@
+{
+  "version": 1,
+  "recordedAt": "2026-11-03T05:43:33.4797896Z",
+  "status": "intermediate-source-checkpoint",
+  "source": "b014d31e8976bb9f902f707c3b9f73c7851467a5",
+  "publication": {
+    "version": 1,
+    "commit": "b014d31e8976bb9f902f707c3b9f73c7851467a5",
+    "parent": "837481f8a5cc63ec83f33e7801f82106627b6488",
+    "tree": "9eb6a05ccb05f2863aaa3599565ca2b99429fd30",
+    "remote": "b014d31e8976bb9f902f707c3b9f73c7851467a5",
+    "paths": [
+      {
+        "path": "crates/arcweft-id/src/effect.rs",
+        "blob": "5bc0b1876624340616df0390ea93e7907f63b309"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/callable.rs",
+        "blob": "94ea259a734bdb3452deb71048623ba0af66053c"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/callable/checked_application.rs",
+        "blob": "44cc9f47a1ca45e23fa302f47e01d3d5c0b79287"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/callable/digest.rs",
+        "blob": "1c16fe3a1dbf98c932811a5053cdf21757aa89e6"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/callable/identity.rs",
+        "blob": "759bf0267fd49696090cf95ff716de82727708e8"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/callable/schema.rs",
+        "blob": "8cfaffb18481c09f8ca50a6774780dafcc1d1a87"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/callable/schema/families.rs",
+        "blob": "db69cf7cfded478d1a6c102764cab84fe535f3d0"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/effects.rs",
+        "blob": "a5f4607ad1278295f451a39582a99b35f11c8ddc"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/evaluated_effects.rs",
+        "blob": "303ad717cae4d0fce220572cf27b7c58ef2729c4"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/error.rs",
+        "blob": "87a56916385164e4a4a2267527892a226baa1115"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/model/evaluated_effect.rs",
+        "blob": "5757e634f570bb6bf718d377b3b0b8f5f03a04cf"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs",
+        "blob": "17377180f446f9fb1efb5dd8a3cff07d9470020f"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/tests/action_declaration.rs",
+        "blob": "bff058f23a35e0c07f09750b81d96fd7a10a179a"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/types/nominal.rs",
+        "blob": "98d86cd3d9274eda415d2418588f45adde795041"
+      },
+      {
+        "path": "crates/arcweft-lang-syntax/src/attachment/choice.rs",
+        "blob": "2fd2603f6948c437e91c4ff31e14ceb8a093e2ea"
+      },
+      {
+        "path": "crates/arcweft-lang-syntax/src/attachment/node.rs",
+        "blob": "664b3418830bd0669af8c0f26ff7325b48dcb853"
+      },
+      {
+        "path": "crates/arcweft-lang-syntax/src/grammar/kinds.rs",
+        "blob": "6ab9c8a56426498246939cda2c39d32e89409cc2"
+      },
+      {
+        "path": "crates/arcweft-lang-syntax/src/parser/predicate_proof_tests.rs",
+        "blob": "f23aadd91974a45e7df892e38b5ef1eab8a0772a"
+      },
+      {
+        "path": "crates/arcweft-lang-syntax/src/parser/statement.rs",
+        "blob": "c00a5cae6f93953bcb633aa621736183cb9d7830"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "4726e90d97cd5e339f9c8ac2feb988923dcf3799301143db26101419db90fbba",
+    "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-03T05:41:05.936422Z"
+  },
+  "scope": "Common Action callable identities, schemas, exact emission operand admission, typed Need result, and ordinary receive call grammar. Core delivery, waiting, Native/AWBC execution and save/restore remain unimplemented; RuntimePlan consumers still require migration. This is not full-workspace or runtime acceptance.",
+  "preliminaryCheck": {
+    "version": 1,
+    "base": "837481f8a5cc63ec83f33e7801f82106627b6488",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "arcweft-lang-sema",
+      "--lib",
+      "--all-features",
+      "--locked"
+    ],
+    "exitCode": 0,
+    "sourceInputs": 4083,
+    "sourceDrift": 0,
+    "startedAt": "2026-11-03T05:26:57.3589558Z",
+    "finishedAt": "2026-11-03T05:28:16.489078Z"
+  },
+  "initialThreeCases": {
+    "version": 1,
+    "base": "837481f8a5cc63ec83f33e7801f82106627b6488",
+    "run": "action-channel-execution-sema1-20261103.runtime",
+    "actualExitCode": 100,
+    "summary": "Summary [   0.075s] 3 tests run: 2 passed, 1 failed, 1366 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 3,
+    "passed": 2,
+    "failed": 1,
+    "skipped": 1366,
+    "selectedPackages": 1,
+    "matchedPackages": 1,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4083,
+    "sourceDrift": 0,
+    "held": 12,
+    "failureSet": [
+      {
+        "status": "FAIL",
+        "binary": "arcweft-lang-sema",
+        "test": "final_analysis::tests::action_declaration::action_receive_returns_the_original_payload_in_a_typed_need"
+      }
+    ],
+    "isPassingRun": false,
+    "recordedAt": "2026-11-03T05:32:38.3210052Z"
+  },
+  "finalFrontEnd": {
+    "version": 1,
+    "base": "837481f8a5cc63ec83f33e7801f82106627b6488",
+    "run": "action-channel-execution-syntax-sema1-20261103.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [  27.685s] 739 tests run: 739 passed, 1366 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 739,
+    "passed": 739,
+    "failed": 0,
+    "skipped": 1366,
+    "selectedPackages": 2,
+    "matchedPackages": 2,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4083,
+    "sourceDrift": 0,
+    "held": 12,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-11-03T05:37:46.2247725Z"
+  },
+  "selectionMeaning": "736 Syntax library cases and the same three new Sema cases execute. The 1366 other Sema cases are out of the filter, not ignored tests. Complete reverse-consumer and workspace gates have not been rerun for this intermediate checkpoint.",
+  "repair": "The first receive test failed in HIR staging with InvalidArenaCommit. Parser classified every let initializer beginning receive as obsolete LetActionReceiveStatement. That kind, AST marker and classifier/choice branches were removed; ordinary calls, await and nested calls now share the let/call grammar. No legacy success route or fallback remains.",
+  "sourceInputs": 4083,
+  "sourceDrift": 0,
+  "heldTracked": 12,
+  "originalUntracked": 6,
+  "priorCompleteConsumerSource": "7104b200150b9b85b31cd686c48573b92b2028d3",
+  "genericMatch": "Accepted and published; this unfinished feature does not reopen its completed boundary.",
+  "raw": {
+    "path": "docs/implementation/acceptance-evidence/task-action-channel-front.raw.zip",
+    "bytes": 1025165,
+    "sha256": "654638850bbab260a82873d87da1f8fb9b3585a2758de539fc54a48018c9ca19",
+    "entryDrift": 0,
+    "entries": [
+      {
+        "entry": "action-channel-execution-owner1-20261103.check.json",
+        "bytes": 378,
+        "sha256": "fbece4975774661225548b6ecc14e5b5fef485cdb3872cf0fb0148ba125059da"
+      },
+      {
+        "entry": "action-channel-execution-owner1-20261103.check.log",
+        "bytes": 84755,
+        "sha256": "d8ab4597c9ea023987cad3b527f1598062922c4b630043c4452ad98a6f767627"
+      },
+      {
+        "entry": "action-channel-execution-owner1-20261103.source-freeze.json",
+        "bytes": 798203,
+        "sha256": "03ea70bd4a9b721f95b6504169b9e91ad2389c6fb2eacbcc6c07b68e17203c9d"
+      },
+      {
+        "entry": "action-channel-execution-sema1-20261103.binaries-before.json",
+        "bytes": 212,
+        "sha256": "a8e1714e6a7541d99859e8fcfcf2458ea27281d7a8372304e1ccbaadc98835dc"
+      },
+      {
+        "entry": "action-channel-execution-sema1-20261103.catalog.inventory.json",
+        "bytes": 361487,
+        "sha256": "90d36bd8a052669915cc461f308a85d4ae5653e7712c117b6e54093ea35c0a1c"
+      },
+      {
+        "entry": "action-channel-execution-sema1-20261103.catalog.json",
+        "bytes": 920,
+        "sha256": "fd43a251d90091eddbab59ce9d88065150f997fbb974c712daafff095b7dcb6c"
+      },
+      {
+        "entry": "action-channel-execution-sema1-20261103.catalog.log",
+        "bytes": 345988,
+        "sha256": "b164733904e2b333c1993d42a81e4b4f156e80c29d416698fa420744a4299e05"
+      },
+      {
+        "entry": "action-channel-execution-sema1-20261103.runtime.json",
+        "bytes": 1014,
+        "sha256": "44e4215f9b30ec74132daf54b121d0d076cc05e1b581141f817b4edb794f7358"
+      },
+      {
+        "entry": "action-channel-execution-sema1-20261103.runtime.log",
+        "bytes": 507693,
+        "sha256": "bbc24bd581aba6cd46015c1b9ea7e4bdc6103d9bc4755da6c96a939e4a871230"
+      },
+      {
+        "entry": "action-channel-execution-sema1-20261103.runtime.terminal-audit.json",
+        "bytes": 836,
+        "sha256": "c40590d2ca8bf303fadd0b63c978d9fa4c44ca9b5023a7058065f83f2c5ca9a3"
+      },
+      {
+        "entry": "action-channel-execution-sema1-20261103.source-freeze.json",
+        "bytes": 798252,
+        "sha256": "eb71fc877e45688bce8d587cbf2f8b2c815ceb60fa8034ff1d0149fc9bc3823b"
+      },
+      {
+        "entry": "action-channel-execution-syntax-sema1-20261103.binaries-before.json",
+        "bytes": 455,
+        "sha256": "7eee17876100ba7d000c8a345d1c231601bdb35782aca650eb5b1a4f05672806"
+      },
+      {
+        "entry": "action-channel-execution-syntax-sema1-20261103.catalog.inventory.json",
+        "bytes": 551124,
+        "sha256": "056c9ac42d59b0b829466bf24c85addc33bb5dcd60d6e35b493f6702f0bf25b9"
+      },
+      {
+        "entry": "action-channel-execution-syntax-sema1-20261103.catalog.json",
+        "bytes": 998,
+        "sha256": "6d7b2dbe5a556baeaf866dad3e52d729d5e2efb150347f3fa91a115ea4da4b97"
+      },
+      {
+        "entry": "action-channel-execution-syntax-sema1-20261103.catalog.log",
+        "bytes": 463087,
+        "sha256": "22de7d3c2c9854d49bef9787988e6f5bee7a1344b263889eb931de673dc7b2a1"
+      },
+      {
+        "entry": "action-channel-execution-syntax-sema1-20261103.runtime.json",
+        "bytes": 1090,
+        "sha256": "685494dc2bb5b79d042f1ca8c5632fe566a88c97c802e95a4cfa41b1addc0425"
+      },
+      {
+        "entry": "action-channel-execution-syntax-sema1-20261103.runtime.log",
+        "bytes": 757124,
+        "sha256": "ff39f0a7be2cbef89819aba470876b481d6cd3ea950567a672168def79dcd17f"
+      },
+      {
+        "entry": "action-channel-execution-syntax-sema1-20261103.runtime.terminal-audit.json",
+        "bytes": 637,
+        "sha256": "c266ed02f5856fdc9587a055e4ddc5cbb1eaaaf27e82f4c3ca1e28be023696bd"
+      },
+      {
+        "entry": "action-channel-execution-syntax-sema1-20261103.source-freeze.json",
+        "bytes": 798252,
+        "sha256": "75268fa92ee8a0a8feda9a04cefe2c7fc5210fac38a31f28a12e3883970955c4"
+      },
+      {
+        "entry": "audit-nextest-final-result.ps1",
+        "bytes": 5266,
+        "sha256": "9d136f5ff9dbe80e524a8c9adb2f11fc96cce75046e3e1fe3e93ba73888cc0ab"
+      },
+      {
+        "entry": "checkpoint-action-channel-front.message.txt",
+        "bytes": 1125,
+        "sha256": "6fdeafbc931911747f210a2805255d12b1492549942460bee22a5d81b676eba6"
+      },
+      {
+        "entry": "checkpoint-action-channel-front.other.txt",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "checkpoint-action-channel-front.owned.txt",
+        "bytes": 1042,
+        "sha256": "37fc1b0be1eb5e88a5c778e7e192742f4b70b02110de101b5cdef17d3f69bf7f"
+      },
+      {
+        "entry": "checkpoint-action-channel-front.pathspec",
+        "bytes": 1023,
+        "sha256": "2f948fdfc9fcd061455b5d4e00451095e2de787eba2a2fece8e6e4f5fdecf643"
+      },
+      {
+        "entry": "checkpoint-action-channel-front.prepared.json",
+        "bytes": 3901,
+        "sha256": "aafe6e88a5103c00db956e9e7499cc53e4745cc13f7fb711cac20179a4c2937a"
+      },
+      {
+        "entry": "checkpoint-action-channel-front.reviewed.patch",
+        "bytes": 32716,
+        "sha256": "4726e90d97cd5e339f9c8ac2feb988923dcf3799301143db26101419db90fbba"
+      },
+      {
+        "entry": "checkpoint-action-channel-front.verified.json",
+        "bytes": 3303,
+        "sha256": "be096527e435c0bce8ef0e8711678de4e757a9f6092a7fb19e4ef42ecb7bcb0e"
+      },
+      {
+        "entry": "record-action-channel-front.ps1",
+        "bytes": 8489,
+        "sha256": "eaf7ad23a9f5b28bc1a92bd54fc41cc0607f21d91e1dfd16d58edbd0f988368a"
+      },
+      {
+        "entry": "run-presentation-projection-owner.ps1",
+        "bytes": 4134,
+        "sha256": "b60d753498997e4ba3b809b3721e9190ea1860971c755e6a1648a8e213403c58"
+      }
+    ]
+  }
+}

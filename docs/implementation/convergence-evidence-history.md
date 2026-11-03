@@ -14347,3 +14347,11 @@ CLI: Summary [ 481.524s] 693 tests run: 660 passed (22 slow), 33 failed, 23 skip
 CLIはSummary [ 524.919s] 693 tests run: 660 passed (30 slow), 33 failed, 23 skipped。直前結果との失敗IDは維持33／追加0／解消0。同じIDだけから原因の同一性は主張しない。workspace全98のcheck／Clippy・canonical構造gateは終了0、警告あり。変更Rust 22 pathのrustfmt checkも終了0。9 crateのdoctestは88件PASS（5 crateは0件）、Web wasm check終了0。raw archiveは118 entries／6347319 bytes、SHA256 d2e133b0ec751b97bc0ff76e7a42f6bc9d0592bb5b8bc412b15b580810a488f3、全entry hash差分0。
 
 訂正理由: 現状一覧の旧Source／9187件とNative63件の説明は今回のfull consumer結果で置き換え、旧実測は旧原本とこの履歴に保持した。Generic Matchの受入・公開は維持し、今回も同じ151件の成功を確認した。全体goalやCLIの未達を受入済み機能の残作業へ戻さない。唯一の現状一覧は[current-status.md](current-status.md)、このcutの全入力・失敗・修復・full SHA・所有レビューは[原本](acceptance-evidence/task-action-original-declaration-identity.json)へ集約する。
+
+## Action送受信の前段checkpoint — 2026-11-03
+
+Source b014d31e8976bb9f902f707c3b9f73c7851467a5、parent 837481f8a5cc63ec83f33e7801f82106627b6488、tree 9eb6a05ccb05f2863aaa3599565ca2b99429fd30。19 path／277 insertions／33 deletionsを、ユーザーの途中commit／push指示に従う中間checkpointとして公開した。emit／receiveの共通callable・generic payload・engine effect・checked emissionを追加した。実際のCore配送／待機、Native／AWBC、保存復元とRuntimePlan利用側は未移行で、全workspace compileや実送受信の受入は主張しない。
+
+前段Sema library checkは終了0。初回新規3件は2 PASS／1 FAILで、receiveはSemaより前のHIR stagingでInvalidArenaCommitとなった。parserがletのreceive初期値を旧LetActionReceiveStatementへ分類していたため、専用kind・AST marker・分類分岐を削除した。元の失敗を保持したまま、通常call／await／nested call grammarへ移行し、Syntax全736件と同じ新Sema3件の739／739 PASSを確認した。1366件はfilter外のSema caseでありignoredとはしない。4083入力・case／Source／test EXE差分0。Sourceと公開blob／full patch、既存12 tracked WIPの保持を照合し、元6 untracked WIPも保持している。
+
+raw 29 entries／1025165 bytes、SHA256 654638850bbab260a82873d87da1f8fb9b3585a2758de539fc54a48018c9ca19、全entry hash差分0。直近の全consumer検証Source7104の実測は前節・旧原本へ保持する。現状一覧の最新Sourceだけをこの前段checkpointへ更新し、既受入機能を未完了には戻していない。[入力・初回失敗・修復・公開照合](acceptance-evidence/task-action-channel-front.json)。
