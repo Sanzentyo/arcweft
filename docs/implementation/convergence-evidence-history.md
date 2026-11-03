@@ -14301,3 +14301,14 @@ Source 58c5b7d64febafaa8c1dab4e4546b901b5c52f58、base fda22d364bd73365c0add6068
 Source bb3d3de5850222a1759ef6730db33b156500700d（親c7e4e24a48dc29c10e8783b554d2f5b3a9239090）の18 pathを通常commit／non-forced pushし、tree・patch・blobを照合した。構文修正c7e4e24a48dc29c10e8783b554d2f5b3a9239090の全734件と、最終constructor owner6／6 PASS、通常24 package 5122／5122 PASS、CLI 660 PASS／33 FAIL（全693件）を記録する。新規失敗ID 0／解消0。Generic151／View40 exact IDは全件PASSで、既存受入は維持した。25 packageのquality gateと最終2 pathの限定再検証を、workspace全98の新しい実行へ読み替えない。
 
 訂正理由: 以前のpayload ownerはcall構築を含めていなかったが、今回は実呼出し・local別名・capture・generic・source order・空payload・型拒否が成立したため、唯一の現状一覧のAction行を拡張した。送受信・元program channel admission・保存復元はこのcutから完了にしない。追加した不正引数testの初回失敗は、重複名が既存HIR recoveryでReadiness拒否されるのにTypeCheckを期待したtest側の誤りで、同じ不正入力の正確な早期拒否をassertするよう訂正した。旧Sourceの検証・full SHA・失敗は削除せず、過去の現在形だけを新しい一覧の根拠に更新した。[全実測・履歴・raw](acceptance-evidence/task-action-callable-constructor.json)。
+
+
+## 修飾付きAction宣言・値構築の全consumer照合 — 2026-11-03
+
+宣言pathを3a32768743acd6347c5aa2bdbcceeef10df5354b（親941dd34fc826350d9f61dd444278a674607e9a1e）、共通値解決を6daa0f58c1088c844af85fb7c5c5103d5d8e92b1、未使用reader削除を93a54c451575ee5eba2ce91df83bef9be6d7a4c1 で通常commit／non-forced pushした。各parent・tree・patch・blobを照合し、既存12 tracked／6 actual untracked WIPを保持した。
+
+実行入力6daa0f58c1088c844af85fb7c5c5103d5d8e92b1・4082入力の同じSourceで、影響71 packageの通常70を選択した。66 packageの9180／9180 PASS（12 slow、24 ignored）、残る4 packageはtest 0件でcompileのみ。CLIは693実行・660 PASS（22 slow）／33 FAIL・23 ignored、485.775秒。前Source bb3d3de5850222a1759ef6730db33b156500700dから維持33／追加0／解消0であり、原因の同一性をIDから推定しない。Generic151／View40 exact IDはすべてPASS、Source／case／EXE差分0。全98 check／Clippy・構造gateと、7 crateのdoctest計4 PASSを確認した。最後の削除は未使用private methodだけで、HIR check／Clippy・構造gateの新規実行と、先行runtime結果の再利用を区別する。
+
+訂正理由: 旧現状行の修飾付き宣言・call構築の未受入という除外は、今回の追加11件と全consumer実測によって置き換えた。直接・別名・capture・特殊化関数内の構築はNative／canonical decoded AWBCで42に到達した。元Action・PublicId・nominal record、共通binderとfield layoutを保持し、namespace用の実行値・暗黙leaf alias・偽のAction関数bodyは作らない。registryの単一componentを広げた初案は既存2 testに拒否され、DeclarationNameを保ってDeclarationPathを別の集約として導入した。旧Bad.Nameは採用文法で有効になったため、回復fixtureをBad..Nameへ移し同じ回復assertionを保持した。lexerのdouble-dot、scopeの空implicit root、callee分類、global／specialized runtime値投影、診断source、test側のAPI／usize誤りの初回失敗は原本へ残す。
+
+emit／receive・元program channel admission／保存復元はこの構築の受入へ含めない。現在のScrollは構文拒否を越えた呼出し解決失敗、RAGはunknown text_styleである。既受入Generic Match行は変更せず、全体goalやCLIの未達を完了機能の未実装へ戻さない。現状は一つの一覧だけを更新し、以前の実測・full SHA・失敗は履歴に保持する。[全実測・訂正理由・159件のrawとhash](acceptance-evidence/task-action-qualified-path.json)。
