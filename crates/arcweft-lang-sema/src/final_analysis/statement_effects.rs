@@ -1661,7 +1661,7 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
         {
             let body_effects = self.fold_body(&body)?;
             if matches!(kind, HirExprKind::Thread(_)) {
-                checked = checked.with_completed_thread_body_effects(body_effects.clone());
+                checked = checked.with_completed_thread_body_effects(body_effects.clone())?;
             }
             if !matches!(kind, HirExprKind::Thread(_))
                 && !latent_callable

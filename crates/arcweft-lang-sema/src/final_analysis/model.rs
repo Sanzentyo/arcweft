@@ -2749,12 +2749,15 @@ impl CheckedExpression {
         self
     }
 
-    pub(super) fn with_completed_thread_body_effects(mut self, effects: EffectSet) -> Self {
+    pub(super) fn with_completed_thread_body_effects(
+        mut self,
+        effects: EffectSet,
+    ) -> Result<Self, super::FinalSemanticAnalysisError> {
         let CheckedExpressionResolution::Thread(thread) = &mut self.data.resolution else {
-            unreachable!("the completed Thread body fold owns a Thread expression");
+            return Err(super::FinalSemanticAnalysisError::WrongPayloadFamily);
         };
         thread.body_effects = effects;
-        self
+        Ok(self)
     }
 
     /// Replaces only the semantic resolution while retaining the already

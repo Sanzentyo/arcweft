@@ -57,6 +57,7 @@ fn forge_thread() -> CheckedThread {
         body: any(),
         mode: any(),
         result: any(),
+        body_effects: any(),
     }
 }
 
