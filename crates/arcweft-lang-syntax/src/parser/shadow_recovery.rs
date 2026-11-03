@@ -212,9 +212,18 @@ pub(super) fn find_statement_terminator(
     end: usize,
 ) -> Option<(usize, bool)> {
     let mut delimiters = Vec::<&str>::new();
+    let mut previous = None;
     for index in start..end {
         let token = parser.token_at(index)?;
         let text = parser.text_of(token);
+        if delimiters.is_empty()
+            && text == "thread"
+            && !matches!(previous, Some("." | "::"))
+            && let Some(suite_end) =
+                super::statement::indented_thread_expression_end(parser, index, end)
+        {
+            return Some((suite_end, false));
+        }
         if delimiters.is_empty() && (text == ";" || token.kind() == SyntaxKind::NewlineToken) {
             return Some((index, text == ";"));
         }
@@ -230,6 +239,9 @@ pub(super) fn find_statement_terminator(
                 delimiters.pop();
             }
             _ => {}
+        }
+        if !is_trivia(token.kind()) {
+            previous = Some(text);
         }
     }
     None

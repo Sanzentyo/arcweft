@@ -997,7 +997,10 @@ pub(super) fn emit_thread_expression(
     role: SyntaxRole,
 ) -> CompletedNode {
     let start_event = parser.event_position();
-    let open = block_open(parser, end).unwrap_or(end);
+    let thread_start = parser.cursor();
+    let open = crate::parser::statement::thread_body_colon(parser, thread_start, end)
+        .or_else(|| block_open(parser, end))
+        .unwrap_or(end);
     let owner = parser.start_projected_owner(SyntaxKind::ThreadExpression, role);
     parser.bump();
     parser.bump_trivia_before(open);
@@ -1050,6 +1053,8 @@ pub(super) fn emit_thread_expression(
             SyntaxRole::Body,
             "syntax.thread.missing_block_close",
         );
+    } else if parser.at(":") {
+        crate::parser::statement::emit_indented_thread_body(parser, thread_start, open, end);
     } else {
         let at = parser.current_offset();
         parser.start(SyntaxKind::MissingBody, SyntaxRole::Body);
@@ -1069,6 +1074,11 @@ pub(super) fn emit_thread_expression(
     );
     parser.finish();
     CompletedNode { start_event }
+}
+
+pub(super) fn has_thread_body(parser: &DocumentParser<'_, '_>, end: usize) -> bool {
+    has_braced_body(parser, end)
+        || crate::parser::statement::thread_body_colon(parser, parser.cursor(), end).is_some()
 }
 
 fn block_open(parser: &DocumentParser<'_, '_>, end: usize) -> Option<usize> {

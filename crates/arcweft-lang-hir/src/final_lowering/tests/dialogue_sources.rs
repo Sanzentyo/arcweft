@@ -116,3 +116,66 @@ fn retained_ruby_sources_publish_the_canonical_call_and_exact_authored_roles() {
 fn typed_ruby_source_retains_its_distinct_authored_roles() {
     check_ruby_source("#ruby(\"ゆめ\")[夢]", false);
 }
+
+#[test]
+fn indented_line_thread_keeps_a_clean_body_and_exact_wait_source() {
+    use crate::expr::{HirThreadBodyOwner, HirThreadFlowItem};
+    use crate::source_index::{HirStmtSourceRole, HirThreadBodySourceRole};
+    let source = "pub character alice { display = \"Alice\" }\nflow main {\n    alice()[Hello[mark @.ready][p]]\n    with:\n        thread worker:\n            wait(0.1s)\n        on mark(@.ready):\n            log.info(\"ready\")\n}\n";
+    let (parsed, _) =
+        parsed_revisions_with_source("arcweft-test://dialogue-source/thread-indent", source);
+    let mut database = HirDatabase::try_new().unwrap();
+    let output = publish_attached_project(&mut database, &parsed, &key(&parsed));
+    let module = output.module();
+    assert_eq!(module.status(), crate::module::HirModuleStatus::Clean);
+    let threads = module
+        .arenas()
+        .expressions()
+        .try_iter(module.slots())
+        .unwrap()
+        .filter_map(|(owner, expression)| match expression.kind() {
+            HirExprKind::Thread(thread) => Some((owner, thread)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let [(owner, thread)] = threads.as_slice() else {
+        panic!("one original line-scoped Thread");
+    };
+    let [HirThreadFlowItem::Statement(wait)] = thread.body().items() else {
+        panic!("one statement-only Thread item");
+    };
+    let projected = module
+        .source_site(
+            parsed.document().identity(),
+            HirSourceQuery::Stmt {
+                owner: *wait,
+                role: HirStmtSourceRole::Whole,
+            },
+        )
+        .unwrap();
+    let HirSourcePresence::Present(HirSourceSite::Span(span)) = projected.presence() else {
+        panic!("original authored wait span");
+    };
+    let start = source.find("wait(0.1s)").unwrap();
+    assert_eq!(
+        span.range(),
+        arcweft_source::SourceRange::new(start, start + "wait(0.1s)".len())
+    );
+    let introducer = module
+        .source_site(
+            parsed.document().identity(),
+            HirSourceQuery::ThreadBody {
+                owner: HirThreadBodyOwner::ThreadExpression(*owner),
+                role: HirThreadBodySourceRole::IndentationIntroducer,
+            },
+        )
+        .unwrap();
+    let HirSourcePresence::Present(HirSourceSite::Span(colon)) = introducer.presence() else {
+        panic!("an authored introducer, distinct from implicit delimiter anchors");
+    };
+    let colon_start = source.find("thread worker:").unwrap() + "thread worker".len();
+    assert_eq!(
+        colon.range(),
+        arcweft_source::SourceRange::new(colon_start, colon_start + 1)
+    );
+}

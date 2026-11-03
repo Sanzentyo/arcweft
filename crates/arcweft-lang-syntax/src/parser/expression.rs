@@ -447,7 +447,7 @@ fn parse_prefix(
         ".." | "..=" => emit_prefix_range(parser, end, role, text == "..="),
         "try" => emit_prefix_operand(parser, end, SyntaxKind::TryExpression, role, false),
         "await" => emit_prefix_operand(parser, end, SyntaxKind::AwaitExpression, role, false),
-        "thread" if composite::has_braced_body(parser, end) => parser
+        "thread" if composite::has_thread_body(parser, end) => parser
             .with_expression_context(ExpressionContext::Ordinary, |parser| {
                 composite::emit_thread_expression(parser, end, role)
             }),

@@ -5,7 +5,7 @@ use super::expression::AttachedExpressionNode;
 use super::family::{FamilyNode, StatementFamily, StatementNode};
 use super::node::{
     AstNode, AttachedContentApplicationExpressionKind, BlockKind, ChoiceStatementKind,
-    CloseBraceKind, ErrorStatementKind, FlowBodyKind, ForStatementKind, IfStatementKind,
+    CloseBraceKind, ColonKind, ErrorStatementKind, FlowBodyKind, ForStatementKind, IfStatementKind,
     IncludeStatementKind, MatchStatementKind, MissingBodyKind, OpenBraceKind, ScopeStatementKind,
     SelectStatementKind, SourceLocaleStatementKind, ThreadExpressionKind, WhileLetStatementKind,
     WhileStatementKind,
@@ -240,6 +240,7 @@ pub enum AttachedRequiredThreadExpressionBody {
 pub struct AttachedThreadExpressionBody {
     owner: AstNode<ThreadExpressionKind>,
     body: AstNode<BlockKind>,
+    indentation: Option<AstNode<ColonKind>>,
     open: AstNode<OpenBraceKind>,
     items: Box<[AttachedThreadFlowItem]>,
     close: AstNode<CloseBraceKind>,
@@ -419,9 +420,14 @@ impl AttachedThreadExpressionBody {
         body: AstNode<BlockKind>,
     ) -> Result<Self, SyntaxAccessError> {
         let AttachedBodyChildren { open, items, close } = attach_body_children(&body)?;
+        let indentation = owner.optional_exact_child::<ColonKind>(SyntaxRole::Colon)?;
+        if open.range().is_empty() != indentation.is_some() {
+            return Err(SyntaxAccessError::InvalidThreadFlowBodyShape { id: owner.id() });
+        }
         Ok(Self {
             owner,
             body,
+            indentation,
             open,
             items,
             close,
@@ -436,6 +442,11 @@ impl AttachedThreadExpressionBody {
     /// Exact revision-bound block syntax for this body.
     pub const fn syntax(&self) -> &AstNode<BlockKind> {
         &self.body
+    }
+
+    /// Authored introducer for an indentation-owned Thread body.
+    pub const fn indentation_introducer(&self) -> Option<&AstNode<ColonKind>> {
+        self.indentation.as_ref()
     }
 
     pub const fn open(&self) -> &AstNode<OpenBraceKind> {

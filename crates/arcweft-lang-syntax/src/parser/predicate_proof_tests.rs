@@ -1120,6 +1120,61 @@ fn malformed_thread_wait_recovers_inside_its_body_before_the_next_function() {
 }
 
 #[test]
+fn indented_thread_expression_keeps_its_suite_and_the_outer_sibling() {
+    for head in [
+        "thread worker",
+        "let child = thread detached worker",
+        "return thread",
+    ] {
+        let source = format!(
+            "fn launch() {{\n    {head}:\n        wait(0.1s)\n    log.info(\"after\")\n}}\n"
+        );
+        let built =
+            parse_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
+        assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+        assert_eq!(built.green().to_string(), source);
+        assert_eq!(
+            green_kind_count(built.green(), SyntaxKind::ThreadExpression),
+            1
+        );
+        assert_eq!(
+            green_kind_count(built.green(), SyntaxKind::WaitStatement),
+            1
+        );
+        let mut pending: Vec<&rowan::GreenNodeData> = vec![built.green()];
+        while let Some(node) = pending.pop() {
+            if node.kind() == rowan::SyntaxKind(SyntaxKind::ThreadExpression as u16) {
+                assert_eq!(green_kind_count(node, SyntaxKind::WaitStatement), 1);
+                assert_eq!(green_kind_count(node, SyntaxKind::CallExpression), 0);
+            }
+            pending.extend(node.children().filter_map(|child| match child {
+                rowan::NodeOrToken::Node(node) => Some(node),
+                rowan::NodeOrToken::Token(_) => None,
+            }));
+        }
+    }
+}
+
+#[test]
+fn missing_thread_indentation_reports_the_body_and_preserves_following_items() {
+    let source = "fn launch() {\n    thread worker:\n    let after = 1i64\n}\nfn next() {}\n";
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    assert_eq!(built.green().to_string(), source);
+    assert!(
+        built
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| { diagnostic.code() == "syntax.thread.invalid_indent" })
+    );
+    assert_eq!(
+        green_kind_count(built.green(), SyntaxKind::ThreadExpression),
+        1
+    );
+    assert_eq!(green_kind_count(built.green(), SyntaxKind::LetStatement), 1);
+    assert_eq!(green_kind_count(built.green(), SyntaxKind::FunctionItem), 2);
+}
+
+#[test]
 fn on_mark_statement_uses_the_typed_mark_trigger_shape() {
     let source = "{ on mark(@.checkpoint) => lemma(); }\n";
     let built = parse_test_statement_block(&document(source)).unwrap();

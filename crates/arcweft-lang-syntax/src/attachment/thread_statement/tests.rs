@@ -92,6 +92,23 @@ fn thread_body(text: &str) -> AttachedThreadExpressionBody {
     body
 }
 
+#[test]
+fn indented_thread_attaches_the_shared_no_tail_flow_body() {
+    let source = "fn launch() {\n    let child = thread worker:\n        wait(0.1s)\n    log.info(\"after\")\n}\n";
+    let body = thread_body(source);
+    assert!(!body.has_recovery());
+    assert!(body.open().range().is_empty());
+    assert!(body.close().range().is_empty());
+    assert_eq!(body.indentation_introducer().unwrap().source_text(), ":");
+    let [AttachedThreadFlowItem::Statement(statement)] = body.items() else {
+        panic!("one owned Thread statement, no value tail or outer sibling");
+    };
+    assert_eq!(
+        statement.syntax().kind(),
+        crate::grammar::SyntaxKind::WaitStatement
+    );
+}
+
 fn assert_one_nested_item(body: &AttachedRequiredNestedThreadFlowBody) {
     let AttachedRequiredNestedThreadFlowBody::Present(body) = body else {
         panic!("authored loop-family body must be present");

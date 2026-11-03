@@ -1332,13 +1332,13 @@ fn emit_indented_await_branch(
             "missing indented Await branch body",
         );
     } else {
-        emit_indented_await_branch_body(parser, body, item_kind);
+        emit_indented_thread_flow_body(parser, body, item_kind);
     }
     parser.finish();
     PendingAwaitBranchProjection::new(kind)
 }
 
-fn emit_indented_await_branch_body(
+fn emit_indented_thread_flow_body(
     parser: &mut DocumentParser<'_, '_>,
     interval: indentation::IndentedSuiteInterval,
     item_kind: SyntaxKind,
@@ -1359,6 +1359,52 @@ fn emit_indented_await_branch_body(
         SyntaxRole::CloseDelimiter,
     );
     parser.finish();
+}
+
+/// The shared expression grammar delegates indentation geometry to the same
+/// statement-suite owner used by Await branches and line-plan work.
+pub(in crate::parser) fn thread_body_colon(
+    parser: &DocumentParser<'_, '_>,
+    start: usize,
+    end: usize,
+) -> Option<usize> {
+    let head_end = indentation::physical_line_end(parser, start, end);
+    indentation::head_body_introducer(parser, start, head_end)
+        .filter(|colon| token_text(parser, *colon) == Some(":"))
+}
+
+pub(in crate::parser) fn indented_thread_expression_end(
+    parser: &DocumentParser<'_, '_>,
+    start: usize,
+    end: usize,
+) -> Option<usize> {
+    let colon = thread_body_colon(parser, start, end)?;
+    let owner = indentation::physical_line_owner_start(parser, start);
+    let suite = indentation::indented_suite_interval(parser, owner, colon, end);
+    suite.issue().is_none().then_some(suite.end())
+}
+
+pub(in crate::parser) fn emit_indented_thread_body(
+    parser: &mut DocumentParser<'_, '_>,
+    start: usize,
+    colon: usize,
+    end: usize,
+) {
+    let owner = indentation::physical_line_owner_start(parser, start);
+    let suite = indentation::indented_suite_interval(parser, owner, colon, end);
+    parser.start(SyntaxKind::ColonNode, SyntaxRole::Colon);
+    parser.bump();
+    parser.finish();
+    if suite.issue().is_some() {
+        emit_required_statement_body_recovery(
+            parser,
+            "syntax.thread.invalid_indent",
+            "Thread requires an indented statement body after `:`",
+        );
+        bump_until(parser, suite.end());
+    } else {
+        emit_indented_thread_flow_body(parser, suite, SyntaxKind::FunctionItem);
+    }
 }
 
 fn emit_invalid_await_branch(

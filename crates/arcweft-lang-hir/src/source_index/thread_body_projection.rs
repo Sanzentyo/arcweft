@@ -5,7 +5,6 @@ use std::collections::BTreeSet;
 use arcweft_lang_syntax::attachment::node::{
     BlockKind, DialogueCancelRuleBodyKind, FlowItemKind, MissingBodyKind,
 };
-use arcweft_lang_syntax::attachment::source_file::AttachedDelimiterState;
 use arcweft_lang_syntax::attachment::{
     AttachedDialogueCancelRuleBody, AttachedDialogueCancelRuleIndentedBody,
     AttachedFlowStatementBody, AttachedNestedThreadFlowBody, AttachedRequiredFlowBody,
@@ -276,6 +275,7 @@ impl StagedHirSourceIndex {
             &attached.open().source_span(),
             attached.items(),
             &attached.close().source_span(),
+            None,
             body,
         )
     }
@@ -294,6 +294,10 @@ impl StagedHirSourceIndex {
             &attached.open().source_span(),
             attached.items(),
             &attached.close().source_span(),
+            attached
+                .indentation_introducer()
+                .map(|colon| colon.source_span())
+                .as_ref(),
             body,
         )
     }
@@ -312,6 +316,7 @@ impl StagedHirSourceIndex {
             &attached.open().source_span(),
             attached.items(),
             &attached.close().source_span(),
+            None,
             body,
         )
     }
@@ -328,6 +333,7 @@ impl StagedHirSourceIndex {
         open: &SourceSpan,
         items: &[AttachedThreadFlowItem],
         close: &SourceSpan,
+        indentation: Option<&SourceSpan>,
         body: &HirThreadBody,
     ) -> Result<(), HirSourceCommitInvariantError> {
         self.ensure_open()?;
@@ -360,6 +366,14 @@ impl StagedHirSourceIndex {
             HirThreadBodySourceRole::CloseDelimiter,
             close,
         )?;
+        if let Some(colon) = indentation {
+            self.stage_required_thread_body_component(
+                parsed,
+                owner,
+                HirThreadBodySourceRole::IndentationIntroducer,
+                colon,
+            )?;
+        }
         for (ordinal, attached) in items.iter().enumerate() {
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 return self.reject(
@@ -666,6 +680,7 @@ impl HirSourceIndex {
                 &attached.open().source_span(),
                 attached.items(),
                 &attached.close().source_span(),
+                None,
             ),
             AttachedRequiredFlowBody::Missing {
                 syntax,
@@ -704,6 +719,10 @@ impl HirSourceIndex {
                     &attached.open().source_span(),
                     attached.items(),
                     &attached.close().source_span(),
+                    attached
+                        .indentation_introducer()
+                        .map(|colon| colon.source_span())
+                        .as_ref(),
                 ),
             AttachedRequiredThreadExpressionBody::Missing {
                 owner: syntax,
@@ -745,6 +764,7 @@ impl HirSourceIndex {
                     &attached.open().source_span(),
                     attached.items(),
                     &attached.close().source_span(),
+                    None,
                 ),
             AttachedRequiredNestedThreadFlowBody::Missing(missing) => {
                 missing.snapshot_id() == parsed.snapshot_id()
@@ -860,6 +880,7 @@ impl HirSourceIndex {
                 insertion,
                 &[],
                 insertion,
+                None,
             )
     }
 
@@ -874,12 +895,26 @@ impl HirSourceIndex {
         open: &SourceSpan,
         items: &[AttachedThreadFlowItem],
         close: &SourceSpan,
+        indentation: Option<&SourceSpan>,
     ) -> bool {
         if body.validate_module(owner.module()).is_err()
             || matches!(owner, HirThreadBodyOwner::NestedScope(scope) if scope != body.scope())
             || !thread_body_families_match(owner, body, items)
         {
             return false;
+        }
+
+        if let Some(colon) = indentation {
+            let Ok(expected) = HirSourceSite::from_attached_span(parsed.document(), colon) else {
+                return false;
+            };
+            if !self.thread_body_component_matches(
+                owner,
+                HirThreadBodySourceRole::IndentationIntroducer,
+                &expected,
+            ) {
+                return false;
+            }
         }
         let Ok(scope_metadata) = slots.resolve_prepared(body.scope()) else {
             return false;
@@ -936,7 +971,11 @@ impl HirSourceIndex {
             }
         }
 
-        let Some(expected_component_count) = body.items().len().checked_add(2) else {
+        let Some(expected_component_count) = body
+            .items()
+            .len()
+            .checked_add(2 + usize::from(indentation.is_some()))
+        else {
             return false;
         };
         self.requirements
@@ -1046,7 +1085,7 @@ fn thread_expression_body_graph_matches(
             attached.syntax().id(),
             &attached.syntax().source_span(),
             attached.items(),
-            matches!(attached.close_state(), AttachedDelimiterState::Missing(_)),
+            attached.is_unclosed(),
             false,
             &HirScopeOwner::Expr(owner),
             parent_scope,

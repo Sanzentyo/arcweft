@@ -757,6 +757,49 @@ flow plan {
     )
 }
 
+#[test]
+fn plan_json_keeps_indented_thread_and_mark_children() {
+    let path = temp_arcw(
+        "line-thread-indent",
+        r#"
+pub character alice { display = "Alice" }
+flow plan {
+    alice()[Hello[mark @.release][p]]
+    with:
+        thread motion:
+            wait(0.1s)
+        on mark(@.release):
+            log.info("release")
+}
+"#,
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("plan")
+        .arg(&path)
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let lines = report["lines"]
+        .as_array()
+        .expect("typed line-plan summaries");
+    assert_eq!(lines.len(), 1);
+    assert_eq!(lines[0]["child_tasks"], 2);
+    let children = lines[0]["root"]["children"][0]["children"]
+        .as_array()
+        .expect("the Thread and mark handler start together");
+    assert_eq!(children.len(), 2);
+    assert_eq!(children[0]["task"]["trigger"], "immediate");
+    assert_eq!(children[0]["task"]["scope"]["node"]["effect"], "1 flow ops");
+    assert_eq!(children[1]["task"]["trigger"], "mark 1");
+}
+
 fn assert_plan_style_contributions(stdout: &str, contributions: &[serde_json::Value]) {
     assert_plan_style_contribution(
         stdout,
