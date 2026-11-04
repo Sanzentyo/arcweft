@@ -157,14 +157,15 @@ pub use nominal_record_domains::{
     RuntimeNominalRecordDomainTable,
 };
 pub use project_call::{
-    RuntimeProjectCallAttachedMaterialization, RuntimeProjectCallAttachedMaterializationSeed,
-    RuntimeProjectCallAttachedPresence, RuntimeProjectCallAttachedPresenceSeed,
-    RuntimeProjectCallFixedMaterialization, RuntimeProjectCallFixedMaterializationSeed,
-    RuntimeProjectCallOperand, RuntimeProjectCallOperandSeed,
-    RuntimeProjectCallOrdinaryMaterialization, RuntimeProjectCallOrdinaryMaterializationSeed,
-    RuntimeProjectCallPlan, RuntimeProjectCallPlanError, RuntimeProjectCallPlanSeed,
-    RuntimeProjectCallRestMaterialization, RuntimeProjectCallRestMaterializationSeed,
-    RuntimeProjectCallSite, RuntimeProjectCallSitePlacementSeed, RuntimeProjectCallSiteTable,
+    RuntimeCallableGroupBinding, RuntimeProjectCallAttachedMaterialization,
+    RuntimeProjectCallAttachedMaterializationSeed, RuntimeProjectCallAttachedPresence,
+    RuntimeProjectCallAttachedPresenceSeed, RuntimeProjectCallFixedMaterialization,
+    RuntimeProjectCallFixedMaterializationSeed, RuntimeProjectCallOperand,
+    RuntimeProjectCallOperandSeed, RuntimeProjectCallOrdinaryMaterialization,
+    RuntimeProjectCallOrdinaryMaterializationSeed, RuntimeProjectCallPlan,
+    RuntimeProjectCallPlanError, RuntimeProjectCallPlanSeed, RuntimeProjectCallRestMaterialization,
+    RuntimeProjectCallRestMaterializationSeed, RuntimeProjectCallSite,
+    RuntimeProjectCallSitePlacementSeed, RuntimeProjectCallSiteTable,
     RuntimeProjectCallSiteTableError,
 };
 pub use task_semantic::{

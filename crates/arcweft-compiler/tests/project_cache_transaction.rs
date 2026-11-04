@@ -1,5 +1,7 @@
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
+#[path = "project_cache_transaction/optional_selectors.rs"]
+mod optional_selectors;
 #[path = "project_cache_transaction/rust_codec_policy.rs"]
 mod rust_codec_policy;
 #[path = "project_cache_transaction/rust_defaults.rs"]

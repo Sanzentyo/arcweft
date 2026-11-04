@@ -3766,7 +3766,8 @@ fn execute_project_call(
     callable
         .validate_for_owner(&owner)
         .map_err(|error| VmError::Runtime(error.to_string()))?;
-    if callable.state() != call.state {
+    let declared = call.binding == crate::plan::RuntimeCallableGroupBinding::Declared;
+    if !declared && callable.state() != call.state {
         return Err(VmError::Runtime(
             "project-call callee has a different callable state".to_owned(),
         ));
@@ -3842,21 +3843,28 @@ fn execute_project_call(
     let source_count = operand_refs.iter().map(Vec::len).sum::<usize>();
     let mut used_sources = BTreeSet::new();
     let mut materialized_rows = Vec::with_capacity(call.ordinary.len());
-    if call.ordinary.len() != state.parameters.len() {
+    if !declared && call.ordinary.len() != state.parameters.len() {
         return Err(VmError::Runtime(
             "project-call logical parameters do not match the selected callable state".to_owned(),
         ));
     }
+    let mut previous = None;
+    let mut parameters = Vec::with_capacity(call.ordinary.len());
     for (parameter_index, row) in call.ordinary.iter().enumerate() {
         let encoded_parameter = match row {
             AwbcProjectCallOrdinaryMaterialization::Fixed { parameter, .. }
             | AwbcProjectCallOrdinaryMaterialization::Rest { parameter, .. } => *parameter,
         };
-        if usize::try_from(encoded_parameter).ok() != Some(parameter_index) {
+        if !call
+            .binding
+            .admits_parameter(parameter_index, previous, encoded_parameter)
+        {
             return Err(VmError::Runtime(
                 "project-call parameter coordinates are not canonical".to_owned(),
             ));
         }
+        previous = Some(encoded_parameter);
+        parameters.push(encoded_parameter);
         match row {
             AwbcProjectCallOrdinaryMaterialization::Fixed { source_index, .. } => {
                 insert_project_call_source(
@@ -3922,9 +3930,28 @@ fn execute_project_call(
             }
         })
         .collect::<Vec<_>>();
-    callable
-        .inspect_group_materialization(&inspected_rows, attached_ref)
-        .map_err(|error| VmError::Runtime(error.to_string()))?;
+    let projection = if declared {
+        if call.attached.is_some() {
+            return Err(VmError::Runtime(
+                "declared group has an attached materialization".to_owned(),
+            ));
+        }
+        Some(
+            callable
+                .inspect_declared_group(
+                    call.state,
+                    call.completed_group,
+                    &parameters,
+                    &inspected_rows,
+                )
+                .map_err(|error| VmError::Runtime(error.to_string()))?,
+        )
+    } else {
+        callable
+            .inspect_group_materialization(&inspected_rows, attached_ref)
+            .map_err(|error| VmError::Runtime(error.to_string()))?;
+        None
+    };
 
     let mut transfer_registers = Vec::with_capacity(call.operands.len() + 1);
     transfer_registers.push(call.callee);
@@ -3995,6 +4022,10 @@ fn execute_project_call(
             )?)
         }
         _ => None,
+    };
+    let logical_values = match projection {
+        Some(projection) => projection.materialize(logical_values),
+        None => logical_values,
     };
     let application = callable
         .prepare_group(logical_values, attached)

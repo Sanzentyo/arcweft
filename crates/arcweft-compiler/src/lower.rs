@@ -7109,6 +7109,20 @@ fn runtime_call(
         owner,
         reason: error.to_string(),
     })?;
+    let call = match analysis
+        .external_callable_application_projection(owner)
+        .map_err(|error| RuntimeSemanticProjectionError::Call {
+            owner,
+            reason: error.to_string(),
+        })? {
+        Some(application) => call
+            .try_with_external_application(owner, application)
+            .map_err(|error| RuntimeSemanticProjectionError::Call {
+                owner,
+                reason: error.to_string(),
+            })?,
+        None => call,
+    };
     let producer_role = match selected.schema().validator() {
         CallableValidator::NeedProducer(role) => Some(*role),
         _ => None,

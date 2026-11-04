@@ -75,6 +75,101 @@ fn program(present: bool) -> AwbcProgram {
 }
 
 #[test]
+fn declared_optional_group_materializes_omission_and_abi_value_before_transfer() {
+    for present in [false, true] {
+        let mut original = program(false);
+        let call = project_call_mut(&mut original);
+        call.binding = crate::plan::RuntimeCallableGroupBinding::Declared;
+        if present {
+            original.frame_layouts[0].slots[1].ty = AwbcTypeId(0);
+            original.instructions[1] = AwbcInstruction::LoadConst {
+                dst: AwbcRegisterId(1),
+                constant: AwbcConstantId(0),
+            };
+        } else {
+            call.ordinary.clear();
+            call.operands.clear();
+        }
+        original
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .unwrap();
+        let bytes = original.encode_canonical().unwrap();
+        let decoded = AwbcProgram::decode_canonical(&bytes, AwbcDecodeBudget::default()).unwrap();
+        assert_eq!(decoded, original);
+        let program = std::sync::Arc::new(decoded);
+        let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).unwrap();
+        let output = step_with_callable_context(
+            &program,
+            &mut fiber,
+            super::super::vm::VmStepOptions {
+                max_instructions: 3,
+            },
+        )
+        .unwrap();
+        assert_eq!(output.exit, super::super::vm::VmExit::Running);
+        let expected = if present {
+            RuntimeValue::option_some(RuntimeValue::Unit)
+        } else {
+            RuntimeValue::option_none()
+        };
+        assert_eq!(
+            fiber.frames.last().unwrap().registers[0].as_ref(),
+            Some(&expected)
+        );
+        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program));
+        let saved = AwbcFiberStateSnapshot::from_live(
+            &fiber,
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                owner.clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )
+        .unwrap();
+        let saved: AwbcFiberStateSnapshot =
+            serde_json::from_slice(&serde_json::to_vec(&saved).unwrap()).unwrap();
+        fiber = saved.into_live_for_program(&owner).unwrap();
+        let output = step_with_callable_context(
+            &program,
+            &mut fiber,
+            super::super::vm::VmStepOptions {
+                max_instructions: 16,
+            },
+        )
+        .unwrap();
+        assert_eq!(output.exit, super::super::vm::VmExit::Returned(None));
+    }
+}
+
+#[test]
+fn declared_optional_group_rejects_unknown_formal_and_binding_in_place_of_abi_value() {
+    let mut wrong = program(false);
+    project_call_mut(&mut wrong).binding = crate::plan::RuntimeCallableGroupBinding::Declared;
+    assert!(
+        wrong
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .is_err()
+    );
+    let mut unknown = program(false);
+    unknown.frame_layouts[0].slots[1].ty = AwbcTypeId(0);
+    unknown.instructions[1] = AwbcInstruction::LoadConst {
+        dst: AwbcRegisterId(1),
+        constant: AwbcConstantId(0),
+    };
+    let call = project_call_mut(&mut unknown);
+    call.binding = crate::plan::RuntimeCallableGroupBinding::Declared;
+    let AwbcProjectCallOrdinaryMaterialization::Fixed { parameter, .. } = &mut call.ordinary[0]
+    else {
+        unreachable!()
+    };
+    *parameter = 1;
+    assert!(
+        unknown
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .is_err()
+    );
+}
+
+#[test]
 fn optional_callable_binding_survives_canonical_wire_and_executes_present_and_omitted() {
     for present in [false, true] {
         let original = program(present);

@@ -191,6 +191,23 @@ impl<F> RuntimeCallableZeroArgProjection<'_, F> {
 }
 
 impl<T, F, S> RuntimeCallableStateDefinition<T, F, S> {
+    pub(crate) const fn active_group(&self) -> Option<u32> {
+        match self.position {
+            RuntimeCallablePosition::Unapplied => Some(0),
+            RuntimeCallablePosition::WithinGroup { group, .. } => Some(group),
+            RuntimeCallablePosition::AfterGroup { completed } => completed.checked_add(1),
+        }
+    }
+    pub(crate) fn admits_declared_parameters(&self, parameters: &[u32]) -> bool {
+        parameters.iter().all(|parameter| {
+            self.parameters
+                .iter()
+                .any(|input| input.coordinate.parameter == *parameter)
+        }) && self.parameters.iter().all(|input| {
+            input.kind != RuntimeCallableParameterKind::Fixed
+                || parameters.contains(&input.coordinate.parameter)
+        })
+    }
     pub(crate) fn zero_argument_invocation(
         &self,
     ) -> Option<RuntimeCallableZeroArgProjection<'_, F>> {

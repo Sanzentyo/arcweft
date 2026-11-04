@@ -843,7 +843,7 @@ impl RuntimeNormalizedType {
         }
     }
 
-    fn append_runtime_plan_type_seeds(
+    pub(crate) fn append_runtime_plan_type_seeds(
         &self,
         seeds: &mut Vec<RuntimePlanTypeSeed>,
     ) -> Result<(), RuntimeCheckedTypeProjectionError> {
@@ -3549,6 +3549,8 @@ fn dialogue_policy_normalized_type(
 /// Typed failure while consuming one ABI-positioned runtime call operand list.
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeResolvedCallError {
+    #[error("external declaration application differs from its checked value call")]
+    ExternalApplicationMismatch,
     #[error("CharacterDialogue operation does not consume its complete source-ordered operand row")]
     CharacterDialogueSourceRow,
     #[error("Vec mutation does not have its checked receiver, argument, and result shape")]
@@ -3690,6 +3692,8 @@ pub struct RuntimeResolvedCall {
     operands: Box<[RuntimeResolvedCallOperand]>,
     attached_content: Option<RuntimePositionedAttachedContent>,
     project_function: Option<RuntimeProjectFunctionCallPlan>,
+    external_application:
+        Option<arcweft_lang_sema::final_analysis::CheckedExternalCallableApplicationProjection>,
     need_producer: Option<RuntimeResolvedNeedProducer>,
     mutation: Option<RuntimeResolvedCallMutation>,
     result: RuntimeCallResultShape,
@@ -4146,6 +4150,7 @@ impl RuntimeResolvedCall {
             operands: operands.into_boxed_slice(),
             attached_content: positioned_attached_content,
             project_function,
+            external_application: None,
             need_producer: None,
             mutation: None,
             result,
@@ -4373,6 +4378,31 @@ impl RuntimeResolvedCall {
 
     pub const fn project_function(&self) -> Option<&RuntimeProjectFunctionCallPlan> {
         self.project_function.as_ref()
+    }
+
+    pub fn try_with_external_application(
+        mut self,
+        owner: ExprId,
+        application: arcweft_lang_sema::final_analysis::CheckedExternalCallableApplicationProjection,
+    ) -> Result<Self, RuntimeResolvedCallError> {
+        if application.origin().expression() != owner
+            || application.group() != self.completed_group
+            || !matches!(self.dispatch, RuntimeResolvedCallDispatch::Value { .. })
+            || self.project_function.is_some()
+            || self.attached_content.is_some()
+            || self.external_application.is_some()
+        {
+            return Err(RuntimeResolvedCallError::ExternalApplicationMismatch);
+        }
+        self.external_application = Some(application);
+        Ok(self)
+    }
+
+    pub const fn external_application(
+        &self,
+    ) -> Option<&arcweft_lang_sema::final_analysis::CheckedExternalCallableApplicationProjection>
+    {
+        self.external_application.as_ref()
     }
 
     pub const fn need_producer(&self) -> Option<&RuntimeResolvedNeedProducer> {
@@ -10357,6 +10387,11 @@ impl RuntimePlanSemanticFacts {
         self.visit_variant_owners(&mut |owner| {
             if let RuntimeVariantOwner::Nominal { nominal, .. } = owner {
                 valid &= nominal.valid_for_project(project);
+            }
+        });
+        self.visit_scoped_calls(&mut |_, owner, call| {
+            if let Some(application) = call.external_application() {
+                valid &= application.origin().validate_owner(project, owner);
             }
         });
         if valid {

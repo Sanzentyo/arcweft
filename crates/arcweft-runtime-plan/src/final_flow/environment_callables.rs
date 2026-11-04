@@ -20,7 +20,10 @@ use arcweft_core::plan::{
 };
 use arcweft_core::value::{RuntimeCallArgumentMode, RuntimeLocalReadMode};
 use arcweft_lang_sema::{
-    callable::{CallableParameterPassing, CallableValidator, CheckedCallableDigest},
+    callable::{
+        CallableParameter, CallableParameterPassing, CallableParameterPresence, CallableValidator,
+        CheckedCallableDigest,
+    },
     final_analysis::CheckedExternalCallableValueProjection,
     types::SemanticTypeDigest,
 };
@@ -39,16 +42,173 @@ impl ExternalCallableKey {
             function_type: value.type_identity(),
         }
     }
+    pub(crate) fn application(
+        value: &arcweft_lang_sema::final_analysis::CheckedExternalCallableApplicationProjection,
+    ) -> Self {
+        Self {
+            declaration: value.declaration().id().semantic_digest(),
+            function_type: value.function_type(),
+        }
+    }
 }
 
-pub(crate) type ExternalCallableStates =
-    BTreeMap<ExternalCallableKey, Box<[RuntimeCallableStateSeedId]>>;
+pub(crate) type ExternalCallableStates<'a> =
+    BTreeMap<ExternalCallableKey, ExternalCallableStateChain<'a>>;
+
+pub(crate) struct ExternalCallableStateChain<'a> {
+    definition: ExternalDefinition<'a>,
+    states: Box<[RuntimeCallableStateSeedId]>,
+}
+
+impl ExternalCallableStateChain<'_> {
+    pub(crate) fn first(&self) -> Option<&RuntimeCallableStateSeedId> {
+        self.states.first()
+    }
+
+    pub(super) fn application_plan(
+        &self,
+        call: &crate::semantic_facts::RuntimeResolvedCall,
+        callee: RuntimeExprSeed,
+        operands: Box<[arcweft_core::plan::RuntimeProjectCallOperandSeed]>,
+    ) -> Result<arcweft_core::plan::RuntimeProjectCallPlanSeed, RuntimePlanLowerError> {
+        use arcweft_core::plan::{
+            RuntimeProjectCallFixedMaterializationSeed,
+            RuntimeProjectCallOrdinaryMaterializationSeed, RuntimeProjectCallPlanSeed,
+        };
+        let error = |message: &str| RuntimePlanLowerError::new(message);
+        let state = self
+            .states
+            .get(call.completed_group().get())
+            .cloned()
+            .ok_or_else(|| error("external group has no admitted state"))?;
+        let mut ordinary = Vec::with_capacity(call.operands().len());
+        for (index, operand) in call.operands().iter().enumerate() {
+            let coordinate = operand
+                .parameter()
+                .ok_or_else(|| error("external value operand lost its formal coordinate"))?;
+            let parameter = self
+                .definition
+                .parameters
+                .iter()
+                .find(|parameter| {
+                    parameter.coordinate.group == coordinate.group()
+                        && parameter.coordinate.parameter == coordinate.parameter()
+                })
+                .ok_or_else(|| {
+                    error("external value operand is outside the original declaration")
+                })?;
+            if !matches!(
+                operand.projection(),
+                crate::semantic_facts::RuntimeResolvedCallOperandProjection::Scalar
+            ) {
+                return Err(error(
+                    "fixed external formal cannot bind an unexpanded spread",
+                ));
+            }
+            ordinary.push(RuntimeProjectCallOrdinaryMaterializationSeed::Fixed(
+                RuntimeProjectCallFixedMaterializationSeed {
+                    parameter: coordinate.parameter(),
+                    abi_ty: parameter.binding.abi().identity(),
+                    binding_ty: parameter.binding.ty().identity(),
+                    source_index: u32::try_from(index)
+                        .map_err(|_| error("external source ordinal exceeds its coordinate"))?,
+                },
+            ));
+        }
+        ordinary.sort_by_key(|row| match row {
+            RuntimeProjectCallOrdinaryMaterializationSeed::Fixed(row) => row.parameter,
+            RuntimeProjectCallOrdinaryMaterializationSeed::Rest(row) => row.parameter,
+        });
+        Ok(RuntimeProjectCallPlanSeed {
+            binding: arcweft_core::plan::RuntimeCallableGroupBinding::Declared,
+            placement: arcweft_core::plan::RuntimeProjectCallSitePlacementSeed::Allocate,
+            callee,
+            state,
+            completed_group: u32::try_from(call.completed_group().get())
+                .map_err(|_| error("external group exceeds its coordinate"))?,
+            operands,
+            ordinary: ordinary.into_boxed_slice(),
+            attached: None,
+        })
+    }
+}
 pub(super) type ExternalCallableLocals = BTreeMap<ExternalCallableKey, Box<[RuntimeLocalSeedId]>>;
 
 struct ExternalParameter<'a> {
     coordinate: RuntimeCallableParameterCoordinate,
-    ty: &'a RuntimeNormalizedType,
+    binding: ExternalParameterBinding<'a>,
     name: Option<&'a str>,
+}
+
+enum ExternalParameterBinding<'a> {
+    Fixed(&'a RuntimeNormalizedType),
+    Optional {
+        abi: &'a RuntimeNormalizedType,
+        binding: RuntimeNormalizedType,
+    },
+}
+
+impl<'a> ExternalParameterBinding<'a> {
+    fn prepare(
+        parameter: &CallableParameter,
+        abi: &'a RuntimeNormalizedType,
+        host: bool,
+    ) -> Result<Self, RuntimePlanLowerError> {
+        if host || parameter.presence() == CallableParameterPresence::Required {
+            return Ok(Self::Fixed(abi));
+        }
+        use arcweft_lang_sema::types::TypeKind;
+        let error = |message: &str| RuntimePlanLowerError::new(message);
+        let declared = parameter
+            .declared_type()
+            .ok_or_else(|| error("optional external formal has no declared ABI type"))?;
+        let identity = |ty: &TypeKind| {
+            ty.semantic_identity_digest()
+                .map(|digest| {
+                    arcweft_core::pattern::RuntimeSemanticTypeId::from_bytes(*digest.as_bytes())
+                })
+                .map_err(|cause| error(&cause.to_string()))
+        };
+        if identity(declared)? != abi.identity() {
+            return Err(error(
+                "optional external formal differs from its checked ABI type",
+            ));
+        }
+        let payload = RuntimeNormalizedType::new(
+            identity(&TypeKind::Tuple(vec![declared.clone()]))?,
+            RuntimeTypeShape::Tuple(vec![abi.clone()].into_boxed_slice()),
+        )
+        .with_scope(abi.scope().clone());
+        let binding = RuntimeNormalizedType::new(
+            identity(&TypeKind::Option(Box::new(declared.clone())))?,
+            RuntimeTypeShape::Option {
+                item: Box::new(abi.clone()),
+                some_payload: Box::new(payload),
+            },
+        )
+        .with_scope(abi.scope().clone());
+        Ok(Self::Optional { abi, binding })
+    }
+
+    fn abi(&self) -> &RuntimeNormalizedType {
+        match self {
+            Self::Fixed(ty) | Self::Optional { abi: ty, .. } => ty,
+        }
+    }
+
+    fn ty(&self) -> &RuntimeNormalizedType {
+        match self {
+            Self::Fixed(ty) => ty,
+            Self::Optional { binding, .. } => binding,
+        }
+    }
+
+    const fn kind(&self) -> RuntimeCallableParameterKind {
+        match self {
+            Self::Fixed(_) => RuntimeCallableParameterKind::Fixed,
+            Self::Optional { .. } => RuntimeCallableParameterKind::Optional,
+        }
+    }
 }
 
 struct ExternalDefinition<'a> {
@@ -65,6 +225,21 @@ pub(super) struct ExternalCallableDefinitions<'a> {
 }
 
 impl<'a> ExternalCallableDefinitions<'a> {
+    pub(super) fn append_type_seeds(
+        &self,
+        seeds: &mut Vec<arcweft_core::plan::RuntimePlanTypeSeed>,
+    ) -> Result<(), RuntimePlanLowerError> {
+        for definition in self.definitions.values() {
+            for parameter in &definition.parameters {
+                parameter
+                    .binding
+                    .ty()
+                    .append_runtime_plan_type_seeds(seeds)
+                    .map_err(|cause| RuntimePlanLowerError::new(cause.to_string()))?;
+            }
+        }
+        Ok(())
+    }
     pub(super) fn prepare(
         facts: &'a RuntimePlanSemanticFacts,
     ) -> Result<Self, RuntimePlanLowerError> {
@@ -108,7 +283,7 @@ impl<'a> ExternalCallableDefinitions<'a> {
                         arcweft_core::plan::RuntimeLocalDeclarationSource::Parameter(
                             identity.generated_parameter(position),
                         ),
-                        parameter.ty.identity(),
+                        parameter.binding.ty().identity(),
                     )
                 })
                 .chain(
@@ -156,18 +331,18 @@ impl<'a> ExternalCallableDefinitions<'a> {
     }
 
     pub(super) fn materialize(
-        &self,
+        self,
         locals: &ExternalCallableLocals,
         builder: &mut RuntimePlanBuilder,
-    ) -> Result<ExternalCallableStates, RuntimePlanLowerError> {
+    ) -> Result<ExternalCallableStates<'a>, RuntimePlanLowerError> {
         self.definitions
-            .iter()
+            .into_iter()
             .map(|(key, definition)| {
-                let locals = locals.get(key).ok_or_else(|| {
+                let locals = locals.get(&key).ok_or_else(|| {
                     RuntimePlanLowerError::new("environment declaration frame is absent")
                 })?;
                 let states = definition.materialize(locals, builder)?;
-                Ok((*key, states))
+                Ok((key, ExternalCallableStateChain { definition, states }))
             })
             .collect()
     }
@@ -233,7 +408,7 @@ impl<'a> ExternalDefinition<'a> {
                 let role =
                     RuntimeRequestRoleIdentity::from_accepted_identity(*hash.finalize().as_bytes());
                 let value = RuntimeExprSeed::new(
-                    parameter.ty.identity(),
+                    parameter.binding.ty().identity(),
                     RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
                         local.clone(),
                         RuntimeLocalReadMode::Move,
@@ -279,7 +454,7 @@ impl<'a> ExternalDefinition<'a> {
                 },
                 self.parameters
                     .iter()
-                    .map(|parameter| parameter.ty.identity())
+                    .map(|parameter| parameter.binding.ty().identity())
                     .collect(),
                 payload.identity(),
                 TaskPolicy::AlwaysStart,
@@ -406,7 +581,11 @@ impl<'a> ExternalDefinition<'a> {
                         parameter: u32::try_from(parameter.index().get())
                             .map_err(|_| error("environment formal exceeds its coordinate"))?,
                     },
-                    ty,
+                    binding: ExternalParameterBinding::prepare(
+                        parameter,
+                        ty,
+                        value.declaration().host_call_contract().is_some(),
+                    )?,
                     name: if parameter.passing() == CallableParameterPassing::NamedOnly {
                         Some(
                             parameter
@@ -485,7 +664,7 @@ impl<'a> ExternalDefinition<'a> {
                     },
                     input_local: local.clone(),
                     pattern: RuntimePatternSeed::new(
-                        parameter.ty.identity(),
+                        parameter.binding.ty().identity(),
                         RuntimePatternSeedKind::Bind {
                             local: local.clone(),
                             mutable: false,
@@ -523,7 +702,7 @@ impl<'a> ExternalDefinition<'a> {
                 .map(|((parameter, local), position)| {
                     RuntimeCallArgumentSeed::new(
                         RuntimeExprSeed::new(
-                            parameter.ty.identity(),
+                            parameter.binding.ty().identity(),
                             RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
                                 local.clone(),
                                 RuntimeLocalReadMode::Move,
@@ -548,7 +727,11 @@ impl<'a> ExternalDefinition<'a> {
                     .map(
                         |(parameter, position)| arcweft_core::value::RuntimeExternalCallOperand {
                             projection:
-                                arcweft_core::value::RuntimeExternalCallOperandProjection::Value,
+                                if parameter.binding.kind() == RuntimeCallableParameterKind::Optional {
+                                    arcweft_core::value::RuntimeExternalCallOperandProjection::OptionalBinding
+                                } else {
+                                    arcweft_core::value::RuntimeExternalCallOperandProjection::Value
+                                },
                             parameter: Some(parameter.coordinate),
                             abi_position: position,
                             expansion_width: 1,
@@ -587,9 +770,9 @@ impl<'a> ExternalDefinition<'a> {
             .iter()
             .map(|parameter| RuntimeCallableParameterInput {
                 coordinate: parameter.coordinate,
-                kind: RuntimeCallableParameterKind::Fixed,
-                abi_ty: parameter.ty.identity(),
-                binding_ty: parameter.ty.identity(),
+                kind: parameter.binding.kind(),
+                abi_ty: parameter.binding.abi().identity(),
+                binding_ty: parameter.binding.ty().identity(),
             })
             .collect::<Vec<_>>();
         callable_states::CallableGroupChain::new(

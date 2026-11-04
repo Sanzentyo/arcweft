@@ -4427,23 +4427,62 @@ fn verify_project_call(
             "project-call group disagrees with its checked state position",
         );
     }
-    if call.ordinary.len() != definition.parameters.len() {
+    let declared = call.binding == crate::plan::RuntimeCallableGroupBinding::Declared;
+    if !declared && call.ordinary.len() != definition.parameters.len() {
         return argument_count(at, definition.parameters.len(), call.ordinary.len());
     }
     let actual_callee = read_register(verifier, function, block, call.callee, state)?;
-    require_project_call_compatible(program, definition.function_type, actual_callee, at)?;
+    if declared {
+        let parameters = call
+            .ordinary
+            .iter()
+            .map(|row| match row {
+                AwbcProjectCallOrdinaryMaterialization::Fixed { parameter, .. }
+                | AwbcProjectCallOrdinaryMaterialization::Rest { parameter, .. } => *parameter,
+            })
+            .collect::<Vec<_>>();
+        if call.attached.is_some()
+            || matches!(
+                definition.position,
+                RuntimeCallablePosition::WithinGroup { .. }
+            )
+            || !program.callable_states.iter().any(|candidate| {
+                candidate.origin == definition.origin
+                    && candidate.active_group() == definition.active_group()
+                    && candidate.function_type == actual_callee
+                    && candidate.admits_declared_parameters(&parameters)
+            })
+        {
+            return invalid_type(
+                at,
+                "declared call disagrees with its remaining callable inputs",
+            );
+        }
+    } else {
+        require_project_call_compatible(program, definition.function_type, actual_callee, at)?;
+    }
 
     let mut sources = BTreeSet::new();
+    let mut previous = None;
     for (ordinary_index, row) in call.ordinary.iter().enumerate() {
-        let input = &definition.parameters[ordinary_index];
         let parameter = match row {
             AwbcProjectCallOrdinaryMaterialization::Fixed { parameter, .. }
             | AwbcProjectCallOrdinaryMaterialization::Rest { parameter, .. } => *parameter,
         };
-        let expected_parameter = u32::try_from(ordinary_index).unwrap_or(u32::MAX);
-        if parameter != expected_parameter {
+        if !call
+            .binding
+            .admits_parameter(ordinary_index, previous, parameter)
+        {
             return invalid_type(at, "project-call logical parameter rows are not dense");
         }
+        previous = Some(parameter);
+        let Some(input) = definition
+            .parameters
+            .iter()
+            .find(|input| input.coordinate.parameter == parameter)
+        else {
+            return invalid_type(at, "project-call formal coordinate is absent");
+        };
         match row {
             AwbcProjectCallOrdinaryMaterialization::Fixed { source_index, .. } => {
                 if !matches!(
@@ -4457,7 +4496,16 @@ fn verify_project_call(
                     return invalid_type(at, "fixed project-call source must be a value operand");
                 }
                 let actual = read_register(verifier, function, block, operand.value, state)?;
-                require_project_call_compatible(program, input.binding_ty, actual, at)?;
+                require_project_call_compatible(
+                    program,
+                    if declared {
+                        input.abi_ty
+                    } else {
+                        input.binding_ty
+                    },
+                    actual,
+                    at,
+                )?;
                 insert_project_call_source(&mut sources, *source_index, call.operands.len(), at)?;
             }
             AwbcProjectCallOrdinaryMaterialization::Rest { source_indices, .. } => {
@@ -4619,6 +4667,12 @@ fn project_call_result_copy_proof(
     definition: &RuntimeCallableStateDefinition<AwbcTypeId, crate::awbc::schema::AwbcFunctionId>,
     state: &FlowState,
 ) -> CopyProof {
+    if call.binding == crate::plan::RuntimeCallableGroupBinding::Declared {
+        // Declared calls may enter different partial states sharing one arrow.
+        // Until the state join proves every retained projection, preserve the
+        // ordinary type proof rather than issuing a false producer Copy proof.
+        return base_copy_proof(program, definition.result);
+    }
     let RuntimeCallableTransition::Retain { values, .. } = &definition.transition else {
         return base_copy_proof(program, definition.result);
     };

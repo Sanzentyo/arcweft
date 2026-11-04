@@ -1164,7 +1164,9 @@ impl Engine {
             };
             callable
                 .validate_for_owner(&crate::task::RuntimeProgramOwner::Plan(Arc::clone(&owner)))?;
-            if callable.state() != plan.state() {
+            if plan.binding() == crate::plan::RuntimeCallableGroupBinding::Materialized
+                && callable.state() != plan.state()
+            {
                 return Err(crate::value::RuntimeCallableValueError::UnexpectedState {
                     expected: plan.state(),
                     actual: callable.state(),
@@ -1173,7 +1175,50 @@ impl Engine {
             }
             let operands = self.evaluate_project_call_operands(plan, pure_backend)?;
             self.inspect_project_call_materialization(plan, &operands)?;
+            let projection = if plan.binding() == crate::plan::RuntimeCallableGroupBinding::Declared
+            {
+                let sources = plan
+                    .ordinary()
+                    .iter()
+                    .map(|row| {
+                        row.source_indices()
+                            .iter()
+                            .flat_map(|index| operands[*index as usize].iter())
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>();
+                let inputs = plan
+                    .ordinary()
+                    .iter()
+                    .zip(&sources)
+                    .map(|(row, values)| match row {
+                        RuntimeProjectCallOrdinaryMaterialization::Fixed(_) => {
+                            crate::value::RuntimeCallableMaterializedArgument::Fixed(values[0])
+                        }
+                        RuntimeProjectCallOrdinaryMaterialization::Rest(_) => {
+                            crate::value::RuntimeCallableMaterializedArgument::Rest(values)
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                let parameters = plan
+                    .ordinary()
+                    .iter()
+                    .map(|row| row.parameter())
+                    .collect::<Vec<_>>();
+                Some(callable.inspect_declared_group(
+                    plan.state(),
+                    plan.completed_group(),
+                    &parameters,
+                    &inputs,
+                )?)
+            } else {
+                None
+            };
             let (arguments, attached) = self.materialize_project_call_owned(plan, operands);
+            let arguments = match projection {
+                Some(projection) => projection.materialize(arguments),
+                None => arguments,
+            };
             Ok::<_, RuntimeEvalError>((callable, arguments, attached))
         })();
         let (callable, arguments, attached) = match prepared {
@@ -1240,7 +1285,14 @@ impl Engine {
                             "fixed project-call source must be unique and singular".to_owned(),
                         ));
                     }
-                    self.require_project_call_value(row.binding_ty(), &values[0])?;
+                    self.require_project_call_value(
+                        if plan.binding() == crate::plan::RuntimeCallableGroupBinding::Declared {
+                            row.abi_ty()
+                        } else {
+                            row.binding_ty()
+                        },
+                        &values[0],
+                    )?;
                 }
                 RuntimeProjectCallOrdinaryMaterialization::Rest(row) => {
                     for &index in row.source_indices() {
@@ -2089,6 +2141,7 @@ mod ownership_tests {
             )
         };
         let call = RuntimeProjectCallPlan::try_from_admitted_parts(
+            crate::plan::RuntimeCallableGroupBinding::Materialized,
             RuntimeExpr::from_admitted_parts(unit_ty, RuntimeExprKind::Value(RuntimeValue::Unit)),
             RuntimeCallableStateId::from_zero_based(0).expect("state id"),
             0,

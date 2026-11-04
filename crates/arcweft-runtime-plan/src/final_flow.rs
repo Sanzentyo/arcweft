@@ -590,7 +590,7 @@ struct FinalLoweringContext<'project, 'data> {
     flow_functions: &'data flow_functions::ReservedFlowFunctions,
     locals: &'data BTreeMap<LocalId, RuntimeLocalSeedId>,
     project_callable_states: &'data callable_states::ProjectCallableStates,
-    environment_callable_states: &'data ExternalCallableStates,
+    environment_callable_states: &'data ExternalCallableStates<'data>,
     callable_sources: &'data callable_states::ProjectCallableSourceStates,
     callable_specializations: &'data callable_states::CallableSpecializationSeeds,
     callable_applications: &'data callable_states::ProjectCallableApplicationStates,
@@ -852,6 +852,9 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
     let mut type_seeds = facts
         .runtime_plan_type_seeds()
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
+    environment_definitions
+        .append_type_seeds(&mut type_seeds)
+        .map_err(|error| vec![error])?;
     // The generated plain-text template retains a Content slot even when the
     // authored call and its callback mention only String. Its exact standard
     // owner must enter the same atomic type batch as every authored dependency.
@@ -5414,6 +5417,7 @@ fn lower_controller_callable(
     );
     let project_call = RuntimeFlowOpSeed::ProjectCall {
         plan: RuntimeProjectCallPlanSeed {
+            binding: arcweft_core::plan::RuntimeCallableGroupBinding::Materialized,
             placement: arcweft_core::plan::RuntimeProjectCallSitePlacementSeed::Allocate,
             callee: RuntimeExprSeed::new(
                 instance.callable_type().identity(),
@@ -5836,7 +5840,7 @@ struct FinalFlowLowerer<'a> {
     defer_sites: &'a BTreeMap<StmtId, RuntimeDeferSiteId>,
     closure_sites: &'a BTreeMap<RuntimeClosureInstanceKey, RuntimeFunctionSiteSeedId>,
     project_callable_states: &'a callable_states::ProjectCallableStates,
-    environment_callable_states: &'a ExternalCallableStates,
+    environment_callable_states: &'a ExternalCallableStates<'a>,
     callable_sources: &'a callable_states::ProjectCallableSourceStates,
     callable_specializations: &'a callable_states::CallableSpecializationSeeds,
     callable_applications: &'a callable_states::ProjectCallableApplicationStates,
@@ -7755,7 +7759,46 @@ impl<'a> FinalFlowLowerer<'a> {
                 ))
             })?;
         let result = bind_seed(&result_type, local.clone());
-        let operation = if call.project_function().is_some() {
+        let operation = if let Some(application) = call.external_application() {
+            let RuntimeResolvedCallDispatch::Value { callee } = call.dispatch() else {
+                return Err(RuntimePlanLowerError::new(
+                    "external application lost its value callee",
+                ));
+            };
+            let lowerer = self.expr_lowerer().with_overrides(overrides);
+            let callee = lowerer.lower(*callee).map_err(RuntimePlanLowerError::new)?;
+            let operands = call
+                .operands()
+                .iter()
+                .map(|operand| {
+                    Ok(arcweft_core::plan::RuntimeProjectCallOperandSeed {
+                        value: lowerer
+                            .lower_scalar_operand_source(operand.source(), operand.ty())
+                            .map_err(RuntimePlanLowerError::new)?,
+                        mode: match operand.projection() {
+                            RuntimeResolvedCallOperandProjection::Scalar => {
+                                arcweft_core::value::RuntimeCallArgumentMode::Value
+                            }
+                            RuntimeResolvedCallOperandProjection::SpreadContainer(_) => {
+                                arcweft_core::value::RuntimeCallArgumentMode::Spread
+                            }
+                        },
+                    })
+                })
+                .collect::<Result<Box<[_]>, RuntimePlanLowerError>>()?;
+            let chain = self
+                .environment_callable_states
+                .get(&ExternalCallableKey::application(application))
+                .ok_or_else(|| {
+                    RuntimePlanLowerError::new(
+                        "external application has no original declaration frame",
+                    )
+                })?;
+            RuntimeFlowOpSeed::ProjectCall {
+                plan: chain.application_plan(call, callee, operands)?,
+                result,
+            }
+        } else if call.project_function().is_some() {
             RuntimeFlowOpSeed::ProjectCall {
                 plan: self.lower_project_call_plan(expression, call, &overrides)?,
                 result,
@@ -8042,6 +8085,7 @@ impl<'a> FinalFlowLowerer<'a> {
             .collect::<Result<Vec<_>, RuntimePlanLowerError>>()?
             .into_boxed_slice();
         Ok(RuntimeProjectCallPlanSeed {
+            binding: arcweft_core::plan::RuntimeCallableGroupBinding::Materialized,
             placement: arcweft_core::plan::RuntimeProjectCallSitePlacementSeed::Allocate,
             callee,
             state,

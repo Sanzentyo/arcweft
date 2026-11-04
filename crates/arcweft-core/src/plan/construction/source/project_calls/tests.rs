@@ -50,6 +50,7 @@ fn call(
 ) -> RuntimeFlowOpSeed {
     RuntimeFlowOpSeed::ProjectCall {
         plan: RuntimeProjectCallPlanSeed {
+            binding: crate::plan::RuntimeCallableGroupBinding::Materialized,
             placement: crate::plan::RuntimeProjectCallSitePlacementSeed::Allocate,
             callee: RuntimeExprSeed::new(
                 ty(function_type),
@@ -143,6 +144,12 @@ fn fixture() -> RuntimePlan {
             }),
         ));
     }
+    let mut declared = ops[0].clone();
+    let RuntimeFlowOpSeed::ProjectCall { plan, .. } = &mut declared else {
+        unreachable!()
+    };
+    plan.binding = RuntimeCallableGroupBinding::Declared;
+    ops.push(declared);
     ops.push(RuntimeFlowOpSeed::ReturnExpr(boolean(true)));
     builder
         .define_function_site_seed(
@@ -360,7 +367,7 @@ fn finish(
 fn project_call_sources_restore_original_order_rest_all_attached_forms_defaults_captures_and_semantics()
  {
     let plan = fixture();
-    assert_eq!(plan.project_call_sites().len(), 10);
+    assert_eq!(plan.project_call_sites().len(), 11);
     let (mut source, functions, states) = source(&plan, meter());
     replay(&plan, &mut source, &functions, &states, false).unwrap();
     let restored = finish(source).unwrap();
@@ -457,7 +464,12 @@ fn project_call_sources_reject_every_truncated_prefix_bad_tags_refs_source_order
                 "prefix {end}"
             );
         }
-        for (offset, value) in [(0, 0), (DOMAIN.len(), 2), (DOMAIN.len() + 1, 0)] {
+        for (offset, value) in [
+            (0, 0),
+            (DOMAIN.len(), 2),
+            (DOMAIN.len() + 1, 2),
+            (DOMAIN.len() + 2, 0),
+        ] {
             let mut bad = bytes.clone();
             bad[offset] = value;
             assert!(
@@ -513,7 +525,11 @@ fn project_call_sources_reject_every_truncated_prefix_bad_tags_refs_source_order
 #[test]
 fn project_call_sources_reject_invalid_attached_presence_flags_and_operand_references() {
     let plan = fixture();
-    for row in plan.project_call_sites().iter().skip(4) {
+    for row in plan
+        .project_call_sites()
+        .iter()
+        .filter(|row| row.plan().attached().is_some())
+    {
         let bytes = encode(row, &plan);
         let mut cursor = cursor::Cursor::new(&bytes, limits(&plan));
         let view = cursor.row().unwrap();

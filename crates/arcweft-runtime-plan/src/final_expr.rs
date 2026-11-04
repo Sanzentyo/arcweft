@@ -154,7 +154,7 @@ pub(crate) struct FinalExprLowerer<'hir> {
             Box<[arcweft_core::plan::RuntimeCallableStateSeedId]>,
         >,
     >,
-    environment_callable_states: Option<&'hir crate::flow::ExternalCallableStates>,
+    environment_callable_states: Option<&'hir crate::flow::ExternalCallableStates<'hir>>,
     callable_specializations: Option<
         &'hir BTreeMap<RuntimeCallableSpecializationKey, RuntimeCallableSpecializationSeedId>,
     >,
@@ -382,7 +382,7 @@ impl<'hir> FinalExprLowerer<'hir> {
 
     pub(crate) fn with_environment_callable_states(
         mut self,
-        states: &'hir crate::flow::ExternalCallableStates,
+        states: &'hir crate::flow::ExternalCallableStates<'hir>,
     ) -> Self {
         self.environment_callable_states = Some(states);
         self

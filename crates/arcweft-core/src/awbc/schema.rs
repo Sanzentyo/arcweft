@@ -2586,6 +2586,7 @@ pub struct AwbcProjectCallAttachedMaterialization {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AwbcProjectCall {
+    pub binding: crate::plan::RuntimeCallableGroupBinding,
     pub callee: AwbcRegisterId,
     pub state: RuntimeCallableStateId,
     pub completed_group: u32,

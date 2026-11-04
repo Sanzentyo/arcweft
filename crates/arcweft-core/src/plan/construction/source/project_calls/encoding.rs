@@ -159,6 +159,7 @@ fn emit(
     let call = site.plan();
     writer.raw(DOMAIN)?;
     writer.byte(1)?;
+    writer.byte(call.binding().semantic_tag())?;
     reference(
         "callable state",
         call.state().get().get(),

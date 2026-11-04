@@ -2055,6 +2055,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             AwbcSafePointKind::CallableBoundary,
             |resume| AwbcTerminator::ProjectCall {
                 call: AwbcProjectCall {
+                    binding: plan.binding(),
                     callee,
                     state: plan.state(),
                     completed_group: plan.completed_group(),

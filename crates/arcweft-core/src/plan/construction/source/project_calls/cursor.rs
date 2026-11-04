@@ -26,6 +26,7 @@ pub(super) struct Attached {
     pub source: Option<u32>,
 }
 pub(super) struct Row<'a> {
+    pub binding: crate::plan::RuntimeCallableGroupBinding,
     pub state: u32,
     pub group: u32,
     pub callee: &'a [u8],
@@ -106,9 +107,15 @@ impl<'a> Cursor<'a> {
         };
         Ok((mode, self.frame()?))
     }
-    pub fn ordinary(&mut self, index: usize, n: usize) -> Result<Ordinary<'a>, Error> {
+    pub fn ordinary(
+        &mut self,
+        index: usize,
+        n: usize,
+        binding: crate::plan::RuntimeCallableGroupBinding,
+        previous: Option<u32>,
+    ) -> Result<Ordinary<'a>, Error> {
         let parameter = self.u32()?;
-        if parameter as usize != index {
+        if !binding.admits_parameter(index, previous, parameter) {
             return Err(self.invalid("logical parameter ordinal"));
         }
         let abi = self.ty()?;
@@ -181,6 +188,9 @@ impl<'a> Cursor<'a> {
         if self.byte()? != 1 {
             return Err(self.invalid("version"));
         }
+        let tag = self.byte()?;
+        let binding = crate::plan::RuntimeCallableGroupBinding::from_semantic_tag(tag)
+            .ok_or_else(|| self.invalid("callable group binding"))?;
         let state = self.u32()?;
         reference("callable state", state, self.limits.expression.state_count)?;
         let group = self.u32()?;
@@ -193,13 +203,18 @@ impl<'a> Cursor<'a> {
         let operands = &self.bytes[start..self.offset];
         let ordinary_count = self.u32()? as usize;
         let start = self.offset;
+        let mut previous = None;
         for index in 0..ordinary_count {
-            self.ordinary(index, operand_count)?;
+            let row = self.ordinary(index, operand_count, binding, previous)?;
+            previous = Some(match row {
+                Ordinary::Fixed { parameter, .. } | Ordinary::Rest { parameter, .. } => parameter,
+            });
         }
         let ordinary = &self.bytes[start..self.offset];
         let attached = self.attached(operand_count)?;
         let result = self.frame()?;
         Ok(Row {
+            binding,
             state,
             group,
             callee,

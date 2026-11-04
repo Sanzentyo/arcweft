@@ -240,10 +240,14 @@ impl<'a> PreparedRuntimeProjectCallSource<'a> {
             operands.finish()?;
             counts.ordinary(row.ordinary_count)?;
             let mut ordinary = cursor::Cursor::new(row.ordinary, limits);
+            let mut previous = None;
             for index in 0..row.ordinary_count {
-                if let cursor::Ordinary::Rest { sources, .. } =
-                    ordinary.ordinary(index, row.operand_count)?
-                {
+                let parsed = ordinary.ordinary(index, row.operand_count, row.binding, previous)?;
+                previous = Some(match &parsed {
+                    cursor::Ordinary::Fixed { parameter, .. }
+                    | cursor::Ordinary::Rest { parameter, .. } => *parameter,
+                });
+                if let cursor::Ordinary::Rest { sources, .. } = parsed {
                     counts.sources(sources.len() / 4)?;
                 }
             }

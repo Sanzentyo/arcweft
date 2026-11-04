@@ -14,6 +14,46 @@ use crate::runtime_id::{RuntimeCallableStateId, RuntimePlanTypeId, RuntimeProjec
 use crate::value::{RuntimeCallArgumentMode, RuntimeExpr};
 use thiserror::Error;
 
+/// Materialized inputs carry complete frame bindings. Declared inputs carry
+/// ABI values at their original formal coordinates; the live callee owns the
+/// remaining inputs and supplies absent optional bindings.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+pub enum RuntimeCallableGroupBinding {
+    Materialized,
+    Declared,
+}
+
+impl RuntimeCallableGroupBinding {
+    #[must_use]
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Materialized => 0,
+            Self::Declared => 1,
+        }
+    }
+
+    #[must_use]
+    pub const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        match tag {
+            0 => Some(Self::Materialized),
+            1 => Some(Self::Declared),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn admits_parameter(
+        self,
+        ordinal: usize,
+        previous: Option<u32>,
+        parameter: u32,
+    ) -> bool {
+        match self {
+            Self::Materialized => u32::try_from(ordinal).ok() == Some(parameter),
+            Self::Declared => previous.is_none_or(|previous| previous < parameter),
+        }
+    }
+}
+
 /// Source-order physical operand of one checked project call.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeProjectCallOperand {
@@ -288,6 +328,7 @@ pub struct RuntimeProjectCallAttachedMaterializationSeed {
 /// transition/default code belongs exclusively to the referenced callable state.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeProjectCallPlan {
+    binding: RuntimeCallableGroupBinding,
     callee: RuntimeExpr,
     state: RuntimeCallableStateId,
     completed_group: u32,
@@ -298,6 +339,7 @@ pub struct RuntimeProjectCallPlan {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeProjectCallPlanSeed {
+    pub binding: RuntimeCallableGroupBinding,
     pub placement: RuntimeProjectCallSitePlacementSeed,
     pub callee: super::RuntimeExprSeed,
     pub state: RuntimeCallableStateSeedId,
@@ -349,6 +391,7 @@ pub enum RuntimeProjectCallPlanError {
 
 impl RuntimeProjectCallPlan {
     pub(crate) fn try_from_admitted_parts(
+        binding: RuntimeCallableGroupBinding,
         callee: RuntimeExpr,
         state: RuntimeCallableStateId,
         completed_group: u32,
@@ -357,12 +400,14 @@ impl RuntimeProjectCallPlan {
         attached: Option<RuntimeProjectCallAttachedMaterialization>,
     ) -> Result<Self, RuntimeProjectCallPlanError> {
         let mut sources = BTreeSet::new();
+        let mut previous = None;
         for (expected, row) in ordinary.iter().enumerate() {
-            if u32::try_from(expected).ok() != Some(row.parameter()) {
+            if !binding.admits_parameter(expected, previous, row.parameter()) {
                 return Err(RuntimeProjectCallPlanError::NonCanonicalParameter {
                     parameter: row.parameter(),
                 });
             }
+            previous = Some(row.parameter());
             let source_indices = row.source_indices();
             if source_indices.windows(2).any(|pair| pair[0] >= pair[1]) {
                 return Err(RuntimeProjectCallPlanError::NonCanonicalSourceOrder {
@@ -426,6 +471,7 @@ impl RuntimeProjectCallPlan {
             }
         }
         Ok(Self {
+            binding,
             callee,
             state,
             completed_group,
@@ -438,6 +484,10 @@ impl RuntimeProjectCallPlan {
     #[must_use]
     pub const fn callee(&self) -> &RuntimeExpr {
         &self.callee
+    }
+    #[must_use]
+    pub const fn binding(&self) -> RuntimeCallableGroupBinding {
+        self.binding
     }
     #[must_use]
     pub const fn state(&self) -> RuntimeCallableStateId {

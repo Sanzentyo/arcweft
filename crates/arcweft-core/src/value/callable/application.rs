@@ -19,6 +19,7 @@ use super::{
     RuntimeCallableOwnedInputError, RuntimeCallableValue, RuntimeCallableValueError, RuntimeValue,
 };
 
+mod declared;
 #[cfg(test)]
 mod snapshot_tests;
 
@@ -150,6 +151,7 @@ impl RuntimeCallableZeroArgInvocationProof {
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum RuntimeCallableMaterializedArgument<'a> {
     Fixed(&'a RuntimeValue),
+    Optional(Option<&'a RuntimeValue>),
     Rest(&'a [&'a RuntimeValue]),
     Bound(&'a RuntimeValue),
 }
@@ -158,6 +160,7 @@ impl RuntimeCallableMaterializedArgument<'_> {
     fn permits_copy(self) -> bool {
         match self {
             Self::Fixed(value) | Self::Bound(value) => value.ownership().permits_copy(),
+            Self::Optional(value) => value.is_none_or(|value| value.ownership().permits_copy()),
             Self::Rest(values) => values.iter().all(|value| value.ownership().permits_copy()),
         }
     }
@@ -1092,6 +1095,14 @@ impl RuntimeCallableValue {
                     })
             };
             match (input.kind, value) {
+                (
+                    RuntimeCallableParameterKind::Optional,
+                    RuntimeCallableMaterializedArgument::Optional(value),
+                ) => {
+                    if let Some(value) = value {
+                        check(input.abi_ty, value)?;
+                    }
+                }
                 (
                     RuntimeCallableParameterKind::Fixed | RuntimeCallableParameterKind::Optional,
                     RuntimeCallableMaterializedArgument::Fixed(value),

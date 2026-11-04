@@ -103,6 +103,7 @@ impl RuntimeBodySemanticContext<'_> {
             }
         })?;
         let call = row.plan();
+        encoder.tag(call.binding().semantic_tag());
         self.write_expression(encoder, call.callee())?;
         self.write_callable_state(encoder, call.state())?;
         encoder.ordinal(call.completed_group());

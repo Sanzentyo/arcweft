@@ -4303,6 +4303,7 @@ impl RuntimePlanBodyConstruction<'_> {
             })
             .transpose()?;
         self.validate_project_call_parts(
+            seed.binding,
             &callee,
             state,
             seed.completed_group,
@@ -4311,6 +4312,7 @@ impl RuntimePlanBodyConstruction<'_> {
             attached.as_ref(),
         )?;
         super::super::RuntimeProjectCallPlan::try_from_admitted_parts(
+            seed.binding,
             callee,
             state,
             seed.completed_group,
@@ -4322,6 +4324,7 @@ impl RuntimePlanBodyConstruction<'_> {
     }
     fn validate_project_call_parts(
         &self,
+        binding: super::super::RuntimeCallableGroupBinding,
         callee: &RuntimeExpr,
         state: crate::runtime_id::RuntimeCallableStateId,
         completed_group: u32,
@@ -4339,27 +4342,53 @@ impl RuntimePlanBodyConstruction<'_> {
             .get(state.index())
             .and_then(Option::as_ref)
             .ok_or(RuntimePlanBuildError::UnknownCallableState { state })?;
-        require_same(
-            "project-call callee state",
-            definition.function_type,
-            callee.ty(),
-        )?;
+        let declared = binding == super::super::RuntimeCallableGroupBinding::Declared;
+        let parameters = ordinary
+            .iter()
+            .map(|row| row.parameter())
+            .collect::<Vec<_>>();
+        if !declared {
+            require_same(
+                "project-call callee state",
+                definition.function_type,
+                callee.ty(),
+            )?;
+        } else if !states
+            .states
+            .iter()
+            .filter_map(Option::as_ref)
+            .any(|candidate| {
+                candidate.origin == definition.origin
+                    && candidate.function_type == callee.ty()
+                    && candidate.active_group() == definition.active_group()
+                    && candidate.admits_declared_parameters(&parameters)
+            })
+            || attached.is_some()
+            || matches!(
+                definition.position,
+                RuntimeCallablePosition::WithinGroup { .. }
+            )
+        {
+            return Err(RuntimePlanBuildError::InvalidProjectCallAbi {
+                context: "declared callee family",
+            });
+        }
         let group = match definition.position {
             RuntimeCallablePosition::Unapplied => 0,
             RuntimeCallablePosition::WithinGroup { group, .. } => group,
             RuntimeCallablePosition::AfterGroup { completed } => completed + 1,
         };
         if group != completed_group
-            || definition.parameters.len() != ordinary.len()
-            || definition
-                .parameters
-                .iter()
-                .zip(ordinary)
-                .any(|(parameter, row)| {
-                    parameter.coordinate.parameter != row.parameter()
-                        || parameter.abi_ty != row.abi_ty()
-                        || parameter.binding_ty != row.binding_ty()
-                })
+            || (!declared && definition.parameters.len() != ordinary.len())
+            || ordinary.iter().any(|row| {
+                definition
+                    .parameters
+                    .iter()
+                    .find(|parameter| parameter.coordinate.parameter == row.parameter())
+                    .is_none_or(|parameter| {
+                        parameter.abi_ty != row.abi_ty() || parameter.binding_ty != row.binding_ty()
+                    })
+            })
         {
             return Err(RuntimePlanBuildError::InvalidProjectCallAbi {
                 context: "callable state parameter row",
@@ -4391,7 +4420,12 @@ impl RuntimePlanBodyConstruction<'_> {
                 context: "callable state attached row",
             });
         }
-        for (input, row) in definition.parameters.iter().zip(ordinary) {
+        for row in ordinary {
+            let input = definition
+                .parameters
+                .iter()
+                .find(|parameter| parameter.coordinate.parameter == row.parameter())
+                .expect("parameter coordinates were checked above");
             match row {
                 super::super::RuntimeProjectCallOrdinaryMaterialization::Fixed(row) => {
                     if !matches!(
@@ -4411,7 +4445,11 @@ impl RuntimePlanBodyConstruction<'_> {
                     }
                     require_same(
                         "project-call fixed source type",
-                        row.binding_ty(),
+                        if declared {
+                            row.abi_ty()
+                        } else {
+                            row.binding_ty()
+                        },
                         operand.value().ty(),
                     )?;
                 }

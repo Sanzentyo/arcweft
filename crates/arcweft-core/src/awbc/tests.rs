@@ -2028,6 +2028,7 @@ fn project_call_invoke_program() -> AwbcProgram {
     });
     program.blocks[0].terminator = AwbcTerminator::ProjectCall {
         call: AwbcProjectCall {
+            binding: crate::plan::RuntimeCallableGroupBinding::Materialized,
             callee: AwbcRegisterId(0),
             state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(0).unwrap(),
             completed_group: 0,
@@ -2199,6 +2200,7 @@ fn project_call_fixed_program() -> AwbcProgram {
     };
     program.blocks[0].terminator = AwbcTerminator::ProjectCall {
         call: AwbcProjectCall {
+            binding: crate::plan::RuntimeCallableGroupBinding::Materialized,
             callee: AwbcRegisterId(0),
             state: callable_state_id(0),
             completed_group: 0,
@@ -2426,6 +2428,7 @@ fn project_call_retained_program() -> AwbcProgram {
     program.blocks[0].instructions = AwbcTableRange::new(0, 2);
     program.blocks[0].terminator = AwbcTerminator::ProjectCall {
         call: AwbcProjectCall {
+            binding: crate::plan::RuntimeCallableGroupBinding::Materialized,
             callee: AwbcRegisterId(0),
             state: callable_state_id(0),
             completed_group: 0,
@@ -2456,6 +2459,7 @@ fn project_call_retained_program() -> AwbcProgram {
         instructions: AwbcTableRange::new(2, 1),
         terminator: AwbcTerminator::ProjectCall {
             call: AwbcProjectCall {
+                binding: crate::plan::RuntimeCallableGroupBinding::Materialized,
                 callee: AwbcRegisterId(1),
                 state: callable_state_id(1),
                 completed_group: 1,
@@ -2772,6 +2776,7 @@ fn project_call_default_program() -> AwbcProgram {
     ]);
     program.blocks[0].terminator = AwbcTerminator::ProjectCall {
         call: AwbcProjectCall {
+            binding: crate::plan::RuntimeCallableGroupBinding::Materialized,
             callee: AwbcRegisterId(0),
             state: callable_state_id(0),
             completed_group: 0,

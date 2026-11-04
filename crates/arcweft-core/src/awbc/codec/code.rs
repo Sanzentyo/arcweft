@@ -1697,6 +1697,7 @@ impl Wire for AwbcProjectCallAttachedMaterialization {
 
 impl Wire for AwbcProjectCall {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.binding.semantic_tag().write_wire(writer)?;
         self.callee.write_wire(writer)?;
         self.state.write_wire(writer)?;
         self.completed_group.write_wire(writer)?;
@@ -1708,7 +1709,17 @@ impl Wire for AwbcProjectCall {
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = u8::read_wire(reader)?;
+        let binding = crate::plan::RuntimeCallableGroupBinding::from_semantic_tag(tag).ok_or(
+            AwbcCodecError::UnknownTag {
+                kind: "callable group binding",
+                tag,
+                offset,
+            },
+        )?;
         Ok(Self {
+            binding,
             callee: AwbcRegisterId::read_wire(reader)?,
             state: RuntimeCallableStateId::read_wire(reader)?,
             completed_group: u32::read_wire(reader)?,

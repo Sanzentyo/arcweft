@@ -45,8 +45,15 @@ impl PreparedRuntimeProjectCallSource<'_> {
             counts.ordinary(row.ordinary_count)?;
             let mut ordinary = Vec::with_capacity(row.ordinary_count);
             let mut parameter = Cursor::new(row.ordinary, self.limits);
+            let mut previous = None;
             for index in 0..row.ordinary_count {
-                ordinary.push(match parameter.ordinary(index, row.operand_count)? {
+                let parsed = parameter.ordinary(index, row.operand_count, row.binding, previous)?;
+                previous = Some(match &parsed {
+                    Ordinary::Fixed { parameter, .. } | Ordinary::Rest { parameter, .. } => {
+                        *parameter
+                    }
+                });
+                ordinary.push(match parsed {
                     Ordinary::Fixed {
                         parameter,
                         abi,
@@ -105,6 +112,7 @@ impl PreparedRuntimeProjectCallSource<'_> {
             debug_assert_eq!(counts.footprint, self.footprint);
             Ok(RuntimeFlowOpSeed::ProjectCall {
                 plan: RuntimeProjectCallPlanSeed {
+                    binding: row.binding,
                     placement: crate::plan::RuntimeProjectCallSitePlacementSeed::Allocate,
                     callee,
                     state: handles.states[row.state as usize - 1].clone(),
