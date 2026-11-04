@@ -389,6 +389,41 @@ pub enum RichTextUnit {
     Cps,
 }
 
+impl RichTextUnit {
+    /// Stable version-one unit tag shared by descriptors and stored values.
+    #[must_use]
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Unitless => 0,
+            Self::Px => 1,
+            Self::Pt => 2,
+            Self::Ch => 3,
+            Self::Em => 4,
+            Self::Deg => 5,
+            Self::Ms => 6,
+            Self::S => 7,
+            Self::Cps => 8,
+        }
+    }
+
+    /// Decodes only a unit in the closed version-one domain.
+    #[must_use]
+    pub const fn from_semantic_tag(value: u8) -> Option<Self> {
+        Some(match value {
+            0 => Self::Unitless,
+            1 => Self::Px,
+            2 => Self::Pt,
+            3 => Self::Ch,
+            4 => Self::Em,
+            5 => Self::Deg,
+            6 => Self::Ms,
+            7 => Self::S,
+            8 => Self::Cps,
+            _ => return None,
+        })
+    }
+}
+
 /// Presence and defaulting policy for one owner-defined property.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PropertyPresence<P: Copy + Eq + 'static> {
@@ -716,5 +751,31 @@ mod tests {
             RichTextCallableSchemaDigest::derive(b"strong"),
             RichTextCallableSchemaDigest::derive(b"em")
         );
+    }
+}
+
+#[cfg(test)]
+mod unit_codec_tests {
+    use super::RichTextUnit as Unit;
+
+    #[test]
+    fn version_one_unit_tags_preserve_the_complete_closed_domain() {
+        for (unit, tag) in [
+            (Unit::Unitless, 0),
+            (Unit::Px, 1),
+            (Unit::Pt, 2),
+            (Unit::Ch, 3),
+            (Unit::Em, 4),
+            (Unit::Deg, 5),
+            (Unit::Ms, 6),
+            (Unit::S, 7),
+            (Unit::Cps, 8),
+        ] {
+            assert_eq!(unit.semantic_tag(), tag);
+            assert_eq!(Unit::from_semantic_tag(tag), Some(unit));
+        }
+        for tag in 9..=u8::MAX {
+            assert_eq!(Unit::from_semantic_tag(tag), None);
+        }
     }
 }

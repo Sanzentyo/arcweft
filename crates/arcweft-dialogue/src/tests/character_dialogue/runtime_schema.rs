@@ -1,3 +1,5 @@
+mod property_construction;
+
 use super::*;
 use crate::{
     CharacterDialogueCharacterDeclaration, CharacterDialogueConfig,

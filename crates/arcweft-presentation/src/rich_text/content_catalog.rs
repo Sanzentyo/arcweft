@@ -1252,7 +1252,7 @@ fn encode_default(bytes: &mut Vec<u8>, value: RichTextDefaultValue) {
         RichTextDefaultValue::Length { milli, unit } => {
             bytes.push(4);
             bytes.extend_from_slice(&milli.to_le_bytes());
-            bytes.push(unit_ordinal(unit));
+            bytes.push(unit.semantic_tag());
         }
         RichTextDefaultValue::AngleMilliDegrees(value) => {
             bytes.push(5);
@@ -1304,7 +1304,7 @@ fn encode_limits(bytes: &mut Vec<u8>, limits: RichTextValueLimits) {
     }
     push_usize(bytes, limits.units.len());
     for unit in limits.units {
-        bytes.push(unit_ordinal(*unit));
+        bytes.push(unit.semantic_tag());
     }
     push_usize(bytes, limits.enum_values.len());
     for value in limits.enum_values {
@@ -1331,20 +1331,6 @@ fn push_str(bytes: &mut Vec<u8>, value: &str) {
 
 fn push_usize(bytes: &mut Vec<u8>, value: usize) {
     bytes.extend_from_slice(&(value as u64).to_le_bytes());
-}
-
-fn unit_ordinal(unit: RichTextUnit) -> u8 {
-    match unit {
-        RichTextUnit::Unitless => 0,
-        RichTextUnit::Px => 1,
-        RichTextUnit::Pt => 2,
-        RichTextUnit::Ch => 3,
-        RichTextUnit::Em => 4,
-        RichTextUnit::Deg => 5,
-        RichTextUnit::Ms => 6,
-        RichTextUnit::S => 7,
-        RichTextUnit::Cps => 8,
-    }
 }
 
 fn style_property_ordinal(property: RichTextStyleProperty) -> u8 {

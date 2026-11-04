@@ -54,18 +54,19 @@ mod dynamic_character_dialogue_context_tests {
         task::RuntimeProgramOwner,
         value::{
             RuntimeEntityReference, RuntimeOpaquePersistence, RuntimeOpaqueValue,
-            RuntimeOpaqueValueClass, RuntimeUInt, RuntimeValue,
+            RuntimeOpaqueValueClass, RuntimeValue,
         },
     };
     use arcweft_dialogue::{
         CharacterDialogueCharacterDeclaration, CharacterDialogueConfig,
         CharacterDialogueGenerationDeclaration, CharacterDialoguePolicyTypeGraph,
-        CharacterDialoguePresentationContract, CharacterDialogueRolePayloadCodec,
-        CharacterDialogueRuntimeCustomFieldCatalog, CharacterDialogueRuntimeDefault,
-        CharacterDialogueRuntimeRole as Role, CharacterDialogueRuntimeRoleBody,
-        CharacterDialogueRuntimeRoleType, CharacterDialogueRuntimeRoleTypes,
-        CharacterDialogueRuntimeSchema, CharacterDialogueType, CharacterDialogueVisualType,
-        DialoguePresentationProfile, DialogueProfileRevision,
+        CharacterDialoguePresentationContract, CharacterDialogueRichTextColor,
+        CharacterDialogueRichTextProperty, CharacterDialogueRichTextPropertyValue,
+        CharacterDialogueRolePayloadCodec, CharacterDialogueRuntimeCustomFieldCatalog,
+        CharacterDialogueRuntimeDefault, CharacterDialogueRuntimeRole as Role,
+        CharacterDialogueRuntimeRoleBody, CharacterDialogueRuntimeRoleType,
+        CharacterDialogueRuntimeRoleTypes, CharacterDialogueRuntimeSchema, CharacterDialogueType,
+        CharacterDialogueVisualType, DialoguePresentationProfile, DialogueProfileRevision,
         character_presentation::{
             CharacterPresentationTargetEvidence, CheckedCharacterPresentationPlan,
         },
@@ -75,9 +76,7 @@ mod dynamic_character_dialogue_context_tests {
         CharacterDialogueFieldCoordinate as Coordinate, CharacterDialoguePatchField,
         CharacterDialoguePatchOperation as Operation,
     };
-    use arcweft_presentation::rich_text::{
-        PRESENTATION_CONTENT_CALLABLE_CATALOG, PresentationReusableStylePropertyId,
-    };
+    use arcweft_presentation::rich_text::PresentationReusableStylePropertyId;
     use arcweft_render_text::resolve_frame_with_template;
     use arcweft_resource_model::registry::ResourceTypeRegistry;
     use arcweft_source::{
@@ -548,32 +547,17 @@ mod dynamic_character_dialogue_context_tests {
         }
 
         fn rich_text_color_value(&self) -> RuntimeValue {
-            let codec = CharacterDialogueRolePayloadCodec::RichTextProperties;
-            let mut payload = codec.no_overrides_payload().expect("typed empty RichText");
-            let color_slot = PRESENTATION_CONTENT_CALLABLE_CATALOG
-                .reusable_style_schema()
-                .expect("reusable style schema")
-                .properties()
-                .iter()
-                .position(|property| property.id == PresentationReusableStylePropertyId::Color)
-                .expect("catalog-owned Color/Value slot");
-            let RuntimeValue::Tuple(slots) = &mut payload else {
-                panic!("sparse RichText policy has a typed tuple root");
-            };
-            slots[color_slot] = RuntimeValue::option_some(RuntimeValue::Tuple(vec![
-                RuntimeValue::UInt(RuntimeUInt::U8(17)),
-                RuntimeValue::UInt(RuntimeUInt::U8(34)),
-                RuntimeValue::UInt(RuntimeUInt::U8(51)),
-                RuntimeValue::UInt(RuntimeUInt::U8(255)),
-            ]));
-            RuntimeOpaqueTypeOwner::exact(
-                CharacterDialogueRuntimeSchema::opaque_type_producer(),
-                role_semantic(Role::RichText),
+            let color = CharacterDialogueRichTextProperty::try_new(
+                PresentationReusableStylePropertyId::Color,
+                CharacterDialogueRichTextPropertyValue::Color(
+                    CharacterDialogueRichTextColor::Rgba8([17, 34, 51, 255]),
+                ),
             )
-            .try_wrap(payload)
-            .expect("accepted RichText role opaque value")
+            .expect("admitted Color property");
+            self.schema
+                .construct_rich_text_properties(&self.owner, &[color])
+                .expect("RichText constructed under the exact original program")
         }
-
         fn frame(
             &self,
             spec: &DialogueContentSpec,

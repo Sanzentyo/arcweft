@@ -78,6 +78,8 @@ mod nominal_record;
 mod nominal_record_expr;
 mod opaque;
 mod option_value;
+mod plain_construction;
+pub use plain_construction::RuntimePlainValueRecipe;
 pub mod ownership;
 mod place_displacement;
 mod place_storage;

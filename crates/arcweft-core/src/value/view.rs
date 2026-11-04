@@ -593,6 +593,7 @@ pub(crate) enum RuntimeValueSource<'a> {
         value: &'a RuntimeValueView<'a>,
         origin: crate::entry::schema::value_encoding::ValueAdmissionOrigin,
     },
+    PlainOptionPayload(&'a super::RuntimePlainValueRecipe<'a>),
 }
 impl<'a> RuntimeValueSource<'a> {
     pub(crate) fn borrowed_value(self) -> super::RuntimeBorrowedValue<'a> {
@@ -604,6 +605,9 @@ impl<'a> RuntimeValueSource<'a> {
                     crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot
                 }
                 Self::Borrowed { origin, .. } => origin,
+                Self::PlainOptionPayload(_) => {
+                    crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live
+                }
             },
         }
     }
@@ -613,6 +617,9 @@ impl<'a> RuntimeValueSource<'a> {
             Self::Live(value) => value.view(),
             Self::Snapshot(value) => value.view(),
             Self::Borrowed { value, .. } => *value,
+            Self::PlainOptionPayload(value) => {
+                RuntimeValueView::Tuple(RuntimeTupleView::PlainOptionPayload(value))
+            }
         }
     }
 }
@@ -630,6 +637,8 @@ pub(crate) enum RuntimeTupleView<'a> {
     },
     Borrowed(&'a [&'a RuntimeValue]),
     Views(&'a [RuntimeValueView<'a>]),
+    PlainRecipes(&'a [super::RuntimePlainValueRecipe<'a>]),
+    PlainOptionPayload(&'a super::RuntimePlainValueRecipe<'a>),
     Columns {
         columns: &'a [RuntimeSeq],
         row: usize,
@@ -829,6 +838,8 @@ impl<'a> RuntimeTupleView<'a> {
             Self::SnapshotColumns { columns, .. } => columns.len(),
             Self::Borrowed(values) => values.len(),
             Self::Views(values) => values.len(),
+            Self::PlainRecipes(values) => values.len(),
+            Self::PlainOptionPayload(_) => 1,
             Self::Columns { columns, .. } => columns.len(),
         }
     }
@@ -845,6 +856,10 @@ impl<'a> RuntimeTupleView<'a> {
             }
             Self::Borrowed(values) => values.get(index).map(|value| value.view()),
             Self::Views(values) => values.get(index).copied(),
+            Self::PlainRecipes(values) => {
+                values.get(index).map(super::RuntimePlainValueRecipe::view)
+            }
+            Self::PlainOptionPayload(value) => (index == 0).then(|| value.view()),
             Self::Columns { columns, row } => columns.get(index)?.value_view(row),
         }
     }

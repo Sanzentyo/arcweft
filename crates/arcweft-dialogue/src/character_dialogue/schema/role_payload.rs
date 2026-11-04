@@ -1,5 +1,7 @@
 //! Dialogue-owned payload codecs for authored CharacterDialogue roles.
 
+mod construction;
+
 use super::super::{CharacterDialogueValueError, PRODUCTION_CHARACTER_DIALOGUE_LIMITS};
 use arcweft_core::{
     entry::RuntimeValueDigest,
@@ -59,15 +61,15 @@ struct RichTextPolicyField {
 /// Coordinates use the presentation-owned semantic property identities. Absence is
 /// represented by no row, so callers do not need to inspect wire slots.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CharacterDialogueRichTextProperty {
+pub struct CharacterDialogueRichTextProperty<S = String, I = PublicId> {
     id: PresentationReusableStylePropertyId,
-    value: CharacterDialogueRichTextPropertyValue,
+    value: CharacterDialogueRichTextPropertyValue<S, I>,
 }
 
 /// Canonically decoded RichText property overrides.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct CharacterDialogueRichTextProperties {
-    properties: Vec<CharacterDialogueRichTextProperty>,
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CharacterDialogueRichTextProperties<S = String, I = PublicId> {
+    properties: Vec<CharacterDialogueRichTextProperty<S, I>>,
 }
 
 /// Typed color accepted by the presentation Content property schema.
@@ -145,6 +147,16 @@ impl CharacterDialogueRolePayloadCodec {
         }
     }
 
+    /// Validates and borrows every present property without cloning scalar data.
+    pub fn borrow_properties<'a>(
+        self,
+        payload: impl Into<RuntimeBorrowedValue<'a>>,
+    ) -> Result<
+        CharacterDialogueRichTextProperties<&'a str, &'a str>,
+        Box<CharacterDialogueValueError>,
+    > {
+        self.payload_schema()?.borrow_properties(payload.into())
+    }
     /// Checks the same property grammar on live/inert borrowed fields without
     /// building owned property rows or copying their strings.
     pub fn validate_properties<'a>(
@@ -264,21 +276,40 @@ impl CharacterDialogueRolePayloadSchema {
         &self,
         payload: impl Into<RuntimeBorrowedValue<'a>>,
     ) -> Result<CharacterDialogueRichTextProperties, CharacterDialogueValueError> {
-        let payload = payload.into();
-        self.visit_properties(payload, |_, _| Ok(()))
+        let borrowed = self
+            .borrow_properties(payload.into())
             .map_err(|error| *error)?;
+        let properties = borrowed
+            .properties
+            .into_iter()
+            .map(|property| {
+                Ok(CharacterDialogueRichTextProperty {
+                    id: property.id,
+                    value: property.value.into_owned()?,
+                })
+            })
+            .collect::<Result<_, Box<CharacterDialogueValueError>>>()
+            .map_err(|error| *error)?;
+        Ok(CharacterDialogueRichTextProperties { properties })
+    }
+
+    fn borrow_properties<'a>(
+        &self,
+        payload: RuntimeBorrowedValue<'a>,
+    ) -> Result<
+        CharacterDialogueRichTextProperties<&'a str, &'a str>,
+        Box<CharacterDialogueValueError>,
+    > {
         let mut properties = Vec::new();
         self.visit_properties(payload, |field, value| {
             properties.push(CharacterDialogueRichTextProperty {
                 id: field.spec.id,
-                value: value.into_owned()?,
+                value,
             });
             Ok(())
-        })
-        .map_err(|error| *error)?;
+        })?;
         Ok(CharacterDialogueRichTextProperties { properties })
     }
-
     fn visit_properties<'a>(
         &self,
         payload: RuntimeBorrowedValue<'a>,
@@ -312,9 +343,17 @@ impl CharacterDialogueRolePayloadSchema {
     }
 }
 
-impl CharacterDialogueRichTextProperties {
+impl<S, I> Default for CharacterDialogueRichTextProperties<S, I> {
+    fn default() -> Self {
+        Self {
+            properties: Vec::new(),
+        }
+    }
+}
+
+impl<S, I> CharacterDialogueRichTextProperties<S, I> {
     /// Present properties in canonical semantic property order.
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = &CharacterDialogueRichTextProperty> {
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = &CharacterDialogueRichTextProperty<S, I>> {
         self.properties.iter()
     }
 
@@ -331,13 +370,13 @@ impl CharacterDialogueRichTextProperties {
     }
 }
 
-impl CharacterDialogueRichTextProperty {
+impl<S, I> CharacterDialogueRichTextProperty<S, I> {
     #[must_use]
     pub const fn id(&self) -> PresentationReusableStylePropertyId {
         self.id
     }
     #[must_use]
-    pub const fn value(&self) -> &CharacterDialogueRichTextPropertyValue {
+    pub const fn value(&self) -> &CharacterDialogueRichTextPropertyValue<S, I> {
         &self.value
     }
 }
@@ -522,7 +561,7 @@ fn decode_property_value(
             let Some(milli) = milli.exact_i32() else {
                 return Err(invalid());
             };
-            let Some(unit) = rich_text_unit(unit) else {
+            let Some(unit) = RichTextUnit::from_semantic_tag(unit) else {
                 return Err(invalid());
             };
             if !parameter.limits.units.contains(&unit) {
@@ -739,21 +778,6 @@ fn closed_enum_domain_len(domain: ClosedEnumDomainId) -> Option<usize> {
     counts
         .into_iter()
         .find_map(|(candidate, count)| (candidate == domain).then_some(count))
-}
-
-fn rich_text_unit(value: u8) -> Option<RichTextUnit> {
-    Some(match value {
-        0 => RichTextUnit::Unitless,
-        1 => RichTextUnit::Px,
-        2 => RichTextUnit::Pt,
-        3 => RichTextUnit::Ch,
-        4 => RichTextUnit::Em,
-        5 => RichTextUnit::Deg,
-        6 => RichTextUnit::Ms,
-        7 => RichTextUnit::S,
-        8 => RichTextUnit::Cps,
-        _ => return None,
-    })
 }
 
 fn schema_error(reason: impl Into<String>) -> CharacterDialogueValueError {
