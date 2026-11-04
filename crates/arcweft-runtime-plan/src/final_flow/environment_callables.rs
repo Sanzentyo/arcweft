@@ -25,7 +25,7 @@ use arcweft_lang_sema::{
         CheckedCallableDigest,
     },
     final_analysis::CheckedExternalCallableValueProjection,
-    types::SemanticTypeDigest,
+    types::{SemanticTypeDigest, TypeKind},
 };
 use std::collections::BTreeMap;
 
@@ -144,7 +144,7 @@ enum ExternalParameterBinding<'a> {
     Fixed(&'a RuntimeNormalizedType),
     Optional {
         abi: &'a RuntimeNormalizedType,
-        binding: RuntimeNormalizedType,
+        binding: Box<RuntimeNormalizedType>,
     },
 }
 
@@ -157,7 +157,6 @@ impl<'a> ExternalParameterBinding<'a> {
         if host || parameter.presence() == CallableParameterPresence::Required {
             return Ok(Self::Fixed(abi));
         }
-        use arcweft_lang_sema::types::TypeKind;
         let error = |message: &str| RuntimePlanLowerError::new(message);
         let declared = parameter
             .declared_type()
@@ -187,7 +186,10 @@ impl<'a> ExternalParameterBinding<'a> {
             },
         )
         .with_scope(abi.scope().clone());
-        Ok(Self::Optional { abi, binding })
+        Ok(Self::Optional {
+            abi,
+            binding: Box::new(binding),
+        })
     }
 
     fn abi(&self) -> &RuntimeNormalizedType {

@@ -25,13 +25,24 @@ pub struct CheckedExternalCallableValueProjection {
 
 /// Selected declaration authority for a completed value-call group. The
 /// structural callee arrow alone cannot describe omitted declaration formals.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct CheckedExternalCallableApplicationProjection {
     origin: CheckedExpressionOrigin,
     catalog: Arc<CheckedCallableCatalog>,
     declaration: CheckedCallableId,
     function_type: SemanticTypeDigest,
     group: crate::callable::CallableGroupIndex,
+}
+
+impl std::fmt::Debug for CheckedExternalCallableApplicationProjection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CheckedExternalCallableApplicationProjection")
+            .field("origin", &self.origin)
+            .field("declaration", &self.declaration)
+            .field("function_type", &self.function_type)
+            .field("group", &self.group)
+            .finish_non_exhaustive()
+    }
 }
 
 impl CheckedExternalCallableApplicationProjection {

@@ -73,6 +73,36 @@ pub(super) struct RuntimeCallableStateBuilder {
 }
 
 impl RuntimeCallableStateBuilder {
+    /// Call admission reads the final graph after pending partial arrows exist.
+    pub(super) fn validate_declared_call(
+        &self,
+        call: &crate::plan::RuntimeProjectCallPlan,
+    ) -> Result<(), RuntimePlanBuildError> {
+        let base = self
+            .states
+            .get(call.state().index())
+            .and_then(Option::as_ref)
+            .ok_or(RuntimePlanBuildError::UnknownCallableState {
+                state: call.state(),
+            })?;
+        let parameters = call
+            .ordinary()
+            .iter()
+            .map(|row| row.parameter())
+            .collect::<Vec<_>>();
+        if self.states.iter().flatten().any(|candidate| {
+            candidate.origin == base.origin
+                && candidate.active_group() == Some(call.completed_group())
+                && candidate.function_type == call.callee().ty()
+                && candidate.admits_declared_parameters(&parameters)
+        }) {
+            Ok(())
+        } else {
+            Err(RuntimePlanBuildError::InvalidProjectCallAbi {
+                context: "sealed declared callee family and remaining coordinates",
+            })
+        }
+    }
     fn reserve(&mut self) -> Result<RuntimeCallableStateId, RuntimePlanBuildError> {
         if self.source_complete {
             return Err(RuntimePlanBuildError::CallableSourceGraphClosed);

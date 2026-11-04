@@ -13,6 +13,20 @@ use crate::{
 };
 
 impl CopyProof {
+    fn optional_argument(value: Option<&Self>) -> Self {
+        let Some(value) = value else {
+            return Self::Copyable;
+        };
+        let identity = crate::pattern::RuntimeBuiltinVariantCaseIdentity::OptionSome;
+        let (case, _) = identity
+            .owner()
+            .resolve_case(identity)
+            .expect("builtin Option owns Some");
+        Self::Variant {
+            case,
+            payload: Some(Box::new(Self::Tuple(vec![value.clone()]))),
+        }
+    }
     pub(super) fn retaining(
         &self,
         values: &[RuntimeCallableInputSource],
@@ -41,6 +55,83 @@ impl CopyProof {
         )
         .compact()
     }
+}
+
+/// Join every live state admitted by this exact declaration and source arrow.
+/// Retention uses its actual remaining coordinates, including absent Option
+/// bindings, so an unrestricted capture keeps its producer Copy proof.
+pub(super) fn declared_group(
+    verifier: &super::Verifier<'_, '_>,
+    call: &crate::awbc::schema::AwbcProjectCall,
+    base: &crate::plan::RuntimeCallableStateDefinition<
+        AwbcTypeId,
+        crate::awbc::schema::AwbcFunctionId,
+    >,
+    state: &super::FlowState,
+    source: AwbcTypeId,
+    work: &mut usize,
+) -> Result<CopyProof, AwbcVerifyError> {
+    use crate::awbc::schema::AwbcProjectCallOrdinaryMaterialization as Row;
+    let program = verifier.program;
+    let proofs = super::project_call_argument_copy_proofs(call, state);
+    let supplied = call
+        .ordinary
+        .iter()
+        .zip(&proofs)
+        .map(|(row, proof)| {
+            let (Row::Fixed { parameter, .. } | Row::Rest { parameter, .. }) = row;
+            (*parameter, proof)
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let parameters = supplied.keys().copied().collect::<Vec<_>>();
+    let callee = &state.copy_proofs[call.callee.index()];
+    let mut joined: Option<CopyProof> = None;
+    for candidate in &program.callable_states {
+        charge_work(work, 1, verifier.budget.dataflow_steps)?;
+        if candidate.origin != base.origin
+            || candidate.active_group() != base.active_group()
+            || candidate.function_type != source
+            || !candidate.admits_declared_parameters(&parameters)
+        {
+            continue;
+        }
+        charge_work(
+            work,
+            candidate.parameters.len(),
+            verifier.budget.dataflow_steps,
+        )?;
+        let logical = candidate
+            .parameters
+            .iter()
+            .map(|input| {
+                let value = supplied.get(&input.coordinate.parameter).copied();
+                match input.kind {
+                    RuntimeCallableParameterKind::Optional => CopyProof::optional_argument(value),
+                    RuntimeCallableParameterKind::Fixed => {
+                        value.expect("admitted required coordinate").clone()
+                    }
+                    RuntimeCallableParameterKind::Rest => {
+                        value.cloned().unwrap_or(CopyProof::Copyable)
+                    }
+                }
+            })
+            .collect::<Vec<_>>();
+        let proof = if let RuntimeCallableTransition::Retain { values, .. } = &candidate.transition
+        {
+            charge_work(work, values.len(), verifier.budget.dataflow_steps)?;
+            callee.retaining(values, &logical, &CopyProof::Affine)
+        } else {
+            base_copy_proof(program, candidate.result)
+        };
+        joined = Some(match joined {
+            Some(previous) => previous.merge(&proof),
+            None => proof,
+        });
+    }
+    joined.ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+        at: "declared project-call".to_owned(),
+        message: "callee has no admitted remaining declaration state".to_owned(),
+    })
 }
 
 pub(super) fn charge_work(
@@ -99,16 +190,7 @@ pub(super) fn applied_group(
                     .map(|(parameter, proof)| match parameter.kind {
                         RuntimeCallableParameterKind::Fixed => proof.clone(),
                         RuntimeCallableParameterKind::Optional => {
-                            let identity =
-                                crate::pattern::RuntimeBuiltinVariantCaseIdentity::OptionSome;
-                            let (case, _) = identity
-                                .owner()
-                                .resolve_case(identity)
-                                .expect("builtin Option owns its Some case");
-                            CopyProof::Variant {
-                                case,
-                                payload: Some(Box::new(CopyProof::Tuple(vec![proof.clone()]))),
-                            }
+                            CopyProof::optional_argument(Some(proof))
                         }
                         RuntimeCallableParameterKind::Rest => {
                             CopyProof::Sequence(vec![proof.clone()])

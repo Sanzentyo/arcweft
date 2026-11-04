@@ -364,6 +364,61 @@ fn finish(
     Ok(source.prepare_image(seal)?.seal(seal, None)?.into_plan())
 }
 #[test]
+fn declared_project_call_admits_pending_partial_arrows_and_rejects_missing_required_inputs_at_seal()
+{
+    for partial in [false, true] {
+        let (mut builder, functions, states) = graph::fixture_builder();
+        graph::define_bodies(&mut builder, &functions, &states);
+        let state = builder
+            .function_callable_state_seed(ty(123), &functions[0])
+            .unwrap();
+        let mut operation = call(&state, 123, &[], 0, vec![], vec![], None);
+        let RuntimeFlowOpSeed::ProjectCall { plan, .. } = &mut operation else {
+            unreachable!()
+        };
+        plan.binding = RuntimeCallableGroupBinding::Declared;
+        if partial {
+            plan.callee = RuntimeExprSeed::new(
+                ty(122),
+                RuntimeExprSeedKind::Apply {
+                    callee: Box::new(plan.callee.clone()),
+                    args: vec![RuntimeCallArgumentSeed::new(boolean(true), Mode::Value, 0)]
+                        .into_boxed_slice(),
+                },
+            );
+            plan.operands = vec![operand(boolean(false), Mode::Value)].into_boxed_slice();
+            plan.ordinary = vec![fixed(1, 0)].into_boxed_slice();
+        }
+        let root = graph::reserve_executable_function(&mut builder, 240, &[], 0, ty(121));
+        builder
+            .define_function_site_seed(
+                &root,
+                RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                    effects: RuntimeEffectSet::empty(),
+                    ops: vec![operation, RuntimeFlowOpSeed::ReturnExpr(boolean(true))]
+                        .into_boxed_slice(),
+                }),
+            )
+            .expect("callee admission waits for the actual completed state graph");
+        if partial {
+            let plan = builder
+                .finish()
+                .expect("the checked prefix demand supplies the remaining state");
+            let (mut source, functions, states) = source(&plan, meter());
+            replay(&plan, &mut source, &functions, &states, false).unwrap();
+            let restored = finish(source).unwrap();
+            assert_eq!(restored.callable_states(), plan.callable_states());
+            assert_eq!(restored.project_call_sites(), plan.project_call_sites());
+        } else {
+            assert!(matches!(
+                builder.finish().unwrap_err(),
+                RuntimePlanBuildError::InvalidProjectCallAbi { .. }
+            ));
+        }
+    }
+}
+
+#[test]
 fn project_call_sources_restore_original_order_rest_all_attached_forms_defaults_captures_and_semantics()
  {
     let plan = fixture();

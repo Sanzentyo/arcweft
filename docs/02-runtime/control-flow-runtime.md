@@ -188,6 +188,26 @@ retain this same mapping; they do not require or reconstruct a second ABI
 position on each physical operand. The callable-state owner still validates
 the complete parameter, attached-default and capture contract before admission.
 
+Group binding distinguishes complete materialized frame inputs from declared
+ABI inputs. A materialized call names one exact callable state. A declared call
+retains the checked declaration and current group, evaluates its actual callee,
+and supplies a sorted subset of original formal coordinates. The callee's live
+state owns the remaining coordinates: present optional inputs become `Some(T)`,
+omitted optional inputs become `None`, and an absent rest input becomes an empty
+pack. Unknown or already-bound coordinates and missing required inputs reject
+the call. Pending partial-arrow states are resolved before the final inventory
+admits the call. Retained callable Copy evidence joins the actual projections
+of all admitted states with that declaration, group and source arrow.
+
+Ordinary external provider declaration frames keep the ABI type `T` separate
+from the optional binding type `Option<T>`. An explicit external operand projection forwards a
+supplied value, unwraps only the outer `Some`, or omits the outer `None` and
+compacts the ABI positions. An inner `None` remains a supplied value. All
+bindings are inspected against the original executable's types and limits
+before their payloads move. The projected call retains the original executable
+lease, formatter, result type and limits. These shapes evolve in the same
+version-one source, codec and semantic contracts.
+
 The version-one checked request-role domain is
 `arcweft.lang.checked-request-role.v1\0`. Its closed family tags are accepted
 variant payload field (0), accepted record field (1), fixed formal (2), and

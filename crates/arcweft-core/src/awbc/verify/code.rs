@@ -418,6 +418,7 @@ fn verify_function(
             block_index,
             &block.terminator,
             &state,
+            &mut steps,
         )?;
         edges = edges.saturating_add(successors.len());
         if edges > verifier.budget.cfg_edges {
@@ -3384,6 +3385,7 @@ fn apply_terminator(
     block: usize,
     terminator: &AwbcTerminator,
     state: &FlowState,
+    steps: &mut usize,
 ) -> Result<Vec<(usize, FlowState)>, AwbcVerifyError> {
     let program = verifier.program;
     let at = format!("terminator of block {block}");
@@ -3577,7 +3579,7 @@ fn apply_terminator(
         }
         AwbcTerminator::ProjectCall { call } => {
             let mut next = state.clone();
-            verify_project_call(verifier, function, block, call, &mut next, &at)?;
+            verify_project_call(verifier, function, block, call, &mut next, &at, steps)?;
             successors.push((
                 verify_resume(
                     verifier,
@@ -4399,6 +4401,7 @@ fn verify_project_call(
     call: &crate::awbc::schema::AwbcProjectCall,
     state: &mut FlowState,
     at: &str,
+    steps: &mut usize,
 ) -> Result<(), AwbcVerifyError> {
     let program = verifier.program;
     check_args_budget(verifier, call.operands.len())?;
@@ -4410,18 +4413,7 @@ fn verify_project_call(
             at: at.to_owned(),
             message: "project-call input state is absent".to_owned(),
         })?;
-    let expected_group =
-        match &definition.position {
-            RuntimeCallablePosition::Unapplied => 0,
-            RuntimeCallablePosition::WithinGroup { group, .. } => *group,
-            RuntimeCallablePosition::AfterGroup { completed } => completed
-                .checked_add(1)
-                .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
-                    at: at.to_owned(),
-                    message: "project-call state group overflows".to_owned(),
-                })?,
-        };
-    if call.completed_group != expected_group {
+    if Some(call.completed_group) != definition.active_group() {
         return invalid_type(
             at,
             "project-call group disagrees with its checked state position",
@@ -4433,25 +4425,11 @@ fn verify_project_call(
     }
     let actual_callee = read_register(verifier, function, block, call.callee, state)?;
     if declared {
-        let parameters = call
-            .ordinary
-            .iter()
-            .map(|row| match row {
-                AwbcProjectCallOrdinaryMaterialization::Fixed { parameter, .. }
-                | AwbcProjectCallOrdinaryMaterialization::Rest { parameter, .. } => *parameter,
-            })
-            .collect::<Vec<_>>();
         if call.attached.is_some()
             || matches!(
                 definition.position,
                 RuntimeCallablePosition::WithinGroup { .. }
             )
-            || !program.callable_states.iter().any(|candidate| {
-                candidate.origin == definition.origin
-                    && candidate.active_group() == definition.active_group()
-                    && candidate.function_type == actual_callee
-                    && candidate.admits_declared_parameters(&parameters)
-            })
         {
             return invalid_type(
                 at,
@@ -4631,7 +4609,11 @@ fn verify_project_call(
             "callable invocation",
         )?;
     }
-    let result_proof = project_call_result_copy_proof(program, call, definition, state);
+    let result_proof = if declared {
+        callable_copy::declared_group(verifier, call, definition, state, actual_callee, steps)?
+    } else {
+        project_call_result_copy_proof(program, call, definition, state)
+    };
     for register in consumed_registers {
         clear_register(verifier, function, block, register, state)?;
     }
@@ -4667,38 +4649,11 @@ fn project_call_result_copy_proof(
     definition: &RuntimeCallableStateDefinition<AwbcTypeId, crate::awbc::schema::AwbcFunctionId>,
     state: &FlowState,
 ) -> CopyProof {
-    if call.binding == crate::plan::RuntimeCallableGroupBinding::Declared {
-        // Declared calls may enter different partial states sharing one arrow.
-        // Until the state join proves every retained projection, preserve the
-        // ordinary type proof rather than issuing a false producer Copy proof.
-        return base_copy_proof(program, definition.result);
-    }
     let RuntimeCallableTransition::Retain { values, .. } = &definition.transition else {
         return base_copy_proof(program, definition.result);
     };
     let callee = &state.copy_proofs[call.callee.index()];
-    let arguments = call
-        .ordinary
-        .iter()
-        .map(|row| match row {
-            AwbcProjectCallOrdinaryMaterialization::Fixed { source_index, .. } => call
-                .operands
-                .get(*source_index as usize)
-                .map(|operand| state.copy_proofs[operand.value.index()].clone())
-                .unwrap_or(CopyProof::Affine),
-            AwbcProjectCallOrdinaryMaterialization::Rest { source_indices, .. } => {
-                if source_indices.iter().all(|index| {
-                    call.operands.get(*index as usize).is_some_and(|operand| {
-                        state.copy_proofs[operand.value.index()].permits_copy()
-                    })
-                }) {
-                    CopyProof::Copyable
-                } else {
-                    CopyProof::Affine
-                }
-            }
-        })
-        .collect::<Vec<_>>();
+    let arguments = project_call_argument_copy_proofs(call, state);
     let attached = match (&definition.attached, &call.attached) {
         (
             RuntimeCallableAttachedContract::Optional { .. },
@@ -4722,6 +4677,33 @@ fn project_call_result_copy_proof(
         _ => CopyProof::Affine,
     };
     callee.retaining(values, &arguments, &attached)
+}
+
+fn project_call_argument_copy_proofs(
+    call: &crate::awbc::schema::AwbcProjectCall,
+    state: &FlowState,
+) -> Vec<CopyProof> {
+    call.ordinary
+        .iter()
+        .map(|row| match row {
+            AwbcProjectCallOrdinaryMaterialization::Fixed { source_index, .. } => call
+                .operands
+                .get(*source_index as usize)
+                .map(|operand| state.copy_proofs[operand.value.index()].clone())
+                .unwrap_or(CopyProof::Affine),
+            AwbcProjectCallOrdinaryMaterialization::Rest { source_indices, .. } => {
+                if source_indices.iter().all(|index| {
+                    call.operands.get(*index as usize).is_some_and(|operand| {
+                        state.copy_proofs[operand.value.index()].permits_copy()
+                    })
+                }) {
+                    CopyProof::Copyable
+                } else {
+                    CopyProof::Affine
+                }
+            }
+        })
+        .collect()
 }
 
 fn verify_apply_group(

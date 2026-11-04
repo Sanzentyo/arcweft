@@ -20,29 +20,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[test]
 fn defaulted_external_value_keeps_omitted_formals_in_compiler_projection() {
-    let parameter = AdapterFunctionParam::try_new(
-        AdapterCallableParameterIndex::try_from_usize(0).unwrap(),
-        Some(AdapterCallableName::try_new("value").unwrap()),
-        AdapterTypeKind::I64,
-        AdapterParameterPassing::PositionalOrNamed,
-        AdapterParameterPresence::Defaulted,
-    )
-    .unwrap();
-    let group = AdapterParameterGroup::try_new(
-        AdapterCallableGroupIndex::try_from_usize(0).unwrap(),
-        vec![parameter],
-    )
-    .unwrap();
-    let signature = AdapterFunctionSignature::try_new(vec![group], AdapterTypeKind::I64).unwrap();
-    let manifest = AdapterManifest::new("optional-api", "Optional API").with_function_signature(
-        AdapterCallablePath::try_new(
-            ["api", "choose"].map(|name| AdapterCallableName::try_new(name).unwrap()),
-        )
-        .unwrap(),
-        AdapterCallableOverloadIndex::try_from_usize(0).unwrap(),
-        signature,
-        vec![],
-    );
+    let manifest = optional_manifest();
     for (case, call) in [
         ("direct-omitted", "let value = api.choose()"),
         (
@@ -157,16 +135,13 @@ impl RuntimeExternalCallBackend for OptionalApi {
             &arcweft_core::value::RuntimeExternalCallableProvider::Adapter("optional-api".into())
         );
         assert!(context.program_owner().is_some());
-        match self.expected {
-            Some(value) => {
-                assert_eq!(args, [RuntimeValue::i64(value)]);
-                assert_eq!(call.operands().len(), 1);
-                assert_eq!(call.operands()[0].parameter.unwrap().parameter, 0);
-            }
-            None => {
-                assert!(args.is_empty());
-                assert!(call.operands().is_empty());
-            }
+        if let Some(value) = self.expected {
+            assert_eq!(args, [RuntimeValue::i64(value)]);
+            assert_eq!(call.operands().len(), 1);
+            assert_eq!(call.operands()[0].parameter.unwrap().parameter, 0);
+        } else {
+            assert_eq!(args.len(), 0);
+            assert_eq!(call.operands().len(), 0);
         }
         self.calls.fetch_add(1, Ordering::Relaxed);
         Some(Ok(RuntimeValue::i64(self.expected.unwrap_or(41))))
@@ -206,4 +181,30 @@ fn run_optional(
         }
     }
     panic!("optional execution exceeded its deterministic OneOp limit");
+}
+
+fn optional_manifest() -> AdapterManifest {
+    let parameter = AdapterFunctionParam::try_new(
+        AdapterCallableParameterIndex::try_from_usize(0).unwrap(),
+        Some(AdapterCallableName::try_new("value").unwrap()),
+        AdapterTypeKind::I64,
+        AdapterParameterPassing::PositionalOrNamed,
+        AdapterParameterPresence::Defaulted,
+    )
+    .unwrap();
+    let group = AdapterParameterGroup::try_new(
+        AdapterCallableGroupIndex::try_from_usize(0).unwrap(),
+        vec![parameter],
+    )
+    .unwrap();
+    let signature = AdapterFunctionSignature::try_new(vec![group], AdapterTypeKind::I64).unwrap();
+    AdapterManifest::new("optional-api", "Optional API").with_function_signature(
+        AdapterCallablePath::try_new(
+            ["api", "choose"].map(|name| AdapterCallableName::try_new(name).unwrap()),
+        )
+        .unwrap(),
+        AdapterCallableOverloadIndex::try_from_usize(0).unwrap(),
+        signature,
+        vec![],
+    )
 }

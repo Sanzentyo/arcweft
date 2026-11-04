@@ -287,6 +287,7 @@ fn callable_project_call_program() -> AwbcProgram {
     });
     program.blocks[0].terminator = AwbcTerminator::ProjectCall {
         call: AwbcProjectCall {
+            binding: arcweft_core::plan::RuntimeCallableGroupBinding::Materialized,
             callee: AwbcRegisterId(0),
             state: callable_state,
             completed_group: 0,
@@ -704,6 +705,7 @@ fn awbc_region_lowering_accepts_project_call_as_internal_terminator() {
     let mut program = program();
     program.blocks[0].terminator = AwbcTerminator::ProjectCall {
         call: AwbcProjectCall {
+            binding: arcweft_core::plan::RuntimeCallableGroupBinding::Materialized,
             callee: AwbcRegisterId(0),
             state: arcweft_core::runtime_id::RuntimeCallableStateId::from_zero_based(0)
                 .expect("first callable state ID"),

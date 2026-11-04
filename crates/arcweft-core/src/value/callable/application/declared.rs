@@ -1,6 +1,15 @@
 //! One borrowed proof aligns declared operands with the live remaining formals.
 
-use super::*;
+use super::RuntimeCallableMaterializedArgument;
+use crate::{
+    plan::{
+        RuntimeCallableAttachedContract, RuntimeCallableParameterKind,
+        RuntimeCallableStateDefinition,
+    },
+    runtime_id::RuntimeCallableStateId,
+    task::RuntimeProgramOwner,
+    value::{RuntimeCallableValue, RuntimeCallableValueError, RuntimeValue},
+};
 
 enum DeclaredBinding {
     Value(usize),

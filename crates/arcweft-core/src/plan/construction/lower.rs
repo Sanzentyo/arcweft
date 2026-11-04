@@ -4343,27 +4343,13 @@ impl RuntimePlanBodyConstruction<'_> {
             .and_then(Option::as_ref)
             .ok_or(RuntimePlanBuildError::UnknownCallableState { state })?;
         let declared = binding == super::super::RuntimeCallableGroupBinding::Declared;
-        let parameters = ordinary
-            .iter()
-            .map(|row| row.parameter())
-            .collect::<Vec<_>>();
         if !declared {
             require_same(
                 "project-call callee state",
                 definition.function_type,
                 callee.ty(),
             )?;
-        } else if !states
-            .states
-            .iter()
-            .filter_map(Option::as_ref)
-            .any(|candidate| {
-                candidate.origin == definition.origin
-                    && candidate.function_type == callee.ty()
-                    && candidate.active_group() == definition.active_group()
-                    && candidate.admits_declared_parameters(&parameters)
-            })
-            || attached.is_some()
+        } else if attached.is_some()
             || matches!(
                 definition.position,
                 RuntimeCallablePosition::WithinGroup { .. }
@@ -4373,12 +4359,8 @@ impl RuntimePlanBodyConstruction<'_> {
                 context: "declared callee family",
             });
         }
-        let group = match definition.position {
-            RuntimeCallablePosition::Unapplied => 0,
-            RuntimeCallablePosition::WithinGroup { group, .. } => group,
-            RuntimeCallablePosition::AfterGroup { completed } => completed + 1,
-        };
-        if group != completed_group
+        // The final state graph owns admission of pending partial arrows.
+        if definition.active_group() != Some(completed_group)
             || (!declared && definition.parameters.len() != ordinary.len())
             || ordinary.iter().any(|row| {
                 definition

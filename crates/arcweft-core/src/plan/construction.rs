@@ -2892,6 +2892,13 @@ impl RuntimePlanBuilder {
     ) -> Result<super::RuntimePlanInventory, RuntimePlanBuildError> {
         self.preflight_executable_inventory(limits, task_rows)?;
         self.callable_states.borrow_mut().seal()?;
+        for row in self.project_call_sites.borrow().rows.iter().flatten() {
+            if row.plan().binding() == super::RuntimeCallableGroupBinding::Declared {
+                self.callable_states
+                    .borrow()
+                    .validate_declared_call(row.plan())?;
+            }
+        }
         self.validate_finish_preconditions()?;
         let mut function_site_builder = RuntimeFunctionSiteTableBuilder::new();
         for site in self.function_sites {
