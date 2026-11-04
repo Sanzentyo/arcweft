@@ -1093,7 +1093,7 @@ impl RuntimeCallableValue {
             };
             match (input.kind, value) {
                 (
-                    RuntimeCallableParameterKind::Fixed,
+                    RuntimeCallableParameterKind::Fixed | RuntimeCallableParameterKind::Optional,
                     RuntimeCallableMaterializedArgument::Fixed(value),
                 ) => check(input.binding_ty, value)?,
                 (
@@ -1318,10 +1318,14 @@ impl RuntimeCallableValue {
             }
         }
         for ((kind, _), value) in inputs.iter().zip(&mut pending.arguments) {
-            if matches!(kind, RuntimeCallableParameterKind::Rest) {
-                let original = value.take().expect("preflight checked prefix argument");
-                *value = Some(crate::value::runtime_sequence_values(vec![original]));
-            }
+            let original = value.take().expect("preflight checked prefix argument");
+            *value = Some(match kind {
+                RuntimeCallableParameterKind::Fixed => original,
+                RuntimeCallableParameterKind::Rest => {
+                    crate::value::runtime_sequence_values(vec![original])
+                }
+                RuntimeCallableParameterKind::Optional => RuntimeValue::option_some(original),
+            });
         }
         let projected = match pending.project(&sources, &[]) {
             Ok(values) => values,

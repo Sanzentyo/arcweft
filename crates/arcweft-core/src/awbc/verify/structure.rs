@@ -2317,6 +2317,11 @@ fn verify_callable_states(program: &AwbcProgram) -> Result<(), AwbcVerifyError> 
             )?;
             match input.kind {
                 RuntimeCallableParameterKind::Fixed if input.abi_ty == input.binding_ty => {}
+                RuntimeCallableParameterKind::Optional
+                    if program.builtin_variant_payload_item(
+                        input.binding_ty,
+                        crate::pattern::RuntimeBuiltinVariantCaseIdentity::OptionSome,
+                    ) == Some(input.abi_ty) => {}
                 RuntimeCallableParameterKind::Rest
                     if matches!(
                         program

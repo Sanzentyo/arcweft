@@ -353,6 +353,7 @@ impl Wire for RuntimeCallableParameterKind {
         writer.write_u8(match self {
             Self::Fixed => 0,
             Self::Rest => 1,
+            Self::Optional => 2,
         });
         Ok(())
     }
@@ -362,6 +363,7 @@ impl Wire for RuntimeCallableParameterKind {
         match reader.read_u8()? {
             0 => Ok(Self::Fixed),
             1 => Ok(Self::Rest),
+            2 => Ok(Self::Optional),
             tag => Err(AwbcCodecError::UnknownTag {
                 kind: "callable parameter kind",
                 tag,

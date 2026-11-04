@@ -8,6 +8,7 @@ mod dialogue_callback_projection;
 mod format_content_execution;
 mod instruction_call_execution;
 mod local_assignment;
+mod optional_callable_binding;
 mod or_patterns;
 mod ownership_admission;
 mod record_shapes;

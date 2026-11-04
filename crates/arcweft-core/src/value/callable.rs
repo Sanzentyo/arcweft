@@ -235,7 +235,7 @@ impl RuntimeCallableValue {
         }
     }
 
-    /// Number of ordinary inputs still required by this callable arrow.
+    /// Number of ordinary inputs exposed by this callable arrow.
     /// Attached content is supplied through the separate group-application ABI.
     pub fn remaining_arity(&self) -> Result<usize, RuntimeCallableValueError> {
         super::RuntimeCallableView::Live(self).remaining_arity(None)
@@ -251,7 +251,8 @@ impl RuntimeCallableValue {
     }
 
     /// Materializes one positional callable arrow into the declaration's
-    /// logical bindings. A rest arrow input is an element, not an existing pack.
+    /// logical bindings. Rest inputs become singleton packs; optional inputs
+    /// become `Some`. Checked group application supplies omitted bindings.
     /// Attached content is not an arrow input; ordinary application omits it.
     pub(crate) fn materialize_arrow_arguments(
         &self,
@@ -396,6 +397,7 @@ impl RuntimeCallableValue {
             .map(|((kind, _), value)| match kind {
                 RuntimeCallableParameterKind::Fixed => value,
                 RuntimeCallableParameterKind::Rest => super::runtime_sequence_values(vec![value]),
+                RuntimeCallableParameterKind::Optional => RuntimeValue::option_some(value),
             })
             .collect()
     }

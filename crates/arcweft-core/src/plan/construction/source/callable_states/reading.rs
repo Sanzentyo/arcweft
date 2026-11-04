@@ -228,6 +228,7 @@ impl<'a> Reader<'a> {
             let kind = match reader.byte()? {
                 0 => Kind::Fixed,
                 1 => Kind::Rest,
+                2 => Kind::Optional,
                 tag => {
                     return Err(Error::Tag {
                         kind: "parameter kind",

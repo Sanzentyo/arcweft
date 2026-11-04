@@ -503,15 +503,17 @@ fn checked_partial_application_seals_retained_parameter_coordinates() {
     );
 }
 
-fn rest_partial_plan(
+fn partial_binding_plan(
     kind: crate::plan::RuntimePlanSequenceKind,
-) -> Result<RuntimePlan, crate::plan::RuntimePlanBuildError> {
+    parameter_kind: RuntimeCallableParameterKind,
+) -> Result<RuntimePlan, Box<crate::plan::RuntimePlanBuildError>> {
     let unit = RuntimeCheckedType::Unit.semantic_identity_digest();
     let boolean = RuntimeCheckedType::Bool.semantic_identity_digest();
     let sequence =
         RuntimeCheckedType::Sequence(Box::new(RuntimeCheckedType::Unit)).semantic_identity_digest();
     let initial_type = RuntimeSemanticTypeId::from_bytes([0x91; 32]);
     let partial_type = RuntimeSemanticTypeId::from_bytes([0x92; 32]);
+    let payload = RuntimeSemanticTypeId::from_bytes([0x93; 32]);
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
         .admit_type_batch(
@@ -520,7 +522,18 @@ fn rest_partial_plan(
                 RuntimePlanTypeSeed::new(boolean, RuntimePlanTypeProjection::Bool),
                 RuntimePlanTypeSeed::new(
                     sequence,
-                    RuntimePlanTypeProjection::Sequence { kind, item: unit },
+                    if parameter_kind == RuntimeCallableParameterKind::Optional {
+                        RuntimePlanTypeProjection::Option {
+                            item: unit,
+                            some_payload: payload,
+                        }
+                    } else {
+                        RuntimePlanTypeProjection::Sequence { kind, item: unit }
+                    },
+                ),
+                RuntimePlanTypeSeed::new(
+                    payload,
+                    RuntimePlanTypeProjection::Tuple(Box::new([unit])),
                 ),
                 RuntimePlanTypeSeed::new(
                     initial_type,
@@ -608,7 +621,7 @@ fn rest_partial_plan(
                 parameters: Box::new([
                     RuntimeCallableParameterInput {
                         coordinate,
-                        kind: RuntimeCallableParameterKind::Rest,
+                        kind: parameter_kind,
                         abi_ty: unit,
                         binding_ty: sequence,
                     },
@@ -673,7 +686,96 @@ fn rest_partial_plan(
             },
         )
         .unwrap();
-    builder.finish()
+    builder.finish().map_err(Box::new)
+}
+
+#[test]
+fn optional_binding_preserves_presence_in_arrow_prefix_and_saved_callable() {
+    let owner = RuntimeProgramOwner::Plan(Arc::new(
+        partial_binding_plan(
+            crate::plan::RuntimePlanSequenceKind::Vec,
+            RuntimeCallableParameterKind::Optional,
+        )
+        .unwrap(),
+    ));
+    let callable = RuntimeCallableValue::try_new(
+        owner.clone(),
+        RuntimeCallableStateId::from_zero_based(0).unwrap(),
+        [],
+    )
+    .unwrap();
+    let bindings = callable
+        .materialize_arrow_arguments(vec![RuntimeValue::Unit, RuntimeValue::Bool(false)])
+        .unwrap();
+    assert_eq!(
+        bindings,
+        [
+            RuntimeValue::option_some(RuntimeValue::Unit),
+            RuntimeValue::Bool(false)
+        ]
+    );
+    let RuntimeCallableApplication::Invoke(invocation) = callable
+        .try_duplicate_unrestricted()
+        .unwrap()
+        .prepare_group(
+            vec![RuntimeValue::option_none(), RuntimeValue::Bool(false)],
+            Some(RuntimeValue::Bool(true)),
+        )
+        .unwrap()
+    else {
+        panic!("a complete checked group invokes the declaration");
+    };
+    assert_eq!(
+        invocation.arguments,
+        [
+            RuntimeValue::option_none(),
+            RuntimeValue::Bool(false),
+            RuntimeValue::Bool(true)
+        ]
+    );
+    let error = callable
+        .try_duplicate_unrestricted()
+        .unwrap()
+        .prepare_group(
+            vec![RuntimeValue::Unit, RuntimeValue::Bool(false)],
+            Some(RuntimeValue::Bool(true)),
+        )
+        .unwrap_err();
+    assert!(matches!(
+        error.reason(),
+        RuntimeCallableValueError::ArgumentType { position: 0, .. }
+    ));
+    let prefix = callable.try_bind_prefix(vec![RuntimeValue::Unit]).unwrap();
+    assert_eq!(
+        prefix.retained(),
+        [RuntimeValue::option_some(RuntimeValue::Unit)]
+    );
+    let saved = crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+        &RuntimeValue::Callable(prefix),
+        &owner,
+    )
+    .unwrap();
+    let RuntimeValue::Callable(restored) = saved.into_runtime_value_for_program(&owner).unwrap()
+    else {
+        unreachable!()
+    };
+    let RuntimeCallableApplication::Invoke(invocation) = restored
+        .prepare_group(
+            vec![RuntimeValue::Bool(false)],
+            Some(RuntimeValue::Bool(true)),
+        )
+        .unwrap()
+    else {
+        panic!("the restored prefix invokes the same declaration");
+    };
+    assert_eq!(
+        invocation.arguments,
+        [
+            RuntimeValue::option_some(RuntimeValue::Unit),
+            RuntimeValue::Bool(false),
+            RuntimeValue::Bool(true)
+        ]
+    );
 }
 
 #[test]
@@ -683,12 +785,11 @@ fn rest_binding_rejects_other_sequence_families() {
         crate::plan::RuntimePlanSequenceKind::Slice,
         crate::plan::RuntimePlanSequenceKind::Array,
     ] {
+        let error = partial_binding_plan(kind, RuntimeCallableParameterKind::Rest).unwrap_err();
         assert!(matches!(
-            rest_partial_plan(kind),
-            Err(crate::plan::RuntimePlanBuildError::Plan(
-                crate::plan::RuntimePlanError::CallableState(
-                    crate::plan::RuntimeCallableStateError::InvalidLayout { .. }
-                )
+            *error,
+            crate::plan::RuntimePlanBuildError::Plan(crate::plan::RuntimePlanError::CallableState(
+                crate::plan::RuntimeCallableStateError::InvalidLayout { .. }
             ))
         ));
     }
@@ -697,7 +798,11 @@ fn rest_binding_rejects_other_sequence_families() {
 #[test]
 fn partial_rest_binding_retains_a_pack_and_keeps_attached_content_separate() {
     let owner = RuntimeProgramOwner::Plan(Arc::new(
-        rest_partial_plan(crate::plan::RuntimePlanSequenceKind::Vec).unwrap(),
+        partial_binding_plan(
+            crate::plan::RuntimePlanSequenceKind::Vec,
+            RuntimeCallableParameterKind::Rest,
+        )
+        .unwrap(),
     ));
     let callable = RuntimeCallableValue::try_new(
         owner,

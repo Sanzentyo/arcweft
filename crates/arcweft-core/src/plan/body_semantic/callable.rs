@@ -224,6 +224,7 @@ impl RuntimeBodySemanticContext<'_> {
             encoder.tag(match parameter.kind {
                 Kind::Fixed => 0,
                 Kind::Rest => 1,
+                Kind::Optional => 2,
             });
             self.write_type(encoder, parameter.abi_ty)?;
             self.write_type(encoder, parameter.binding_ty)?;

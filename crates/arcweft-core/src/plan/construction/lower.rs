@@ -4386,14 +4386,18 @@ impl RuntimePlanBodyConstruction<'_> {
                 context: "callable state attached row",
             });
         }
-        for row in ordinary {
+        for (input, row) in definition.parameters.iter().zip(ordinary) {
             match row {
                 super::super::RuntimeProjectCallOrdinaryMaterialization::Fixed(row) => {
-                    require_same(
-                        "project-call fixed ABI/binding type",
-                        row.abi_ty(),
-                        row.binding_ty(),
-                    )?;
+                    if !matches!(
+                        input.kind,
+                        super::super::RuntimeCallableParameterKind::Fixed
+                            | super::super::RuntimeCallableParameterKind::Optional
+                    ) {
+                        return Err(RuntimePlanBuildError::InvalidProjectCallAbi {
+                            context: "fixed materialization parameter kind",
+                        });
+                    }
                     let operand = self.project_call_operand(operands, row.source_index())?;
                     if operand.mode() != RuntimeCallArgumentMode::Value {
                         return Err(RuntimePlanBuildError::InvalidProjectCallAbi {
@@ -4402,11 +4406,16 @@ impl RuntimePlanBodyConstruction<'_> {
                     }
                     require_same(
                         "project-call fixed source type",
-                        row.abi_ty(),
+                        row.binding_ty(),
                         operand.value().ty(),
                     )?;
                 }
                 super::super::RuntimeProjectCallOrdinaryMaterialization::Rest(row) => {
+                    if input.kind != super::super::RuntimeCallableParameterKind::Rest {
+                        return Err(RuntimePlanBuildError::InvalidProjectCallAbi {
+                            context: "rest materialization parameter kind",
+                        });
+                    }
                     let item = match self.projection(row.binding_ty())? {
                         RuntimePlanTypeProjection::Sequence {
                             kind: RuntimePlanSequenceKind::Vec,

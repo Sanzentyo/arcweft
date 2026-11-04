@@ -98,6 +98,18 @@ pub(super) fn applied_group(
                     .zip(arguments)
                     .map(|(parameter, proof)| match parameter.kind {
                         RuntimeCallableParameterKind::Fixed => proof.clone(),
+                        RuntimeCallableParameterKind::Optional => {
+                            let identity =
+                                crate::pattern::RuntimeBuiltinVariantCaseIdentity::OptionSome;
+                            let (case, _) = identity
+                                .owner()
+                                .resolve_case(identity)
+                                .expect("builtin Option owns its Some case");
+                            CopyProof::Variant {
+                                case,
+                                payload: Some(Box::new(CopyProof::Tuple(vec![proof.clone()]))),
+                            }
+                        }
                         RuntimeCallableParameterKind::Rest => {
                             CopyProof::Sequence(vec![proof.clone()])
                         }

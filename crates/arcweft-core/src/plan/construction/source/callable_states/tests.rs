@@ -716,6 +716,44 @@ fn callable_definition_snapshots_share_metadata_across_slot_growth_and_release_w
 }
 
 #[test]
+fn callable_sources_preserve_optional_ordinary_binding_and_its_executable_owner() {
+    let (mut builder, functions, states) = fixture_builder();
+    let optional = builder.reserve_callable_state_seed().unwrap();
+    builder
+        .define_callable_state_seed(
+            &optional,
+            State {
+                function_type: UNARY,
+                origin: optional.clone(),
+                position: Position::Unapplied,
+                retained: Box::new([]),
+                parameters: Box::new([parameter(0, 0, Kind::Optional, BOOL, OPTION)]),
+                result: BOOL,
+                attached: Attached::None,
+                transition: Transition::Invoke {
+                    function: functions[3].clone(),
+                    captures: Box::new([]),
+                    arguments: Box::new([Input::Argument { position: 0 }]),
+                },
+                partials: Box::new([]),
+            },
+        )
+        .unwrap();
+    define_bodies(&mut builder, &functions, &states);
+    let plan = builder.finish().unwrap();
+    let bytes = encode(&plan);
+    let (source, functions, states) = source(&plan, &bytes);
+    let restored = finish(source, &functions, &states);
+    assert_eq!(restored.callable_states(), plan.callable_states());
+    assert_eq!(restored.function_sites(), plan.function_sites());
+    assert_eq!(
+        restored.executable_semantic_digest(),
+        plan.executable_semantic_digest()
+    );
+    assert_eq!(encode(&restored), bytes);
+}
+
+#[test]
 fn callable_sources_preserve_the_complete_graph_defaults_forward_edges_partials_and_common_seal() {
     let plan = fixture();
     let bytes = encode(&plan);

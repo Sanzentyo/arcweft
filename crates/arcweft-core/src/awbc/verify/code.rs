@@ -4446,7 +4446,10 @@ fn verify_project_call(
         }
         match row {
             AwbcProjectCallOrdinaryMaterialization::Fixed { source_index, .. } => {
-                if input.kind != RuntimeCallableParameterKind::Fixed {
+                if !matches!(
+                    input.kind,
+                    RuntimeCallableParameterKind::Fixed | RuntimeCallableParameterKind::Optional
+                ) {
                     return invalid_type(at, "fixed call materialization targets a rest parameter");
                 }
                 let operand = project_call_operand(call, *source_index, at)?;
@@ -4454,7 +4457,7 @@ fn verify_project_call(
                     return invalid_type(at, "fixed project-call source must be a value operand");
                 }
                 let actual = read_register(verifier, function, block, operand.value, state)?;
-                require_project_call_compatible(program, input.abi_ty, actual, at)?;
+                require_project_call_compatible(program, input.binding_ty, actual, at)?;
                 insert_project_call_source(&mut sources, *source_index, call.operands.len(), at)?;
             }
             AwbcProjectCallOrdinaryMaterialization::Rest { source_indices, .. } => {

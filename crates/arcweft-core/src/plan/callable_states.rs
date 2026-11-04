@@ -51,9 +51,12 @@ pub struct RuntimeCallableRetainedInput<T> {
 pub enum RuntimeCallableParameterKind {
     Fixed,
     Rest,
+    /// The arrow accepts `abi_ty`; the declaration binds canonical `Option<abi_ty>`.
+    /// Omission belongs to checked group application, not positional-prefix arity.
+    Optional,
 }
 
-/// The callable arrow exposes ABI types; a rest parameter binds a typed pack.
+/// The arrow exposes ABI types; rest and optional parameters have typed bindings.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuntimeCallableParameterInput<T> {
@@ -617,6 +620,8 @@ impl RuntimeCallableState {
             let binding = ty(input.binding_ty, "parameter binding")?;
             match input.kind {
                 RuntimeCallableParameterKind::Fixed if input.abi_ty == input.binding_ty => {}
+                RuntimeCallableParameterKind::Optional if matches!(binding, Type::Option { item, .. } if *item == input.abi_ty) =>
+                    {}
                 RuntimeCallableParameterKind::Rest if matches!(binding, Type::Sequence { kind: super::RuntimePlanSequenceKind::Vec, item } if *item == input.abi_ty) =>
                     {}
                 _ => return Err(invalid_layout()),

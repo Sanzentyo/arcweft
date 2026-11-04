@@ -160,7 +160,8 @@ impl RuntimeProjectCallRestMaterialization {
     }
 }
 
-/// Ordinary logical materialization rows. Fixed and rest have different
+/// Ordinary logical materialization rows. Fixed carries one complete binding,
+/// including a canonical Option for an optional parameter. Fixed and rest have different
 /// source cardinality, so they remain distinct rather than sharing a
 /// presence-bearing catch-all row.
 #[derive(Clone, Debug, Eq, PartialEq)]

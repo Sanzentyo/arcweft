@@ -208,6 +208,7 @@ impl<'a> Writer<'a> {
             self.tag(match input.kind {
                 Kind::Fixed => 0,
                 Kind::Rest => 1,
+                Kind::Optional => 2,
             })?;
             self.ty(input.abi_ty)?;
             self.ty(input.binding_ty)?;
