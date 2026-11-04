@@ -534,12 +534,30 @@ impl<'a> ExternalDefinition<'a> {
                     )
                 })
                 .collect();
-            let target = self
+            let mut target = self
                 .value
                 .declaration()
                 .id()
                 .runtime_target()
                 .map_err(|cause| error(&cause.to_string()))?;
+            if let arcweft_core::value::RuntimeCallTarget::External(call) = target {
+                let operands = self
+                    .parameters
+                    .iter()
+                    .zip(0_u32..)
+                    .map(
+                        |(parameter, position)| arcweft_core::value::RuntimeExternalCallOperand {
+                            parameter: Some(parameter.coordinate),
+                            abi_position: position,
+                            expansion_width: 1,
+                        },
+                    )
+                    .collect();
+                target = arcweft_core::value::RuntimeCallTarget::External(
+                    call.with_operands(operands)
+                        .map_err(|cause| error(&cause.to_string()))?,
+                );
+            }
             let expression = RuntimeExprSeed::new(
                 self.result.identity(),
                 RuntimeExprSeedKind::Call {

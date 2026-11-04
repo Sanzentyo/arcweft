@@ -2395,12 +2395,64 @@ impl<'hir> FinalExprLowerer<'hir> {
             ) => unreachable!("Map prefix is lowered before generic call operands"),
             RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Registered(
                 registered,
-            )) => Ok(RuntimeExprSeedKind::Call {
-                callee: registered
+            )) => {
+                let mut callee = registered
                     .runtime_target()
-                    .map_err(|error| error.to_string())?,
-                args: arguments.into_boxed_slice(),
-            }),
+                    .map_err(|error| error.to_string())?;
+                if let RuntimeCallTarget::External(call) = callee {
+                    let mut operands = selected
+                        .operands()
+                        .iter()
+                        .map(|operand| {
+                            let expansion_width = match operand.projection() {
+                                RuntimeResolvedCallOperandProjection::Scalar => 1,
+                                RuntimeResolvedCallOperandProjection::SpreadContainer(_) => {
+                                    match operand.ty().shape() {
+                                        RuntimeTypeShape::Tuple(items) => {
+                                            u32::try_from(items.len())
+                                                .map_err(|_| "external tuple width exceeds u32")?
+                                        }
+                                        RuntimeTypeShape::Array { length, .. } => length
+                                            .constant()
+                                            .and_then(|length| u32::try_from(length).ok())
+                                            .ok_or("external array width is not closed u32")?,
+                                        _ => {
+                                            return Err(
+                                                "external operand has no fixed expansion width",
+                                            );
+                                        }
+                                    }
+                                }
+                            };
+                            Ok(arcweft_core::value::RuntimeExternalCallOperand {
+                                parameter: operand.parameter().map(|parameter| {
+                                    arcweft_core::plan::RuntimeCallableParameterCoordinate {
+                                        group: parameter.group(),
+                                        parameter: parameter.parameter(),
+                                    }
+                                }),
+                                abi_position: operand.abi_position(),
+                                expansion_width,
+                            })
+                        })
+                        .collect::<Result<Vec<_>, &str>>()?;
+                    if let Some(attached) = selected.positioned_attached_content() {
+                        operands.push(arcweft_core::value::RuntimeExternalCallOperand {
+                            parameter: None,
+                            abi_position: attached.abi_position(),
+                            expansion_width: 1,
+                        });
+                    }
+                    callee = RuntimeCallTarget::External(
+                        call.with_operands(operands.into_boxed_slice())
+                            .map_err(|error| error.to_string())?,
+                    );
+                }
+                Ok(RuntimeExprSeedKind::Call {
+                    callee,
+                    args: arguments.into_boxed_slice(),
+                })
+            }
             RuntimeResolvedCallDispatch::Value { callee } => {
                 if call.callee().value_expression() != Some(*callee) {
                     return Err(format!(

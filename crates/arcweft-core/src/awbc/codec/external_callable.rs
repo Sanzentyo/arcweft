@@ -7,8 +7,8 @@ use super::{
 use crate::{
     entry::RuntimeCallableId,
     value::{
-        RuntimeExternalCallable, RuntimeExternalCallableDeclaration, RuntimeExternalCallableExport,
-        RuntimeExternalCallableProvider, StandardEnvironmentId,
+        RuntimeExternalCallOperand, RuntimeExternalCallable, RuntimeExternalCallableDeclaration,
+        RuntimeExternalCallableExport, RuntimeExternalCallableProvider, StandardEnvironmentId,
     },
 };
 
@@ -40,7 +40,8 @@ impl Wire for RuntimeExternalCallable {
                 writer.write_table(path)?;
             }
         }
-        self.declaration().overload().write_wire(writer)
+        self.declaration().overload().write_wire(writer)?;
+        writer.write_table(self.operands())
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
@@ -103,7 +104,54 @@ impl Wire for RuntimeExternalCallable {
             message: error.to_string(),
             offset,
         })?;
-        Ok(Self::new(identity, declaration))
+        let operands = reader
+            .read_table::<RuntimeExternalCallOperand>(
+                "external call operands",
+                reader.budget().collection_items,
+            )?
+            .into_boxed_slice();
+        Self::new(identity, declaration)
+            .with_operands(operands)
+            .map_err(|error| AwbcCodecError::InvalidMetadata {
+                kind: "external call operand layout",
+                message: error.to_string(),
+                offset,
+            })
+    }
+}
+
+impl Wire for RuntimeExternalCallOperand {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        u8::from(self.parameter.is_some()).write_wire(writer)?;
+        if let Some(parameter) = self.parameter {
+            parameter.group.write_wire(writer)?;
+            parameter.parameter.write_wire(writer)?;
+        }
+        self.abi_position.write_wire(writer)?;
+        self.expansion_width.write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let parameter = match u8::read_wire(reader)? {
+            0 => None,
+            1 => Some(crate::plan::RuntimeCallableParameterCoordinate {
+                group: u32::read_wire(reader)?,
+                parameter: u32::read_wire(reader)?,
+            }),
+            tag => {
+                return Err(AwbcCodecError::UnknownTag {
+                    kind: "external operand coordinate",
+                    tag,
+                    offset,
+                });
+            }
+        };
+        Ok(Self {
+            parameter,
+            abi_position: u32::read_wire(reader)?,
+            expansion_width: u32::read_wire(reader)?,
+        })
     }
 }
 
@@ -130,11 +178,29 @@ mod tests {
                     name: "run".into(),
                 },
             ] {
-                let target = RuntimeCallTarget::External(RuntimeExternalCallable::new(
-                    RuntimeCallableId::from_checked_digest([0x91; 32]),
-                    RuntimeExternalCallableDeclaration::try_new(provider.clone(), export, 37)
-                        .unwrap(),
-                ));
+                let target = RuntimeCallTarget::External(
+                    RuntimeExternalCallable::new(
+                        RuntimeCallableId::from_checked_digest([0x91; 32]),
+                        RuntimeExternalCallableDeclaration::try_new(provider.clone(), export, 37)
+                            .unwrap(),
+                    )
+                    .with_operands(Box::new([
+                        RuntimeExternalCallOperand {
+                            parameter: Some(crate::plan::RuntimeCallableParameterCoordinate {
+                                group: 1,
+                                parameter: 7,
+                            }),
+                            abi_position: 1,
+                            expansion_width: 2,
+                        },
+                        RuntimeExternalCallOperand {
+                            parameter: None,
+                            abi_position: 0,
+                            expansion_width: 1,
+                        },
+                    ]))
+                    .unwrap(),
+                );
                 let mut writer = Writer::default();
                 target.write_wire(&mut writer).unwrap();
                 let bytes = writer.into_bytes();

@@ -845,10 +845,18 @@ impl Decoder<'_, '_> {
                     },
                     _ => return Err(r.invalid("external export")),
                 };
-                RuntimeCallTarget::External(RuntimeExternalCallable::new(
-                    identity,
-                    RuntimeExternalCallableDeclaration::try_new(provider, export, r.u16()?)?,
-                ))
+                let declaration =
+                    RuntimeExternalCallableDeclaration::try_new(provider, export, r.u16()?)?;
+                let count = r.count()?;
+                let operands = (0..count)
+                    .map(|_| r.external_operand())
+                    .collect::<Result<Box<[_]>, Box<Error>>>()
+                    .map_err(|error| *error)?;
+                RuntimeCallTarget::External(
+                    RuntimeExternalCallable::new(identity, declaration)
+                        .with_operands(operands)
+                        .map_err(|_| r.invalid("external operand layout"))?,
+                )
             }
             _ => return Err(r.invalid("call target")),
         })

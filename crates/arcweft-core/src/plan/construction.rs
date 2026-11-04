@@ -153,6 +153,8 @@ pub enum RuntimePlanTable {
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimePlanBuildError {
     #[error(transparent)]
+    ExternalCallOperands(Box<crate::value::RuntimeExternalCallOperandError>),
+    #[error(transparent)]
     PresentationFactory(Box<crate::presentation::RuntimePresentationFactoryCallError>),
     #[error("invalid retained View call: {0}")]
     PresentationView(Box<crate::presentation::RuntimePresentationViewCallError>),

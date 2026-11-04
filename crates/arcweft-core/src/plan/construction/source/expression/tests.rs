@@ -29,6 +29,70 @@ fn empty_handles() -> RuntimeExpressionSourceHandles<'static> {
 }
 
 #[test]
+fn external_source_admission_rejects_layouts_that_do_not_match_original_arguments() {
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_type_batch(
+            [RuntimePlanTypeSeed::new(
+                ty(1),
+                RuntimePlanTypeProjection::Bool,
+            )],
+            [],
+        )
+        .unwrap();
+    let declaration = || {
+        RuntimeExternalCallable::new(
+            crate::entry::RuntimeCallableId::from_checked_digest([0xc8; 32]),
+            RuntimeExternalCallableDeclaration::try_new(
+                RuntimeExternalCallableProvider::Standard(StandardEnvironmentId::Core),
+                RuntimeExternalCallableExport::Function(Box::new(["fixture".into()])),
+                0,
+            )
+            .unwrap(),
+        )
+    };
+    let expression = |callee| {
+        seed(
+            1,
+            RuntimeExprSeedKind::Call {
+                callee: RuntimeCallTarget::External(callee),
+                args: Box::new([RuntimeCallArgumentSeed::new(
+                    boolean(true),
+                    RuntimeCallArgumentMode::Value,
+                    0,
+                )]),
+            },
+        )
+    };
+    let missing = builder
+        .lower_expression(expression(declaration()))
+        .unwrap_err();
+    assert!(
+        matches!(missing, RuntimePlanBuildError::ExternalCallOperands(error) if matches!(*error, RuntimeExternalCallOperandError::ArgumentCount { expected: 0, actual: 1 }))
+    );
+    for width in [2, 1] {
+        let call = declaration()
+            .with_operands(Box::new([RuntimeExternalCallOperand {
+                parameter: Some(RuntimeCallableParameterCoordinate {
+                    group: 0,
+                    parameter: 4,
+                }),
+                abi_position: 0,
+                expansion_width: width,
+            }]))
+            .unwrap();
+        let result = builder.lower_expression(expression(call));
+        if width == 2 {
+            assert!(
+                matches!(result, Err(RuntimePlanBuildError::ExternalCallOperands(error)) if matches!(*error, RuntimeExternalCallOperandError::ArgumentMismatch { operand: 0 }))
+            );
+        } else {
+            result.unwrap();
+        }
+    }
+}
+
+#[test]
 fn array_from_vec_source_round_trip_preserves_exact_type_and_runtime_length_check() {
     for length in [0, 2] {
         let mut builder = RuntimePlanBuilder::new();
@@ -670,16 +734,48 @@ fn fixture() -> RuntimePlan {
             expressions.push(seed(
                 1,
                 K::Call {
-                    callee: RuntimeCallTarget::External(RuntimeExternalCallable::new(
-                        identity.clone(),
-                        RuntimeExternalCallableDeclaration::try_new(
-                            provider.clone(),
-                            export,
-                            u16::MAX,
+                    callee: RuntimeCallTarget::External(
+                        RuntimeExternalCallable::new(
+                            identity.clone(),
+                            RuntimeExternalCallableDeclaration::try_new(
+                                provider.clone(),
+                                export,
+                                u16::MAX,
+                            )
+                            .unwrap(),
                         )
+                        .with_operands(Box::new([
+                            RuntimeExternalCallOperand {
+                                parameter: Some(RuntimeCallableParameterCoordinate {
+                                    group: 1,
+                                    parameter: 7,
+                                }),
+                                abi_position: 1,
+                                expansion_width: 1,
+                            },
+                            RuntimeExternalCallOperand {
+                                parameter: Some(RuntimeCallableParameterCoordinate {
+                                    group: 1,
+                                    parameter: 2,
+                                }),
+                                abi_position: 0,
+                                expansion_width: 1,
+                            },
+                        ]))
                         .unwrap(),
-                    )),
-                    args: Box::new([]),
+                    ),
+                    args: Box::new([
+                        RuntimeCallArgumentSeed::new(
+                            boolean(true),
+                            RuntimeCallArgumentMode::Value,
+                            1,
+                        ),
+                        RuntimeCallArgumentSeed::new(
+                            boolean(false),
+                            RuntimeCallArgumentMode::Value,
+                            0,
+                        ),
+                    ]),
                 },
             ));
         }

@@ -1036,6 +1036,20 @@ impl RuntimePlanBodyConstruction<'_> {
             }
             RuntimeExprSeedKind::Call { callee, args } => {
                 let args = self.lower_call_arguments(args)?;
+                if let crate::value::RuntimeCallTarget::External(call) = &callee {
+                    call.validate_arguments(args.len(), |index| {
+                        let argument = args.get(index)?;
+                        let width = match argument.mode() {
+                            RuntimeCallArgumentMode::Value => 1,
+                            RuntimeCallArgumentMode::Spread => match self.projection(argument.value().ty()).ok()? {
+                                RuntimePlanTypeProjection::Tuple(items) => u32::try_from(items.len()).ok()?,
+                                RuntimePlanTypeProjection::Array { length, .. } => u32::try_from(length.constant()?).ok()?,
+                                _ => return None,
+                            },
+                        };
+                        Some((argument.abi_position(), width))
+                    }).map_err(|error| RuntimePlanBuildError::ExternalCallOperands(Box::new(error)))?;
+                }
                 if let crate::value::RuntimeCallTarget::PresentationView(call) = &callee {
                     let authority = super::super::value_admission::PlanValueAuthority::Building {
                         types: &self.types, records: &self.nominal_record_domains, variants: &self.variant_domains,

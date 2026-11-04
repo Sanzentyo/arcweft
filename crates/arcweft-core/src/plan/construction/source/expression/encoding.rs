@@ -605,6 +605,21 @@ impl Sink<'_, '_> {
                     }
                 }
                 self.raw(&declaration.overload().to_le_bytes())?;
+                self.counts.array(
+                    callable.operands().len(),
+                    size_of::<RuntimeExternalCallOperand>()
+                        + RuntimeExternalCallOperand::validation_scratch_element_bytes(),
+                )?;
+                self.count(callable.operands().len())?;
+                for row in callable.operands() {
+                    self.byte(u8::from(row.parameter.is_some()))?;
+                    if let Some(parameter) = row.parameter {
+                        self.raw(&parameter.group.to_le_bytes())?;
+                        self.raw(&parameter.parameter.to_le_bytes())?;
+                    }
+                    self.raw(&row.abi_position.to_le_bytes())?;
+                    self.raw(&row.expansion_width.to_le_bytes())?;
+                }
             }
         }
         Ok(())

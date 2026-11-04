@@ -7,7 +7,10 @@ use crate::entry::schema::value_encoding::ValueResourceAdmission;
 use crate::pattern::RuntimePattern;
 use crate::runtime_id::RuntimePlanTypeId;
 use crate::task::semantic::TaskSemanticMeter;
-use crate::value::{AwbcRuntimeValueSnapshot, RuntimeAgentConstructor, RuntimeAgentField};
+use crate::value::{
+    AwbcRuntimeValueSnapshot, RuntimeAgentConstructor, RuntimeAgentField,
+    RuntimeExternalCallOperand,
+};
 
 pub(super) struct Row<'a> {
     pub tag: u8,
@@ -28,6 +31,52 @@ mod tests {
     use arcweft_interaction_model::presentation::{
         PresentationArgumentRole, PresentationCallableId,
     };
+
+    #[test]
+    fn external_source_preflight_rejects_overlapping_borrowed_operand_ranges() {
+        fn text(bytes: &mut Vec<u8>, value: &str) {
+            bytes.extend(u32::try_from(value.len()).unwrap().to_le_bytes());
+            bytes.extend(value.as_bytes());
+        }
+        let plan = crate::plan::RuntimePlanBuilder::new().finish().unwrap();
+        let limits = super::super::tests::limits(&plan);
+        for overlap in [false, true] {
+            let mut bytes = vec![2];
+            text(
+                &mut bytes,
+                crate::entry::RuntimeCallableId::from_checked_digest([0xa7; 32]).as_str(),
+            );
+            bytes.extend([
+                0,
+                crate::value::StandardEnvironmentId::Core.canonical_tag(),
+                0,
+            ]);
+            bytes.extend(1_u32.to_le_bytes());
+            text(&mut bytes, "fixture");
+            bytes.extend(0_u16.to_le_bytes());
+            bytes.extend(2_u32.to_le_bytes());
+            for position in [0_u32, u32::from(!overlap)] {
+                bytes.push(0);
+                bytes.extend(position.to_le_bytes());
+                bytes.extend(1_u32.to_le_bytes());
+            }
+            let mut cursor = Cursor::new(&bytes, limits);
+            let mut counts = Counts::new(limits, 1).unwrap();
+            let result = cursor.call_target(&mut counts);
+            if overlap {
+                assert!(matches!(
+                    result,
+                    Err(Error::Invalid {
+                        kind: "external operand layout",
+                        ..
+                    })
+                ));
+            } else {
+                result.unwrap();
+                cursor.finish().unwrap();
+            }
+        }
+    }
 
     #[test]
     fn factory_source_preflight_rejects_duplicate_borrowed_destinations() {
@@ -95,6 +144,21 @@ impl<'a> Cursor<'a> {
         Ok(u16::from_le_bytes(
             self.slice(2)?.try_into().expect("source u16 width"),
         ))
+    }
+    pub fn external_operand(&mut self) -> Result<RuntimeExternalCallOperand, Box<Error>> {
+        let parameter = match self.byte()? {
+            0 => None,
+            1 => Some(crate::plan::RuntimeCallableParameterCoordinate {
+                group: self.u32()?,
+                parameter: self.u32()?,
+            }),
+            _ => return Err(Box::new(self.invalid("external operand coordinate"))),
+        };
+        Ok(RuntimeExternalCallOperand {
+            parameter,
+            abi_position: self.u32()?,
+            expansion_width: self.u32()?,
+        })
     }
     pub fn boolean(&mut self) -> Result<bool, Error> {
         match self.byte()? {
@@ -663,6 +727,23 @@ impl<'a> Cursor<'a> {
                     _ => return Err(self.invalid("external export")),
                 }
                 self.u16()?;
+                let n = self.count()?;
+                counts.array(
+                    n,
+                    size_of::<RuntimeExternalCallOperand>()
+                        + RuntimeExternalCallOperand::validation_scratch_element_bytes(),
+                )?;
+                let start = self.offset;
+                for _ in 0..n {
+                    self.external_operand().map_err(|error| *error)?;
+                }
+                let mut rows = Cursor::new(self.bytes, self.limits);
+                rows.offset = start;
+                RuntimeExternalCallOperand::preflight_layout((0..n).map(|_| {
+                    rows.external_operand()
+                        .expect("complete operand table was scanned")
+                }))
+                .map_err(|_| self.invalid("external operand layout"))?;
             }
             _ => return Err(self.invalid("call target")),
         }

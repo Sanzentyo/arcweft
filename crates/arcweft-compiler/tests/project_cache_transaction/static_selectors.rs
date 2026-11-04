@@ -139,6 +139,33 @@ flow main() {
     )
     .unwrap();
     assert_eq!(decoded, report.program);
+    let mut malformed = decoded.clone();
+    let external = malformed
+        .intrinsics
+        .iter_mut()
+        .find(|row| matches!(&row.identity, RuntimeCallTarget::External(_)))
+        .expect("source fixture invokes its registered external declaration");
+    let RuntimeCallTarget::External(call) = &external.identity else {
+        unreachable!()
+    };
+    let mut operands = call.operands().to_vec();
+    let mut position = 0;
+    for (index, operand) in operands.iter_mut().enumerate() {
+        operand.abi_position = position;
+        operand.expansion_width = if index == 0 { 2 } else { 1 };
+        position += operand.expansion_width;
+    }
+    external.identity =
+        RuntimeCallTarget::External(call.clone().with_operands(operands.into()).unwrap());
+    let Err(error) = ArcweftRuntimeExecutor::from_awbc_product(malformed, AwbcEntryId(0)) else {
+        panic!("external layout and signature disagreement must reject before execution");
+    };
+    assert!(
+        error
+            .to_string()
+            .contains("external operand layout differs from its signature"),
+        "{error:?}"
+    );
     let [flow] = runtime.plan.flows() else {
         panic!("one flow")
     };
@@ -188,10 +215,33 @@ flow main() {
     let [(target, args)] = native_observed.calls.as_slice() else {
         panic!("one registered invocation")
     };
-    assert_eq!(target, declared_target);
+    let RuntimeCallTarget::External(declared_target) = declared_target else {
+        panic!("accepted external declaration")
+    };
     let RuntimeCallTarget::External(target) = target else {
         panic!("selected external declaration")
     };
+    assert_eq!(target.identity(), declared_target.identity());
+    assert_eq!(target.declaration(), declared_target.declaration());
+    assert_eq!(target.operands().len(), 3);
+    assert!(
+        target
+            .operands()
+            .iter()
+            .all(|row| row.parameter.is_some() && row.expansion_width == 1)
+    );
+    for operand in target.operands() {
+        let (group, parameter) = match (staged, operand.abi_position) {
+            (_, 0) => (0, 0),
+            (true, position @ 1..=2) => (1, position - 1),
+            (false, position @ 1..=2) => (0, position),
+            _ => panic!("the accepted fixture has exactly three supplied parameters"),
+        };
+        assert_eq!(
+            operand.parameter,
+            Some(arcweft_core::plan::RuntimeCallableParameterCoordinate { group, parameter })
+        );
+    }
     assert!(
         target
             .identity()

@@ -1269,6 +1269,17 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
             "signatures",
             &at,
         )?;
+        if let crate::value::RuntimeCallTarget::External(call) = &intrinsic.identity {
+            let count = call.operands().iter().try_fold(0_usize, |count, row| {
+                count.checked_add(row.expansion_width as usize)
+            });
+            if count != Some(program.signatures[intrinsic.signature.index()].params.len()) {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "external operand layout differs from its signature".to_owned(),
+                });
+            }
+        }
         if intrinsic.revision != 1 {
             return Err(AwbcVerifyError::InvalidInvariant {
                 at,
