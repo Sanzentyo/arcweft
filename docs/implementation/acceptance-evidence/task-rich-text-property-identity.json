@@ -1967,5 +1967,711 @@
         "sha256": "2207e2b2972bf69375071a89924e544fce651ec47e8c8486675b902805cb143d"
       }
     ]
+  },
+  "construction": {
+    "version": 1,
+    "recordedAt": "2026-11-04T00:34:46.3327586Z",
+    "inspectedHead": "817bbeef131d49f5828f3e23504055dd70c67229",
+    "source": {
+      "version": 1,
+      "commit": "817bbeef131d49f5828f3e23504055dd70c67229",
+      "parent": "b467c89ed0d2d26330e77dafb8b5409c11cab773",
+      "tree": "65a96cf79be06896c55d6eb5043759bb12dea838",
+      "remote": "817bbeef131d49f5828f3e23504055dd70c67229",
+      "paths": [
+        {
+          "path": "crates/arcweft-core/src/value.rs",
+          "blob": "3456e3a753f372e97058224f54543361122b29cf"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/awbc_save/retained_admission.rs",
+          "blob": "7fa89043541eaa7eebab6eb665191ea5a6f0d4be"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/awbc_save/retained_admission/plain_construction.rs",
+          "blob": "7caa52019f20a9d984c18c6907ab8e20443e39ba"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/awbc_save/retained_admission/plain_construction/tests.rs",
+          "blob": "c7274eaf2a17c3c5de81438cf9e6273a19faaba9"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/plain_construction.rs",
+          "blob": "601e2f366950ce2eee2d92e51f721820ee88687c"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/view.rs",
+          "blob": "b6288dc144e1ae1dd6568ec1966848a4596e6057"
+        },
+        {
+          "path": "crates/arcweft-dialogue/src/character_dialogue/schema/role_payload.rs",
+          "blob": "2fcd13b1053e849fb3ca5d7707d0573da1cc35b5"
+        },
+        {
+          "path": "crates/arcweft-dialogue/src/character_dialogue/schema/role_payload/construction.rs",
+          "blob": "1f1de71edfa401aab3a751dd7a59a15415e9db28"
+        },
+        {
+          "path": "crates/arcweft-dialogue/src/tests/character_dialogue/runtime_schema.rs",
+          "blob": "6c7494f19e625d779d3ec6c83d7968ceec490d86"
+        },
+        {
+          "path": "crates/arcweft-dialogue/src/tests/character_dialogue/runtime_schema/property_construction.rs",
+          "blob": "d1c8b3d68b0ab007f3c14d5e003e134d96c6cb77"
+        },
+        {
+          "path": "crates/arcweft-presentation/src/rich_text/content_catalog.rs",
+          "blob": "bf3f68f5ea7372d4943fa6f5825c8e7fd3dc8fbe"
+        },
+        {
+          "path": "crates/arcweft-rich-text-schema/src/lib.rs",
+          "blob": "aa74f3a89abe6733106639828b57a88069bad42f"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/src/display/tests.rs",
+          "blob": "2c812e7543588ffbff624a7ac4bd2273244bde10"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "0a3a968197005ce77f89b1fe40094148b382030fe9bac233e93bb4e5f7dfdb05",
+      "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-04T00:34:36.4960862Z"
+    },
+    "state": "Program-bound borrowed construction API validated and published. Source factory registration/execution and whole reverse-dependency runtime acceptance are not claimed.",
+    "implementation": [
+      "Core owns a prospective borrowed scalar/tuple/Option recipe with no opaque or affine grant. One original retained bank checks the complete opaque envelope and payload before owned allocation.",
+      "Dialogue admits borrowed semantic properties through its existing value grammar, including closed enum owner domains and allowed units, then merges source-ordered duplicate settings.",
+      "The producer binds the exact executable lease and accepted RichText role. Dynamic display tests consume this API instead of assembling opaque payloads by hand.",
+      "Version-one unit tags are owned by RichTextUnit and reused by Presentation and Dialogue; existing bytes are unchanged. New API failures preserve typed boxed errors."
+    ],
+    "validation": {
+      "terminal": {
+        "version": 1,
+        "base": "b467c89ed0d2d26330e77dafb8b5409c11cab773",
+        "run": "plain-role-construction-owner5-20261104.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   0.195s] 24 tests run: 24 passed, 2691 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 24,
+        "passed": 24,
+        "failed": 0,
+        "skipped": 2691,
+        "selectedPackages": 5,
+        "matchedPackages": 5,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4096,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-04T00:31:40.076459Z"
+      },
+      "quality": [
+        {
+          "receipt": "plain-role-construction-quality2-check",
+          "result": {
+            "version": 1,
+            "base": "b467c89ed0d2d26330e77dafb8b5409c11cab773",
+            "command": [
+              "check",
+              "--workspace",
+              "--all-targets",
+              "--all-features",
+              "--locked"
+            ],
+            "exitCode": 0,
+            "sourceInputs": 4096,
+            "sourceDrift": 0,
+            "startedAt": "2026-11-04T00:31:55.5133335Z",
+            "finishedAt": "2026-11-04T00:32:45.8131273Z"
+          }
+        },
+        {
+          "receipt": "plain-role-construction-quality2-clippy",
+          "result": {
+            "version": 1,
+            "base": "b467c89ed0d2d26330e77dafb8b5409c11cab773",
+            "command": [
+              "clippy",
+              "--workspace",
+              "--all-targets",
+              "--all-features",
+              "--locked"
+            ],
+            "exitCode": 0,
+            "sourceInputs": 4096,
+            "sourceDrift": 0,
+            "startedAt": "2026-11-04T00:32:46.304106Z",
+            "finishedAt": "2026-11-04T00:33:49.1899595Z"
+          }
+        },
+        {
+          "receipt": "plain-role-construction-quality2-structure",
+          "result": {
+            "version": 1,
+            "base": "b467c89ed0d2d26330e77dafb8b5409c11cab773",
+            "command": [
+              "+nightly",
+              "-Zscript",
+              "tools/structure-audit.rs",
+              "--root",
+              ".",
+              "--fail-on-blocking",
+              "--write",
+              "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/plain-role-construction-quality2.structure-report"
+            ],
+            "exitCode": 0,
+            "sourceInputs": 4096,
+            "sourceDrift": 0,
+            "startedAt": "2026-11-04T00:33:49.6437773Z",
+            "finishedAt": "2026-11-04T00:33:53.265925Z"
+          }
+        }
+      ],
+      "sourceCaseExecutableDrift": 0,
+      "fmt": "All 13 owned Rust files formatted; explicit staged whitespace gate passed."
+    },
+    "attempts": [
+      {
+        "receipt": "plain-construction-owner1-20261104.runtime.terminal-audit",
+        "result": {
+          "version": 1,
+          "base": "b467c89ed0d2d26330e77dafb8b5409c11cab773",
+          "run": "plain-construction-owner1-20261104.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [   0.067s] 5 tests run: 5 passed, 2298 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 5,
+          "passed": 5,
+          "failed": 0,
+          "skipped": 2298,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4094,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-03T23:39:37.6709573Z"
+        }
+      },
+      {
+        "receipt": "rich-text-construction-owner1-20261104.catalog",
+        "result": {
+          "version": 1,
+          "base": "b467c89ed0d2d26330e77dafb8b5409c11cab773",
+          "command": [
+            "nextest",
+            "list",
+            "-p",
+            "arcweft-rich-text-schema",
+            "-p",
+            "arcweft-presentation",
+            "-p",
+            "arcweft-dialogue",
+            "-p",
+            "arcweft-runtime-driver",
+            "--all-targets",
+            "--all-features",
+            "--locked",
+            "-E",
+            "test(unit_codec_tests::) | test(property_construction::) | test(role_payload::tests::) | test(reusable_style::tests::) | test(dynamic_character_dialogue_context_tests::)",
+            "--message-format",
+            "json"
+          ],
+          "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/rich-text-construction-owner1-20261104.catalog.log",
+          "exitCode": 101,
+          "sourceInputs": 4096,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-03T23:56:32.470815Z",
+          "finishedAt": "2026-11-03T23:58:39.7957554Z"
+        },
+        "correction": "Unbox the existing owned collection error at its unchanged public boundary."
+      },
+      {
+        "receipt": "rich-text-construction-owner2-20261104.catalog",
+        "result": {
+          "version": 1,
+          "base": "b467c89ed0d2d26330e77dafb8b5409c11cab773",
+          "command": [
+            "nextest",
+            "list",
+            "-p",
+            "arcweft-rich-text-schema",
+            "-p",
+            "arcweft-presentation",
+            "-p",
+            "arcweft-dialogue",
+            "-p",
+            "arcweft-runtime-driver",
+            "--all-targets",
+            "--all-features",
+            "--locked",
+            "-E",
+            "test(unit_codec_tests::) | test(property_construction::) | test(role_payload::tests::) | test(reusable_style::tests::) | test(dynamic_character_dialogue_context_tests::)",
+            "--message-format",
+            "json"
+          ],
+          "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/rich-text-construction-owner2-20261104.catalog.log",
+          "exitCode": 101,
+          "sourceInputs": 4096,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-04T00:00:00.4608621Z",
+          "finishedAt": "2026-11-04T00:00:11.7961691Z"
+        },
+        "correction": "Use the public RuntimeBorrowedValue conversion in tests."
+      },
+      {
+        "receipt": "rich-text-construction-owner3-20261104.runtime.terminal-audit",
+        "result": {
+          "version": 1,
+          "base": "b467c89ed0d2d26330e77dafb8b5409c11cab773",
+          "run": "rich-text-construction-owner3-20261104.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   0.149s] 19 tests run: 18 passed, 1 failed, 393 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 19,
+          "passed": 18,
+          "failed": 1,
+          "skipped": 393,
+          "selectedPackages": 4,
+          "matchedPackages": 4,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4096,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-dialogue",
+              "test": "tests::character_dialogue::runtime_schema::property_construction::borrowed_property_admission_rejects_erased_domains_units_and_limits"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-04T00:05:40.5408998Z"
+        },
+        "correction": "The test incorrectly rejected Pt. The canonical RubySize contract permits both Px and Pt; use Deg as the negative case and assert both allowed units."
+      },
+      {
+        "receipt": "rich-text-construction-owner4-20261104.runtime.terminal-audit",
+        "result": {
+          "version": 1,
+          "base": "b467c89ed0d2d26330e77dafb8b5409c11cab773",
+          "run": "rich-text-construction-owner4-20261104.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [   0.141s] 19 tests run: 19 passed, 393 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 19,
+          "passed": 19,
+          "failed": 0,
+          "skipped": 393,
+          "selectedPackages": 4,
+          "matchedPackages": 4,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4096,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-04T00:14:59.7785035Z"
+        }
+      }
+    ],
+    "scope": "Final 24 cases include 5 Core construction cases, unit tags, borrowed property admission, original Native/AWBC type owners and JSON cold restore, existing role codec/schema tests and 5 dynamic display cases. Fixtures with both type tables do not claim source execution. Full 98-package check/Clippy/all-targets/all-features and structure pass on final hashes; existing warnings remain. Prior 47-package execution and its 14 CLI failures are preserved as earlier-input evidence, not a fresh run of the new Core API.",
+    "ownership": "Core owns borrowed recipe inspection and resource/type admission; Dialogue owns property grammar and role production; Presentation consumes the schema-owned unit codec. No dependency direction changes or version bump.",
+    "correctionReason": "Remove construction API implementation from the current remaining range based on actual code and execution. Keep external source registration, original call-context connection, alias argument-order and static provenance within the continuing factory boundary.",
+    "supersededCurrentRows": [
+      "| RichTextの部分layout指定／source factory | **部分layout・共通property保存を検証・公開済み。source factory接続は継続中** | 部分layoutのSource 726323d1edc63a6a543f7b8b817570ecc2ea2b3e／638d6459bf68b4679349f2bfccc03f53d1878d26と5回帰の受入を維持する。後続4736756c99a102d70ec3090541b6e99024a15c79では、selectorを跨ぐ同じ設定を27の意味上のpropertyへ一本化し、後着値の上書き・競合拒否・live／inert codec・ruby部分継承・transform合成を検証した。境界13件と動的表示5件は18／18 PASS。この新しい実装・実行証拠により、共通property identityを残作業から外す。factory登録・構築前admission、factory aliasの引数順、static inline_stylesを含む出典は継続範囲。RAGのtext_style未登録をaccepted-semantic checkerで迂回しない。[最新の受入・実測・訂正理由](acceptance-evidence/task-rich-text-property-identity.json)、[部分layoutの元記録](acceptance-evidence/task-rich-text-layout-presence.json)。 |",
+      "| workspace check／Clippy・fmt・構造gate | **全98と最終owner gateは終了0。既存警告は残存** | Source 4736756c99a102d70ec3090541b6e99024a15c79へ至る全98 check／Clippy（all-target／all-feature／locked）・構造gateが終了0。後続のtext-modelのセミコロン2箇所はowner check／Clippyで確認した。最後のDialogue負例保持・実値assertion強化を含む最終bytesは全47逆依存でコンパイル・実行し、Rust6件のfmt検査も終了0。全98を最後のtest差分まで再実行したとは扱わない。[全入力・receipt・owner review](acceptance-evidence/task-rich-text-property-identity.json)。今回doctest／wasm専用検証は未再実行。以前の実測を新規実行へ数えない。 |"
+    ],
+    "historyPrefix": {
+      "bytes": 1829383,
+      "sha256": "cbfe0d00cd8fc39a44e1b4fb33021079824de1823ce98071f39d0b04ca6e873c"
+    },
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-rich-text-property-construction.raw.zip",
+      "bytes": 3855620,
+      "sha256": "fab560f9da2f3edd22ded3732083842c2021ba1568a12ad9440112cafc5d66b2",
+      "entryDrift": 0,
+      "entries": [
+        {
+          "entry": "audit-nextest-final-result.ps1",
+          "bytes": 5266,
+          "sha256": "9d136f5ff9dbe80e524a8c9adb2f11fc96cce75046e3e1fe3e93ba73888cc0ab"
+        },
+        {
+          "entry": "plain-construction-owner1-20261104.binaries-before.json",
+          "bytes": 3108,
+          "sha256": "af33d5b53713dc703ac41a3056538ab2425c5919822fed94a4f7c535f162b8b4"
+        },
+        {
+          "entry": "plain-construction-owner1-20261104.catalog.inventory.json",
+          "bytes": 587631,
+          "sha256": "2930d90899c1e03eca2ba1acdb44ac248225f4b4614d57580bbe0ee81fa0cb70"
+        },
+        {
+          "entry": "plain-construction-owner1-20261104.catalog.json",
+          "bytes": 608,
+          "sha256": "e643c0b41fad13279f27241148f72ecffacd174ebe8d98ac70dcec473719041c"
+        },
+        {
+          "entry": "plain-construction-owner1-20261104.catalog.log",
+          "bytes": 538502,
+          "sha256": "0d87da564d8402c67f61970f2c44dd11942fa4d6b1ff5052147f0e7d9d560f05"
+        },
+        {
+          "entry": "plain-construction-owner1-20261104.runtime.json",
+          "bytes": 700,
+          "sha256": "f5db5457847aa5ff0d31785c7557f1c24f5d175483482f620f6c9edd333cdb80"
+        },
+        {
+          "entry": "plain-construction-owner1-20261104.runtime.log",
+          "bytes": 786441,
+          "sha256": "cb1280e561ca692f5891233d57a751e7e9cc0f06ed7cc5364e6e8c87ace6f677"
+        },
+        {
+          "entry": "plain-construction-owner1-20261104.runtime.terminal-audit.json",
+          "bytes": 617,
+          "sha256": "60d42b2a5069f56a93619cf44774dc267eae1821e044a4004acc309358064398"
+        },
+        {
+          "entry": "plain-construction-owner1-20261104.source-freeze.json",
+          "bytes": 800413,
+          "sha256": "89689f55771069e42e1215327c62e8f912abc3ac60bfd9dfa433b390145dc51a"
+        },
+        {
+          "entry": "plain-role-construction-owner5-20261104.binaries-before.json",
+          "bytes": 6516,
+          "sha256": "3c818e86b7f665598390115271c171f2986808cef97b0033aa3479f376850e1b"
+        },
+        {
+          "entry": "plain-role-construction-owner5-20261104.catalog.inventory.json",
+          "bytes": 691892,
+          "sha256": "4dcfc9f4e5592733d361ba01ba81d4480e7a26cb27b42276469e2e361c5eb861"
+        },
+        {
+          "entry": "plain-role-construction-owner5-20261104.catalog.json",
+          "bytes": 947,
+          "sha256": "f29d67e45fd61c122f655398c0c12fbf12fa650b7202ed30a603cd74c0737fe2"
+        },
+        {
+          "entry": "plain-role-construction-owner5-20261104.catalog.log",
+          "bytes": 629148,
+          "sha256": "44ca185bb7a7f8c661fd05e8ecc5dc3afa89f74b6167d0296eaf1b06c26ff040"
+        },
+        {
+          "entry": "plain-role-construction-owner5-20261104.runtime.json",
+          "bytes": 1039,
+          "sha256": "0739be1dc3b00d53d112cf7ffa0ffc08679d3bbf5cf611ac2ddaf8b1fb0e2cf0"
+        },
+        {
+          "entry": "plain-role-construction-owner5-20261104.runtime.log",
+          "bytes": 950697,
+          "sha256": "71dd74565c360281bcc308ca6db4eb0e6399a51fd4ca69c6da0401f818f304f8"
+        },
+        {
+          "entry": "plain-role-construction-owner5-20261104.runtime.terminal-audit.json",
+          "bytes": 626,
+          "sha256": "b0a20dd21a4c244d27a9484539cf639127d0a7009bb1f84545335bdfc5b0aeee"
+        },
+        {
+          "entry": "plain-role-construction-owner5-20261104.source-freeze.json",
+          "bytes": 800867,
+          "sha256": "01ba4c7c9a57f73a51706c59f26b1056eec2679d1312554a72255245bccbb91e"
+        },
+        {
+          "entry": "plain-role-construction-quality1-check.json",
+          "bytes": 355,
+          "sha256": "89e56d1c1236511e7c6cacf9009060aea48281dbdd49637c30c63ec4b1022508"
+        },
+        {
+          "entry": "plain-role-construction-quality1-check.log",
+          "bytes": 109512,
+          "sha256": "b38850e7d70763edf597671890354d71f988aef58deb1a6f127178d7510b86de"
+        },
+        {
+          "entry": "plain-role-construction-quality1-clippy.json",
+          "bytes": 356,
+          "sha256": "6f218a7187092210826868fbd68c0d9e755f481b497aeea91b60f07f4cda873f"
+        },
+        {
+          "entry": "plain-role-construction-quality1-clippy.log",
+          "bytes": 8857619,
+          "sha256": "b5926b4a5854b3f46715b2679df7f992ab3ec024771d2611b3fac05cc3c32af2"
+        },
+        {
+          "entry": "plain-role-construction-quality1-structure.json",
+          "bytes": 527,
+          "sha256": "5fed6e3a031dd96b804bef37e43319f33ea9d7339e23180a035633b05d4f9cdd"
+        },
+        {
+          "entry": "plain-role-construction-quality1-structure.log",
+          "bytes": 65606,
+          "sha256": "39e780fc180548d1dc053379e65c9cc2a40c8276150bbd322b41cf7e95f9005d"
+        },
+        {
+          "entry": "plain-role-construction-quality1.source-freeze.json",
+          "bytes": 800110,
+          "sha256": "24d96f61ae1c68298ded10a566fb8171daaa889fe4e95afe516619e2f86b97e2"
+        },
+        {
+          "entry": "plain-role-construction-quality1.structure-report/dependency_edges.csv",
+          "bytes": 78114,
+          "sha256": "ed740dc1ecf2341a73101ad5ce67871b803b4a3f24542bda8269119484a3f6b9"
+        },
+        {
+          "entry": "plain-role-construction-quality1.structure-report/file_metrics.csv",
+          "bytes": 337354,
+          "sha256": "906c3b98c769d63d05732db51aff48f83d91542e5dc40fa1592e62fdffc0b36a"
+        },
+        {
+          "entry": "plain-role-construction-quality1.structure-report/findings.md",
+          "bytes": 123305,
+          "sha256": "5933298f935e4264bab374450db3f820ada4754774174c8f7ee580a4af691184"
+        },
+        {
+          "entry": "plain-role-construction-quality1.structure-report/package_metrics.csv",
+          "bytes": 6508,
+          "sha256": "69980c5bd27ba9dfb87970e4a9528bcbca1747425c46a0fe3fa1acab2135cf5b"
+        },
+        {
+          "entry": "plain-role-construction-quality1.structure-report/public_type_duplicates.csv",
+          "bytes": 17441,
+          "sha256": "47d18482e444d7eef28fc1dafef7703ce467fdf7f4a019834b93e4fdbc6612e5"
+        },
+        {
+          "entry": "plain-role-construction-quality2-check.json",
+          "bytes": 355,
+          "sha256": "7996c301b79da020cd85626dc32772344501b67b0e229ff3d5b65318c8221b66"
+        },
+        {
+          "entry": "plain-role-construction-quality2-check.log",
+          "bytes": 109154,
+          "sha256": "162f3c994abc4c00202d05defb78f6059f19587635dc3c9b05a41f42073951d1"
+        },
+        {
+          "entry": "plain-role-construction-quality2-clippy.json",
+          "bytes": 356,
+          "sha256": "be426487db469c7422a97378c677a51e2923a4c68239719ced5410a37c7aa57b"
+        },
+        {
+          "entry": "plain-role-construction-quality2-clippy.log",
+          "bytes": 8842614,
+          "sha256": "c271987875906ed3bacc45592af1e6889e18fee92ca22f0e3229b408f6536b95"
+        },
+        {
+          "entry": "plain-role-construction-quality2-structure.json",
+          "bytes": 527,
+          "sha256": "11a98211241ba8fc0db17a2fb65efb1a040ab52088b447278988b5e02cfa4b87"
+        },
+        {
+          "entry": "plain-role-construction-quality2-structure.log",
+          "bytes": 65606,
+          "sha256": "d33913f7895e4a0caf918ebf941bf6247a141c409a27267fd2ac18aa6ce99c6b"
+        },
+        {
+          "entry": "plain-role-construction-quality2.structure-report/dependency_edges.csv",
+          "bytes": 78114,
+          "sha256": "ed740dc1ecf2341a73101ad5ce67871b803b4a3f24542bda8269119484a3f6b9"
+        },
+        {
+          "entry": "plain-role-construction-quality2.structure-report/file_metrics.csv",
+          "bytes": 337354,
+          "sha256": "eb7039a028dd514c2430383ee834f5dae2b53893b61c9df600bbd8e80dd4c5b6"
+        },
+        {
+          "entry": "plain-role-construction-quality2.structure-report/findings.md",
+          "bytes": 123305,
+          "sha256": "5933298f935e4264bab374450db3f820ada4754774174c8f7ee580a4af691184"
+        },
+        {
+          "entry": "plain-role-construction-quality2.structure-report/package_metrics.csv",
+          "bytes": 6508,
+          "sha256": "69980c5bd27ba9dfb87970e4a9528bcbca1747425c46a0fe3fa1acab2135cf5b"
+        },
+        {
+          "entry": "plain-role-construction-quality2.structure-report/public_type_duplicates.csv",
+          "bytes": 17441,
+          "sha256": "47d18482e444d7eef28fc1dafef7703ce467fdf7f4a019834b93e4fdbc6612e5"
+        },
+        {
+          "entry": "plain-role-construction-source.message.txt",
+          "bytes": 726,
+          "sha256": "8e5db51d824a968db42087796af860791f1a98eb67a7dd8842da535af4673167"
+        },
+        {
+          "entry": "plain-role-construction-source.other.txt",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "plain-role-construction-source.owned.txt",
+          "bytes": 838,
+          "sha256": "4607485dca3961eda338b0629ed2b51d6c2103d59580a3cc69490c9b79d2cd1b"
+        },
+        {
+          "entry": "plain-role-construction-source.pathspec",
+          "bytes": 825,
+          "sha256": "dbfdbb92c1e169353785b82a8e92065a8c0c6ce535b6d8bce095172c91f48a37"
+        },
+        {
+          "entry": "plain-role-construction-source.prepared.json",
+          "bytes": 3157,
+          "sha256": "3dd89e3d50061671b9ccef9dc360cdcb5d196d30899000cc1966f67909323e89"
+        },
+        {
+          "entry": "plain-role-construction-source.reviewed.patch",
+          "bytes": 54222,
+          "sha256": "0a3a968197005ce77f89b1fe40094148b382030fe9bac233e93bb4e5f7dfdb05"
+        },
+        {
+          "entry": "plain-role-construction-source.verified.json",
+          "bytes": 2559,
+          "sha256": "f30ec8a2e2852bbab1304e13e3716411682e523dfe52955a9114539959aaa77d"
+        },
+        {
+          "entry": "plain-role-construction-status-before.json",
+          "bytes": 2317,
+          "sha256": "7e5e362d337505dccbdab4374c6146cfdf560920fa196565bd5c11ffc888b133"
+        },
+        {
+          "entry": "record-plain-role-construction.ps1",
+          "bytes": 7499,
+          "sha256": "06708727081556b315b85920d5552ade77080220ab1d1f840dd531d140f67d9f"
+        },
+        {
+          "entry": "rich-text-construction-owner1-20261104.catalog.json",
+          "bytes": 880,
+          "sha256": "f004bdd314518d5eadafd411b254ac2ea4c818f1e67296cdf1169c509232e641"
+        },
+        {
+          "entry": "rich-text-construction-owner1-20261104.catalog.log",
+          "bytes": 76672,
+          "sha256": "45827ba1d58dbd0fb4fe5932b01495f29cf4288c47d9ad35d8a912ca51dd09f0"
+        },
+        {
+          "entry": "rich-text-construction-owner1-20261104.source-freeze.json",
+          "bytes": 800867,
+          "sha256": "fdd05924bcb0954f5bd4fc15d2529cbacc10d32d0cc5d62ec128495ab4e11a2f"
+        },
+        {
+          "entry": "rich-text-construction-owner2-20261104.catalog.json",
+          "bytes": 880,
+          "sha256": "10ed7b6db58b11c4bbfc69d5ab21b2abfcee677ed4ffe7058c235899befd2e71"
+        },
+        {
+          "entry": "rich-text-construction-owner2-20261104.catalog.log",
+          "bytes": 72588,
+          "sha256": "3a73868b2ba42278d63e4615297222c35b2ceddc4df0ae01b34862ea8c85e5e8"
+        },
+        {
+          "entry": "rich-text-construction-owner2-20261104.source-freeze.json",
+          "bytes": 800867,
+          "sha256": "98da5b182037fa41fcace8a4a991c8e4931df2fbb1708b86a77ca9c9691f6439"
+        },
+        {
+          "entry": "rich-text-construction-owner3-20261104.binaries-before.json",
+          "bytes": 3413,
+          "sha256": "4320f8f71465520123b630ea0d89337ce281bdf7908b4bc6ca12e8a398c6c814"
+        },
+        {
+          "entry": "rich-text-construction-owner3-20261104.catalog.inventory.json",
+          "bytes": 104304,
+          "sha256": "08d874ee046060ec1201b9587f0ff06d0edb58eafb3c7064c31a69073b3b2050"
+        },
+        {
+          "entry": "rich-text-construction-owner3-20261104.catalog.json",
+          "bytes": 878,
+          "sha256": "1ff8b4e2a1ce0be0793be00c526fd7ed5109b11e8fe268b265923ab8f81b3f0d"
+        },
+        {
+          "entry": "rich-text-construction-owner3-20261104.catalog.log",
+          "bytes": 161664,
+          "sha256": "1099b4c8b62a680e3ad4be2a7cd13cbcbaad7d6d4c3bbe286b4596995ec19520"
+        },
+        {
+          "entry": "rich-text-construction-owner3-20261104.runtime.json",
+          "bytes": 972,
+          "sha256": "1c7d8f926e27db62039d38a909c5912b08cf3a9abc10ec806c7e11b4d45b456b"
+        },
+        {
+          "entry": "rich-text-construction-owner3-20261104.runtime.log",
+          "bytes": 207381,
+          "sha256": "c236d3ec87a0318b959154616c4a44f423c0ca7419cd74393b5132a97957577a"
+        },
+        {
+          "entry": "rich-text-construction-owner3-20261104.runtime.terminal-audit.json",
+          "bytes": 867,
+          "sha256": "71cfc9387203d7eb7564591904c771b73c112cff8c316faf0f272acdbdb1a3c7"
+        },
+        {
+          "entry": "rich-text-construction-owner3-20261104.source-freeze.json",
+          "bytes": 800867,
+          "sha256": "6c8206adc51e3e4cf930908caaa9ce1c2f541e2a5c2b264eac24bf7f97ab7465"
+        },
+        {
+          "entry": "rich-text-construction-owner4-20261104.binaries-before.json",
+          "bytes": 3413,
+          "sha256": "304276dfb8bd52d51e64462d8175e5c22a88e47c31605300519d70d51ed54e04"
+        },
+        {
+          "entry": "rich-text-construction-owner4-20261104.catalog.inventory.json",
+          "bytes": 104304,
+          "sha256": "08d874ee046060ec1201b9587f0ff06d0edb58eafb3c7064c31a69073b3b2050"
+        },
+        {
+          "entry": "rich-text-construction-owner4-20261104.catalog.json",
+          "bytes": 878,
+          "sha256": "d320039501a5a0f04598621e0e015271c3cd935a2cd2bd39da5b1caddc9cf618"
+        },
+        {
+          "entry": "rich-text-construction-owner4-20261104.catalog.log",
+          "bytes": 161822,
+          "sha256": "963308d61a67fbee70405da880550e1de06cb1ce56ac4c9ca633e8eba1e3d00c"
+        },
+        {
+          "entry": "rich-text-construction-owner4-20261104.runtime.json",
+          "bytes": 970,
+          "sha256": "7319819dfe5d294bfb4a4f08c12534c13b1d32f20887409378fa79117ac6fc7c"
+        },
+        {
+          "entry": "rich-text-construction-owner4-20261104.runtime.log",
+          "bytes": 206356,
+          "sha256": "800eea6975651193d05da6ab150240a069f7f7806f01919e530d9b910eaf6f33"
+        },
+        {
+          "entry": "rich-text-construction-owner4-20261104.runtime.terminal-audit.json",
+          "bytes": 623,
+          "sha256": "c35f541efcc257486ea2ad47f2552360062eb17b5d474a142640b6a73414d279"
+        },
+        {
+          "entry": "rich-text-construction-owner4-20261104.source-freeze.json",
+          "bytes": 800867,
+          "sha256": "c5596310eeed5346f58fa2999d2fa99973a0cf03f36aceac45263bea018a795f"
+        },
+        {
+          "entry": "run-action-payload-quality.ps1",
+          "bytes": 1729,
+          "sha256": "ca098c1a52ef14e7f767eec068c3a20e5415e73ee4191d81ccbf9aafa8ac339a"
+        },
+        {
+          "entry": "run-presentation-projection-owner.ps1",
+          "bytes": 4134,
+          "sha256": "b60d753498997e4ba3b809b3721e9190ea1860971c755e6a1648a8e213403c58"
+        },
+        {
+          "entry": "write-verified-evidence-archive.ps1",
+          "bytes": 1658,
+          "sha256": "2207e2b2972bf69375071a89924e544fce651ec47e8c8486675b902805cb143d"
+        }
+      ]
+    }
   }
 }

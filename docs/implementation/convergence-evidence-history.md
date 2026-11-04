@@ -14506,3 +14506,11 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 - The 14 failed IDs match the earlier full run; added/removed IDs are zero. Cause equivalence is not inferred from IDs. All actual stdout/stderr, source/case/executable pins, graph, superseded rows and quality receipts are retained.
 - All 98 check/Clippy/structure gates passed before the final two semicolons and test-only rejection/value assertions. Final text-model owner check/Clippy and six Rust fmt checks passed. Final test bytes executed in the reverse run. Dedicated doctest/wasm and whole-engine/source-factory/parity acceptance are not claimed.
 - Record: [property identity evidence](acceptance-evidence/task-rich-text-property-identity.json). The sole current list is [current-status.md](current-status.md).
+
+## 2026-11-04 — Borrowed RichText construction under the original program
+
+- Source 817bbeef131d49f5828f3e23504055dd70c67229 (parent b467c89ed0d2d26330e77dafb8b5409c11cab773) publishes Core prospective plain-root admission and Dialogue borrowed property construction. The dynamic display fixture uses the real producer. Version-one unit tags move to their schema owner without changing existing tags.
+- The final focused bundle passes 24/24 cases, 2691 skipped, with 4096 input hashes and zero source/case/executable drift. Original Native/AWBC type-table fixtures and cold restore validate this API; they do not claim registered source execution.
+- Final all-98 check/Clippy/all-targets/all-features and structure gates exit 0. Earlier catalog compile failures and the 18/19 run are retained: the failed test wrongly rejected Pt, whereas the canonical RubySize contract permits Px and Pt. It now rejects Deg and asserts both allowed units. Typed boxed errors remove the new large-error API warnings.
+- This new evidence completes the construction API boundary. Source registration, calling-context connection, alias argument order and static provenance remain within the continuing factory work. Prior accepted properties, sparse layout and Generic Match remain accepted. The earlier 47-package run and its 14 CLI failures stay recorded as earlier-input results.
+- Record and immutable raw receipts: [property evidence](acceptance-evidence/task-rich-text-property-identity.json). The sole current list is [current-status.md](current-status.md).
