@@ -4352,5 +4352,501 @@
       "entryDrift": 0,
       "indexEntry": "optional-bindings-archive-inputs.json"
     }
+  },
+  "externalBindingProjection": {
+    "version": 1,
+    "source": "0f0f99ca13b1762b9dd393d565a8ef4a54cd5d36",
+    "parent": "e4d36a097fa0384f8e59752fae11105cda49580f",
+    "tree": "9596a0ad6f215dd8df3834a1d5b913849f8a5c7f",
+    "patchSha256": "14b74bbbaeaa22a6538a75c4c382746f1bf46e05d047747bf82ae8b677d709a0",
+    "state": "Published prerequisite; Source omission regression remains open; full reverse consumers not rerun for this cut",
+    "owner": {
+      "version": 1,
+      "base": "e4d36a097fa0384f8e59752fae11105cda49580f",
+      "run": "external-binding-projection-owner5-20261104.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   0.240s] 25 tests run: 25 passed, 2292 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 25,
+      "passed": 25,
+      "failed": 0,
+      "skipped": 2292,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4101,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-04T04:54:55.9703043Z"
+    },
+    "quality": [
+      {
+        "version": 1,
+        "base": "e4d36a097fa0384f8e59752fae11105cda49580f",
+        "command": [
+          "check",
+          "-p",
+          "arcweft-core",
+          "-p",
+          "arcweft-runtime-plan",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4101,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-04T04:54:57.0430234Z",
+        "finishedAt": "2026-11-04T04:55:20.5560027Z"
+      },
+      {
+        "version": 1,
+        "base": "e4d36a097fa0384f8e59752fae11105cda49580f",
+        "command": [
+          "clippy",
+          "-p",
+          "arcweft-core",
+          "-p",
+          "arcweft-runtime-plan",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4101,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-04T04:55:21.0909677Z",
+        "finishedAt": "2026-11-04T04:55:56.3767206Z"
+      },
+      {
+        "version": 1,
+        "base": "e4d36a097fa0384f8e59752fae11105cda49580f",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/external-binding-projection-quality3-20261104.structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4101,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-04T04:55:56.8970759Z",
+        "finishedAt": "2026-11-04T04:56:00.7780843Z"
+      }
+    ],
+    "attempts": [
+      "owner1: 22/22 PASS",
+      "owner2: 24 PASS / 1 FAIL: hand-encoded cursor fixture lacked new projection byte; corrected framing",
+      "owner3: 25/25 PASS",
+      "owner4: 25/25 PASS after optional admission helper extraction",
+      "owner5: 25/25 PASS after separating borrowed admission and owned materialization"
+    ],
+    "ownership": "Core context inspects all original bindings before moving; OptionSome unwraps only the outer Option, OptionNone omits the descriptor; same original executable lease, locale, formatter, result type, limits and caller row order",
+    "limits": "Compiler repro2 remains 1 FAIL: alias omission fails RuntimePlan lowering; direct omission and alias present compile. These are distinct from accepted Generic Match and earlier full reverse results.",
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-rich-text-external-binding-projection.raw.zip",
+      "bytes": 4831955,
+      "sha256": "f19fe6ec4a6e89f957d552b3b9caf1b2df39c3cc3ad85b4441094111f4f2f201",
+      "entryDrift": 0,
+      "entries": [
+        {
+          "entry": "external-binding-projection-build1.log",
+          "bytes": 101433,
+          "sha256": "0beb2ebad13a23eaa44c37bff982e54be4278587e3e4cbaa8338cba4043cad35"
+        },
+        {
+          "entry": "external-binding-projection-evidence.json",
+          "bytes": 3497,
+          "sha256": "d797a9e772b6315c6e35413c97e657e1728a6752397ac665a3713848ccb639e4"
+        },
+        {
+          "entry": "external-binding-projection-owner1-20261104.binaries-before.json",
+          "bytes": 3108,
+          "sha256": "4d1bfb69fbff2737d00211ec66f3f9786c33eb54a70a851a22b28b43c29dc292"
+        },
+        {
+          "entry": "external-binding-projection-owner1-20261104.catalog.inventory.json",
+          "bytes": 591093,
+          "sha256": "dbca29584a8f4a4c0ede2f3afcb147646a00629aa27d23acd29aa33734dc2be9"
+        },
+        {
+          "entry": "external-binding-projection-owner1-20261104.catalog.json",
+          "bytes": 687,
+          "sha256": "82fb31fe8430472ae638028a2d1bdb50c9acf574659296e7cc9eaccf58345a00"
+        },
+        {
+          "entry": "external-binding-projection-owner1-20261104.catalog.log",
+          "bytes": 539843,
+          "sha256": "4bab12619d9831584f6e4bb9d09d941bd75d5025ecdbd043122d44330032edaa"
+        },
+        {
+          "entry": "external-binding-projection-owner1-20261104.runtime.json",
+          "bytes": 779,
+          "sha256": "2177755a033521727ec7ac833fd77cb3722bafb8e975d02cefe90cdbe0b88f88"
+        },
+        {
+          "entry": "external-binding-projection-owner1-20261104.runtime.log",
+          "bytes": 818162,
+          "sha256": "1d83c0265a497ff7048a079176248d53a1e7a45232bafa0d1d71ce7b5a37df4f"
+        },
+        {
+          "entry": "external-binding-projection-owner1-20261104.runtime.terminal-audit.json",
+          "bytes": 630,
+          "sha256": "779bb8b993bb28f7eb5dab8792aa387fa8c5b00a44081a50205392c3bfa4d17d"
+        },
+        {
+          "entry": "external-binding-projection-owner1-20261104.source-freeze.json",
+          "bytes": 801899,
+          "sha256": "d20772ed2d47db00b84453d525c0ed73cd1bfde19b7db5300a3f052a719bfc1f"
+        },
+        {
+          "entry": "external-binding-projection-owner2-20261104.binaries-before.json",
+          "bytes": 3108,
+          "sha256": "bb224d766deaa8c30b8ce38a882a774f080ea85ef5a4a3b3b0c5ec98c612208e"
+        },
+        {
+          "entry": "external-binding-projection-owner2-20261104.catalog.inventory.json",
+          "bytes": 591359,
+          "sha256": "613f10ae1ed5ca2cd85f292082fbde367a27bb16c0b60ea60a8df2c7b224ed6c"
+        },
+        {
+          "entry": "external-binding-projection-owner2-20261104.catalog.json",
+          "bytes": 749,
+          "sha256": "2d4e85d1992a2da5e5a76a60ac4028ec4b25c38090d717cf797828a3f8c3312d"
+        },
+        {
+          "entry": "external-binding-projection-owner2-20261104.catalog.log",
+          "bytes": 537869,
+          "sha256": "73523c161d3771beb199547ff543af50fb5ea5722be48903fda36bad5f72d567"
+        },
+        {
+          "entry": "external-binding-projection-owner2-20261104.runtime.json",
+          "bytes": 843,
+          "sha256": "03866c684260f5387d6c84ee571ec7a5e976a067883fdd0d5a8daba29cf2804f"
+        },
+        {
+          "entry": "external-binding-projection-owner2-20261104.runtime.log",
+          "bytes": 819367,
+          "sha256": "03f89db0dfa53bc0fb2d95086a0fca620836ab36339ce89f153d5bc019c4531c"
+        },
+        {
+          "entry": "external-binding-projection-owner2-20261104.runtime.terminal-audit.json",
+          "bytes": 861,
+          "sha256": "6fb554a25e031ef6ab2754e0c0168f2f2d711057187795d98f87c4adc75475a8"
+        },
+        {
+          "entry": "external-binding-projection-owner2-20261104.source-freeze.json",
+          "bytes": 801899,
+          "sha256": "3b69e8c3137aa975af8fc83445153b9b07e34e0efc129cf01918f7d0fa339202"
+        },
+        {
+          "entry": "external-binding-projection-owner3-20261104.binaries-before.json",
+          "bytes": 3108,
+          "sha256": "97e4f521b18d9f3547ed3042f3fe45a7b969224b1ad99d215950d030f4c7d169"
+        },
+        {
+          "entry": "external-binding-projection-owner3-20261104.catalog.inventory.json",
+          "bytes": 591359,
+          "sha256": "613f10ae1ed5ca2cd85f292082fbde367a27bb16c0b60ea60a8df2c7b224ed6c"
+        },
+        {
+          "entry": "external-binding-projection-owner3-20261104.catalog.json",
+          "bytes": 749,
+          "sha256": "406a92e06e3726dfb0db1901ecbf20b59057e80982f463f2aa6a7473029aad5a"
+        },
+        {
+          "entry": "external-binding-projection-owner3-20261104.catalog.log",
+          "bytes": 537869,
+          "sha256": "746e14425408f9404fac4ea13bab7af2a7a66c1e440e5e8042c24633e8552a59"
+        },
+        {
+          "entry": "external-binding-projection-owner3-20261104.runtime.json",
+          "bytes": 841,
+          "sha256": "3c2fcc0f8d978e4775ce211242f8557a9fb85c52bfd09a6a76544fcabd5df88d"
+        },
+        {
+          "entry": "external-binding-projection-owner3-20261104.runtime.log",
+          "bytes": 818448,
+          "sha256": "949f8afd8782b5f52a3387f4b752ea86b3ffe4adffe2923a393544ef44d171a4"
+        },
+        {
+          "entry": "external-binding-projection-owner3-20261104.runtime.terminal-audit.json",
+          "bytes": 630,
+          "sha256": "99e74487337febe2a559bd912ab9332b4a05c4a74ace9fddc52e35cc583acbc5"
+        },
+        {
+          "entry": "external-binding-projection-owner3-20261104.source-freeze.json",
+          "bytes": 801899,
+          "sha256": "185ec93cf7788440b3770328b2e55e64ff8504ee5fc7839f312bdf9f9269f2bc"
+        },
+        {
+          "entry": "external-binding-projection-owner4-20261104.binaries-before.json",
+          "bytes": 3108,
+          "sha256": "bbd48e58f1acc6aba72a7b7efed82e0cbc456f704588e1025ca99a99eca39c57"
+        },
+        {
+          "entry": "external-binding-projection-owner4-20261104.catalog.inventory.json",
+          "bytes": 591359,
+          "sha256": "613f10ae1ed5ca2cd85f292082fbde367a27bb16c0b60ea60a8df2c7b224ed6c"
+        },
+        {
+          "entry": "external-binding-projection-owner4-20261104.catalog.json",
+          "bytes": 749,
+          "sha256": "a22cc8b2fb744e2896ff4695a9edbb509c7531690e21a4bb9c46c185cf5f2b2c"
+        },
+        {
+          "entry": "external-binding-projection-owner4-20261104.catalog.log",
+          "bytes": 537869,
+          "sha256": "56d1d01099793dd6a85229a173379723ab6b5491ca8756698a1b27f6b2e04f77"
+        },
+        {
+          "entry": "external-binding-projection-owner4-20261104.runtime.json",
+          "bytes": 841,
+          "sha256": "84ac820c4b7dfafc5325fede9391cc12497a83dc8de3e5172171042dc9d70401"
+        },
+        {
+          "entry": "external-binding-projection-owner4-20261104.runtime.log",
+          "bytes": 818448,
+          "sha256": "fda71e0298f67b0b8ad1024fddb16c42f7de4b293dcf39accb362984c4b67106"
+        },
+        {
+          "entry": "external-binding-projection-owner4-20261104.runtime.terminal-audit.json",
+          "bytes": 630,
+          "sha256": "ff48e2d0bb33546750eef6c71839433e1ad5146916f8cfbf0af4464abdbb56ef"
+        },
+        {
+          "entry": "external-binding-projection-owner4-20261104.source-freeze.json",
+          "bytes": 801899,
+          "sha256": "d98b838cf408cbcee3d015b27625306b27a73e163a9722eb4dc0c5cb9320c740"
+        },
+        {
+          "entry": "external-binding-projection-owner5-20261104.binaries-before.json",
+          "bytes": 3108,
+          "sha256": "5b48dda539854146b793be200cff9ffce24f42497fe9c94f9bb9b9b0499b9aa8"
+        },
+        {
+          "entry": "external-binding-projection-owner5-20261104.catalog.inventory.json",
+          "bytes": 591359,
+          "sha256": "613f10ae1ed5ca2cd85f292082fbde367a27bb16c0b60ea60a8df2c7b224ed6c"
+        },
+        {
+          "entry": "external-binding-projection-owner5-20261104.catalog.json",
+          "bytes": 749,
+          "sha256": "d558d17d6bb932899b57f36462a8d3b6d7b378dc609cfe57e21d256887060cc2"
+        },
+        {
+          "entry": "external-binding-projection-owner5-20261104.catalog.log",
+          "bytes": 537869,
+          "sha256": "cdf4f0667cbb668f9b2ea14129b147ff8569246436b90dd8d42315efa19976c9"
+        },
+        {
+          "entry": "external-binding-projection-owner5-20261104.runtime.json",
+          "bytes": 841,
+          "sha256": "18d7141a49531a105126b4e61c22640ddb9e862cc77331b96e4fb593f5cede74"
+        },
+        {
+          "entry": "external-binding-projection-owner5-20261104.runtime.log",
+          "bytes": 818448,
+          "sha256": "a0a4b8c29719b6c1739a87d337d2306865bdf14962de73c8c5bdc241fa03c0d0"
+        },
+        {
+          "entry": "external-binding-projection-owner5-20261104.runtime.terminal-audit.json",
+          "bytes": 630,
+          "sha256": "de275d00af9ea7d5828b46aa05cac6acf1fc337c83793d440fd9064c40f3f56b"
+        },
+        {
+          "entry": "external-binding-projection-owner5-20261104.source-freeze.json",
+          "bytes": 801899,
+          "sha256": "c8b0e9c8db7acddd40e0c1d80f1806afdc5b5e3e508af373174c61636e1c5f41"
+        },
+        {
+          "entry": "external-binding-projection-quality1-20261104-check.json",
+          "bytes": 407,
+          "sha256": "694d8daee26ea09530c69717b50995883595f9ab37ae2fd3721b10439171e19f"
+        },
+        {
+          "entry": "external-binding-projection-quality1-20261104-check.log",
+          "bytes": 95544,
+          "sha256": "31131deef855248b97e87f9e02f7afc42ec16dd799afb2c89205c7323a00f181"
+        },
+        {
+          "entry": "external-binding-projection-quality1-20261104-clippy.json",
+          "bytes": 408,
+          "sha256": "1785c5d2ad376dc4f3d42d5a25932e5c28042f0537ab110bc749f2c5cfcdcebc"
+        },
+        {
+          "entry": "external-binding-projection-quality1-20261104-clippy.log",
+          "bytes": 6549592,
+          "sha256": "29388b8ed5a21546efbc4681ea3a983a28130dd8ae330358ee79714b7ac01e4e"
+        },
+        {
+          "entry": "external-binding-projection-quality1-20261104-structure.json",
+          "bytes": 540,
+          "sha256": "dc3a5bfa19406e2142112f04c2317f254dcf4bd51bf338e00fae895d8d48ccb1"
+        },
+        {
+          "entry": "external-binding-projection-quality1-20261104-structure.log",
+          "bytes": 65619,
+          "sha256": "693d59d302ba3932a3fded6a0b2dd45722e77c9d4370d3659639f6f2e289f43c"
+        },
+        {
+          "entry": "external-binding-projection-quality2-20261104-check.json",
+          "bytes": 407,
+          "sha256": "2a4ae3e93f1c1b6db04d63cab3e957ebe862955a795081af09c244a90a4723f5"
+        },
+        {
+          "entry": "external-binding-projection-quality2-20261104-check.log",
+          "bytes": 95544,
+          "sha256": "16a08fa0a30a4129597c4e428e255f5078d404a777273c5460cb7c07d1cdc1ca"
+        },
+        {
+          "entry": "external-binding-projection-quality2-20261104-clippy.json",
+          "bytes": 408,
+          "sha256": "fb14680890da3f8a3bc610dd214214ee072699887b2a6f9366debbb1cbf0fe9d"
+        },
+        {
+          "entry": "external-binding-projection-quality2-20261104-clippy.log",
+          "bytes": 6547345,
+          "sha256": "76bd2bf6b9a1b87743903aaaf1c981b5f6c83d9d7437c022e719682cef958425"
+        },
+        {
+          "entry": "external-binding-projection-quality2-20261104-structure.json",
+          "bytes": 540,
+          "sha256": "59ecd11045186939bd8a8714c4fd982fc7440c0ea29610276e0c2f95ba9c1af5"
+        },
+        {
+          "entry": "external-binding-projection-quality2-20261104-structure.log",
+          "bytes": 65619,
+          "sha256": "3a8435075673c04d76b814ce4a1f94707a97e623d165dc32e31530a5e3418bf8"
+        },
+        {
+          "entry": "external-binding-projection-quality3-20261104-check.json",
+          "bytes": 407,
+          "sha256": "62ee473d0dd413c77d92c8490f04687b5983ba4442061d13e5648cde449510cd"
+        },
+        {
+          "entry": "external-binding-projection-quality3-20261104-check.log",
+          "bytes": 95544,
+          "sha256": "f5e46213b807c0a1cf2e7a8b4c10c8d2b8697f59bbff1161808c1d312bbae40f"
+        },
+        {
+          "entry": "external-binding-projection-quality3-20261104-clippy.json",
+          "bytes": 408,
+          "sha256": "a3c961aec9337d1a284765828fb9339ed564f8802b6172b08e2ac72182cbaba8"
+        },
+        {
+          "entry": "external-binding-projection-quality3-20261104-clippy.log",
+          "bytes": 6546726,
+          "sha256": "3f677b5d82f0a1dccb0a23d21871e602674dce3b29912c1d0b466c1c561e9913"
+        },
+        {
+          "entry": "external-binding-projection-quality3-20261104-structure.json",
+          "bytes": 540,
+          "sha256": "7e26dbcf94ff611dda0edcb0d246fda366ac42314137ae81a28152f663f652cb"
+        },
+        {
+          "entry": "external-binding-projection-quality3-20261104-structure.log",
+          "bytes": 65619,
+          "sha256": "90b6b7d1e353093605e0e0777ba528c96006149e7747b5fbcdd64867cc027e18"
+        },
+        {
+          "entry": "external-binding-projection-source.message.txt",
+          "bytes": 70,
+          "sha256": "c8ea38dd2223feac05bddaeb76f2101a1dfd16da899c6698aa7c3e2d7e080e24"
+        },
+        {
+          "entry": "external-binding-projection-source.other.txt",
+          "bytes": 139,
+          "sha256": "979460668c0c64b18f66a13b3939c041d38e57b9de1c1b347238cbbfa7488d93"
+        },
+        {
+          "entry": "external-binding-projection-source.owned.txt",
+          "bytes": 841,
+          "sha256": "cf9e31fc6a7702f773366ad5b85a49d8dbf1349c3e59a1cfe9df34b2220965dd"
+        },
+        {
+          "entry": "external-binding-projection-source.pathspec",
+          "bytes": 825,
+          "sha256": "799be93346b576d3380a89e3defa8a5cb65696d40375dfafe3a16353eacd36e4"
+        },
+        {
+          "entry": "external-binding-projection-source.prepared.json",
+          "bytes": 3804,
+          "sha256": "53ecdbd32795423153afffe05346f97c88dd65632c28c18f3e51b35823efa25e"
+        },
+        {
+          "entry": "external-binding-projection-source.reviewed.patch",
+          "bytes": 48382,
+          "sha256": "14b74bbbaeaa22a6538a75c4c382746f1bf46e05d047747bf82ae8b677d709a0"
+        },
+        {
+          "entry": "external-binding-projection-source.verified.json",
+          "bytes": 3206,
+          "sha256": "f47081e324b99aee89850309798b3bab9d485213f9b2a2167b6b1a88205ba85f"
+        },
+        {
+          "entry": "optional-external-source-repro1-20261104.catalog.json",
+          "bytes": 639,
+          "sha256": "aaad50ce4fbe9637497aec336f394e95ca1e5b430eddec6162e3b681dfde5a16"
+        },
+        {
+          "entry": "optional-external-source-repro1-20261104.catalog.log",
+          "bytes": 89744,
+          "sha256": "2ef5acd729582e6464ce775ff53162aa0b58885392fc7fbf46a3239e3016ce66"
+        },
+        {
+          "entry": "optional-external-source-repro1-20261104.source-freeze.json",
+          "bytes": 2959811,
+          "sha256": "2a314a825b8e237589249a8e8263658d06632312426e37fd26fb475f519aee26"
+        },
+        {
+          "entry": "optional-external-source-repro2-20261104.binaries-before.json",
+          "bytes": 246,
+          "sha256": "293da11417b14a132e0dce0d3b69b01d966574ffe49dfa604143814d2098893c"
+        },
+        {
+          "entry": "optional-external-source-repro2-20261104.catalog.inventory.json",
+          "bytes": 11652,
+          "sha256": "c028cc3271ba757550644a3d43e3bc678a4a900da4ec5800d65202c9d57e8b52"
+        },
+        {
+          "entry": "optional-external-source-repro2-20261104.catalog.json",
+          "bytes": 668,
+          "sha256": "d1c778755801015befe4cb67c66506eb823e04b01ff3e039fd5eb61c59f58c37"
+        },
+        {
+          "entry": "optional-external-source-repro2-20261104.catalog.log",
+          "bytes": 91900,
+          "sha256": "220af415d46f99226eb9ff8d757f4cda7c050b7a1734e3baa7a237fcac281b76"
+        },
+        {
+          "entry": "optional-external-source-repro2-20261104.runtime.json",
+          "bytes": 762,
+          "sha256": "9ac2d90c5a15a04b6318c3ad1332a19a4fa2eeed17d17a20ccac0e10e4292ed5"
+        },
+        {
+          "entry": "optional-external-source-repro2-20261104.runtime.log",
+          "bytes": 100153,
+          "sha256": "0f967f518b2f15e19981fa7f1f4489b8056df239a4dd9da99e1e025e3f36d3ec"
+        },
+        {
+          "entry": "optional-external-source-repro2-20261104.runtime.terminal-audit.json",
+          "bytes": 869,
+          "sha256": "bad52afa9598788fe239ac8ef68c00bca8ce3915a9bb7e08f56abba49d17b01b"
+        },
+        {
+          "entry": "optional-external-source-repro2-20261104.source-freeze.json",
+          "bytes": 801512,
+          "sha256": "df03290b43937f627c9b2e960042b17a1d0abbb92b135d3834a6fb9327a404dd"
+        }
+      ]
+    }
   }
 }
