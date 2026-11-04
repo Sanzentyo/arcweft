@@ -122,6 +122,7 @@ impl Wire for RuntimeExternalCallable {
 
 impl Wire for RuntimeExternalCallOperand {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.projection.semantic_tag().write_wire(writer)?;
         u8::from(self.parameter.is_some()).write_wire(writer)?;
         if let Some(parameter) = self.parameter {
             parameter.group.write_wire(writer)?;
@@ -133,6 +134,13 @@ impl Wire for RuntimeExternalCallOperand {
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         let offset = reader.offset();
+        let tag = u8::read_wire(reader)?;
+        let projection = crate::value::RuntimeExternalCallOperandProjection::from_semantic_tag(tag)
+            .ok_or(AwbcCodecError::UnknownTag {
+                kind: "external operand projection",
+                tag,
+                offset,
+            })?;
         let parameter = match u8::read_wire(reader)? {
             0 => None,
             1 => Some(crate::plan::RuntimeCallableParameterCoordinate {
@@ -148,6 +156,7 @@ impl Wire for RuntimeExternalCallOperand {
             }
         };
         Ok(Self {
+            projection,
             parameter,
             abi_position: u32::read_wire(reader)?,
             expansion_width: u32::read_wire(reader)?,
@@ -186,6 +195,7 @@ mod tests {
                     )
                     .with_operands(Box::new([
                         RuntimeExternalCallOperand {
+                            projection: crate::value::RuntimeExternalCallOperandProjection::Value,
                             parameter: Some(crate::plan::RuntimeCallableParameterCoordinate {
                                 group: 1,
                                 parameter: 7,
@@ -194,8 +204,19 @@ mod tests {
                             expansion_width: 2,
                         },
                         RuntimeExternalCallOperand {
+                            projection: crate::value::RuntimeExternalCallOperandProjection::Value,
                             parameter: None,
                             abi_position: 0,
+                            expansion_width: 1,
+                        },
+                        RuntimeExternalCallOperand {
+                            projection:
+                                crate::value::RuntimeExternalCallOperandProjection::OptionalBinding,
+                            parameter: Some(crate::plan::RuntimeCallableParameterCoordinate {
+                                group: 2,
+                                parameter: 5,
+                            }),
+                            abi_position: 3,
                             expansion_width: 1,
                         },
                     ]))

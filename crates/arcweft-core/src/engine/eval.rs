@@ -1483,6 +1483,19 @@ pub(crate) fn evaluate_runtime_call(
     {
         return value;
     }
+    if let RuntimeCallTarget::External(call) = callee
+        && call.operands().iter().any(|row| {
+            row.projection == crate::value::RuntimeExternalCallOperandProjection::OptionalBinding
+        })
+    {
+        let prepared = external_context.prepare_external_bindings(call, args)?;
+        return evaluate_runtime_call_after_intrinsics(
+            &prepared.callee,
+            &prepared.arguments,
+            &prepared.context,
+            pure_backend,
+        );
+    }
     evaluate_runtime_call_after_intrinsics(callee, &args, external_context, pure_backend)
 }
 

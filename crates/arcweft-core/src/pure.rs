@@ -5,6 +5,7 @@ pub(crate) use callable_batch::{
     RuntimeNumericProjection, project_numeric_map,
 };
 mod control;
+mod external_arguments;
 use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
 use arcweft_interaction_model::dialogue::{
     CharacterDialogueOperation, CharacterDialoguePatchField,
@@ -13,6 +14,7 @@ pub use control::{
     RuntimePureControlBindings, RuntimePureUnitDestination, RuntimePureUnitSource,
     RuntimePureUnitValue,
 };
+pub use external_arguments::RuntimeExternalCallArgumentError;
 
 #[cfg(test)]
 mod function_application_tests;

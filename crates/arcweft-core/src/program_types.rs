@@ -61,6 +61,28 @@ pub(crate) enum RuntimeProgramValueType<'a> {
     },
 }
 
+impl RuntimeProgramValueType<'_> {
+    pub(crate) fn option_item(self) -> Option<RuntimeSemanticTypeId> {
+        match self {
+            Self::Plan { program, ty } => {
+                let RuntimePlanTypeProjection::Option { item, .. } =
+                    program.type_table().get(ty)?.projection()
+                else {
+                    return None;
+                };
+                Some(program.type_table().get(*item)?.semantic_identity())
+            }
+            Self::Awbc { program, ty } => {
+                let item = program.builtin_variant_payload_item(
+                    ty,
+                    crate::pattern::RuntimeBuiltinVariantCaseIdentity::OptionSome,
+                )?;
+                Some(program.runtime_types.get(item.index())?.semantic_identity())
+            }
+        }
+    }
+}
+
 impl<'a> RuntimeProgramTypes<'a> {
     pub(crate) fn value_type(
         self,

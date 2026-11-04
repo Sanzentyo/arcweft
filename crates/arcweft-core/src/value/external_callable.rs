@@ -13,15 +13,48 @@ pub use arcweft_manifest_model::StandardEnvironmentId;
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuntimeExternalCallOperand {
+    pub projection: RuntimeExternalCallOperandProjection,
     pub parameter: Option<RuntimeCallableParameterCoordinate>,
     pub abi_position: u32,
     pub expansion_width: u32,
+}
+
+/// Projection from a declaration frame's binding to the provider argument.
+/// `OptionalBinding` consumes the canonical outer Option, preserving an inner
+/// Option or any affine payload as the original argument value.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum RuntimeExternalCallOperandProjection {
+    Value,
+    OptionalBinding,
+}
+
+impl RuntimeExternalCallOperandProjection {
+    #[must_use]
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Value => 0,
+            Self::OptionalBinding => 1,
+        }
+    }
+
+    #[must_use]
+    pub const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        match tag {
+            0 => Some(Self::Value),
+            1 => Some(Self::OptionalBinding),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, thiserror::Error, Eq, PartialEq)]
 pub enum RuntimeExternalCallOperandError {
     #[error("external operands do not cover one contiguous ABI range")]
     InvalidRange,
+    #[error("external optional operand {operand} must name one formal and one binding")]
+    InvalidOptionalBinding { operand: usize },
+    #[error("external optional operand {operand} must have a canonical Option binding type")]
+    InvalidOptionalBindingType { operand: usize },
     #[error("external operand {operand} differs from the admitted call argument")]
     ArgumentMismatch { operand: usize },
     #[error("external operand count differs: expected {expected}, found {actual}")]
@@ -37,8 +70,18 @@ impl RuntimeExternalCallOperand {
         operands: impl ExactSizeIterator<Item = Self>,
     ) -> Result<(), RuntimeExternalCallOperandError> {
         let mut ranges = operands
-            .map(|row| (row.abi_position, row.expansion_width))
-            .collect::<Vec<_>>();
+            .enumerate()
+            .map(|(operand, row)| {
+                if row.projection == RuntimeExternalCallOperandProjection::OptionalBinding
+                    && (row.parameter.is_none() || row.expansion_width != 1)
+                {
+                    return Err(RuntimeExternalCallOperandError::InvalidOptionalBinding {
+                        operand,
+                    });
+                }
+                Ok((row.abi_position, row.expansion_width))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         // Empty spreads at a boundary precede its nonempty range. Unstable
         // sorting needs no second scratch allocation and leaves source rows intact.
         ranges.sort_unstable();
@@ -207,6 +250,22 @@ impl RuntimeExternalCallable {
         &self.operands
     }
 
+    pub(crate) fn validate_binding_types(
+        &self,
+        mut is_option: impl FnMut(u32) -> bool,
+    ) -> Result<(), RuntimeExternalCallOperandError> {
+        for (operand, row) in self.operands.iter().enumerate() {
+            if row.projection == RuntimeExternalCallOperandProjection::OptionalBinding
+                && !is_option(row.abi_position)
+            {
+                return Err(
+                    RuntimeExternalCallOperandError::InvalidOptionalBindingType { operand },
+                );
+            }
+        }
+        Ok(())
+    }
+
     /// Checks the invocation against the original expression's operand groups.
     pub fn validate_arguments(
         &self,
@@ -279,6 +338,7 @@ impl RuntimeExternalCallable {
         encoder.count(self.operands.len());
         for row in &self.operands {
             encoder.enter_element();
+            encoder.tag(row.projection.semantic_tag());
             if let Some(parameter) = row.parameter {
                 encoder.tag(1);
                 encoder.ordinal(parameter.group);
@@ -311,6 +371,7 @@ mod tests {
 
     fn operand(parameter: u32, position: u32, width: u32) -> RuntimeExternalCallOperand {
         RuntimeExternalCallOperand {
+            projection: crate::value::RuntimeExternalCallOperandProjection::Value,
             parameter: Some(RuntimeCallableParameterCoordinate {
                 group: 2,
                 parameter,
@@ -368,6 +429,43 @@ mod tests {
     }
 
     #[test]
+    fn external_optional_projection_requires_one_named_binding_and_an_explicit_wire_field() {
+        let mut row = operand(0, 0, 1);
+        row.projection = RuntimeExternalCallOperandProjection::OptionalBinding;
+        let call = declaration().with_operands(Box::new([row])).unwrap();
+        assert_eq!(
+            call.validate_binding_types(|_| false),
+            Err(RuntimeExternalCallOperandError::InvalidOptionalBindingType { operand: 0 })
+        );
+        assert!(call.validate_binding_types(|_| true).is_ok());
+        let mut wire = serde_json::to_value(call).unwrap();
+        wire["operands"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("projection");
+        assert!(serde_json::from_value::<RuntimeExternalCallable>(wire).is_err());
+        for bad in [
+            RuntimeExternalCallOperand {
+                parameter: None,
+                ..row
+            },
+            RuntimeExternalCallOperand {
+                expansion_width: 0,
+                ..row
+            },
+            RuntimeExternalCallOperand {
+                expansion_width: 2,
+                ..row
+            },
+        ] {
+            assert!(matches!(
+                declaration().with_operands(Box::new([bad])),
+                Err(RuntimeExternalCallOperandError::InvalidOptionalBinding { operand: 0 })
+            ));
+        }
+    }
+
+    #[test]
     fn external_operand_coordinates_and_expansion_bind_the_executable_digest() {
         let digest = |row| {
             let call = declaration().with_operands(Box::new([row])).unwrap();
@@ -378,6 +476,13 @@ mod tests {
             encoder.finish().unwrap()
         };
         let original = digest(operand(0, 0, 1));
+        assert_ne!(
+            original,
+            digest(RuntimeExternalCallOperand {
+                projection: RuntimeExternalCallOperandProjection::OptionalBinding,
+                ..operand(0, 0, 1)
+            })
+        );
         assert_ne!(original, digest(operand(1, 0, 1)));
         assert_ne!(original, digest(operand(0, 0, 2)));
         let mut other = operand(0, 0, 1);

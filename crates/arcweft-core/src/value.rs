@@ -59,7 +59,8 @@ mod expression_locals;
 mod expression_semantic;
 mod external_callable;
 pub use external_callable::{
-    RuntimeExternalCallOperand, RuntimeExternalCallOperandError, RuntimeExternalCallable,
+    RuntimeExternalCallOperand, RuntimeExternalCallOperandError,
+    RuntimeExternalCallOperandProjection, RuntimeExternalCallable,
     RuntimeExternalCallableDeclaration, RuntimeExternalCallableExport,
     RuntimeExternalCallableProvider, StandardEnvironmentId,
 };
@@ -2784,6 +2785,8 @@ impl From<RuntimeLocalBinding> for RuntimeLocalSlot {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimeEvalError {
+    #[error(transparent)]
+    ExternalArguments(#[from] Box<crate::pure::RuntimeExternalCallArgumentError>),
     #[error(transparent)]
     Quantity(#[from] RuntimeOpaqueValueError),
     #[error(transparent)]

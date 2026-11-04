@@ -1279,6 +1279,23 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
                     message: "external operand layout differs from its signature".to_owned(),
                 });
             }
+            call.validate_binding_types(|position| {
+                program.signatures[intrinsic.signature.index()]
+                    .params
+                    .get(position as usize)
+                    .is_some_and(|ty| {
+                        program
+                            .builtin_variant_payload_item(
+                                *ty,
+                                crate::pattern::RuntimeBuiltinVariantCaseIdentity::OptionSome,
+                            )
+                            .is_some()
+                    })
+            })
+            .map_err(|error| AwbcVerifyError::InvalidInvariant {
+                at: at.clone(),
+                message: error.to_string(),
+            })?;
         }
         if intrinsic.revision != 1 {
             return Err(AwbcVerifyError::InvalidInvariant {

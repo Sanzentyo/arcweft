@@ -547,6 +547,8 @@ impl<'a> ExternalDefinition<'a> {
                     .zip(0_u32..)
                     .map(
                         |(parameter, position)| arcweft_core::value::RuntimeExternalCallOperand {
+                            projection:
+                                arcweft_core::value::RuntimeExternalCallOperandProjection::Value,
                             parameter: Some(parameter.coordinate),
                             abi_position: position,
                             expansion_width: 1,

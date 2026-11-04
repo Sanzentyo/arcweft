@@ -245,9 +245,28 @@ impl PureEvaluator<'_> {
         if let RuntimeCallTarget::PresentationSlot(call) = callee {
             return call.evaluate_in_context(&context, &values);
         }
+        let prepared = if let RuntimeCallTarget::External(call) = callee
+            && call.operands().iter().any(|row| {
+                row.projection
+                    == crate::value::RuntimeExternalCallOperandProjection::OptionalBinding
+            }) {
+            Some(context.prepare_external_bindings(call, std::mem::take(&mut values))?)
+        } else {
+            None
+        };
+        let (context, callee, values) =
+            prepared
+                .as_ref()
+                .map_or((&context, callee, values.as_slice()), |prepared| {
+                    (
+                        &prepared.context,
+                        &prepared.callee,
+                        prepared.arguments.as_slice(),
+                    )
+                });
         self.external
             .as_mut()
-            .and_then(|backend| backend.call_external(&context, callee, &values))
+            .and_then(|backend| backend.call_external(context, callee, values))
             .ok_or_else(|| error("selected pure external callable has no backend"))?
     }
 }

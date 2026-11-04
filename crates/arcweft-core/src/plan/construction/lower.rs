@@ -1049,6 +1049,11 @@ impl RuntimePlanBodyConstruction<'_> {
                         };
                         Some((argument.abi_position(), width))
                     }).map_err(|error| RuntimePlanBuildError::ExternalCallOperands(Box::new(error)))?;
+                    let argument_types = self.expanded_argument_types(&args)?;
+                    call.validate_binding_types(|position| {
+                        argument_types.get(position as usize).and_then(|ty| self.projection(*ty).ok())
+                            .is_some_and(|ty| matches!(ty, RuntimePlanTypeProjection::Option { .. }))
+                    }).map_err(|error| RuntimePlanBuildError::ExternalCallOperands(Box::new(error)))?;
                 }
                 if let crate::value::RuntimeCallTarget::PresentationView(call) = &callee {
                     let authority = super::super::value_admission::PlanValueAuthority::Building {

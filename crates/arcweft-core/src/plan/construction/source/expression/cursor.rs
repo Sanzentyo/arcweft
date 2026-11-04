@@ -56,7 +56,10 @@ mod tests {
             bytes.extend(0_u16.to_le_bytes());
             bytes.extend(2_u32.to_le_bytes());
             for position in [0_u32, u32::from(!overlap)] {
-                bytes.push(0);
+                bytes.extend([
+                    crate::value::RuntimeExternalCallOperandProjection::Value.semantic_tag(),
+                    0,
+                ]);
                 bytes.extend(position.to_le_bytes());
                 bytes.extend(1_u32.to_le_bytes());
             }
@@ -146,6 +149,9 @@ impl<'a> Cursor<'a> {
         ))
     }
     pub fn external_operand(&mut self) -> Result<RuntimeExternalCallOperand, Box<Error>> {
+        let tag = self.byte()?;
+        let projection = crate::value::RuntimeExternalCallOperandProjection::from_semantic_tag(tag)
+            .ok_or_else(|| Box::new(self.invalid("external operand projection")))?;
         let parameter = match self.byte()? {
             0 => None,
             1 => Some(crate::plan::RuntimeCallableParameterCoordinate {
@@ -155,6 +161,7 @@ impl<'a> Cursor<'a> {
             _ => return Err(Box::new(self.invalid("external operand coordinate"))),
         };
         Ok(RuntimeExternalCallOperand {
+            projection,
             parameter,
             abi_position: self.u32()?,
             expansion_width: self.u32()?,

@@ -2425,6 +2425,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                                 }
                             };
                             Ok(arcweft_core::value::RuntimeExternalCallOperand {
+                                projection: arcweft_core::value::RuntimeExternalCallOperandProjection::Value,
                                 parameter: operand.parameter().map(|parameter| {
                                     arcweft_core::plan::RuntimeCallableParameterCoordinate {
                                         group: parameter.group(),
@@ -2438,6 +2439,8 @@ impl<'hir> FinalExprLowerer<'hir> {
                         .collect::<Result<Vec<_>, &str>>()?;
                     if let Some(attached) = selected.positioned_attached_content() {
                         operands.push(arcweft_core::value::RuntimeExternalCallOperand {
+                            projection:
+                                arcweft_core::value::RuntimeExternalCallOperandProjection::Value,
                             parameter: None,
                             abi_position: attached.abi_position(),
                             expansion_width: 1,

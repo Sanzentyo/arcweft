@@ -73,6 +73,7 @@ fn external_source_admission_rejects_layouts_that_do_not_match_original_argument
     for width in [2, 1] {
         let call = declaration()
             .with_operands(Box::new([RuntimeExternalCallOperand {
+                projection: crate::value::RuntimeExternalCallOperandProjection::Value,
                 parameter: Some(RuntimeCallableParameterCoordinate {
                     group: 0,
                     parameter: 4,
@@ -90,6 +91,20 @@ fn external_source_admission_rejects_layouts_that_do_not_match_original_argument
             result.unwrap();
         }
     }
+    let call = declaration()
+        .with_operands(Box::new([RuntimeExternalCallOperand {
+            projection: RuntimeExternalCallOperandProjection::OptionalBinding,
+            parameter: Some(RuntimeCallableParameterCoordinate {
+                group: 0,
+                parameter: 4,
+            }),
+            abi_position: 0,
+            expansion_width: 1,
+        }]))
+        .unwrap();
+    assert!(
+        matches!(builder.lower_expression(expression(call)), Err(RuntimePlanBuildError::ExternalCallOperands(error)) if matches!(*error, RuntimeExternalCallOperandError::InvalidOptionalBindingType { operand: 0 }))
+    );
 }
 
 #[test]
@@ -746,6 +761,8 @@ fn fixture() -> RuntimePlan {
                         )
                         .with_operands(Box::new([
                             RuntimeExternalCallOperand {
+                                projection:
+                                    crate::value::RuntimeExternalCallOperandProjection::Value,
                                 parameter: Some(RuntimeCallableParameterCoordinate {
                                     group: 1,
                                     parameter: 7,
@@ -754,11 +771,22 @@ fn fixture() -> RuntimePlan {
                                 expansion_width: 1,
                             },
                             RuntimeExternalCallOperand {
+                                projection:
+                                    crate::value::RuntimeExternalCallOperandProjection::Value,
                                 parameter: Some(RuntimeCallableParameterCoordinate {
                                     group: 1,
                                     parameter: 2,
                                 }),
                                 abi_position: 0,
+                                expansion_width: 1,
+                            },
+                            RuntimeExternalCallOperand {
+                                projection: RuntimeExternalCallOperandProjection::OptionalBinding,
+                                parameter: Some(RuntimeCallableParameterCoordinate {
+                                    group: 1,
+                                    parameter: 9,
+                                }),
+                                abi_position: 2,
                                 expansion_width: 1,
                             },
                         ]))
@@ -774,6 +802,11 @@ fn fixture() -> RuntimePlan {
                             boolean(false),
                             RuntimeCallArgumentMode::Value,
                             0,
+                        ),
+                        RuntimeCallArgumentSeed::new(
+                            seed(8, K::Value(RuntimeValue::option_some(RuntimeValue::i64(4)))),
+                            RuntimeCallArgumentMode::Value,
+                            2,
                         ),
                     ]),
                 },

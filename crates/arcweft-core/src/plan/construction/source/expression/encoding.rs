@@ -612,6 +612,7 @@ impl Sink<'_, '_> {
                 )?;
                 self.count(callable.operands().len())?;
                 for row in callable.operands() {
+                    self.byte(row.projection.semantic_tag())?;
                     self.byte(u8::from(row.parameter.is_some()))?;
                     if let Some(parameter) = row.parameter {
                         self.raw(&parameter.group.to_le_bytes())?;
