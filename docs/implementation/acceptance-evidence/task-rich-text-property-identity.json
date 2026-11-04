@@ -3885,5 +3885,472 @@
       }
     },
     "indexing": "Per-case results, complete graphs and coverage rows are retained in the verified raw archive; this index keeps their summaries and exact entry references."
+  },
+  "optionalBindings": {
+    "version": 1,
+    "recordedAt": "2026-11-04T03:44:41.7569605Z",
+    "inspectedHead": "7d1986b5d6c9520d138df2f19066fe2cf2f2a265",
+    "source": {
+      "version": 1,
+      "commit": "7d1986b5d6c9520d138df2f19066fe2cf2f2a265",
+      "parent": "b810db0a58398a3518a0bec3b1a3590e48e784f3",
+      "tree": "c90169fd55cd563cca70207f7d2c158723823f4d",
+      "remote": "7d1986b5d6c9520d138df2f19066fe2cf2f2a265",
+      "paths": [
+        {
+          "path": "crates/arcweft-core/src/awbc/codec/callable.rs",
+          "blob": "bd5173952d61944a41b14b4ec57a7ef704c9e330"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/tests.rs",
+          "blob": "6ce381e98d5028d8a088bca54a50b9e0cd452528"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/tests/optional_callable_binding.rs",
+          "blob": "2aca4ea5698204d84d1b993fb21ac91dd84fa9c0"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/verify/code.rs",
+          "blob": "e4863f589a45d3d8f85e52f91230b4b6c2a3c3b1"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/verify/code/callable_copy.rs",
+          "blob": "9ee091f06ae24095d39725baba1533eed2f93c0c"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/verify/structure.rs",
+          "blob": "fc0779a9bea0f749a6f75ebde743b7207f4dbc0f"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/body_semantic/callable.rs",
+          "blob": "23f0774e16f88dde2fa64d0e8bfe3329a7a711a8"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/callable_states.rs",
+          "blob": "900e7a34e822153efbe6ad5a931cd1129b5eb4f4"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/lower.rs",
+          "blob": "848a217f5b1ba8f40b1dee560d3cdc0fbc2567c1"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/source/callable_states/reading.rs",
+          "blob": "86eeeff6e7ae3e81c8a45f4c22fbab295264674f"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/source/callable_states/tests.rs",
+          "blob": "7f41cf0849f33b18cef31f379465b80e5f9325b0"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/source/callable_states/writing.rs",
+          "blob": "d599ea766bd5456bd5a94ae3d988dddd7ade75b3"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/project_call.rs",
+          "blob": "4089b578652c4c01c3643f324f4cd5d7dbd3b0af"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/callable.rs",
+          "blob": "03157b744372f76aaaf14aabed8d205d6be08dee"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/callable/application.rs",
+          "blob": "21028ccada62c19790b4a3be4385ee330fb8fe95"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/callable/tests.rs",
+          "blob": "5252a0b96375491b2b4e4538f1c56f24671319a5"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "431deb738abaaf10cce9e8d022167e1a18605fe3a3b2868683fe40a40960005e",
+      "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-04T03:04:17.5187604Z"
+    },
+    "state": "Core optional ordinary binding boundary verified and published; Source external omission application and RichText factories remain unfinished.",
+    "implementation": [
+      "One callable-state parameter kind admits ABI T with canonical Option<T> binding, independently of attached Content and positional-prefix arity.",
+      "Checked fixed group materialization carries a complete binding. Scalar arrow inputs and retained positional prefixes are wrapped once as Some; explicit None remains omission.",
+      "Plan admission, AWBC verification, copy proofs, semantic metadata and strict version-one Source/AWBC codecs share this state authority. No compatibility reader or second function type was introduced."
+    ],
+    "validation": {
+      "owner": {
+        "version": 1,
+        "base": "b810db0a58398a3518a0bec3b1a3590e48e784f3",
+        "run": "optional-bindings-owner6-20261104.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   0.893s] 67 tests run: 67 passed, 2246 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 67,
+        "passed": 67,
+        "failed": 0,
+        "skipped": 2246,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4097,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-04T03:02:55.9807243Z"
+      },
+      "fullReverse": {
+        "version": 1,
+        "base": "7d1986b5d6c9520d138df2f19066fe2cf2f2a265",
+        "run": "optional-bindings-reverse1-20261104.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [1241.520s] 7800 tests run: 7786 passed (66 slow), 14 failed, 40 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 7800,
+        "passed": 7786,
+        "failed": 14,
+        "skipped": 40,
+        "selectedPackages": 53,
+        "matchedPackages": 50,
+        "noMatchingSelectedTests": [
+          "arcweft",
+          "arcweft-bundle-assets",
+          "arcweft-render-web"
+        ],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4097,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_rag_query_indexes_multiple_sources"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_reports_text_presentation_z_index_depth"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "plan_json_lists_runtime_task_graph"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "spec_valid_run_edge_fixture_now_executes"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "unsafe_json_lists_audit_regions"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "spec_rejected_edge_fixtures_fail_with_diagnostics"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_records_required_solver_checks"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_reports_missing_promotion_proof"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_reports_semantic_thread_join_conflict"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_respects_semantic_defer_cancel_discharge"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-04T03:44:17.3994802Z"
+      },
+      "graph": {
+        "receipt": "optional-bindings.graph.json",
+        "workspacePackages": 98,
+        "selectedPackages": 53,
+        "metadataTreeDrift": 0
+      },
+      "caseResults": "optional-bindings-reverse1-20261104.runtime.cases.json",
+      "ownerCoverage": {
+        "receipt": "optional-bindings-final-coverage.json",
+        "ownerCases": 67,
+        "newCases": 5
+      },
+      "normal": {
+        "executed": 7102,
+        "passed": 7102,
+        "failed": 0
+      },
+      "cli": {
+        "executed": 698,
+        "passed": 684,
+        "failed": 14
+      },
+      "acceptedGeneric": {
+        "cases": 151,
+        "freshPassed": 151,
+        "receipt": "optional-bindings-result-comparison.json"
+      },
+      "retainedBoundaries": {
+        "externalDescriptor": 25,
+        "requiredArgumentAliasesAndCapture": 4,
+        "constructorFresh": 19,
+        "constructorUnselected": 5,
+        "receipt": "optional-bindings-boundary-coverage.json"
+      },
+      "immediatePriorFailureComparison": {
+        "priorSource": "4a3400586e018b734e9d724c31106027256ce068",
+        "failedIdsAdded": 0,
+        "failedIdsRemoved": 0,
+        "causeClaim": "Matching failed IDs alone do not establish identical causes."
+      },
+      "quality": [
+        {
+          "gate": "check",
+          "receipt": "optional-bindings-quality3-20261104-check.json",
+          "exitCode": 0,
+          "sourceDrift": 0
+        },
+        {
+          "gate": "clippy",
+          "receipt": "optional-bindings-quality3-20261104-clippy.json",
+          "exitCode": 0,
+          "sourceDrift": 0
+        },
+        {
+          "gate": "structure",
+          "receipt": "optional-bindings-quality3-20261104-structure.json",
+          "exitCode": 0,
+          "sourceDrift": 0
+        }
+      ],
+      "formatReview": "optional-bindings-final-quality-review.json"
+    },
+    "attempts": [
+      {
+        "run": "optional-bindings-owner1-20261104",
+        "executed": 61,
+        "passed": 59,
+        "failed": 2,
+        "reason": "New fixture lacked a formal ownership row; extending a shared fixture displaced a specialization fixture coordinate."
+      },
+      {
+        "run": "optional-bindings-owner2-20261104",
+        "executed": 62,
+        "passed": 61,
+        "failed": 1,
+        "reason": "The new VM fixture budget covered two instructions but not the call terminator; the assertion expected callee ingress too early."
+      },
+      {
+        "run": "optional-bindings-owner3-20261104",
+        "executed": 63,
+        "passed": 63,
+        "failed": 0
+      },
+      {
+        "run": "optional-bindings-owner4-20261104",
+        "executed": 3,
+        "passed": 3,
+        "failed": 0,
+        "reason": "Recheck after checked fixture index conversions."
+      },
+      {
+        "run": "optional-bindings-owner5-20261104",
+        "executed": 0,
+        "stage": "catalog-count",
+        "reason": "A substring filter selected 67 rather than the predicted 65 cases; no runtime executed. The unchanged observed selection was rerun."
+      },
+      {
+        "run": "optional-bindings-owner6-20261104",
+        "executed": 67,
+        "passed": 67,
+        "failed": 0,
+        "reason": "Final source bytes, including the shared fixture cleanup, with complete source/case/executable checks."
+      }
+    ],
+    "environment": {
+      "packageClean": "optional-bindings-core-clean-20261104.json",
+      "wholeClean": "optional-bindings-whole-clean-20261104.json",
+      "reason": "After final owner/quality validation, limited free disk required Cargo-owned cache cleanup before the complete reverse build. All 4097 source inputs and Git state stayed unchanged.",
+      "changedBuildOrRuntimeLimits": false
+    },
+    "ownership": {
+      "authority": "RuntimeCallableStateDefinition parameter grammar",
+      "physicalInput": "One complete fixed binding or existing rest pack",
+      "optionalBinding": "Canonical Option owned by the original program type table",
+      "affineBehavior": "Existing move and copy admission retained; values are wrapped without cloning their payload",
+      "fixtureReview": "The existing cohesive partial-state fixture is generalized rather than duplicated; its size lint remains."
+    },
+    "scope": {
+      "accepted": [
+        "Core ordinary optional ABI/binding grammar",
+        "Prefix retention and native callable snapshot restoration",
+        "Strict Source graph replay and semantic digest",
+        "Decoded AWBC group/arrow execution, frame save/restore and malformed binding rejection"
+      ],
+      "remaining": [
+        "Project checked external optional/defaulted source calls onto the admitted binding law",
+        "Preserve external source operand composition order through function values",
+        "Register text_style/ruby_style/rich_text_style and connect original call context to construction",
+        "Carry static inline-style provenance and length units through the consuming owners"
+      ],
+      "genericMatch": "Accepted/public; same 151 cases pass freshly. No completed feature is reopened because the whole goal remains unfinished.",
+      "sourceOmissionProbe": {
+        "receipt": "optional-bindings-source-probe-comparison.json",
+        "result": {
+          "version": 1,
+          "source": "7d1986b5d6c9520d138df2f19066fe2cf2f2a265",
+          "direct": {
+            "version": 1,
+            "base": "7d1986b5d6c9520d138df2f19066fe2cf2f2a265",
+            "source": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/optional-external-direct-probe.arcw",
+            "sourceSha256": "51873e850bc8b42af4e94f536960d771282d4eadcb70814405e51b23b1c204ee",
+            "executable": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+            "executableSha256": "ca783f157f21a6c4fdc93faea2cb63374b1deb7f89e5618b5ba2bdb2121504bb",
+            "command": [
+              "compile",
+              "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/optional-external-direct-probe.arcw",
+              "--emit",
+              "plan",
+              "--output",
+              "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/optional-bindings-source-probe-direct.plan.json",
+              "--json"
+            ],
+            "exitCode": 0,
+            "report": {
+              "status": "ok",
+              "input": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/optional-external-direct-probe.arcw",
+              "emit": "plan",
+              "output": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/optional-bindings-source-probe-direct.plan.json",
+              "syntax_warnings": 0,
+              "flows": 1,
+              "line_task_groups": 0,
+              "verifier_diagnostics": 0,
+              "obligations": 0,
+              "unsafe_audits": 0,
+              "semantic": {
+                "types": 1,
+                "locals": 0,
+                "captures": 0,
+                "expressions": 2,
+                "patterns": 0,
+                "statements": 2,
+                "items": 2,
+                "calls": 1,
+                "call_diagnostics": 0,
+                "logical_argument_checks": 0,
+                "resolver_invocations": 1,
+                "candidate_argument_probes": 0,
+                "selected_replay_argument_visits": 0,
+                "retained_argument_fact_publications": 0
+              }
+            },
+            "output": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/optional-bindings-source-probe-direct.plan.json",
+            "outputExists": true,
+            "startedAt": "2026-11-04T03:41:12.6995843Z",
+            "finishedAt": "2026-11-04T03:41:13.0747907Z",
+            "scope": "Compile-only source probe; no runtime or factory acceptance is inferred."
+          },
+          "alias": {
+            "version": 1,
+            "base": "7d1986b5d6c9520d138df2f19066fe2cf2f2a265",
+            "source": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/optional-external-alias-probe.arcw",
+            "sourceSha256": "d5372b3aa0cd40fd5e113d1649e2d228eed4e29d25e417d54339c0b94ab4991a",
+            "executable": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+            "executableSha256": "ca783f157f21a6c4fdc93faea2cb63374b1deb7f89e5618b5ba2bdb2121504bb",
+            "command": [
+              "compile",
+              "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/optional-external-alias-probe.arcw",
+              "--emit",
+              "plan",
+              "--output",
+              "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/optional-bindings-source-probe-alias.plan.json",
+              "--json"
+            ],
+            "exitCode": 1,
+            "report": {
+              "version": 1,
+              "status": "denied",
+              "stage": "runtime-plan-lower",
+              "diagnostics": [
+                {
+                  "module": null,
+                  "stage": "runtime-plan-lower",
+                  "diagnostic": {
+                    "severity": "error",
+                    "code": "compiler.runtime_plan_lower",
+                    "message": "partial function application result cannot use plan type 34 with its admitted projection",
+                    "span": null,
+                    "labels": [],
+                    "notes": [],
+                    "suggestions": [],
+                    "commands": []
+                  }
+                }
+              ]
+            },
+            "output": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/optional-bindings-source-probe-alias.plan.json",
+            "outputExists": false,
+            "startedAt": "2026-11-04T03:41:13.1044375Z",
+            "finishedAt": "2026-11-04T03:41:13.4144887Z",
+            "scope": "Compile-only source probe; no runtime or factory acceptance is inferred."
+          },
+          "executableDrift": 0,
+          "conclusion": "Core optional binding is not yet projected from this external function-value call. Direct source compile succeeds; omitted alias source compile is still rejected."
+        },
+        "claim": "The fresh compile-only direct/alias comparison keeps the missing Source projection concrete. It does not reopen required-argument aliases or Generic Match."
+      }
+    },
+    "correctionReason": "Add this verified lower-layer boundary without presenting it as completion of Source aliases or factories; replace the prior current summaries while retaining all old results and full SHAs.",
+    "supersededCurrentRows": [
+      "| RichTextの部分layout指定／source factory | **部分layout・共通property・生成 API・外部引数座標を検証・公開済み。source factory接続は継続中** | 生成 API 817bbeef131d49f5828f3e23504055dd70c67229は、元programの完全なopaque rootを一つの資源bankで検査し、文字列コピー・所有payload確保に先行する。部分layoutと共通propertyの既受入を維持する。後続4a3400586e018b734e9d724c31106027256ce068で、外部呼出しの意味座標・ABI範囲・Source／AWBC codec・実signature検査を接続し、直接／通常alias／capture／停止復元を含む25件が同じ53逆依存runでPASS。factory登録・元call contextからの生成 API 接続、省略引数aliasのABI、合成順とstatic inline_stylesを含む出典は継続範囲。既存cues.stopの直接compileは成功し、引数省略aliasはRuntimePlan投影で拒否する具体例を保持する。RAGのtext_style未登録をaccepted-semantic checkerで迂回しない。[各cutの全SHA・受入・再現と原本](acceptance-evidence/task-rich-text-property-identity.json)、[部分layoutの元記録](acceptance-evidence/task-rich-text-layout-presence.json)。 |",
+      "| Generic Match `.1.2` C3/C5 | **受入・公開済み** | 受入850534b9e9bc8c8872f6528dd00050a5e6e7699e、公開f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2。115 transcript、24 coverage、5公開query、7 Native／decoded-AWBC継続・保存の151件。完全transcript、uninhabited-domain、Never／let-else継続、exhaustive-only atomic publicationの受入を維持する。[元の受入監査](acceptance-evidence/accepted-generic-c3-c5-closure-audit.json)。Source 4a3400586e018b734e9d724c31106027256ce068の全53逆依存で、同じ151 IDが151／151新規PASS。[最新case照合と以前の全実測](acceptance-evidence/task-rich-text-property-identity.json)。公開SHAと過去の結果は[検証履歴](convergence-evidence-history.md)へ保持する。別境界や全体goalの未達だけで未完了へ戻さない。 |",
+      "| 共有契約／推移的逆依存matrix | **Core／RuntimePlan／Compiler全53逆依存を終端照合。通常側7097／7097 PASS** | Source 4a3400586e018b734e9d724c31106027256ce068、4096入力、all-target／all-feature／locked。実metadataとcargo treeのnormal／build／dev・全target graphで53 packageを選択し、50にRust testがある。arcweft／bundle-assets／render-webは実行PASSへ数えない。全7795件は7781 PASS／14 FAIL・40 skipped。descriptor境界25件、今回の影響内の生成 API 19件、Generic 151件が同じ実runでPASS。選択外のPresentation／schema 5件を新規実行へ加算しない。source／case／実EXE driftは0。[graph・全case・以前の47選択を含む各実測](acceptance-evidence/task-rich-text-property-identity.json)。 |",
+      "| CLI全target照合 | **統合受入は未完了。最新の全698件は684 PASS／14 FAIL** | Source 4a3400586e018b734e9d724c31106027256ce068、4096入力、全53逆依存の同じ一回の実runに含む全target／all-feature／locked。CLIは698件684 PASS／14 FAIL。前の14 failed IDと一致し、追加・解消IDは0。ID一致だけから原因同一とは推定しない。[全件・全失敗・以前の実測](acceptance-evidence/task-rich-text-property-identity.json)。RichText factory・出典は専用行で追い、Generic Matchや既受入のtyped ownerを一括して未完了へ戻さない。 |",
+      "| workspace check／Clippy・fmt・構造gate | **最新 Source の全98 gate は終了0。既存警告は残存** | Source 4a3400586e018b734e9d724c31106027256ce068の最終4096入力で、全98 packageのcheck／Clippy（all-target／all-feature／locked）と構造gateが終了0。Rust13件のfmt検査とstaged whitespaceも終了0。全体cargo cleanは135688 files／171.5 GiB削除・source／Git状態drift 0。初回catalogのICE、全53 catalogのWindows paging不足（os 1455）、同一設定の再試行と全件終端を別々に保持する。[全入力・receipt・環境診断・owner review](acceptance-evidence/task-rich-text-property-identity.json)。今回doctest／wasm専用検証は未再実行。 |"
+    ],
+    "historyPrefix": {
+      "bytes": 1833456,
+      "sha256": "d99f3c74bf7ef34b418a46658131099361e79703486c51795a7fc8221fb9bf0a"
+    },
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-rich-text-optional-bindings.raw.zip",
+      "bytes": 6492482,
+      "sha256": "3ff55e339b3c3096dfd2167b777b072da99e80f46334a1b854d18662bbc24b01",
+      "entries": 122,
+      "entryDrift": 0,
+      "indexEntry": "optional-bindings-archive-inputs.json"
+    }
   }
 }
