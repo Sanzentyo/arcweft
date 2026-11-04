@@ -2673,5 +2673,1217 @@
         }
       ]
     }
+  },
+  "externalOperands": {
+    "version": 1,
+    "recordedAt": "2026-11-04T02:06:29.8150117Z",
+    "inspectedHead": "4a3400586e018b734e9d724c31106027256ce068",
+    "source": {
+      "version": 1,
+      "commit": "4a3400586e018b734e9d724c31106027256ce068",
+      "parent": "d059779e74b588ee7e8d106b9aa5be18367965fb",
+      "tree": "a84c32b70a28a3b1b38ea7494ce037bab41a747b",
+      "remote": "4a3400586e018b734e9d724c31106027256ce068",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/project_cache_transaction/static_selectors.rs",
+          "blob": "f5d5264d88e5be2b7ac3635d05eb12340f0d6f76"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/codec/external_callable.rs",
+          "blob": "c582eb824a4591b7e6eb2afbfe8ce8f8a624efd8"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/verify/structure.rs",
+          "blob": "9bc1c9d46547e71f6a94a1148323a5247e46f7df"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction.rs",
+          "blob": "b9ee4e6b34c4b613a3fc9727ab8412a55b99e7ca"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/lower.rs",
+          "blob": "37fa5c3b64538b8d01f3b760cdec4ed0da6bed97"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/source/expression/cursor.rs",
+          "blob": "ab562e748ac7db9d75abd71866f124acf526666b"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/source/expression/decoding.rs",
+          "blob": "259ebfaa35040c286a723f1d8086128ff0cab0d2"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/source/expression/encoding.rs",
+          "blob": "da24b9bcfc953d8940b19abed0b0c47bc0bb06b7"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/source/expression/tests.rs",
+          "blob": "9367f441693dad53d6d18d8dfe1c904b0564913a"
+        },
+        {
+          "path": "crates/arcweft-core/src/value.rs",
+          "blob": "6957cdc8e1ea7622a4c555d40369662d6dfcc1f0"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/external_callable.rs",
+          "blob": "83097ee613d39ecd9c8fe197f8a356adcef949bb"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_expr.rs",
+          "blob": "d8487372871c89c21302092272726a25b041db08"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_flow/environment_callables.rs",
+          "blob": "a3308de7ac61476e43d457422e2412fcb3620f4a"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "c14a9889b04bc38eda9c171cf3d22f6460a204d6aacdd387e532c60964cd2fdf",
+      "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-04T01:13:16.4232553Z"
+    },
+    "state": "Direct external operand-coordinate/linkage and persistence boundary validated. Whole-formal wrapper coordinates are retained; original caller precedence through first-class factory normalization remains outside this acceptance.",
+    "implementation": [
+      "Core owns source-ordered optional formal coordinates and expanded ABI ranges on the exact checked external target, with canonical coverage and original-argument checks.",
+      "Source and AWBC/Serde codecs and executable metadata retain the same descriptor. AWBC admits only layouts matching its signature. All owned contract markers remain 1; Serde requires the operand field and no legacy reader is retained.",
+      "Borrowed Source preflight validates complete row ranges before copying declaration strings and counts both owned rows and bounded ranges scratch.",
+      "RuntimePlan projects accepted direct operand facts and environment-wrapper formal coordinates; no source labels or type-based formal inference are used."
+    ],
+    "validation": {
+      "terminal": {
+        "version": 1,
+        "base": "4a3400586e018b734e9d724c31106027256ce068",
+        "run": "external-operands-reverse2-20261104.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [1426.076s] 7795 tests run: 7781 passed (77 slow), 14 failed, 40 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 7795,
+        "passed": 7781,
+        "failed": 14,
+        "skipped": 40,
+        "selectedPackages": 53,
+        "matchedPackages": 50,
+        "noMatchingSelectedTests": [
+          "arcweft",
+          "arcweft-bundle-assets",
+          "arcweft-render-web"
+        ],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4096,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_rag_query_indexes_multiple_sources"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_reports_text_presentation_z_index_depth"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "plan_json_lists_runtime_task_graph"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "spec_valid_run_edge_fixture_now_executes"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "unsafe_json_lists_audit_regions"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_records_required_solver_checks"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "spec_rejected_edge_fixtures_fail_with_diagnostics"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_reports_missing_promotion_proof"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_respects_semantic_defer_cancel_discharge"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_reports_semantic_thread_join_conflict"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-04T01:57:37.6972887Z"
+      },
+      "graph": {
+        "version": 1,
+        "workspacePackages": 98,
+        "roots": [
+          "arcweft-core",
+          "arcweft-runtime-plan",
+          "arcweft-compiler"
+        ],
+        "selectedPackages": 53,
+        "selection": [
+          "arcweft",
+          "arcweft-adapter-desktop",
+          "arcweft-adapter-sema",
+          "arcweft-agent-mcp",
+          "arcweft-agent-mcp-client",
+          "arcweft-agent-policy",
+          "arcweft-agent-protocol",
+          "arcweft-agent-repl",
+          "arcweft-agent-runner",
+          "arcweft-browser-bench",
+          "arcweft-bundle",
+          "arcweft-bundle-assets",
+          "arcweft-character-view",
+          "arcweft-cli",
+          "arcweft-compiler",
+          "arcweft-core",
+          "arcweft-debug-model",
+          "arcweft-debug-sqlite",
+          "arcweft-dialogue",
+          "arcweft-glyphon",
+          "arcweft-host-adapter",
+          "arcweft-lang-jit-cranelift",
+          "arcweft-lang-sema",
+          "arcweft-launch",
+          "arcweft-lsp",
+          "arcweft-player-native",
+          "arcweft-player-scene",
+          "arcweft-player-text-input",
+          "arcweft-player-web",
+          "arcweft-project",
+          "arcweft-project-loader",
+          "arcweft-rag",
+          "arcweft-render-text",
+          "arcweft-render-web",
+          "arcweft-render-wgpu",
+          "arcweft-resource-manifest",
+          "arcweft-resource-model",
+          "arcweft-runtime-accelerator",
+          "arcweft-runtime-codegen",
+          "arcweft-runtime-driver",
+          "arcweft-runtime-host",
+          "arcweft-runtime-plan",
+          "arcweft-runtime-scheduler",
+          "arcweft-save",
+          "arcweft-test",
+          "arcweft-text-layout",
+          "arcweft-text-model",
+          "arcweft-tooling",
+          "arcweft-verify",
+          "arcweft-verify-lsp",
+          "arcweft-verify-oxiz",
+          "arcweft-verify-z3",
+          "arcweft-view"
+        ],
+        "dependencyKinds": [
+          "normal",
+          "build",
+          "dev"
+        ],
+        "target": "all",
+        "features": "all",
+        "metadataTreeDrift": 0,
+        "detailsRawEntry": "external-operands.graph.json"
+      },
+      "comparison": {
+        "version": 1,
+        "total": 7795,
+        "normal": {
+          "executed": 7097,
+          "passed": 7097,
+          "failed": 0
+        },
+        "cli": {
+          "executed": 698,
+          "passed": 684,
+          "failed": 14
+        },
+        "genericCases": 151,
+        "genericPassed": 151,
+        "propertyCodecAndProjectorCases": 9,
+        "dynamicDisplayCases": 5,
+        "addedFailedIds": [],
+        "removedFailedIds": [],
+        "causeClaim": "ID comparison only; matching IDs do not establish identical causes.",
+        "detailsRawEntry": "external-operands-result-comparison.json",
+        "allCaseResultsRawEntry": "external-operands-reverse2-20261104.runtime.cases.json"
+      },
+      "boundaryCoverage": {
+        "version": 1,
+        "descriptorCases": 25,
+        "directAliasesAndCapture": 4,
+        "constructorFresh": 19,
+        "constructorUnselected": 5,
+        "reuseClaim": "The 4 Presentation and 1 rich-text-schema cases are prior-input evidence, not fresh execution in the Core reverse selection. Their accepted scope remains retained.",
+        "detailsRawEntry": "external-operands-boundary-coverage.json"
+      },
+      "quality": [
+        {
+          "receipt": "external-operands-quality2-check",
+          "result": {
+            "version": 1,
+            "base": "d059779e74b588ee7e8d106b9aa5be18367965fb",
+            "command": [
+              "check",
+              "--workspace",
+              "--all-targets",
+              "--all-features",
+              "--locked"
+            ],
+            "exitCode": 0,
+            "sourceInputs": 4096,
+            "sourceDrift": 0,
+            "startedAt": "2026-11-04T01:10:34.8401634Z",
+            "finishedAt": "2026-11-04T01:11:19.7725546Z"
+          }
+        },
+        {
+          "receipt": "external-operands-quality2-clippy",
+          "result": {
+            "version": 1,
+            "base": "d059779e74b588ee7e8d106b9aa5be18367965fb",
+            "command": [
+              "clippy",
+              "--workspace",
+              "--all-targets",
+              "--all-features",
+              "--locked"
+            ],
+            "exitCode": 0,
+            "sourceInputs": 4096,
+            "sourceDrift": 0,
+            "startedAt": "2026-11-04T01:11:20.2580225Z",
+            "finishedAt": "2026-11-04T01:12:19.6309736Z"
+          }
+        },
+        {
+          "receipt": "external-operands-quality2-structure",
+          "result": {
+            "version": 1,
+            "base": "d059779e74b588ee7e8d106b9aa5be18367965fb",
+            "command": [
+              "+nightly",
+              "-Zscript",
+              "tools/structure-audit.rs",
+              "--root",
+              ".",
+              "--fail-on-blocking",
+              "--write",
+              "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/external-operands-quality2.structure-report"
+            ],
+            "exitCode": 0,
+            "sourceInputs": 4096,
+            "sourceDrift": 0,
+            "startedAt": "2026-11-04T01:12:20.1097023Z",
+            "finishedAt": "2026-11-04T01:12:23.7060616Z"
+          }
+        }
+      ],
+      "fmt": {
+        "version": 1,
+        "base": "d059779e74b588ee7e8d106b9aa5be18367965fb",
+        "files": [
+          "crates/arcweft-compiler/tests/project_cache_transaction/static_selectors.rs",
+          "crates/arcweft-core/src/awbc/codec/external_callable.rs",
+          "crates/arcweft-core/src/awbc/verify/structure.rs",
+          "crates/arcweft-core/src/plan/construction.rs",
+          "crates/arcweft-core/src/plan/construction/lower.rs",
+          "crates/arcweft-core/src/plan/construction/source/expression/cursor.rs",
+          "crates/arcweft-core/src/plan/construction/source/expression/decoding.rs",
+          "crates/arcweft-core/src/plan/construction/source/expression/encoding.rs",
+          "crates/arcweft-core/src/plan/construction/source/expression/tests.rs",
+          "crates/arcweft-core/src/value.rs",
+          "crates/arcweft-core/src/value/external_callable.rs",
+          "crates/arcweft-runtime-plan/src/final_expr.rs",
+          "crates/arcweft-runtime-plan/src/final_flow/environment_callables.rs"
+        ],
+        "exitCode": 0,
+        "recordedAt": "2026-11-04T01:13:00.3579971Z"
+      },
+      "newOwnerWarnings": {
+        "version": 1,
+        "newOwnerWarnings": [],
+        "observedWarnings": 0,
+        "scope": "External linkage/codec owners and new external_operand method; existing workspace warnings are retained.",
+        "excludedUnrelatedWarnings": [
+          {
+            "warning": "warning: the `Err`-variant returned from this function is very large",
+            "span": "--> crates/arcweft-core/src/plan/construction/source/pure_callables/cursor.rs:148:29"
+          }
+        ]
+      },
+      "sourceCaseExecutableDrift": 0
+    },
+    "attempts": [
+      {
+        "receipt": "external-operands-owner1-20261104.catalog",
+        "result": {
+          "version": 1,
+          "base": "d059779e74b588ee7e8d106b9aa5be18367965fb",
+          "command": [
+            "nextest",
+            "list",
+            "-p",
+            "arcweft-core",
+            "-p",
+            "arcweft-runtime-plan",
+            "-p",
+            "arcweft-compiler",
+            "--all-targets",
+            "--all-features",
+            "--locked",
+            "-E",
+            "test(external_callable::) | test(expression_sources_) | test(static_selector_and_value_callee)",
+            "--message-format",
+            "json"
+          ],
+          "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/external-operands-owner1-20261104.catalog.log",
+          "exitCode": 101,
+          "sourceInputs": 4096,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-04T00:44:19.7161767Z",
+          "finishedAt": "2026-11-04T00:49:40.2107337Z"
+        },
+        "state": "rustc import-resolution ICE and missing-rlib catalog failure; no test execution. Cause is not inferred from later failures."
+      },
+      {
+        "receipt": "whole-clean-20261104",
+        "result": {
+          "version": 1,
+          "base": "d059779e74b588ee7e8d106b9aa5be18367965fb",
+          "command": [
+            "cargo",
+            "clean"
+          ],
+          "target": "D:\\git\\arcweft\\target",
+          "exitCode": 0,
+          "sourceInputs": 4096,
+          "sourceDrift": 0,
+          "statusDrift": 0,
+          "statusSha256": "24a486d8aefbd98a1174fd9c1d5d5d1ddae130df21e7261d2f188fcbcc5d321f",
+          "startedAt": "2026-11-04T00:50:28.9309264Z",
+          "finishedAt": "2026-11-04T00:51:15.7351044Z",
+          "log": "whole-clean-20261104.log"
+        },
+        "state": "Explicitly requested full cargo clean removed 135688 files/171.5GiB; 4096 source inputs and Git status unchanged."
+      },
+      {
+        "receipt": "external-operands-owner2-20261104.runtime.terminal-audit",
+        "result": {
+          "version": 1,
+          "base": "d059779e74b588ee7e8d106b9aa5be18367965fb",
+          "run": "external-operands-owner2-20261104.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [   0.828s] 20 tests run: 20 passed, 3249 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 20,
+          "passed": 20,
+          "failed": 0,
+          "skipped": 3249,
+          "selectedPackages": 3,
+          "matchedPackages": 2,
+          "noMatchingSelectedTests": [
+            "arcweft-runtime-plan"
+          ],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4096,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-04T01:00:20.795476Z"
+        },
+        "state": "Post-clean focused 20/20 pass on earlier input, before final borrowed-preflight and admission-negative refinement."
+      },
+      {
+        "receipt": "external-operands-reverse1-20261104.catalog",
+        "result": {
+          "version": 1,
+          "base": "4a3400586e018b734e9d724c31106027256ce068",
+          "command": [
+            "nextest",
+            "list",
+            "-p",
+            "arcweft",
+            "-p",
+            "arcweft-adapter-desktop",
+            "-p",
+            "arcweft-adapter-sema",
+            "-p",
+            "arcweft-agent-mcp",
+            "-p",
+            "arcweft-agent-mcp-client",
+            "-p",
+            "arcweft-agent-policy",
+            "-p",
+            "arcweft-agent-protocol",
+            "-p",
+            "arcweft-agent-repl",
+            "-p",
+            "arcweft-agent-runner",
+            "-p",
+            "arcweft-browser-bench",
+            "-p",
+            "arcweft-bundle",
+            "-p",
+            "arcweft-bundle-assets",
+            "-p",
+            "arcweft-character-view",
+            "-p",
+            "arcweft-cli",
+            "-p",
+            "arcweft-compiler",
+            "-p",
+            "arcweft-core",
+            "-p",
+            "arcweft-debug-model",
+            "-p",
+            "arcweft-debug-sqlite",
+            "-p",
+            "arcweft-dialogue",
+            "-p",
+            "arcweft-glyphon",
+            "-p",
+            "arcweft-host-adapter",
+            "-p",
+            "arcweft-lang-jit-cranelift",
+            "-p",
+            "arcweft-lang-sema",
+            "-p",
+            "arcweft-launch",
+            "-p",
+            "arcweft-lsp",
+            "-p",
+            "arcweft-player-native",
+            "-p",
+            "arcweft-player-scene",
+            "-p",
+            "arcweft-player-text-input",
+            "-p",
+            "arcweft-player-web",
+            "-p",
+            "arcweft-project",
+            "-p",
+            "arcweft-project-loader",
+            "-p",
+            "arcweft-rag",
+            "-p",
+            "arcweft-render-text",
+            "-p",
+            "arcweft-render-web",
+            "-p",
+            "arcweft-render-wgpu",
+            "-p",
+            "arcweft-resource-manifest",
+            "-p",
+            "arcweft-resource-model",
+            "-p",
+            "arcweft-runtime-accelerator",
+            "-p",
+            "arcweft-runtime-codegen",
+            "-p",
+            "arcweft-runtime-driver",
+            "-p",
+            "arcweft-runtime-host",
+            "-p",
+            "arcweft-runtime-plan",
+            "-p",
+            "arcweft-runtime-scheduler",
+            "-p",
+            "arcweft-save",
+            "-p",
+            "arcweft-test",
+            "-p",
+            "arcweft-text-layout",
+            "-p",
+            "arcweft-text-model",
+            "-p",
+            "arcweft-tooling",
+            "-p",
+            "arcweft-verify",
+            "-p",
+            "arcweft-verify-lsp",
+            "-p",
+            "arcweft-verify-oxiz",
+            "-p",
+            "arcweft-verify-z3",
+            "-p",
+            "arcweft-view",
+            "--all-targets",
+            "--all-features",
+            "--locked",
+            "--message-format",
+            "json"
+          ],
+          "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/external-operands-reverse1-20261104.catalog.log",
+          "exitCode": 101,
+          "sourceInputs": 4096,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-04T01:13:52.1745335Z",
+          "finishedAt": "2026-11-04T01:23:18.3144112Z"
+        },
+        "state": "Full 53-package catalog failed before execution: Windows os error 1455 prevented mmap of an rlib; following diagnostics included missing rlib/ICE. Not a test-result failure."
+      }
+    ],
+    "environment": {
+      "diagnosis": {
+        "version": 1,
+        "recordedAt": "2026-11-04T01:24:58.0513638Z",
+        "committedBytes": 45310742528,
+        "commitLimit": 75980988416,
+        "availableBytes": 41635082240,
+        "percentCommitted": 59,
+        "paging": [
+          {
+            "Name": "C:\\pagefile.sys",
+            "AllocatedBaseSize": 7168,
+            "CurrentUsage": 1465,
+            "PeakUsage": 1522
+          }
+        ],
+        "firstReverseError": "E0786 failed to mmap arcweft_bundle rlib: Windows os error 1455 (paging file too small). Later missing-rlib/ICE diagnostics follow this failure; no cache-corruption cause is established.",
+        "action": "Retry the unchanged full 53-package catalog without cleaning successful artifacts or changing jobs/profiles/test limits."
+      },
+      "retrySamples": [
+        {
+          "at": "2026-11-04T01:28:27.1618916Z",
+          "committedBytes": 88177774592,
+          "commitLimit": 101310488576,
+          "percentCommitted": 87,
+          "availableBytes": 14677250048
+        },
+        {
+          "at": "2026-11-04T01:28:31.1029281Z",
+          "committedBytes": 85976088576,
+          "commitLimit": 101310488576,
+          "percentCommitted": 84,
+          "availableBytes": 13297827840
+        },
+        {
+          "at": "2026-11-04T01:28:34.6313034Z",
+          "committedBytes": 87152562176,
+          "commitLimit": 101310488576,
+          "percentCommitted": 86,
+          "availableBytes": 12031049728
+        },
+        {
+          "at": "2026-11-04T01:28:38.1364707Z",
+          "committedBytes": 88980078592,
+          "commitLimit": 101310488576,
+          "percentCommitted": 87,
+          "availableBytes": 10079666176
+        },
+        {
+          "at": "2026-11-04T01:28:41.4966488Z",
+          "committedBytes": 79282262016,
+          "commitLimit": 101310488576,
+          "percentCommitted": 78,
+          "availableBytes": 11517513728
+        },
+        {
+          "at": "2026-11-04T01:28:45.7142067Z",
+          "committedBytes": 86609842176,
+          "commitLimit": 98004979712,
+          "percentCommitted": 88,
+          "availableBytes": 15333203968
+        },
+        {
+          "at": "2026-11-04T01:28:49.0604716Z",
+          "committedBytes": 88244002816,
+          "commitLimit": 98004979712,
+          "percentCommitted": 90,
+          "availableBytes": 13692071936
+        },
+        {
+          "at": "2026-11-04T01:28:52.899471Z",
+          "committedBytes": 95282311168,
+          "commitLimit": 98004979712,
+          "percentCommitted": 97,
+          "availableBytes": 10104913920
+        },
+        {
+          "at": "2026-11-04T01:28:56.4310317Z",
+          "committedBytes": 94447636480,
+          "commitLimit": 98004979712,
+          "percentCommitted": 96,
+          "availableBytes": 8020361216
+        },
+        {
+          "at": "2026-11-04T01:28:59.905104Z",
+          "committedBytes": 95435128832,
+          "commitLimit": 98004979712,
+          "percentCommitted": 97,
+          "availableBytes": 6717186048
+        }
+      ],
+      "action": "The unchanged full selection retried with successful artifacts retained. No jobs, profile, runtime budget, capture limit or OS paging settings changed."
+    },
+    "ownership": "One Core target descriptor owns formal linkage; Source framing and AWBC codecs consume it. Layout validation uses ranges-only bounded scratch; the Source cursor shares one typed row parser with materialization. Compiler execution tests assert declaration identity, exact parameter-to-ABI mapping and rejection through actual AWBC admission. No new crate dependency or unsafe boundary.",
+    "scope": "The final complete Core/RuntimePlan/Compiler reverse closure has 53 packages. Its 25 descriptor/source/admission cases include direct calls, ordinary aliases, captured groups and per-step AWBC restoration; they do not establish original caller precedence for overlapping factory composition. Fresh constructor coverage is 19 cases; the other 5 Presentation/schema cases retain earlier accepted evidence and are not counted as fresh in this selection. Dedicated doctest/wasm and whole-goal/source-factory acceptance are not claimed.",
+    "correctionReason": "Update the sole current list from actual source and complete-run evidence. Keep accepted Generic, sparse layout, property identity and constructor boundaries accepted. ID equality alone does not establish equivalent failure causes.",
+    "supersededCurrentRows": [
+      "| RichTextの部分layout指定／source factory | **部分layout・共通property保存と生成 API を検証・公開済み。source factory接続は継続中** | 部分layoutのSource 726323d1edc63a6a543f7b8b817570ecc2ea2b3e／638d6459bf68b4679349f2bfccc03f53d1878d26と5回帰、共通propertyの4736756c99a102d70ec3090541b6e99024a15c79と18件の受入を維持する。後続817bbeef131d49f5828f3e23504055dd70c67229では、元programの完全なopaque rootを、文字列コピー・所有payload確保前に一つの資源bankで検査する生成 API を実装した。閉じたenum owner・許容単位・後着値上書き・異program拒否、Native／AWBC型とcold restore、動的表示を含む最終24／24 PASS。この実装・実行証拠により生成 API 自体を残作業から外す。factory登録・元call contextからの生成 API 接続、factory aliasの引数順、static inline_stylesを含む出典は継続範囲。RAGのtext_style未登録をaccepted-semantic checkerで迂回しない。[受入・全SHA・失敗と訂正理由](acceptance-evidence/task-rich-text-property-identity.json)、[部分layoutの元記録](acceptance-evidence/task-rich-text-layout-presence.json)。 |",
+      "| Generic Match `.1.2` C3/C5 | **受入・公開済み** | 受入850534b9e9bc8c8872f6528dd00050a5e6e7699e、公開f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2。115 transcript、24 coverage、5公開query、7 Native／decoded-AWBC継続・保存の151件。完全transcript、uninhabited-domain、Never／let-else継続、exhaustive-only atomic publicationの受入を維持する。[元の受入監査](acceptance-evidence/accepted-generic-c3-c5-closure-audit.json)。Source 4736756c99a102d70ec3090541b6e99024a15c79の全47逆依存で、同じ151 IDが151／151新規PASS。[最新のcase照合](acceptance-evidence/task-rich-text-property-identity.json)。以前の151 PASSと公開SHAは[検証履歴](convergence-evidence-history.md)へ保持する。別境界や全体goalの未達だけで未完了へ戻さない。 |",
+      "| 共有契約／推移的逆依存matrix | **Presentation／Dialogue／text-model／driver全47逆依存を終端照合。通常側6410／6410 PASS** | Source 4736756c99a102d70ec3090541b6e99024a15c79、4091入力、all-target／all-feature／locked。47 packageを選択し44にRust testがある。arcweft／bundle-assets／render-webは実行PASSへ数えない。全7108件は7094 PASS／14 FAIL・48 skipped、CLIは次行へ集約する。source／case／実EXE driftは0。Native auxiliaryの既存10 target・16 distinct caseも同じ実runで全PASSと照合し、別runとして加算しない。[graph・全case・対象境界](acceptance-evidence/task-rich-text-property-identity.json)。旧35逆依存4815件と、それ以前の全件実測は[履歴](convergence-evidence-history.md)へ保持する。 |",
+      "| CLI全target照合 | **統合受入は未完了。最新の全698件は684 PASS／14 FAIL** | Source 4736756c99a102d70ec3090541b6e99024a15c79、4091入力、全47逆依存の同じ一回の実runに含むCLI全target／all-feature／locked。CLIは698件684 PASS／14 FAIL・23 ignored。前回の14 failed IDと同一で、追加・解消IDは0。ID一致だけから原因同一とは推定しない。[最新全件・全失敗](acceptance-evidence/task-rich-text-property-identity.json)。以前の失敗・修復・公開SHAは[当時の履歴](convergence-evidence-history.md)と各原本へ保持する。RichText factory・出典は専用行で追い、Generic Matchや既受入のtyped ownerを一括して未完了へ戻さない。 |",
+      "| workspace check／Clippy・fmt・構造gate | **最新 Source の全98 gate は終了0。既存警告は残存** | Source 817bbeef131d49f5828f3e23504055dd70c67229の最終4,096入力で、全98 packageのcheck／Clippy（all-target／all-feature／locked）と構造gateが終了0。新規生成 API の大きなerror戻り値・wildcard import等を整理した。対象Rust13件の整形とstaged whitespace gateも確認した。最新の実行は対象24件であり、先のSource 4736756c99a102d70ec3090541b6e99024a15c79の全47逆依存runを今回のCore APIの全件再実行とは扱わない。[各入力・receipt・owner review](acceptance-evidence/task-rich-text-property-identity.json)。今回doctest／wasm専用検証は未再実行。 |"
+    ],
+    "historyPrefix": {
+      "bytes": 1830932,
+      "sha256": "635addd306c3dfc203260f7d1a2d73841dbed4ae1c06177b62f7cb34a140499b"
+    },
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-rich-text-external-operands.raw.zip",
+      "bytes": 4845115,
+      "sha256": "64a244771334e797608ea82b6dfbfee9eb1162f86fc688334024591600d8b644",
+      "entryDrift": 0,
+      "entries": [
+        {
+          "entry": "audit-external-operands-tests.ps1",
+          "bytes": 7307,
+          "sha256": "089184fa783f5cc77eae63131547507d03a96d1707f17a8a6f0da92b78461442"
+        },
+        {
+          "entry": "audit-nextest-final-result.ps1",
+          "bytes": 5266,
+          "sha256": "9d136f5ff9dbe80e524a8c9adb2f11fc96cce75046e3e1fe3e93ba73888cc0ab"
+        },
+        {
+          "entry": "external-operands-boundary-coverage.json",
+          "bytes": 14126,
+          "sha256": "198b4bee3ce8fc7c30d3ee14f2ace70c04c3e818651ed393a5e4b9361100ab58"
+        },
+        {
+          "entry": "external-operands-catalog-boundary-membership.json",
+          "bytes": 223,
+          "sha256": "7849ae89973ee3bc7fb08fb5fb06f37215027cce4d9823129adc82b98def167b"
+        },
+        {
+          "entry": "external-operands-final-fmt.json",
+          "bytes": 1025,
+          "sha256": "50c7209937692785800a5018d28eb987e5f54c09bd33945c1a4b5cad3635863e"
+        },
+        {
+          "entry": "external-operands-final-fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "external-operands-fmt.json",
+          "bytes": 1025,
+          "sha256": "22c7a4f4d373210fa7c2f835fa84b30d1391844d53b58cebd247387e52161c6f"
+        },
+        {
+          "entry": "external-operands-fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "external-operands-memory-diagnosis.json",
+          "bytes": 706,
+          "sha256": "3d5733a985519796e5414d465ecaa0e93aa35dc33e19b521d4f1f9a0c5ee564b"
+        },
+        {
+          "entry": "external-operands-owner1-20261104.catalog.json",
+          "bytes": 746,
+          "sha256": "855b75b60866e2ee4b0344de6998b952af781a87c516420584269a8c7d957a91"
+        },
+        {
+          "entry": "external-operands-owner1-20261104.catalog.log",
+          "bytes": 529724,
+          "sha256": "1797a093a835bf6acd786717d8f82a1e497d560a5d286eb710adcb902eb91467"
+        },
+        {
+          "entry": "external-operands-owner1-20261104.source-freeze.json",
+          "bytes": 800869,
+          "sha256": "b4d01e6a098f4a9b1160eb7ced7e15be9175577e5444e36f50c2da8002247de4"
+        },
+        {
+          "entry": "external-operands-owner2-20261104.binaries-before.json",
+          "bytes": 11083,
+          "sha256": "6bcdb128f32cfb85d50eb26e75169e6adf72c02f2d6824ca75568379f807837f"
+        },
+        {
+          "entry": "external-operands-owner2-20261104.catalog.inventory.json",
+          "bytes": 830153,
+          "sha256": "a91d0b4cdda76c901e93c32fda3e1d1f41719833d9e758c251473170819f04b0"
+        },
+        {
+          "entry": "external-operands-owner2-20261104.catalog.json",
+          "bytes": 744,
+          "sha256": "96fbd379cf75880156606b77eb8c623aa483b11cb0fb3a7e6b2616efe1cee174"
+        },
+        {
+          "entry": "external-operands-owner2-20261104.catalog.log",
+          "bytes": 741677,
+          "sha256": "6509f7e76442586fc2b943d8fb6689acb86bc2bafd658d9957c83a31941f0669"
+        },
+        {
+          "entry": "external-operands-owner2-20261104.runtime.json",
+          "bytes": 836,
+          "sha256": "043afefd7883177c3ae90204657909df11694f39f5411404115332ba0054cb7b"
+        },
+        {
+          "entry": "external-operands-owner2-20261104.runtime.log",
+          "bytes": 1122340,
+          "sha256": "ef1c27a935e1108063c6055c76a3e279c53c14ce4f28f44e8187d53a74520bd3"
+        },
+        {
+          "entry": "external-operands-owner2-20261104.runtime.terminal-audit.json",
+          "bytes": 652,
+          "sha256": "5f04b39500feb6848fc41e018a8ecd12d811cda7b8cf583b31367570afbe3b3b"
+        },
+        {
+          "entry": "external-operands-owner2-20261104.source-freeze.json",
+          "bytes": 800869,
+          "sha256": "8db8e275f7259892a77cafcd6febcefab2d4659e8f9af10bc42c4301d9ec46dd"
+        },
+        {
+          "entry": "external-operands-quality1-check.json",
+          "bytes": 355,
+          "sha256": "f954ac9fb6d991b4af396b7c2950e1829aaf2d7497dd26185087310e9c120ba3"
+        },
+        {
+          "entry": "external-operands-quality1-check.log",
+          "bytes": 129997,
+          "sha256": "f9e5b662172d883e6409467e51959e5e66b5012f870735c8fc4daa695a7322b2"
+        },
+        {
+          "entry": "external-operands-quality1-clippy.json",
+          "bytes": 356,
+          "sha256": "634db81f1ee362903d688f517d2f1423f631ff6d508ea87ff7ae0a138ca67035"
+        },
+        {
+          "entry": "external-operands-quality1-clippy.log",
+          "bytes": 8849701,
+          "sha256": "96f41afa2571bf0fbe4a5cf6591717940d3e87081a46925cd889660d6af72573"
+        },
+        {
+          "entry": "external-operands-quality1-owner-warnings.json",
+          "bytes": 6170,
+          "sha256": "3dfa74047d383a7200976e92b3644ee42ff776265b8dd7d10c30fd0ca8ca52ff"
+        },
+        {
+          "entry": "external-operands-quality1-structure.json",
+          "bytes": 521,
+          "sha256": "273ecdb80bec6f840a7199b8b5aa14a73931a0231fa38197e5a5b9fe8e69945f"
+        },
+        {
+          "entry": "external-operands-quality1-structure.log",
+          "bytes": 65600,
+          "sha256": "2abf5b2cc3f139df5ef113005753b6fd67458dfbcaa842553c942fd2feb06cd0"
+        },
+        {
+          "entry": "external-operands-quality1.source-freeze.json",
+          "bytes": 800869,
+          "sha256": "af4c4716da8c20d4a89a37ec08e5ced44dc6d115106ec715e006925c4385793f"
+        },
+        {
+          "entry": "external-operands-quality1.structure-report/dependency_edges.csv",
+          "bytes": 78114,
+          "sha256": "ed740dc1ecf2341a73101ad5ce67871b803b4a3f24542bda8269119484a3f6b9"
+        },
+        {
+          "entry": "external-operands-quality1.structure-report/file_metrics.csv",
+          "bytes": 337357,
+          "sha256": "5d8883b9aefe255c59572080cea1ae0e7cbc30ca891594039c1f030e14b0fdac"
+        },
+        {
+          "entry": "external-operands-quality1.structure-report/findings.md",
+          "bytes": 123305,
+          "sha256": "c69947c59b3a0bd5eca73ea05ca23f993ea82b8acb43e895e6191721723ff054"
+        },
+        {
+          "entry": "external-operands-quality1.structure-report/package_metrics.csv",
+          "bytes": 6508,
+          "sha256": "69980c5bd27ba9dfb87970e4a9528bcbca1747425c46a0fe3fa1acab2135cf5b"
+        },
+        {
+          "entry": "external-operands-quality1.structure-report/public_type_duplicates.csv",
+          "bytes": 17441,
+          "sha256": "c0285c9ce113ba438a54a379f2639f0713f3af382fee3872927d838eed647f65"
+        },
+        {
+          "entry": "external-operands-quality2-check.json",
+          "bytes": 355,
+          "sha256": "36c98800ab9e1b8d94ff2f53024ff5708024f0e24d7549ba7a611576aa13f25b"
+        },
+        {
+          "entry": "external-operands-quality2-check.log",
+          "bytes": 109154,
+          "sha256": "ad8636556dadb3ab055d887f8767bd96d6c4961095b225643b1ef5088fac1ede"
+        },
+        {
+          "entry": "external-operands-quality2-clippy.json",
+          "bytes": 356,
+          "sha256": "b2d76ac46ad34bef9401bbff3aadf86fea4260f0c4b13322f67a4aeba448658c"
+        },
+        {
+          "entry": "external-operands-quality2-clippy.log",
+          "bytes": 8843061,
+          "sha256": "1975174c6654d1eaf61a8d7550e4562af401bc636bdcbd4bd6a4d1fa5890c8ac"
+        },
+        {
+          "entry": "external-operands-quality2-new-owner-warnings.json",
+          "bytes": 441,
+          "sha256": "59e1746a3460858e713476c4391c7cb8b0d371383d40a6fcac5227cd097f813d"
+        },
+        {
+          "entry": "external-operands-quality2-structure.json",
+          "bytes": 521,
+          "sha256": "a832f5c7e820fc58ddeba2d76a506e40f4a8dabda26b2050bf2e073d51668387"
+        },
+        {
+          "entry": "external-operands-quality2-structure.log",
+          "bytes": 65600,
+          "sha256": "c03410103d66e7b5df881a6347e1a6b9b692b4ff084a5d5fb98f15f6035ae240"
+        },
+        {
+          "entry": "external-operands-quality2.source-freeze.json",
+          "bytes": 800869,
+          "sha256": "828b5ae71ae20a049561ef2fd4d41cadefba75ef206ca59df733ba0b59ddaad2"
+        },
+        {
+          "entry": "external-operands-quality2.structure-report/dependency_edges.csv",
+          "bytes": 78114,
+          "sha256": "ed740dc1ecf2341a73101ad5ce67871b803b4a3f24542bda8269119484a3f6b9"
+        },
+        {
+          "entry": "external-operands-quality2.structure-report/file_metrics.csv",
+          "bytes": 337357,
+          "sha256": "0da40b51b62f58b3fc536f02366f20e1e25d8c84d1fecaad1024493a1fa98243"
+        },
+        {
+          "entry": "external-operands-quality2.structure-report/findings.md",
+          "bytes": 123305,
+          "sha256": "c69947c59b3a0bd5eca73ea05ca23f993ea82b8acb43e895e6191721723ff054"
+        },
+        {
+          "entry": "external-operands-quality2.structure-report/package_metrics.csv",
+          "bytes": 6508,
+          "sha256": "69980c5bd27ba9dfb87970e4a9528bcbca1747425c46a0fe3fa1acab2135cf5b"
+        },
+        {
+          "entry": "external-operands-quality2.structure-report/public_type_duplicates.csv",
+          "bytes": 17441,
+          "sha256": "c0285c9ce113ba438a54a379f2639f0713f3af382fee3872927d838eed647f65"
+        },
+        {
+          "entry": "external-operands-result-comparison.json",
+          "bytes": 44942,
+          "sha256": "6f29b14e0e87aaf1ea15698faaf2c7f1ad8713bf2b8244c81671f28abdc23d31"
+        },
+        {
+          "entry": "external-operands-reverse1-20261104.catalog.json",
+          "bytes": 2560,
+          "sha256": "512915693d23556f775cc505b83b4f2282cbcbbab62226961b1edda3f35f3e3c"
+        },
+        {
+          "entry": "external-operands-reverse1-20261104.catalog.log",
+          "bytes": 546764,
+          "sha256": "bb125c04ee9cb2a5bcf0deb149b308b74314d492a19daa89e538223332369e55"
+        },
+        {
+          "entry": "external-operands-reverse1-20261104.source-freeze.json",
+          "bytes": 800869,
+          "sha256": "5a016b5b2b8e66ba2154e9cc89b924b9f76b2126bdc4c4c453a47bc245663052"
+        },
+        {
+          "entry": "external-operands-reverse2-20261104.binaries-before.json",
+          "bytes": 54027,
+          "sha256": "bf6090bc9e108d77a1eb16e3e50843909fd4434c60d6786230e0830f94a6a91a"
+        },
+        {
+          "entry": "external-operands-reverse2-20261104.catalog.inventory.json",
+          "bytes": 1962825,
+          "sha256": "42b26dbee7dcb77db6055a03c0e8303169e72cee630b8371b8295368c5d143e5"
+        },
+        {
+          "entry": "external-operands-reverse2-20261104.catalog.json",
+          "bytes": 2558,
+          "sha256": "3a039f9ea9e0c560437c62474859afea5952f1968f2987152823bf07071a7dcd"
+        },
+        {
+          "entry": "external-operands-reverse2-20261104.catalog.log",
+          "bytes": 1446952,
+          "sha256": "9bd0973bb5d3cef4ebacd3e0acb5c631e9de0456419882276c12b3a709657d48"
+        },
+        {
+          "entry": "external-operands-reverse2-20261104.runtime.cases.json",
+          "bytes": 1641447,
+          "sha256": "de3e0f2c7418ba063a8a50897137c70bd9bbe24b222509a3067fb3e1dd9ca3b8"
+        },
+        {
+          "entry": "external-operands-reverse2-20261104.runtime.json",
+          "bytes": 2652,
+          "sha256": "81b77098947eeb98aedcbf10afc3bf379bedf75bc543d086618c744668bbd1f7"
+        },
+        {
+          "entry": "external-operands-reverse2-20261104.runtime.log",
+          "bytes": 5416627,
+          "sha256": "4490e9fa138744ec765bdba5e5d5d26defd6e28ecfc321b697c88ba827e98a13"
+        },
+        {
+          "entry": "external-operands-reverse2-20261104.runtime.terminal-audit.json",
+          "bytes": 2944,
+          "sha256": "a5f24f30a59741a6ed5e2b7c8d546760dc75153fdb58569cab5b293437d0e006"
+        },
+        {
+          "entry": "external-operands-reverse2-20261104.source-freeze.json",
+          "bytes": 800869,
+          "sha256": "63808531b7564cd4a13a5a0b8aa7ea98e156ace8406c208b05eda9ca0d3da106"
+        },
+        {
+          "entry": "external-operands-reverse2-memory-samples.json",
+          "bytes": 1878,
+          "sha256": "7d8ffa59de20a1ad6683a76b57d6c254defc4ed8abef50635ffa43bc5b4505da"
+        },
+        {
+          "entry": "external-operands-source.message.txt",
+          "bytes": 886,
+          "sha256": "de9f19f17ee8060668cf666ea95ae08b874e1ca000eb6dc1705024603054b2a4"
+        },
+        {
+          "entry": "external-operands-source.owned.txt",
+          "bytes": 771,
+          "sha256": "f90a3a6422c45786595835673b970c3c6a147ce6e1717460e0ff4ce794a4b053"
+        },
+        {
+          "entry": "external-operands-source.pathspec",
+          "bytes": 758,
+          "sha256": "3d361e23a4f62c31f92bf5e6d0621b239e5b5ba9136b5671dae9419fbd1cccf8"
+        },
+        {
+          "entry": "external-operands-source.prepared.json",
+          "bytes": 3090,
+          "sha256": "19a7b7e5243cfc5fc16d1ee865f6fdf544d0eeaf28a6e946a0b689161ce396c1"
+        },
+        {
+          "entry": "external-operands-source.reviewed.patch",
+          "bytes": 42112,
+          "sha256": "c14a9889b04bc38eda9c171cf3d22f6460a204d6aacdd387e532c60964cd2fdf"
+        },
+        {
+          "entry": "external-operands-source.verified.json",
+          "bytes": 2492,
+          "sha256": "86ad8cb2ebd47be3280f4b66d0e13e8a1b27637351845bce1bbf718204f9cd0e"
+        },
+        {
+          "entry": "external-operands-status-before.json",
+          "bytes": 4844,
+          "sha256": "ec6ed978bb6a9884bf5292d75000ffdf139c8dac9f9dde2d4778f33d9bd98d2a"
+        },
+        {
+          "entry": "external-operands.graph.json",
+          "bytes": 56839,
+          "sha256": "3186960c4d060dd0756bf9650527a3e2ec961f8d7e2e86ecfba8845ad95535ca"
+        },
+        {
+          "entry": "external-operands.metadata.json",
+          "bytes": 4292497,
+          "sha256": "48645271823339777421ca9bc282033a87ce735e0a549fa31e564e0606b028fb"
+        },
+        {
+          "entry": "external-operands.metadata.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "external-operands.tree.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "external-operands.tree.txt",
+          "bytes": 19459,
+          "sha256": "b366a96025075e8716157c96ded790ee94ea9c0ae84008320c5b6ab7be47018c"
+        },
+        {
+          "entry": "record-external-operands.ps1",
+          "bytes": 8524,
+          "sha256": "a648babb4c55815e3d0ceb9b28acfec1a5ff57924073e8773ab7994bbb1b16bc"
+        },
+        {
+          "entry": "run-action-payload-quality.ps1",
+          "bytes": 1729,
+          "sha256": "ca098c1a52ef14e7f767eec068c3a20e5415e73ee4191d81ccbf9aafa8ac339a"
+        },
+        {
+          "entry": "run-presentation-projection-owner.ps1",
+          "bytes": 4134,
+          "sha256": "b60d753498997e4ba3b809b3721e9190ea1860971c755e6a1648a8e213403c58"
+        },
+        {
+          "entry": "whole-clean-20261104.json",
+          "bytes": 474,
+          "sha256": "5adf4ba0f1341b6ad772899b2795111cdcf42a3ffd5ba61e48565c2e07fffd6f"
+        },
+        {
+          "entry": "whole-clean-20261104.log",
+          "bytes": 43,
+          "sha256": "c6bd17aa06934a41c069a79ef6f216072be0b820b299c1a78893075e6c460c74"
+        },
+        {
+          "entry": "whole-clean-20261104.metadata.json",
+          "bytes": 355182,
+          "sha256": "f3da79a1d678301bd9b2d5662376d8439ddd65775127ef5f0cad90e5799b635d"
+        },
+        {
+          "entry": "whole-clean-20261104.metadata.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "write-verified-evidence-archive.ps1",
+          "bytes": 1658,
+          "sha256": "2207e2b2972bf69375071a89924e544fce651ec47e8c8486675b902805cb143d"
+        }
+      ]
+    },
+    "sourceProbe": {
+      "version": 1,
+      "source": "4a3400586e018b734e9d724c31106027256ce068",
+      "scope": "Independent temporary source compile probe; no runtime execution and no workspace source changes.",
+      "direct": {
+        "receipt": {
+          "version": 1,
+          "base": "4a3400586e018b734e9d724c31106027256ce068",
+          "source": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/optional-external-direct-probe.arcw",
+          "command": [
+            "arcw",
+            "compile",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/optional-external-direct-probe.arcw",
+            "--emit",
+            "plan",
+            "--json"
+          ],
+          "exitCode": 0,
+          "startedAt": "2026-11-04T01:43:25.9265232Z",
+          "finishedAt": "2026-11-04T01:43:29.9376116Z",
+          "scope": "Temporary source probe only; not source-factory acceptance or a runtime execution claim."
+        },
+        "source": "entry cli @entry.main { goto @flow.main }\nflow main() -> Unit {\n    cues.stop()\n    return ()\n}\n"
+      },
+      "alias": {
+        "receipt": {
+          "version": 1,
+          "base": "4a3400586e018b734e9d724c31106027256ce068",
+          "source": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/optional-external-alias-probe.arcw",
+          "command": [
+            "arcw",
+            "compile",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/optional-external-alias-probe.arcw",
+            "--emit",
+            "plan",
+            "--json"
+          ],
+          "exitCode": 1,
+          "startedAt": "2026-11-04T01:43:30.1552777Z",
+          "finishedAt": "2026-11-04T01:43:33.2047123Z",
+          "scope": "Temporary source probe only; not source-factory acceptance or a runtime execution claim."
+        },
+        "source": "entry cli @entry.main { goto @flow.main }\nflow main() -> Unit {\n    let stop = cues.stop\n    stop()\n    return ()\n}\n"
+      },
+      "comparison": {
+        "version": 1,
+        "source": "4a3400586e018b734e9d724c31106027256ce068",
+        "state": "Independent temporary source probe, no workspace source edits or runtime execution",
+        "directExit": 0,
+        "aliasExit": 1,
+        "aliasStage": "runtime-plan-lower",
+        "aliasDiagnostic": "partial function application result cannot use plan type 34 with its admitted projection",
+        "directSource": "optional-external-direct-probe.arcw",
+        "aliasSource": "optional-external-alias-probe.arcw",
+        "reason": "Concrete existing defaulted-parameter alias failure. Use it to repair callable omission transport when continuing source factory integration. Do not reopen accepted Generic Match or required-parameter alias behavior."
+      },
+      "raw": {
+        "path": "docs/implementation/acceptance-evidence/task-rich-text-optional-call-probe.raw.zip",
+        "bytes": 11588,
+        "sha256": "6a700667094734dd187b3185a32526351eebab66a6687d7e9d5faebe666c9f33",
+        "entryDrift": 0,
+        "entries": [
+          {
+            "entry": "optional-external-alias-probe.arcw",
+            "bytes": 116,
+            "sha256": "d5372b3aa0cd40fd5e113d1649e2d228eed4e29d25e417d54339c0b94ab4991a"
+          },
+          {
+            "entry": "optional-external-alias-probe.json",
+            "bytes": 633,
+            "sha256": "4c5a44f9ceec35697199a9b36b92dd0c8f625097779ab637cf2b96dbba38f2c3"
+          },
+          {
+            "entry": "optional-external-alias-probe.log",
+            "bytes": 522,
+            "sha256": "f2b7936865a5c66700f647e0bd673309f533057f929c47cd9519dca562393110"
+          },
+          {
+            "entry": "optional-external-direct-probe.arcw",
+            "bytes": 96,
+            "sha256": "51873e850bc8b42af4e94f536960d771282d4eadcb70814405e51b23b1c204ee"
+          },
+          {
+            "entry": "optional-external-direct-probe.json",
+            "bytes": 635,
+            "sha256": "d25a126d8ea258bda386ba61b2d986bce438c332fac17e3fb076d11853b116e1"
+          },
+          {
+            "entry": "optional-external-direct-probe.log",
+            "bytes": 839,
+            "sha256": "2a52897e763345d4bde9489e98ec8d70683e3be611e1e03e3f65edd8c490662a"
+          },
+          {
+            "entry": "optional-external-direct-probe.plan.json",
+            "bytes": 134515,
+            "sha256": "9d0405699f0da64247994f5f2fef636d8ce746858bb6c195a9c59f668574b0c0"
+          },
+          {
+            "entry": "optional-external-probe-comparison.json",
+            "bytes": 716,
+            "sha256": "d3f934269dcdfe01d60636f744f230dc2505db96df86cc6b1505bcf45ef37ec5"
+          }
+        ]
+      }
+    },
+    "indexing": "Per-case results, complete graphs and coverage rows are retained in the verified raw archive; this index keeps their summaries and exact entry references."
   }
 }
