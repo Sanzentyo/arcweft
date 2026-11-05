@@ -382,9 +382,24 @@ impl ViewCompositor {
         &mut self,
         frame: &mut ViewCompositorFrame<'_>,
     ) -> Result<ViewCompositorStats, ViewCompositorError> {
-        self.pool.reused_this_frame = 0;
+        self.render_scene_region(
+            frame,
+            [0.0, 0.0],
+            [frame.scene.viewport_width(), frame.scene.viewport_height()],
+        )
+    }
+
+    /// Keeps scene coordinates and compositor ancestry while drawing into a
+    /// physical subregion. Group targets retain their own filter/mask extent.
+    pub(crate) fn render_scene_region(
+        &mut self,
+        frame: &mut ViewCompositorFrame<'_>,
+        origin_logical: [f32; 2],
+        logical_extent: [f32; 2],
+    ) -> Result<ViewCompositorStats, ViewCompositorError> {
         let final_target = frame.final_target;
         let root_extent = frame.target_extent.clamped(self.max_extent);
+        self.pool.begin_frame(root_extent, self.format);
         let root = self
             .pool
             .acquire(frame.device, self.format, root_extent, "arcweft-view-root");
@@ -403,10 +418,7 @@ impl ViewCompositor {
         clear_target(state.encoder, &root.view);
 
         for node in state.scene.paint_nodes() {
-            let root_target = root.as_target(
-                [0.0, 0.0],
-                [state.scene.viewport_width(), state.scene.viewport_height()],
-            );
+            let root_target = root.as_target(origin_logical, logical_extent);
             self.render_node(&mut state, node, root_target)?;
         }
 
@@ -1200,6 +1212,14 @@ struct ShaderPassInputs<'a> {
 }
 
 impl ViewRenderTargetPool {
+    fn begin_frame(&mut self, extent: ViewTextureExtent, format: wgpu::TextureFormat) {
+        self.reused_this_frame = 0;
+        // Crop sizes vary with text. Keep reuse within the current root extent,
+        // rather than retaining every historical glyph-sized GPU target.
+        self.available
+            .retain(|target| target.extent == extent && target.format == format);
+    }
+
     fn acquire(
         &mut self,
         device: &wgpu::Device,

@@ -1,9 +1,9 @@
 use super::{
     CaptureAttachment, CaptureCropPolicy, CapturePlan, CaptureRegion, CaptureRequest, CaptureScope,
     PixelRect, PreparedTextAlphaCoverage, PreparedTextCaptureBudget,
-    PreparedTextCaptureBudgetMetric, PreparedTextSelection, PreparedTextSelectionError,
-    RasterCoverage, RasterRegion, RasterScope, SharedOffscreenCaptureError,
-    validate_prepared_text_capture_budget,
+    PreparedTextCaptureBudgetMetric, PreparedTextCoverageExtent, PreparedTextSelection,
+    PreparedTextSelectionError, RasterCoverage, RasterRegion, RasterScope,
+    SharedOffscreenCaptureError, validate_prepared_text_capture_budget,
 };
 use crate::geometry::{
     ChoiceScroll, InteractionVisualState, PreparedFrame, RenderPreferences, RenderScene,
@@ -23,7 +23,7 @@ fn viewport() -> RenderViewport {
     }
 }
 
-fn prepared_frame(viewport: RenderViewport) -> PreparedFrame {
+pub(super) fn prepared_frame(viewport: RenderViewport) -> PreparedFrame {
     SharedFramePlanContext::new()
         .prepare(&RenderScene {
             content_avoidance_regions: Vec::new(),
@@ -57,7 +57,7 @@ fn rendered_color() -> Vec<u8> {
         .collect()
 }
 
-fn prepared_raster_region(
+pub(super) fn prepared_raster_region(
     text_index: u32,
     glyph_index: u32,
     object_id_rgba: [u8; 4],
@@ -68,6 +68,7 @@ fn prepared_raster_region(
         coverage: RasterCoverage::PreparedText(
             PreparedTextSelection::try_new(PreparedTextId::from_index(text_index), [glyph_index])
                 .expect("test selection is valid"),
+            PreparedTextCoverageExtent::Frame,
         ),
     }
 }
@@ -464,6 +465,7 @@ fn prepared_text_capture_budget_counts_padded_rows_for_thin_tall_regions() {
         object_id_rgba: [1, 0, 0, u8::MAX],
         coverage: RasterCoverage::PreparedText(
             PreparedTextSelection::try_new(PreparedTextId::from_index(0), [0]).expect("selection"),
+            PreparedTextCoverageExtent::Frame,
         ),
     };
     let scope = RasterScope::Regions(vec![thin_tall_region]);
@@ -535,6 +537,7 @@ fn prepared_text_capture_budget_reports_checked_arithmetic_overflow() {
         object_id_rgba: [1, 0, 0, u8::MAX],
         coverage: RasterCoverage::PreparedText(
             PreparedTextSelection::try_new(PreparedTextId::from_index(0), [0]).expect("selection"),
+            PreparedTextCoverageExtent::Frame,
         ),
     };
     assert!(matches!(
@@ -563,6 +566,7 @@ fn prepared_text_capture_budget_reports_checked_arithmetic_overflow() {
         object_id_rgba: [1, 0, 0, u8::MAX],
         coverage: RasterCoverage::PreparedText(
             PreparedTextSelection::try_new(PreparedTextId::from_index(0), [0]).expect("selection"),
+            PreparedTextCoverageExtent::Frame,
         ),
     };
     assert!(matches!(

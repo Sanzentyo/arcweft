@@ -1,8 +1,8 @@
 use super::{
     CaptureAttachment, MAX_PREPARED_TEXT_COVERAGE_PASSES,
     MAX_PREPARED_TEXT_COVERAGE_READBACK_BYTES, MAX_PREPARED_TEXT_COVERAGE_RENDER_PIXELS, PixelRect,
-    PreparedTextCaptureBudgetMetric, RasterCoverage, RasterScope, SharedOffscreenCaptureError,
-    intersect, readback::padded_rgba_row_bytes,
+    PreparedTextCaptureBudgetMetric, PreparedTextCoverageExtent, RasterCoverage, RasterScope,
+    SharedOffscreenCaptureError, intersect, readback::padded_rgba_row_bytes,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -52,9 +52,9 @@ pub(super) fn validate_prepared_text_capture_budget(
     let mut render_pixels = 0_u64;
     let mut readback_bytes = 0_u64;
     for region in regions {
-        if !matches!(&region.coverage, RasterCoverage::PreparedText(_)) {
+        let RasterCoverage::PreparedText(_, extent) = &region.coverage else {
             continue;
-        }
+        };
         let rect = intersect(region.rect, crop);
         if rect.is_empty() {
             continue;
@@ -74,7 +74,13 @@ pub(super) fn validate_prepared_text_capture_budget(
             );
         }
 
-        render_pixels = render_pixels.checked_add(frame_pixels).ok_or(
+        let region_render_pixels = match extent {
+            PreparedTextCoverageExtent::Frame => frame_pixels,
+            PreparedTextCoverageExtent::Region => {
+                u64::from(rect.width()) * u64::from(rect.height())
+            }
+        };
+        render_pixels = render_pixels.checked_add(region_render_pixels).ok_or(
             SharedOffscreenCaptureError::PreparedTextCoverageBudgetOverflow {
                 metric: PreparedTextCaptureBudgetMetric::RenderPixels,
             },

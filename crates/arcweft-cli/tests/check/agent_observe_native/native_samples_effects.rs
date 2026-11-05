@@ -41,9 +41,10 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
         workspace_root().join("samples/rich-text-full-grammar.arcw"),
         "entry.rich_text_full_grammar",
     );
-    let json = observe_native_rich_text_layer_report(&source_path);
-
-    assert_native_rich_text_layer_image_has_content(&json);
+    let mut session = NativeMcpDialogueSession::new();
+    session.observe_fixture(&source_path, None, 128);
+    let json = session.advance_to_line("say.full.005");
+    session.assert_rich_text_layer_capture_has_content();
     let dialogue_view = json["objects"]
         .as_array()
         .unwrap()
@@ -62,8 +63,8 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
             .unwrap()
             .iter()
             .find(|run| {
-                run["range"]["start"].as_u64() == Some(27)
-                    && run["range"]["end"].as_u64() == Some(63)
+                run["range"]["start"].as_u64() == Some(28)
+                    && run["range"]["end"].as_u64() == Some(64)
             })
             .expect("vertical_rl display-map run is observed");
     assert_eq!(
@@ -76,17 +77,24 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
         observed_object_rich_text_line(&json, vertical_rl),
         fixture_runtime_line("say.full.005")
     );
-    assert_eq!(vertical_rl["rich_text_ref"]["range"]["start"], 27);
-    assert_eq!(vertical_rl["rich_text_ref"]["range"]["end"], 63);
-    assert!(
-        vertical_rl["bbox"]["height"].as_u64().unwrap() >= 120,
-        "full grammar vertical_rl run should preserve column geometry: {vertical_rl}"
-    );
-    assert!(
-        vertical_rl["bbox"]["width"].as_u64().unwrap() <= 260,
-        "full grammar vertical_rl run should not flatten into a horizontal line: {vertical_rl}"
-    );
-    let first_vertical_cluster = find_rich_text_cluster_object(&json, "吾", 27, 30);
+    assert_eq!(vertical_rl["rich_text_ref"]["range"]["start"], 28);
+    assert_eq!(vertical_rl["rich_text_ref"]["range"]["end"], 64);
+    // The standard DialogueView declares 25px/34px. The current multiline
+    // sample retains its leading LF, shifting these source ranges by one.
+    let catalog: arcweft_agent_protocol::text_context::AgentTextContextCatalog =
+        serde_json::from_value(json["text_contexts"].clone()).unwrap();
+    let (context, _) = checked_observed_text_element(&catalog, vertical_rl);
+    let layout = catalog.resolve(&context).unwrap().content.layout();
+    let run = layout
+        .runs
+        .iter()
+        .find(|run| run.source_range == arcweft_text_model::RichTextRange::new(28, 64))
+        .unwrap();
+    assert_eq!(run.style.font_size_milli(), 25_000);
+    assert_eq!(run.style.line_height_milli(), 34_000);
+    assert_eq!(vertical_rl["bbox"]["height"], 101);
+    assert_eq!(vertical_rl["bbox"]["width"], 152);
+    let first_vertical_cluster = find_rich_text_cluster_object(&json, "吾", 28, 31);
     assert_eq!(
         first_vertical_cluster["rich_text_ref"]["kind"],
         "glyph_cluster"
@@ -96,8 +104,8 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
         observed_object_rich_text_line(&json, first_vertical_cluster),
         fixture_runtime_line("say.full.005")
     );
-    assert_eq!(first_vertical_cluster["bbox"]["width"], 30);
-    assert_eq!(first_vertical_cluster["bbox"]["height"], 30);
+    assert_eq!(first_vertical_cluster["bbox"]["width"], 26);
+    assert_eq!(first_vertical_cluster["bbox"]["height"], 26);
     assert!(
         first_vertical_cluster["capture_refs"]["captures"]
             .as_array()
@@ -108,17 +116,11 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
                     .as_str()
                     .is_some_and(|uri| uri.ends_with(".mask.rgba")))
     );
-    let first_vertical_cluster_mask_uri =
-        rich_text_object_capture_uri(first_vertical_cluster, "mask", "application/octet-stream");
-    assert_agent_read_uri_object_image_has_content(
-        &source_path,
-        first_vertical_cluster_mask_uri,
-        first_vertical_cluster["id"].as_str().unwrap(),
-        30,
-        30,
-    );
+    // Positive raw Mask/ObjectId reads of this exact progressed native frame
+    // live in progressed_full_grammar_frame_keeps_issued_cluster_mask_and_object_id_readback.
+    // MCP publication separately withholds those non-color attachments.
 
-    let sideways_latin = find_rich_text_cluster_object(&json, "ABC", 51, 54);
+    let sideways_latin = find_rich_text_cluster_object(&json, "ABC", 52, 55);
     assert_eq!(
         sideways_latin["rich_text_ref"]["orientation"],
         "sideways_cw"
@@ -135,14 +137,15 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
         observed_object_rich_text_line(&json, vertical_lr),
         fixture_runtime_line("say.full.005")
     );
-    assert_eq!(vertical_lr["rich_text_ref"]["range"]["start"], 66);
-    assert_eq!(vertical_lr["rich_text_ref"]["range"]["end"], 71);
+    assert_eq!(vertical_lr["rich_text_ref"]["range"]["start"], 67);
+    assert_eq!(vertical_lr["rich_text_ref"]["range"]["end"], 72);
     assert!(
         vertical_lr["bbox"]["height"].as_u64().unwrap()
             > vertical_lr["bbox"]["width"].as_u64().unwrap(),
         "short vertical_lr sample run should be visibly vertical: {vertical_lr}"
     );
-    assert_full_grammar_sample_vertical_lr_cluster_readback(&source_path, &json);
+    assert_full_grammar_sample_vertical_lr_cluster_geometry(&json);
+    session.close();
 }
 
 #[test]
@@ -1128,41 +1131,24 @@ fn assert_windows_fonts_sample_vertical_cluster_readback(
     }
 }
 
-fn assert_full_grammar_sample_vertical_lr_cluster_readback(
-    source_path: &NativeCliFixture,
-    json: &serde_json::Value,
-) {
-    let first_vertical_lr_cluster = find_rich_text_cluster_object(json, "縦", 66, 69);
+fn assert_full_grammar_sample_vertical_lr_cluster_geometry(json: &serde_json::Value) {
+    let first_vertical_lr_cluster = find_rich_text_cluster_object(json, "縦", 67, 70);
     assert_eq!(
         first_vertical_lr_cluster["rich_text_ref"]["kind"],
         "glyph_cluster"
     );
     assert_eq!(first_vertical_lr_cluster["rich_text_ref"]["source"], "text");
-    assert_eq!(first_vertical_lr_cluster["bbox"]["width"], 30);
-    assert_eq!(first_vertical_lr_cluster["bbox"]["height"], 30);
-    let first_vertical_lr_cluster_mask_uri = rich_text_object_capture_uri(
+    assert_eq!(first_vertical_lr_cluster["bbox"]["width"], 26);
+    assert_eq!(first_vertical_lr_cluster["bbox"]["height"], 26);
+    rich_text_object_capture_uri(
         first_vertical_lr_cluster,
         "mask",
         "application/octet-stream",
     );
-    assert_agent_read_uri_object_image_has_content(
-        source_path,
-        first_vertical_lr_cluster_mask_uri,
-        first_vertical_lr_cluster["id"].as_str().unwrap(),
-        30,
-        30,
-    );
-    let first_vertical_lr_cluster_object_id_uri = rich_text_object_capture_uri(
+    rich_text_object_capture_uri(
         first_vertical_lr_cluster,
         "object_id",
         "application/octet-stream",
-    );
-    assert_agent_read_uri_object_image_has_content(
-        source_path,
-        first_vertical_lr_cluster_object_id_uri,
-        first_vertical_lr_cluster["id"].as_str().unwrap(),
-        30,
-        30,
     );
 }
 

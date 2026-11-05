@@ -96,6 +96,100 @@ impl NativeMcpDialogueSession {
         serde_json::from_str(text).unwrap()
     }
 
+    fn observe_fixture(&mut self, fixture: &NativeCliFixture, sample: Option<f32>, max_ops: u64) {
+        let mut args = serde_json::json!({
+            "source": fixture.path, "entry": fixture.entry.public_label().as_str(),
+            "page": 0, "steps": 4, "max_ops": max_ops,
+            "viewport_width": 1280, "viewport_height": 720,
+        });
+        if let Some(sample) = sample {
+            args["capture_time"] = serde_json::json!(sample);
+        }
+        self.tool("arcweft.observe", args);
+    }
+
+    /// Progress the real session; observing again would restart the source.
+    fn advance_to_line(&mut self, line: &str) -> serde_json::Value {
+        for _ in 0..80 {
+            let report = self.observation();
+            assert!(
+                report["diagnostics"].as_array().unwrap().is_empty(),
+                "{report}"
+            );
+            if report["objects"].as_array().unwrap().iter().any(|object| {
+                object["role"] == "dialogue_view"
+                    && object["content"]["kind"] == "rich_text"
+                    && object["rich_text_ref"].is_null()
+                    && observed_object_rich_text_line(&report, object) == fixture_runtime_line(line)
+            }) {
+                return report;
+            }
+            if report["actions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|action| action["action"] == "advance_text" && action["enabled"] == true)
+            {
+                self.tool("arcweft.action", serde_json::json!({"kind":"advance_text"}));
+            } else {
+                self.tool(
+                    "arcweft.session.step_frames",
+                    serde_json::json!({"count":4}),
+                );
+            }
+        }
+        panic!("bounded native dialogue progression did not reach {line}");
+    }
+
+    fn image_resource(&mut self, uri: &str) -> (serde_json::Value, Vec<u8>) {
+        let read = self.rpc(
+            "resources/read",
+            serde_json::json!({"uri":uri, "max_privacy":"secret"}),
+        );
+        let [resource] = read["contents"].as_array().unwrap().as_slice() else {
+            panic!("one issued image resource: {read}");
+        };
+        assert_eq!(resource["uri"], uri);
+        arcweft_agent_protocol::image::AgentImageMetadata::decode_json(
+            &serde_json::to_vec(&resource["image"]).unwrap(),
+        )
+        .expect("actual MCP image metadata retains its admitted context");
+        let bytes = general_purpose::STANDARD
+            .decode(resource["blob"].as_str().unwrap())
+            .unwrap();
+        (resource.clone(), bytes)
+    }
+
+    fn capture(&mut self, arguments: serde_json::Value) -> (serde_json::Value, Vec<u8>) {
+        let result = self.tool("arcweft.capture", arguments);
+        let metadata = mcp_content_metadata(&result["content"][0], "issued MCP capture metadata");
+        let uri = metadata["uri"].as_str().unwrap();
+        let (resource, bytes) = self.image_resource(uri);
+        assert_eq!(resource["image"], metadata["image"]);
+        (resource, bytes)
+    }
+
+    fn assert_rich_text_layer_capture_has_content(&mut self) {
+        let (resource, bytes) = self.capture(serde_json::json!({
+            "layer":"dialogue.rich_text", "page":0, "format":"png",
+        }));
+        let image = &resource["image"];
+        assert_eq!(image["kind"], "color");
+        assert_eq!(image["renderer"], "native");
+        assert_eq!(image["scope"]["kind"], "layer");
+        assert_eq!(image["scope"]["id"], "dialogue.rich_text");
+        assert_eq!(image["composition"], "masked_framebuffer_crop");
+        assert_eq!(resource["mimeType"], "image/png");
+        assert!(image["content_pixels"].as_u64().unwrap() > 0);
+        assert_eq!(
+            png_dimensions(&bytes),
+            Some((
+                image["width"].as_u64().unwrap().try_into().unwrap(),
+                image["height"].as_u64().unwrap().try_into().unwrap(),
+            ))
+        );
+    }
+
     fn close(mut self) {
         self.input.take();
         let status = self.child.wait().expect("finish native MCP fixture");

@@ -502,7 +502,43 @@ fn retain_prepared_text_node(
     }
 }
 
+fn text_coverage_is_local(
+    node: &ViewPaintNode,
+    primitives: &[ViewPrimitive],
+    selected: PreparedTextId,
+) -> Option<bool> {
+    match node {
+        ViewPaintNode::Direct(context) => {
+            let start = usize::try_from(context.primitive_range.start).ok()?;
+            let end = usize::try_from(context.primitive_range.end).ok()?;
+            primitives.get(start..end)?.iter().any(|primitive| {
+                matches!(primitive, ViewPrimitive::Text(text) if text.text == selected)
+            }).then_some(true)
+        }
+        ViewPaintNode::Group(group) => {
+            let mut children = group
+                .children
+                .iter()
+                .filter_map(|node| text_coverage_is_local(node, primitives, selected));
+            let first = children.next()?;
+            Some(
+                first
+                    && children.all(|local| local)
+                    && group.effects.allows_cropped_text_coverage(),
+            )
+        }
+    }
+}
+
 impl ViewScene {
+    /// Only ancestry that actually paints this text can restrict its coverage
+    /// target. Unrelated groups are removed by the same coverage projection.
+    pub(crate) fn allows_cropped_text_coverage(&self, selected: PreparedTextId) -> bool {
+        self.paint_nodes
+            .iter()
+            .filter_map(|node| text_coverage_is_local(node, &self.primitives, selected))
+            .all(|local| local)
+    }
     pub fn new(viewport_width: f32, viewport_height: f32) -> Self {
         Self {
             viewport_width,
@@ -806,6 +842,8 @@ mod tests {
             ]),
         ));
 
+        assert!(scene.allows_cropped_text_coverage(selected));
+        assert!(!scene.allows_cropped_text_coverage(unrelated));
         scene.retain_prepared_text_coverage_paint(selected);
 
         let [ViewPaintNode::Group(root)] = scene.paint_nodes() else {

@@ -382,6 +382,16 @@ impl ViewCompositingGroup {
 }
 
 impl ViewCompositingEffects {
+    /// Cropped coverage preserves local opacity/blending. Filters, masks and
+    /// shadows retain the full target coordinate space and neighboring samples.
+    pub(crate) fn allows_cropped_text_coverage(&self) -> bool {
+        self.filters.is_empty()
+            && self.backdrop_filters.is_empty()
+            && self.box_shadows.is_empty()
+            && self.masks.is_empty()
+            && self.clip_path.is_none()
+    }
+
     pub fn is_identity(&self) -> bool {
         self.opacity_is_identity()
             && self.filters.is_empty()

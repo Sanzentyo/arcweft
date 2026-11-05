@@ -575,6 +575,40 @@ fn paired_body_capture_fixture() -> PreparedFrame {
     body_capture_text_fixture("――")
 }
 
+#[test]
+fn blank_prepared_glyphs_keep_advance_without_coverage_work() {
+    let frame = body_capture_text_fixture("A A");
+    let owner = &frame.prepared_text_owners()[0];
+    let item = frame.text.get(owner.text).unwrap();
+    let mut ink = Vec::new();
+    let mut blank = Vec::new();
+    for (index, glyph) in item.glyphs.iter().enumerate() {
+        let selection =
+            PreparedTextSelection::try_new(owner.text, [u32::try_from(index).unwrap()]).unwrap();
+        assert!(text_paint_is_visible(&item.paint.glyphs[index]));
+        if glyph.source_range == RichTextRange::new(1, 2) {
+            assert!(glyph.advance.width > 0.0 || glyph.advance.height > 0.0);
+            assert!(glyph.ink_bounds.width == 0.0 || glyph.ink_bounds.height == 0.0);
+            assert!(!player_prepared_text_selection_is_visible(
+                &frame, &selection
+            ));
+            blank.push(u32::try_from(index).unwrap());
+        } else {
+            assert!(player_prepared_text_selection_is_visible(
+                &frame, &selection
+            ));
+            ink.push(u32::try_from(index).unwrap());
+        }
+    }
+    assert_eq!(blank.len(), 1);
+    assert_eq!(ink.len(), 2);
+    ink.extend(blank);
+    assert!(player_prepared_text_selection_is_visible(
+        &frame,
+        &PreparedTextSelection::try_new(owner.text, ink).unwrap(),
+    ));
+}
+
 fn body_capture_text_fixture(text: &str) -> PreparedFrame {
     let mut display = super::super::super::tests::test_line_display_frame();
     display.text = text.to_owned();

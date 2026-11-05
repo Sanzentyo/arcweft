@@ -499,8 +499,15 @@ fn player_prepared_text_selection_is_visible(
     selection.glyph_indices().iter().copied().any(|index| {
         usize::try_from(index)
             .ok()
-            .and_then(|index| item.paint.glyphs.get(index))
-            .is_some_and(text_paint_is_visible)
+            .and_then(|index| item.glyphs.get(index).zip(item.paint.glyphs.get(index)))
+            .is_some_and(|(glyph, paint)| {
+                // A space can retain positive advance/selection bounds while
+                // its prepared raster has no ink. It cannot stamp alpha or an
+                // object ID, so it needs no independent coverage render.
+                glyph.ink_bounds.width > 0.0
+                    && glyph.ink_bounds.height > 0.0
+                    && text_paint_is_visible(paint)
+            })
     })
 }
 

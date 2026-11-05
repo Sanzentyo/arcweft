@@ -1,3 +1,4 @@
+mod coverage;
 mod prepared_text;
 mod view_text;
 
@@ -197,13 +198,19 @@ impl SharedRenderer {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        target: &wgpu::TextureView,
+        target: ViewCompositorTarget<'_>,
         frame: &PreparedFrame,
     ) -> Result<(), SharedRendererError> {
+        if target.origin_logical != [0.0, 0.0]
+            || target.extent.width != frame.viewport.physical_width
+            || target.extent.height != frame.viewport.physical_height
+        {
+            return self.render_coverage_region_to_view(device, queue, target, frame);
+        }
         let submission = self.prepare_to_view_with_clear(
             device,
             queue,
-            target,
+            target.view,
             frame,
             wgpu::Color::TRANSPARENT,
         )?;

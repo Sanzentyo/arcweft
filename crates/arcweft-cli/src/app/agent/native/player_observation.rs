@@ -73,6 +73,9 @@ use arcweft_runtime_host::NativeTaskDispatch;
 use arcweft_text_model::{Milli, RichTextParam};
 use arcweft_tooling::runtime_diagnostic::project_runtime_assertion_fault;
 use capture::capture_player_observation_frame;
+
+#[cfg(test)]
+mod full_grammar;
 use std::collections::BTreeMap;
 use std::path::Path;
 

@@ -20,8 +20,9 @@ use readback::{padded_rgba_row_bytes, readback_texture_alpha_rect, readback_text
 /// encoding semantic identity into filtered color channels.
 pub const MAX_PREPARED_TEXT_COVERAGE_PASSES: u64 = 128;
 
-/// Maximum full-frame renderer work for prepared-text coverage, measured in
-/// physical pixels. This is exactly 32 Full HD pass equivalents.
+/// Maximum cumulative root target area for prepared-text coverage, measured in
+/// physical pixels. This is exactly 32 Full HD pass equivalents. Nonlocal paint
+/// retains a full-frame root; local glyph paint uses its physical crop.
 pub const MAX_PREPARED_TEXT_COVERAGE_RENDER_PIXELS: u64 = 32 * 1_920 * 1_080;
 
 /// Maximum cumulative prepared-text coverage readback in one capture.
@@ -245,7 +246,7 @@ pub struct SharedOffscreenCapture {
 pub enum PreparedTextCaptureBudgetMetric {
     /// Independent shared-renderer coverage passes.
     Passes,
-    /// Full-frame physical pixels submitted to the renderer.
+    /// Physical root target pixels submitted to the renderer.
     RenderPixels,
     /// Cropped RGBA8 bytes transferred from GPU textures.
     ReadbackBytes,
@@ -397,7 +398,8 @@ impl SharedOffscreenCapture {
     /// Renders the canonical color frame once and derives the requested
     /// attachments from its pixels and ordered region geometry. Each
     /// prepared-text region receives an independent transparent shared-renderer
-    /// pass and cropped readback. Coverage is stamped immediately in painter
+    /// pass and cropped readback. Local glyph paint uses a crop-sized target;
+    /// nonlocal item/ancestor effects retain full-frame input. Coverage is stamped immediately in painter
     /// order, keeping memory bounded to one coverage crop without encoding
     /// semantic IDs into filtered RGB.
     pub fn capture(
@@ -433,22 +435,25 @@ impl SharedOffscreenCapture {
         for (region_index, region) in regions.iter().enumerate() {
             match &region.coverage {
                 RasterCoverage::Bounds => plan.stamp_bounds_region(&mut capture, region),
-                RasterCoverage::PreparedText(selection) if plan.needs_debug_coverage() => {
+                RasterCoverage::PreparedText(selection, extent) if plan.needs_debug_coverage() => {
                     let rect = intersect(region.rect, plan.crop);
                     if rect.is_empty() {
                         continue;
                     }
+                    let render_rect = match extent {
+                        PreparedTextCoverageExtent::Frame => PixelRect::full(width, height),
+                        PreparedTextCoverageExtent::Region => rect,
+                    };
                     let coverage = self.render_prepared_text_coverage(
                         frame,
                         region_index,
                         selection,
                         rect,
-                        width,
-                        height,
+                        render_rect,
                     )?;
                     plan.stamp_prepared_text_region(&mut capture, region_index, region, &coverage)?;
                 }
-                RasterCoverage::PreparedText(_) => {}
+                RasterCoverage::PreparedText(..) => {}
             }
         }
         Ok(capture)
@@ -460,15 +465,14 @@ impl SharedOffscreenCapture {
         region_index: usize,
         selection: &PreparedTextSelection,
         rect: PixelRect,
-        width: u32,
-        height: u32,
+        render_rect: PixelRect,
     ) -> Result<PreparedTextAlphaCoverage, SharedOffscreenCaptureError> {
         let attachment_frame = prepared_text_coverage_frame(frame, selection);
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("arcweft-shared-offscreen-prepared-text-coverage"),
             size: wgpu::Extent3d {
-                width,
-                height,
+                width: render_rect.width(),
+                height: render_rect.height(),
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -479,16 +483,38 @@ impl SharedOffscreenCapture {
             view_formats: &[],
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let scale = frame.viewport.physical_scale_factor_f32();
         self.renderer.render_coverage_to_view(
             &self.device,
             &self.queue,
-            &view,
+            crate::view_compositor::ViewCompositorTarget {
+                texture: &texture,
+                view: &view,
+                extent: crate::view_effects::ViewTextureExtent::new(
+                    render_rect.width(),
+                    render_rect.height(),
+                ),
+                origin_logical: [
+                    render_rect.left.to_f32().unwrap() / scale,
+                    render_rect.top.to_f32().unwrap() / scale,
+                ],
+                logical_extent: [
+                    render_rect.width().to_f32().unwrap() / scale,
+                    render_rect.height().to_f32().unwrap() / scale,
+                ],
+            },
             &attachment_frame,
         )?;
+        let read_rect = PixelRect {
+            left: rect.left - render_rect.left,
+            top: rect.top - render_rect.top,
+            right: rect.right - render_rect.left,
+            bottom: rect.bottom - render_rect.top,
+        };
         Ok(PreparedTextAlphaCoverage {
             region_index,
             rect,
-            alpha: readback_texture_alpha_rect(&self.device, &self.queue, &texture, rect)?,
+            alpha: readback_texture_alpha_rect(&self.device, &self.queue, &texture, read_rect)?,
         })
     }
 }
@@ -543,7 +569,15 @@ struct RasterRegion {
 #[derive(Clone, Debug)]
 enum RasterCoverage {
     Bounds,
-    PreparedText(PreparedTextSelection),
+    PreparedText(PreparedTextSelection, PreparedTextCoverageExtent),
+}
+
+/// Item-wide shader/filter passes sample outside a crop. Glyph-only paint
+/// keeps the same raster scale while rendering directly into its region.
+#[derive(Clone, Copy, Debug)]
+enum PreparedTextCoverageExtent {
+    Region,
+    Frame,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -736,7 +770,7 @@ impl CapturePlan {
             for (region_index, region) in regions.iter().enumerate() {
                 match &region.coverage {
                     RasterCoverage::Bounds => self.stamp_bounds_region(&mut capture, region),
-                    RasterCoverage::PreparedText(_) if self.needs_debug_coverage() => {
+                    RasterCoverage::PreparedText(..) if self.needs_debug_coverage() => {
                         let rect = intersect(region.rect, self.crop);
                         if rect.is_empty() {
                             continue;
@@ -748,7 +782,7 @@ impl CapturePlan {
                             Self::prepared_text_coverage(region_index, prepared_text_coverages)?,
                         )?;
                     }
-                    RasterCoverage::PreparedText(_) => {}
+                    RasterCoverage::PreparedText(..) => {}
                 }
             }
         }
@@ -783,7 +817,7 @@ impl CapturePlan {
             .enumerate()
             .filter_map(|(region_index, region)| match &region.coverage {
                 RasterCoverage::Bounds => None,
-                RasterCoverage::PreparedText(selection) => Some((region_index, selection)),
+                RasterCoverage::PreparedText(selection, _) => Some((region_index, selection)),
             })
     }
 
@@ -956,6 +990,7 @@ fn rasterize_regions(
     let needs_object_id = attachments.contains(&CaptureAttachment::ObjectId);
     let mut ids = HashSet::with_capacity(regions.len());
     let mut object_ids = HashSet::with_capacity(regions.len());
+    let mut coverage_extents = std::collections::BTreeMap::new();
     regions
         .iter()
         .map(|region| {
@@ -1009,7 +1044,21 @@ fn rasterize_regions(
                             glyph_count: item.glyphs.len(),
                         });
                     }
-                    RasterCoverage::PreparedText(selection.clone())
+                    let extent = *coverage_extents.entry(selection.text()).or_insert_with(|| {
+                        if item.paint.offscreen_passes.is_empty()
+                            && item.paint.post_processes.is_empty()
+                            && frame.view_scenes().iter().all(|prepared| {
+                                prepared
+                                    .scene
+                                    .allows_cropped_text_coverage(selection.text())
+                            })
+                        {
+                            PreparedTextCoverageExtent::Region
+                        } else {
+                            PreparedTextCoverageExtent::Frame
+                        }
+                    });
+                    RasterCoverage::PreparedText(selection.clone(), extent)
                 }
             };
             Ok(RasterRegion {
@@ -1168,3 +1217,6 @@ fn rgba_len(width: u32, height: u32) -> Result<usize, SharedOffscreenCaptureErro
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod crop_tests;

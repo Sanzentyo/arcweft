@@ -86,6 +86,15 @@ captures. `arcweft.session.info` reports `shared_capture_session_active`;
 subsequent captures derive from the same retained Color/ObjectId/Mask data.
 Reads of retained image resources return their original bytes and metadata.
 
+Prepared-text coverage keeps the original painter graph, physical raster scale
+and frame coordinates. Local glyph paint renders into its physical crop;
+item-wide effects and ancestor filters, shadows, masks or clip paths retain the
+full frame for neighboring samples and target-relative coordinates. Blank
+glyphs retain their layout advance and selection bounds without an independent
+alpha pass. Existing pass, cumulative root-target pixel and padded readback
+limits are checked before coverage work; a smaller target does not increase
+those limits.
+
 Frame preparation distinguishes live playback from a visual sample. Live
 playback uses each dialogue stage's retained logical elapsed time. A sample
 evaluates reveal and Fx at the requested stage-local elapsed time while keeping
