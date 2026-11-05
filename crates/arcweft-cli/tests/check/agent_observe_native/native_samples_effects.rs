@@ -1524,60 +1524,70 @@ fn count_soft_glow_blue_pixels(rgba: &[u8]) -> usize {
 
 #[test]
 fn agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures() {
-    let cases = [
-        (
-            "windows-fonts",
-            NativeCliFixture::checked_in(
-                workspace_root().join("samples/rich-text-windows-fonts.arcw"),
-                "entry.windows_font_showcase",
-            ),
-            "entry.windows_font_showcase",
-            "縦書きの見本。吾輩は猫である。ABC 123 2026。春夏秋冬、朝昼夕夜、天地左右。",
-            None,
-            500,
-        ),
-        (
-            "full-grammar",
-            NativeCliFixture::checked_in(
-                workspace_root().join("samples/rich-text-full-grammar.arcw"),
-                "entry.rich_text_full_grammar",
-            ),
-            "entry.rich_text_full_grammar",
-            "吾輩は猫である。ABC 123 2026",
-            Some(120),
-            260,
-        ),
-    ];
     let dir = temp_dir("agent-observe-native-sample-full-frame-png");
-    for (label, source_path, entry_source_body, run_text, min_height, max_width) in cases {
-        let png_path = dir.join(format!("{label}-full-frame.png"));
-        let entry = EntryRuntimeId::from_source_entity_body(entry_source_body)
-            .expect("sample full-frame entry ID is valid");
-        let json = capture_native_png_report(&source_path, &entry, &png_path);
-        assert_native_capture_has_content(&json, &format!("{label}-full-frame.png"));
-        let run = find_rich_text_run_object(&json, run_text);
-        if let Some(min_height) = min_height {
-            assert!(
-                run["bbox"]["height"].as_u64().unwrap() >= min_height,
-                "{label} full-frame PNG report should preserve vertical run height: {run}"
-            );
-        } else {
-            assert_windows_fonts_sample_vertical_run_geometry(&json);
-        }
-        assert!(
-            run["bbox"]["width"].as_u64().unwrap() <= max_width,
-            "{label} full-frame PNG report should preserve column-shaped width: {run}"
-        );
-        assert!(
-            json["images"][0]["content_bbox"]["height"]
-                .as_u64()
-                .is_some_and(|height| height > 0),
-            "{label} full-frame PNG should contain rendered native pixels: {json}"
-        );
-    }
+    let windows = NativeCliFixture::checked_in(
+        workspace_root().join("samples/rich-text-windows-fonts.arcw"),
+        "entry.windows_font_showcase",
+    );
+    let png_path = dir.join("windows-fonts-full-frame.png");
+    let json = capture_native_png_report(&windows, &windows.entry, &png_path);
+    assert_native_capture_has_content(&json, "windows-fonts-full-frame.png");
+    assert_windows_fonts_sample_vertical_run_geometry(&json);
+    let run = find_rich_text_run_object(
+        &json,
+        "縦書きの見本。吾輩は猫である。ABC 123 2026。春夏秋冬、朝昼夕夜、天地左右。",
+    );
+    assert!(run["bbox"]["width"].as_u64().unwrap() <= 500);
+    assert!(
+        json["images"][0]["content_bbox"]["height"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+
+    let grammar = NativeCliFixture::checked_in(
+        workspace_root().join("samples/rich-text-full-grammar.arcw"),
+        "entry.rich_text_full_grammar",
+    );
+    // The one-shot viewport contains the first active line. These explicit
+    // actions exercise the original 4-step/64-op configuration to line005.
+    let stored = grammar.capture_progressed_viewport(&dir, 13);
+    let run = find_rich_text_run_object(&stored.report, "吾輩は猫である。ABC 123 2026");
+    assert_eq!(
+        observed_object_rich_text_line(&stored.report, run),
+        fixture_runtime_line("say.full.005")
+    );
+    assert_eq!(run["rich_text_ref"]["range"]["start"], 28);
+    assert_eq!(run["rich_text_ref"]["range"]["end"], 64);
+    assert_eq!(run["bbox"]["width"], 152);
+    assert_eq!(run["bbox"]["height"], 101);
+    let image = serde_json::to_value(&stored.image).unwrap();
+    assert_eq!(image["renderer"], "native");
+    assert_eq!(image["kind"], "color");
+    assert_eq!(image["scope"]["kind"], "viewport");
+    assert_eq!(image["composition"], "framebuffer");
+    assert_eq!(image["width"], 1280);
+    assert_eq!(image["height"], 720);
+    assert!(image["content_pixels"].as_u64().unwrap() > 0);
+    assert!(image["content_bbox"]["height"].as_u64().unwrap() > 0);
+    assert_eq!(png_dimensions(&stored.bytes), Some((1280, 720)));
+    let decoded = arcweft_image::decode_image_bytes(
+        arcweft_image::ImageFormat::Png,
+        &stored.bytes,
+        arcweft_image::ImageDecodeOptions::default(),
+    )
+    .unwrap();
+    let [frame] = decoded.frames() else {
+        panic!("one actual viewport frame")
+    };
+    assert!(
+        frame
+            .rgba()
+            .chunks_exact(4)
+            .any(|pixel| pixel[..3].iter().any(|channel| *channel != 0))
+    );
     fs::remove_dir_all(&dir).expect("remove temp native sample full-frame dir");
 }
-
 #[test]
 fn agent_observe_shared_renderer_writes_dialogue_layer_masked_framebuffer_crop() {
     let path = temp_authored_native_cli_fixture(
