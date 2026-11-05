@@ -1130,7 +1130,7 @@ pub(super) fn agent_repl_query(
         rag_context_packs: Vec::new(),
         project_context: None,
         runtime: None,
-        observe_options: None,
+        frame_request: None,
         repl_session: None,
         repl_tier_handler: arcweft_agent_repl::ReplTierCommandHandler::default(),
     };

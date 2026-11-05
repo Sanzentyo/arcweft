@@ -257,7 +257,7 @@ pub(super) fn agent_mcp_run_observation(
     let mut runtime = native_player_runtime_state_for_options(&options, adapter_registrars)
         .map_err(|_| "failed to initialize player-backed MCP observe runtime".to_owned())?;
     let mut observed =
-        observe_native_player_runtime(&mut runtime, &options, BundleStepInput::default())
+        observe_native_player_runtime(&mut runtime, &(&options).into(), BundleStepInput::default())
             .map_err(|_| "failed to run player-backed MCP observe runtime".to_owned())?;
     let image_output =
         agent_observe_image_output(&mut observed.report, &options, &observed.image_frames)
@@ -267,26 +267,25 @@ pub(super) fn agent_mcp_run_observation(
         image_output,
         image_frames: observed.image_frames,
         runtime,
-        options,
+        frame_request: super::player_observation::NativeFrameObservationRequest::for_progress(
+            &options,
+        ),
     })
 }
 
 pub(super) fn agent_mcp_observe_runtime(
     runtime: &mut NativeAgentRuntimeState,
-    options: &AgentObserveOptions,
+    options: &super::player_observation::NativeFrameObservationRequest,
     step_input: BundleStepInput,
     _adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<AgentMcpFrame, String> {
-    let mut observed = observe_native_player_runtime(runtime, options, step_input)
+    let observed = observe_native_player_runtime(runtime, options, step_input)
         .map_err(|_| "failed to run player-backed MCP observe runtime".to_owned())?;
-    let image_output =
-        agent_observe_image_output(&mut observed.report, options, &observed.image_frames)
-            .map_err(|_| "failed to build MCP action image output".to_owned())?;
-    let resources = agent_observe_list_resources(&observed.report, image_output.as_ref())
+    let resources = agent_observe_list_resources(&observed.report, None)
         .map_err(|_| "failed to build MCP action resources".to_owned())?;
     Ok(AgentMcpFrame {
         report: observed.report,
-        image_output,
+        image_output: None,
         image_frames: observed.image_frames,
         resources,
     })

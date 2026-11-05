@@ -45,6 +45,24 @@ pub(super) enum AgentCaptureScope {
     Object(String),
 }
 
+impl AgentCaptureScope {
+    /// A scope query reports its missing target without selecting another crop.
+    pub(super) fn missing_observed_target<'a>(
+        &'a self,
+        layers: &[AgentObservedLayer],
+        views: &[AgentObservedView],
+        objects: &[AgentObservedObject],
+    ) -> Option<(&'static str, &'a str)> {
+        let (kind, id, present) = match self {
+            Self::Viewport => return None,
+            Self::View(id) => ("view", id, views.iter().any(|value| &value.id == id)),
+            Self::Layer(id) => ("layer", id, layers.iter().any(|value| &value.id == id)),
+            Self::Object(id) => ("object", id, objects.iter().any(|value| &value.id == id)),
+        };
+        (!present).then_some((kind, id.as_str()))
+    }
+}
+
 pub(super) fn agent_capture_request_from_uri(
     report: &AgentObservationReport,
     uri: &str,

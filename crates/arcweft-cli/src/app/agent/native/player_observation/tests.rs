@@ -203,24 +203,12 @@ fn player_semantic_actions_become_agent_action_targets() {
 fn missing_requested_capture_scopes_report_structured_diagnostics() {
     let mut diagnostics = Vec::new();
 
-    push_missing_capture_scope_diagnostics(
-        &mut diagnostics,
-        9,
-        [
-            Some(RequestedCaptureScope {
-                kind: RequestedCaptureScopeKind::View,
-                id: "view.HiddenPanel",
-            }),
-            Some(RequestedCaptureScope {
-                kind: RequestedCaptureScopeKind::Object,
-                id: "button.hidden",
-            }),
-            None,
-        ],
-        &[],
-        &[],
-        &[],
-    );
+    for scope in [
+        super::super::AgentCaptureScope::View("view.HiddenPanel".to_owned()),
+        super::super::AgentCaptureScope::Object("button.hidden".to_owned()),
+    ] {
+        push_missing_requested_scope_diagnostic(&mut diagnostics, 9, &scope, &[], &[], &[]);
+    }
 
     assert_eq!(diagnostics.len(), 2);
     assert!(diagnostics.iter().all(|diagnostic| {
@@ -288,17 +276,10 @@ fn hidden_image_object_capture_scope_reports_missing_scope_diagnostic() {
             .into_iter()
             .collect::<Vec<_>>();
     let mut diagnostics = Vec::new();
-    push_missing_capture_scope_diagnostics(
+    push_missing_requested_scope_diagnostic(
         &mut diagnostics,
         4,
-        [
-            None,
-            Some(RequestedCaptureScope {
-                kind: RequestedCaptureScopeKind::Object,
-                id: "object.image.image.glass_bg",
-            }),
-            None,
-        ],
+        &super::super::AgentCaptureScope::Object("object.image.image.glass_bg".to_owned()),
         &[],
         &[],
         &objects,
@@ -322,17 +303,10 @@ fn released_image_object_capture_scope_reports_missing_scope_diagnostic() {
     let objects = Vec::new();
     let mut diagnostics = Vec::new();
 
-    push_missing_capture_scope_diagnostics(
+    push_missing_requested_scope_diagnostic(
         &mut diagnostics,
         5,
-        [
-            None,
-            Some(RequestedCaptureScope {
-                kind: RequestedCaptureScopeKind::Object,
-                id: "object.image.image.glass_bg",
-            }),
-            None,
-        ],
+        &super::super::AgentCaptureScope::Object("object.image.image.glass_bg".to_owned()),
         &[],
         &[],
         &objects,

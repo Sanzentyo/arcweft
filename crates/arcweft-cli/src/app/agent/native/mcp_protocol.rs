@@ -1,3 +1,4 @@
+use super::player_observation::NativeFrameObservationRequest;
 use super::repl_cli_command::{
     AgentReplParsedInput, CliReplCommandJsonOptions, CliReplCommandResult,
     cli_repl_command_result_json, cli_repl_protocol_unavailable_result, parse_agent_repl_input,
@@ -67,7 +68,7 @@ pub(super) struct AgentMcpState {
     pub(super) rag_context_packs: Vec<RagContextPack>,
     pub(super) project_context: Option<AgentMcpProjectContext>,
     pub(super) runtime: Option<NativeAgentRuntimeState>,
-    pub(super) observe_options: Option<AgentObserveOptions>,
+    pub(super) frame_request: Option<NativeFrameObservationRequest>,
     pub(super) repl_session: Option<arcweft_agent_repl::ReplSession>,
     pub(super) repl_tier_handler: arcweft_agent_repl::ReplTierCommandHandler,
 }
@@ -224,7 +225,7 @@ pub(super) struct AgentMcpObservation {
     pub(super) image_output: Option<AgentImageOutput>,
     pub(super) image_frames: AgentImageFrameStore,
     pub(super) runtime: NativeAgentRuntimeState,
-    pub(super) options: AgentObserveOptions,
+    pub(super) frame_request: NativeFrameObservationRequest,
 }
 
 pub(super) struct AgentMcpFrame {
@@ -529,7 +530,7 @@ pub(super) fn agent_mcp_store_observation(
     state.image_frames = observed.image_frames;
     state.project_context = Some(observed.runtime.project_context.clone());
     state.runtime = Some(observed.runtime);
-    state.observe_options = Some(observed.options);
+    state.frame_request = Some(observed.frame_request);
     state.capture_resources.clear();
     state.published_resources.clear();
 }
@@ -783,7 +784,7 @@ pub(super) fn agent_mcp_call_action(
     })?;
     let action = agent_mcp_action_argument(arguments, &before)?;
     let options = state
-        .observe_options
+        .frame_request
         .clone()
         .ok_or_else(|| "arcweft.action requires an active native observation session".to_owned())?;
     let frame = {
@@ -839,16 +840,12 @@ pub(super) fn agent_mcp_call_step_frames(
         .unwrap_or(1)
         .max(1);
     let options = state
-        .observe_options
+        .frame_request
         .clone()
         .ok_or_else(|| {
             "arcweft.session.step_frames requires an active native observation session".to_owned()
         })
-        .map(|mut options| {
-            options.steps = usize::try_from(count).unwrap_or(usize::MAX);
-            options.capture_step = None;
-            options
-        })?;
+        .map(|options| options.with_step_count(usize::try_from(count).unwrap_or(usize::MAX)))?;
     let frame = {
         let runtime = state.runtime.as_mut().ok_or_else(|| {
             "arcweft.session.step_frames requires an active native runtime session".to_owned()
@@ -899,13 +896,11 @@ pub(super) fn agent_mcp_call_wait(
 
     for poll_index in 0..max_polls {
         let options = state
-            .observe_options
+            .frame_request
             .clone()
             .ok_or_else(|| "arcweft.wait requires an active native observation session".to_owned())
-            .map(|mut options| {
-                options.steps = usize::try_from(poll_frames.max(1)).unwrap_or(usize::MAX);
-                options.capture_step = None;
-                options
+            .map(|options| {
+                options.with_step_count(usize::try_from(poll_frames.max(1)).unwrap_or(usize::MAX))
             })?;
         let frame = {
             let runtime = state.runtime.as_mut().ok_or_else(|| {

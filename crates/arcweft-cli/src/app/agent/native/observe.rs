@@ -1,3 +1,4 @@
+use super::player_observation::{NativeFrameObservationRequest, NativeFrameSample};
 use super::*;
 use arcweft_agent_runner::error::{AgentHostResponseKind, AgentHostResponseSerializationError};
 use arcweft_runtime_driver::dialogue::BundlePresentationInput;
@@ -269,9 +270,21 @@ impl<'a> NativeAgentScriptSession<'a> {
         &mut self,
         step_input: BundleStepInput,
     ) -> Result<&AgentObservationReport, NativeAgentScriptSessionError> {
-        let options = self.options.clone();
+        let request = if self.observed.is_none() {
+            NativeFrameObservationRequest::from(&self.options)
+        } else {
+            NativeFrameObservationRequest::for_progress(&self.options)
+        };
+        self.refresh_frame(request, step_input)
+    }
+
+    fn refresh_frame(
+        &mut self,
+        request: NativeFrameObservationRequest,
+        step_input: BundleStepInput,
+    ) -> Result<&AgentObservationReport, NativeAgentScriptSessionError> {
         let runtime = self.runtime_state()?;
-        let observed = observe_native_player_runtime(runtime, &options, step_input)
+        let observed = observe_native_player_runtime(runtime, &request, step_input)
             .map_err(|_| NativeAgentScriptSessionError::Observe)?;
         self.observed = Some(NativeAgentObservedSnapshot {
             report: observed.report,
@@ -581,8 +594,9 @@ impl AgentSession for NativeAgentScriptSession<'_> {
 
     fn step_frames(&mut self, count: u32) -> Result<ObservationEnvelope, Self::Error> {
         let additional = usize::try_from(count.max(1)).unwrap_or(usize::MAX);
-        self.options.steps = self.options.steps.saturating_add(additional);
-        let report = self.refresh_observation(BundleStepInput::default())?;
+        let request =
+            NativeFrameObservationRequest::for_progress(&self.options).with_step_count(additional);
+        let report = self.refresh_frame(request, BundleStepInput::default())?;
         native_agent_observation_envelope(report)
     }
 }
@@ -1121,33 +1135,23 @@ pub(super) const fn agent_observe_image_kind_name(image: AgentObserveImageKind) 
     }
 }
 
-pub(super) fn agent_observe_effective_steps(options: &AgentObserveOptions) -> usize {
+fn agent_observe_effective_steps(options: &AgentObserveOptions) -> usize {
     options.capture_step.unwrap_or(options.steps)
 }
 
 pub(super) fn agent_observe_capture_time_seconds(options: &AgentObserveOptions) -> f32 {
-    options
-        .capture_time_seconds
-        .unwrap_or_else(|| match options.capture_step {
-            Some(step) => agent_capture_time_seconds_from_step(step),
-            None => 60.0,
-        })
-}
-
-pub(super) fn agent_observe_report_capture_time_millis(
-    options: &AgentObserveOptions,
-) -> Option<u32> {
-    (options.capture_time_seconds.is_some() || options.capture_step.is_some())
-        .then(|| agent_capture_time_millis(agent_observe_capture_time_seconds(options)))
+    NativeFrameSample::new(options.capture_time_seconds, options.capture_step).seconds()
 }
 
 pub(super) fn agent_report_capture_time_seconds(report: &AgentObservationReport) -> f32 {
-    report.capture_time_millis.map_or(60.0, |millis| {
-        (f64::from(millis) / 1000.0)
-            .to_string()
-            .parse()
-            .unwrap_or(f32::MAX)
-    })
+    report
+        .capture_time_millis
+        .map_or(NativeFrameSample::Implicit.seconds(), |millis| {
+            (f64::from(millis) / 1000.0)
+                .to_string()
+                .parse()
+                .unwrap_or(f32::MAX)
+        })
 }
 
 pub(super) fn agent_capture_time_seconds_from_step(step: usize) -> f32 {

@@ -1,4 +1,6 @@
 mod capture;
+mod request;
+pub(super) use request::{NativeFrameObservationRequest, NativeFrameSample};
 
 use super::image_mapping::{
     agent_image_geometry_from_render_quad, agent_object_capture_refs_with_source,
@@ -10,12 +12,11 @@ use super::{
     agent_action_targets_for_runtime_status, agent_action_targets_for_scroll_regions,
     agent_action_targets_for_semantics, agent_capture_time_millis,
     agent_dialogue_prepared_text_objects, agent_mcp_project_context_from_project,
-    agent_object_capture_refs, agent_object_id_color, agent_observe_capture_time_seconds,
-    agent_observe_effective_steps, agent_observe_layout_scene_graph,
-    agent_observe_report_capture_time_millis, agent_observed_layers, agent_observed_scroll_regions,
-    agent_observed_views, agent_observed_virtual_lists, agent_overlay_svg,
-    agent_view_prepared_text_objects, dedupe_agent_action_targets, hash_hex,
-    native_host_policy_for_selection, report_path, resolve_source_selection,
+    agent_object_capture_refs, agent_object_id_color, agent_observe_layout_scene_graph,
+    agent_observed_layers, agent_observed_scroll_regions, agent_observed_views,
+    agent_observed_virtual_lists, agent_overlay_svg, agent_view_prepared_text_objects,
+    dedupe_agent_action_targets, hash_hex, native_host_policy_for_selection, report_path,
+    resolve_source_selection,
 };
 use crate::app::bundle::compile_bundle_for_selection;
 use arcweft_agent_protocol::{
@@ -81,7 +82,7 @@ pub(super) fn agent_player_observation_for_options(
 ) -> Result<AgentObservationState, ExitCode> {
     let mut runtime = native_player_runtime_state_for_options(options, adapter_registrars)?;
     let observed =
-        observe_native_player_runtime(&mut runtime, options, BundleStepInput::default())?;
+        observe_native_player_runtime(&mut runtime, &options.into(), BundleStepInput::default())?;
     Ok(AgentObservationState {
         report: observed.report,
         image_frames: observed.image_frames,
@@ -223,7 +224,7 @@ pub(super) fn native_player_runtime_state_for_options(
 
 pub(super) fn observe_native_player_runtime(
     runtime: &mut NativeAgentRuntimeState,
-    options: &AgentObserveOptions,
+    options: &NativeFrameObservationRequest,
     step_input: BundleStepInput,
 ) -> Result<NativePlayerObservedFrame, ExitCode> {
     let PlayerRuntimeAdvance {
@@ -240,22 +241,20 @@ pub(super) fn observe_native_player_runtime(
         &step.presentation,
         step.index,
         &viewport,
-        agent_observe_report_capture_time_millis(options),
+        options.sample.reported_millis(),
     )?;
     objects.extend(player_observed_image_objects(
         prepared,
         &step.presentation,
         step.index,
         &viewport,
-        u64::from(agent_capture_time_millis(
-            agent_observe_capture_time_seconds(options),
-        )),
+        u64::from(agent_capture_time_millis(options.sample.seconds())),
     ));
     let expected_capture_scope = arcweft_agent_protocol::text_context::AgentTextContextScope {
         session_id: "cli".to_owned(),
         frame_id: format!("frame.{}", step.index),
         tick: step.index,
-        capture_time_millis: agent_observe_report_capture_time_millis(options),
+        capture_time_millis: options.sample.reported_millis(),
     };
     let image_frames = capture_player_observation_frame(
         runtime,
@@ -286,11 +285,11 @@ pub(super) fn observe_native_player_runtime(
 
 fn advance_player_runtime(
     runtime: &mut NativeAgentRuntimeState,
-    options: &AgentObserveOptions,
+    options: &NativeFrameObservationRequest,
     step_input: BundleStepInput,
 ) -> Result<PlayerRuntimeAdvance, ExitCode> {
-    let effective_steps = agent_observe_effective_steps(options);
-    let force_capture_step = options.capture_step.is_some();
+    let effective_steps = options.steps;
+    let force_capture_step = options.force_capture_step;
     let mut pending_step_input = step_input;
     let mut diagnostics = Vec::new();
     let mut task_request_count = 0usize;
@@ -473,11 +472,9 @@ fn complete_player_runtime_tasks(
 fn prepare_player_runtime_frame(
     runtime: &mut NativeAgentRuntimeState,
     presentation: &BundlePresentationSnapshot,
-    options: &AgentObserveOptions,
+    options: &NativeFrameObservationRequest,
 ) -> Result<PreparedPlayerRuntimeFrame, ExitCode> {
-    let visual_time_millis = u64::from(agent_capture_time_millis(
-        agent_observe_capture_time_seconds(options),
-    ));
+    let visual_time_millis = u64::from(agent_capture_time_millis(options.sample.seconds()));
     let time = arcweft_player_scene::frame::PlayerFrameTime::sample_millis(
         visual_time_millis,
         arcweft_text_model::DialogueRevealPolicy::default(),
@@ -523,7 +520,7 @@ fn prepare_player_runtime_frame(
     Ok(PreparedPlayerRuntimeFrame { prepared })
 }
 
-fn player_observe_viewport(options: &AgentObserveOptions) -> RenderViewport {
+fn player_observe_viewport(options: &NativeFrameObservationRequest) -> RenderViewport {
     RenderViewport {
         logical_width: u32_to_f32(options.viewport_width),
         logical_height: u32_to_f32(options.viewport_height),
@@ -552,7 +549,7 @@ fn player_observation_report(
     prepared: &PlayerPreparedFrame,
     objects: Vec<AgentObservedObject>,
     text_contexts: arcweft_agent_protocol::text_context::AgentTextContextCatalog,
-    options: &AgentObserveOptions,
+    options: &NativeFrameObservationRequest,
     evidence: PlayerObservationEvidence<'_>,
 ) -> Result<AgentObservationReport, ExitCode> {
     let PlayerObservationEvidence {
@@ -579,7 +576,7 @@ fn player_observation_report(
     push_missing_requested_scope_diagnostic(
         &mut diagnostics,
         step.index,
-        options,
+        &options.diagnostic_scope,
         &layers,
         &views,
         &objects,
@@ -634,7 +631,7 @@ fn player_observation_report(
         events: step.observations.events.clone(),
         diagnostics,
         steps: step.index.saturating_add(1),
-        capture_time_millis: agent_observe_report_capture_time_millis(options),
+        capture_time_millis: options.sample.reported_millis(),
         task_requests: task_request_count,
         final_status: step.status_label.clone(),
         overlay_svg: None,
@@ -687,76 +684,12 @@ fn player_visual_evidence(
 fn push_missing_requested_scope_diagnostic(
     diagnostics: &mut Vec<AgentDiagnostic>,
     step: usize,
-    options: &AgentObserveOptions,
+    scope: &super::AgentCaptureScope,
     layers: &[AgentObservedLayer],
     views: &[AgentObservedView],
     objects: &[AgentObservedObject],
 ) {
-    push_missing_capture_scope_diagnostics(
-        diagnostics,
-        step,
-        requested_capture_scopes(options),
-        layers,
-        views,
-        objects,
-    );
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct RequestedCaptureScope<'a> {
-    kind: RequestedCaptureScopeKind,
-    id: &'a str,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum RequestedCaptureScopeKind {
-    View,
-    Object,
-    Layer,
-}
-
-impl RequestedCaptureScopeKind {
-    fn label(self) -> &'static str {
-        match self {
-            Self::View => "view",
-            Self::Object => "object",
-            Self::Layer => "layer",
-        }
-    }
-}
-
-fn requested_capture_scopes(
-    options: &AgentObserveOptions,
-) -> [Option<RequestedCaptureScope<'_>>; 3] {
-    [
-        options.view.as_deref().map(|id| RequestedCaptureScope {
-            kind: RequestedCaptureScopeKind::View,
-            id,
-        }),
-        options.object.as_deref().map(|id| RequestedCaptureScope {
-            kind: RequestedCaptureScopeKind::Object,
-            id,
-        }),
-        options.layer.as_deref().map(|id| RequestedCaptureScope {
-            kind: RequestedCaptureScopeKind::Layer,
-            id,
-        }),
-    ]
-}
-
-fn push_missing_capture_scope_diagnostics(
-    diagnostics: &mut Vec<AgentDiagnostic>,
-    step: usize,
-    requested_scopes: [Option<RequestedCaptureScope<'_>>; 3],
-    layers: &[AgentObservedLayer],
-    views: &[AgentObservedView],
-    objects: &[AgentObservedObject],
-) {
-    for scope in requested_scopes
-        .into_iter()
-        .flatten()
-        .filter(|scope| !capture_scope_is_observed(*scope, layers, views, objects))
-    {
+    if let Some((kind, id)) = scope.missing_observed_target(layers, views, objects) {
         diagnostics.push(AgentDiagnostic {
             step,
             severity: AgentDiagnosticSeverity::Error,
@@ -764,27 +697,11 @@ fn push_missing_capture_scope_diagnostics(
             code: Some("AGENT_CAPTURE_MISSING_SCOPE".to_owned()),
             effect_id: None,
             message: format!(
-                "no observed {} matches requested capture scope `{}` after presentation handle filtering",
-                scope.kind.label(),
-                scope.id
+                "no observed {kind} matches requested capture scope `{id}` after presentation handle filtering"
             ),
         });
     }
 }
-
-fn capture_scope_is_observed(
-    scope: RequestedCaptureScope<'_>,
-    layers: &[AgentObservedLayer],
-    views: &[AgentObservedView],
-    objects: &[AgentObservedObject],
-) -> bool {
-    match scope.kind {
-        RequestedCaptureScopeKind::View => views.iter().any(|observed| observed.id == scope.id),
-        RequestedCaptureScopeKind::Object => objects.iter().any(|observed| observed.id == scope.id),
-        RequestedCaptureScopeKind::Layer => layers.iter().any(|observed| observed.id == scope.id),
-    }
-}
-
 fn player_observed_viewport(prepared: &PlayerPreparedFrame) -> AgentViewport {
     AgentViewport {
         width: prepared.scene.viewport.physical_width,

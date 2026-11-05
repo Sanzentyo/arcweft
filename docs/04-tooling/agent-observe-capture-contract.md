@@ -33,6 +33,16 @@ the tool that returned it. The current native renderer value is `native`.
 
 An observation represents a single rendered frame:
 
+Image encoding, output, crop selection and a `capture_step` frontier belong to
+the observation/capture request that supplied them. Persistent session progress
+retains its bounded execution configuration, viewport and explicit sample time.
+`action`, `session.step_frames` and `wait` publish their resulting current frame;
+clients can read its advertised observation resource and request captures from
+that frame. A transition frame may contain no dialogue layer. An explicit
+capture of a missing scope still reports that missing scope. Each `step_frames`
+count applies to that call's advance, while the report's tick and step identity
+continue to identify the actual session frontier.
+
 ```json
 {
   "session_id": "cli",

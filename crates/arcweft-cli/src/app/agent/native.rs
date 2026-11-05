@@ -288,8 +288,7 @@ use mcp_resources::{
 use observe::{
     NativeAgentScriptSession, agent_capture_time_millis, agent_capture_time_seconds_from_step,
     agent_hit_test_command, agent_hit_test_report, agent_observation_for_options,
-    agent_observe_capture_time_seconds, agent_observe_command, agent_observe_effective_steps,
-    agent_observe_report_capture_time_millis, agent_observe_resource_by_uri,
+    agent_observe_capture_time_seconds, agent_observe_command, agent_observe_resource_by_uri,
     agent_observe_resource_by_uri_with_page_and_time_and_frame_store,
     agent_report_capture_time_seconds, native_agent_action_step_input, native_agent_scroll_region,
     validate_agent_observe_options,
