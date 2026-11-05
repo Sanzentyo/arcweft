@@ -28,7 +28,7 @@ pub style rich_text_panel {
 
 pub view RichTextPanel(dialogue: DialogueView) {
     Panel(x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px, part = dialogue_panel) {
-        Text(dialogue.speaker)
+        Text(dialogue.character.display_name)
             .x(85.6px)
             .y(480.8px)
             .width(1108.8px)
@@ -75,9 +75,9 @@ entry game @entry.main {
 }
 
 flow rich_text_showcase(state: GameState) -> String {
-    let alice_panel = alice(style=text_style(color=rgb("#9fdcff")))
+    let alice_panel = alice(rich_text=text_style(color=rgb("#9fdcff")))
 
-    alice_panel(id=@say.rich_text.001, voice=auto, look=.smile, style=text_style(color=rgb("#8fd7ff")), rich_text=rich_text_style(ruby=ruby_style(size=11px, gap=1px)))[
+    alice_panel(id=@say.rich_text.001, voice=auto, rich_text=rich_text_style(text=text_style(color=rgb("#8fd7ff")), ruby=ruby_style(size=11px, gap=1px)))[
         #font("Yu Gothic")[#color(rgb("#8fd7ff"))[光る]]#fx(wave(amplitude=3px, direction=vec2(0.0, 1.0), period=8, speed=1))[波]と、#fx(shake(amplitude=1px, seed=3u32))[震える声]。#transform(.offset, x=12px, y=-4px)[|[星屑](ほしくず)]が浮いて、#layout(.vertical_rl)[#font("Yu Mincho")[縦書きも混ざる]]。[p]
     ]
 
@@ -85,7 +85,7 @@ flow rich_text_showcase(state: GameState) -> String {
         #font("Segoe UI")[Segoe UI] と #font("Consolas")[Consolas 123]、#font("MS Mincho")[明朝]、#font("Meiryo")[メイリオ] を同じ行で確認する。[p]
     ]
 
-    benio(id=@say.rich_text.003, voice=auto, look=.confident)[
+    benio(id=@say.rich_text.003, voice=auto)[
         #strong()[太字]、#em()[強調]、#style(.italic)[italic]、#style(.oblique, angle=12deg)[斜体角度]、#size(36pt)[大きな文字]、#color(rgb("#ff9ac8"))[色指定]。[p]
     ]
 
