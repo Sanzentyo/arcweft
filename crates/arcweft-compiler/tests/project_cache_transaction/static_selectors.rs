@@ -155,8 +155,23 @@ flow main() {
         operand.expansion_width = if index == 0 { 2 } else { 1 };
         position += operand.expansion_width;
     }
-    external.identity =
-        RuntimeCallTarget::External(call.clone().with_operands(operands.into()).unwrap());
+    if call.operand_order()
+        == arcweft_core::value::RuntimeExternalCallOperandOrder::InvocationInputs
+    {
+        assert_eq!(
+            call.clone().with_operands(operands.clone().into()),
+            Err(arcweft_core::value::RuntimeExternalCallOperandError::InvocationInputLayout)
+        );
+    }
+    // Keep the independent program/signature rejection reachable under an
+    // authored layout; forwarding rejects this width before program admission.
+    external.identity = RuntimeCallTarget::External(
+        call.clone()
+            .with_operand_order(arcweft_core::value::RuntimeExternalCallOperandOrder::Authored)
+            .unwrap()
+            .with_operands(operands.into())
+            .unwrap(),
+    );
     let Err(error) = ArcweftRuntimeExecutor::from_awbc_product(malformed, AwbcEntryId(0)) else {
         panic!("external layout and signature disagreement must reject before execution");
     };
