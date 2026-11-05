@@ -973,7 +973,11 @@ impl PureFunctionBackend for VmPureFunctionBackend {
                 let (captures, arguments) = helper.split_function_arguments(
                     request.bindings.iter().map(|binding| binding.value.clone()),
                 )?;
-                evaluator.evaluate_function_site(site, captures, arguments)?
+                evaluator.evaluate_function_site(
+                    crate::value::RuntimeCallableInvocation::positional_plan(
+                        site, captures, arguments,
+                    )?,
+                )?
             }
         };
         Ok(PureFunctionResult {
@@ -1149,7 +1153,9 @@ impl VmPureFunctionScratch {
         self.env.replace_scopes_with_bindings([Vec::new()]);
         let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env))
             .with_format_context(self.format_context.clone());
-        let result = evaluator.evaluate_function_site(site, Vec::new(), args);
+        let result = evaluator.evaluate_function_site(
+            crate::value::RuntimeCallableInvocation::positional_plan(site, Vec::new(), args)?,
+        );
         self.env = evaluator.into_env();
         result
     }
@@ -1263,7 +1269,11 @@ impl VmPureFunctionScratch {
             self.env.replace_scopes_with_bindings([Vec::new()]);
             let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env))
                 .with_format_context(self.format_context.clone());
-            let result = evaluator.evaluate_function_site(site, captures, arguments);
+            let result = evaluator.evaluate_function_site(
+                crate::value::RuntimeCallableInvocation::positional_plan(
+                    site, captures, arguments,
+                )?,
+            );
             self.env = evaluator.into_env();
             return result;
         }

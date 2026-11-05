@@ -161,8 +161,12 @@ fn native_slot_replacement_returns_the_original_body_type_and_invocation() {
     engine
         .stage_admitted_function_site_call(
             invocation,
-            vec![],
-            vec![],
+            crate::value::RuntimeCallableInvocation::positional_plan(
+                replacing_site,
+                vec![],
+                vec![],
+            )
+            .unwrap(),
             FunctionCallFrame::new(replacing_site, FunctionReturnContinuation::Bind { result }),
             None,
         )

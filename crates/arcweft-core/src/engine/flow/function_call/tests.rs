@@ -1285,6 +1285,46 @@ mod synchronous_executable_boundary_tests {
     use super::*;
 
     #[test]
+    fn native_input_scope_retains_noncanonical_order_through_authenticated_env_rollback() {
+        use crate::engine::{FunctionCallFrame, FunctionReturnContinuation};
+        use crate::value::{
+            RuntimeCallableBodyReference, RuntimeCallableInvocation, RuntimeInputOrder,
+        };
+        let (plan, site) = scalar_executable_invocation_fixture(false);
+        let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&plan));
+        let mut engine =
+            Engine::new_with_shared_plan(Arc::clone(&plan), crate::task::GenerationId::new(0));
+        let arguments = vec![RuntimeValue::i64(4), RuntimeValue::i64(999)];
+        let declaration = plan
+            .validate_function_site_inputs(site, &[], &arguments)
+            .unwrap();
+        engine
+            .stage_admitted_function_site_call(
+                declaration,
+                RuntimeCallableInvocation {
+                    body: RuntimeCallableBodyReference::Plan(site),
+                    captures: vec![],
+                    arguments,
+                    input_order: RuntimeInputOrder::try_new([1, 0]).unwrap(),
+                },
+                FunctionCallFrame::new(site, FunctionReturnContinuation::Expression),
+                None,
+            )
+            .unwrap();
+        let env = &engine.fiber.frame.env;
+        assert_eq!(env.function_input_order().unwrap().slots(), [1, 0]);
+        let image = env.inert_rollback_image(&owner).unwrap();
+        let restored = crate::value::RuntimeEnv::from_rollback_image(image, &owner).unwrap();
+        assert_eq!(restored.function_input_order().unwrap().slots(), [1, 0]);
+        let context = crate::pure::RuntimeProgramExecutionContext::native(
+            Arc::clone(&plan),
+            crate::value::RuntimeFormatContext::default(),
+        )
+        .with_input_order(restored.function_input_order());
+        assert_eq!(context.input_order().unwrap().slots(), [1, 0]);
+    }
+
+    #[test]
     fn synchronous_expression_continuation_never_becomes_a_suspended_packet() {
         use crate::engine::{
             FlowControlStackEntry, FlowControlStackEntryKind, FunctionCallFrame,
@@ -1837,9 +1877,12 @@ mod synchronous_executable_boundary_tests {
         let before = engine.inert_rollback_image().unwrap();
         let error = engine
             .evaluate_function_site(
-                site,
-                vec![],
-                vec![RuntimeValue::i64(4), RuntimeValue::i64(999)],
+                crate::value::RuntimeCallableInvocation::positional_plan(
+                    site,
+                    vec![],
+                    vec![RuntimeValue::i64(4), RuntimeValue::i64(999)],
+                )
+                .unwrap(),
                 &mut NoPhysicalCalls,
             )
             .unwrap_err();

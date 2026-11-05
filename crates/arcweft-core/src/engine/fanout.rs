@@ -21,7 +21,7 @@ pub struct ProgramFanoutState<
     P = RuntimePayload,
 > {
     pub(super) source: NativeSourceOperation,
-    pub(super) context: crate::value::RuntimeScopeTypeContext,
+    pub(super) context: crate::value::RuntimeScopeFunctionContext,
     pub(super) base: H,
     pub(super) limit: u32,
     pub(super) items: Vec<Option<V>>,

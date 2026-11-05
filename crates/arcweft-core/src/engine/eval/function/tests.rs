@@ -92,7 +92,15 @@ fn numeric_closure_uses_its_binder_while_ordinary_site_enters_the_scalar_backend
         let mut backend = crate::pure::VmRuntimePureCallBackend::default();
         assert_eq!(
             engine
-                .evaluate_function_site(site, vec![], vec![RuntimeValue::i64(42)], &mut backend)
+                .evaluate_function_site(
+                    crate::value::RuntimeCallableInvocation::positional_plan(
+                        site,
+                        vec![],
+                        vec![RuntimeValue::i64(42)]
+                    )
+                    .unwrap(),
+                    &mut backend
+                )
                 .unwrap(),
             RuntimeValue::i64(42)
         );

@@ -297,8 +297,8 @@ impl Engine {
             .expect("complete borrowed preflight admits the same owned program inputs");
         self.stage_admitted_function_site_call(
             declaration,
-            captures,
-            parameters,
+            crate::value::RuntimeCallableInvocation::positional_plan(site, captures, parameters)
+                .expect("admitted program inputs fit their coordinate domain"),
             FunctionCallFrame::new(site, continuation),
             None,
         )

@@ -115,8 +115,8 @@ impl Engine {
         std::mem::swap(&mut self.fiber, &mut child);
         let staged = self.stage_admitted_function_site_call(
             declaration,
-            Vec::new(),
-            arguments,
+            crate::value::RuntimeCallableInvocation::positional_plan(site, Vec::new(), arguments)
+                .expect("admitted reducer inputs fit their coordinate domain"),
             FunctionCallFrame::new(site, FunctionReturnContinuation::RootReducer { entry }),
             None,
         );

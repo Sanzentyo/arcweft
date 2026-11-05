@@ -138,7 +138,8 @@ impl Engine {
                 RuntimeProgramExecutionContext::native(
                     Arc::clone(&self.plan),
                     self.format_context().clone(),
-                ),
+                )
+                .with_input_order(self.fiber.frame.env.function_input_order()),
                 argument_types,
                 result_type,
                 RuntimeSchemaLimits::engine_default(),

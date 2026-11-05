@@ -15,6 +15,7 @@ use std::sync::Arc;
 pub struct RuntimeProgramExecutionContext {
     program: RuntimeProgramExecutionOwner,
     format_context: RuntimeFormatContext,
+    input_order: Option<Arc<crate::value::RuntimeInputOrder>>,
 }
 
 #[derive(Clone, Debug)]
@@ -38,6 +39,7 @@ impl RuntimeProgramExecutionContext {
         Self {
             program: RuntimeProgramExecutionOwner::Native(program),
             format_context,
+            input_order: None,
         }
     }
 
@@ -46,6 +48,7 @@ impl RuntimeProgramExecutionContext {
         Self {
             program: RuntimeProgramExecutionOwner::Awbc(program),
             format_context,
+            input_order: None,
         }
     }
 
@@ -74,6 +77,20 @@ impl RuntimeProgramExecutionContext {
     #[must_use]
     pub const fn format_context(&self) -> &RuntimeFormatContext {
         &self.format_context
+    }
+
+    /// Leases the original active frame's immutable argument provenance.
+    pub(crate) fn with_input_order(
+        mut self,
+        order: Option<&Arc<crate::value::RuntimeInputOrder>>,
+    ) -> Self {
+        self.input_order = order.cloned();
+        self
+    }
+
+    #[must_use]
+    pub fn input_order(&self) -> Option<&crate::value::RuntimeInputOrder> {
+        self.input_order.as_deref()
     }
 
     /// Executes under the retained authority, without readmission, owner

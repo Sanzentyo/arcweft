@@ -1592,7 +1592,7 @@ pub enum FlowStatusLabelStyle {
 /// retained while a Pending observer enters another function.
 #[derive(Debug, PartialEq)]
 pub struct AwaitState<H = crate::task::RuntimeNeedHandle, P = RuntimeNeedPublication> {
-    pub(crate) source_context: crate::value::RuntimeScopeTypeContext,
+    pub(crate) source_context: crate::value::RuntimeScopeFunctionContext,
     pub source: AwaitSource,
     pub handle: H,
     /// Last observed adapter publication. Local Program value custody is
@@ -1715,7 +1715,7 @@ impl<H, P> AwaitState<H, P> {
 #[derive(Debug, PartialEq)]
 pub struct AwaitManyState<H = crate::task::RuntimeNeedHandle, V = RuntimeValue, P = RuntimePayload>
 {
-    pub(crate) source_context: crate::value::RuntimeScopeTypeContext,
+    pub(crate) source_context: crate::value::RuntimeScopeFunctionContext,
     pub binding: Option<RuntimePattern>,
     pub target: AwaitManyTarget,
     pub base: H,
@@ -2590,7 +2590,16 @@ impl Engine {
                 message: error.to_string(),
             })?;
         let staged = declaration
-            .stage_owned_inputs([], bindings.into_iter().map(|binding| binding.value))
+            .stage_owned_inputs(
+                crate::value::RuntimeCallableInvocation::positional_plan(
+                    declaration.site(),
+                    Vec::new(),
+                    bindings.into_iter().map(|binding| binding.value).collect(),
+                )
+                .map_err(|error| EngineStartError::InvalidFlowInvocation {
+                    message: error.to_string(),
+                })?,
+            )
             .map_err(|error| EngineStartError::InvalidFlowInvocation {
                 message: error.to_string(),
             })?;
@@ -2684,8 +2693,15 @@ impl Engine {
                     })?;
             self.stage_admitted_function_site_call(
                 declaration,
-                Vec::new(),
-                Vec::new(),
+                crate::value::RuntimeCallableInvocation::positional_plan(
+                    site,
+                    Vec::new(),
+                    Vec::new(),
+                )
+                .map_err(|error| EngineStartError::InvalidRootStartup {
+                    entry: entry.canonical_label(),
+                    message: error.to_string(),
+                })?,
                 FunctionCallFrame::new(
                     site,
                     FunctionReturnContinuation::RootInitializer {
@@ -2753,7 +2769,13 @@ impl Engine {
             }
         };
         let prepared = startup.stage_flow(|_, binding| {
-            let staged = declaration.stage_owned_inputs([], [binding.value])?;
+            let staged = declaration.stage_owned_inputs(
+                crate::value::RuntimeCallableInvocation::positional_plan(
+                    declaration.site(),
+                    Vec::new(),
+                    vec![binding.value],
+                )?,
+            )?;
             Ok::<_, RuntimeEvalError>((declaration.site(), declaration.type_instantiation, staged))
         });
         let (root, (site, instantiation, staged), outcome) = match prepared {
@@ -3605,6 +3627,18 @@ impl Engine {
             prepared.site,
             site.inputs().len(),
             prepared.type_instantiation.clone(),
+            invocation
+                .input_order
+                .project(site.inputs().iter().map(|input| match input.source() {
+                    RuntimeFunctionInputSource::Capture { position }
+                    | RuntimeFunctionInputSource::CapturedParameter { position, .. } => {
+                        position as usize
+                    }
+                    RuntimeFunctionInputSource::Parameter { position, .. } => {
+                        invocation.captures.len() + position as usize
+                    }
+                }))
+                .expect("prepared callback retains its original input order"),
         );
         let mut captures = invocation
             .captures
@@ -4168,6 +4202,8 @@ impl Engine {
             prepared.site_id,
             site.inputs().len(),
             prepared.type_instantiation.clone(),
+            crate::value::RuntimeInputOrder::for_arity(site.inputs().len())
+                .expect("admitted deferred inputs fit their coordinate domain"),
         );
         let mut captures = captures.into_iter().map(Some).collect::<Vec<_>>();
         for input in site.inputs() {
@@ -5131,9 +5167,10 @@ mod rollback_tests {
             VecDeque::from([publication(1, affine), publication(2, RuntimeValue::Unit)]),
         );
         engine.fiber.frame.await_observer = Some(Box::new(AwaitState {
-            source_context: crate::value::RuntimeScopeTypeContext::Function {
+            source_context: crate::value::RuntimeScopeFunctionContext::Function {
                 site,
                 instantiation: None,
+                input_order: crate::value::RuntimeInputOrder::canonical(1).into(),
             },
             source: AwaitSource::Native(NativeAwaitSource {
                 operation,

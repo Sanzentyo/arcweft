@@ -236,7 +236,8 @@ impl PureEvaluator<'_> {
             RuntimeProgramExecutionContext::native(
                 Arc::clone(self.plan),
                 self.format_context.clone(),
-            ),
+            )
+            .with_input_order(self.env.function_input_order()),
             semantic_types,
             result,
             RuntimeSchemaLimits::engine_default(),
@@ -287,7 +288,11 @@ impl VmPureFunctionScratch {
             let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env))
                 .with_format_context(self.format_context.clone());
             evaluator.external = Some(backend);
-            let result = evaluator.evaluate_function_site(site, captures, arguments);
+            let result = evaluator.evaluate_function_site(
+                crate::value::RuntimeCallableInvocation::positional_plan(
+                    site, captures, arguments,
+                )?,
+            );
             self.env = evaluator.into_env();
             return result;
         }

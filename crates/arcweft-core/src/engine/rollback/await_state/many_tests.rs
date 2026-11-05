@@ -270,11 +270,12 @@ fn native_fanout_preflight_rejects_corrupt_frontiers_indices_and_results() {
             6 => state.items[0] = AwbcRuntimeValueSnapshot::Unit,
             7 => state.captured.push(AwbcRuntimeValueSnapshot::Bool(true)),
             8 => {
-                state.source_context = crate::value::RuntimeScopeTypeContext::Function {
+                state.source_context = crate::value::RuntimeScopeFunctionContext::Function {
                     site: crate::runtime_id::RuntimeFunctionSiteId::from_accepted_ordinal(
                         std::num::NonZeroU32::new(u32::MAX).unwrap(),
                     ),
                     instantiation: None,
+                    input_order: crate::value::RuntimeInputOrder::canonical(0).into(),
                 };
             }
             9 => {

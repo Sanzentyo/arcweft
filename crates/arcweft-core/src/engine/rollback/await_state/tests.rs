@@ -56,9 +56,10 @@ fn waiting() -> (
     (
         owner,
         AwaitState {
-            source_context: crate::value::RuntimeScopeTypeContext::Function {
+            source_context: crate::value::RuntimeScopeFunctionContext::Function {
                 site,
                 instantiation: None,
+                input_order: crate::value::RuntimeInputOrder::canonical(1).into(),
             },
             source: AwaitSource::Native(NativeAwaitSource {
                 operation,
@@ -137,11 +138,12 @@ fn native_waits_reject_wrong_types_correlations_and_cursor_frontiers_before_proj
                 .push_back(corrupt.queued.front().unwrap().clone()),
             4 => corrupt.observed_through.as_mut().unwrap().sequence = TaskSequence(0),
             5 => {
-                corrupt.source_context = crate::value::RuntimeScopeTypeContext::Function {
+                corrupt.source_context = crate::value::RuntimeScopeFunctionContext::Function {
                     site: crate::runtime_id::RuntimeFunctionSiteId::from_accepted_ordinal(
                         std::num::NonZeroU32::MAX,
                     ),
                     instantiation: None,
+                    input_order: crate::value::RuntimeInputOrder::canonical(0).into(),
                 };
             }
             _ => unreachable!(),

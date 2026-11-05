@@ -78,7 +78,7 @@ impl Engine {
         self.fiber.frame.env.bind_root_function(
             declaration.site(),
             declaration.type_instantiation.clone(),
-            [],
+            ([], crate::value::RuntimeInputOrder::canonical(0)),
         );
         self.fiber.frame.pending_ops = pending_ops;
         self.fiber.frame.status = FlowFiberStatus::Running;

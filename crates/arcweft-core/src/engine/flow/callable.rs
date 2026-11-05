@@ -107,14 +107,7 @@ impl Engine {
                 };
                 let frame =
                     FunctionCallFrame::new(site, FunctionReturnContinuation::Bind { result });
-                self.start_function_site_call(
-                    invocation.captures,
-                    invocation.arguments,
-                    frame,
-                    next_op_index,
-                    output,
-                    backend,
-                )
+                self.start_function_site_call(invocation, frame, next_op_index, output, backend)
             }
             RuntimeCallableApplication::AttachedDefault {
                 invocation,
@@ -127,14 +120,7 @@ impl Engine {
                     site,
                     FunctionReturnContinuation::CallableDefault { pending, result },
                 );
-                self.start_function_site_call(
-                    invocation.captures,
-                    invocation.arguments,
-                    frame,
-                    next_op_index,
-                    output,
-                    backend,
-                )
+                self.start_function_site_call(invocation, frame, next_op_index, output, backend)
             }
         }
     }

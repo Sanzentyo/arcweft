@@ -17,24 +17,30 @@ use crate::value::{RuntimeFunctionApplyError, RuntimeValue};
 impl Engine {
     pub(in crate::engine) fn start_function_site_call(
         &mut self,
-        captures: Vec<RuntimeValue>,
-        args: Vec<RuntimeValue>,
+        invocation: crate::value::RuntimeCallableInvocation,
         mut frame: FunctionCallFrame,
         next_op_index: Option<usize>,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<(), RuntimeEvalError> {
         let site = frame.site;
+        if invocation.plan_site()? != site {
+            return Err(RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site }.into());
+        }
         let plan_owner = Arc::clone(&self.plan);
-        let declaration = plan_owner.validate_function_site_inputs(site, &captures, &args)?;
+        let declaration = plan_owner.validate_function_site_inputs(
+            site,
+            &invocation.captures,
+            &invocation.arguments,
+        )?;
         let executable = matches!(declaration.body(), RuntimeFunctionSiteBody::Executable(_));
         if executable
             && declaration.is_eager_pure_candidate()
             && let Ok(function) = crate::pure::RuntimePureFunctionRef::resolve(&plan_owner, site)
             && let Some(value) = self.evaluate_budgeted_scalar_function_site(
                 function,
-                &captures,
-                &args,
+                &invocation.captures,
+                &invocation.arguments,
                 pure_backend,
             )?
         {
@@ -53,13 +59,13 @@ impl Engine {
                     | FunctionReturnContinuation::Function { .. }
             )
         {
-            let value = self.evaluate_function_site(site, captures, args, pure_backend)?;
+            let value = self.evaluate_function_site(invocation, pure_backend)?;
             frame.type_instantiation = declaration.type_instantiation;
             self.advance_if_needed(next_op_index);
             self.complete_function_call_return(frame, value, output, pure_backend);
             return Ok(());
         }
-        self.stage_admitted_function_site_call(declaration, captures, args, frame, next_op_index)?;
+        self.stage_admitted_function_site_call(declaration, invocation, frame, next_op_index)?;
         if executable
             && let Ok(function) = crate::pure::RuntimePureFunctionRef::resolve(&plan_owner, site)
             && function.scalar_eval_supported
@@ -78,15 +84,14 @@ impl Engine {
     pub(in crate::engine) fn stage_admitted_function_site_call(
         &mut self,
         declaration: crate::plan::RuntimeFunctionInputAdmission<'_>,
-        captures: Vec<RuntimeValue>,
-        args: Vec<RuntimeValue>,
+        invocation: crate::value::RuntimeCallableInvocation,
         mut frame: FunctionCallFrame,
         next_op_index: Option<usize>,
     ) -> Result<(), RuntimeEvalError> {
         let site = declaration.site();
         debug_assert_eq!(frame.site, site);
         let pending_ops = self.prepare_function_root_work(site)?;
-        let staged = declaration.stage_owned_inputs(captures, args)?;
+        let staged = declaration.stage_owned_inputs(invocation)?;
         self.advance_if_needed(next_op_index);
         frame.type_instantiation = declaration.type_instantiation;
         self.enter_function_call_frame(frame, staged);
@@ -99,12 +104,17 @@ impl Engine {
     pub(in crate::engine) fn enter_function_call_frame(
         &mut self,
         mut frame: FunctionCallFrame,
-        staged: Vec<crate::value::RuntimeLocalBinding>,
+        staged: (
+            Vec<crate::value::RuntimeLocalBinding>,
+            crate::value::RuntimeInputOrder,
+        ),
     ) {
+        let (staged, input_order) = staged;
         self.fiber.frame.env.push_function_scope(
             frame.site,
             staged.len(),
             frame.type_instantiation.clone(),
+            input_order,
         );
         self.fiber.frame.env.bind_all(staged);
         frame.function_scope = true;

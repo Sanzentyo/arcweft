@@ -42,7 +42,7 @@ impl PreparedRuntimeTaskCaptures<'_> {
     }
 }
 
-impl super::RuntimeScopeTypeContext {
+impl super::RuntimeScopeFunctionContext {
     pub(crate) fn instantiation(
         &self,
     ) -> Option<&crate::program_types::RuntimeFunctionEffectInstantiation> {
@@ -60,6 +60,7 @@ impl super::RuntimeScopeTypeContext {
         let Self::Function {
             site,
             instantiation,
+            input_order,
         } = self
         else {
             return Ok(());
@@ -72,6 +73,15 @@ impl super::RuntimeScopeTypeContext {
                     },
                     super::AwbcRuntimeValueSnapshotError::from,
                 )
+            })?;
+        let declaration = plan
+            .function_sites()
+            .get(*site)
+            .expect("original function instantiation admission checked its site");
+        input_order
+            .validate_arity(declaration.inputs().len())
+            .map_err(|error| super::AwbcRuntimeValueSnapshotError::Message {
+                message: error.to_string(),
             })
     }
 
@@ -83,11 +93,12 @@ impl super::RuntimeScopeTypeContext {
         let Self::Function {
             site,
             instantiation,
+            input_order,
         } = self
         else {
             return Ok(());
         };
-        admission.validate_metadata(&(1_u8, site.get(), instantiation))?;
+        admission.validate_metadata(&(1_u8, site.get(), instantiation, input_order))?;
         admission.admit_composite(origin, |owner, resources| {
             let Some(RuntimeProgramOwner::Plan(plan)) = owner else {
                 return Err(super::AwbcRuntimeValueSnapshotError::Message {
@@ -339,13 +350,15 @@ impl<V> RuntimeEnv<V> {
         ))
     }
 
-    pub(crate) fn source_function_context(&self) -> super::RuntimeScopeTypeContext {
+    pub(crate) fn source_function_context(&self) -> super::RuntimeScopeFunctionContext {
         self.scopes
             .iter()
             .rev()
             .find_map(|scope| match &scope.function_context {
-                super::RuntimeScopeTypeContext::Lexical => None,
-                context @ super::RuntimeScopeTypeContext::Function { .. } => Some(context.clone()),
+                super::RuntimeScopeFunctionContext::Lexical => None,
+                context @ super::RuntimeScopeFunctionContext::Function { .. } => {
+                    Some(context.clone())
+                }
             })
             .unwrap_or_default()
     }
@@ -365,6 +378,18 @@ impl<V> RuntimeEnv<V> {
             .and_then(|(_, binding)| binding)
     }
 
+    pub(crate) fn function_input_order(&self) -> Option<&std::sync::Arc<super::RuntimeInputOrder>> {
+        self.scopes
+            .iter()
+            .rev()
+            .find_map(|scope| match &scope.function_context {
+                super::RuntimeScopeFunctionContext::Lexical => None,
+                super::RuntimeScopeFunctionContext::Function { input_order, .. } => {
+                    Some(input_order)
+                }
+            })
+    }
+
     pub(crate) fn function_contexts(
         &self,
     ) -> impl DoubleEndedIterator<
@@ -376,10 +401,11 @@ impl<V> RuntimeEnv<V> {
         self.scopes
             .iter()
             .filter_map(|scope| match &scope.function_context {
-                super::RuntimeScopeTypeContext::Lexical => None,
-                super::RuntimeScopeTypeContext::Function {
+                super::RuntimeScopeFunctionContext::Lexical => None,
+                super::RuntimeScopeFunctionContext::Function {
                     site,
                     instantiation,
+                    ..
                 } => Some((*site, instantiation.as_ref())),
             })
     }
@@ -431,7 +457,7 @@ impl<V> RuntimeEnv<V> {
         for scope in scopes {
             resources.work().charge(0)?;
             resources.work().collection(scope.slots.len())?;
-            if let super::RuntimeScopeTypeContext::Function {
+            if let super::RuntimeScopeFunctionContext::Function {
                 instantiation: binding,
                 ..
             } = &scope.function_context
@@ -571,14 +597,16 @@ impl RuntimeEnv {
         site: crate::runtime_id::RuntimeFunctionSiteId,
         binding_capacity: usize,
         binding: Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
+        input_order: super::RuntimeInputOrder,
     ) {
         self.push_scope_with_capacity(binding_capacity);
         self.scopes
             .last_mut()
             .expect("function scope was pushed")
-            .function_context = super::RuntimeScopeTypeContext::Function {
+            .function_context = super::RuntimeScopeFunctionContext::Function {
             site,
             instantiation: binding,
+            input_order: std::sync::Arc::new(input_order),
         };
     }
 
@@ -590,14 +618,19 @@ impl RuntimeEnv {
         instantiation: Option<
             std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>,
         >,
-        bindings: impl IntoIterator<Item = RuntimeLocalBinding>,
+        inputs: (
+            impl IntoIterator<Item = RuntimeLocalBinding>,
+            super::RuntimeInputOrder,
+        ),
     ) {
+        let (bindings, input_order) = inputs;
         self.ensure_root_scope();
         let root = self.scopes.first_mut().expect("root scope was ensured");
         root.clear();
-        root.function_context = super::RuntimeScopeTypeContext::Function {
+        root.function_context = super::RuntimeScopeFunctionContext::Function {
             site,
             instantiation,
+            input_order: std::sync::Arc::new(input_order),
         };
         for binding in bindings {
             root.set(binding.local, binding.value);
@@ -1046,7 +1079,7 @@ impl RuntimeScope {
         Self {
             identity: RuntimeScopeIdentity::Anonymous,
             presentation_scope: None,
-            function_context: super::RuntimeScopeTypeContext::Lexical,
+            function_context: super::RuntimeScopeFunctionContext::Lexical,
             slots: Vec::with_capacity(binding_capacity),
         }
     }
@@ -1102,7 +1135,7 @@ impl RuntimeScope {
     fn clear(&mut self) {
         self.presentation_scope = None;
         self.identity = RuntimeScopeIdentity::Anonymous;
-        self.function_context = super::RuntimeScopeTypeContext::Lexical;
+        self.function_context = super::RuntimeScopeFunctionContext::Lexical;
         self.slots.clear();
     }
 
@@ -1388,7 +1421,12 @@ mod tests {
             .unwrap();
         let binding = admission.type_instantiation.unwrap();
         let mut env = RuntimeEnv::default();
-        env.push_function_scope(sites[0], 0, Some(binding.clone()));
+        env.push_function_scope(
+            sites[0],
+            0,
+            Some(binding.clone()),
+            crate::value::RuntimeInputOrder::canonical(0),
+        );
         env.push_scope();
         let crate::value::RuntimeExprKind::Let {
             binding: declaration,
@@ -1410,7 +1448,12 @@ mod tests {
         env.set(declaration, value.clone());
         assert_eq!(env.function_instantiation(), Some(binding.as_ref()));
         let suspended_source = env.source_function_context();
-        env.push_function_scope(sites[1], 0, None);
+        env.push_function_scope(
+            sites[1],
+            0,
+            None,
+            crate::value::RuntimeInputOrder::canonical(0),
+        );
         assert!(env.function_instantiation().is_none());
         assert_eq!(suspended_source.instantiation(), Some(binding.as_ref()));
         let mut retained = super::super::RuntimeRetainedValueAdmission::for_program(
@@ -1466,19 +1509,22 @@ mod tests {
         unknown.scopes[2].slots[0].local = local(99);
         assert!(RuntimeEnv::from_rollback_image(unknown, &owner).is_err());
         let mut detached = image.clone();
-        detached.scopes[1].function_context = super::super::RuntimeScopeTypeContext::Lexical;
+        detached.scopes[1].function_context = super::super::RuntimeScopeFunctionContext::Lexical;
         assert!(RuntimeEnv::from_rollback_image(detached, &owner).is_err());
         let mut missing = image.clone();
-        missing.scopes[1].function_context = super::super::RuntimeScopeTypeContext::Function {
+        missing.scopes[1].function_context = super::super::RuntimeScopeFunctionContext::Function {
             site: sites[0],
             instantiation: None,
+            input_order: crate::value::RuntimeInputOrder::canonical(0).into(),
         };
         assert!(RuntimeEnv::from_rollback_image(missing, &owner).is_err());
         let mut wrong_owner = image.clone();
-        wrong_owner.scopes[1].function_context = super::super::RuntimeScopeTypeContext::Function {
-            site: sites[1],
-            instantiation: Some(binding.clone()),
-        };
+        wrong_owner.scopes[1].function_context =
+            super::super::RuntimeScopeFunctionContext::Function {
+                site: sites[1],
+                instantiation: Some(binding.clone()),
+                input_order: crate::value::RuntimeInputOrder::canonical(0).into(),
+            };
         assert!(RuntimeEnv::from_rollback_image(wrong_owner, &owner).is_err());
         let mut encoded = serde_json::to_value(binding.as_ref()).unwrap();
         encoded["effects"][0] = serde_json::json!([]);
@@ -1486,9 +1532,10 @@ mod tests {
             serde_json::from_value(encoded).unwrap();
         let mut wrong_effects = image;
         wrong_effects.scopes[1].function_context =
-            super::super::RuntimeScopeTypeContext::Function {
+            super::super::RuntimeScopeFunctionContext::Function {
                 site: sites[0],
                 instantiation: Some(std::sync::Arc::new(forged)),
+                input_order: crate::value::RuntimeInputOrder::canonical(0).into(),
             };
         assert!(RuntimeEnv::from_rollback_image(wrong_effects, &owner).is_err());
     }

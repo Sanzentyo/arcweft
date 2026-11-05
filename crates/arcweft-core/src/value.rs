@@ -2704,7 +2704,7 @@ pub struct RuntimeEnv<V = RuntimeValue> {
 struct RuntimeScope<T = RuntimeValue> {
     identity: RuntimeScopeIdentity,
     presentation_scope: Option<crate::presentation::resources::RuntimePresentationScopeBinding>,
-    function_context: RuntimeScopeTypeContext,
+    function_context: RuntimeScopeFunctionContext,
     slots: Vec<RuntimeLocalSlot<T>>,
 }
 
@@ -2713,20 +2713,21 @@ impl<T> Default for RuntimeScope<T> {
         Self {
             identity: RuntimeScopeIdentity::default(),
             presentation_scope: None,
-            function_context: RuntimeScopeTypeContext::default(),
+            function_context: RuntimeScopeFunctionContext::default(),
             slots: Vec::new(),
         }
     }
 }
 
-/// Lexical inheritance or the authenticated type environment of a function.
+/// Lexical inheritance or the authenticated execution context of a function.
 /// Suspended operations retain this same context independently of later calls.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub(crate) enum RuntimeScopeTypeContext {
+pub(crate) enum RuntimeScopeFunctionContext {
     #[default]
     Lexical,
     Function {
         site: crate::runtime_id::RuntimeFunctionSiteId,
+        input_order: std::sync::Arc<RuntimeInputOrder>,
         instantiation:
             Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
     },

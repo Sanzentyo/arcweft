@@ -12,11 +12,10 @@ use crate::engine::{
 use crate::plan::{RuntimeFunctionInputSource, RuntimeFunctionSiteBody};
 use crate::plan::{RuntimePureInputType, RuntimePureOutputType};
 use crate::pure::{RuntimeFixedArgs, RuntimePureFunctionRef};
-use crate::runtime_id::{RuntimeCallableStateId, RuntimeFunctionSiteId};
+use crate::runtime_id::RuntimeCallableStateId;
 use crate::task::RuntimeProgramOwner;
 use crate::value::{
-    RuntimeCallArgument, RuntimeCallArgumentMode, RuntimeCallableApplication,
-    RuntimeCallableBodyReference, RuntimeCallableValue, RuntimeCallableValueError,
+    RuntimeCallArgument, RuntimeCallArgumentMode, RuntimeCallableApplication, RuntimeCallableValue,
     RuntimeExactInteger, RuntimeValue,
 };
 
@@ -57,7 +56,14 @@ impl Engine {
             .iter()
             .map(|capture| self.evaluate_expr_with_backend(capture, backend))
             .collect::<Result<Vec<_>, _>>()?;
-        self.evaluate_function_site(site.function(), captures, Vec::new(), backend)
+        self.evaluate_function_site(
+            crate::value::RuntimeCallableInvocation::positional_plan(
+                site.function(),
+                captures,
+                Vec::new(),
+            )?,
+            backend,
+        )
     }
 
     pub(in crate::engine) fn evaluate_callable_expr(
@@ -138,29 +144,13 @@ impl Engine {
             match application {
                 RuntimeCallableApplication::Complete(value) => return Ok(value),
                 RuntimeCallableApplication::Invoke(invocation) => {
-                    let RuntimeCallableBodyReference::Plan(site) = invocation.body else {
-                        return Err(RuntimeCallableValueError::ForeignProgram.into());
-                    };
-                    return self.evaluate_function_site(
-                        site,
-                        invocation.captures,
-                        invocation.arguments,
-                        backend,
-                    );
+                    return self.evaluate_function_site(invocation, backend);
                 }
                 RuntimeCallableApplication::AttachedDefault {
                     invocation,
                     pending,
                 } => {
-                    let RuntimeCallableBodyReference::Plan(site) = invocation.body else {
-                        return Err(RuntimeCallableValueError::ForeignProgram.into());
-                    };
-                    let value = self.evaluate_function_site(
-                        site,
-                        invocation.captures,
-                        invocation.arguments,
-                        backend,
-                    )?;
+                    let value = self.evaluate_function_site(invocation, backend)?;
                     application = pending
                         .complete_default(value)
                         .map_err(|failure| RuntimeEvalError::Callable(failure.into_parts().0))?;
@@ -171,18 +161,22 @@ impl Engine {
 
     pub(in crate::engine) fn evaluate_function_site(
         &mut self,
-        site: RuntimeFunctionSiteId,
-        captures: Vec<RuntimeValue>,
-        arguments: Vec<RuntimeValue>,
+        invocation: crate::value::RuntimeCallableInvocation,
         backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let site = invocation.plan_site()?;
         let plan = Arc::clone(&self.plan);
-        let declaration = plan.validate_function_site_inputs(site, &captures, &arguments)?;
+        let declaration =
+            plan.validate_function_site_inputs(site, &invocation.captures, &invocation.arguments)?;
         let type_instantiation = declaration.type_instantiation.clone();
         if declaration.is_eager_pure_candidate()
             && let Ok(function) = RuntimePureFunctionRef::resolve(&plan, site)
-            && let Some(value) = self
-                .evaluate_budgeted_scalar_function_site(function, &captures, &arguments, backend)?
+            && let Some(value) = self.evaluate_budgeted_scalar_function_site(
+                function,
+                &invocation.captures,
+                &invocation.arguments,
+                backend,
+            )?
         {
             if !plan.value_matches_type(declaration.result(), &value)? {
                 return Err(RuntimeEvalError::InvalidExpressionType(
@@ -198,7 +192,7 @@ impl Engine {
                     .to_owned(),
             });
         };
-        let staged = declaration.stage_owned_inputs(captures, arguments)?;
+        let staged = declaration.stage_owned_inputs(invocation)?;
         let frame_depth = self.fiber.frame.control_stack.len();
         let scope_depth = self.fiber.frame.env.scope_depth();
         let mut frame = FunctionCallFrame::new(site, FunctionReturnContinuation::Expression);

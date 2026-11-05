@@ -4,14 +4,12 @@
 
 use std::sync::Arc;
 
-use crate::pattern::match_runtime_pattern_owned;
-use crate::plan::{RuntimeFunctionInputSource, RuntimeFunctionSiteBody};
-use crate::runtime_id::{RuntimeCallableStateId, RuntimeFunctionSiteId};
+use crate::plan::RuntimeFunctionSiteBody;
+use crate::runtime_id::RuntimeCallableStateId;
 use crate::task::RuntimeProgramOwner;
 use crate::value::{
-    RuntimeCallArgument, RuntimeCallableApplication, RuntimeCallableBodyReference,
-    RuntimeCallableValue, RuntimeCallableValueError, RuntimeEvalError, RuntimeExpr, RuntimeValue,
-    runtime_value_label,
+    RuntimeCallArgument, RuntimeCallableApplication, RuntimeCallableValue,
+    RuntimeCallableValueError, RuntimeEvalError, RuntimeExpr, RuntimeValue, runtime_value_label,
 };
 
 use super::PureEvaluator;
@@ -91,27 +89,13 @@ impl PureEvaluator<'_> {
             match application {
                 RuntimeCallableApplication::Complete(value) => return Ok(value),
                 RuntimeCallableApplication::Invoke(invocation) => {
-                    let RuntimeCallableBodyReference::Plan(site) = invocation.body else {
-                        return Err(RuntimeCallableValueError::ForeignProgram.into());
-                    };
-                    return self.evaluate_function_site(
-                        site,
-                        invocation.captures,
-                        invocation.arguments,
-                    );
+                    return self.evaluate_function_site(invocation);
                 }
                 RuntimeCallableApplication::AttachedDefault {
                     invocation,
                     pending,
                 } => {
-                    let RuntimeCallableBodyReference::Plan(site) = invocation.body else {
-                        return Err(RuntimeCallableValueError::ForeignProgram.into());
-                    };
-                    let value = self.evaluate_function_site(
-                        site,
-                        invocation.captures,
-                        invocation.arguments,
-                    )?;
+                    let value = self.evaluate_function_site(invocation)?;
                     application = pending
                         .complete_default(value)
                         .map_err(|failure| RuntimeEvalError::Callable(failure.into_parts().0))?;
@@ -124,13 +108,14 @@ impl PureEvaluator<'_> {
     /// An Executable body declines before any scope or child activation begins.
     pub(super) fn evaluate_function_site(
         &mut self,
-        site: RuntimeFunctionSiteId,
-        captures: Vec<RuntimeValue>,
-        arguments: Vec<RuntimeValue>,
+        invocation: crate::value::RuntimeCallableInvocation,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let declaration = self
-            .plan
-            .validate_function_site_inputs(site, &captures, &arguments)?;
+        let site = invocation.plan_site()?;
+        let declaration = self.plan.validate_function_site_inputs(
+            site,
+            &invocation.captures,
+            &invocation.arguments,
+        )?;
         let type_instantiation = declaration.type_instantiation.clone();
         let RuntimeFunctionSiteBody::Expression(body) = declaration.body() else {
             return Err(RuntimeEvalError::UnsupportedPure {
@@ -139,41 +124,9 @@ impl PureEvaluator<'_> {
                     .to_owned(),
             });
         };
-        let mut captures = captures.into_iter().map(Some).collect::<Vec<_>>();
-        let mut arguments = arguments.into_iter().map(Some).collect::<Vec<_>>();
-        let mut staged = Vec::new();
-        for input in declaration.inputs() {
-            let (values, position) = match input.source() {
-                RuntimeFunctionInputSource::Capture { position }
-                | RuntimeFunctionInputSource::CapturedParameter { position, .. } => {
-                    (&mut captures, position)
-                }
-                RuntimeFunctionInputSource::Parameter { position, .. } => {
-                    (&mut arguments, position)
-                }
-            };
-            let value = values
-                .get_mut(position as usize)
-                .and_then(Option::take)
-                .ok_or(
-                    crate::value::RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site },
-                )?;
-            let bindings = match_runtime_pattern_owned(
-                self.plan,
-                input.pattern(),
-                value,
-                type_instantiation.as_deref(),
-            )?
-            .ok_or_else(|| {
-                RuntimeEvalError::PatternMismatch(format!(
-                    "function site {site} input {:?}",
-                    input.source()
-                ))
-            })?;
-            staged.extend(bindings);
-        }
+        let (staged, input_order) = declaration.stage_owned_inputs(invocation)?;
         self.env
-            .push_function_scope(site, staged.len(), type_instantiation.clone());
+            .push_function_scope(site, staged.len(), type_instantiation.clone(), input_order);
         self.env.bind_all(staged);
         let value = self.evaluate_expr(body);
         let value = value.and_then(|value| {

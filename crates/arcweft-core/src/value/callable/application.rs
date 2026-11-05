@@ -74,6 +74,33 @@ pub(crate) struct RuntimeCallableInvocation {
     pub input_order: RuntimeInputOrder,
 }
 
+impl RuntimeCallableInvocation {
+    /// A direct host/program ingress supplies a positional packet. Applied
+    /// callables carry the order selected by their actual application instead.
+    pub(crate) fn positional_plan(
+        site: RuntimeFunctionSiteId,
+        captures: Vec<RuntimeValue>,
+        arguments: Vec<RuntimeValue>,
+    ) -> Result<Self, RuntimeCallableValueError> {
+        let input_order = RuntimeInputOrder::for_arity(captures.len() + arguments.len())?;
+        Ok(Self {
+            body: RuntimeCallableBodyReference::Plan(site),
+            captures,
+            arguments,
+            input_order,
+        })
+    }
+
+    pub(crate) fn plan_site(&self) -> Result<RuntimeFunctionSiteId, RuntimeCallableValueError> {
+        let RuntimeCallableBodyReference::Plan(site) = self.body else {
+            return Err(RuntimeCallableValueError::ForeignProgram);
+        };
+        self.input_order
+            .validate_arity(self.captures.len() + self.arguments.len())?;
+        Ok(site)
+    }
+}
+
 #[derive(Debug)]
 pub(crate) enum RuntimeCallableApplication {
     Complete(RuntimeValue),

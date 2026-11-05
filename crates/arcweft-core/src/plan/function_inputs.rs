@@ -57,12 +57,46 @@ impl RuntimeFunctionInputAdmission<'_> {
     /// Flow roots and structured calls share this binding rule.
     pub(crate) fn stage_owned_inputs(
         &self,
-        captures: impl IntoIterator<Item = RuntimeValue>,
-        arguments: impl IntoIterator<Item = RuntimeValue>,
-    ) -> Result<Vec<crate::value::RuntimeLocalBinding>, crate::value::RuntimeEvalError> {
+        invocation: crate::value::RuntimeCallableInvocation,
+    ) -> Result<
+        (
+            Vec<crate::value::RuntimeLocalBinding>,
+            crate::value::RuntimeInputOrder,
+        ),
+        crate::value::RuntimeEvalError,
+    > {
         let site = self.site;
-        let mut captures = captures.into_iter().map(Some).collect::<Vec<_>>();
-        let mut arguments = arguments.into_iter().map(Some).collect::<Vec<_>>();
+        if invocation.plan_site()? != site {
+            return Err(RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site }.into());
+        }
+        let capture_count = invocation.captures.len();
+        let input_order = invocation
+            .input_order
+            .project(
+                self.declaration
+                    .inputs()
+                    .iter()
+                    .map(|input| match input.source() {
+                        RuntimeFunctionInputSource::Capture { position }
+                        | RuntimeFunctionInputSource::CapturedParameter { position, .. } => {
+                            position as usize
+                        }
+                        RuntimeFunctionInputSource::Parameter { position, .. } => {
+                            capture_count + position as usize
+                        }
+                    }),
+            )
+            .map_err(crate::value::RuntimeCallableValueError::from)?;
+        let mut captures = invocation
+            .captures
+            .into_iter()
+            .map(Some)
+            .collect::<Vec<_>>();
+        let mut arguments = invocation
+            .arguments
+            .into_iter()
+            .map(Some)
+            .collect::<Vec<_>>();
         self.validate_owned_patterns(
             &captures.iter().flatten().collect::<Vec<_>>(),
             &arguments.iter().flatten().collect::<Vec<_>>(),
@@ -99,7 +133,7 @@ impl RuntimeFunctionInputAdmission<'_> {
             })?;
             staged.extend(bindings);
         }
-        Ok(staged)
+        Ok((staged, input_order))
     }
 }
 
