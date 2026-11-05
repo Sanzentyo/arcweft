@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "recordedAt": "2026-11-05T23:48:54.7146300Z",
+  "recordedAt": "2026-11-05T23:48:54.71463Z",
   "source": "db071219f84e57186efa9d40dccc3bb8620f417c",
   "publication": {
     "version": 1,
@@ -301,5 +301,127 @@
         "sha256": "bd943fd51fb6e5f2d3acf71b021fd988e65d97d1341af4d700c32d083c596ae3"
       }
     ]
+  },
+  "workspaceQuality": {
+    "version": 1,
+    "source": "db071219f84e57186efa9d40dccc3bb8620f417c",
+    "sourceInputs": 4126,
+    "sourceDrift": 0,
+    "checks": {
+      "check": {
+        "version": 1,
+        "base": "db071219f84e57186efa9d40dccc3bb8620f417c",
+        "command": [
+          "check",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4126,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T23:47:39.086342Z",
+        "finishedAt": "2026-11-05T23:51:20.9203739Z"
+      },
+      "clippy": {
+        "version": 1,
+        "base": "db071219f84e57186efa9d40dccc3bb8620f417c",
+        "command": [
+          "clippy",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4126,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T23:51:21.3746718Z",
+        "finishedAt": "2026-11-05T23:54:04.5123753Z"
+      },
+      "structure": {
+        "version": 1,
+        "base": "db071219f84e57186efa9d40dccc3bb8620f417c",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/proof-trust-policy-quality-20261106.structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4126,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T23:54:04.9923564Z",
+        "finishedAt": "2026-11-05T23:54:09.8724442Z"
+      }
+    },
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-proof-trust-policy-quality.raw.zip",
+      "bytes": 844388,
+      "sha256": "c37d727c6fb61111e6ea5f235ff99132201231b99d0d83a388f4a51ad509b925",
+      "entryDrift": 0,
+      "entries": [
+        {
+          "entry": "proof-trust-policy-quality-20261106-check.json",
+          "bytes": 355,
+          "sha256": "876e2c18ebd960903476419cde6bb5210373acd2548d7be450458a1f477f5353"
+        },
+        {
+          "entry": "proof-trust-policy-quality-20261106-check.log",
+          "bytes": 130847,
+          "sha256": "8bb1f097bfe538660ba714cee13027794da64f99c4cc4b98865bbb12e1d291a1"
+        },
+        {
+          "entry": "proof-trust-policy-quality-20261106-clippy.json",
+          "bytes": 356,
+          "sha256": "23cdba7489c882f978b4a1c3a0568f58f03ab6c83f28cc9c2450322dabde83eb"
+        },
+        {
+          "entry": "proof-trust-policy-quality-20261106-clippy.log",
+          "bytes": 8882319,
+          "sha256": "fd8a650b7c9d3959bf3c47757b33e7ef1387aa0d0fa3d8cf3e22388d38487370"
+        },
+        {
+          "entry": "proof-trust-policy-quality-20261106-structure.json",
+          "bytes": 530,
+          "sha256": "55375b3159d2a6bcf78b0a02a039b9f0074b502356aa9498f54ad862f6a60665"
+        },
+        {
+          "entry": "proof-trust-policy-quality-20261106-structure.log",
+          "bytes": 65793,
+          "sha256": "15f4362383d6b13423e994cd4382fda0f07ebee18b2c046212d8826bb82dbbf5"
+        },
+        {
+          "entry": "proof-trust-policy-quality-20261106.structure-report/dependency_edges.csv",
+          "bytes": 78209,
+          "sha256": "3093f8a36140f5d2345ba17f2653cd7950d662b1cf512584fbe01b805bea723b"
+        },
+        {
+          "entry": "proof-trust-policy-quality-20261106.structure-report/file_metrics.csv",
+          "bytes": 340013,
+          "sha256": "c82db161bf08a1fc807444b94fea27d741f8f3005cc3b51c67d7c027e137aeae"
+        },
+        {
+          "entry": "proof-trust-policy-quality-20261106.structure-report/findings.md",
+          "bytes": 123641,
+          "sha256": "ae2e723f040712c081c2ea80ad00003a0cad6cf3a62162f621c00822f52e4588"
+        },
+        {
+          "entry": "proof-trust-policy-quality-20261106.structure-report/package_metrics.csv",
+          "bytes": 6508,
+          "sha256": "824d564aa9d244ebd4199fb6ee8e80ee7c7096c7d1d7c90a64d682ee6e0e0d54"
+        },
+        {
+          "entry": "proof-trust-policy-quality-20261106.structure-report/public_type_duplicates.csv",
+          "bytes": 17441,
+          "sha256": "13445c763605bdaab707dfe671c9e64d6b3e37e9d06c1482c74eac173efa5f77"
+        }
+      ]
+    }
   }
 }
