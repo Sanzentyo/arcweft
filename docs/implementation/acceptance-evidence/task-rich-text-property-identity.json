@@ -7475,5 +7475,368 @@
         "indexEntry": "callable-input-order-awbc.archive-inputs.json"
       }
     }
+  },
+  "typedTextLengths": {
+    "version": 1,
+    "recordedAt": "2026-11-05T08:11:32.1323005Z",
+    "source": {
+      "version": 1,
+      "commit": "d693a3fcc4b4716ac9d608e9c075d8f1ff96bcdf",
+      "parent": "848d782dcbafe834f02a082e8d0a82b2c73daf54",
+      "tree": "8ee82858f4b4765fbd1882fc1e9313170289c1f6",
+      "remote": "d693a3fcc4b4716ac9d608e9c075d8f1ff96bcdf",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/src/lower.rs",
+          "blob": "05efe96cbe33bf61a3bcbd68eedcabef744e1925"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/project/tests/layout_presence.rs",
+          "blob": "e69b836beb292d07be3b41ba7e64e783df1f172a"
+        },
+        {
+          "path": "crates/arcweft-presentation/src/rich_text/authoring_schema.rs",
+          "blob": "17acebe1ce8271c6234ec3dce68bcb0392679485"
+        },
+        {
+          "path": "crates/arcweft-presentation/src/rich_text/authoring_schema/direct_style.rs",
+          "blob": "f04b5b940abde6568f3812fb147d76ece9cb8d5d"
+        },
+        {
+          "path": "crates/arcweft-presentation/src/rich_text/content_catalog.rs",
+          "blob": "458e72e30b9dbf5ca3b89cc96b00e1699fa2c9a1"
+        },
+        {
+          "path": "crates/arcweft-presentation/tests/rich_text_authoring_schema.rs",
+          "blob": "05adbc237a90c5f72935202f6488f38ce179ce09"
+        },
+        {
+          "path": "crates/arcweft-primitives/src/lib.rs",
+          "blob": "b691bed9cb9c94e2ed71e2de1392ca42ade71654"
+        },
+        {
+          "path": "crates/arcweft-render-text/src/lib.rs",
+          "blob": "a633fb001f4ad6067318963cf0104d4453322d9f"
+        },
+        {
+          "path": "crates/arcweft-render-text/src/resolved_document.rs",
+          "blob": "2394f173380aa306a024cfcba48cf70493aa6162"
+        },
+        {
+          "path": "crates/arcweft-render-text/src/resolved_document/length.rs",
+          "blob": "37dcc19261d4ab9c6aa7f24cd8f103863218620e"
+        },
+        {
+          "path": "crates/arcweft-render-text/tests/resolved_document.rs",
+          "blob": "7780e16821ed5b163fae9a58b75aaaee7a199475"
+        },
+        {
+          "path": "crates/arcweft-rich-text-schema/src/lib.rs",
+          "blob": "84858c19b3d93dd69634030dc88cc84aa62e7d4a"
+        },
+        {
+          "path": "crates/arcweft-text-layout/src/config.rs",
+          "blob": "4ebb8cf194e6849febf002ab6463c5f0e2871a87"
+        },
+        {
+          "path": "crates/arcweft-text-layout/src/document_layout.rs",
+          "blob": "c80af412b64ecca841a9724258bbb7b21cbc3066"
+        },
+        {
+          "path": "crates/arcweft-text-layout/src/document_ruby.rs",
+          "blob": "ee70a57de1361fb98f3547e8186196b422e70d78"
+        },
+        {
+          "path": "crates/arcweft-text-layout/tests/document_layout/ruby_geometry.rs",
+          "blob": "c52abfde019d10187f4698345f006ab946717f79"
+        },
+        {
+          "path": "crates/arcweft-text-model/src/character_dialogue_style.rs",
+          "blob": "8f6d08e3101814ecdffea02e9430ec47380c6738"
+        },
+        {
+          "path": "crates/arcweft-text-model/src/lib.rs",
+          "blob": "a4cdfecdd0ed650f20b30c6795482524f31d0556"
+        },
+        {
+          "path": "crates/arcweft-text-model/src/rich_effects.rs",
+          "blob": "1f5ad4e3fa2eaa26b349e6e9413be8a0c9b1fcf6"
+        },
+        {
+          "path": "crates/arcweft-text-model/src/style.rs",
+          "blob": "4ba90c08824c78d3a7347ac7d061aacf3e6332f5"
+        },
+        {
+          "path": "docs/03-presentation/text-typesetting.md",
+          "blob": "5606e1b92f9b7b511a9d59f55fca646d028438cd"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "4fc85ca4cc13e3769244c2ddd9dd2a1b8915a9d8be8d67fd5909c1fa8835b971",
+      "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-05T08:06:55.4087188Z"
+    },
+    "state": "Authored px/pt transport and shared text geometry resolution are implemented and owner/source-integration validated. Full59 reverse, full98 quality, final CLI/render parity and the remaining typed font/static provenance contracts are still separate.",
+    "implementation": [
+      "Keep the existing CheckedLength as the authored length authority in RichTextStyle::Size and all sparse/resolved layout length fields. Compiler Content lowering and CharacterDialogue projection retain the actual unit; JSON has no legacy numeric/unit-dropping reader.",
+      "Presentation authoring_schema owns one FONT_SIZE_LIMITS for both direct styles and Content callable values. Accept Px and Pt as required by the maintained source examples; numeric bounds, precision and byte allowances remain unchanged. Ruby policy retains its existing accepted units and bounds.",
+      "RenderText owns the private-field ResolvedTextLength admission into nonnegative logical milli-pixels. Px is identity and Pt uses the CSS absolute ratio4/3, rounded once with checked integer arithmetic. Relative units without context, negatives and signed-domain overflow return typed errors. TextStyleCascade, vertical column spacing and ruby size/gap/overhang/collision consumers share this resolution; absent values alone choose defaults. Device scaling remains downstream.",
+      "Delete the old milli_points-only Size field, tuple projections that dropped layout units, duplicate font-size policy and invalid-value fallback paths. Keep Arcweft-owned contracts at version1. No Cargo dependency changes."
+    ],
+    "contract": {
+      "path": "docs/03-presentation/text-typesetting.md",
+      "primarySource": "https://www.w3.org/TR/css-values-4/#absolute-lengths",
+      "rationale": "Text geometry uses one logical-pixel basis shared by Native and Web. The fixed CSS ratio determines logical points; device DPI is not inferred. This is a maintained consuming-boundary contract, not an early conversion at factory/call ingress."
+    },
+    "validation": {
+      "initialOwners": {
+        "version": 1,
+        "base": "848d782dcbafe834f02a082e8d0a82b2c73daf54",
+        "run": "rich-text-length-owner1-20261105.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   1.860s] 309 tests run: 308 passed, 1 failed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 309,
+        "passed": 308,
+        "failed": 1,
+        "skipped": 0,
+        "selectedPackages": 6,
+        "matchedPackages": 6,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4107,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-presentation::rich_text_authoring_schema",
+            "test": "direct_style_schemas_preserve_required_values_defaults_and_limits"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-05T08:02:31.7978901Z"
+      },
+      "initialReason": "309 run,308 PASS/1 FAIL: direct-style schema test still expected only[Pt]. Update its exact inventory to[Px,Pt], preserving all other assertions and numeric limits; consolidate both schema consumers onto one policy. No runtime implementation failure in this attempt.",
+      "owners": {
+        "version": 1,
+        "base": "848d782dcbafe834f02a082e8d0a82b2c73daf54",
+        "run": "rich-text-length-owner2-20261105.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   1.819s] 309 tests run: 309 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 309,
+        "passed": 309,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 6,
+        "matchedPackages": 6,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4107,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-05T08:05:07.2784304Z"
+      },
+      "ownerCommand": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-primitives",
+        "-p",
+        "arcweft-rich-text-schema",
+        "-p",
+        "arcweft-text-model",
+        "-p",
+        "arcweft-render-text",
+        "-p",
+        "arcweft-text-layout",
+        "-p",
+        "arcweft-presentation",
+        "--all-features",
+        "--locked",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "ownerScope": "Separate complete six-package run,309/309 PASS,0 skipped. Includes existing presentation/editor/text suites plus mixed-unit TextModel JSON,18pt/24px body metrics,9pt/12px ruby geometry in horizontal/vertical-rl/vertical-lr, rounding and typed invalid-unit/negative/overflow rejection.",
+      "compiler": {
+        "version": 1,
+        "base": "d693a3fcc4b4716ac9d608e9c075d8f1ff96bcdf",
+        "run": "rich-text-length-compiler1-20261105.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [  27.458s] 318 tests run: 318 passed, 175 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 318,
+        "passed": 318,
+        "failed": 0,
+        "skipped": 175,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4107,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-05T08:10:31.4570316Z"
+      },
+      "compilerCommand": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-compiler",
+        "--lib",
+        "--test",
+        "callable_execution",
+        "--all-features",
+        "--locked",
+        "-E",
+        "binary(callable_execution) | test(source_layout_preserves_omission_and_explicit_default_contributions) | test(source_font_and_ruby_lengths_retain_units_in_materialized_templates)",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "compilerScope": "One318-case run: all316 callable_execution integration cases plus2 selected Compiler library source-layout cases. The unchanged original2 px factory cases now pass; direct/alias source order and quantity properties run in Native and decoded AWBC with public JSON save at each OneOp. Static materialized templates preserve both font/ruby units. This is not all Compiler library tests, public Native session-save or final Native/Web image parity.",
+      "sourceRelation": "Owner/graph/structure froze4107 actual repository inputs on848d782dcbafe834f02a082e8d0a82b2c73daf54 plus21 published paths; Compiler froze the same inputs on d693a3fcc4b4716ac9d608e9c075d8f1ff96bcdf. Each source/case/executable drift0. Relevant original user WIP is observed, not pristine HEAD.",
+      "formatting": "All20 changed Rust paths rustfmt and staged whitespace exit0.",
+      "structure": {
+        "version": 1,
+        "base": "848d782dcbafe834f02a082e8d0a82b2c73daf54",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/rich-text-length-structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4107,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T08:06:21.5525088Z",
+        "finishedAt": "2026-11-05T08:06:25.9586654Z"
+      }
+    },
+    "graph": {
+      "version": 1,
+      "base": "848d782dcbafe834f02a082e8d0a82b2c73daf54",
+      "roots": [
+        "arcweft-compiler",
+        "arcweft-presentation",
+        "arcweft-primitives",
+        "arcweft-render-text",
+        "arcweft-rich-text-schema",
+        "arcweft-text-layout",
+        "arcweft-text-model"
+      ],
+      "workspacePackages": 98,
+      "selection": [
+        "arcweft",
+        "arcweft-adapter-desktop",
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-policy",
+        "arcweft-agent-protocol",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-browser-bench",
+        "arcweft-bundle",
+        "arcweft-bundle-assets",
+        "arcweft-character-view",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-core",
+        "arcweft-debug-model",
+        "arcweft-debug-sqlite",
+        "arcweft-desktop-native",
+        "arcweft-dialogue",
+        "arcweft-glyphon",
+        "arcweft-host-adapter",
+        "arcweft-lang-hir",
+        "arcweft-lang-jit-cranelift",
+        "arcweft-lang-sema",
+        "arcweft-lang-syntax",
+        "arcweft-launch",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-text-input",
+        "arcweft-player-web",
+        "arcweft-presentation",
+        "arcweft-primitives",
+        "arcweft-project",
+        "arcweft-project-loader",
+        "arcweft-rag",
+        "arcweft-render-text",
+        "arcweft-render-web",
+        "arcweft-render-wgpu",
+        "arcweft-resource-manifest",
+        "arcweft-resource-model",
+        "arcweft-rich-text-schema",
+        "arcweft-runtime-accelerator",
+        "arcweft-runtime-codegen",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-runtime-scheduler",
+        "arcweft-save",
+        "arcweft-test",
+        "arcweft-text-layout",
+        "arcweft-text-model",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3",
+        "arcweft-view"
+      ],
+      "selectedPackages": 59,
+      "target": "all",
+      "features": "all",
+      "dependencyKinds": [
+        "normal",
+        "build",
+        "dev"
+      ],
+      "metadataTreeDrift": 0,
+      "runtimeAcceptance": "Pending. Component owner runs are not the complete reverse closure."
+    },
+    "ownershipReview": "CheckedLength remains the single authored quantity value. Presentation owns one font-size acceptance policy; RenderText owns absolute logical-pixel admission; TextLayout consumes it without implementing a second unit conversion. Authored cascade/save data retain units. All20 Rust file/owner/embedded-test measurements and98-package structure results are archived:3337 files,3206 Rust,1807432 physical Rust LOC,385 review triggers,0 blocking. The actual7-root closure has59 packages; metadata/tree all-target/all-feature normal/build/dev difference0. The additional package over the previous58 is the newly touched root arcweft-primitives.",
+    "correctionReason": "Supersedes only the old2 px factory failures and unit-dropping current statement for this new source, supported by the unchanged cases now passing and new unit/geometry evidence. Keep every earlier failed run and full SHA unchanged. Do not reopen Generic Match or unrelated accepted boundaries because the overall goal is incomplete.",
+    "supersededCurrentRows": [
+      "| RichTextの部分layout指定／source factory | **既受入を維持。Native／AWBCの順序転送を検証・公開済み、単位等は継続** | Source 083baa5e4596a9f4d36c32bb1124adc9683d2db3は実引数順をAWBC frame・strict保存形式・宣言wrapperからproviderへ接続する。Core library2278／2278 PASS。Compiler callable_execution全316件は314 PASS／2 FAILで、ptの直接／alias合成は両backendで24pt、AWBC各OneOpの公開JSON保存復元もPASS。旧alias11ptの実測は履歴に保持し、このSourceの残作業から除く。元のpx2条件はPt限定Size schemaで引き続きFAIL。単位を落とすTextModel／表示consumer、typed bare serif、static inline_stylesと全体受入を継続する。部分layout・共通property等の既受入は維持する。[実測・旧失敗・公開SHA・原本](acceptance-evidence/task-rich-text-property-identity.json)。 |",
+      "| 共有契約／推移的逆依存matrix | **直近の全53実測を保持。今回の全58逆依存は未実行** | Source2aaa0480b171d15274737d7bd49a3c391ce19096の全53実runは7808件中7793 PASS／15 CLI FAIL、40 skipped。50 packageに実テストがあり、3 packageはbuildのみ。source／case／EXE drift0。中間Source083baa5e4596a9f4d36c32bb1124adc9683d2db3はCoreを含む5 ownerの実graphで58 package、normal／build／dev・all target／all featureのmetadata／tree差分0。Core library2278件のPASSを全58の実行とは扱わない。[全実測・新graph・原本](acceptance-evidence/task-rich-text-property-identity.json)。 |",
+      "| CLI全target照合 | **統合受入は未完了。直近の全698実測は683 PASS／15 FAIL** | Source 2aaa0480b171d15274737d7bd49a3c391ce19096、4102入力、全53逆依存の同じ実runに含む。従来の14 failed IDと、新たなMCP stdioのChildExitDeadline 1件を保持する。同じsource・feature・全224 EXE hashの単独再実行では追加1件がPASSしたが、全体runの15 FAILは変更しない。原因は未確定で、ID一致や単独PASSから原因を推定しない。中間Source 083baa5e4596a9f4d36c32bb1124adc9683d2db3の全CLIは未再実行。[全失敗・単独再実行・原本](acceptance-evidence/task-rich-text-property-identity.json)。別境界の失敗でGeneric Matchや既受入のtyped ownerを未完了へ戻さない。 |",
+      "| workspace check／Clippy・fmt・構造gate | **中間cutはfmt・構造gateが終了0。全体check／Clippyは未再実行** | Source083baa5e4596a9f4d36c32bb1124adc9683d2db3は変更Rust19件のfmt・staged whitespaceと全98 packageの構造gateが終了0（blocking0、review trigger385）。全98 check／Clippy（all-target／all-feature／locked）の直近の終了0はSource2aaa0480b171d15274737d7bd49a3c391ce19096で、警告は残存する。ユーザー指定の全体cargo cleanはSource187fb586261ac6ba381546532143fa20854dba8bで終了0、ソース・記録・Git差分0。doctest／wasm専用検証は未再実行。[測定・owner review・cleanを含む履歴とraw](acceptance-evidence/task-rich-text-property-identity.json)。 |"
+    ],
+    "historyPrefix": {
+      "bytes": 1849341,
+      "sha256": "6ebee4a06e229380199587038f9a6c19c2c79ef983ace641062a41d1f8ab5312"
+    },
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-rich-text-length.raw.zip",
+      "bytes": 1269577,
+      "sha256": "3778258bb343a54bfedf4ff1e27b67f3ed65dd62ed51b902dcfd8c62e9947667",
+      "entries": 62,
+      "entryDrift": 0,
+      "indexEntry": "rich-text-length.archive-inputs.json"
+    }
   }
 }
