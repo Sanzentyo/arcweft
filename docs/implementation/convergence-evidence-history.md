@@ -14763,3 +14763,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - The same 4,126 source inputs built the Compiler View integration test and Runtime Driver library test targets in isolation. The three selected Compiler tests passed in 0.294 seconds. The filter selected no Runtime Driver runtime case.
 - Retrying the complete 22-package catalog with the same source inputs still exited 101 before tests. Windows reported OS error 1455 again, and rustc also reported an internal compiler error. [Both commands, results and raw diagnostics](acceptance-evidence/task-unsafe-audit-reason.json).
+
+## 2026-11-06 — Proof trust declaration and policy diagnostic
+
+- Source db071219f84e57186efa9d40dccc3bb8620f417c preserves the checked trust declaration and its attribute source. Applying a policy that forbids trusted declarations produces an error on the original attribute. The pending formal proof-body obligation stays separate.
+- The baseline CLI showed the trusted declaration as pending in dev and release. The new CLI used the same source hash, retained the decoded reason and exact byte range 0..50 in both modes, and produced one `verify.proof.trust_disallowed` in release. Baseline CLI controls 3/3 passed. Final focused nextest ran 5/5 PASS, 696 skipped, 1.755 seconds, with zero source, case and executable drift. [Original outputs and publication](acceptance-evidence/task-proof-trust-policy.json).

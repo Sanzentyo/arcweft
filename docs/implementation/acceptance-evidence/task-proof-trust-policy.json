@@ -1,0 +1,305 @@
+{
+  "version": 1,
+  "recordedAt": "2026-11-05T23:48:54.7146300Z",
+  "source": "db071219f84e57186efa9d40dccc3bb8620f417c",
+  "publication": {
+    "version": 1,
+    "commit": "db071219f84e57186efa9d40dccc3bb8620f417c",
+    "parent": "e6ac7cca91c791b1e853bd75f1276001aca73eb8",
+    "tree": "bbeca8a930a2bccf6d3fb033012c594a07e7224a",
+    "remote": "db071219f84e57186efa9d40dccc3bb8620f417c",
+    "paths": [
+      {
+        "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+        "blob": "a7881415c2955c6d80f14fd6dc4b3116148399c1"
+      },
+      {
+        "path": "crates/arcweft-verify/src/lib.rs",
+        "blob": "f0c33d83277a2afab5b0b394f5b045894efd2bf0"
+      },
+      {
+        "path": "docs/01-language/proofs-and-unsafe-audits.md",
+        "blob": "6a488132fb07f61dbdeade36b56d96a552f9fc7c"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "039aeb5820fb23d2496e271773202cf943d8caf5ff911eec69401258f3622070",
+    "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-05T23:47:24.3250809Z"
+  },
+  "scope": "The verifier reports the declared proof trust reason and revision-bound attribute source. The same policy logic applies to new reports and policy reprojection. The original formal proof-body obligation remains pending. Lifetime promotion and transitive proof discharge are separate requirements.",
+  "baseline": {
+    "tests": {
+      "version": 1,
+      "base": "c6588ddb19608abba93d20649abda4450fee1d0d",
+      "run": "proof-trust-policy-baseline-cli-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   1.831s] 3 tests run: 3 passed, 489 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 489,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4126,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-05T23:43:46.3128405Z"
+    },
+    "probe": {
+      "version": 1,
+      "head": "e6ac7cca91c791b1e853bd75f1276001aca73eb8",
+      "binarySha256": "ae6903d73038fd759db475401082711d3b24d164804cc0397c2d117c56ff83fe",
+      "sourceSha256": "d95400e6e6974f914136127d3fbc5e6d505a1ba49f3be2a7227a0b818d0aa5c2",
+      "cases": [
+        {
+          "mode": "dev",
+          "exitCode": 0,
+          "declared": {
+            "kind": "pending"
+          },
+          "policy": {
+            "mode": "dev",
+            "backend": "emit",
+            "allow_trusted_proofs": true
+          },
+          "bodyDischarge": "missing",
+          "diagIds": [
+            "verify.pending.proof.signed_manifest.body",
+            "verify.pending.proof.ordinary.body"
+          ],
+          "stdoutSha256": "aa363b760d8212c96e6aab89a610d928e6395ea1d726458f0a839ca95f8d492a",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "mode": "release",
+          "exitCode": 1,
+          "declared": {
+            "kind": "pending"
+          },
+          "policy": {
+            "mode": "release",
+            "backend": "emit",
+            "allow_trusted_proofs": false
+          },
+          "bodyDischarge": "missing",
+          "diagIds": [
+            "verify.pending.proof.signed_manifest.body",
+            "verify.pending.proof.ordinary.body"
+          ],
+          "stdoutSha256": "262b6e0b0a10b9e3ba5988d167060f6f1e1955966bb2b935cfbbbd6e0f9527f0",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    }
+  },
+  "focused": {
+    "version": 1,
+    "base": "e6ac7cca91c791b1e853bd75f1276001aca73eb8",
+    "run": "proof-trust-policy-owner1-20261106.runtime",
+    "actualExitCode": 0,
+    "summary": "Summary [   1.755s] 5 tests run: 5 passed, 696 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 5,
+    "passed": 5,
+    "failed": 0,
+    "skipped": 696,
+    "selectedPackages": 2,
+    "matchedPackages": 2,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4126,
+    "sourceDrift": 0,
+    "held": 12,
+    "failureSet": [],
+    "isPassingRun": true,
+    "recordedAt": "2026-11-05T23:46:44.5069698Z"
+  },
+  "currentProbe": {
+    "version": 1,
+    "head": "e6ac7cca91c791b1e853bd75f1276001aca73eb8",
+    "binarySha256": "b523ab09939bac11b7accad8974a7ad12d0b0968ba7b71ff6920df0e41a489f7",
+    "sourceSha256": "d95400e6e6974f914136127d3fbc5e6d505a1ba49f3be2a7227a0b818d0aa5c2",
+    "cases": [
+      {
+        "mode": "dev",
+        "exitCode": 0,
+        "declared": {
+          "kind": "trusted",
+          "reason": "  signed\nmanifest  ",
+          "source": {
+            "source": {
+              "id": "arcweft-project://proof-trust-policy-before-20261106/proof-trust-policy-before-20261106.arcw",
+              "revision": "65ab96bb2713cd963f06b003db169f1ddc37bd93b5c0fcc17926f032d4866fb0",
+              "source_len": 103
+            },
+            "start": 0,
+            "end": 50
+          }
+        },
+        "exactAttribute": "#[verify.trusted(reason = \"  signed\\nmanifest  \")]",
+        "policy": {
+          "mode": "dev",
+          "backend": "emit",
+          "allow_trusted_proofs": true
+        },
+        "bodyDischarge": "missing",
+        "policyDiagnostics": [],
+        "stdoutSha256": "c22b9ad3fd8f33eb06a38edede30ab12a4e319cec9c582909341ba01ec21da63",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "mode": "release",
+        "exitCode": 1,
+        "declared": {
+          "kind": "trusted",
+          "reason": "  signed\nmanifest  ",
+          "source": {
+            "source": {
+              "id": "arcweft-project://proof-trust-policy-before-20261106/proof-trust-policy-before-20261106.arcw",
+              "revision": "65ab96bb2713cd963f06b003db169f1ddc37bd93b5c0fcc17926f032d4866fb0",
+              "source_len": 103
+            },
+            "start": 0,
+            "end": 50
+          }
+        },
+        "exactAttribute": "#[verify.trusted(reason = \"  signed\\nmanifest  \")]",
+        "policy": {
+          "mode": "release",
+          "backend": "emit",
+          "allow_trusted_proofs": false
+        },
+        "bodyDischarge": "missing",
+        "policyDiagnostics": [
+          {
+            "id": "verify.proof.trust_disallowed",
+            "severity": "error",
+            "message": "policy disallows the trust declaration on proof `signed_manifest`",
+            "source": {
+              "source": {
+                "id": "arcweft-project://proof-trust-policy-before-20261106/proof-trust-policy-before-20261106.arcw",
+                "revision": "65ab96bb2713cd963f06b003db169f1ddc37bd93b5c0fcc17926f032d4866fb0",
+                "source_len": 103
+              },
+              "start": 0,
+              "end": 50
+            },
+            "obligation": null,
+            "related_ids": [
+              "signed_manifest"
+            ],
+            "actions": []
+          }
+        ],
+        "stdoutSha256": "793e731e9681336317481a3da2cd4d86fba7cdc160bff4419fb6bd337fd99922",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ]
+  },
+  "raw": {
+    "path": "docs/implementation/acceptance-evidence/task-proof-trust-policy.raw.zip",
+    "bytes": 58477,
+    "sha256": "1d8cc025ec1f20031556bca6c7ddeed4a5338b14db2be514ad222676d227ff98",
+    "entryDrift": 0,
+    "entries": [
+      {
+        "entry": "checkpoint-proof-trust-policy-20261106.verified.json",
+        "bytes": 954,
+        "sha256": "97c35264ceb67cec62538d13f8f786991256557d0d8387bfec9084df7a99127b"
+      },
+      {
+        "entry": "proof-trust-policy-after-20261106.dev.json",
+        "bytes": 7079,
+        "sha256": "c22b9ad3fd8f33eb06a38edede30ab12a4e319cec9c582909341ba01ec21da63"
+      },
+      {
+        "entry": "proof-trust-policy-after-20261106.dev.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "proof-trust-policy-after-20261106.receipt.json",
+        "bytes": 2906,
+        "sha256": "e49758839a469c93c1df1edc8060b156d7ef53612e85ed3c439435fd46697edc"
+      },
+      {
+        "entry": "proof-trust-policy-after-20261106.release.json",
+        "bytes": 7681,
+        "sha256": "793e731e9681336317481a3da2cd4d86fba7cdc160bff4419fb6bd337fd99922"
+      },
+      {
+        "entry": "proof-trust-policy-after-20261106.release.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "proof-trust-policy-baseline-cli-20261106.runtime.terminal-audit.json",
+        "bytes": 621,
+        "sha256": "178d20171170efa14e19d3a76ff4bfb9b222704b22fb7ea1a4ca2311ec0c109e"
+      },
+      {
+        "entry": "proof-trust-policy-before-20261106.arcw",
+        "bytes": 103,
+        "sha256": "d95400e6e6974f914136127d3fbc5e6d505a1ba49f3be2a7227a0b818d0aa5c2"
+      },
+      {
+        "entry": "proof-trust-policy-before-20261106.dev.json",
+        "bytes": 6693,
+        "sha256": "aa363b760d8212c96e6aab89a610d928e6395ea1d726458f0a839ca95f8d492a"
+      },
+      {
+        "entry": "proof-trust-policy-before-20261106.dev.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "proof-trust-policy-before-20261106.receipt.json",
+        "bytes": 1443,
+        "sha256": "3b60b9d8187e656e4064dbc7b3ef9e3026c300c17e35911fff8d0de3cea87d64"
+      },
+      {
+        "entry": "proof-trust-policy-before-20261106.release.json",
+        "bytes": 6694,
+        "sha256": "262b6e0b0a10b9e3ba5988d167060f6f1e1955966bb2b935cfbbbd6e0f9527f0"
+      },
+      {
+        "entry": "proof-trust-policy-before-20261106.release.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "proof-trust-policy-owner1-20261106.binaries-before.json",
+        "bytes": 645,
+        "sha256": "1a885dd6264a2e53f2febe9e7cb4de183eb7043b736e863b9cfcc2e98e057871"
+      },
+      {
+        "entry": "proof-trust-policy-owner1-20261106.catalog.inventory.json",
+        "bytes": 169250,
+        "sha256": "540657e78279d39a74066e29edd489c8b04d807e0fa754bf9142ead48a93ac2d"
+      },
+      {
+        "entry": "proof-trust-policy-owner1-20261106.runtime.json",
+        "bytes": 975,
+        "sha256": "b8965aeffb1cab8a230d3022f6aca7f234dc203aeea84f67cba8670f77e0fd5b"
+      },
+      {
+        "entry": "proof-trust-policy-owner1-20261106.runtime.log",
+        "bytes": 284199,
+        "sha256": "345abb730c38989572ca10145fd2c857e1fc5d2cacd7fae2b3fb04164ecb4886"
+      },
+      {
+        "entry": "proof-trust-policy-owner1-20261106.runtime.terminal-audit.json",
+        "bytes": 615,
+        "sha256": "bd943fd51fb6e5f2d3acf71b021fd988e65d97d1341af4d700c32d083c596ae3"
+      }
+    ]
+  }
+}
