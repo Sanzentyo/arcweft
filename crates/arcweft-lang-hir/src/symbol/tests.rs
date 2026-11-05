@@ -564,6 +564,7 @@ mod import_linking;
 mod limits;
 mod nominal_lookup;
 mod nominal_publication;
+mod style_identity;
 mod symbol_projection;
 
 fn aliased_target_imports(count: usize) -> String {

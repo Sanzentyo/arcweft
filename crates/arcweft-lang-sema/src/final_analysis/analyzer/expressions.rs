@@ -725,6 +725,12 @@ impl Analyzer<'_, '_, '_> {
         let expression = module.resolve_expr(owner).map_err(|_| {
             AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
         })?;
+        if context.consumer() == super::expression_error::AnalyzerExpressionConsumer::ViewPartName {
+            return self
+                .check_view_part_name(context, owner, expression)
+                .map(Into::into)
+                .map_err(Into::into);
+        }
         let expression_uses = self
             .topology
             .module(owner.module())
@@ -4430,6 +4436,62 @@ impl Analyzer<'_, '_, '_> {
         Ok(Some(PreparedExpressionFact::from(prepared)))
     }
 
+    fn check_view_part_name(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        owner: ExprId,
+        expression: &HirExpr,
+    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+        let name = match expression.kind() {
+            HirExprKind::Path(HirPathValue::Resolved(path)) => {
+                if path.root() != HirPathRoot::ImplicitCrate
+                    || path
+                        .segments()
+                        .iter()
+                        .any(|segment| matches!(segment, HirPathSegment::ProjectSymbol(_)))
+                {
+                    return Err(AnalyzerExpressionError::rejected(owner));
+                }
+                arcweft_view::ViewPartLocalName::try_from_segments(
+                    path.segments().iter().filter_map(|segment| match segment {
+                        HirPathSegment::Identifier(name) => Some(name.as_str()),
+                        HirPathSegment::ProjectSymbol(_) => None,
+                    }),
+                )
+            }
+            HirExprKind::Select(select) => {
+                let HirSelectedMember::Name(member) = select.member() else {
+                    return Err(AnalyzerExpressionError::rejected(owner));
+                };
+                let prefix = self.evaluate_expression(context, select.target(), None)?;
+                let Some(CheckedExpressionResolution::ViewPartName(prefix)) =
+                    prefix.checked_resolution()
+                else {
+                    return Err(AnalyzerExpressionError::rejected(owner));
+                };
+                arcweft_view::ViewPartLocalName::try_from_segments([
+                    prefix.as_str(),
+                    member.as_str(),
+                ])
+            }
+            _ => return Err(AnalyzerExpressionError::rejected(owner)),
+        }
+        .map_err(|_| AnalyzerExpressionError::rejected(owner))?;
+        let ty = self
+            .catalogs
+            .world
+            .environment()
+            .compile_time_scalars()
+            .type_for(crate::registration::CompileTimeScalarTypeRoleId::PublicId)
+            .clone();
+        Ok(CheckedExpression::value(
+            ty,
+            CheckedTypeSelection::Expected,
+            EffectSet::new(),
+            CheckedExpressionResolution::ViewPartName(name),
+        ))
+    }
+
     fn check_view_call_expression(
         &mut self,
         context: &AnalyzerExpressionContext<'_>,
@@ -4518,6 +4580,13 @@ impl Analyzer<'_, '_, '_> {
                 arcweft_view::ViewElementArgumentRole::Label => TypeKind::String,
                 arcweft_view::ViewElementArgumentRole::Enabled => TypeKind::Bool,
                 arcweft_view::ViewElementArgumentRole::Spacing => TypeKind::I32,
+                arcweft_view::ViewElementArgumentRole::Part => self
+                    .catalogs
+                    .world
+                    .environment()
+                    .compile_time_scalars()
+                    .type_for(crate::registration::CompileTimeScalarTypeRoleId::PublicId)
+                    .clone(),
                 _ => self
                     .catalogs
                     .world
@@ -4526,7 +4595,17 @@ impl Analyzer<'_, '_, '_> {
                     .type_for(crate::registration::CompileTimeScalarTypeRoleId::Length)
                     .clone(),
             });
-            let checked = self.evaluate_expression(context, argument.value(), expected.as_ref())?;
+            let part_context;
+            let argument_context = if role == Some(arcweft_view::ViewElementArgumentRole::Part) {
+                part_context = context.for_consumer(
+                    super::expression_error::AnalyzerExpressionConsumer::ViewPartName,
+                );
+                &part_context
+            } else {
+                context
+            };
+            let checked =
+                self.evaluate_expression(argument_context, argument.value(), expected.as_ref())?;
             if let Some(expected) = &expected {
                 if !checked.value_type().is_some_and(|ty| expected.accepts(ty)) {
                     return Err(AnalyzerExpressionError::rejected(argument.value()));

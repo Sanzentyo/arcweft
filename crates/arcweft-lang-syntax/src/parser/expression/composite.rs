@@ -51,7 +51,7 @@ fn emit_delimited_group(
     parser.start_transparent_expression_group(role);
     emit_open_delimiter(parser, SyntaxKind::OpenParenNode, "(");
     parser.bump_trivia_before(close);
-    emit_expression(parser, close, SyntaxRole::Operand);
+    let _ = super::emit_expression_node(parser, close, SyntaxRole::Operand);
     bump_until(parser, close);
     emit_close_delimiter(
         parser,

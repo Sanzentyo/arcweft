@@ -343,11 +343,11 @@ impl HirRetainedHeader {
                         .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
                     origin: HirPublicIdOrigin::DerivedFromName,
                 },
-                HirRetainedName::Missing | HirRetainedName::Invalid => {
-                    HirRetainedPublicId::Recovered(
-                        HirRetainedPublicIdIssue::DerivedFromRecoveredName,
-                    )
-                }
+                HirRetainedName::IdentityOnly
+                | HirRetainedName::Missing
+                | HirRetainedName::Invalid => HirRetainedPublicId::Recovered(
+                    HirRetainedPublicIdIssue::DerivedFromRecoveredName,
+                ),
             },
             AttachedDeclarationPublicId::Explicit { value, .. } => HirRetainedPublicId::Resolved {
                 value: value.clone(),

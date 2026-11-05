@@ -280,7 +280,9 @@ fn source_owner(
         HirItemKind::View(view) => {
             let name = match view.header().name() {
                 HirRetainedName::Resolved(name) => Some(name),
-                HirRetainedName::Missing | HirRetainedName::Invalid => None,
+                HirRetainedName::IdentityOnly
+                | HirRetainedName::Missing
+                | HirRetainedName::Invalid => None,
             };
             ordinary_callable(
                 module,

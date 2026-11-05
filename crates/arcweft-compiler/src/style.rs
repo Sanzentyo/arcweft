@@ -1,8 +1,7 @@
 //! Compiler-owned admission boundary for final-HIR native Style data.
 //!
-//! The former syntax/flattened-HIR Style reader has been removed. Until the
-//! final-HIR semantic producer is connected, authored Style items fail closed;
-//! an empty project receives the one canonical empty product artifact.
+//! Authored selectors consume typed final-HIR components and declarations
+//! consume their accepted semantic values. Unsupported products fail closed.
 
 use std::collections::BTreeMap;
 
@@ -322,10 +321,24 @@ fn lower_selector(selector: &HirStyleSelector) -> Option<arcweft_view::style::Vi
                 Some(name) => Some(ViewStyleTargetKind::from_source_name(name.as_str()?)?),
                 None => None,
             };
-            if sequence.part().is_some() || !sequence.predicates().is_empty() {
-                return None;
-            }
-            ViewStyleSelectorSequence::new(relation, target, None, Vec::new())
+            let part = match sequence.part() {
+                Some(name) => Some(arcweft_view::ViewPartName::try_new(name.as_str()?).ok()?),
+                None => None,
+            };
+            let predicates = sequence
+                .predicates()
+                .iter()
+                .map(|name| {
+                    let name = name.as_str()?;
+                    arcweft_view::style::ViewInteractionSelector::from_source_name(name)
+                        .map(arcweft_view::style::ViewStylePredicate::Interaction)
+                        .or_else(|| {
+                            arcweft_view::style::ViewElementState::from_source_name(name)
+                                .map(arcweft_view::style::ViewStylePredicate::ElementState)
+                        })
+                })
+                .collect::<Option<Vec<_>>>()?;
+            ViewStyleSelectorSequence::new(relation, target, part, predicates)
         })
         .collect::<Option<Vec<_>>>()?;
     arcweft_view::style::ViewStyleSelector::new(sequences)

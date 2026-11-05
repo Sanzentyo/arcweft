@@ -178,8 +178,8 @@ pub(super) fn payload_matches(
     };
     item.members().is_empty()
         && item_prefix_matches(item, attached.prefix(), slots)
-        && HirStyleItem::project_attached_public_id(module, attached.id())
-            .is_ok_and(|id| &id == style.public_id())
+        && HirStyleItem::project_attached_header(module, attached.id())
+            .is_ok_and(|header| &header == style.header())
         && style_id_expression_is_unallocated(attached.id(), slots)
         && outer_body_shape_is_consistent(attached.body())
         && style_tokens_match(style.tokens(), attached.body(), slots)

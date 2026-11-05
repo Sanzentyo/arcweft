@@ -659,6 +659,14 @@ fn reduce_compile_time_scalar(
     exact_rgb: bool,
 ) -> Result<CheckedCompileTimeScalar, CompileTimeScalarReductionError> {
     if matches!(kind, CheckedCompileTimeScalarKind::PublicId)
+        && let Some(crate::final_analysis::CheckedExpressionResolution::ViewPartName(name)) =
+            fact.checked_resolution()
+    {
+        return Ok(CheckedCompileTimeScalar::PublicId(
+            name.as_public_id().clone(),
+        ));
+    }
+    if matches!(kind, CheckedCompileTimeScalarKind::PublicId)
         && let Some(crate::final_analysis::CheckedExpressionResolution::Value(
             crate::final_analysis::CheckedValueResolution::Constant(HirLiteral::String(
                 HirStringLiteral::Value(value),

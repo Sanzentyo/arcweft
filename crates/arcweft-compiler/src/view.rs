@@ -240,6 +240,8 @@ pub(crate) enum ViewProjectLowerError {
     #[error(transparent)]
     StyleModel(#[from] arcweft_view::style::ViewStyleModelError),
     #[error(transparent)]
+    StyleSheetIdentity(#[from] arcweft_view::style::ViewStyleSheetIdError),
+    #[error(transparent)]
     SourceIdentity(#[from] arcweft_source::ProductSourceIdentityError),
 }
 
@@ -529,11 +531,13 @@ impl<'a> ViewProjectLowerer<'a> {
             .source_map
             .try_with_document(&standard_view_source)?
             .try_with_document(&standard_style_source)?;
-        let resources = ViewProgramStyleResources::new(None, Some(self.style.resource().clone()))
-            .merge(ViewProgramStyleResources::new(
-                authored.program,
-                Some(authored.style),
-            ))?
+        // The authored program can reference both its inline patches and the
+        // project's named sheets. Assemble their complete catalog first, keeping
+        // the inline patch inventory at its original dense coordinates.
+        let authored_styles = ViewProgramStyleResources::new(None, Some(authored.style)).merge(
+            ViewProgramStyleResources::new(None, Some(self.style.resource().clone())),
+        )?;
+        let resources = ViewProgramStyleResources::new(authored.program, authored_styles.style)
             .merge(ViewProgramStyleResources::new(
                 Some(standard_view::dialogue_program()),
                 Some(standard_view::dialogue_style()),
@@ -1144,7 +1148,7 @@ fn lower_authored_view(
         for entry in view.declaration.body() {
             match entry {
                 arcweft_lang_hir::item::HirViewBodyEntry::Value(value) => {
-                    lowerer.lower_value(*value)?
+                    lowerer.lower_value(*value)?;
                 }
                 arcweft_lang_hir::item::HirViewBodyEntry::Statement(statement) => {
                     lowerer.lower_statement(*statement)?
@@ -1393,25 +1397,29 @@ impl AuthoredViewBodyLowerer<'_> {
     fn lower_branch_body(
         &mut self,
         body: AuthoredViewBranchBody<'_>,
-    ) -> Result<(), ViewProjectLowerError> {
+    ) -> Result<Vec<usize>, ViewProjectLowerError> {
         let outer = self.locals.clone();
         self.output
             .instructions
             .push(ViewProgramInstruction::BeginScope);
-        match body {
+        let nodes = match body {
             AuthoredViewBranchBody::Value(value) => self.lower_value(value)?,
             AuthoredViewBranchBody::Statements(statements) => {
                 for &statement in statements {
                     self.lower_statement(statement)?;
                 }
+                Vec::new()
             }
-            AuthoredViewBranchBody::Statement(statement) => self.lower_statement(statement)?,
-        }
+            AuthoredViewBranchBody::Statement(statement) => {
+                self.lower_statement(statement)?;
+                Vec::new()
+            }
+        };
         self.output
             .instructions
             .push(ViewProgramInstruction::EndScope);
         self.locals = outer;
-        Ok(())
+        Ok(nodes)
     }
 
     fn lower_conditional(
@@ -1419,7 +1427,7 @@ impl AuthoredViewBodyLowerer<'_> {
         condition: ExprId,
         then_body: AuthoredViewBranchBody<'_>,
         else_body: Option<AuthoredViewBranchBody<'_>>,
-    ) -> Result<(), ViewProjectLowerError> {
+    ) -> Result<Vec<usize>, ViewProjectLowerError> {
         let owner = self.owner;
         let invalid = || ViewProjectLowerError::MissingCheckedViewProjection { owner };
         let condition = ViewExpressionLowerer {
@@ -1443,11 +1451,11 @@ impl AuthoredViewBodyLowerer<'_> {
                 else_span: None,
                 source: None,
             });
-        self.lower_branch_body(then_body)?;
+        let mut nodes = self.lower_branch_body(then_body)?;
         let then_end = self.output.instructions.len();
         let then_span = u32::try_from(then_end - branch - 1).map_err(|_| invalid())?;
         let else_span = if let Some(body) = else_body {
-            self.lower_branch_body(body)?;
+            nodes.extend(self.lower_branch_body(body)?);
             Some(u32::try_from(self.output.instructions.len() - then_end).map_err(|_| invalid())?)
         } else {
             None
@@ -1462,14 +1470,14 @@ impl AuthoredViewBodyLowerer<'_> {
         };
         *stored_then = then_span;
         *stored_else = else_span;
-        Ok(())
+        Ok(nodes)
     }
 
     fn lower_match(
         &mut self,
         owner: arcweft_lang_hir::project::HirMatchOwner,
         matched: arcweft_lang_hir::project::HirMatchView<'_>,
-    ) -> Result<(), ViewProjectLowerError> {
+    ) -> Result<Vec<usize>, ViewProjectLowerError> {
         let view_owner = self.owner;
         let invalid = || ViewProjectLowerError::MissingCheckedViewProjection { owner: view_owner };
         let execution = ViewExpressionLowerer {
@@ -1519,6 +1527,7 @@ impl AuthoredViewBodyLowerer<'_> {
         let outer = self.locals.clone();
         let mut ordinal = 0usize;
         let mut arms = Vec::new();
+        let mut nodes = Vec::new();
         for (arm, bindings) in matched.arms().zip(selection.outputs()) {
             self.locals = outer.clone();
             let mut outputs = Vec::new();
@@ -1553,7 +1562,7 @@ impl AuthoredViewBodyLowerer<'_> {
                     )
                 }
             };
-            self.lower_branch_body(body)?;
+            nodes.extend(self.lower_branch_body(body)?);
             arms.push(arcweft_view::ViewMatchArm {
                 body_span: u32::try_from(self.output.instructions.len() - start)
                     .map_err(|_| invalid())?,
@@ -1566,7 +1575,7 @@ impl AuthoredViewBodyLowerer<'_> {
             return Err(invalid());
         };
         program.arms = arms.into_boxed_slice();
-        Ok(())
+        Ok(nodes)
     }
 
     fn lower_repeat(
@@ -1671,10 +1680,12 @@ impl AuthoredViewBodyLowerer<'_> {
             return self.lower_repeat(statement, iteration);
         }
         if let arcweft_lang_hir::stmt::HirStmtKind::Match(matched) = row.kind() {
-            return self.lower_match(
-                statement.into(),
-                arcweft_lang_hir::project::HirMatchView::Statement(matched),
-            );
+            return self
+                .lower_match(
+                    statement.into(),
+                    arcweft_lang_hir::project::HirMatchView::Statement(matched),
+                )
+                .map(|_| ());
         }
         if let arcweft_lang_hir::stmt::HirStmtKind::If(branch) = row.kind() {
             let then_body = AuthoredViewBranchBody::Statements(
@@ -1694,7 +1705,9 @@ impl AuthoredViewBodyLowerer<'_> {
                 }
                 None => None,
             };
-            return self.lower_conditional(branch.condition(), then_body, else_body);
+            return self
+                .lower_conditional(branch.condition(), then_body, else_body)
+                .map(|_| ());
         }
 
         match row.kind().evaluation_plan() {
@@ -1712,7 +1725,7 @@ impl AuthoredViewBodyLowerer<'_> {
                         })
                     })
                 {
-                    return self.lower_value(input);
+                    return self.lower_value(input).map(|_| ());
                 }
                 let execution = ViewExpressionLowerer {
                     module: self.module,
@@ -1796,12 +1809,12 @@ impl AuthoredViewBodyLowerer<'_> {
                 kind: arcweft_lang_hir::stmt::HirStmtValuePlanKind::Expression,
                 expression: Some(expression),
                 ..
-            } => self.lower_value(expression),
+            } => self.lower_value(expression).map(|_| ()),
             _ => Err(invalid()),
         }
     }
 
-    fn lower_value(&mut self, value: ExprId) -> Result<(), ViewProjectLowerError> {
+    fn lower_value(&mut self, value: ExprId) -> Result<Vec<usize>, ViewProjectLowerError> {
         let expression = self.module.resolve_expr(value).map_err(|_| {
             ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner }
         })?;
@@ -1830,18 +1843,18 @@ impl AuthoredViewBodyLowerer<'_> {
             for &statement in block.statements() {
                 self.lower_statement(statement)?;
             }
-            self.lower_value(block.tail())?;
+            let nodes = self.lower_value(block.tail())?;
             self.output
                 .instructions
                 .push(ViewProgramInstruction::EndScope);
             self.locals = outer;
-            return Ok(());
+            return Ok(nodes);
         }
         if matches!(expression.kind(), arcweft_lang_hir::expr::HirExprKind::Unit) {
-            return Ok(());
+            return Ok(Vec::new());
         }
         if matches!(checked.value_type(), Some(TypeKind::CompileTimeCallable(_))) {
-            return Ok(());
+            return Ok(Vec::new());
         }
         if let CheckedExpressionResolution::ViewCall(CheckedViewCall::ContainerBody(application)) =
             checked.resolution()
@@ -1876,13 +1889,13 @@ impl AuthoredViewBodyLowerer<'_> {
                 CheckedExpressionResolution::ViewFxApplication(application) => {
                     self.lower_fx_modifier(value, application)
                 }
-                CheckedExpressionResolution::Call => self.lower_handler_modifier(value, call),
+                CheckedExpressionResolution::Call => self.lower_modifier(value, call),
                 _ => Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner }),
             };
         };
         match kind {
             CheckedViewCall::Element(element_call) => {
-                self.lower_element(element_call.element(), element_call.arguments(), None)?
+                self.lower_element(element_call.element(), element_call.arguments(), None)
             }
             CheckedViewCall::ContainerBody(_) => {
                 return Err(ViewProjectLowerError::MissingCheckedViewProjection {
@@ -1901,10 +1914,9 @@ impl AuthoredViewBodyLowerer<'_> {
                 } else {
                     ViewTextSurface::Text
                 };
-                self.lower_text(argument, surface)?;
+                self.lower_text(argument, surface)
             }
         }
-        Ok(())
     }
 
     fn lower_element(
@@ -1912,7 +1924,7 @@ impl AuthoredViewBodyLowerer<'_> {
         element: arcweft_view::ViewElementKind,
         arguments: &[arcweft_lang_sema::final_analysis::CheckedViewElementArgument],
         body: Option<ExprId>,
-    ) -> Result<(), ViewProjectLowerError> {
+    ) -> Result<Vec<usize>, ViewProjectLowerError> {
         if arguments.iter().any(|argument| {
             matches!(
                 argument.role(),
@@ -1923,20 +1935,31 @@ impl AuthoredViewBodyLowerer<'_> {
         }) {
             return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
         }
-        let styles = self.lower_element_style(element, arguments)?;
+        let styles = self.lower_element_style(
+            Some(element),
+            arguments
+                .iter()
+                .map(|argument| (argument.role(), argument.value())),
+        )?;
+        let part = arguments
+            .iter()
+            .find(|argument| argument.role() == arcweft_view::ViewElementArgumentRole::Part)
+            .map(|argument| self.checked_part(argument.value()).cloned())
+            .transpose()?;
         let ordinal = self.element_ordinal;
         self.element_ordinal = self
             .element_ordinal
             .checked_add(1)
             .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner })?;
         let target = format!("node.{}.{}", self.view.as_str(), ordinal);
+        let node = self.output.instructions.len();
         self.output
             .instructions
             .push(ViewProgramInstruction::OpenElement {
                 element,
                 target: Some(target.clone()),
                 styles,
-                part: None,
+                part,
                 key: None,
                 source: None,
             });
@@ -2036,13 +2059,13 @@ impl AuthoredViewBodyLowerer<'_> {
         self.output
             .instructions
             .push(ViewProgramInstruction::CloseElement);
-        Ok(())
+        Ok(vec![node])
     }
     fn lower_nested_view(
         &mut self,
         value: ExprId,
         call: &arcweft_lang_hir::expr::HirCallInvocation,
-    ) -> Result<(), ViewProjectLowerError> {
+    ) -> Result<Vec<usize>, ViewProjectLowerError> {
         use arcweft_lang_sema::callable::{
             CheckedCallArgumentPassing, CheckedCallOperandDestination,
         };
@@ -2137,6 +2160,7 @@ impl AuthoredViewBodyLowerer<'_> {
                 },
             );
         }
+        let node = self.output.instructions.len();
         self.output
             .instructions
             .push(ViewProgramInstruction::CallView {
@@ -2147,13 +2171,13 @@ impl AuthoredViewBodyLowerer<'_> {
                 key: None,
                 source: None,
             });
-        Ok(())
+        Ok(vec![node])
     }
 
     fn lower_element_style(
         &mut self,
-        element: arcweft_view::ViewElementKind,
-        arguments: &[arcweft_lang_sema::final_analysis::CheckedViewElementArgument],
+        element: Option<arcweft_view::ViewElementKind>,
+        arguments: impl IntoIterator<Item = (arcweft_view::ViewElementArgumentRole, ExprId)>,
     ) -> Result<Vec<arcweft_view::style::ViewStyleApplicationTarget>, ViewProjectLowerError> {
         use arcweft_lang_sema::final_analysis::CheckedCompileTimeScalar;
         use arcweft_primitives::LengthUnit;
@@ -2167,26 +2191,25 @@ impl AuthoredViewBodyLowerer<'_> {
         };
         let invalid = || ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner };
         let mut declarations = Vec::new();
-        for argument in arguments {
+        for (role, value) in arguments {
             if matches!(
-                argument.role(),
-                ViewElementArgumentRole::Label | ViewElementArgumentRole::Enabled
+                role,
+                ViewElementArgumentRole::Label
+                    | ViewElementArgumentRole::Enabled
+                    | ViewElementArgumentRole::Part
             ) {
                 continue;
             }
-            let property = argument
-                .role()
-                .style_property(element)
+            let property = role
+                .geometry_property()
+                .or_else(|| element.and_then(|element| role.style_property(element)))
                 .ok_or_else(invalid)?;
-            let checked = self
-                .analysis
-                .expression(argument.value())
-                .ok_or_else(invalid)?;
+            let checked = self.analysis.expression(value).ok_or_else(invalid)?;
             let CheckedExpressionResolution::CompileTimeScalar(scalar) = checked.resolution()
             else {
                 return Err(invalid());
             };
-            let milli = match (argument.role(), scalar.value()) {
+            let milli = match (role, scalar.value()) {
                 (ViewElementArgumentRole::Spacing, CheckedCompileTimeScalar::Int(value)) => {
                     i32::try_from(*value)
                         .ok()
@@ -2208,7 +2231,7 @@ impl AuthoredViewBodyLowerer<'_> {
                 .source_site(
                     self.module.provenance().source_identity(),
                     HirSourceQuery::Expr {
-                        owner: argument.value(),
+                        owner: value,
                         role: HirExprSourceRole::Whole,
                     },
                 )
@@ -2232,7 +2255,7 @@ impl AuthoredViewBodyLowerer<'_> {
                 )?,
             );
             if matches!(
-                argument.role(),
+                role,
                 ViewElementArgumentRole::X | ViewElementArgumentRole::Y
             ) && !declarations
                 .iter()
@@ -2274,7 +2297,7 @@ impl AuthoredViewBodyLowerer<'_> {
         &mut self,
         expression: ExprId,
         application: &CheckedViewFxApplication,
-    ) -> Result<(), ViewProjectLowerError> {
+    ) -> Result<Vec<usize>, ViewProjectLowerError> {
         let definition_id = application.definition().definition();
         let definition = self.fx_catalog.get(definition_id).ok_or_else(|| {
             ViewProjectLowerError::MissingCompiledFxDefinition {
@@ -2356,7 +2379,7 @@ impl AuthoredViewBodyLowerer<'_> {
         if projection.application != application.outer_application() {
             return Err(ViewProjectLowerError::InvalidViewFxApplication { expression });
         }
-        self.lower_value(projection.receiver)?;
+        let nodes = self.lower_value(projection.receiver)?;
         self.output
             .instructions
             .push(ViewProgramInstruction::ApplyFx {
@@ -2367,7 +2390,7 @@ impl AuthoredViewBodyLowerer<'_> {
                 application_ordinal: application.ordinal().get(),
                 source: None,
             });
-        Ok(())
+        Ok(nodes)
     }
 
     fn lower_view_value_program(
@@ -2417,11 +2440,111 @@ impl AuthoredViewBodyLowerer<'_> {
         Ok(id)
     }
 
+    fn checked_part(
+        &self,
+        value: ExprId,
+    ) -> Result<&arcweft_view::ViewPartLocalName, ViewProjectLowerError> {
+        match self
+            .analysis
+            .expression(value)
+            .map(|expression| expression.resolution())
+        {
+            Some(CheckedExpressionResolution::ViewPartName(name)) => Ok(name),
+            Some(CheckedExpressionResolution::CompileTimeScalar(scalar)) => match scalar.original()
+            {
+                CheckedExpressionResolution::ViewPartName(name) => Ok(name),
+                _ => Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner }),
+            },
+            _ => Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner }),
+        }
+    }
+
+    fn lower_modifier(
+        &mut self,
+        owner: ExprId,
+        call: &arcweft_lang_hir::expr::HirCallInvocation,
+    ) -> Result<Vec<usize>, ViewProjectLowerError> {
+        use arcweft_lang_sema::{callable::ViewModifierId, final_analysis::CheckedValueResolution};
+        let view_owner = self.owner;
+        let invalid = || ViewProjectLowerError::MissingCheckedViewProjection { owner: view_owner };
+        let application = self
+            .analysis
+            .call(owner)
+            .and_then(|fact| fact.selected_application())
+            .ok_or_else(invalid)?;
+        let CallableValidator::ViewModifier(modifier) = application
+            .core()
+            .candidates()
+            .selected()
+            .schema()
+            .validator()
+        else {
+            return Err(invalid());
+        };
+        let modifier = *modifier;
+        if modifier.event().is_some() {
+            return self.lower_handler_modifier(owner, call);
+        }
+        let projection = checked_view_modifier_projection(self.analysis, self.owner, owner)?;
+        let [argument] = application.core().execution().arguments() else {
+            return Err(invalid());
+        };
+        let [slot] = argument.slots() else {
+            return Err(invalid());
+        };
+        let argument = slot.source().owner();
+        let part = if modifier == ViewModifierId::Part {
+            Some(self.checked_part(argument)?.clone())
+        } else {
+            None
+        };
+        let styles = if let Some(role) = modifier.geometry() {
+            self.lower_element_style(None, [(role, argument)])?
+        } else if modifier == ViewModifierId::Style {
+            let id = match self
+                .analysis
+                .expression(argument)
+                .map(|value| value.resolution())
+            {
+                Some(CheckedExpressionResolution::Value(CheckedValueResolution::ProjectItem(
+                    item,
+                ))) => item.public_id(),
+                Some(CheckedExpressionResolution::Value(
+                    CheckedValueResolution::ImportedProjectEntity(entity),
+                )) => entity.target().symbol().public_id(),
+                _ => return Err(invalid()),
+            };
+            vec![arcweft_view::style::ViewStyleApplicationTarget::named(
+                ViewStyleSheetId::try_new(id.as_str())?,
+            )]
+        } else if modifier == ViewModifierId::Part {
+            Vec::new()
+        } else {
+            return Err(invalid());
+        };
+        let nodes = self.lower_value(projection.receiver)?;
+        for &node in &nodes {
+            let instruction = self.output.instructions.get_mut(node).ok_or_else(invalid)?;
+            instruction
+                .styles_mut()
+                .ok_or_else(invalid)?
+                .extend(styles.iter().cloned());
+            if let Some(part) = &part {
+                let target = instruction.part_mut().ok_or_else(invalid)?;
+                if target.is_some() {
+                    return Err(invalid());
+                }
+                *target = Some(part.clone());
+            }
+        }
+        Ok(nodes)
+    }
+
     fn lower_handler_modifier(
         &mut self,
         owner: ExprId,
         call: &arcweft_lang_hir::expr::HirCallInvocation,
-    ) -> Result<(), ViewProjectLowerError> {
+    ) -> Result<Vec<usize>, ViewProjectLowerError> {
         let application = self
             .analysis
             .call(owner)
@@ -2740,7 +2863,7 @@ impl AuthoredViewBodyLowerer<'_> {
             result,
         });
 
-        self.lower_value(select.target())?;
+        let nodes = self.lower_value(select.target())?;
         self.output
             .instructions
             .push(ViewProgramInstruction::BindHandler {
@@ -2748,14 +2871,14 @@ impl AuthoredViewBodyLowerer<'_> {
                 handler: program_id,
                 source: None,
             });
-        Ok(())
+        Ok(nodes)
     }
 
     fn lower_text(
         &mut self,
         value: ExprId,
         surface: ViewTextSurface,
-    ) -> Result<(), ViewProjectLowerError> {
+    ) -> Result<Vec<usize>, ViewProjectLowerError> {
         let owner = self.owner;
         let source_kind = self.text_source_kind(value, surface)?;
         let ordinal = self.text_ordinal;
@@ -2770,6 +2893,7 @@ impl AuthoredViewBodyLowerer<'_> {
             kind: source_kind,
             source: None,
         });
+        let node = self.output.instructions.len();
         self.output
             .instructions
             .push(ViewProgramInstruction::EmitText {
@@ -2801,7 +2925,7 @@ impl AuthoredViewBodyLowerer<'_> {
             )
             .with_surface(surface),
         );
-        Ok(())
+        Ok(vec![node])
     }
 
     fn text_source_kind(

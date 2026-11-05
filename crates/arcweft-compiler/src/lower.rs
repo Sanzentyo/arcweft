@@ -1546,6 +1546,7 @@ fn project_runtime_semantic_fact_inventories(
             | CheckedExpressionResolution::ViewCall(_)
             | CheckedExpressionResolution::ViewFxApplication(_)
             | CheckedExpressionResolution::StyleValue(_)
+            | CheckedExpressionResolution::ViewPartName(_)
             | CheckedExpressionResolution::CompileTimeCallee(_)
             | CheckedExpressionResolution::TypeValue(_)
             | CheckedExpressionResolution::CompileTimeEnum(_)
@@ -3135,7 +3136,7 @@ fn character_presentation_record(
         .transpose()?;
     let fallback = match character.header().name() {
         HirRetainedName::Resolved(name) => Some(name.last_segment()),
-        HirRetainedName::Missing | HirRetainedName::Invalid => None,
+        HirRetainedName::IdentityOnly | HirRetainedName::Missing | HirRetainedName::Invalid => None,
     }
     .map(CharacterDisplayNameValue::try_new)
     .transpose()

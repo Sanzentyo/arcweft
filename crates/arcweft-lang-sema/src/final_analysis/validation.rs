@@ -938,6 +938,7 @@ fn expression_resolution_matches(
         (HirExprKind::Literal(authored), CheckedExpressionResolution::Literal(checked)) => {
             authored == checked
         }
+        (HirExprKind::Path(_) | HirExprKind::Select(_), CheckedExpressionResolution::ViewPartName(_)) => true,
         (
             HirExprKind::Path(_) | HirExprKind::EntityReference(_),
             CheckedExpressionResolution::Value(_),
@@ -1199,6 +1200,8 @@ fn validate_expression_resolution(
     coordinates: &SemanticCoordinateIndex<'_, '_>,
 ) -> Result<(), FinalSemanticAnalysisError> {
     match resolution {
+        CheckedExpressionResolution::ViewPartName(_) => matches!(ty, TypeKind::CompileTimeScalar(scalar) if scalar.kind() == crate::types::CompileTimeScalarKind::PublicId)
+            .then_some(()).ok_or(FinalSemanticAnalysisError::WrongPayloadFamily),
         CheckedExpressionResolution::ViewCall(super::CheckedViewCall::ContainerBody(
             application,
         )) => {
@@ -2595,21 +2598,10 @@ fn validate_project_item(
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
             let owner = resolve_item(modules, *owner)?;
-            let family_matches = matches!(
-                (accepted.family(), owner.kind()),
-                (
-                    DeclarationIdentityFamily::Character,
-                    HirItemKind::Character(_)
-                ) | (DeclarationIdentityFamily::View, HirItemKind::View(_))
-                    | (DeclarationIdentityFamily::Action, HirItemKind::Action(_))
-                    | (
-                        DeclarationIdentityFamily::Activity,
-                        HirItemKind::Activity(_)
-                    )
-                    | (DeclarationIdentityFamily::Signal, HirItemKind::Signal(_))
-                    | (DeclarationIdentityFamily::Metric, HirItemKind::Metric(_))
-                    | (DeclarationIdentityFamily::Layer, HirItemKind::Layer(_))
-            );
+            let family_matches = owner.kind().retained_header().is_some_and(|header| {
+                header.family() == accepted.family()
+                    && header.public_id().resolved() == Some(accepted.public_id())
+            });
             family_matches
                 .then_some(())
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)

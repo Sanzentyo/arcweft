@@ -2917,6 +2917,10 @@ fn write_resolution_payload(
             transcript_update!(hasher, &[9]);
             transcript_update!(hasher, value.semantic_digest().as_bytes());
         }
+        CheckedExpressionResolution::ViewPartName(name) => {
+            transcript_update!(hasher, &[22]);
+            write_bytes(hasher, name.as_public_id().canonical_identity_bytes())?;
+        }
         CheckedExpressionResolution::DialogueLineReference(line) => {
             transcript_update!(hasher, &[10]);
             write_bytes(hasher, line.canonical_identity_bytes())?;

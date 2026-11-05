@@ -222,3 +222,44 @@ flow main() {
         );
     }
 }
+
+#[test]
+fn rich_text_showcase_compiles_with_typed_presentation_contracts() {
+    let source = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../samples/rich-text-showcase/src/main.arcw"
+    ));
+    let (project, context) = removed_role_dialogue_project(source);
+    let context = context.with_command_policy(arcweft_core::entry::RuntimeCommandPolicy::deny_all(
+        arcweft_core::entry::RootExecutionLimits::engine_default(),
+    ));
+    let (mut session, parsed) = compilation_state(&project);
+    let compiled = compile_project(&mut session, &project, &parsed, &context).unwrap_or_else(|error| {
+        let site = match error.semantic_error() {
+            Some(arcweft_lang_sema::final_analysis::FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner }
+                | arcweft_lang_sema::final_analysis::FinalSemanticAnalysisError::CallResolutionFailed { owner }
+                | arcweft_lang_sema::final_analysis::FinalSemanticAnalysisError::ValueResolutionFailed { owner }) => {
+                error.compilation_lease().and_then(|lease| {
+                    lease.tooling_lease().modules().iter()
+                        .find(|module| module.hir().module_id() == owner.module())
+                        .map(|module| (module.hir().resolve_expr(*owner).map(|expr| format!("{:?}", expr.kind())), module.hir().source_anchor(
+                            arcweft_lang_hir::source_index::HirSourceQuery::Expr {
+                                owner: *owner,
+                                role: arcweft_lang_hir::source_index::HirExprSourceRole::Whole,
+                            },
+                        )))
+                })
+            }
+            _ => None,
+        };
+        panic!("showcase compiles under the maintained contract: {error:?}; typed source: {site:?}");
+    });
+    assert_eq!(
+        compiled
+            .runtime_plan()
+            .dialogue_content_catalog
+            .records()
+            .len(),
+        6
+    );
+}

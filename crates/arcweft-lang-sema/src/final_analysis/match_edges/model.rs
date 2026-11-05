@@ -35,15 +35,16 @@ const EXPRESSION_RESOLUTION_TAG_VIEW_FX_APPLICATION: u16 = 0x0221;
 const EXPRESSION_RESOLUTION_TAG_SCOPE: u16 = 0x0222;
 const EXPRESSION_RESOLUTION_TAG_REGISTRY_ADDRESS: u16 = 0x0223;
 const EXPRESSION_RESOLUTION_TAG_THREAD: u16 = 0x0224;
-const EXPRESSION_RESOLUTION_TAG_END: u16 = EXPRESSION_RESOLUTION_TAG_THREAD;
+const EXPRESSION_RESOLUTION_TAG_VIEW_PART_NAME: u16 = 0x0225;
+const EXPRESSION_RESOLUTION_TAG_END: u16 = EXPRESSION_RESOLUTION_TAG_VIEW_PART_NAME;
 // This count is the number of live constructors, not the width of the
 // numeric range.  0x0211 and 0x0213 are retained tombstones for removed
 // constructors and must never be reused.
-const EXPRESSION_RESOLUTION_TAG_COUNT: u16 = 35;
-const EXPRESSION_RESOLUTION_LIVE_TAGS: [u16; 35] = [
+const EXPRESSION_RESOLUTION_TAG_COUNT: u16 = 36;
+const EXPRESSION_RESOLUTION_LIVE_TAGS: [u16; 36] = [
     0x0200, 0x0201, 0x0202, 0x0203, 0x0204, 0x0205, 0x0206, 0x0207, 0x0208, 0x0209, 0x020A, 0x020B,
     0x020C, 0x020D, 0x020E, 0x020F, 0x0210, 0x0212, 0x0214, 0x0215, 0x0216, 0x0217, 0x0218, 0x0219,
-    0x021A, 0x021B, 0x021C, 0x021D, 0x021E, 0x021F, 0x0220, 0x0221, 0x0222, 0x0223, 0x0224,
+    0x021A, 0x021B, 0x021C, 0x021D, 0x021E, 0x021F, 0x0220, 0x0221, 0x0222, 0x0223, 0x0224, 0x0225,
 ];
 const VALUE_RESOLUTION_TAG_BASE: u16 = 0x0300;
 const VALUE_RESOLUTION_TAG_END: u16 = 0x030b;
@@ -52,7 +53,7 @@ const PATTERN_RESOLUTION_TAG_BASE: u16 = 0x0600;
 const PATTERN_RESOLUTION_TAG_END: u16 = 0x0607;
 const PATTERN_RESOLUTION_TAG_COUNT: u16 = 8;
 const _: () = {
-    assert!(EXPRESSION_RESOLUTION_TAG_END == 0x0224);
+    assert!(EXPRESSION_RESOLUTION_TAG_END == 0x0225);
     assert!(EXPRESSION_RESOLUTION_LIVE_TAGS.len() == EXPRESSION_RESOLUTION_TAG_COUNT as usize);
     assert!(
         PATTERN_RESOLUTION_TAG_END
@@ -412,6 +413,7 @@ impl CheckedExpressionResolution {
             Self::ViewCall(_) => EXPRESSION_RESOLUTION_TAG_BASE + 16,
             Self::CompileTimeCallee(_) => EXPRESSION_RESOLUTION_TAG_COMPILE_TIME_CALLEE,
             Self::StyleValue(_) => EXPRESSION_RESOLUTION_TAG_BASE + 18,
+            Self::ViewPartName(_) => EXPRESSION_RESOLUTION_TAG_VIEW_PART_NAME,
             Self::TypeValue(_) => EXPRESSION_RESOLUTION_TAG_TYPE_VALUE,
             Self::CompileTimeScalar(_) => EXPRESSION_RESOLUTION_TAG_TEXT_PROXY_SCALAR,
             Self::DialogueLineReference(_) => EXPRESSION_RESOLUTION_TAG_BASE + 20,
@@ -522,7 +524,8 @@ mod tests {
         assert!(!expression.contains(&REMOVED_EXPRESSION_RESOLUTION_VIEW_CALLEE_TAG));
         assert!(!expression.contains(&REMOVED_EXPRESSION_RESOLUTION_STYLE_CALLEE_TAG));
         assert_eq!(expression[34], 0x0224);
-        assert_eq!(EXPRESSION_RESOLUTION_TAG_END, 0x0224);
+        assert_eq!(expression[35], 0x0225);
+        assert_eq!(EXPRESSION_RESOLUTION_TAG_END, 0x0225);
 
         let value = (VALUE_RESOLUTION_TAG_BASE..=VALUE_RESOLUTION_TAG_END).collect::<Vec<_>>();
         assert_eq!(value.len(), usize::from(VALUE_RESOLUTION_TAG_COUNT));

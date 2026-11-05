@@ -1017,6 +1017,8 @@ pub enum CheckedExpressionResolution {
     ViewFxApplication(Box<CheckedViewFxApplication>),
     /// A property value admitted by the final-HIR Style checker.
     StyleValue(arcweft_view::style::ViewSpecifiedValue),
+    /// A static local part name admitted by the View property grammar.
+    ViewPartName(arcweft_view::ViewPartLocalName),
     /// A compile-time callable leaf selected by a language-owned checker.
     CompileTimeCallee(CheckedCompileTimeCallee),
     /// A compile-time value describing one exact semantic type.
@@ -1055,6 +1057,7 @@ impl CheckedExpressionResolution {
     ) -> Option<arcweft_lang_hir::project::HirSelectedSelectTargetDisposition> {
         match self {
             Self::Variant(_)
+            | Self::ViewPartName(_)
             | Self::Value(
                 CheckedValueResolution::ProjectCallable(_)
                 | CheckedValueResolution::EnvironmentCallable(_)
@@ -1119,6 +1122,7 @@ impl CheckedExpressionResolution {
             | Self::PipeLeft(_)
             | Self::ViewCall(_)
             | Self::StyleValue(_)
+            | Self::ViewPartName(_)
             | Self::CompileTimeCallee(_)
             | Self::TypeValue(_)
             | Self::DialogueLineReference(_)
@@ -1186,6 +1190,7 @@ impl CheckedExpressionResolution {
             | Self::ViewCall(_)
             | Self::ViewFxApplication(_)
             | Self::StyleValue(_)
+            | Self::ViewPartName(_)
             | Self::CompileTimeCallee(_)
             | Self::DialogueLineReference(_)
             | Self::DialogueLineCoordinate(_)

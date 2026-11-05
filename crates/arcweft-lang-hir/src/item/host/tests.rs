@@ -29,11 +29,29 @@ fn resolved_id(value: &str) -> HirIdRefValue {
     ))
 }
 
-fn resolved_style_id(value: &str) -> super::super::HirRetainedPublicId {
-    super::super::HirRetainedPublicId::Resolved {
-        value: arcweft_id::PublicId::try_new(value).unwrap(),
-        origin: super::super::HirPublicIdOrigin::Explicit,
-    }
+fn resolved_style_header(value: &str) -> super::super::HirRetainedHeader {
+    super::super::HirRetainedHeader::try_new(
+        &arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root(),
+        arcweft_id::DeclarationIdentityFamily::Style,
+        super::super::HirRetainedPublicId::Resolved {
+            value: arcweft_id::PublicId::try_new(value).unwrap(),
+            origin: super::super::HirPublicIdOrigin::Explicit,
+        },
+        super::super::HirRetainedName::IdentityOnly,
+    )
+    .unwrap()
+}
+
+fn recovered_style_header() -> super::super::HirRetainedHeader {
+    super::super::HirRetainedHeader::try_new(
+        &arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root(),
+        arcweft_id::DeclarationIdentityFamily::Style,
+        super::super::HirRetainedPublicId::Recovered(
+            super::super::HirRetainedPublicIdIssue::Malformed,
+        ),
+        super::super::HirRetainedName::Invalid,
+    )
+    .unwrap()
 }
 
 fn recovered_id() -> HirIdRefValue {
@@ -168,7 +186,7 @@ fn clean_style_model_preserves_typed_ids_source_order_and_nested_body() {
     .unwrap();
     let style = HirStyleItem::try_new(
         local,
-        resolved_style_id("style.dialogue"),
+        resolved_style_header("style.dialogue"),
         Box::new([token]),
         Box::new([
             HirStyleBodyItem::Rule(rule),
@@ -276,9 +294,7 @@ fn every_typed_style_recovery_role_poison_propagates_to_the_item() {
     .unwrap();
     let style = HirStyleItem::try_new(
         local,
-        super::super::HirRetainedPublicId::Recovered(
-            super::super::HirRetainedPublicIdIssue::Malformed,
-        ),
+        recovered_style_header(),
         Box::new([token]),
         Box::new([
             HirStyleBodyItem::Rule(rule),
@@ -367,7 +383,7 @@ fn each_nested_style_recovery_role_marks_the_item_recovered() {
     let style_with_token = |token| {
         HirStyleItem::try_new(
             local,
-            resolved_style_id("style.dialogue"),
+            resolved_style_header("style.dialogue"),
             Box::new([token]),
             Box::new([]),
         )
@@ -376,7 +392,7 @@ fn each_nested_style_recovery_role_marks_the_item_recovered() {
     let style_with_rule = |declaration| {
         HirStyleItem::try_new(
             local,
-            resolved_style_id("style.dialogue"),
+            resolved_style_header("style.dialogue"),
             Box::new([]),
             Box::new([HirStyleBodyItem::Rule(
                 HirStyleRule::try_new(local, clean_selector(), Box::new([declaration])).unwrap(),
@@ -387,7 +403,7 @@ fn each_nested_style_recovery_role_marks_the_item_recovered() {
     let style_with_clause = |clause| {
         HirStyleItem::try_new(
             local,
-            resolved_style_id("style.dialogue"),
+            resolved_style_header("style.dialogue"),
             Box::new([]),
             Box::new([HirStyleBodyItem::Environment(
                 HirStyleEnvironment::try_new(local, Box::new([clause]), Box::new([])).unwrap(),
@@ -397,15 +413,7 @@ fn each_nested_style_recovery_role_marks_the_item_recovered() {
     };
 
     let cases = [
-        HirStyleItem::try_new(
-            local,
-            super::super::HirRetainedPublicId::Recovered(
-                super::super::HirRetainedPublicIdIssue::Malformed,
-            ),
-            Box::new([]),
-            Box::new([]),
-        )
-        .unwrap(),
+        HirStyleItem::try_new(local, recovered_style_header(), Box::new([]), Box::new([])).unwrap(),
         style_with_token(HirStyleToken::try_new(local, recovered_id(), None, value, None).unwrap()),
         style_with_token(
             HirStyleToken::try_new(
@@ -419,7 +427,7 @@ fn each_nested_style_recovery_role_marks_the_item_recovered() {
         ),
         HirStyleItem::try_new(
             local,
-            resolved_style_id("style.dialogue"),
+            resolved_style_header("style.dialogue"),
             Box::new([]),
             Box::new([HirStyleBodyItem::Rule(
                 HirStyleRule::try_new(
@@ -479,7 +487,7 @@ fn each_nested_style_recovery_role_marks_the_item_recovered() {
         ),
         HirStyleItem::try_new(
             local,
-            resolved_style_id("style.dialogue"),
+            resolved_style_header("style.dialogue"),
             Box::new([]),
             Box::new([HirStyleBodyItem::Recovered(HirStyleBodyIssue::Missing)]),
         )
@@ -577,7 +585,7 @@ fn style_model_rejects_foreign_type_expression_and_nested_environment_ids() {
     assert_eq!(
         HirStyleItem::try_new(
             local,
-            resolved_style_id("style.dialogue"),
+            resolved_style_header("style.dialogue"),
             Box::new([]),
             Box::new([HirStyleBodyItem::Environment(environment)]),
         ),

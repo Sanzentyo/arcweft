@@ -91,6 +91,25 @@ fn view_child_bodies_are_immediate_regions_and_handlers_remain_closures() {
 }
 
 #[test]
+fn transparent_groups_keep_view_context_in_if_and_match_branches() {
+    for expression in [
+        "if flag { Text(\"a\") } else { Panel { Text(\"b\") } }",
+        "match flag { true => Text(\"a\"), false => Panel { Text(\"b\") } }",
+    ] {
+        let source = format!("view Main(flag: bool) {{ ({expression}).width(4px) }}");
+        let built = parse(&source);
+        assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+        assert_eq!(
+            count_kind(&built, SyntaxKind::ViewBodyApplicationExpression),
+            1
+        );
+        assert_eq!(count_kind(&built, SyntaxKind::RecordExpression), 0);
+        assert_eq!(count_kind(&built, SyntaxKind::ErrorExpression), 0);
+        assert_eq!(built.green().to_string(), source);
+    }
+}
+
+#[test]
 fn member_chains_continue_across_newlines_in_root_and_nested_view_regions() {
     for ending in ["\n", "\r\n"] {
         let source = concat!(

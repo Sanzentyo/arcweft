@@ -1076,3 +1076,33 @@ fn clean_use_declaration_requires_at_least_one_flattened_binding() {
     let declaration = HirUseDeclaration::try_new(Box::new([binding])).unwrap();
     assert_eq!(declaration.bindings().len(), 1);
 }
+
+#[test]
+fn identity_only_headers_cannot_issue_named_or_derived_declarations() {
+    let root = arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root();
+    for (family, origin, identity) in [
+        (
+            DeclarationIdentityFamily::Character,
+            HirPublicIdOrigin::Explicit,
+            "character.alice",
+        ),
+        (
+            DeclarationIdentityFamily::Style,
+            HirPublicIdOrigin::DerivedFromName,
+            "style.Accent",
+        ),
+    ] {
+        assert_eq!(
+            HirRetainedHeader::try_new(
+                &root,
+                family,
+                HirRetainedPublicId::Resolved {
+                    value: PublicId::try_new(identity).unwrap(),
+                    origin
+                },
+                HirRetainedName::IdentityOnly
+            ),
+            Err(HirRetainedHeaderError::IdentityOnlyRequiresExplicitStyle)
+        );
+    }
+}

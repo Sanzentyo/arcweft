@@ -25,60 +25,62 @@ use super::super::{StagedHirModuleTransaction, require_limit};
 use super::{LoweredItemProjection, item_state};
 
 impl HirStyleItem {
-    pub(crate) fn project_attached_public_id(
+    pub(crate) fn project_attached_header(
         module: &arcweft_lang_syntax::ast::module_path::CanonicalModulePath,
         attached: &AttachedStyleId,
-    ) -> Result<crate::item::HirRetainedPublicId, HirLowerFailure> {
-        use crate::item::{HirPublicIdOrigin, HirRetainedPublicId, HirRetainedPublicIdIssue};
+    ) -> Result<crate::item::HirRetainedHeader, HirLowerFailure> {
+        use crate::item::{
+            HirPublicIdOrigin, HirRetainedHeader, HirRetainedName, HirRetainedPublicId,
+            HirRetainedPublicIdIssue,
+        };
         use crate::leaf::HirIdRef;
         use arcweft_id::{DeclarationIdentityFamily, DeclarationPath, PublicId};
         use arcweft_lang_syntax::attachment::StyleIdForm;
+        let finish = |public_id, name| {
+            HirRetainedHeader::try_new(module, DeclarationIdentityFamily::Style, public_id, name)
+                .map_err(|_| HirInvariantFailure::InvalidArenaCommit.into())
+        };
         let reference = id_ref(
             attached
                 .reference()
                 .ok_or(HirInvariantFailure::InvalidArenaCommit)?,
         )?;
         let Some(reference) = reference.as_resolved() else {
-            return Ok(HirRetainedPublicId::Recovered(
-                HirRetainedPublicIdIssue::RecoveredReference(
+            return finish(
+                HirRetainedPublicId::Recovered(HirRetainedPublicIdIssue::RecoveredReference(
                     reference
                         .recovery()
                         .ok_or(HirInvariantFailure::InvalidArenaCommit)?
                         .clone(),
-                ),
-            ));
+                )),
+                HirRetainedName::Invalid,
+            );
         };
-        let (value, origin) = if attached.form() == Some(StyleIdForm::Bare) {
+        let (value, origin, name) = if attached.form() == Some(StyleIdForm::Bare) {
             let HirIdRef::FamilyRelative(relative) = reference else {
                 return Err(HirInvariantFailure::InvalidArenaCommit.into());
             };
-            let mut declaration = relative
-                .relative()
-                .suffix()
-                .as_str()
-                .split('.')
-                .collect::<Vec<_>>();
-            let name = DeclarationPath::try_new(
-                declaration
-                    .pop()
-                    .ok_or(HirInvariantFailure::InvalidArenaCommit)?,
-            )
-            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+            let name = DeclarationPath::try_new(relative.relative().suffix().as_str())
+                .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
             let namespace = module
                 .segments()
                 .iter()
-                .map(arcweft_lang_syntax::ast::module_path::ModuleSegment::as_str)
-                .chain(declaration);
+                .map(arcweft_lang_syntax::ast::module_path::ModuleSegment::as_str);
             (
                 DeclarationIdentityFamily::Style
                     .derive_public_id(namespace, &name)
                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
                 HirPublicIdOrigin::DerivedFromName,
+                HirRetainedName::Resolved(name),
             )
         } else if let Some(value) =
             reference.declaration_public_id(DeclarationIdentityFamily::Style)
         {
-            (value, HirPublicIdOrigin::Explicit)
+            (
+                value,
+                HirPublicIdOrigin::Explicit,
+                HirRetainedName::IdentityOnly,
+            )
         } else {
             let issue = match reference {
                 HirIdRef::Absolute(reference) => PublicId::try_new(reference.as_str()).map_or(
@@ -87,9 +89,12 @@ impl HirStyleItem {
                 ),
                 _ => HirRetainedPublicIdIssue::Malformed,
             };
-            return Ok(HirRetainedPublicId::Recovered(issue));
+            return finish(
+                HirRetainedPublicId::Recovered(issue),
+                HirRetainedName::Invalid,
+            );
         };
-        Ok(HirRetainedPublicId::Resolved { value, origin })
+        finish(HirRetainedPublicId::Resolved { value, origin }, name)
     }
 }
 
@@ -111,8 +116,8 @@ impl StagedHirModuleTransaction<'_> {
         let prefix = self.lower_item_prefix(attached.prefix(), scope)?;
         preflight_style(&attached)?;
 
-        let retained_id =
-            HirStyleItem::project_attached_public_id(self.request.key().path(), attached.id())?;
+        let header =
+            HirStyleItem::project_attached_header(self.request.key().path(), attached.id())?;
         let mut tokens = Vec::new();
         let body = self.lower_style_body(attached.body(), scope, true, &mut tokens)?;
         let issue = prefix
@@ -136,9 +141,8 @@ impl StagedHirModuleTransaction<'_> {
                 .then_some(HirItemIssue::Recovery)
             });
         let module = self.snapshot_id().module();
-        let style =
-            HirStyleItem::try_new(module, retained_id, tokens.into_boxed_slice(), body.items)
-                .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+        let style = HirStyleItem::try_new(module, header, tokens.into_boxed_slice(), body.items)
+            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
         self.source_components
             .stage_attached_style(self.request.source(), owner, &attached)?;
         let item = HirItem::try_new_with_state(

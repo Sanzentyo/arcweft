@@ -192,6 +192,7 @@ expression_family_inventory!(ExpressionResolutionFamily for CheckedExpressionRes
     CheckedExpressionResolution::ViewCall(_) => ViewCall => Accepted,
     CheckedExpressionResolution::ViewFxApplication(_) => ViewFxApplication => Accepted,
     CheckedExpressionResolution::StyleValue(_) => StyleValue => ProvenUnreachable,
+    CheckedExpressionResolution::ViewPartName(_) => ViewPartName => Accepted,
     CheckedExpressionResolution::CompileTimeCallee(_) => CompileTimeCallee => Accepted,
     CheckedExpressionResolution::TypeValue(_) => TypeValue => Accepted,
     CheckedExpressionResolution::CompileTimeScalar(_) => CompileTimeScalar => Accepted,
@@ -674,6 +675,16 @@ fn checked_match_ordinary_expression_corpus_retains_families_and_meaning() {
 
 fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
     let mut rows = vec![
+        ExpressionCorpusRow {
+            name: "typed local View parts under Match",
+            exact_path_families: false,
+            source: "view Main(flag: bool) { match flag { true => Panel(part=first), false => Panel().part(second) } }".to_owned(),
+            fixture: ExpressionCorpusFixture::Standard,
+            shapes: &[ExprShapeFamily::Match, ExprShapeFamily::Call, ExprShapeFamily::Path],
+            resolutions: &[ExpressionResolutionFamily::ViewCall, ExpressionResolutionFamily::ViewPartName],
+            values: &[ValueResolutionFamily::Local],
+            selects: &[],
+        },
         ExpressionCorpusRow {
             name: "immediate View child bodies under Match",
             exact_path_families: false,

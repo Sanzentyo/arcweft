@@ -18,7 +18,7 @@ use arcweft_lang_hir::{
     },
     source_index::{
         HirEntrySourcePart, HirExprSourceRole, HirFlowSourceRole, HirItemSourceRole,
-        HirSourcePresence, HirSourceQuery, HirSourceSite, HirStyleSourceRole,
+        HirSourcePresence, HirSourceQuery, HirSourceSite,
     },
     stmt::HirStmtKind,
     symbol::{CallableDeclarationKey, ProjectSymbolTable},
@@ -71,7 +71,7 @@ impl ProjectSemanticIndex {
         project_nominal_types(&mut index, symbols)?;
         retained_entities(&mut index, project, symbols, analysis)?;
         entry_entities(&mut index, project, analysis, entries)?;
-        flow_and_style_entities(&mut index, project, symbols, analysis)?;
+        flow_entities(&mut index, project, symbols, analysis)?;
         choice_entities(&mut index, project, analysis)?;
         callable_dependencies(&mut index, symbols, analysis)?;
         validate_relation_endpoints(&index)?;
@@ -361,38 +361,15 @@ fn checked_target_ref(
     }
 }
 
-fn flow_and_style_entities(
+fn flow_entities(
     index: &mut ProjectSemanticIndex,
     project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     analysis: &FinalSemanticAnalysis,
 ) -> Result<(), ProjectSemanticIndexError> {
     for item in project.items() {
-        match item.item().kind() {
-            HirItemKind::Flow(_) => index_flow(index, item, symbols, analysis)?,
-            HirItemKind::Style(style) => {
-                let id = style
-                    .public_id()
-                    .resolved()
-                    .ok_or_else(|| ProjectSemanticIndexError::InvalidEntityIdentity {
-                        id: "<recovered>".to_owned(),
-                        family: "style",
-                        message: "style declaration has a recovered identity".to_owned(),
-                    })?
-                    .clone();
-                index_nonretained_entity(
-                    index,
-                    item,
-                    ProjectEntityId::public(id),
-                    EntityKind::Style,
-                    HirItemSourceRole::Style(HirStyleSourceRole::ItemId),
-                    analysis,
-                )?;
-            }
-            // `Source` is intentionally not reintroduced here. Lang-01.3
-            // removes that old producer/reader family, and final HIR has no
-            // accepted Source entity source role to project from.
-            _ => {}
+        if matches!(item.item().kind(), HirItemKind::Flow(_)) {
+            index_flow(index, item, symbols, analysis)?;
         }
     }
     Ok(())

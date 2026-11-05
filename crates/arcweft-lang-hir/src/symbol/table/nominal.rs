@@ -172,7 +172,9 @@ impl<'a> NominalHir<'a> {
             Self::TypeAlias(item) => item.name().resolved().map(HirName::as_str),
             Self::Action(item) => match item.header().name() {
                 HirRetainedName::Resolved(name) => Some(name.last_segment()),
-                HirRetainedName::Missing | HirRetainedName::Invalid => None,
+                HirRetainedName::IdentityOnly
+                | HirRetainedName::Missing
+                | HirRetainedName::Invalid => None,
             },
         }
     }
@@ -195,7 +197,9 @@ impl<'a> NominalHir<'a> {
                         ModuleSegment::new(segment).expect("declaration namespace component")
                     })
                     .collect(),
-                HirRetainedName::Missing | HirRetainedName::Invalid => Box::new([]),
+                HirRetainedName::IdentityOnly
+                | HirRetainedName::Missing
+                | HirRetainedName::Invalid => Box::new([]),
             },
             Self::Struct(_) | Self::Enum(_) | Self::TypeAlias(_) => Box::new([]),
         }

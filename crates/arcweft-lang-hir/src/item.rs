@@ -433,6 +433,37 @@ pub enum HirItemKind {
 }
 
 impl HirItemKind {
+    /// Shared declaration identity authority for authored retained entities.
+    pub const fn retained_header(&self) -> Option<&HirRetainedHeader> {
+        match self {
+            Self::Character(item) => Some(item.header()),
+            Self::View(item) => Some(item.header()),
+            Self::Action(item) => Some(item.header()),
+            Self::Activity(item) => Some(item.header()),
+            Self::Signal(item) => Some(item.header()),
+            Self::Metric(item) => Some(item.header()),
+            Self::Layer(item) => Some(item.header()),
+            Self::Style(item) => Some(item.header()),
+            Self::Module(_)
+            | Self::Use(_)
+            | Self::Flow(_)
+            | Self::Function(_)
+            | Self::Predicate(_)
+            | Self::Proof(_)
+            | Self::Trait(_)
+            | Self::Impl(_)
+            | Self::Enum(_)
+            | Self::Struct(_)
+            | Self::TypeAlias(_)
+            | Self::Resource(_)
+            | Self::Entry(_)
+            | Self::ExternCapability(_)
+            | Self::Test(_)
+            | Self::Bench(_)
+            | Self::Error(_) => None,
+        }
+    }
+
     pub const fn family(&self) -> HirItemFamily {
         match self {
             Self::Module(_) => HirItemFamily::Module,

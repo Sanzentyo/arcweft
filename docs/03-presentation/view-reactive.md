@@ -202,6 +202,16 @@ profile は px の固定小数点 thousandths を使い、pt／em は換算規�
 既存の Style/layout 規則に従う。これらの入力は新しい runtime scalar interpreter
 や別の bounds table を作らず、既存の cascade、geometry、paint、hit-test 境界を使う。
 
+静的に構築するView nodeには、同じLength契約の `.x(value)`／`.y(value)`／
+`.width(value)`／`.height(value)` も適用できる。modifierは式が返すroot nodeに作用し、
+containerの子へ付け替えない。inline Style applicationは記述順に保持する。
+`.part(name)` とconstructorの `part = name` は同じprivate local partを宣言する。
+Sourceのnameはidentifierを`.`でつないだ静的な名前で、UTF-8で255 bytes・32 segments
+を含む上限まで受理し、同じnodeへの重複指定を拒否する。
+`.style(reference)` は元のStyle宣言identityを保持した `Ref<Style>` を受け取り、
+import aliasでも参照先sheetは変わらない。明示IDだけのStyleはlexical nameを作らない。
+Styleのpart／interaction／element-state selectorは共有registryとruntime cascadeへ渡す。
+
 `Row`／`Column` の `spacing` は compile-time scalar の i32 整数pxを受け取る。
 Row は物理 ColumnGap、Column は物理 RowGap の inline Style declarationへ投影する。
 writing modeによる軸の入れ替えは行わず、間隔は隣接する子の間だけに加える。

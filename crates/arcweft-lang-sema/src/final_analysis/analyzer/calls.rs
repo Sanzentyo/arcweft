@@ -5092,7 +5092,8 @@ impl Analyzer<'_, '_, '_> {
             current_group,
         )?;
         let consumer = match context.consumer() {
-            super::expression_error::AnalyzerExpressionConsumer::Ordinary => {
+            super::expression_error::AnalyzerExpressionConsumer::Ordinary
+            | super::expression_error::AnalyzerExpressionConsumer::ViewPartName => {
                 constraints::AnalyzerCallConsumerAdmission::ordinary()
             }
             super::expression_error::AnalyzerExpressionConsumer::ViewFxProducer => {

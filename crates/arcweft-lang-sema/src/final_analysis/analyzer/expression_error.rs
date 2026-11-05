@@ -124,6 +124,7 @@ pub(crate) struct AnalyzerExpressionContext<'a> {
 pub(super) enum AnalyzerExpressionConsumer {
     Ordinary,
     ViewFxProducer,
+    ViewPartName,
 }
 
 impl<'a> AnalyzerExpressionContext<'a> {
@@ -182,6 +183,24 @@ impl<'a> AnalyzerExpressionContext<'a> {
     pub(super) const fn with_consumer(mut self, consumer: AnalyzerExpressionConsumer) -> Self {
         self.consumer = consumer;
         self
+    }
+
+    pub(super) fn for_consumer(
+        &self,
+        consumer: AnalyzerExpressionConsumer,
+    ) -> AnalyzerExpressionContext<'_> {
+        AnalyzerExpressionContext {
+            authority: match &self.authority {
+                AnalyzerExpressionFactAuthority::Published => {
+                    AnalyzerExpressionFactAuthority::Published
+                }
+                AnalyzerExpressionFactAuthority::Candidate(authority) => {
+                    AnalyzerExpressionFactAuthority::Candidate(authority.reborrow())
+                }
+            },
+            frames: Rc::clone(&self.frames),
+            consumer,
+        }
     }
 
     pub(super) fn enter_call(

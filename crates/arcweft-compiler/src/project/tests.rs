@@ -5,6 +5,7 @@ mod analysis_lease;
 mod layout_presence;
 mod producer_slots;
 mod type_purpose;
+mod view_node_properties;
 use arcweft_lang_hir::symbol::{
     CallablePackageId, ExternalDeclarationSeed, ProjectDirectBinding, ProjectSymbolWorldId,
 };

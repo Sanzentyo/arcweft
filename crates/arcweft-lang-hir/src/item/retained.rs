@@ -13,7 +13,7 @@ use super::{
     validate_locals, validate_parameters, validate_retained_family, validate_scope, validate_type,
 };
 
-/// Retained identity and local name shared by the seven authored families.
+/// Retained identity and authored binding shared by retained declaration families.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirRetainedHeader {
     family: DeclarationIdentityFamily,
@@ -30,6 +30,12 @@ impl HirRetainedHeader {
     ) -> Result<Self, HirRetainedHeaderError> {
         if family == DeclarationIdentityFamily::Asset {
             return Err(HirRetainedHeaderError::AssetIsCatalogOwned);
+        }
+        if matches!(name, HirRetainedName::IdentityOnly)
+            && (family != DeclarationIdentityFamily::Style
+                || public_id.origin() != Some(HirPublicIdOrigin::Explicit))
+        {
+            return Err(HirRetainedHeaderError::IdentityOnlyRequiresExplicitStyle);
         }
         match &public_id {
             HirRetainedPublicId::Resolved { value, origin } => {
@@ -80,7 +86,10 @@ impl HirRetainedHeader {
 
     pub(crate) const fn has_recovery(&self) -> bool {
         matches!(self.public_id, HirRetainedPublicId::Recovered(_))
-            || !matches!(self.name, HirRetainedName::Resolved(_))
+            || matches!(
+                self.name,
+                HirRetainedName::Missing | HirRetainedName::Invalid
+            )
     }
 }
 
@@ -124,6 +133,8 @@ pub enum HirRetainedPublicIdIssue {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HirRetainedName {
     Resolved(DeclarationPath),
+    /// An explicitly identified Style has no authored lexical binding name.
+    IdentityOnly,
     Missing,
     Invalid,
 }
@@ -136,6 +147,8 @@ pub enum HirPublicIdOrigin {
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum HirRetainedHeaderError {
+    #[error("an identity-only declaration name requires an explicit Style identity")]
+    IdentityOnlyRequiresExplicitStyle,
     #[error("asset identities are catalog-owned and cannot form authored retained HIR items")]
     AssetIsCatalogOwned,
     #[error(transparent)]

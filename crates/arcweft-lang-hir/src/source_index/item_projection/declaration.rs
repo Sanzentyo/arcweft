@@ -411,15 +411,5 @@ const fn is_declaration_kind(retained: &HirItemKind) -> bool {
 }
 
 const fn admits_declaration_whole_source(retained: &HirItemKind) -> bool {
-    is_declaration_kind(retained)
-        || matches!(
-            retained,
-            HirItemKind::Character(_)
-                | HirItemKind::View(_)
-                | HirItemKind::Action(_)
-                | HirItemKind::Activity(_)
-                | HirItemKind::Signal(_)
-                | HirItemKind::Metric(_)
-                | HirItemKind::Layer(_)
-        )
+    is_declaration_kind(retained) || retained.retained_header().is_some()
 }

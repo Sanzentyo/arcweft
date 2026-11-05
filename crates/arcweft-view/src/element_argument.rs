@@ -15,6 +15,7 @@ pub enum ViewElementArgumentRole {
     Width,
     Height,
     Spacing,
+    Part,
 }
 
 impl ViewElementArgumentRole {
@@ -29,6 +30,7 @@ impl ViewElementArgumentRole {
             Self::Width => 4,
             Self::Height => 5,
             Self::Spacing => 6,
+            Self::Part => 7,
         }
     }
 
@@ -53,6 +55,7 @@ impl ViewElementArgumentRole {
             "width" => Some(Self::Width),
             "height" => Some(Self::Height),
             "spacing" => Some(Self::Spacing),
+            "part" => Some(Self::Part),
             _ => None,
         }
     }
@@ -63,7 +66,7 @@ impl ViewElementArgumentRole {
                 element.is_action_control() || element.text_input_kind().is_some()
             }
             Self::Spacing => self.style_property(element).is_some(),
-            Self::X | Self::Y | Self::Width | Self::Height => true,
+            Self::X | Self::Y | Self::Width | Self::Height | Self::Part => true,
         }
     }
 
@@ -71,10 +74,7 @@ impl ViewElementArgumentRole {
     /// Spacing belongs to the element's physical flow, never an inherited box axis.
     pub const fn style_property(self, element: ViewElementKind) -> Option<ViewPropertyKind> {
         match self {
-            Self::X => Some(ViewPropertyKind::Left),
-            Self::Y => Some(ViewPropertyKind::Top),
-            Self::Width => Some(ViewPropertyKind::Width),
-            Self::Height => Some(ViewPropertyKind::Height),
+            Self::X | Self::Y | Self::Width | Self::Height => self.geometry_property(),
             Self::Spacing => match element.default_physical_flow() {
                 Some(ViewPhysicalFlow::Row | ViewPhysicalFlow::RowReverse) => {
                     Some(ViewPropertyKind::ColumnGap)
@@ -84,7 +84,18 @@ impl ViewElementArgumentRole {
                 }
                 Some(ViewPhysicalFlow::Overlay) | None => None,
             },
-            Self::Label | Self::Enabled => None,
+            Self::Label | Self::Enabled | Self::Part => None,
+        }
+    }
+
+    /// Physical property shared by constructor inputs and node modifiers.
+    pub const fn geometry_property(self) -> Option<ViewPropertyKind> {
+        match self {
+            Self::X => Some(ViewPropertyKind::Left),
+            Self::Y => Some(ViewPropertyKind::Top),
+            Self::Width => Some(ViewPropertyKind::Width),
+            Self::Height => Some(ViewPropertyKind::Height),
+            Self::Label | Self::Enabled | Self::Spacing | Self::Part => None,
         }
     }
 }

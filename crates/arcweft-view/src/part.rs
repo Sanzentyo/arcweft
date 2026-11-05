@@ -217,6 +217,42 @@ pub enum ViewProgramBuildError {
 }
 
 impl ViewPartLocalName {
+    /// Admits borrowed dotted components before copying into a bounded name.
+    pub fn try_from_segments<'a>(
+        segments: impl IntoIterator<Item = &'a str>,
+    ) -> Result<Self, ViewPartNameError> {
+        let mut value = String::new();
+        for (index, segment) in segments
+            .into_iter()
+            .flat_map(|segment| segment.split('.'))
+            .enumerate()
+        {
+            if index >= MAX_VIEW_PART_NAME_SEGMENTS {
+                return Err(ViewPartNameError::TooManySegments {
+                    segments: index + 1,
+                    limit: MAX_VIEW_PART_NAME_SEGMENTS,
+                });
+            }
+            let separator = usize::from(index != 0);
+            let length = value
+                .len()
+                .checked_add(separator)
+                .and_then(|length| length.checked_add(segment.len()))
+                .unwrap_or(usize::MAX);
+            if length > MAX_VIEW_PART_NAME_BYTES {
+                return Err(ViewPartNameError::TooLong {
+                    length,
+                    limit: MAX_VIEW_PART_NAME_BYTES,
+                });
+            }
+            if separator != 0 {
+                value.push('.');
+            }
+            value.push_str(segment);
+        }
+        Self::try_new(value)
+    }
+
     pub fn try_new(value: impl Into<String>) -> Result<Self, ViewPartNameError> {
         let value = value.into();
         validate_name(&value).map(Self)

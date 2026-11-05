@@ -572,7 +572,7 @@ impl TypeCheckEnv {
                 .expect("standard dialogue content owner is registered before fmt"),
             environment.accepted_compile_time_scalar_type(CompileTimeScalarKind::Color),
         );
-        environment
+        let environment = environment
             .with_typed_standard_schema(standard_callable_path(["fmt"]), fmt_schema)
             .with_typed_standard_schema(
                 standard_callable_path(["data", "shape"]),
@@ -612,7 +612,12 @@ impl TypeCheckEnv {
                         ),
                     ],
                 ),
-            )
+            );
+        ViewModifierId::ALL
+            .into_iter()
+            .fold(environment, |environment, modifier| {
+                environment.recanonicalize_standard_view_modifier(modifier)
+            })
     }
 
     fn with_standard_rich_text_factories(self) -> Self {
@@ -1211,55 +1216,59 @@ impl TypeCheckEnv {
             ),
             std::iter::empty::<EffectCapability>(),
         );
-        env.with_standard_need_producer_function(
-            ["asset", "image"],
-            FunctionSignature::new(
-                TypeKind::Need(Box::new(TypeKind::Result {
-                    ok: Box::new(TypeKind::Named("ImageHandle".to_owned())),
-                    error: Box::new(TypeKind::Named("AssetError".to_owned())),
-                })),
-                [FunctionParam::required(
-                    "asset",
-                    TypeKind::entity_ref(crate::types::EntityKind::Asset),
-                )],
-            ),
-            CallableNeedProducerRole::asset_image(),
-        )
-        .with_standard_need_producer_function(
-            ["voice", "load"],
-            FunctionSignature::new(
-                TypeKind::Need(Box::new(TypeKind::Result {
-                    ok: Box::new(TypeKind::Named("AudioHandle".to_owned())),
-                    error: Box::new(TypeKind::Named("VoiceError".to_owned())),
-                })),
-                [FunctionParam::required(
-                    "voice",
-                    TypeKind::entity_ref(crate::types::EntityKind::Voice),
-                )],
-            ),
-            CallableNeedProducerRole::voice_load(),
-        )
-        .with_standard_method(
-            TypeKind::VoiceHandle,
-            "stop",
-            FunctionSignature::new(
-                TypeKind::Unit,
-                [FunctionParam::defaulted("fade", TypeKind::Duration)],
-            ),
-        )
-        .with_standard_method(
-            TypeKind::Named("DialogueText".to_owned()),
-            "flush",
-            FunctionSignature::new(
-                TypeKind::Unit,
-                [FunctionParam::defaulted(
-                    "mode",
-                    TypeKind::Named("TextFlushMode".to_owned()),
-                )],
-            ),
-        )
-        .with_standard_view_modifier(ViewModifierId::OnActivate)
-        .with_standard_view_modifier(ViewModifierId::Fx)
+        let env = env
+            .with_standard_need_producer_function(
+                ["asset", "image"],
+                FunctionSignature::new(
+                    TypeKind::Need(Box::new(TypeKind::Result {
+                        ok: Box::new(TypeKind::Named("ImageHandle".to_owned())),
+                        error: Box::new(TypeKind::Named("AssetError".to_owned())),
+                    })),
+                    [FunctionParam::required(
+                        "asset",
+                        TypeKind::entity_ref(crate::types::EntityKind::Asset),
+                    )],
+                ),
+                CallableNeedProducerRole::asset_image(),
+            )
+            .with_standard_need_producer_function(
+                ["voice", "load"],
+                FunctionSignature::new(
+                    TypeKind::Need(Box::new(TypeKind::Result {
+                        ok: Box::new(TypeKind::Named("AudioHandle".to_owned())),
+                        error: Box::new(TypeKind::Named("VoiceError".to_owned())),
+                    })),
+                    [FunctionParam::required(
+                        "voice",
+                        TypeKind::entity_ref(crate::types::EntityKind::Voice),
+                    )],
+                ),
+                CallableNeedProducerRole::voice_load(),
+            )
+            .with_standard_method(
+                TypeKind::VoiceHandle,
+                "stop",
+                FunctionSignature::new(
+                    TypeKind::Unit,
+                    [FunctionParam::defaulted("fade", TypeKind::Duration)],
+                ),
+            )
+            .with_standard_method(
+                TypeKind::Named("DialogueText".to_owned()),
+                "flush",
+                FunctionSignature::new(
+                    TypeKind::Unit,
+                    [FunctionParam::defaulted(
+                        "mode",
+                        TypeKind::Named("TextFlushMode".to_owned()),
+                    )],
+                ),
+            );
+        ViewModifierId::ALL
+            .into_iter()
+            .fold(env, |environment, modifier| {
+                environment.with_standard_view_modifier(modifier)
+            })
     }
 
     #[must_use]
@@ -1349,7 +1358,7 @@ impl TypeCheckEnv {
                 crate::nominal::AcceptedNominalCatalogLimits::PRODUCTION,
             )
             .expect("Content has one standard alias owner");
-        environment.recanonicalize_standard_view_modifier(ViewModifierId::OnActivate)
+        environment
     }
 
     /// Registers one standard nominal record and its typed fields.

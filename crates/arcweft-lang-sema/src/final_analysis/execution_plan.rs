@@ -612,6 +612,7 @@ fn execution_plan_for_expression_with_roles(
             ))
         }
         CheckedExpressionResolution::CompileTimeCallee(_)
+        | CheckedExpressionResolution::ViewPartName(_)
         | CheckedExpressionResolution::TypeValue(_)
         | CheckedExpressionResolution::CompileTimeScalar(_) => {
             Ok(super::CheckedExpressionExecutionPlan::structural(

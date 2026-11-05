@@ -295,7 +295,7 @@ pub struct ExternalSymbol {
 pub struct ProjectRetainedSymbol {
     public_id: PublicId,
     family: DeclarationIdentityFamily,
-    name: DeclarationPath,
+    name: Option<DeclarationPath>,
     owner: ItemId,
     module: CanonicalModulePath,
     visibility: Option<Visibility>,
@@ -1136,7 +1136,7 @@ impl ProjectRetainedSymbol {
         revision: ProjectSymbolRevision,
         public_id: PublicId,
         family: DeclarationIdentityFamily,
-        name: DeclarationPath,
+        name: Option<DeclarationPath>,
         owner: ItemId,
         module: CanonicalModulePath,
         visibility: Option<Visibility>,
@@ -1145,6 +1145,9 @@ impl ProjectRetainedSymbol {
     ) -> Self {
         let projection = match family {
             DeclarationIdentityFamily::View => {
+                let name = name
+                    .as_ref()
+                    .expect("View headers require an authored declaration name");
                 ProjectRetainedProjection::ViewConstructor(CallableDeclarationKey::Existing(
                     CallableDeclarationId::try_new_in_owner_path(
                         world.package().clone(),
@@ -1163,7 +1166,8 @@ impl ProjectRetainedSymbol {
                     world,
                     revision,
                     module.clone(),
-                    &name,
+                    name.as_ref()
+                        .expect("Action headers require an authored declaration name"),
                     public_id.clone(),
                 ),
             ),
@@ -1209,8 +1213,8 @@ impl ProjectRetainedSymbol {
         self.family
     }
 
-    pub const fn name(&self) -> &DeclarationPath {
-        &self.name
+    pub const fn name(&self) -> Option<&DeclarationPath> {
+        self.name.as_ref()
     }
 
     pub const fn owner(&self) -> ItemId {

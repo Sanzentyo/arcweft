@@ -1520,9 +1520,20 @@ impl<'a, 'project, 'catalog, 'control>
             && selected_candidate.is_some_and(|candidate| {
                 candidate.schema().validator()
                     == &crate::callable::CallableValidator::ViewModifier(
-                        crate::callable::ViewModifierId::Fx,
+                        crate::callable::ViewModifierId::Part,
                     )
             }) {
+            child_context.with_consumer(
+                super::super::expression_error::AnalyzerExpressionConsumer::ViewPartName,
+            )
+        } else if matches!(source, AnalyzerCallConstraintSource::Argument { .. })
+            && selected_candidate.is_some_and(|candidate| {
+                candidate.schema().validator()
+                    == &crate::callable::CallableValidator::ViewModifier(
+                        crate::callable::ViewModifierId::Fx,
+                    )
+            })
+        {
             child_context.with_consumer(
                 super::super::expression_error::AnalyzerExpressionConsumer::ViewFxProducer,
             )

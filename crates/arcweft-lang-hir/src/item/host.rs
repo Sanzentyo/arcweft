@@ -10,8 +10,8 @@ use super::callable::{
     HirCallableAttachedContentParameter, HirFunctionParameterGroup, HirGenericParameter,
 };
 use super::{
-    HirItemInvariantError, HirItemPrefix, HirRequiredName, HirRetainedPublicId, validate_expr,
-    validate_exprs, validate_function_parameter_groups, validate_generic_parameters,
+    HirItemInvariantError, HirItemPrefix, HirRequiredName, HirRetainedHeader, HirRetainedPublicId,
+    validate_expr, validate_exprs, validate_function_parameter_groups, validate_generic_parameters,
     validate_optional_attached_content, validate_optional_type, validate_scope,
     validate_statements,
 };
@@ -363,7 +363,7 @@ pub enum HirBenchExecutionTarget {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirStyleItem {
-    public_id: HirRetainedPublicId,
+    header: HirRetainedHeader,
     tokens: Box<[HirStyleToken]>,
     body: Box<[HirStyleBodyItem]>,
 }
@@ -371,17 +371,15 @@ pub struct HirStyleItem {
 impl HirStyleItem {
     pub(crate) fn try_new(
         expected: HirModuleId,
-        public_id: HirRetainedPublicId,
+        header: HirRetainedHeader,
         tokens: Box<[HirStyleToken]>,
         body: Box<[HirStyleBodyItem]>,
     ) -> Result<Self, HirItemInvariantError> {
-        if let Some(id) = public_id.resolved() {
-            arcweft_id::DeclarationIdentityFamily::Style
-                .validate_public_id(id)
-                .map_err(|_| HirItemInvariantError::RetainedFamilyMismatch)?;
+        if header.family() != arcweft_id::DeclarationIdentityFamily::Style {
+            return Err(HirItemInvariantError::RetainedFamilyMismatch);
         }
         let item = Self {
-            public_id,
+            header,
             tokens,
             body,
         };
@@ -390,7 +388,11 @@ impl HirStyleItem {
     }
 
     pub const fn public_id(&self) -> &HirRetainedPublicId {
-        &self.public_id
+        self.header.public_id()
+    }
+
+    pub const fn header(&self) -> &HirRetainedHeader {
+        &self.header
     }
 
     pub const fn tokens(&self) -> &[HirStyleToken] {
@@ -414,7 +416,7 @@ impl HirStyleItem {
     }
 
     pub(crate) fn has_recovery(&self) -> bool {
-        self.public_id.resolved().is_none()
+        self.header.has_recovery()
             || self.tokens.iter().any(HirStyleToken::has_recovery)
             || self.body.iter().any(HirStyleBodyItem::has_recovery)
     }

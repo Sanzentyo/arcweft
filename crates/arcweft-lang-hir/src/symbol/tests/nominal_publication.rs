@@ -10,7 +10,10 @@ fn action_declaration_paths_publish_one_binding_and_preserve_nominal_namespace()
     .unwrap()
     .into_table();
     let action = table.retained_symbols().next().unwrap();
-    assert_eq!(action.name().as_str(), "feedback.submit");
+    assert_eq!(
+        action.name().map(|name| name.as_str()),
+        Some("feedback.submit")
+    );
     assert_eq!(action.public_id().as_str(), "action.feedback.submit");
     let payload = table.nominal(action.action_payload().unwrap()).unwrap();
     assert_eq!(payload.id().name().as_str(), "submit");

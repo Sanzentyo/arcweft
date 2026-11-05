@@ -225,7 +225,8 @@ impl ViewProgramInstruction {
         }
     }
 
-    pub(crate) fn styles_mut(&mut self) -> Option<&mut Vec<ViewStyleApplicationTarget>> {
+    /// Ordered style applications of this node-producing instruction.
+    pub fn styles_mut(&mut self) -> Option<&mut Vec<ViewStyleApplicationTarget>> {
         match self {
             Self::OpenElement { styles, .. }
             | Self::EmitText { styles, .. }
@@ -242,6 +243,18 @@ impl ViewProgramInstruction {
             | Self::ApplyFx { .. }
             | Self::BindHandler { .. }
             | Self::AttachSemantic { .. } => None,
+        }
+    }
+
+    /// Local part slot of this node-producing instruction.
+    pub fn part_mut(&mut self) -> Option<&mut Option<ViewPartLocalName>> {
+        match self {
+            Self::OpenElement { part, .. }
+            | Self::EmitText { part, .. }
+            | Self::EmitImage { part, .. }
+            | Self::EmitCustom { part, .. }
+            | Self::CallView { part, .. } => Some(part),
+            _ => None,
         }
     }
 

@@ -11,7 +11,7 @@ use arcweft_lang_syntax::ast::{
 };
 use arcweft_source::SourceSpan;
 
-use crate::item::{HirItem, HirItemKind, HirRetainedHeader, HirRetainedName};
+use crate::item::{HirItem, HirRetainedName};
 use crate::leaf::HirIdRef;
 use crate::module::HirModuleStatus;
 use crate::project::HirProjectView;
@@ -85,7 +85,7 @@ impl ProjectSymbolTable {
         diagnostics: &mut Vec<ProjectSymbolLinkError>,
         work: &mut u64,
     ) {
-        let Some(header) = retained_header(item.kind()) else {
+        let Some(header) = item.kind().retained_header() else {
             return;
         };
         let Some(source) = module.item_source(
@@ -98,15 +98,19 @@ impl ProjectSymbolTable {
             diagnostics.push(error);
             return;
         }
-        let (Some(public_id), HirRetainedName::Resolved(name)) =
-            (header.public_id().resolved(), header.name())
-        else {
+        let Some(public_id) = header.public_id().resolved() else {
             return;
+        };
+        let name = match header.name() {
+            HirRetainedName::Resolved(name) => Some(name),
+            HirRetainedName::IdentityOnly => None,
+            HirRetainedName::Missing | HirRetainedName::Invalid => return,
         };
 
         // Account for every component before allocating binding and owner paths.
         let additional_components =
-            u64::try_from(name.segments().count().saturating_sub(1)).unwrap_or(u64::MAX);
+            u64::try_from(name.map_or(0, |name| name.segments().count().saturating_sub(1)))
+                .unwrap_or(u64::MAX);
         if let Err(error) = Self::charge(work, additional_components, Some(source.clone())) {
             diagnostics.push(error);
             return;
@@ -122,43 +126,45 @@ impl ProjectSymbolTable {
             return;
         }
 
-        let path = ProjectSymbolPath::new(
-            ModulePathRoot::ImplicitCrate,
-            name.segments().map(|segment| {
-                ProjectSymbolSegment::try_new(segment)
-                    .expect("declaration components are project symbol segments")
-            }),
-        )
-        .expect("one declaration path owns its implicit project binding");
-        let lookup_key = path.to_string();
-        if let Some(first) = self
-            .scopes
-            .get(module_path)
-            .and_then(|scope| scope.get(&lookup_key))
-            .and_then(|bindings| bindings.first())
-            .and_then(|binding| binding.sites.first())
-            .cloned()
-        {
-            diagnostics.push(ProjectSymbolLinkError::duplicate_declaration(
-                module_path.clone(),
-                name.as_str().to_owned(),
-                first,
-                source,
-            ));
-            return;
-        }
         let visibility = item.prefix().visibility().map(super::hir_visibility);
-        let target = ProjectSymbolTargetId::Retained(public_id.clone());
-        self.insert_scope_binding(
-            module_path,
-            ScopeBinding::new(
-                path,
-                target,
-                visibility,
-                module_path.clone(),
-                [source.clone()],
-            ),
-        );
+        if let Some(name) = name {
+            let path = ProjectSymbolPath::new(
+                ModulePathRoot::ImplicitCrate,
+                name.segments().map(|segment| {
+                    ProjectSymbolSegment::try_new(segment)
+                        .expect("declaration components are project symbol segments")
+                }),
+            )
+            .expect("one declaration path owns its implicit project binding");
+            let lookup_key = path.to_string();
+            if let Some(first) = self
+                .scopes
+                .get(module_path)
+                .and_then(|scope| scope.get(&lookup_key))
+                .and_then(|bindings| bindings.first())
+                .and_then(|binding| binding.sites.first())
+                .cloned()
+            {
+                diagnostics.push(ProjectSymbolLinkError::duplicate_declaration(
+                    module_path.clone(),
+                    name.as_str().to_owned(),
+                    first,
+                    source,
+                ));
+                return;
+            }
+            let target = ProjectSymbolTargetId::Retained(public_id.clone());
+            self.insert_scope_binding(
+                module_path,
+                ScopeBinding::new(
+                    path,
+                    target,
+                    visibility,
+                    module_path.clone(),
+                    [source.clone()],
+                ),
+            );
+        }
         self.symbols.insert(
             declaration_id,
             ProjectSymbol::Retained(ProjectRetainedSymbol::new(
@@ -166,7 +172,7 @@ impl ProjectSymbolTable {
                 self.revision,
                 public_id.clone(),
                 header.family(),
-                name.clone(),
+                name.cloned(),
                 owner,
                 module_path.clone(),
                 visibility,
@@ -310,36 +316,6 @@ impl ProjectSymbolTable {
 struct EntityReferenceProjection {
     path: SymbolPath,
     public_id: PublicId,
-}
-
-fn retained_header(kind: &HirItemKind) -> Option<&HirRetainedHeader> {
-    match kind {
-        HirItemKind::Character(declaration) => Some(declaration.header()),
-        HirItemKind::View(declaration) => Some(declaration.header()),
-        HirItemKind::Action(declaration) => Some(declaration.header()),
-        HirItemKind::Activity(declaration) => Some(declaration.header()),
-        HirItemKind::Signal(declaration) => Some(declaration.header()),
-        HirItemKind::Metric(declaration) => Some(declaration.header()),
-        HirItemKind::Layer(declaration) => Some(declaration.header()),
-        HirItemKind::Module(_)
-        | HirItemKind::Use(_)
-        | HirItemKind::Flow(_)
-        | HirItemKind::Function(_)
-        | HirItemKind::Predicate(_)
-        | HirItemKind::Proof(_)
-        | HirItemKind::Trait(_)
-        | HirItemKind::Impl(_)
-        | HirItemKind::Enum(_)
-        | HirItemKind::Struct(_)
-        | HirItemKind::TypeAlias(_)
-        | HirItemKind::Resource(_)
-        | HirItemKind::Entry(_)
-        | HirItemKind::ExternCapability(_)
-        | HirItemKind::Test(_)
-        | HirItemKind::Bench(_)
-        | HirItemKind::Style(_)
-        | HirItemKind::Error(_) => None,
-    }
 }
 
 #[allow(

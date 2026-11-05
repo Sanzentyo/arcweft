@@ -38,11 +38,11 @@ pub view RichTextPanel(dialogue: DialogueView) {
             .y(518.8px)
             .width(1108.8px)
             .height(125.6px)
-            .style(@style.rich_text_panel)
+            .part(rich_text_panel)
         Button("", x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px)
             .part(dialogue_action)
             .on_click { dialogue.primary_action }
-    }
+    }.style(@style.rich_text_panel)
 }
 
 struct GameState {

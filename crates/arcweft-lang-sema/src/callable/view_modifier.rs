@@ -18,16 +18,37 @@ pub enum ViewModifierId {
     OnActivate,
     /// Applies one checked Fx value to the retained receiver node.
     Fx,
+    X,
+    Y,
+    Width,
+    Height,
+    Part,
+    Style,
 }
 
 impl ViewModifierId {
-    pub const ALL: [Self; 2] = [Self::OnActivate, Self::Fx];
+    pub const ALL: [Self; 8] = [
+        Self::OnActivate,
+        Self::Fx,
+        Self::X,
+        Self::Y,
+        Self::Width,
+        Self::Height,
+        Self::Part,
+        Self::Style,
+    ];
 
     /// Collision-free tag used by the callable-schema semantic transcript.
     pub const fn semantic_tag(self) -> u8 {
         match self {
             Self::OnActivate => 0,
             Self::Fx => 1,
+            Self::X => 2,
+            Self::Y => 3,
+            Self::Width => 4,
+            Self::Height => 5,
+            Self::Part => 6,
+            Self::Style => 7,
         }
     }
 
@@ -39,13 +60,17 @@ impl ViewModifierId {
             Self::Fx => {
                 CallableName::try_new("fx").expect("the standard View modifier member is canonical")
             }
+            Self::X => CallableName::try_new("x").expect("canonical View modifier"),
+            Self::Y => CallableName::try_new("y").expect("canonical View modifier"),
+            Self::Width => CallableName::try_new("width").expect("canonical View modifier"),
+            Self::Height => CallableName::try_new("height").expect("canonical View modifier"),
+            Self::Part => CallableName::try_new("part").expect("canonical View modifier"),
+            Self::Style => CallableName::try_new("style").expect("canonical View modifier"),
         }
     }
 
     pub const fn receiver(self) -> TypeKind {
-        match self {
-            Self::OnActivate | Self::Fx => TypeKind::ViewValue,
-        }
+        TypeKind::ViewValue
     }
 
     /// Exact signature of this standard modifier.
@@ -78,6 +103,27 @@ impl ViewModifierId {
                     TypeKind::CompileTimeFx(crate::types::CompileTimeFxType::Abstract),
                 )],
             ),
+            Self::X | Self::Y | Self::Width | Self::Height => FunctionSignature::new(
+                TypeKind::ViewValue,
+                [FunctionParam::required(
+                    "value",
+                    TypeKind::Named("Length".to_owned()),
+                )],
+            ),
+            Self::Part => FunctionSignature::new(
+                TypeKind::ViewValue,
+                [FunctionParam::required(
+                    "name",
+                    TypeKind::Named("PublicId".to_owned()),
+                )],
+            ),
+            Self::Style => FunctionSignature::new(
+                TypeKind::ViewValue,
+                [FunctionParam::required(
+                    "style",
+                    TypeKind::entity_ref(crate::types::EntityKind::Style),
+                )],
+            ),
         }
     }
 
@@ -89,14 +135,38 @@ impl ViewModifierId {
                 0,
             )
             .expect("the View handler result has one language-owned type parameter"),
-            Self::Fx => super::CallableGenericParameterIssuer::empty(),
+            Self::Fx
+            | Self::X
+            | Self::Y
+            | Self::Width
+            | Self::Height
+            | Self::Part
+            | Self::Style => super::CallableGenericParameterIssuer::empty(),
         }
     }
 
     pub const fn event(self) -> Option<arcweft_view::EventKind> {
         match self {
             Self::OnActivate => Some(arcweft_view::EventKind::Activate),
-            Self::Fx => None,
+            Self::Fx
+            | Self::X
+            | Self::Y
+            | Self::Width
+            | Self::Height
+            | Self::Part
+            | Self::Style => None,
+        }
+    }
+
+    /// The constructor argument role shared by a geometry modifier.
+    pub const fn geometry(self) -> Option<arcweft_view::ViewElementArgumentRole> {
+        use arcweft_view::ViewElementArgumentRole as Role;
+        match self {
+            Self::X => Some(Role::X),
+            Self::Y => Some(Role::Y),
+            Self::Width => Some(Role::Width),
+            Self::Height => Some(Role::Height),
+            Self::OnActivate | Self::Fx | Self::Part | Self::Style => None,
         }
     }
 
