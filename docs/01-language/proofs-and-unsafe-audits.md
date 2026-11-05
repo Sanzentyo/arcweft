@@ -128,6 +128,9 @@ Rules:
 - it does not grant filesystem, network, device, GPU, or OS capabilities
 ```
 
+Write the reason as a nonempty string literal. The checked audit retains the
+source operand, and the report retains the decoded text.
+
 Diagnostics should point at the operation and the required proof/audit path:
 
 ```text

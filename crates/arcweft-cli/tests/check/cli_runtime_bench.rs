@@ -805,6 +805,35 @@ flow cancel_cleanup {
 }
 
 #[test]
+fn verify_json_preserves_the_checked_unsafe_audit_reason() {
+    let path = temp_arcw(
+        "verify-unsafe-audit-reason",
+        r#"
+flow main {
+    unsafe lifetime @unsafe.cache reason = "  audit\ncontext  " {
+        /// SAFETY: this fixture exercises the audit header.
+    }
+}
+"#,
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .args(["verify", "--mode", "test", "--json"])
+        .arg(&path)
+        .output()
+        .expect("arcw verifies checked audit metadata");
+    fs::remove_file(&path).unwrap();
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let [audit] = report["unsafe_audits"].as_array().unwrap().as_slice() else {
+        panic!("one checked audit header: {report}");
+    };
+    assert_eq!(audit["id"], "unsafe.cache");
+    assert_eq!(audit["has_reason"], true);
+    assert_eq!(audit["reason"], "  audit\ncontext  ");
+    assert_eq!(audit["has_safety_doc"], true);
+    assert!(audit["source"]["source"]["id"].is_string());
+}
+
+#[test]
 fn unsafe_json_lists_audit_regions() {
     let path = temp_arcw(
         "unsafe-audit",

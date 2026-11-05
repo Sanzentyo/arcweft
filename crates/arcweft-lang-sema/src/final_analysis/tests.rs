@@ -1197,9 +1197,29 @@ fn checked_unsafe_audit_owns_identity_and_uses_checked_reason_child() {
             _ => None,
         })
         .expect("unsafe reason child");
+    assert_eq!(checked_audit.reason(), Some(reason));
     let checked_reason = report.expression(reason).expect("checked unsafe reason");
     assert_eq!(checked_reason.value_type(), Some(&TypeKind::String));
     assert!(checked_reason.effects().is_empty());
+}
+
+#[test]
+fn checked_unsafe_audit_reason_requires_an_authored_nonempty_literal() {
+    for reason in ["\"   \"", "audit_reason"] {
+        let source = format!(
+            "fn audited(audit_reason: String) {{\n    unsafe lifetime @unsafe.audit reason = {reason} {{\n        /// SAFETY: audit reason fixture\n    }};\n}}\n",
+        );
+        let fixture = fixture(&source, None);
+        let error = analyze(&fixture).expect_err("invalid reason is rejected at semantic sealing");
+        assert!(matches!(
+            &error,
+            FinalSemanticAnalysisError::InvalidUnsafeAuditReason { .. }
+        ));
+        let diagnostic = error.source_diagnostic().expect("exact reason span");
+        assert_eq!(diagnostic.code().unwrap().as_str(), "sema.unsafe.reason");
+        let span = diagnostic.span().unwrap();
+        assert_eq!(&source[span.range().as_range()], reason);
+    }
 }
 
 #[test]

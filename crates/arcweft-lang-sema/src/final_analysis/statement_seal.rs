@@ -7,9 +7,12 @@
 use std::collections::BTreeMap;
 
 use arcweft_lang_hir::{
+    expr::HirExprKind,
     identity::{ExprId, LocalId, StmtId},
+    leaf::{HirLiteral, HirStringLiteral},
     module::HirModule,
     project::{HirAnalysisProjectView, HirControlTransferKind},
+    source_index::{HirExprSourceRole, HirSourceQuery},
     stmt::{
         HirCancelTrigger, HirSelectBranchHead, HirSelectStmt, HirSourceLocaleValue, HirStmtKind,
         HirTrigger, HirUnsafeAuditIdentity, HirUnsafeLifetimeBody,
@@ -468,6 +471,7 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
 
     fn unsafe_audit(
         &mut self,
+        module: &HirModule,
         owner: StmtId,
         audit: &arcweft_lang_hir::stmt::HirUnsafeAudit,
         body: &HirUnsafeLifetimeBody,
@@ -484,15 +488,41 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
             return Err(FinalSemanticAnalysisError::RecoveredOwner);
         };
         if let Some(reason) = audit.reason() {
-            let reason = expressions
+            let checked = expressions
                 .get(&reason)
                 .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: reason })?;
-            if reason.value_type() != Some(&TypeKind::String) || !reason.effects().is_empty() {
-                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            let expression = module
+                .resolve_expr(reason)
+                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+            let literal = matches!(
+                (expression.kind(), checked.resolution()),
+                (
+                    HirExprKind::Literal(HirLiteral::String(HirStringLiteral::Value(source))),
+                    super::CheckedExpressionResolution::Literal(HirLiteral::String(
+                        HirStringLiteral::Value(value),
+                    )),
+                ) if source == value && !value.trim().is_empty()
+            );
+            if !literal
+                || checked.value_type() != Some(&TypeKind::String)
+                || !checked.effects().is_empty()
+            {
+                let source_span = module
+                    .source_anchor(HirSourceQuery::Expr {
+                        owner: reason,
+                        role: HirExprSourceRole::Whole,
+                    })
+                    .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
+                    .ok_or(FinalSemanticAnalysisError::RecoveredOwner)?;
+                return Err(FinalSemanticAnalysisError::InvalidUnsafeAuditReason {
+                    owner,
+                    reason,
+                    source_span,
+                });
             }
         }
         Ok(CheckedStatementPayload::UnsafeAudit(
-            CheckedUnsafeAudit::new(id.clone(), audit.has_safety_doc()),
+            CheckedUnsafeAudit::new(id.clone(), audit.reason(), audit.has_safety_doc()),
         ))
     }
 
@@ -684,7 +714,7 @@ impl CheckedStatementPayloadSealer for CheckedStatementSeal<'_, '_, '_> {
             HirStmtKind::On { trigger, .. } => self.trigger(owner, trigger),
             HirStmtKind::CancelRule { trigger, .. } => self.cancel_trigger(owner, trigger),
             HirStmtKind::UnsafeLifetime { audit, body } => {
-                self.unsafe_audit(owner, audit, body, expressions)
+                self.unsafe_audit(module, owner, audit, body, expressions)
             }
             HirStmtKind::Choice { .. } => self.structural(owner),
             HirStmtKind::If(_) => self.structural(owner),

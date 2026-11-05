@@ -14,6 +14,7 @@ use arcweft_lang_hir::{
     body_edges::{HirBodyChild, HirBodyChildRole},
     identity::{ExprId, ItemId, StmtId},
     item::{HirItemKind, HirPredicateBody, HirProofBody},
+    leaf::{HirLiteral, HirStringLiteral},
     module::HirModule,
     project::HirAnalysisProjectView,
     source_index::{
@@ -27,8 +28,8 @@ use arcweft_lang_hir::{
     },
 };
 use arcweft_lang_sema::final_analysis::{
-    CheckedAssertionDisposition, CheckedItemRole, CheckedStatementPayload, CheckedUnsafeAudit,
-    FinalSemanticAnalysis, FinalSemanticAnalysisError,
+    CheckedAssertionDisposition, CheckedExpressionResolution, CheckedItemRole,
+    CheckedStatementPayload, CheckedUnsafeAudit, FinalSemanticAnalysis, FinalSemanticAnalysisError,
 };
 use arcweft_lang_sema::types::TypeKind;
 use arcweft_source::{
@@ -526,6 +527,8 @@ pub struct UnsafeAuditSummary {
     pub id: String,
     pub source: Option<SourceSpan>,
     pub has_reason: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
     pub has_safety_doc: bool,
     /// Typed owner used for all in-process joins.
     #[serde(skip)]
@@ -966,7 +969,12 @@ impl ProjectVerifier<'_, '_> {
         statement: &HirStmtKind,
         audit: &CheckedUnsafeAudit,
     ) -> Result<(), VerificationInputError> {
-        let has_reason = self.checked_unsafe_audit_children(owner, statement)?;
+        let reason = self.checked_unsafe_audit_children(owner, statement)?;
+        if reason.map(|(owner, _)| owner) != audit.reason() {
+            return Err(VerificationInputError::StatementRoleMismatch { owner });
+        }
+        let reason = reason.map(|(_, text)| text.to_owned());
+        let has_reason = reason.is_some();
         let source = statement_source(module, owner)?;
         let id = audit.id().as_public_id().as_str().to_owned();
         let complete = has_reason && audit.has_safety_doc();
@@ -974,6 +982,7 @@ impl ProjectVerifier<'_, '_> {
             id: id.clone(),
             source: Some(source.clone()),
             has_reason,
+            reason,
             has_safety_doc: audit.has_safety_doc(),
             statement: Some(owner),
         });
@@ -1005,7 +1014,7 @@ impl ProjectVerifier<'_, '_> {
         &self,
         owner: StmtId,
         statement: &HirStmtKind,
-    ) -> Result<bool, VerificationInputError> {
+    ) -> Result<Option<(ExprId, &str)>, VerificationInputError> {
         let bodies = statement
             .body_projections()
             .map_err(|_| VerificationInputError::StatementRoleMismatch { owner })?;
@@ -1051,12 +1060,13 @@ impl ProjectVerifier<'_, '_> {
                     let checked = self.semantics.expression(expression).ok_or(
                         VerificationInputError::MissingExpressionFact { owner: expression },
                     )?;
-                    if checked.value_type() != Some(&TypeKind::String)
-                        || !checked.effects().is_empty()
-                    {
+                    let CheckedExpressionResolution::Literal(HirLiteral::String(
+                        HirStringLiteral::Value(text),
+                    )) = checked.resolution()
+                    else {
                         return Err(VerificationInputError::StatementRoleMismatch { owner });
-                    }
-                    reason = Some(expression);
+                    };
+                    reason = Some((expression, text.as_ref()));
                 }
                 (
                     HirStatementChildRole::BodyItem {
@@ -1075,7 +1085,7 @@ impl ProjectVerifier<'_, '_> {
         if next_body != body_statements.len() {
             return Err(VerificationInputError::StatementRoleMismatch { owner });
         }
-        Ok(reason.is_some())
+        Ok(reason)
     }
 
     fn validate_statements(

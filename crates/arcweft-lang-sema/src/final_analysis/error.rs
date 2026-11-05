@@ -415,6 +415,12 @@ pub enum FinalSemanticAnalysisError {
         index: usize,
         effects: EffectSet,
     },
+    #[error("unsafe lifetime audit requires a nonempty string literal reason")]
+    InvalidUnsafeAuditReason {
+        owner: StmtId,
+        reason: ExprId,
+        source_span: SourceSpan,
+    },
     #[error("call fact is not a clean selected call")]
     UnacceptedCall,
     #[error("call result/effects disagree with the expression fact")]
@@ -753,6 +759,7 @@ impl FinalSemanticAnalysisError {
             Self::IncompatibleCallableResults { .. } => "sema.callable.result_type",
             Self::AssertionConditionNotBool { .. } => "sema.assert.condition_not_bool",
             Self::AssertionConditionNotPure { .. } => "sema.assert.condition_not_pure",
+            Self::InvalidUnsafeAuditReason { .. } => "sema.unsafe.reason",
             Self::RecursiveCallableContract { .. } => "sema.callable.recursive_contract",
             Self::BreakValueRequiresLoop { .. } => "sema.break.value_target",
             Self::StatementOperandTypeMismatch { .. } => "sema.statement.operand_type",
@@ -820,6 +827,14 @@ impl FinalSemanticAnalysisError {
                     .with_label(DiagnosticLabel::primary(
                         source_span.clone(),
                         Some("expected a payload constructed by an Action declaration".to_owned()),
+                    )),
+            ),
+            Self::InvalidUnsafeAuditReason { source_span, .. } => Some(
+                Diagnostic::new(DiagnosticSeverity::Error, self.to_string())
+                    .with_code(self.diagnostic_code())
+                    .with_label(DiagnosticLabel::primary(
+                        source_span.clone(),
+                        Some("write the audit reason as a string literal".to_owned()),
                     )),
             ),
             Self::UnknownValueMember { member_source, .. } => Some(

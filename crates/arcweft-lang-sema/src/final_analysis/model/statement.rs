@@ -412,12 +412,21 @@ impl CheckedSelectStatement {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedUnsafeAudit {
     id: UnsafeAuditId,
+    reason: Option<ExprId>,
     has_safety_doc: bool,
 }
 
 impl CheckedUnsafeAudit {
-    pub(crate) const fn new(id: UnsafeAuditId, has_safety_doc: bool) -> Self {
-        Self { id, has_safety_doc }
+    pub(crate) const fn new(
+        id: UnsafeAuditId,
+        reason: Option<ExprId>,
+        has_safety_doc: bool,
+    ) -> Self {
+        Self {
+            id,
+            reason,
+            has_safety_doc,
+        }
     }
 
     pub const fn id(&self) -> &UnsafeAuditId {
@@ -426,6 +435,11 @@ impl CheckedUnsafeAudit {
 
     pub const fn has_safety_doc(&self) -> bool {
         self.has_safety_doc
+    }
+
+    /// The original checked literal retained as this audit's reason.
+    pub const fn reason(&self) -> Option<ExprId> {
+        self.reason
     }
 
     pub fn semantic_id(&self) -> AcceptedUnsafeAuditSemanticId {
