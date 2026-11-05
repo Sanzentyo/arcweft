@@ -6021,5 +6021,256 @@
       "entryDrift": 0,
       "indexEntry": "declared-callable-group-archive-inputs.json"
     }
+  },
+  "sourceFactories": {
+    "version": 1,
+    "recordedAt": "2026-11-05T05:57:51.1287442Z",
+    "source": {
+      "version": 1,
+      "commit": "c310c7eeab2bce80d127f19eb9ebbea4306e41cd",
+      "parent": "2b0c6f26e45ce7f85a01aa9db395ad36d5455816",
+      "tree": "61e860ec8402dc9b91c76ac3a6c987b944019483",
+      "remote": "c310c7eeab2bce80d127f19eb9ebbea4306e41cd",
+      "paths": [
+        {
+          "path": "Cargo.lock",
+          "blob": "09a4fa154c3421f5a860ea84b9e4c92c70da8cef"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/lower.rs",
+          "blob": "7364477712daa82a89c1af86b1de67b364133bc6"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/callable_execution.rs",
+          "blob": "ef1f01c8dd4988bc24dc3ea888bdd7ad17992083"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/callable_execution/rich_text_factories.rs",
+          "blob": "7d13645e7f6321a90e58bc3c790bce80ecec3d76"
+        },
+        {
+          "path": "crates/arcweft-dialogue/src/character_dialogue.rs",
+          "blob": "6577864eec4b59c569400de3ba60f7b7062eb034"
+        },
+        {
+          "path": "crates/arcweft-dialogue/src/character_dialogue/external_call_backend.rs",
+          "blob": "9582df0014a2bc197b387d4e3df116aa3853672d"
+        },
+        {
+          "path": "crates/arcweft-dialogue/src/character_dialogue/schema/role_payload.rs",
+          "blob": "b23ceffb74b078a42baa460387fe4197d7a0c2d7"
+        },
+        {
+          "path": "crates/arcweft-dialogue/src/character_dialogue/schema/role_payload/construction.rs",
+          "blob": "8ac753253af5e4b4c0a6f8d1be43780279bdf2d4"
+        },
+        {
+          "path": "crates/arcweft-dialogue/src/character_dialogue/style_factory.rs",
+          "blob": "4faf0cf80436b83ec1c2d336b99bf299b142e231"
+        },
+        {
+          "path": "crates/arcweft-dialogue/src/lib.rs",
+          "blob": "b430ef63e9bc6428cb1c080a35429b72cd627f22"
+        },
+        {
+          "path": "crates/arcweft-dialogue/src/tests/character_dialogue/runtime_schema/property_construction.rs",
+          "blob": "60f941bb9f90ad5f68382d0cbad06a3b9bdd1a47"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/checked_text_proxy.rs",
+          "blob": "6440263fe007c58e8c0505a43c256ff494396c57"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/env/base.rs",
+          "blob": "ffa1d0292a40b0789ecb07f18d5bdef431c2907c"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/execution_plan.rs",
+          "blob": "c28b0fdc9b8334b8814c34129386b0768e1b4455"
+        },
+        {
+          "path": "crates/arcweft-rich-text-schema/Cargo.toml",
+          "blob": "1fdee6a10bb66e99984a07b88dbe71550ec29ca1"
+        },
+        {
+          "path": "crates/arcweft-rich-text-schema/src/lib.rs",
+          "blob": "c4336a71e4b70e06b611427304ea88d67a636d0d"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+          "blob": "3c51501e636f273c321ca80e21e5a21c8f155fad"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "3bbab0f445ecab30a6494d8064db198fde5087e1d3cfc929971c36371554b892",
+      "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-05T05:54:31.8597078Z"
+    },
+    "state": "Intermediate checkpoint, not final factory acceptance. Empty direct/alias factories execute and restore; px property construction, composition provenance, generic font families and complete consumer/quality validation remain incomplete.",
+    "authorization": "The user requested frequent commit/push and explicitly permitted intermediate commits without proving every intermediate state works. This checkpoint retains failing acceptance tests and does not mark the goal or the factories complete.",
+    "workingTree": {
+      "heldTracked": 12,
+      "heldUntracked": 6,
+      "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+      "actualSourceInputs": 4104,
+      "sourceDrift": 0,
+      "claim": "Observed checkout includes the unchanged original held WIP; no pristine-HEAD test claim."
+    },
+    "implementation": [
+      "One Dialogue-owned factory parameter catalog registers text_style(font,color,size), ruby_style(size,gap,overhang,collision_gap), rich_text_style(text,ruby). All ordinary inputs are optional and return the accepted RichText role. Runtime selection uses the original Core provider/function export/overload, not source aliases.",
+      "Borrowed property construction uses the original call execution program, exact result type and limits, retaining the existing property codec and one prospective output-root preflight. Unbound/wrong-result/over-limit inputs reject.",
+      "LengthUnit and RichTextUnit have distinct wire tags. A typed TryFrom conversion admits px/pt/ch/em and explicitly rejects unsupported runtime length units without reinterpretation. Internal Cargo dependency and lock edge are updated.",
+      "CheckedCompileTimeScalar owns a runtime_quantity inspection. Contextually reduced Milli/Ratio/Length/Angle facts retain a runtime projection; Compiler materializes their original semantic quantity type. A typed RuntimePlan operand mismatch preserves the missing operand/type evidence rather than calling every mismatch a non-Call expression."
+    ],
+    "validation": {
+      "owner": {
+        "version": 1,
+        "base": "2b0c6f26e45ce7f85a01aa9db395ad36d5455816",
+        "run": "rich-text-source-factory-owner5-20261105.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   0.933s] 23 tests run: 21 passed, 2 failed, 859 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 23,
+        "passed": 21,
+        "failed": 2,
+        "skipped": 859,
+        "selectedPackages": 3,
+        "matchedPackages": 3,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4104,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::callable_execution",
+            "test": "rich_text_factories::source_style_factories_preserve_typography_values_and_units_during_composition"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::callable_execution",
+            "test": "rich_text_factories::source_style_factories_use_caller_order_for_conflicting_properties"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-05T05:51:53.0668354Z"
+      },
+      "receipt": "rich-text-source-factory-owner5-20261105.runtime.terminal-audit.json",
+      "catalog": "rich-text-source-factory-owner5-20261105.catalog.inventory.json",
+      "genericQuantityCases": 14,
+      "emptyFactoryCases": "One test executes all three empty factories directly and via aliases through Native and canonical decoded AWBC; each AWBC OneOp step uses public JSON save/restore.",
+      "limitsCase": "Original result type, unbound context and small original string allowance rejection PASS; existing borrowed construction checks also PASS.",
+      "sourceRelation": "Owner5 ran on base 2b0c6f26e45ce7f85a01aa9db395ad36d5455816 plus these exact 17 published paths. All 4104 inputs are unchanged after c310c7eeab2bce80d127f19eb9ebbea4306e41cd publication.",
+      "fullClosure": {
+        "version": 1,
+        "base": "c310c7eeab2bce80d127f19eb9ebbea4306e41cd",
+        "roots": [
+          "arcweft-rich-text-schema",
+          "arcweft-dialogue",
+          "arcweft-lang-sema",
+          "arcweft-runtime-plan"
+        ],
+        "workspacePackages": 98,
+        "selection": [
+          "arcweft",
+          "arcweft-adapter-desktop",
+          "arcweft-adapter-sema",
+          "arcweft-agent-mcp",
+          "arcweft-agent-mcp-client",
+          "arcweft-agent-policy",
+          "arcweft-agent-protocol",
+          "arcweft-agent-repl",
+          "arcweft-agent-runner",
+          "arcweft-bundle",
+          "arcweft-bundle-assets",
+          "arcweft-character-view",
+          "arcweft-cli",
+          "arcweft-compiler",
+          "arcweft-debug-model",
+          "arcweft-debug-sqlite",
+          "arcweft-desktop-native",
+          "arcweft-dialogue",
+          "arcweft-glyphon",
+          "arcweft-lang-hir",
+          "arcweft-lang-sema",
+          "arcweft-lang-syntax",
+          "arcweft-launch",
+          "arcweft-lsp",
+          "arcweft-player-native",
+          "arcweft-player-scene",
+          "arcweft-player-text-input",
+          "arcweft-player-web",
+          "arcweft-presentation",
+          "arcweft-project",
+          "arcweft-project-loader",
+          "arcweft-rag",
+          "arcweft-render-text",
+          "arcweft-render-web",
+          "arcweft-render-wgpu",
+          "arcweft-rich-text-schema",
+          "arcweft-runtime-driver",
+          "arcweft-runtime-host",
+          "arcweft-runtime-plan",
+          "arcweft-test",
+          "arcweft-text-layout",
+          "arcweft-text-model",
+          "arcweft-tooling",
+          "arcweft-verify",
+          "arcweft-verify-lsp",
+          "arcweft-verify-oxiz",
+          "arcweft-verify-z3",
+          "arcweft-view"
+        ],
+        "selectedPackages": 48,
+        "target": "all",
+        "features": "all",
+        "dependencyKinds": [
+          "normal",
+          "build",
+          "dev"
+        ],
+        "metadataTreeDrift": 0,
+        "runtimeStatus": "Not run for this source; focused owner evidence is distinct."
+      },
+      "quality": "Changed Rust fmt and applicable staged whitespace PASS. Workspace check/Clippy/structure and complete 48-package runtime closure are not yet run for this checkpoint.",
+      "acceptedGeneric": "Generic Match remains accepted/public. Latest same151 fresh results belong to Source 2aaa0480b171d15274737d7bd49a3c391ce19096; they are not relabeled as c310 runtime execution."
+    },
+    "attempts": [
+      "build1: early nonfrozen check exit101, before the new typed unit conversion was available to the compiled dependency graph.",
+      "owner1: catalog compile101 from the new fixture passing Arc<RuntimePlan> to Engine::for_flow, fixed to its actual RuntimePlan API. Separate bundle rlib-unavailable diagnostics were retained; the exact rlib was later present and owner2 rebuilt without cache removal.",
+      "owner2: 9 run /7PASS/2FAIL. Empty factories and quota/unit/old construction tests PASS; both composed cases fail RuntimePlan call-operand validation.",
+      "owner3: catalog compile101 because a diagnostic field named source:ExprId was interpreted by thiserror as an error source. Renamed operand.",
+      "owner4: 9 run /7PASS/2FAIL. Typed operand diagnostics show expected quantity type with missing expression type. Sema classified contextually reduced quantities as compile-time-only, while Compiler only materialized Color for that resolution.",
+      "owner5: 23 run /21PASS/2FAIL, 859 skipped. All14 existing quantity tests PASS, plus the7 owner cases. Both composed px cases now compile and enter execution but reject the Size property grammar; the earlier projection failure is repaired for these inputs. These equal failed IDs have a different observed failure and are not relabeled as an unchanged cause."
+    ],
+    "remaining": {
+      "units": "Presentation SIZE_LIMITS in crates/arcweft-presentation/src/rich_text/content_catalog.rs currently accepts only RichTextUnit::Pt. Maintained dialogue-character-methods-and-views.md specifies text_style(size=24px); the retained original tests fail at property construction. Repair the typed unit contract and its consumers together, without silently converting under an invented density.",
+      "order": "Conflicting-property direct/alias test remains present, but owner5 rejects px before reaching its expected source-order assertion. Actual composition order is not yet verified. The generated environment wrapper currently forwards formal order; inspect and repair owned callable/frame provenance if execution demonstrates loss.",
+      "font": "font currently accepts named String values. Maintained bare serif requires a real typed generic font family across semantic/schema/consumer owners; no string guessing.",
+      "instances": "Review the closed generic/closure expression partition for reduced quantity facts; current root projection proof does not establish every generated instance.",
+      "gates": "Final workspace quality, transitive consumers, actual CLI probes and display/unit acceptance remain pending."
+    },
+    "correctionReason": "Replace stale current unknown-target registration wording with scoped empty-factory execution evidence and exact new failed conditions. Keep every prior result/full SHA and all previously accepted sparse layout, properties, construction, optional binding, aliases and Generic Match boundaries.",
+    "supersededCurrentRows": [
+      "| RichTextの部分layout指定／source factory | **既受入を維持・Sourceの省略引数aliasも検証／公開済み。factoryは継続中** | Source 2aaa0480b171d15274737d7bd49a3c391ce19096で、宣言済み引数座標と実callable stateから省略／明示の束縛を導出し、Native／decoded AWBCへ接続した。最終owner 52／52 PASS、実引数0／1件・戻り値・一回の呼出しを確認し、decoded AWBCでは各OneOpの公開JSON save／restoreも検証した。以前拒否された同一sourceのcues.stop aliasと直接callは実CLIでcompile成功。部分layout・共通property・生成API・Coreの既受入は維持する。残るfactory登録はtext_style／ruby_style／rich_text_styleの実CLI 3件がtype-checkのsema.call.unknown_targetで拒否されたことを根拠とする。元call context接続、合成順、static inline_stylesの出典・長さ単位の消費も別の継続範囲。[具体的入力・新旧の全実測・SHA](acceptance-evidence/task-rich-text-property-identity.json)。 |",
+      "| 共有契約／推移的逆依存matrix | **全53 packageの終端を確認。通常系7,110／7,110 PASS・CLI失敗は別行** | Source 2aaa0480b171d15274737d7bd49a3c391ce19096、4102入力。normal／build／dev・全targetの実Cargo graphとtree照合は差分0、53 package中50で実テストあり。同じall-target／all-feature／lockedの一回のrunは7,808件中7,793 PASS／15 FAIL、40 skipped。arcweft／arcweft-bundle-assets／arcweft-render-webはbuildのみ。Source／case／EXE drift 0。[全件・case別coverage・graph・終端とraw](acceptance-evidence/task-rich-text-property-identity.json)。 |",
+      "| CLI全target照合 | **統合受入は未完了。最新の全698件は683 PASS／15 FAIL** | Source 2aaa0480b171d15274737d7bd49a3c391ce19096、4102入力、全53逆依存の同じ実runに含む。従来の14 failed IDと、新たなMCP stdioのChildExitDeadline 1件を保持する。同じsource・feature・全224 EXE hashの単独再実行では追加1件がPASSしたが、全体runの15 FAILは変更しない。原因は未確定で、ID一致や単独PASSから原因を推定しない。[全失敗・単独再実行・原本](acceptance-evidence/task-rich-text-property-identity.json)。別境界の失敗でGeneric Matchや既受入のtyped ownerを未完了へ戻さない。 |",
+      "| workspace check／Clippy・fmt・構造gate | **最新Sourceの全98 package check／Clippyと構造gateは終了0。既存警告は残存** | Source 2aaa0480b171d15274737d7bd49a3c391ce19096の最終4102入力に対応する全98 packageのcheck／Clippy（all-target／all-feature／locked）と構造gateは終了0。変更Rust34件のfmtとstaged whitespaceも終了0。容量不足後の全体cargo cleanは75,585 files／114.0 GiB削除、source／Git状態drift 0。その後に全53逆依存を再構築して終端まで確認した。以前のclean・失敗原本も保持する。[receipt・owner review・raw](acceptance-evidence/task-rich-text-property-identity.json)。doctest／wasm専用検証は未再実行。 |"
+    ],
+    "historyPrefix": {
+      "bytes": 1840320,
+      "sha256": "b4de5249503f50290721ab49c80b90bb57fd2b5ec12fdcfe9438390dad68b62d"
+    },
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-rich-text-source-factory-checkpoint.raw.zip",
+      "bytes": 1776310,
+      "sha256": "440a46120b4a17927d0660cfe1e246b942a5c850ea500a5ac9e1b1942583b740",
+      "entries": 57,
+      "entryDrift": 0,
+      "indexEntry": "rich-text-source-factory-archive-inputs.json"
+    }
   }
 }
