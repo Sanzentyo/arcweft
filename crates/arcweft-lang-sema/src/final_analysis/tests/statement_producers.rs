@@ -689,14 +689,14 @@ fn wrong_prepared_payload(expected: ExpectedPayload) -> PreparedStatementPayload
         | ExpectedPayload::SourceLocale
         | ExpectedPayload::Scope
         | ExpectedPayload::EvaluatedEffectOrStructural => PreparedStatementPayload::Assertion(
-            crate::final_analysis::CheckedAssertionDisposition::Discharged,
+            crate::final_analysis::CheckedAssertionDisposition::PendingProof,
         ),
         ExpectedPayload::Assignment | ExpectedPayload::RegistryWrite | ExpectedPayload::Reject => {
             PreparedStatementPayload::HirOwned
         }
         ExpectedPayload::Trigger | ExpectedPayload::Select | ExpectedPayload::Include => {
             PreparedStatementPayload::Assertion(
-                crate::final_analysis::CheckedAssertionDisposition::Discharged,
+                crate::final_analysis::CheckedAssertionDisposition::PendingProof,
             )
         }
     }

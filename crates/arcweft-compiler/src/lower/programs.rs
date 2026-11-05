@@ -29,6 +29,7 @@ pub(super) fn materialize(
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
+    verification: &arcweft_verify::RuntimeProjectVerification<'_>,
     owners: &HirRuntimeSemanticReachability<'_>,
     programs: &[RuntimePureProgramFact],
     dialogue: &RuntimeDialogueProjectionCatalog,
@@ -68,6 +69,7 @@ pub(super) fn materialize(
                 symbols,
                 world,
                 analysis,
+                verification,
                 owners,
                 dialogue,
                 &mut projection,
@@ -304,11 +306,19 @@ pub fn compile_deterministic_program(
             reason: error.to_string(),
         }
     })?;
+    let verification =
+        arcweft_verify::verify_project_for_runtime(hir, lease.project_symbols(), analysis)
+            .map_err(|error| {
+                Box::new(RuntimeSemanticProjectionError::AssertionVerification(
+                    Box::new(error),
+                ))
+            })?;
     let facts = super::project_runtime_semantic_facts_with_programs_and_fx(
         hir,
         lease.project_symbols(),
         lease.registered_world(),
         analysis,
+        &verification,
         &ordinary,
         &roots,
         &[fact],
@@ -380,11 +390,15 @@ mod tests {
         )
         .unwrap();
         let fx = crate::fx_catalog::CompiledFxCatalog::lower(analysis).unwrap();
+        let verification =
+            arcweft_verify::verify_project_for_runtime(hir, lease.project_symbols(), analysis)
+                .unwrap();
         let facts = project_runtime_semantic_facts_with_programs_and_fx(
             hir,
             lease.project_symbols(),
             lease.registered_world(),
             analysis,
+            &verification,
             &ordinary,
             &roots,
             &[fact],

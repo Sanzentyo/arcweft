@@ -1406,7 +1406,6 @@ fn write_statement_payload(
                 hasher,
                 &[match disposition {
                     CheckedAssertionDisposition::PendingProof => 0,
-                    CheckedAssertionDisposition::Discharged => 1,
                     CheckedAssertionDisposition::Runtime(policy) => {
                         match policy {
                             crate::assertion::AssertionRuntimePolicy::AlwaysGuard => 2,

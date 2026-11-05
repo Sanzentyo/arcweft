@@ -5,7 +5,10 @@
 //! It never lowers syntax, links or clones HIR modules, reparses source text,
 //! or rebuilds semantic facts from presentation labels.
 
-use std::collections::BTreeMap;
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet},
+};
 
 use arcweft_lang_hir::{
     body_edges::{HirBodyChild, HirBodyChildRole},
@@ -42,6 +45,7 @@ use crate::smt::{SmtCheck, SmtError, SmtOutcome, SmtProblem};
 mod assertion_smt;
 mod call_witness;
 mod insertion;
+mod propositional_proof;
 pub mod smt;
 
 pub use call_witness::ProofCallWitnessProjection;
@@ -596,12 +600,96 @@ pub fn verify_project(
     semantics: &FinalSemanticAnalysis,
     policy: VerificationPolicy,
 ) -> Result<VerificationReport, VerificationInputError> {
+    verify_checked_project(
+        project,
+        symbols,
+        semantics,
+        policy,
+        AssertionProofMode::Collect,
+    )
+}
+
+/// Verified assertion evidence tied to the exact checked generation used by
+/// the executable compiler. The serialized report cannot supply this evidence.
+pub struct RuntimeProjectVerification<'a> {
+    semantics: &'a FinalSemanticAnalysis,
+    discharged_assertions: BTreeSet<StmtId>,
+    report: VerificationReport,
+}
+
+impl RuntimeProjectVerification<'_> {
+    pub const fn report(&self) -> &VerificationReport {
+        &self.report
+    }
+
+    pub fn into_report(self) -> VerificationReport {
+        self.report
+    }
+
+    /// An assertion may be omitted only if every condition on this exact
+    /// statement in this exact analysis has a checked proof.
+    pub fn proves_assertion(&self, semantics: &FinalSemanticAnalysis, owner: StmtId) -> bool {
+        std::ptr::eq(semantics, self.semantics) && self.discharged_assertions.contains(&owner)
+    }
+}
+
+/// Checks compile-time assertions using a bounded finite proof over the same
+/// propositional queries used by the tooling solver adapters.
+pub fn verify_project_for_runtime<'a>(
+    project: HirAnalysisProjectView<'_>,
+    symbols: &ProjectSymbolTable,
+    semantics: &'a FinalSemanticAnalysis,
+) -> Result<RuntimeProjectVerification<'a>, VerificationInputError> {
+    let report = verify_checked_project(
+        project,
+        symbols,
+        semantics,
+        VerificationPolicy::default(),
+        AssertionProofMode::CheckFinite,
+    )?;
+    let mut statements = BTreeMap::new();
+    for obligation in &report.obligations {
+        if obligation.kind == ProofObligationKind::AssertionProof
+            && let Some(owner) = obligation.statement
+        {
+            let proved = obligation.discharge.is_machine_proven();
+            statements
+                .entry(owner)
+                .and_modify(|all_proved| *all_proved &= proved)
+                .or_insert(proved);
+        }
+    }
+    let discharged_assertions = statements
+        .into_iter()
+        .filter_map(|(owner, proved)| proved.then_some(owner))
+        .collect();
+    Ok(RuntimeProjectVerification {
+        semantics,
+        discharged_assertions,
+        report,
+    })
+}
+
+#[derive(Clone, Copy)]
+enum AssertionProofMode {
+    Collect,
+    CheckFinite,
+}
+
+fn verify_checked_project(
+    project: HirAnalysisProjectView<'_>,
+    symbols: &ProjectSymbolTable,
+    semantics: &FinalSemanticAnalysis,
+    policy: VerificationPolicy,
+    assertion_mode: AssertionProofMode,
+) -> Result<VerificationReport, VerificationInputError> {
     semantics.validate_generation(project, symbols)?;
     let insertion = VerifierInsertionInventory::from_project(project);
     let mut verifier = ProjectVerifier {
         project,
         symbols,
         semantics,
+        assertion_mode,
         insertion,
         report: VerificationReport {
             policy,
@@ -616,6 +704,7 @@ struct ProjectVerifier<'project, 'catalog> {
     project: HirAnalysisProjectView<'project>,
     symbols: &'catalog ProjectSymbolTable,
     semantics: &'catalog FinalSemanticAnalysis,
+    assertion_mode: AssertionProofMode,
     insertion: VerifierInsertionInventory,
     report: VerificationReport,
 }
@@ -800,6 +889,15 @@ impl ProjectVerifier<'_, '_> {
         for (index, condition) in conditions.into_iter().enumerate() {
             let id = format!("assertion.{assertion}.condition.{index}");
             let smt = assertion_smt::counterexample(&id, module, self.semantics, condition);
+            let discharge = if matches!(self.assertion_mode, AssertionProofMode::CheckFinite)
+                && smt
+                    .as_ref()
+                    .is_some_and(propositional_proof::proves_assertion)
+            {
+                ProofDischarge::Automatic
+            } else {
+                ProofDischarge::Missing
+            };
             let obligation = ProofObligation {
                 id,
                 kind: ProofObligationKind::AssertionProof,
@@ -807,14 +905,16 @@ impl ProjectVerifier<'_, '_> {
                 subject: Some(format!("condition.{index}")),
                 source: Some(source.clone()),
                 insertion_target: None,
-                discharge: ProofDischarge::Missing,
+                discharge,
                 smt,
                 proof_artifact: None,
                 statement: Some(owner),
             };
-            self.report
-                .diagnostics
-                .push(unresolved_prove_diagnostic(&obligation));
+            if obligation.discharge.is_missing() {
+                self.report
+                    .diagnostics
+                    .push(unresolved_prove_diagnostic(&obligation));
+            }
             self.report.obligations.push(obligation);
         }
         Ok(())
@@ -1069,15 +1169,19 @@ fn missing_obligation_diagnostic(
 ) -> VerificationDiagnostic {
     VerificationDiagnostic {
         id: format!("verify.pending.{}", obligation.id),
-        severity: match mode {
-            VerificationMode::Dev => Severity::Warning,
-            VerificationMode::Test | VerificationMode::Release => Severity::Error,
-        },
+        severity: pending_obligation_severity(mode),
         message: obligation.message.clone(),
         source: obligation.source.clone(),
         obligation: Some(obligation.id.clone()),
         related_ids: obligation.subject.iter().cloned().collect(),
         actions: obligation.actions(),
+    }
+}
+
+const fn pending_obligation_severity(mode: VerificationMode) -> Severity {
+    match mode {
+        VerificationMode::Dev => Severity::Warning,
+        VerificationMode::Test | VerificationMode::Release => Severity::Error,
     }
 }
 
@@ -1100,6 +1204,24 @@ fn source_sort_key(source: Option<&SourceSpan>) -> (&str, usize, usize) {
 }
 
 impl VerificationReport {
+    /// Projects pending declaration and audit diagnostics under another policy.
+    /// Proof and solver outcomes stay attached to the observed report.
+    pub fn with_pending_policy(&self, policy: VerificationPolicy) -> Cow<'_, Self> {
+        if self.policy == policy {
+            return Cow::Borrowed(self);
+        }
+        let mut report = self.clone();
+        report.policy = policy;
+        for diagnostic in &mut report.diagnostics {
+            if let Some(obligation) = diagnostic.obligation.as_deref()
+                && diagnostic.id.strip_prefix("verify.pending.") == Some(obligation)
+            {
+                diagnostic.severity = pending_obligation_severity(policy.mode);
+            }
+        }
+        Cow::Owned(report)
+    }
+
     /// Returns final-HIR-identity-ordered bounded Call evidence for this generation.
     pub fn call_witnesses(&self) -> &[ProofCallWitnessProjection] {
         &self.call_witnesses

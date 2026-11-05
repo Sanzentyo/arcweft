@@ -165,12 +165,11 @@ impl CheckedIteration {
     }
 }
 
-/// Final assertion disposition after proof/debug policy admission.
+/// Checked assertion disposition before verification and runtime admission.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CheckedAssertionDisposition {
-    /// Awaiting compile-time verifier admission. This never enters runtime lowering.
+    /// Every condition requires compile-time verifier admission.
     PendingProof,
-    Discharged,
     Runtime(crate::assertion::AssertionRuntimePolicy),
     OmittedDebug,
 }

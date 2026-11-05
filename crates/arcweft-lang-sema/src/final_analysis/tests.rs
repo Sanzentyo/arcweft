@@ -2175,7 +2175,7 @@ fn push_complete_statement_facts(module: &HirModule, input: &mut FinalSemanticAn
     for (id, statement) in module.statements() {
         let fact = match statement.kind() {
             HirStmtKind::Assertion { .. } => {
-                PreparedStatementPayload::Assertion(CheckedAssertionDisposition::Discharged)
+                PreparedStatementPayload::Assertion(CheckedAssertionDisposition::PendingProof)
             }
             HirStmtKind::For(_) => {
                 PreparedStatementPayload::Iteration(Box::new(CheckedIteration::Builtin {

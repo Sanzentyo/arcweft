@@ -1,8 +1,8 @@
 use super::diagnostics::emit_diagnostics;
 use super::project::{
     CheckedModule, ProfileOptions, ProjectDiagnosticOutput, SourceSelection, analyze_selection,
-    load_and_check_selection, resolve_source_selection, runtime_pure_config_for_selection,
-    verify_analysis, verify_compiled_project,
+    compiled_verification_report, load_and_check_selection, resolve_source_selection,
+    runtime_pure_config_for_selection, verify_analysis,
 };
 use super::runtime::entry::select_runtime_entry;
 use super::runtime::executor::RuntimeExecutorInstance;
@@ -197,7 +197,7 @@ fn verify_types_semantics(
     mode: VerificationMode,
 ) -> Result<arcweft_verify::VerificationReport, ExitCode> {
     run_profile_phase(&mut checked.phases, "verify", || {
-        verify_compiled_project(
+        Ok(compiled_verification_report(
             &checked.compiled,
             VerificationPolicy {
                 mode,
@@ -205,6 +205,7 @@ fn verify_types_semantics(
                 allow_trusted_proofs: mode != VerificationMode::Release,
             },
         )
+        .into_owned())
     })
 }
 
@@ -285,14 +286,14 @@ pub(super) fn unsafe_command(options: &UnsafeOptions) -> Result<(), ExitCode> {
         None,
         ProjectDiagnosticOutput::for_json(options.json),
     )?;
-    let report = verify_compiled_project(
+    let report = compiled_verification_report(
         &checked.compiled,
         VerificationPolicy {
             mode: options.mode,
             backend: BackendKind::Emit,
             allow_trusted_proofs: options.mode != VerificationMode::Release,
         },
-    )?;
+    );
     if options.json {
         print_json(&report.unsafe_audits)?;
     } else {

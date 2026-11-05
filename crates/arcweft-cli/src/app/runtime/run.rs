@@ -21,8 +21,8 @@ use crate::app::diagnostics::emit_diagnostics;
 use crate::app::progress::{CliProgress, CliProgressStatus};
 use crate::app::project::ProfileOptions;
 use crate::app::project::{
-    SourceSelection, resolve_source_selection_or_default_profile,
-    runtime_pure_config_for_selection, verify_compiled_project,
+    SourceSelection, compiled_verification_report, resolve_source_selection_or_default_profile,
+    runtime_pure_config_for_selection,
 };
 use crate::app::shared::print_json;
 use crate::output::{RuntimeExecutorTier, RuntimeRunReport};
@@ -230,14 +230,14 @@ fn require_runtime_verification_safety(
     compiled: &arcweft_compiler::project::CompiledProject,
     source_document: &arcweft_source::SourceDocument,
 ) -> Result<(), ExitCode> {
-    let verification = verify_compiled_project(
+    let verification = compiled_verification_report(
         compiled,
         VerificationPolicy {
             mode: VerificationMode::Dev,
             backend: BackendKind::Emit,
             allow_trusted_proofs: true,
         },
-    )?;
+    );
     if verification.has_blocking_runtime_safety_gaps() {
         emit_runtime_verification_diagnostics(source_document, &verification);
         return Err(ExitCode::FAILURE);

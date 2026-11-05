@@ -1,8 +1,8 @@
 use super::diagnostics::emit_diagnostics;
 use super::progress::{CliProgress, CliProgressStatus};
 use super::project::{
-    ProfileOptions, SourceSelection, adapter_manifest_for_selection, resolve_source_selection,
-    semantic_context_for_selection, verify_compiled_project,
+    ProfileOptions, SourceSelection, adapter_manifest_for_selection, compiled_verification_report,
+    resolve_source_selection, semantic_context_for_selection,
 };
 use super::runtime::options::CliRuntimeStepMode;
 use super::runtime::profile::report_path;
@@ -276,7 +276,8 @@ pub(in crate::app) fn compile_bundle_from_profile_runtime_plan_with_adapter(
 ) -> Result<CompiledBundleArtifact, ExitCode> {
     let semantic_index = Arc::clone(compiled.compiled.analysis_lease().semantic_index());
     let execution_diagnostics = Arc::clone(&compiled.execution_diagnostics);
-    let verification = verify_compiled_project(&compiled.compiled, VerificationPolicy::default())?;
+    let verification =
+        compiled_verification_report(&compiled.compiled, VerificationPolicy::default());
     if verification.has_blocking_runtime_safety_gaps() {
         emit_bundle_verification_diagnostics(&compiled.source_document, &verification);
         return Err(ExitCode::FAILURE);

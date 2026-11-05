@@ -211,6 +211,12 @@ Boolean literals, checked local bindings, and the Boolean
 operators `!`, `&&`, `||`, `=>`, `==`, and `!=`. Each assertion condition
 has its own obligation. An unsatisfiable counterexample query discharges the
 condition in the report. A satisfiable query retains its counterexample, and
-conditions outside the supported fragment remain pending. Runtime plan
-generation still requires proof discharge at its own admission boundary.
+conditions outside the supported fragment remain pending.
+
+The compiler checks the same Boolean queries with a bounded finite proof.
+It admits a statement only when every condition is proved for the original
+checked generation. Runtime plan assembly omits that statement in both the
+ordinary body and each closed instance. A counterexample, unsupported
+condition, or exhausted proof budget blocks publication. Solver reports
+from tooling remain diagnostics and are not executable inputs.
 

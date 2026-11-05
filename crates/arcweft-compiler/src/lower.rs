@@ -273,6 +273,8 @@ pub enum RuntimeRecordExecutableOwner {
 /// fact vocabulary.
 #[derive(Debug, Error)]
 pub enum RuntimeSemanticProjectionError {
+    #[error(transparent)]
+    AssertionVerification(Box<arcweft_verify::VerificationInputError>),
     #[error("accepted entity pattern {owner:?} has no sealed runtime projection: {source}")]
     EntityPattern {
         owner: PatternId,
@@ -502,6 +504,8 @@ pub fn project_runtime_semantic_facts(
     dialogue_profile: Option<&CheckedDialogueProfile>,
     instantiation_control: &ProjectInstantiationControl,
 ) -> Result<(RuntimePlanSemanticFacts, Arc<[FxDefinition]>), RuntimeSemanticProjectionError> {
+    let verification = arcweft_verify::verify_project_for_runtime(project, symbols, analysis)
+        .map_err(|error| RuntimeSemanticProjectionError::AssertionVerification(Box::new(error)))?;
     let fx_catalog = crate::fx_catalog::CompiledFxCatalog::lower(analysis).map_err(|error| {
         RuntimeSemanticProjectionError::Type {
             reason: error.to_string(),
@@ -512,6 +516,7 @@ pub fn project_runtime_semantic_facts(
         symbols,
         world,
         analysis,
+        &verification,
         runtime_owners,
         None,
         &[],
@@ -532,6 +537,7 @@ pub(crate) fn project_runtime_semantic_facts_with_programs_and_fx(
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
+    verification: &arcweft_verify::RuntimeProjectVerification<'_>,
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
     program_owners: &HirRuntimeSemanticReachability<'_>,
     pure_programs: &[RuntimePureProgramFact],
@@ -544,6 +550,7 @@ pub(crate) fn project_runtime_semantic_facts_with_programs_and_fx(
         symbols,
         world,
         analysis,
+        verification,
         runtime_owners,
         Some(program_owners),
         pure_programs,
@@ -558,6 +565,7 @@ fn project_runtime_semantic_fact_inventories(
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
+    verification: &arcweft_verify::RuntimeProjectVerification<'_>,
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
     program_owners: Option<&HirRuntimeSemanticReachability<'_>>,
     pure_programs: &[RuntimePureProgramFact],
@@ -760,6 +768,7 @@ fn project_runtime_semantic_fact_inventories(
         symbols,
         world,
         analysis,
+        verification,
         runtime_owners,
         program_owners,
         &dialogue_projection,
@@ -770,6 +779,7 @@ fn project_runtime_semantic_fact_inventories(
         symbols,
         world,
         analysis,
+        verification,
         runtime_owners,
         &dialogue_projection,
         &discovered_instances,
@@ -782,6 +792,7 @@ fn project_runtime_semantic_fact_inventories(
             symbols,
             world,
             analysis,
+            verification,
             owners,
             pure_programs,
             &dialogue_projection,
@@ -795,6 +806,7 @@ fn project_runtime_semantic_fact_inventories(
         symbols,
         world,
         analysis,
+        verification,
         runtime_owners,
         &runtime_calls,
         &project_function_instances,
@@ -1675,7 +1687,10 @@ fn project_runtime_semantic_fact_inventories(
                 );
             }
             CheckedStatementPayload::Assertion(disposition) => {
-                input.push_assertion(owner, runtime_assertion(owner, *disposition)?);
+                input.push_assertion(
+                    owner,
+                    runtime_assertion(owner, *disposition, analysis, verification)?,
+                );
             }
             CheckedStatementPayload::Defer(defer) => {
                 input.push_defer(
@@ -6475,12 +6490,18 @@ fn runtime_record_pattern_under(
 fn runtime_assertion(
     owner: StmtId,
     disposition: CheckedAssertionDisposition,
+    analysis: &FinalSemanticAnalysis,
+    verification: &arcweft_verify::RuntimeProjectVerification<'_>,
 ) -> Result<RuntimeAssertionAdmission, RuntimeSemanticProjectionError> {
     match disposition {
+        CheckedAssertionDisposition::PendingProof
+            if verification.proves_assertion(analysis, owner) =>
+        {
+            Ok(RuntimeAssertionAdmission::Discharged)
+        }
         CheckedAssertionDisposition::PendingProof => {
             Err(RuntimeSemanticProjectionError::InvalidAssertionDisposition { owner })
         }
-        CheckedAssertionDisposition::Discharged => Ok(RuntimeAssertionAdmission::Discharged),
         CheckedAssertionDisposition::OmittedDebug => Ok(RuntimeAssertionAdmission::OmittedDebug),
         CheckedAssertionDisposition::Runtime(AssertionRuntimePolicy::AlwaysGuard) => Ok(
             RuntimeAssertionAdmission::Runtime(RuntimeAssertionMode::Check),
@@ -7808,6 +7829,7 @@ fn materialize_runtime_project_function_instances(
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
+    verification: &arcweft_verify::RuntimeProjectVerification<'_>,
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
     program_owners: Option<&HirRuntimeSemanticReachability<'_>>,
     dialogue: &RuntimeDialogueProjectionCatalog,
@@ -7825,6 +7847,7 @@ fn materialize_runtime_project_function_instances(
             symbols,
             world,
             analysis,
+            verification,
             node.definition_reachability(runtime_owners, program_owners)?,
             dialogue,
             &mut ProjectInstanceProjection::Materialize {
@@ -7851,6 +7874,7 @@ fn build_runtime_project_function_instance(
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
+    verification: &arcweft_verify::RuntimeProjectVerification<'_>,
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
     dialogue: &RuntimeDialogueProjectionCatalog,
     instances: &mut ProjectInstanceProjection<'_>,
@@ -8024,6 +8048,7 @@ fn build_runtime_project_function_instance(
         symbols,
         world,
         analysis,
+        verification,
         runtime_owners,
         dialogue,
         instances,
@@ -8063,6 +8088,7 @@ fn runtime_executable_semantic_facts<'abi>(
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
+    verification: &arcweft_verify::RuntimeProjectVerification<'_>,
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
     dialogue: &RuntimeDialogueProjectionCatalog,
     instances: &mut ProjectInstanceProjection<'_>,
@@ -8633,6 +8659,7 @@ fn runtime_executable_semantic_facts<'abi>(
                         symbols,
                         world,
                         analysis,
+                        verification,
                         runtime_owners,
                         dialogue,
                         instances,
@@ -8807,6 +8834,8 @@ fn runtime_executable_semantic_facts<'abi>(
             ) => RuntimeProjectFunctionStatementPayload::Assertion(runtime_assertion(
                 owner,
                 *disposition,
+                analysis,
+                verification,
             )?),
             (
                 CheckedExecutableRuntimeStatementFactFamily::RegistryWrite,
@@ -9001,6 +9030,7 @@ fn runtime_closure_instance_fact(
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
+    verification: &arcweft_verify::RuntimeProjectVerification<'_>,
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
     dialogue: &RuntimeDialogueProjectionCatalog,
     instances: &mut ProjectInstanceProjection<'_>,
@@ -9098,6 +9128,7 @@ fn runtime_closure_instance_fact(
         symbols,
         world,
         analysis,
+        verification,
         runtime_owners,
         dialogue,
         instances,

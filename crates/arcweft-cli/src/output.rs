@@ -1,4 +1,4 @@
-use crate::app::project::{CheckedModule, verify_compiled_project};
+use crate::app::project::CheckedModule;
 use arcweft_core::aot::AotProgramStats;
 use arcweft_core::awbc::schema::AwbcProgram;
 use arcweft_core::effect::{LineEffectRequest, RuntimeAssertionFailure};
@@ -21,8 +21,6 @@ use arcweft_text_model::DialogueContentCatalog;
 use arcweft_tooling::runtime_diagnostic::{
     RuntimeAssertionDiagnosticIdentity, project_runtime_assertion_fault,
 };
-use arcweft_verify::{BackendKind, VerificationMode, VerificationPolicy};
-use std::process::ExitCode;
 
 /// Compiler rejection published before any executable project exists.
 ///
@@ -231,16 +229,9 @@ impl<'a> RuntimePlanReport<'a> {
     pub(crate) fn from_lowered(
         checked: &CheckedModule,
         runtime_report: &'a RuntimePlanLowerReport,
-    ) -> Result<Self, ExitCode> {
-        let verification = verify_compiled_project(
-            &checked.compiled,
-            VerificationPolicy {
-                mode: VerificationMode::Dev,
-                backend: BackendKind::Emit,
-                allow_trusted_proofs: true,
-            },
-        )?;
-        Ok(Self {
+    ) -> Self {
+        let verification = checked.compiled.verification();
+        Self {
             lines: checked
                 .runtime_plan()
                 .plan
@@ -263,7 +254,7 @@ impl<'a> RuntimePlanReport<'a> {
                 .collect(),
             verifier_diagnostics: verification.diagnostics.len(),
             verifier_obligations: verification.obligations.len(),
-        })
+        }
     }
 }
 

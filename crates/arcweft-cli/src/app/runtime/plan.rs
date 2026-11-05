@@ -14,7 +14,7 @@ pub(in crate::app) fn runtime_plan_command(options: &PlanOptions) -> Result<(), 
         ProjectDiagnosticOutput::for_json(options.json),
     )?;
     let lowered = checked.runtime_plan();
-    let report = RuntimePlanReport::from_lowered(&checked, lowered)?;
+    let report = RuntimePlanReport::from_lowered(&checked, lowered);
     if options.json {
         print_json(&report)
     } else {

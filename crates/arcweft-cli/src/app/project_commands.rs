@@ -7,9 +7,9 @@ use super::bundle::{
 use super::diagnostics::emit_diagnostics;
 use super::progress::{CliProgress, CliProgressStatus};
 use super::project::{
-    ProfileOptions, ProjectDiagnosticOutput, SourceSelection, load_and_check_selection,
-    print_project_compile_error, profile_project_compilation_context, project_compilation_context,
-    resolve_source_selection, semantic_context_for_selection, verify_compiled_project,
+    ProfileOptions, ProjectDiagnosticOutput, SourceSelection, compiled_verification_report,
+    load_and_check_selection, print_project_compile_error, profile_project_compilation_context,
+    project_compilation_context, resolve_source_selection, semantic_context_for_selection,
 };
 use super::runtime::profile::compile_accepted_project_runtime_plan;
 use super::runtime::run::watch_inputs;
@@ -2163,14 +2163,14 @@ pub(super) fn compile_command(options: &CompileOptions) -> Result<(), ExitCode> 
         CliProgressStatus::Verifying,
         options.input.display(),
         || {
-            verify_compiled_project(
+            Ok(compiled_verification_report(
                 &checked.compiled,
                 VerificationPolicy {
                     mode: VerificationMode::Dev,
                     backend: BackendKind::Emit,
                     allow_trusted_proofs: true,
                 },
-            )
+            ))
         },
     )?;
     if verification.has_blocking_runtime_safety_gaps() {
@@ -2343,14 +2343,15 @@ where
             ExitCode::FAILURE
         })?
     };
-    let mut verification = verify_compiled_project(
+    let mut verification = compiled_verification_report(
         &compiled_project,
         VerificationPolicy {
             mode: verification_mode,
             backend: BackendKind::Emit,
             allow_trusted_proofs: verification_mode != VerificationMode::Release,
         },
-    )?;
+    )
+    .into_owned();
     append_release_dynamic_goto_diagnostics(
         &mut verification,
         &compiled_project,

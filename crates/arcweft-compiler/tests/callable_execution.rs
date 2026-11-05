@@ -20,6 +20,26 @@ use execution::{
 };
 
 #[test]
+fn proved_assertions_allow_native_and_decoded_awbc_flow_and_generic_function_execution() {
+    let source = r"
+fn carry<T>(value: T, flag: bool) -> T {
+    assert.prove(flag || !flag);
+    value
+}
+
+flow main() -> i64 {
+    let flag = true;
+    assert.prove(flag => flag);
+    return carry(42i64, flag);
+}
+
+entry cli @entry.main { goto @flow.main }
+";
+    assert_native_return(source, "42");
+    assert_awbc_return(source, RuntimeValue::i64(42));
+}
+
+#[test]
 fn source_dialogue_reveal_and_advance_keep_the_original_line_groups() {
     use arcweft_core::engine::{Engine, FlowExit, FlowFiberStatus};
     use arcweft_core::plan::FlowEvent;

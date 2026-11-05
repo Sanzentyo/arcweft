@@ -1049,7 +1049,7 @@ fn n05_n06_wrong_select_statement_family_or_branch_roles_never_publish() {
         analyze_with_statement_mutation(
             &fixture,
             owner,
-            PreparedStatementPayload::Assertion(CheckedAssertionDisposition::Discharged),
+            PreparedStatementPayload::Assertion(CheckedAssertionDisposition::PendingProof),
         )
         .is_err()
     );

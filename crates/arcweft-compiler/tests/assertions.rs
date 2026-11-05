@@ -37,14 +37,14 @@ use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_source::{
     SourceDocument, SourceDocumentId, SourceName, SourceRange, identity::SourceSnapshotId,
 };
-use arcweft_verify::ProofObligationKind;
+use arcweft_verify::{ProofDischarge, ProofObligationKind, verify_project_for_runtime};
 
 #[test]
 fn compile_source_rejects_unresolved_prove_before_emitting_a_plan() {
     let error = compile_source(
         r"
-flow assertions {
-    assert.prove(true, false)
+flow assertions(flag: bool) {
+    assert.prove(flag || !flag, false, flag)
 }
 ",
     )
@@ -67,8 +67,35 @@ flow assertions {
             "verify.proof.unresolved"
         );
     }
-    assert!(errors[0].diagnostic().message().contains("condition 0"));
-    assert!(errors[1].diagnostic().message().contains("condition 1"));
+    assert!(errors[0].diagnostic().message().contains("condition 1"));
+    assert!(errors[1].diagnostic().message().contains("condition 2"));
+}
+
+#[test]
+fn proved_assertion_uses_the_original_analysis_and_emits_no_runtime_guard() {
+    let source = "flow assertions(flag: bool) { assert.prove(flag || !flag, flag == flag) }\n";
+    let original = compile_assertion_project(source, AssertionBuildProfile::Debug);
+    let fresh = compile_assertion_project(source, AssertionBuildProfile::Debug);
+    assert_eq!(original.runtime_plan().assertion_site_count(), 0);
+    assert!(assertion_guards(&original).is_empty());
+
+    let lease = original.analysis_lease();
+    let checked = lease.final_analysis();
+    let verification = verify_project_for_runtime(
+        lease.hir_project().analysis_view().unwrap(),
+        lease.project_symbols(),
+        checked,
+    )
+    .unwrap();
+    let [first, second] = verification.report().obligations.as_slice() else {
+        panic!("both checked conditions must have their own evidence");
+    };
+    let owner = first.statement.unwrap();
+    assert_eq!(second.statement, Some(owner));
+    assert_eq!(first.discharge, ProofDischarge::Automatic);
+    assert_eq!(second.discharge, ProofDischarge::Automatic);
+    assert!(verification.proves_assertion(checked, owner));
+    assert!(!verification.proves_assertion(fresh.analysis_lease().final_analysis(), owner));
 }
 
 #[test]
@@ -181,7 +208,7 @@ fn unit_proof_omitted_tail_remains_implicit_unit() {
 
 #[test]
 fn proof_body_prove_is_admitted_until_the_verifier_requires_discharge() {
-    let error = compile_source("proof pending() { assert.prove(true) }\n")
+    let error = compile_source("proof pending() { assert.prove(false) }\n")
         .expect_err("undischarged Proof-body Prove assertion blocks code generation");
     let project = error.project();
     assert_eq!(

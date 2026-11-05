@@ -51,11 +51,11 @@ use arcweft_runtime_host::{NativeFileRoots, NativeTaskBridge};
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, identity::SourceSnapshotId};
 use arcweft_verify::{VerificationPolicy, VerificationReport, verify_project};
 use clap::Args;
-use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
+use std::{borrow::Cow, collections::BTreeMap};
 
 #[derive(Args, Clone, Debug, Default)]
 pub(in crate::app) struct ProfileOptions {
@@ -1437,13 +1437,13 @@ impl CheckedModule {
     }
 }
 
-/// Verifies the exact executable HIR generation and semantic authority retained
-/// by one compiled project.
-pub(crate) fn verify_compiled_project(
+/// Borrows the proof outcomes retained by the compiled project, applying the
+/// requested reporting policy to pending diagnostics.
+pub(crate) fn compiled_verification_report(
     compiled: &CompiledProject,
     policy: VerificationPolicy,
-) -> Result<VerificationReport, ExitCode> {
-    verify_analysis(compiled.analysis_lease(), policy)
+) -> Cow<'_, VerificationReport> {
+    compiled.verification().with_pending_policy(policy)
 }
 
 pub(in crate::app) fn verify_analysis(

@@ -469,6 +469,43 @@ fn verify_oxiz_solves_typed_boolean_assertions_and_reports_counterexamples() {
 }
 
 #[test]
+fn plan_json_reuses_proved_assertions_from_the_compiled_project() {
+    let path = temp_arcw(
+        "plan-proved-assertions",
+        r"
+fn carry<T>(value: T, flag: bool) -> T {
+    assert.prove(flag || !flag);
+    value
+}
+
+flow main() -> i64 {
+    let flag = true;
+    assert.prove(flag => flag);
+    return carry(42i64, flag);
+}
+
+entry cli @entry.main { goto @flow.main }
+",
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("plan")
+        .arg(&path)
+        .arg("--json")
+        .output()
+        .expect("arcw publishes the verified runtime plan");
+    fs::remove_file(&path).unwrap();
+    assert!(
+        output.status.success(),
+        "stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["verifier_obligations"], 2);
+    assert_eq!(report["verifier_diagnostics"], 0);
+}
+
+#[test]
 fn verify_json_reports_semantic_thread_join_conflict() {
     for source in [
         r#"

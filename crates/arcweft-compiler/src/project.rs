@@ -74,7 +74,7 @@ use arcweft_source::{
     SourceName, SourceSetRevision,
 };
 use arcweft_verify::{
-    Severity as VerificationSeverity, VerificationPolicy, VerificationReport, verify_project,
+    Severity as VerificationSeverity, VerificationReport, verify_project_for_runtime,
 };
 use std::{
     collections::BTreeMap,
@@ -616,24 +616,22 @@ fn compile_analyzed_project(
     let registered_world = analysis.registered_world();
     let final_analysis = analysis.final_analysis();
     let checked_entries = final_analysis.checked_entries();
-    let verification = Arc::new(
-        verify_project(
-            executable,
-            registered_world.symbols(),
-            final_analysis.as_ref(),
-            VerificationPolicy::default(),
+    let verification = verify_project_for_runtime(
+        executable,
+        registered_world.symbols(),
+        final_analysis.as_ref(),
+    )
+    .map_err(|error| {
+        linked_error(
+            ProjectCompileStage::RuntimePlanLower,
+            [
+                Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                    .with_code("verify.project.input"),
+            ],
         )
-        .map_err(|error| {
-            linked_error(
-                ProjectCompileStage::RuntimePlanLower,
-                [
-                    Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
-                        .with_code("verify.project.input"),
-                ],
-            )
-        })?,
-    );
+    })?;
     let verification_errors = verification
+        .report()
         .diagnostics
         .iter()
         .filter(|diagnostic| diagnostic.severity == VerificationSeverity::Error)
@@ -787,6 +785,7 @@ fn compile_analyzed_project(
         registered_world.symbols(),
         registered_world,
         final_analysis,
+        &verification,
         &runtime_reachability,
         &program_reachability,
         &pure_programs,
@@ -879,7 +878,7 @@ fn compile_analyzed_project(
 
     Ok(CompiledProject {
         analysis: Arc::clone(analysis),
-        verification,
+        verification: Arc::new(verification.into_report()),
         style,
         fx_definitions: fx_catalog.into_definitions(),
         view_product,
