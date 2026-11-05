@@ -17205,5 +17205,956 @@
       "entries": 73,
       "entryDrift": 0
     }
+  },
+  "callableResultJoinOwner": {
+    "version": 1,
+    "recordedAt": "2026-11-05T17:29:03.8044279Z",
+    "source": {
+      "version": 1,
+      "commit": "f2d9dc791bb0f7ecfc13b47792511086a5c31878",
+      "parent": "4d7431389e603e417f37cc9b0dcfe83b262da037",
+      "tree": "2b6c01c623c20e24030828e4e0037e2745cd4dd7",
+      "remote": "f2d9dc791bb0f7ecfc13b47792511086a5c31878",
+      "paths": [
+        {
+          "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+          "blob": "e899ae3a25a8cac4aa8fd84b0107b1dabd0dc8b7"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expression_error.rs",
+          "blob": "ae351668215ae8bfc251ef3daeefa8201fdd1c08"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+          "blob": "62cce729b5f4141b1b047d9b8152f5d1225eef62"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/control_results.rs",
+          "blob": "4bb5fe781deae61e6bc989c0a90a2b9e46ca4aac"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/error.rs",
+          "blob": "7f9043575571ea1b123f2383daae643eae2d2581"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests/control_results.rs",
+          "blob": "0e3203b307c18a4c16e153373167b8011259aa56"
+        },
+        {
+          "path": "docs/01-language/control-transfer-return-out-yield.md",
+          "blob": "a75f770d1de7f22cd3586d2941d5cf0ec924f44b"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "4280c58f52a4f543874d884b65583b60e19db76b10c632c6cf0de357ab66932b",
+      "heldPatchSha256": "450c9a0d35f590fa234046cddf9c11acd60e7bf9072569f1c4a3b87cb39f6b5b",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-05T17:22:29.5025589Z"
+    },
+    "scope": "Published typed diagnostic owner checkpoint. Current status is maintained only in current-status.md; the complete22-package reverse run is ongoing.",
+    "owner": {
+      "version": 1,
+      "base": "4d7431389e603e417f37cc9b0dcfe83b262da037",
+      "run": "callable-result-join-owner2-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   0.590s] 19 tests run: 19 passed, 1354 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 19,
+      "passed": 19,
+      "failed": 0,
+      "skipped": 1354,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4113,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-05T17:12:07.5074869Z"
+    },
+    "branches": {
+      "version": 1,
+      "base": "4d7431389e603e417f37cc9b0dcfe83b262da037",
+      "run": "callable-result-join-branches1-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   0.167s] 1 test run: 1 passed, 1372 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 1372,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4113,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-05T17:14:09.7666344Z"
+    },
+    "cli": {
+      "version": 1,
+      "base": "4d7431389e603e417f37cc9b0dcfe83b262da037",
+      "run": "callable-result-join-cli2-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   1.760s] 1 test run: 1 passed, 487 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 487,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4113,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-05T17:16:47.3921918Z"
+    },
+    "quality": {
+      "check": {
+        "version": 1,
+        "base": "4d7431389e603e417f37cc9b0dcfe83b262da037",
+        "command": [
+          "check",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4113,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T17:18:24.1805621Z",
+        "finishedAt": "2026-11-05T17:18:47.0765375Z"
+      },
+      "clippy": {
+        "version": 1,
+        "base": "4d7431389e603e417f37cc9b0dcfe83b262da037",
+        "command": [
+          "clippy",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4113,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T17:18:47.5469098Z",
+        "finishedAt": "2026-11-05T17:19:19.7386891Z"
+      },
+      "structure": {
+        "version": 1,
+        "base": "4d7431389e603e417f37cc9b0dcfe83b262da037",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/callable-result-join-quality2-20261106.structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4113,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T17:19:20.2515037Z",
+        "finishedAt": "2026-11-05T17:19:23.8301876Z"
+      }
+    },
+    "fmt": {
+      "version": 1,
+      "base": "f2d9dc791bb0f7ecfc13b47792511086a5c31878",
+      "command": [
+        "rustfmt",
+        "--edition",
+        "2024",
+        "--check",
+        "crates/arcweft-lang-sema/src/final_analysis/error.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/analyzer/expression_error.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/control_results.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/tests/control_results.rs",
+        "crates/arcweft-cli/tests/check/cli_runtime_bench.rs"
+      ],
+      "exitCode": 0
+    },
+    "graph": {
+      "version": 1,
+      "base": "4d7431389e603e417f37cc9b0dcfe83b262da037",
+      "roots": [
+        "arcweft-lang-sema"
+      ],
+      "selectedPackages": 22,
+      "selection": [
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lang-sema",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-project-loader",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ],
+      "workspacePackages": 98,
+      "features": "all",
+      "target": "all",
+      "dependencyKinds": [
+        "normal",
+        "build",
+        "dev"
+      ],
+      "reusedFrom": "rag-project-summary.graph.json",
+      "graphInputPaths": [
+        {
+          "path": "Cargo.lock",
+          "bytes": 219178,
+          "sha256": "3d77909e468ade39ac7a519e1fb4e7b69b1b60be99ac3c0ab720bb0623e52297"
+        },
+        {
+          "path": "Cargo.toml",
+          "bytes": 13015,
+          "sha256": "cc8cd0b1581030d3b3d1ac13f8bbedec6297148fc28324b50309cab4714d78db"
+        },
+        {
+          "path": "crates/arcweft-adapter-context/Cargo.toml",
+          "bytes": 471,
+          "sha256": "c1fa89cef41d4a3f9d6b913ab5d3128148af84bf5f5d5d3de8377353bcb7b6fa"
+        },
+        {
+          "path": "crates/arcweft-adapter-desktop/Cargo.toml",
+          "bytes": 564,
+          "sha256": "b0f68e7c7b22216b32dd14e8c21e8e58d9e188f392956142ffcbb41e2a7ee911"
+        },
+        {
+          "path": "crates/arcweft-adapter-metadata/Cargo.toml",
+          "bytes": 366,
+          "sha256": "ea548990289f194de5b881a4e153c35715863bc42c2be9ffbe94560bd2b9f057"
+        },
+        {
+          "path": "crates/arcweft-adapter-sema/Cargo.toml",
+          "bytes": 571,
+          "sha256": "51b2b951ce1108a30a6ee2b588778db089350fed409f58f3b9b5393df303a53b"
+        },
+        {
+          "path": "crates/arcweft-adt/Cargo.toml",
+          "bytes": 210,
+          "sha256": "eb4d514ee056867d74d1de2e0b4d3a7880bdc950890529ecbdce24ba7a2af2fd"
+        },
+        {
+          "path": "crates/arcweft-agent-mcp-client/Cargo.toml",
+          "bytes": 462,
+          "sha256": "2b2c046bf870a7b8786fcd070e3d198b8eaf11f4052189d9e9fc137d21355146"
+        },
+        {
+          "path": "crates/arcweft-agent-mcp/Cargo.toml",
+          "bytes": 758,
+          "sha256": "48723bbd679cc189d962f9c9ff1bd767fe0d237a3588db9a6db9ce80df1d3081"
+        },
+        {
+          "path": "crates/arcweft-agent-policy/Cargo.toml",
+          "bytes": 513,
+          "sha256": "f6ac162ae26ec94f1be8e1b3aa07976f6eb2c47667dac1be1f91395f6d7f70b4"
+        },
+        {
+          "path": "crates/arcweft-agent-protocol/Cargo.toml",
+          "bytes": 805,
+          "sha256": "f28584e17e3d107cd828a8849ec63ed226fd8f1456e87df8c1e40cd94b83da6a"
+        },
+        {
+          "path": "crates/arcweft-agent-repl/Cargo.toml",
+          "bytes": 1129,
+          "sha256": "f8466e6fd547dee4d8949144be1bf1892f5a695d6e7da7b0ee59dbf25ffe7428"
+        },
+        {
+          "path": "crates/arcweft-agent-runner/Cargo.toml",
+          "bytes": 731,
+          "sha256": "fc85d7388021cb1f849961b6823c121371b00e6dabc8290d8e2e92860fd888e1"
+        },
+        {
+          "path": "crates/arcweft-audio-codec/Cargo.toml",
+          "bytes": 616,
+          "sha256": "262f243913d939ae54d91f57e78b694eca13d85be93ec90a8c452ef832ac082a"
+        },
+        {
+          "path": "crates/arcweft-audio-core/Cargo.toml",
+          "bytes": 390,
+          "sha256": "d70e2b9a50dab58311c83c9f70edb27face75c36f41d78b3be845095066725a6"
+        },
+        {
+          "path": "crates/arcweft-audio-device-cpal/Cargo.toml",
+          "bytes": 1466,
+          "sha256": "63b920d334efa39b2ce239bf0144d55a1d9480692cca261d97dc157f733e3b72"
+        },
+        {
+          "path": "crates/arcweft-audio-mixer/Cargo.toml",
+          "bytes": 362,
+          "sha256": "1bb235c34d9d27e339cc15b2f6b76c8a9086c3d4f36ce1bbc41e5a550636d998"
+        },
+        {
+          "path": "crates/arcweft-browser-bench/Cargo.toml",
+          "bytes": 908,
+          "sha256": "3b11549ca3203d8c46a0546c186aa571d739c18ee26570be52f197723970c40d"
+        },
+        {
+          "path": "crates/arcweft-bundle-assets/Cargo.toml",
+          "bytes": 459,
+          "sha256": "977c683c5cbc208a87bd9c8ef99f5eaa4fe8051df0b8a81efa2f579388d3268a"
+        },
+        {
+          "path": "crates/arcweft-bundle/Cargo.toml",
+          "bytes": 1775,
+          "sha256": "abf5f084b5de2a010e6e0f62b5996afb880d647720f1d20c9d4c6cad8e707a5a"
+        },
+        {
+          "path": "crates/arcweft-character-psd/Cargo.toml",
+          "bytes": 386,
+          "sha256": "57e32f7c057d95c7cc50fa64592f606b8595daefba0a2ddf3dd4c56a9a198867"
+        },
+        {
+          "path": "crates/arcweft-character-view/Cargo.toml",
+          "bytes": 481,
+          "sha256": "cb4bf9950d6faff602cf4d112a577e8bafe77c40cfd9ec5cff1fbce889359983"
+        },
+        {
+          "path": "crates/arcweft-character/Cargo.toml",
+          "bytes": 443,
+          "sha256": "65d433bab694f47bf5af653beea78336d876a214b4baf9be226370b250fec0a4"
+        },
+        {
+          "path": "crates/arcweft-cli/Cargo.toml",
+          "bytes": 3655,
+          "sha256": "98233c14ea88afabb8b4bf8b10f0aadb30f21e052eff6cfb1871e0e92df56434"
+        },
+        {
+          "path": "crates/arcweft-codec-arrow/Cargo.toml",
+          "bytes": 366,
+          "sha256": "b4e37abbdebd430a205e6e0ab4ae566cb6a648eb866522a6c1b0c11ee5331f0e"
+        },
+        {
+          "path": "crates/arcweft-codec-avro/Cargo.toml",
+          "bytes": 372,
+          "sha256": "40be5a6999f6cec6fc23100d9c61bc2857f687cda25dfd04aeb23c889f4f7755"
+        },
+        {
+          "path": "crates/arcweft-codec-binary/Cargo.toml",
+          "bytes": 568,
+          "sha256": "469ca885fcdc7fff485fd76abfa668de187e7d0446b12d18ca8e980e55ead7fe"
+        },
+        {
+          "path": "crates/arcweft-codec-cbor/Cargo.toml",
+          "bytes": 351,
+          "sha256": "eb4a6fa90dc1f4b7dad7117fc754d24823a6dd846a6c26f9443201b72734a1c4"
+        },
+        {
+          "path": "crates/arcweft-codec-csv/Cargo.toml",
+          "bytes": 340,
+          "sha256": "3550c9fb328c0e547fce36e43a3e151640b183fe5030c956bc4b714a4f831776"
+        },
+        {
+          "path": "crates/arcweft-codec-json/Cargo.toml",
+          "bytes": 379,
+          "sha256": "32a8de49fb5cb258dd370783e7080454034a516b71c155c1a2d9775a199a15f2"
+        },
+        {
+          "path": "crates/arcweft-codec-msgpack/Cargo.toml",
+          "bytes": 316,
+          "sha256": "8f7ad1516850313150645abedd19381cda0448204d1efc9a47c088ceecf752ae"
+        },
+        {
+          "path": "crates/arcweft-codec-toml/Cargo.toml",
+          "bytes": 385,
+          "sha256": "63986cf4e70025ad54148b1f95ba42200dcee18566795e0175958ff6e836db96"
+        },
+        {
+          "path": "crates/arcweft-codec-yaml/Cargo.toml",
+          "bytes": 319,
+          "sha256": "18d271030aad8d31a317527a834c4b7ec09abb3209368471dae89a5e59efad54"
+        },
+        {
+          "path": "crates/arcweft-compiler/Cargo.toml",
+          "bytes": 1838,
+          "sha256": "c7c284f8902bcd3d36757fe562504bc499c07419a0e551ebb55bcc341d4420f2"
+        },
+        {
+          "path": "crates/arcweft-config/Cargo.toml",
+          "bytes": 275,
+          "sha256": "398af8609e81eee972ecb0ae0c745609b055777cfb20afdc37a0aac7ca587804"
+        },
+        {
+          "path": "crates/arcweft-content-policy/Cargo.toml",
+          "bytes": 313,
+          "sha256": "490da5d1803ac020e64b9ccccadd8f17e48584a0b3fc7352d583c5ae8162c810"
+        },
+        {
+          "path": "crates/arcweft-core/Cargo.toml",
+          "bytes": 1066,
+          "sha256": "3d9c65437451c702ab25edb02666ec24336cd5f9539fa3f0d59eae0ab5a0222b"
+        },
+        {
+          "path": "crates/arcweft-data-derive-support/Cargo.toml",
+          "bytes": 402,
+          "sha256": "ad81c2b2d33785a22491de7ba6c301e963b3aa6bf917f2a89dd32a524e3614f4"
+        },
+        {
+          "path": "crates/arcweft-data-derive/Cargo.toml",
+          "bytes": 500,
+          "sha256": "4cb2417d8ff076ab4bbdd66401274714b8ad0a2ffcdbd82d82905f072d6373cd"
+        },
+        {
+          "path": "crates/arcweft-data/Cargo.toml",
+          "bytes": 408,
+          "sha256": "c9fcaa6f84153224481e2fe106ec184301c928e951978b286411cc426d42bab6"
+        },
+        {
+          "path": "crates/arcweft-debug-model/Cargo.toml",
+          "bytes": 319,
+          "sha256": "d655dcb965ec0963c9022a0edd563f3f84b52b6ed19364cb05c539a58b74c4ad"
+        },
+        {
+          "path": "crates/arcweft-debug-sqlite/Cargo.toml",
+          "bytes": 401,
+          "sha256": "24a00ef6ad4a0f4cfdbe69ecadaa5da5a70179c4b7196da0accc5d0015e7927c"
+        },
+        {
+          "path": "crates/arcweft-desktop-contract/Cargo.toml",
+          "bytes": 310,
+          "sha256": "cdea30b4301e9d1bba019cc91931368e3eb2a4970cacfcdaf90cfc3eb81342c1"
+        },
+        {
+          "path": "crates/arcweft-desktop-host/Cargo.toml",
+          "bytes": 256,
+          "sha256": "90ae48d4f444e6a06d2cfe6363397933970f3106cd8d1c907ab9f82e8eabcb3a"
+        },
+        {
+          "path": "crates/arcweft-desktop-native/Cargo.toml",
+          "bytes": 1767,
+          "sha256": "be8c973953db7967e5c005017d6f4014272816dabbb553849b79760d3d18bcd9"
+        },
+        {
+          "path": "crates/arcweft-dialogue/Cargo.toml",
+          "bytes": 770,
+          "sha256": "af86042433bf6d4052b26f3ce8d8161dc9d5e83a948cdb2549dc6e5ff0e3237b"
+        },
+        {
+          "path": "crates/arcweft-glyphon/Cargo.toml",
+          "bytes": 484,
+          "sha256": "6dc8b193f3cb5097b14152161716bfc938f62474b3dd274fe44c1bd66ba95827"
+        },
+        {
+          "path": "crates/arcweft-host-adapter/Cargo.toml",
+          "bytes": 318,
+          "sha256": "f4f74414448a89a6b6c96f074745d6684970743e63a49c81844ffafc999f94f6"
+        },
+        {
+          "path": "crates/arcweft-http-codec/Cargo.toml",
+          "bytes": 313,
+          "sha256": "682c0a456c257ac432ee4626225fee6b7c84d97ffafa2f7bd348496afadbc90e"
+        },
+        {
+          "path": "crates/arcweft-id/Cargo.toml",
+          "bytes": 402,
+          "sha256": "26956290534245daa0422aa80c58535fa16a5288dffdec24e6b79967f3c411ab"
+        },
+        {
+          "path": "crates/arcweft-image/Cargo.toml",
+          "bytes": 378,
+          "sha256": "712fc6225922b77d7541deeb70abda0058bf2328673965251c57ff1325610c5f"
+        },
+        {
+          "path": "crates/arcweft-interaction-model/Cargo.toml",
+          "bytes": 387,
+          "sha256": "a7e203539fb85e01625755dc336a990a42262e8934eebc307c984599d3f67ff2"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/Cargo.toml",
+          "bytes": 516,
+          "sha256": "b8924c8de799e9672fb9b7c7febd0ae41e5b19bf41444030d9a33be2d4c59dd1"
+        },
+        {
+          "path": "crates/arcweft-lang-jit-cranelift/Cargo.toml",
+          "bytes": 649,
+          "sha256": "fc6571885fe6cbe3d76455a0cd0b7766dac0eafb71458b93dc87442e97946d34"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/Cargo.toml",
+          "bytes": 923,
+          "sha256": "47c3ca017e89395f4be79ce06b3a200fc3609ac37c51d4c87fa5ecdc44f2fd3b"
+        },
+        {
+          "path": "crates/arcweft-lang-syntax/Cargo.toml",
+          "bytes": 493,
+          "sha256": "2afe87428ada9770a6cb3f7f0c7cbe9301961eeb9b05c05945e05a544d95cb87"
+        },
+        {
+          "path": "crates/arcweft-launch/Cargo.toml",
+          "bytes": 574,
+          "sha256": "5a4e8f268fe1d77adce4c391e80215e531e8f53f094a6921cf5e89fcb8fac68a"
+        },
+        {
+          "path": "crates/arcweft-layout/Cargo.toml",
+          "bytes": 336,
+          "sha256": "e3c26ebbd36e6c1418e9bec42077ebf1cb5c93c0dbfa7a8680b55aaf3bce76dc"
+        },
+        {
+          "path": "crates/arcweft-lsp/Cargo.toml",
+          "bytes": 1769,
+          "sha256": "9adbaa1535ae4232d0c86f6bd4bdc74af87303fc4a77270d0f15af04e1666033"
+        },
+        {
+          "path": "crates/arcweft-manifest-model/Cargo.toml",
+          "bytes": 370,
+          "sha256": "619a0d8f7c720dd9157c75efa3320b5a7a379471db06b00a8c73c65f1510bdaa"
+        },
+        {
+          "path": "crates/arcweft-memory/Cargo.toml",
+          "bytes": 213,
+          "sha256": "d8fe9fa92305c08fb4b53458d2e23e4b732d71b23643c2bc6a5fdcf8ec3e963e"
+        },
+        {
+          "path": "crates/arcweft-need/Cargo.toml",
+          "bytes": 325,
+          "sha256": "6153ab36cd7d6ab8639e88cc37c501a55446fac993bc79331bdefa9677a65104"
+        },
+        {
+          "path": "crates/arcweft-player-native/Cargo.toml",
+          "bytes": 2516,
+          "sha256": "43875992fc090ce210fc3d142ab75371533d2289793e96fdb196585f3f7cb8e3"
+        },
+        {
+          "path": "crates/arcweft-player-scene/Cargo.toml",
+          "bytes": 1183,
+          "sha256": "ad800e09409d3690be930e096cdb5e450e3f0e8cad2b21f45eefa8632baea954"
+        },
+        {
+          "path": "crates/arcweft-player-text-input/Cargo.toml",
+          "bytes": 401,
+          "sha256": "857f6cd5833300f38617f7317042add6aab939d137af42a4c8395969f67774e6"
+        },
+        {
+          "path": "crates/arcweft-player-web/Cargo.toml",
+          "bytes": 1978,
+          "sha256": "608975f178ea4d53e95c8040074be326ab9526dace69ccc3c3a5ba8f661c9a9a"
+        },
+        {
+          "path": "crates/arcweft-presentation/Cargo.toml",
+          "bytes": 525,
+          "sha256": "c4a4921cdcaeb9e06272b8a3889dc4d4174187c3498f463b8a1b73ec7f61a1d4"
+        },
+        {
+          "path": "crates/arcweft-primitives/Cargo.toml",
+          "bytes": 256,
+          "sha256": "a00aeaba7d26eac5d984552eed283996951ae912beac16af19e9a176940ec7e6"
+        },
+        {
+          "path": "crates/arcweft-project-loader/Cargo.toml",
+          "bytes": 1308,
+          "sha256": "4b3f0320ffd6519d5670c6c4c1fc5c0b0c73882a0ac25992adba9e904da66b48"
+        },
+        {
+          "path": "crates/arcweft-project/Cargo.toml",
+          "bytes": 518,
+          "sha256": "4f60bec416f2daeb69c5770789987f51b37185d8a2583e10322f7eb64fc0aa7d"
+        },
+        {
+          "path": "crates/arcweft-rag/Cargo.toml",
+          "bytes": 257,
+          "sha256": "485e11c67baa26ebf02438664c2c1c913490e0eb2ae9f2eaa976af5e1f0c000f"
+        },
+        {
+          "path": "crates/arcweft-ref/Cargo.toml",
+          "bytes": 260,
+          "sha256": "756435e5c633d809d345b4a8734cef3fb78f949ee354b881dea717f170a73759"
+        },
+        {
+          "path": "crates/arcweft-render-text/Cargo.toml",
+          "bytes": 735,
+          "sha256": "1c54223ba6a0f5dc4bec8e15e755d53b3afc7e3cc6c94edf7d72a9b0510d9a16"
+        },
+        {
+          "path": "crates/arcweft-render-web/Cargo.toml",
+          "bytes": 499,
+          "sha256": "1f7afc441a36291c28234e6920b170ffeaae47558f26bfdbea8090c1dd26491f"
+        },
+        {
+          "path": "crates/arcweft-render-wgpu/Cargo.toml",
+          "bytes": 1056,
+          "sha256": "1e93150af4218eb3ebe5e7dad5bcb646bc864343fe331c11c863eeddb43ee75c"
+        },
+        {
+          "path": "crates/arcweft-resource-manifest/Cargo.toml",
+          "bytes": 599,
+          "sha256": "6551c8b18f994af912cdf4cc3c23283cd56ed6877b03f07ac5aa78bb50ac0023"
+        },
+        {
+          "path": "crates/arcweft-resource-model/Cargo.toml",
+          "bytes": 587,
+          "sha256": "dc488745726746d2a3708e9ae3d3762498d19ae5c3cdf85d966b524c367bc692"
+        },
+        {
+          "path": "crates/arcweft-rich-text-schema/Cargo.toml",
+          "bytes": 333,
+          "sha256": "99aaf174234c9934382effc08a8e35aec158e3f367a135e55f9ba0377896117f"
+        },
+        {
+          "path": "crates/arcweft-runtime-accelerator/Cargo.toml",
+          "bytes": 2102,
+          "sha256": "63e650c655d69f9003946960a0924b81eacc80ace4980745e8db27087fbc1ab3"
+        },
+        {
+          "path": "crates/arcweft-runtime-codegen/Cargo.toml",
+          "bytes": 361,
+          "sha256": "7bf1f9f68525db0039644e752403af469cd1b759acfbcebb527060e608ff2bed"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/Cargo.toml",
+          "bytes": 1180,
+          "sha256": "6089dd4bcacc09f96ab38ed446a1a7aa3d3076eff08e9bd9c991f84a6048f5d9"
+        },
+        {
+          "path": "crates/arcweft-runtime-host/Cargo.toml",
+          "bytes": 1347,
+          "sha256": "e38a8f282dc1de34c1307bc81aa1744225cf1c6585dbe7804a54f337a14c618b"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/Cargo.toml",
+          "bytes": 781,
+          "sha256": "ddbc53d77771880439596906c4f59537449efb36424afb535839a7f31a442df7"
+        },
+        {
+          "path": "crates/arcweft-runtime-scheduler/Cargo.toml",
+          "bytes": 276,
+          "sha256": "491a222e45c470d5639bbfacbeaf62073113e602175afc17cb7c6486035e5cad"
+        },
+        {
+          "path": "crates/arcweft-rust-abi-build/Cargo.toml",
+          "bytes": 301,
+          "sha256": "831ddc454401dba25dfd22bd0e2aacf72fba0dd1f8c3d9ba9b2b885f970e0bb6"
+        },
+        {
+          "path": "crates/arcweft-rust-abi-macros/Cargo.toml",
+          "bytes": 461,
+          "sha256": "a7378d1a69dedcd68332824bc30439c18aa7e3dff4aa853b456949f8ec92637e"
+        },
+        {
+          "path": "crates/arcweft-rust-abi/Cargo.toml",
+          "bytes": 399,
+          "sha256": "cb548aa5ac4ca59fea4ede57a57239d5d632c81f417a476479873cbfed66eb7c"
+        },
+        {
+          "path": "crates/arcweft-save/Cargo.toml",
+          "bytes": 509,
+          "sha256": "29136a6ec2564f916ed5f9df0bbf99a553d801cb2649f797dbad2815f6962b3c"
+        },
+        {
+          "path": "crates/arcweft-serde-bridge/Cargo.toml",
+          "bytes": 441,
+          "sha256": "970a35d6640d2bcda6c5746687c1d9a375ba01f5c9baf7ace094efa3ac13e1a4"
+        },
+        {
+          "path": "crates/arcweft-source/Cargo.toml",
+          "bytes": 414,
+          "sha256": "78c056664ca58f705e00d18a3f801481b671c1b5cb74f4ffc75a255c7826e2a6"
+        },
+        {
+          "path": "crates/arcweft-test/Cargo.toml",
+          "bytes": 550,
+          "sha256": "7426e2de75c2ae682bffe6c4884c2920225e9a963b4853ceb5da1248d7de4205"
+        },
+        {
+          "path": "crates/arcweft-text-layout/Cargo.toml",
+          "bytes": 517,
+          "sha256": "ff0f7e7295ba558fe5252623d99936ad7deb47b4dae35b95a7b811cd2ec8b321"
+        },
+        {
+          "path": "crates/arcweft-text-model/Cargo.toml",
+          "bytes": 790,
+          "sha256": "18f0f481941b7b8cb874212bb1d9e1702f12f702cee9a756d1765f32bcfe4f78"
+        },
+        {
+          "path": "crates/arcweft-tooling/Cargo.toml",
+          "bytes": 641,
+          "sha256": "815a42c42b381e304a5c5ca18aaa4ecbfe006526918da3c9487596c2b402cd96"
+        },
+        {
+          "path": "crates/arcweft-verify-lsp/Cargo.toml",
+          "bytes": 583,
+          "sha256": "3373ed4abfdc54cc679bbc9a081db75b9348130aaa29b4b4eabe4b0beb10b539"
+        },
+        {
+          "path": "crates/arcweft-verify-oxiz/Cargo.toml",
+          "bytes": 348,
+          "sha256": "2406f28520ef7737f58d8227c13556ffe45bdb81aa22af0358bf0f2bb387db80"
+        },
+        {
+          "path": "crates/arcweft-verify-z3/Cargo.toml",
+          "bytes": 297,
+          "sha256": "6ff99c7088d32bce5b22f9efcdb6ad8bec9c4c0b45a53a612c2f288dfe1e290c"
+        },
+        {
+          "path": "crates/arcweft-verify/Cargo.toml",
+          "bytes": 470,
+          "sha256": "474d57f0ca3bfe45828706daaaab7882cc28c7005d10226f40342c7c4104f426"
+        },
+        {
+          "path": "crates/arcweft-view/Cargo.toml",
+          "bytes": 616,
+          "sha256": "3ab59e15e40dd17ecc54618cd50f96fe713a5230d7a127d63d8550a024ef365d"
+        },
+        {
+          "path": "crates/arcweft/Cargo.toml",
+          "bytes": 645,
+          "sha256": "202f79748ca64b1165897317ea6311dce25823730f401c965589a03e5003fc4d"
+        },
+        {
+          "path": "vendor/glyphon/Cargo.toml",
+          "bytes": 1790,
+          "sha256": "7c0b81f441c7f63ea4cef99d864c11501f04263feced1dda37513803b4086357"
+        }
+      ],
+      "graphInputDrift": 0,
+      "metadataSha256": "09d79ab6276c3ae65cf0c974acd21d9c4b5f710ef2c21a903f3cfb5c4b37e51b",
+      "treeSha256": "9e66421a6192ba79d1da6558868a660499db017e71ad234f55c7f4eab4383172",
+      "metadataTreeDrift": 0
+    },
+    "ownership": {
+      "version": 1,
+      "base": "4d7431389e603e417f37cc9b0dcfe83b262da037",
+      "workingTree": "Original12 tracked WIP and6 untracked retained, plus6 owned Rust paths and1 maintained spec",
+      "files": [
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/error.rs",
+          "owner": "arcweft-lang-sema",
+          "bytes": 49841,
+          "physicalLoc": 1295,
+          "basePhysicalLoc": 1269,
+          "classification": "production"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expression_error.rs",
+          "owner": "arcweft-lang-sema",
+          "bytes": 37614,
+          "physicalLoc": 1077,
+          "basePhysicalLoc": 1063,
+          "classification": "production"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+          "owner": "arcweft-lang-sema",
+          "bytes": 251107,
+          "physicalLoc": 5867,
+          "basePhysicalLoc": 5834,
+          "classification": "production"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions/control_results.rs",
+          "owner": "arcweft-lang-sema",
+          "bytes": 6355,
+          "physicalLoc": 153,
+          "basePhysicalLoc": 137,
+          "classification": "production"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests/control_results.rs",
+          "owner": "arcweft-lang-sema",
+          "bytes": 11945,
+          "physicalLoc": 314,
+          "basePhysicalLoc": 249,
+          "classification": "test"
+        },
+        {
+          "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+          "owner": "arcweft-cli",
+          "bytes": 331843,
+          "physicalLoc": 9697,
+          "basePhysicalLoc": 9663,
+          "classification": "test"
+        }
+      ],
+      "packages": [
+        {
+          "package": "arcweft-cli",
+          "manifest": "crates/arcweft-cli/Cargo.toml",
+          "workspace_fan_in": "0",
+          "workspace_fan_out": "54",
+          "development_workspace_fan_in": "0",
+          "development_workspace_fan_out": "2"
+        },
+        {
+          "package": "arcweft-lang-sema",
+          "manifest": "crates/arcweft-lang-sema/Cargo.toml",
+          "workspace_fan_in": "8",
+          "workspace_fan_out": "15",
+          "development_workspace_fan_in": "4",
+          "development_workspace_fan_out": "0"
+        }
+      ],
+      "graphInput": "callable-result-join.graph.json; actual metadata/Sema invert tree reused only after101Cargo/toolchain input hashes match",
+      "disposition": [
+        "Final sema owns one closed ResultJoin candidate-rejection payload and its public IncompatibleCallableResults projection. Keep it distinct from Fatal/invariant failures; speculative branch probes roll back facts, retain only a type hint or deferred immutable source rejection, and perform the original contextual final check. No executable facts or new caches are published from a rejection.",
+        "Existing callable completion owns the finite set of reachable return statements and normal continuation. Reuse that exact completion set for type joining and, only on conflict, typed HIR source queries. Copy source spans rather than clone whole result type graphs. Nested callable returns remain excluded by existing completion ownership. No source parsing, value reconstruction, alternate result resolver or new evaluator was added.",
+        "The large expression module still owns its existing family checks and callable-body completion. The error module remains the sole final semantic diagnostic algebra; its code and labels come from the same typed payload. Control-results state is local to one branch inference and is discarded on return. No unrelated state or API widening for file splitting is introduced.",
+        "Test fixtures use actual Thread return branches instead of line-plan out. Exact CLI denied/type-check/code/two Source-value spans and absence of accepted verifier obligations preserve the intended negative boundary. Sema covers direct nested child isolation, closure results, normal Unit completion and If/IfLet/Match synthesis rejection. Existing positive return-boundary/control cases remain."
+      ],
+      "heldPatchSha256": "450c9a0d35f590fa234046cddf9c11acd60e7bf9072569f1c4a3b87cb39f6b5b",
+      "originalHeld": 12,
+      "originalUntracked": 6,
+      "wipDrift": 0,
+      "contractVersion": "No Arcweft-owned version marker changed; versions remain1."
+    },
+    "implementation": [
+      "Keep an incompatible callable result join as AnalyzerExpressionRejection::ResultJoin, not Fatal, carrying only original typed source spans. Project it once into FinalSemanticAnalysisError::IncompatibleCallableResults and sema.callable.result_type. The existing completion authority selects the reachable returns and normal continuation; nested callable returns stay separate. No value/source reconstruction, type-graph cloning or alternative result resolver is introduced.",
+      "Branch synthesis rolls candidate facts back. If a type hint is available, retain the original contextual final check; if every branch lacks a hint, preserve the first concrete result-join rejection instead of replacing it with generic unavailable. If, IfLet and Match share this owner.",
+      "The CLI fixture formerly used two sequential out statements in a dialogue child, which do not denote Thread returns under the adopted contract. Replace the fixture with actual child return branches and an outer-If variant. Require denied/type-check, exact code/message/two original value spans, a primary span and no accepted verifier obligations. Do not weaken the assertion to any denial."
+    ],
+    "coverage": "Owner2:19PASS1354skip0.590s. Later branch case:1PASS1372skip0.167s, one Rust test with five Source inputs (nested Thread, closure, If, IfLet, Match). Normal Unit completion is a separate test in owner2. CLI2:1PASS487skip1.760s, one Rust test with two Source inputs. Do not report five/two Source inputs as five/two Rust tests or fabricate one combined run.",
+    "earlierAttempts": {
+      "owner1": {
+        "version": 1,
+        "base": "4d7431389e603e417f37cc9b0dcfe83b262da037",
+        "run": "callable-result-join-owner1-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   0.545s] 19 tests run: 19 passed, 1354 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 19,
+        "passed": 19,
+        "failed": 0,
+        "skipped": 1354,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4113,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-05T17:03:16.3267675Z"
+      },
+      "cli1": {
+        "version": 1,
+        "base": "4d7431389e603e417f37cc9b0dcfe83b262da037",
+        "run": "callable-result-join-cli1-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   1.636s] 1 test run: 1 passed, 487 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 487,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4113,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-05T17:06:07.2866579Z"
+      },
+      "quality1check": {
+        "version": 1,
+        "base": "4d7431389e603e417f37cc9b0dcfe83b262da037",
+        "command": [
+          "check",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4113,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T17:07:12.5837165Z",
+        "finishedAt": "2026-11-05T17:07:54.7118113Z"
+      },
+      "quality1clippy": {
+        "version": 1,
+        "base": "4d7431389e603e417f37cc9b0dcfe83b262da037",
+        "command": [
+          "clippy",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4113,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T17:07:55.1777674Z",
+        "finishedAt": "2026-11-05T17:08:41.6852048Z"
+      },
+      "quality1structure": {
+        "version": 1,
+        "base": "4d7431389e603e417f37cc9b0dcfe83b262da037",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/callable-result-join-quality1-20261106.structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4113,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T17:08:42.1880598Z",
+        "finishedAt": "2026-11-05T17:08:47.3035254Z"
+      },
+      "bothBranchesProbe": {
+        "version": 1,
+        "base": "4d7431389e603e417f37cc9b0dcfe83b262da037",
+        "epoch": "callable-result-join-cli1-20261106",
+        "binarySha256": "03943212296cf30030ae1ce79b51b7404c6bf241c7259972201f316f30e37663",
+        "exitCode": 1,
+        "status": "denied",
+        "stage": "type-check",
+        "diagnostics": [
+          {
+            "code": "sema.final_analysis",
+            "message": "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 8, kind: Expr }) has no admissible final type",
+            "span": null
+          }
+        ],
+        "observation": "Two branches both fail result synthesis. The control-result probe currently drops both typed join rejections and returns generic unavailable for the outer owner."
+      },
+      "reason": "Direct owner/CLI inputs passed, but a separate two-failed-branch probe still returned generic sema.final_analysis with no source span. Preserve that observation and initial input; the final deferred-rejection change and additional Source cases address it. Earlier quality passes are not relabeled as final-code passes."
+    },
+    "validationScope": "Final workspace98 all-target/all-feature/locked check/Clippy and structure gate exit0, warnings remain. Source4113/case/EXE drift0 in the recorded runs. The complete22 reverse run, dedicated doctest/wasm, Tier2 and final Native-Web parity are not established by this checkpoint. Diagnostic-only sema/CLI work adds no runtime scheduling, device, capture or protocol path requiring a new Tier2 family.",
+    "correctionReason": "The Thread-result CLI owner condition now has passing exact diagnostic evidence and is removed from the current residual list. Keep the earlier actual full55 CLI700/688PASS12FAIL and9579/26FAIL unchanged. Eleven other old CLI IDs remain current conditions; do not invent a700/11FAIL result before the new full run. Generic Match remains accepted/public.",
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-callable-result-join-owner.raw.zip",
+      "bytes": 3574137,
+      "sha256": "fe44e91012af0eb1969953bb8a0e77d77f250300a89f695991f8f3863441269c",
+      "entries": 81,
+      "entryDrift": 0
+    }
   }
 }
