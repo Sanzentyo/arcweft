@@ -264,5 +264,177 @@
         }
       ]
     }
+  },
+  "cleanReverseCatalogRecovery": {
+    "version": 1,
+    "source": "9f459007999067966a0baa432f7241990aa1302b",
+    "recordedAt": "2026-11-05T23:43:37.9810155Z",
+    "sourceInputs": 4126,
+    "inputDriftBetweenAttempts": 0,
+    "isolated": {
+      "catalog": {
+        "version": 1,
+        "base": "3a345e30a07b09287fc9a8bce28a8d24ef998963",
+        "command": [
+          "nextest",
+          "list",
+          "-p",
+          "arcweft-compiler",
+          "-p",
+          "arcweft-runtime-driver",
+          "--lib",
+          "--test",
+          "view_product",
+          "--all-features",
+          "--locked",
+          "-E",
+          "test(task_plan) | test(view_style) | test(lifetime)",
+          "--message-format",
+          "json"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/checked-unsafe-audit-catalog-recovery-20261106.catalog.log",
+        "exitCode": 0,
+        "sourceInputs": 4126,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T23:35:49.7909072Z",
+        "finishedAt": "2026-11-05T23:40:19.0474216Z"
+      },
+      "runtime": {
+        "version": 1,
+        "base": "3a345e30a07b09287fc9a8bce28a8d24ef998963",
+        "run": "checked-unsafe-audit-catalog-recovery-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   0.294s] 3 tests run: 3 passed, 337 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 3,
+        "passed": 3,
+        "failed": 0,
+        "skipped": 337,
+        "selectedPackages": 2,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [
+          "arcweft-runtime-driver"
+        ],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4126,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-05T23:40:24.2959418Z"
+      },
+      "scope": "The Compiler integration test and Runtime Driver library test binaries built on unchanged source. Three Compiler tests passed. The Runtime Driver binary had no selected runtime case in this targeted filter."
+    },
+    "fullRetry": {
+      "catalog": {
+        "version": 1,
+        "base": "c6588ddb19608abba93d20649abda4450fee1d0d",
+        "command": [
+          "nextest",
+          "list",
+          "-p",
+          "arcweft-adapter-sema",
+          "-p",
+          "arcweft-agent-mcp",
+          "-p",
+          "arcweft-agent-mcp-client",
+          "-p",
+          "arcweft-agent-repl",
+          "-p",
+          "arcweft-agent-runner",
+          "-p",
+          "arcweft-cli",
+          "-p",
+          "arcweft-compiler",
+          "-p",
+          "arcweft-lang-sema",
+          "-p",
+          "arcweft-lsp",
+          "-p",
+          "arcweft-player-native",
+          "-p",
+          "arcweft-player-scene",
+          "-p",
+          "arcweft-player-web",
+          "-p",
+          "arcweft-project-loader",
+          "-p",
+          "arcweft-runtime-driver",
+          "-p",
+          "arcweft-runtime-host",
+          "-p",
+          "arcweft-runtime-plan",
+          "-p",
+          "arcweft-test",
+          "-p",
+          "arcweft-tooling",
+          "-p",
+          "arcweft-verify",
+          "-p",
+          "arcweft-verify-lsp",
+          "-p",
+          "arcweft-verify-oxiz",
+          "-p",
+          "arcweft-verify-z3",
+          "--all-features",
+          "--locked",
+          "--message-format",
+          "json"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/checked-unsafe-audit-clean-reverse22-retry-20261106.catalog.log",
+        "exitCode": 101,
+        "sourceInputs": 4126,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T23:41:23.5729601Z",
+        "finishedAt": "2026-11-05T23:42:22.398407Z"
+      },
+      "selectedPackages": 22,
+      "windowsCommitLimitError": 1455,
+      "rustcInternalCompilerError": true,
+      "runtimeStarted": false
+    },
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-unsafe-audit-clean-recovery.raw.zip",
+      "bytes": 62199,
+      "sha256": "b0e890a16ed587f899c3b406881ca5589ead9f8a81ca1dea507057b8af6c5c74",
+      "entryDrift": 0,
+      "entries": [
+        {
+          "entry": "checked-unsafe-audit-catalog-recovery-20261106.catalog.inventory.json",
+          "bytes": 86673,
+          "sha256": "7671268bc7b69b0ce7db97e2eedf2c6afd6f3fd3e6815d195fe4ba2a04cc6c9b"
+        },
+        {
+          "entry": "checked-unsafe-audit-catalog-recovery-20261106.catalog.json",
+          "bytes": 712,
+          "sha256": "3085e646fa77503bfcfeacdef44d9d1b3dcc0663649bb40ab499cc9b6f84decb"
+        },
+        {
+          "entry": "checked-unsafe-audit-catalog-recovery-20261106.runtime.json",
+          "bytes": 804,
+          "sha256": "da0efcc75765f0e9617dbd658fac47c1e7b0a79e3c210784485025870f07d498"
+        },
+        {
+          "entry": "checked-unsafe-audit-catalog-recovery-20261106.runtime.log",
+          "bytes": 185531,
+          "sha256": "62a8c5ad8431e57f14886a75b9260e7300d781768db5c115633ec4080556b579"
+        },
+        {
+          "entry": "checked-unsafe-audit-catalog-recovery-20261106.runtime.terminal-audit.json",
+          "bytes": 661,
+          "sha256": "472d146e4e5eeff12a9255d73085c5c357d4e1be19dc9f3ca943d8e0b149cb17"
+        },
+        {
+          "entry": "checked-unsafe-audit-clean-reverse22-retry-20261106.catalog.json",
+          "bytes": 1352,
+          "sha256": "ec4a887351ca4ccdeac56222f4b676e74ba4687d4d73e9c9e8b04fbe8be7b250"
+        },
+        {
+          "entry": "checked-unsafe-audit-clean-reverse22-retry-20261106.catalog.log",
+          "bytes": 176777,
+          "sha256": "9a22329a9cfc895e91810a20e5617dd34611c1e22a74375aeba3c1b5676a023a"
+        }
+      ]
+    }
   }
 }

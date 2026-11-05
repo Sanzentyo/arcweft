@@ -14758,3 +14758,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - The 22-package all-feature locked nextest catalog for Source 9f459007999067966a0baa432f7241990aa1302b exited 101 with zero drift across 4,126 inputs. Runtime tests did not start.
 - Windows returned OS error 1455 while mapping `arcweft_bundle` in multiple rustc processes. The same build emitted compiler diagnostics in the Compiler View tests and Runtime Driver library test. Their reproducibility is under separate test. [Original log and exact command](acceptance-evidence/task-unsafe-audit-reason.json).
+
+## 2026-11-06 — Clean reverse build isolation and retry
+
+- The same 4,126 source inputs built the Compiler View integration test and Runtime Driver library test targets in isolation. The three selected Compiler tests passed in 0.294 seconds. The filter selected no Runtime Driver runtime case.
+- Retrying the complete 22-package catalog with the same source inputs still exited 101 before tests. Windows reported OS error 1455 again, and rustc also reported an internal compiler error. [Both commands, results and raw diagnostics](acceptance-evidence/task-unsafe-audit-reason.json).
