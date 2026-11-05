@@ -1,0 +1,542 @@
+{
+  "version": 1,
+  "recordedAt": "2026-11-05T22:31:00.4625997Z",
+  "source": "019c06f9094ea5b8aa36722d7ed20476d7190290",
+  "workingTree": "main; retained original 12 tracked and six actual untracked WIP",
+  "contract": "docs/01-language/proofs-and-unsafe-audits.md",
+  "scope": "Shared semantic analysis admission feeds arcw verify before runtime assembly. Bounded checked Boolean assertions produce per-condition counterexample problems. OxiZ checks real queries. The runtime compiler still requires its own proof admission.",
+  "publication": {
+    "version": 1,
+    "commit": "019c06f9094ea5b8aa36722d7ed20476d7190290",
+    "parent": "9051739a03710e55e9a9193fbcd87fbb4fea3420",
+    "tree": "cd35164d1bf78ff36fcc1c5ea0a3930e7a5aaedd",
+    "remote": "019c06f9094ea5b8aa36722d7ed20476d7190290",
+    "paths": [
+      {
+        "path": "crates/arcweft-cli/src/app/project.rs",
+        "blob": "908987f4bb364eee0d8a9f4cf65737806ba4ab0f"
+      },
+      {
+        "path": "crates/arcweft-cli/src/app/verify.rs",
+        "blob": "bec9380d2036ad122e1f03f845d743cb35f6319f"
+      },
+      {
+        "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+        "blob": "9f364b5db8c444999b9f812a442ee80aa33c6a79"
+      },
+      {
+        "path": "crates/arcweft-compiler/src/project.rs",
+        "blob": "32a4692e6110db3835d56b49620f6081475202f1"
+      },
+      {
+        "path": "crates/arcweft-verify/src/assertion_smt.rs",
+        "blob": "6c7ab5408bab259395b17d36cf02ec3f606b2b0f"
+      },
+      {
+        "path": "crates/arcweft-verify/src/lib.rs",
+        "blob": "a901f351e841f3773b99002960dd285a32e80321"
+      },
+      {
+        "path": "docs/01-language/proofs-and-unsafe-audits.md",
+        "blob": "74c0a58bc1f9901d00314a33ece5e1dba079a2ba"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "057dea028873b3a1ecd7095d1e0291066a02124865c7bfa2cc12e62ce18ebe1d",
+    "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-05T22:29:28.191168Z"
+  },
+  "initialCatalog": {
+    "receipt": {
+      "version": 1,
+      "base": "544b9f5c01e3b18531fa59f0924d16a444e84083",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-cli",
+        "-p",
+        "arcweft-compiler",
+        "-p",
+        "arcweft-verify",
+        "-p",
+        "arcweft-verify-oxiz",
+        "-p",
+        "arcweft-verify-z3",
+        "-p",
+        "arcweft-verify-lsp",
+        "--all-features",
+        "--locked",
+        "-E",
+        "test(verify_oxiz) | test(verify_json) | test(prove) | test(assertion) | test(spec_rejected_edge_fixtures) | test(boolean_identity)",
+        "--message-format",
+        "json"
+      ],
+      "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/assertion-smt-owner1-20261106.catalog.log",
+      "exitCode": 101,
+      "sourceInputs": 4125,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-05T22:20:26.6003831Z",
+      "finishedAt": "2026-11-05T22:22:12.6929124Z"
+    },
+    "diagnostic": "E0786 mmap denial on arcweft_bundle rlib, Windows paging-file error 1455",
+    "executedTests": 0,
+    "repair": "Set CARGO_BUILD_JOBS=4 for subsequent runs"
+  },
+  "precedingFocused": {
+    "version": 1,
+    "base": "9051739a03710e55e9a9193fbcd87fbb4fea3420",
+    "run": "assertion-smt-owner2-20261106.runtime",
+    "actualExitCode": 100,
+    "summary": "Summary [   2.496s] 32 tests run: 28 passed, 4 failed, 1552 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 32,
+    "passed": 28,
+    "failed": 4,
+    "skipped": 1552,
+    "selectedPackages": 6,
+    "matchedPackages": 4,
+    "noMatchingSelectedTests": [
+      "arcweft-verify-z3",
+      "arcweft-verify-lsp"
+    ],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4125,
+    "sourceDrift": 0,
+    "held": 12,
+    "failureSet": [
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_records_required_solver_checks"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_reports_missing_promotion_proof"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_respects_semantic_defer_cancel_discharge"
+      },
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "spec_rejected_edge_fixtures_fail_with_diagnostics"
+      }
+    ],
+    "isPassingRun": false,
+    "recordedAt": "2026-11-05T22:26:15.0024208Z"
+  },
+  "focused": {
+    "terminal": {
+      "version": 1,
+      "base": "9051739a03710e55e9a9193fbcd87fbb4fea3420",
+      "run": "assertion-smt-owner3-20261106.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [   2.406s] 32 tests run: 28 passed, 4 failed, 1552 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 32,
+      "passed": 28,
+      "failed": 4,
+      "skipped": 1552,
+      "selectedPackages": 6,
+      "matchedPackages": 4,
+      "noMatchingSelectedTests": [
+        "arcweft-verify-z3",
+        "arcweft-verify-lsp"
+      ],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4125,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_records_required_solver_checks"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_reports_missing_promotion_proof"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_respects_semantic_defer_cancel_discharge"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "spec_rejected_edge_fixtures_fail_with_diagnostics"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-11-05T22:28:48.8033903Z"
+    },
+    "receipt": {
+      "version": 1,
+      "base": "9051739a03710e55e9a9193fbcd87fbb4fea3420",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-cli",
+        "-p",
+        "arcweft-compiler",
+        "-p",
+        "arcweft-verify",
+        "-p",
+        "arcweft-verify-oxiz",
+        "-p",
+        "arcweft-verify-z3",
+        "-p",
+        "arcweft-verify-lsp",
+        "--all-features",
+        "--locked",
+        "-E",
+        "test(verify_oxiz) | test(verify_json) | test(prove) | test(assertion) | test(spec_rejected_edge_fixtures) | test(boolean_identity)",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/assertion-smt-owner3-20261106.runtime.log",
+      "exitCode": 100,
+      "sourceInputs": 4125,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-05T22:28:36.5410042Z",
+      "finishedAt": "2026-11-05T22:28:42.7081211Z"
+    },
+    "newFailureIds": [],
+    "referenceRun": "lifetime-selector-reverse-20261106.runtime",
+    "sourceAgreement": 0,
+    "scopedFmtExitCode": 0,
+    "stagedDiffCheckExitCode": 0,
+    "solverCase": "3747:        PASS [   1.887s] (30/32) arcweft-cli::check verify_oxiz_solves_typed_boolean_assertions_and_reports_counterexamples"
+  },
+  "beforeProbe": {
+    "version": 1,
+    "head": "544b9f5c01e3b18531fa59f0924d16a444e84083",
+    "runtimeSource": "9a719aacb210b69b981ea2940c8c184766acaa19",
+    "command": "arcw verify input --mode test --backend oxiz --json",
+    "binarySha256": "bfcc46eb7f8de25b1c659f14814c72f9aa3bc47732c00841908de43c42d21aa7",
+    "binaryDrift": 0,
+    "cases": [
+      {
+        "case": "assertion",
+        "path": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\assertion-smt-before-20261106.arcw",
+        "sourceSha256": "6fcabad0fda6bf4bb89a52cb69b6d2814c28e74d56ad229f963250110891f1ea",
+        "exitCode": 1,
+        "status": "denied",
+        "stage": "runtime-plan-lower",
+        "codes": [
+          "verify.proof.unresolved"
+        ],
+        "messages": [
+          "assert.prove condition 0 requires compile-time discharge"
+        ],
+        "solverChecks": null,
+        "stdoutSha256": "132d074a1bf213ade256196980e530deb48a91c8d8f132f6ac3d311841f4905d",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "case": "out",
+        "path": "tests/fixtures/arcw/spec_should_fail/017_out_in_flow_rejected.arcw",
+        "sourceSha256": "495972f3ce0b9ca36fe214f311175c8e7fce7e0584cff05fc4931b92cb94e4e7",
+        "exitCode": 1,
+        "status": "denied",
+        "stage": "type-check",
+        "codes": [
+          "sema.final_analysis"
+        ],
+        "messages": [
+          "control-transfer statement StmtId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 8, kind: Stmt }) has an unresolved Out target"
+        ],
+        "solverChecks": null,
+        "stdoutSha256": "cba1ed70b02b26d74fa2044724e843cb9c9d0d941e5141ad95edda64daa2f696",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ]
+  },
+  "afterProbe": {
+    "version": 1,
+    "head": "9051739a03710e55e9a9193fbcd87fbb4fea3420",
+    "sourceFreeze": "assertion-smt-owner3-20261106",
+    "binarySha256": "e5a590f6e569abed423d59c0ecd6045502511213859dbba43558f6d15ab7ae9a",
+    "binaryDrift": 0,
+    "cases": [
+      {
+        "name": "proved",
+        "command": [
+          "verify",
+          "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\assertion-smt-before-20261106.arcw",
+          "--mode",
+          "test",
+          "--backend",
+          "oxiz",
+          "--json",
+          "--emit-smt",
+          "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\assertion-smt-after-20261106.smt"
+        ],
+        "exitCode": 0,
+        "sourceSha256": "6fcabad0fda6bf4bb89a52cb69b6d2814c28e74d56ad229f963250110891f1ea",
+        "obligations": [
+          {
+            "id": "assertion.0.condition.0",
+            "kind": "assertion_proof",
+            "discharge": "solver",
+            "hasProblem": true
+          }
+        ],
+        "checks": [
+          {
+            "obligation": "assertion.0.condition.0",
+            "backend": "oxiz",
+            "outcome": "unsat",
+            "raw_output": "unsat",
+            "error": null,
+            "required": true
+          }
+        ],
+        "stage": null,
+        "denialCodes": [
+          null
+        ],
+        "stdoutSha256": "1f9dd2ff473a8396de094b7ae269ccf30e7fdf84a2c681e6d97f8e8dd366f91d",
+        "stderrSha256": "bd1f4d19031082bc0de64f7b657ee56884472c49c2fa90901719d9f0f0d7df79"
+      },
+      {
+        "name": "refuted-and-unprojected",
+        "command": [
+          "verify",
+          "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\assertion-smt-after-20261106.counterexample.arcw",
+          "--mode",
+          "test",
+          "--backend",
+          "oxiz",
+          "--json"
+        ],
+        "exitCode": 1,
+        "sourceSha256": "a81207fd0dd6ad10d81bbc35c371359db87b40e6ba974738be17455b425d7970",
+        "obligations": [
+          {
+            "id": "assertion.0.condition.0",
+            "kind": "assertion_proof",
+            "discharge": "missing",
+            "hasProblem": true
+          },
+          {
+            "id": "assertion.0.condition.1",
+            "kind": "assertion_proof",
+            "discharge": "missing",
+            "hasProblem": false
+          }
+        ],
+        "checks": [
+          {
+            "obligation": "assertion.0.condition.0",
+            "backend": "oxiz",
+            "outcome": "sat",
+            "model": {
+              "bool_0": "false"
+            },
+            "raw_output": "sat",
+            "error": null,
+            "required": true
+          }
+        ],
+        "stage": null,
+        "denialCodes": [
+          null
+        ],
+        "stdoutSha256": "9dcef8d9bf866c73535a24601aeaa1cd99bfb1b5363e8445ddd142b7132a4c31",
+        "stderrSha256": "494a51c2ed2982e2c91c3c1fd0ca3cd607c877d5a3500f9dfcfba872d3a4b8d5"
+      },
+      {
+        "name": "runtime-admission",
+        "command": [
+          "plan",
+          "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\assertion-smt-before-20261106.arcw",
+          "--json"
+        ],
+        "exitCode": 1,
+        "sourceSha256": "6fcabad0fda6bf4bb89a52cb69b6d2814c28e74d56ad229f963250110891f1ea",
+        "obligations": [
+          {
+            "id": null,
+            "kind": null,
+            "discharge": null,
+            "hasProblem": false
+          }
+        ],
+        "checks": [],
+        "stage": "runtime-plan-lower",
+        "denialCodes": [
+          "verify.proof.unresolved"
+        ],
+        "stdoutSha256": "f5a9ead520c8d3538402ac629629ca7be12b3da0f1554887108306bd17d06ae3",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ],
+    "smt": {
+      "path": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\assertion-smt-after-20261106.smt\\assertion.0.condition.0.smt2",
+      "sha256": "5b460c47c910bb2f1ef42773829de740c803a60c9e809d9d7ce662603384cb9c"
+    }
+  },
+  "raw": {
+    "path": "docs/implementation/acceptance-evidence/task-verify-propositional-assertions.raw.zip",
+    "bytes": 208951,
+    "sha256": "7507b77463271d89d5ee68dd82f28c53daeecd4ad2d5918b7f1699f3fa5c3e2f",
+    "entryDrift": 0,
+    "entries": [
+      {
+        "entry": "assertion-smt-after-20261106.counterexample.arcw",
+        "bytes": 111,
+        "sha256": "a81207fd0dd6ad10d81bbc35c371359db87b40e6ba974738be17455b425d7970"
+      },
+      {
+        "entry": "assertion-smt-after-20261106.proved.stderr.log",
+        "bytes": 45,
+        "sha256": "bd1f4d19031082bc0de64f7b657ee56884472c49c2fa90901719d9f0f0d7df79"
+      },
+      {
+        "entry": "assertion-smt-after-20261106.proved.stdout.json",
+        "bytes": 1794,
+        "sha256": "1f9dd2ff473a8396de094b7ae269ccf30e7fdf84a2c681e6d97f8e8dd366f91d"
+      },
+      {
+        "entry": "assertion-smt-after-20261106.receipt.json",
+        "bytes": 4023,
+        "sha256": "6c724215fb2b59f642898d038d2e4f9392ea11e3879ddec5a4fb5504ee42bd74"
+      },
+      {
+        "entry": "assertion-smt-after-20261106.refuted-and-unprojected.stderr.log",
+        "bytes": 63,
+        "sha256": "494a51c2ed2982e2c91c3c1fd0ca3cd607c877d5a3500f9dfcfba872d3a4b8d5"
+      },
+      {
+        "entry": "assertion-smt-after-20261106.refuted-and-unprojected.stdout.json",
+        "bytes": 4905,
+        "sha256": "9dcef8d9bf866c73535a24601aeaa1cd99bfb1b5363e8445ddd142b7132a4c31"
+      },
+      {
+        "entry": "assertion-smt-after-20261106.runtime-admission.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "assertion-smt-after-20261106.runtime-admission.stdout.json",
+        "bytes": 1555,
+        "sha256": "f5a9ead520c8d3538402ac629629ca7be12b3da0f1554887108306bd17d06ae3"
+      },
+      {
+        "entry": "assertion-smt-after-20261106.smt/assertion.0.condition.0.smt2",
+        "bytes": 211,
+        "sha256": "5b460c47c910bb2f1ef42773829de740c803a60c9e809d9d7ce662603384cb9c"
+      },
+      {
+        "entry": "assertion-smt-before-20261106.arcw",
+        "bytes": 57,
+        "sha256": "6fcabad0fda6bf4bb89a52cb69b6d2814c28e74d56ad229f963250110891f1ea"
+      },
+      {
+        "entry": "assertion-smt-before-20261106.assertion.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "assertion-smt-before-20261106.assertion.stdout.json",
+        "bytes": 1757,
+        "sha256": "132d074a1bf213ade256196980e530deb48a91c8d8f132f6ac3d311841f4905d"
+      },
+      {
+        "entry": "assertion-smt-before-20261106.out.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "assertion-smt-before-20261106.out.stdout.json",
+        "bytes": 546,
+        "sha256": "cba1ed70b02b26d74fa2044724e843cb9c9d0d941e5141ad95edda64daa2f696"
+      },
+      {
+        "entry": "assertion-smt-before-20261106.receipt.json",
+        "bytes": 1826,
+        "sha256": "c27f44f67e7738bcf2ae33028e41b425715e0a239c47ecac9020e8f27d4ee51f"
+      },
+      {
+        "entry": "assertion-smt-owner1-20261106.catalog.json",
+        "bytes": 863,
+        "sha256": "14124fe6feefe463857a2115b2b815ceb636e1bdaf0695d9c456a461a0003d45"
+      },
+      {
+        "entry": "assertion-smt-owner1-20261106.catalog.log",
+        "bytes": 91636,
+        "sha256": "af8f0eff55e8d107e50a348a9cd0c7e835f1881bcbffa6bdf621b42263788f4a"
+      },
+      {
+        "entry": "assertion-smt-owner2-20261106.runtime.json",
+        "bytes": 955,
+        "sha256": "3444c7fc18371a36619e30fef348aa5f646297a04980fd7cf93342d69d61c960"
+      },
+      {
+        "entry": "assertion-smt-owner2-20261106.runtime.log",
+        "bytes": 562805,
+        "sha256": "3566e15c37eafb58b4c9c14cb67a77ad54ff818904a4b35e112a13db9ff93330"
+      },
+      {
+        "entry": "assertion-smt-owner2-20261106.runtime.terminal-audit.json",
+        "bytes": 1262,
+        "sha256": "ea533e1e2f2d111c7024bf0ead869a09e7cc738767ad6c179e0a9dfd286cf485"
+      },
+      {
+        "entry": "assertion-smt-owner3-20261106.binaries-before.json",
+        "bytes": 10797,
+        "sha256": "575e29328815c096e3c11966f2067aa95e969e6b046c385e08bacae34d0f256f"
+      },
+      {
+        "entry": "assertion-smt-owner3-20261106.catalog.inventory.json",
+        "bytes": 388909,
+        "sha256": "65d202ff282818717379f6317a8ca2a4db688f74f7945b3cdec63b9698ddafa3"
+      },
+      {
+        "entry": "assertion-smt-owner3-20261106.catalog.json",
+        "bytes": 861,
+        "sha256": "1f182e3ca46db40a101f9d94386f39f8297d286de7ea9da49414d7dc509d4fb6"
+      },
+      {
+        "entry": "assertion-smt-owner3-20261106.runtime.json",
+        "bytes": 955,
+        "sha256": "ac6e2a1cffb90fe89f02563614e105c2e2c0f4de15fe4cde966e759270876233"
+      },
+      {
+        "entry": "assertion-smt-owner3-20261106.runtime.log",
+        "bytes": 562805,
+        "sha256": "4e08ef9ee453d0a0b8c6df6959bb40bf8956a097fa8c59c13ea1c113f1dabf1f"
+      },
+      {
+        "entry": "assertion-smt-owner3-20261106.runtime.terminal-audit.json",
+        "bytes": 1262,
+        "sha256": "fbbf57b546d1f51ebd8439d6e5b2679d2a5778c2025b7cca20ffcc40eeb163a2"
+      },
+      {
+        "entry": "assertion-smt.reverse-selection.json",
+        "bytes": 18442,
+        "sha256": "9eaf9d7a471eac514dafa1fba1181f238248be4b39227c48bc23053adab4abbb"
+      },
+      {
+        "entry": "checkpoint-assertion-smt-20261106.verified.json",
+        "bytes": 1475,
+        "sha256": "ae0f4ea6cc472bfe6ca81f5589df3c0b3cb2407a311295f779feb4e7a94104e2"
+      }
+    ]
+  }
+}
