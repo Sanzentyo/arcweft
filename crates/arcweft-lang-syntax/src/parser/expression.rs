@@ -2569,13 +2569,6 @@ fn emit_select(
         let at = parser.current_offset();
         parser.start(SyntaxKind::MissingName, SyntaxRole::Field(0));
         parser.finish();
-        parser.push(crate::grammar::event::SyntaxEvent::Diagnostic(
-            crate::grammar::event::PendingSyntaxDiagnostic::new(
-                "syntax.expression.missing_member",
-                SourceRange::new(at, at),
-                "member access requires a name after `.`",
-            ),
-        ));
         (SyntaxSelectedMember::Missing, SourceRange::new(at, at))
     };
     parser.set_expression_projection(

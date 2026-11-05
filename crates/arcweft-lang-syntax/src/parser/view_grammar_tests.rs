@@ -130,7 +130,10 @@ fn malformed_continued_member_keeps_recovery_and_the_following_declaration() {
     let source =
         "view Broken() { Panel { Text(\"child\")\n .(20px) } }\nview Next() { Text(\"next\") }\n";
     let built = parse(source);
-    assert!(!built.diagnostics().is_empty());
+    assert!(
+        built.diagnostics().is_empty(),
+        "HIR owns the recovery diagnostic"
+    );
     assert_eq!(count_kind(&built, SyntaxKind::MissingName), 1);
     assert_eq!(count_kind(&built, SyntaxKind::ViewDeclarationItem), 2);
     assert_eq!(built.green().to_string(), source);
