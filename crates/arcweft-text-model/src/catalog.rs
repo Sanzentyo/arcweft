@@ -31,7 +31,6 @@ pub struct DialogueContentSpec {
     template_digest: RuntimeDialogueContentTemplateDigest,
     character: CheckedCharacterPresentationPlan,
     presentation: DialoguePresentationSnapshot,
-    inline_styles: Vec<RichTextStyleContribution>,
     source: ProductSourceRef,
 }
 
@@ -67,7 +66,6 @@ impl DialogueContentSpec {
         template: &DialogueContentFragmentTemplate,
         character: CheckedCharacterPresentationPlan,
         presentation: DialoguePresentationSnapshot,
-        inline_styles: Vec<RichTextStyleContribution>,
         source: ProductSourceRef,
     ) -> Result<Self, DialogueContentSpecError> {
         template.validate_for_catalog().map_err(|source| {
@@ -83,7 +81,6 @@ impl DialogueContentSpec {
             template_digest: template.digest(),
             character,
             presentation,
-            inline_styles,
             source,
         })
     }
@@ -95,7 +92,6 @@ impl DialogueContentSpec {
         template_digest: RuntimeDialogueContentTemplateDigest,
         character: CheckedCharacterPresentationPlan,
         presentation: DialoguePresentationSnapshot,
-        inline_styles: Vec<RichTextStyleContribution>,
         source: ProductSourceRef,
     ) -> Self {
         Self {
@@ -105,7 +101,6 @@ impl DialogueContentSpec {
             template_digest,
             character,
             presentation,
-            inline_styles,
             source,
         }
     }
@@ -138,10 +133,6 @@ impl DialogueContentSpec {
 
     pub const fn presentation_revision(&self) -> &DialogueProfileRevision {
         self.presentation.revision()
-    }
-
-    pub fn inline_styles(&self) -> &[RichTextStyleContribution] {
-        &self.inline_styles
     }
 
     pub const fn source(&self) -> &ProductSourceRef {
@@ -337,7 +328,6 @@ struct DialogueContentSpecWire {
     character: CheckedCharacterPresentationPlan,
     presentation: DialoguePresentationProfile,
     presentation_revision: DialogueProfileRevision,
-    inline_styles: Vec<RichTextStyleContribution>,
     source: ProductSourceRef,
 }
 
@@ -354,7 +344,6 @@ impl Serialize for DialogueContentSpec {
             character: self.character.clone(),
             presentation: self.presentation.profile().clone(),
             presentation_revision: self.presentation.revision().clone(),
-            inline_styles: self.inline_styles.clone(),
             source: self.source.clone(),
         }
         .serialize(serializer)
@@ -374,7 +363,6 @@ impl<'de> Deserialize<'de> for DialogueContentSpec {
             wire.template_digest,
             wire.character,
             DialoguePresentationSnapshot::new(wire.presentation, wire.presentation_revision),
-            wire.inline_styles,
             wire.source,
         ))
     }
@@ -414,58 +402,4 @@ impl<'de> Deserialize<'de> for DialogueContentCatalog {
         Self::try_from_records_and_templates(wire.records, wire.templates)
             .map_err(serde::de::Error::custom)
     }
-}
-
-/// Provenance for one inline style contribution.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RichTextStyleContribution {
-    pub path: String,
-    pub layer: RichTextCascadeLayer,
-    pub source: RichTextSettingSource,
-    pub op: RichTextAssignOp,
-    pub value: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub style_index: Option<usize>,
-    #[serde(default)]
-    pub active: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub shadowed_by: Option<usize>,
-}
-
-/// Source-owned style layers retained in static dialogue content.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RichTextCascadeLayer {
-    InlineSpan,
-    DialogueViewStyle,
-    EngineDefaults,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum RichTextSettingSource {
-    SourceFile {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        item_id: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        public_id: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        range: Option<RichTextSourceRange>,
-    },
-    EngineDefault {
-        key: String,
-    },
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RichTextAssignOp {
-    Replace,
-    Append,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RichTextSourceRange {
-    pub start: usize,
-    pub end: usize,
 }

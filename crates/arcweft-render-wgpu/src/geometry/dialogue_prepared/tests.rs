@@ -94,7 +94,6 @@ fn runtime_line_context() -> RuntimeLineContext {
             InlineFailurePolicy::FailLine,
         ),
         Vec::new(),
-        Vec::new(),
     )
 }
 
@@ -202,6 +201,7 @@ fn resolver(
 #[test]
 fn vertical_ruby_stage_uses_canonical_layout_and_prepared_glyphs() {
     let frame = frame(vec![RichTextNode::Scope {
+        origin: arcweft_text_model::RichTextStyleOrigin::Generated,
         style: Box::new(RichTextStyle::Layout {
             layout: RichTextLayoutUpdate {
                 writing_mode: Some(RichTextWritingMode::VerticalRl),
@@ -339,6 +339,7 @@ fn typed_sampler_uses_logical_glyph_ordinal_and_time_only_changes_paint() {
             text: "前".to_owned(),
         },
         RichTextNode::Scope {
+            origin: arcweft_text_model::RichTextStyleOrigin::Generated,
             style: Box::new(RichTextStyle::Fx {
                 application: application.clone(),
             }),
@@ -405,6 +406,7 @@ fn typed_fx_application_changes_layout_style_and_post_layout_transform() {
         runtime_time: FxLogicalTime::zero(),
     };
     let frame = frame(vec![RichTextNode::Scope {
+        origin: arcweft_text_model::RichTextStyleOrigin::Generated,
         style: Box::new(RichTextStyle::Fx { application }),
         body: vec![RichTextNode::Text {
             text: "typed".to_owned(),
@@ -503,6 +505,7 @@ fn typed_shader_and_mask_resolve_glyph_and_post_process_passes() {
         runtime_time: FxLogicalTime::zero(),
     };
     let frame = frame(vec![RichTextNode::Scope {
+        origin: arcweft_text_model::RichTextStyleOrigin::Generated,
         style: Box::new(RichTextStyle::Fx { application }),
         body: vec![RichTextNode::Text {
             text: "source".to_owned(),
@@ -560,6 +563,7 @@ fn stage_local_fx_time_reaches_dialogue_prepared_glyph_mask() {
         5,
     );
     let frame = frame(vec![RichTextNode::Scope {
+        origin: arcweft_text_model::RichTextStyleOrigin::Generated,
         style: Box::new(RichTextStyle::Fx {
             application: application.clone(),
         }),
@@ -629,6 +633,7 @@ fn missing_typed_shader_is_a_typed_diagnostic() {
     let application = bind_empty(&definition, 0);
     let resolver = resolver(definition, &application, 0);
     let frame = frame(vec![RichTextNode::Scope {
+        origin: arcweft_text_model::RichTextStyleOrigin::Generated,
         style: Box::new(RichTextStyle::Fx {
             application: application.clone(),
         }),
@@ -832,7 +837,6 @@ fn frame(nodes: Vec<RichTextNode>) -> LineDisplayFrame {
             DialoguePresentationProfile::engine_default(),
             test_dialogue_profile_revision(),
         ),
-        Vec::new(),
         test_source_ref(),
     )
     .expect("dialogue spec");

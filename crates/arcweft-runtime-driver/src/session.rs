@@ -1892,7 +1892,6 @@ mod view_handler_queue_tests {
             ),
             text: String::new(),
             base_styles: Vec::new(),
-            style_contributions: Vec::new(),
             nodes: Vec::new(),
             display_map: RichTextDisplayMap::default(),
             host_events: Vec::new(),

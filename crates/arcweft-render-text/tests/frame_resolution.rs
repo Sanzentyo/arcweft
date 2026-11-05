@@ -92,7 +92,6 @@ fn context_with_styles(
             InlineFailurePolicy::FailLine,
         ),
         base_styles,
-        Vec::new(),
     )
     .with_materialized_bindings(&typed_bindings)
 }
@@ -150,7 +149,6 @@ fn spec_with_line(line: &str, nodes: Vec<RichTextNode>) -> TestSpec {
             support::dialogue_profile(),
             support::dialogue_profile_revision(),
         ),
-        Vec::new(),
         source_ref(),
     )
     .expect("test dialogue spec");
@@ -252,6 +250,7 @@ fn nested_ruby_owns_preorder_body_nodes_and_exact_run_slices() {
             },
             RichTextNode::Ruby {
                 body: vec![RichTextNode::Scope {
+                    origin: arcweft_text_model::RichTextStyleOrigin::Generated,
                     style: Box::new(RichTextStyle::Strong),
                     body: vec![RichTextNode::Text {
                         text: "BC".to_owned(),
@@ -425,6 +424,7 @@ fn interpolation_fallback_can_render_expr_or_call_source() {
 #[test]
 fn structural_scope_preserves_style_across_control_nodes() {
     let line = spec(vec![RichTextNode::Scope {
+        origin: arcweft_text_model::RichTextStyleOrigin::Generated,
         style: Box::new(RichTextStyle::Color {
             value: RichTextColor::Rgba8 {
                 value: [0x80, 0xc0, 0xff, 0xff],

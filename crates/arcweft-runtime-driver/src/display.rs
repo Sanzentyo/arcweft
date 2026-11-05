@@ -272,7 +272,6 @@ impl DialogueRuntimeContextProvider for CatalogDialogueRuntimeContextProvider<'_
             },
             effective,
             base_styles,
-            content.inline_styles().to_vec(),
         ))
     }
 }

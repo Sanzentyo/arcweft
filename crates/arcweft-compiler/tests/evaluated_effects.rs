@@ -53,7 +53,7 @@ use arcweft_text_model::{
 fn object_proxy(compiled: &CompiledProject) -> &RichTextObjectProxy {
     fn find_object_proxy(nodes: &[RichTextNode]) -> Option<&RichTextObjectProxy> {
         nodes.iter().find_map(|node| match node {
-            RichTextNode::Scope { style, body } => match style.as_ref() {
+            RichTextNode::Scope { style, body, .. } => match style.as_ref() {
                 RichTextStyle::Object { proxy } => Some(proxy),
                 _ => find_object_proxy(body),
             },
@@ -3064,7 +3064,6 @@ fn resolve_authored_spacing_frame(
         )
         .unwrap(),
         base_styles,
-        spec.inline_styles().to_vec(),
     );
     let frame =
         arcweft_render_text::resolve_materialized_frame(spec, &materialized, &content, &context)
@@ -3297,3 +3296,6 @@ mod dialogue_readiness;
 
 #[path = "evaluated_effects/dialogue_template_order.rs"]
 mod dialogue_template_order;
+
+#[path = "evaluated_effects/content_style_origin.rs"]
+mod content_style_origin;

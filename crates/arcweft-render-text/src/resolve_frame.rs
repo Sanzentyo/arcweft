@@ -13,8 +13,7 @@ use arcweft_text_model::{
     MaterializedDialogueContent, ResolvedRichTextNode, RichTextControl, RichTextControlMarker,
     RichTextDisplayMap, RichTextDocument, RichTextHostEventMarker, RichTextNode, RichTextNodeCount,
     RichTextNodeIndex, RichTextNodeRange, RichTextRange, RichTextRubyAnnotation, RichTextStyle,
-    RichTextStyleContribution, RichTextTextRun, RichTextTextRunRange, RichTextTextSource,
-    presentation_from_styles,
+    RichTextTextRun, RichTextTextRunRange, RichTextTextSource, presentation_from_styles,
 };
 use thiserror::Error;
 
@@ -25,7 +24,6 @@ pub struct RuntimeLineContext {
     character: DialoguePresentationCharacter,
     effective: CharacterDialoguePresentationConfig,
     base_styles: Vec<RichTextStyle>,
-    style_contributions: Vec<RichTextStyleContribution>,
     materialized_bindings: Vec<RuntimeDialogueContentBinding>,
     has_materialized_bindings: bool,
 }
@@ -48,14 +46,12 @@ impl RuntimeLineContext {
         character: DialoguePresentationCharacter,
         effective: CharacterDialoguePresentationConfig,
         base_styles: Vec<RichTextStyle>,
-        style_contributions: Vec<RichTextStyleContribution>,
     ) -> Self {
         Self {
             values,
             character,
             effective,
             base_styles,
-            style_contributions,
             materialized_bindings: Vec::new(),
             has_materialized_bindings: false,
         }
@@ -260,7 +256,11 @@ impl<'a> LineDisplayFrameResolver<'a> {
                     self.push_visible_text(text, RichTextTextSource::Raw, current_index, styles);
                     resolved.push(ResolvedRichTextNode::Raw { text: text.clone() });
                 }
-                RichTextNode::Scope { style, body } => {
+                RichTextNode::Scope {
+                    style,
+                    origin,
+                    body,
+                } => {
                     let mut nested_styles = styles.to_vec();
                     nested_styles.push(style.as_ref().clone());
                     let mut resolved_body = Vec::new();
@@ -273,6 +273,7 @@ impl<'a> LineDisplayFrameResolver<'a> {
                     )?;
                     resolved.push(ResolvedRichTextNode::Scope {
                         style: style.clone(),
+                        origin: origin.clone(),
                         body: resolved_body,
                     });
                 }
@@ -507,13 +508,6 @@ impl<'a> LineDisplayFrameResolver<'a> {
             effective: self.context.effective.clone(),
             text: self.text,
             base_styles: self.context.base_styles.clone(),
-            style_contributions: self
-                .context
-                .style_contributions
-                .iter()
-                .chain(self.spec.inline_styles())
-                .cloned()
-                .collect(),
             nodes: self.nodes,
             display_map: self.display_map,
             host_events: self.host_events,

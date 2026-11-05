@@ -45,9 +45,8 @@ use arcweft_layout::{
 use arcweft_presentation::fx::{FxApplication, FxApplicationDraft, FxDefinition, FxGraph, FxId};
 use arcweft_text_model::{
     CharacterDialoguePresentationConfig, DialoguePresentationCharacter, LineDisplayFrame,
-    ResolvedRichTextNode, RichTextAssignOp, RichTextCascadeLayer, RichTextDisplayMap,
-    RichTextNodeIndex, RichTextObjectProxyDeclaration, RichTextParam, RichTextPresentation,
-    RichTextRange, RichTextSettingSource, RichTextStyleContribution, RichTextTextProxyField,
+    ResolvedRichTextNode, RichTextDisplayMap, RichTextNodeIndex, RichTextObjectProxyDeclaration,
+    RichTextParam, RichTextPresentation, RichTextRange, RichTextTextProxyField,
     RichTextTextProxyFieldKind, RichTextTextProxyFieldSchema, RichTextTextProxyScalar,
     RichTextTextProxySchema, RichTextTextRun, RichTextTextSource,
 };
@@ -260,18 +259,6 @@ fn test_line_display_frame() -> LineDisplayFrame {
         ),
         text: "Hello".to_owned(),
         base_styles: Vec::new(),
-        style_contributions: vec![RichTextStyleContribution {
-            path: "rich_text.ruby.size".to_owned(),
-            layer: RichTextCascadeLayer::EngineDefaults,
-            source: RichTextSettingSource::EngineDefault {
-                key: "dialogue.rich_text.ruby.size".to_owned(),
-            },
-            op: RichTextAssignOp::Replace,
-            value: "14".to_owned(),
-            style_index: None,
-            active: true,
-            shadowed_by: None,
-        }],
         nodes: vec![ResolvedRichTextNode::Text {
             text: "Hello".to_owned(),
         }],
@@ -832,16 +819,6 @@ fn observation_report_serializes_stable_snake_case_enums() {
     );
     assert_eq!(json["objects"][0]["content"]["kind"], "rich_text");
     assert!(json["objects"][0].get("rich_text").is_none());
-    assert_eq!(
-        json["text_contexts"]["entries"][0]["content"]["context"]["frame"]["style_contributions"]
-            [0]["path"],
-        "rich_text.ruby.size"
-    );
-    assert_eq!(
-        json["text_contexts"]["entries"][0]["content"]["context"]["frame"]["style_contributions"]
-            [0]["layer"],
-        "engine_defaults"
-    );
     assert_eq!(
         json["objects"][0]["rich_text_ref"]["hit_regions"][0]["kind"],
         "text_run"

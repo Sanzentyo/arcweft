@@ -292,7 +292,6 @@ pub(super) fn test_line_display_frame() -> LineDisplayFrame {
         ),
         text: String::new(),
         base_styles: Vec::new(),
-        style_contributions: Vec::new(),
         nodes: Vec::new(),
         display_map: arcweft_text_model::RichTextDisplayMap::default(),
         host_events: Vec::new(),

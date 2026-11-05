@@ -400,7 +400,6 @@ fn vertical_ruby_frame(line: &RuntimeLineId) -> LineDisplayFrame {
             support::dialogue_profile(),
             support::dialogue_profile_revision(),
         ),
-        Vec::new(),
         test_source_ref(),
     )
     .expect("dialogue spec");
@@ -433,7 +432,6 @@ fn vertical_ruby_frame(line: &RuntimeLineId) -> LineDisplayFrame {
                     ..RichTextLayoutUpdate::default()
                 },
             }],
-            Vec::new(),
         ),
     )
     .expect("display frame resolves")

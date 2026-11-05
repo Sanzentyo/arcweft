@@ -461,6 +461,7 @@ fn rich_text_direction_and_theme_never_infer_a_different_axis_provider() {
 
     presentation.view.mounts[0].text[0].value = BundleViewTextValue::RichTextDocument {
         document: Box::new(RichTextDocument::new(vec![RichTextNode::Scope {
+            origin: arcweft_text_model::RichTextStyleOrigin::Generated,
             style: Box::new(RichTextStyle::Layout {
                 layout: RichTextLayoutUpdate {
                     direction: Some(RichTextInlineDirection::Rtl),

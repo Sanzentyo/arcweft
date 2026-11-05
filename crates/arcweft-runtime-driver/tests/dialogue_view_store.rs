@@ -60,7 +60,6 @@ fn runtime_context(view: &str) -> RuntimeLineContext {
             InlineFailurePolicy::FailLine,
         ),
         Vec::new(),
-        Vec::new(),
     )
 }
 
@@ -84,7 +83,6 @@ fn resolved_frame(line: &str, view: &str, text: &str) -> LineDisplayFrame {
             support::dialogue_profile(),
             support::dialogue_profile_revision(),
         ),
-        Vec::new(),
         source_ref(),
     )
     .expect("dialogue spec");

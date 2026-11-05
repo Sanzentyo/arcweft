@@ -23,7 +23,6 @@ impl crate::LineDisplayStageProjection {
                 &self.text_key,
                 &self.text,
                 &self.base_styles,
-                &self.style_contributions,
                 &self.display_map,
                 &self.host_events,
                 &self.unresolved,
@@ -86,7 +85,7 @@ impl LineDisplayStageSnapshot {
         Ok(Self {
             line: frame.line.clone(), character: frame.character.clone(), text_key: frame.text_key.clone(),
             effective: CharacterDialoguePresentationConfigSnapshot::from_live(&frame.effective, owner, None)?,
-            text: frame.text.clone(), base_styles: frame.base_styles.clone(), style_contributions: frame.style_contributions.clone(),
+            text: frame.text.clone(), base_styles: frame.base_styles.clone(),
             stage_index: frame.stage_index, page_index: frame.page_index, reveal_start: frame.reveal_start, end: frame.end,
             display_map: frame.display_map.clone(), host_events: frame.host_events.clone(), unresolved: frame.unresolved.clone(),
             content: AwbcRuntimeValueSnapshot::from_unrestricted_dialogue_content(&frame.content, owner).map_err(|error| error.to_string())?,
@@ -233,7 +232,6 @@ impl<E, C, I> LineDisplayFrame<E, C, I> {
                 &self.text_key,
                 &self.text,
                 &self.base_styles,
-                &self.style_contributions,
                 &self.nodes,
                 &self.display_map,
                 &self.host_events,
@@ -256,7 +254,6 @@ impl<E, C, I> LineDisplayFrame<E, C, I> {
             effective: effective(self.effective)?,
             text: self.text,
             base_styles: self.base_styles,
-            style_contributions: self.style_contributions,
             nodes: self.nodes,
             display_map: self.display_map,
             host_events: self.host_events,
@@ -362,7 +359,7 @@ impl LineDisplayFrameSnapshot {
             effective,
             text: frame.text.clone(),
             base_styles: frame.base_styles.clone(),
-            style_contributions: frame.style_contributions.clone(),
+
             nodes: frame.nodes.clone(),
             display_map: frame.display_map.clone(),
             host_events: frame.host_events.clone(),
@@ -437,14 +434,13 @@ impl LineDisplayFrameSnapshot {
 impl Serialize for LineDisplayFrameSnapshot {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut wire = serializer.serialize_struct("LineDisplayFrameSnapshot", 13)?;
+        let mut wire = serializer.serialize_struct("LineDisplayFrameSnapshot", 12)?;
         wire.serialize_field("line", &self.line)?;
         wire.serialize_field("character", &self.character)?;
         wire.serialize_field("text_key", &self.text_key)?;
         wire.serialize_field("effective", &self.effective)?;
         wire.serialize_field("text", &self.text)?;
         wire.serialize_field("base_styles", &self.base_styles)?;
-        wire.serialize_field("style_contributions", &self.style_contributions)?;
         wire.serialize_field("nodes", &self.nodes)?;
         wire.serialize_field("display_map", &self.display_map)?;
         wire.serialize_field("host_events", &self.host_events)?;
@@ -458,14 +454,13 @@ impl Serialize for LineDisplayFrameSnapshot {
 impl Serialize for LineDisplayStageSnapshot {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut wire = serializer.serialize_struct("LineDisplayStageSnapshot", 16)?;
+        let mut wire = serializer.serialize_struct("LineDisplayStageSnapshot", 15)?;
         wire.serialize_field("line", &self.line)?;
         wire.serialize_field("character", &self.character)?;
         wire.serialize_field("text_key", &self.text_key)?;
         wire.serialize_field("effective", &self.effective)?;
         wire.serialize_field("text", &self.text)?;
         wire.serialize_field("base_styles", &self.base_styles)?;
-        wire.serialize_field("style_contributions", &self.style_contributions)?;
         wire.serialize_field("stage_index", &self.stage_index)?;
         wire.serialize_field("page_index", &self.page_index)?;
         wire.serialize_field("reveal_start", &self.reveal_start)?;

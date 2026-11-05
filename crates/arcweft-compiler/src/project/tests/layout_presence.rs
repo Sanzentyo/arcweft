@@ -8,7 +8,7 @@ use arcweft_text_model::{
 fn source_layout_preserves_omission_and_explicit_default_contributions() {
     fn visit(nodes: &[RichTextNode], updates: &mut Vec<RichTextLayoutUpdate>) {
         for node in nodes {
-            if let RichTextNode::Scope { style, body } = node {
+            if let RichTextNode::Scope { style, body, .. } = node {
                 if let RichTextStyle::Layout { layout } = style.as_ref() {
                     updates.push(layout.clone());
                 }
@@ -76,7 +76,7 @@ fn source_layout_preserves_omission_and_explicit_default_contributions() {
 fn source_font_and_ruby_lengths_retain_units_in_materialized_templates() {
     fn visit(nodes: &[RichTextNode], lengths: &mut Vec<CheckedLength>) {
         for node in nodes {
-            if let RichTextNode::Scope { style, body } = node {
+            if let RichTextNode::Scope { style, body, .. } = node {
                 match style.as_ref() {
                     RichTextStyle::Size { length } => lengths.push(*length),
                     RichTextStyle::Layout { layout } => lengths.extend(layout.ruby_font_size),
@@ -117,7 +117,7 @@ fn source_fonts_keep_generic_and_quoted_named_identity_in_templates() {
     use arcweft_text_model::RichTextFontFamily as Font;
     fn visit(nodes: &[RichTextNode], fonts: &mut Vec<Font>) {
         for node in nodes {
-            if let RichTextNode::Scope { style, body } = node {
+            if let RichTextNode::Scope { style, body, .. } = node {
                 if let RichTextStyle::Font { family } = style.as_ref() {
                     fonts.push(family.clone());
                 }
@@ -163,7 +163,7 @@ fn source_text_proxy_font_defaults_and_overrides_keep_typed_family_identity() {
 
     fn visit(nodes: &[RichTextNode], proxies: &mut Vec<RichTextObjectProxy>) {
         for node in nodes {
-            if let RichTextNode::Scope { style, body } = node {
+            if let RichTextNode::Scope { style, body, .. } = node {
                 if let RichTextStyle::Object { proxy } = style.as_ref() {
                     proxies.push(proxy.clone());
                 }

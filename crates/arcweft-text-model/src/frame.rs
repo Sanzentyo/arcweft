@@ -1,8 +1,7 @@
 //! Resolved dialogue display frame and source map.
 
 use crate::{
-    DialogueHostEvent, RichTextControl, RichTextPresentation, RichTextStyle,
-    RichTextStyleContribution,
+    DialogueHostEvent, RichTextControl, RichTextPresentation, RichTextStyle, RichTextStyleOrigin,
 };
 use arcweft_character::id::CharacterId;
 use arcweft_core::plan::RuntimeLineId;
@@ -41,7 +40,6 @@ pub struct LineDisplayFrame<
     pub effective: E,
     pub text: String,
     pub base_styles: Vec<RichTextStyle>,
-    pub style_contributions: Vec<RichTextStyleContribution>,
     pub nodes: Vec<ResolvedRichTextNode>,
     pub display_map: RichTextDisplayMap,
     pub host_events: Vec<DialogueHostEvent>,
@@ -62,7 +60,6 @@ struct LineDisplayFrameWire<E, C, I> {
     effective: E,
     text: String,
     base_styles: Vec<RichTextStyle>,
-    style_contributions: Vec<RichTextStyleContribution>,
     nodes: Vec<ResolvedRichTextNode>,
     display_map: RichTextDisplayMap,
     host_events: Vec<DialogueHostEvent>,
@@ -86,7 +83,6 @@ impl<'de, E: Deserialize<'de>, C: Deserialize<'de>, I: Deserialize<'de>> Deseria
             effective: wire.effective,
             text: wire.text,
             base_styles: wire.base_styles,
-            style_contributions: wire.style_contributions,
             nodes: wire.nodes,
             display_map: wire.display_map,
             host_events: wire.host_events,
@@ -377,6 +373,7 @@ pub enum ResolvedRichTextNode {
     },
     Scope {
         style: Box<RichTextStyle>,
+        origin: RichTextStyleOrigin,
         body: Vec<ResolvedRichTextNode>,
     },
     Ruby {
@@ -415,7 +412,7 @@ impl<E, C, I> LineDisplayFrame<E, C, I> {
         fn collect_nodes<'a>(nodes: &'a [ResolvedRichTextNode], out: &mut Vec<&'a FxApplication>) {
             for node in nodes {
                 match node {
-                    ResolvedRichTextNode::Scope { style, body } => {
+                    ResolvedRichTextNode::Scope { style, body, .. } => {
                         collect([style.as_ref()], out);
                         collect_nodes(body, out);
                     }
@@ -459,7 +456,6 @@ mod serde_tests {
             ),
             text,
             base_styles: Vec::new(),
-            style_contributions: Vec::new(),
             nodes: vec![ResolvedRichTextNode::Text {
                 text: "Hello".to_owned(),
             }],

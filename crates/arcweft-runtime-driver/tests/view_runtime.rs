@@ -140,7 +140,6 @@ fn dialogue_frame(
             support::dialogue_profile(),
             support::dialogue_profile_revision(),
         ),
-        Vec::new(),
         dialogue_source_ref(),
     )
     .expect("dialogue spec");
@@ -166,7 +165,6 @@ fn dialogue_frame(
                 view_id(view),
                 InlineFailurePolicy::FailLine,
             ),
-            Vec::new(),
             Vec::new(),
         ),
     )

@@ -212,10 +212,18 @@ each plan's root node tree and counts for child tasks, effects, captures, nodes,
 cancel rules, and cleanup actions. Task nodes include trigger, join/cancel
 policy, and the nested scope tree.
 
-`dialogue_content_catalog` contains static, source-owned line records: line and
+`dialogue_content_catalog.records` contains static, source-owned line records: line and
 text-key identities, template identity and digest, checked character presentation
-plan, accepted presentation profile and revision, `inline_styles`, and source
-coordinates. Runtime display-frame construction applies the current
+plan, accepted presentation profile and revision, and exact source identity.
+`dialogue_content_catalog.templates` exposes their canonical typed Content trees,
+selected by each record's template identity and digest. Each lexical style scope
+retains its typed style, nested body and `origin`: `authored` carries a bounded
+byte range in the exact product source revision; `generated` identifies a runtime
+formatting wrapper with no authored location. Scope nesting expresses local
+overrides; there is no independent flat contribution list or global
+active/shadowed flag. Origin participates in the version-1 template digest and
+survives Content materialization, resolved frames and their saved snapshots.
+Runtime display-frame construction applies the current
 `CharacterDialogue` value and resolves the style cascade. `streams` summarizes
 each stream's identity, item/error types, operation count, and yield count.
 Verifier diagnostic and obligation counts are included at the report root.

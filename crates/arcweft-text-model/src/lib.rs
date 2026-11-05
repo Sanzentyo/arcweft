@@ -20,8 +20,7 @@ pub use arcweft_primitives::{CheckedLength, LengthUnit};
 
 pub use catalog::{
     DialogueContentCatalog, DialogueContentCatalogError, DialogueContentSpec,
-    DialogueContentSpecError, DialoguePresentationSnapshot, RichTextAssignOp, RichTextCascadeLayer,
-    RichTextSettingSource, RichTextSourceRange, RichTextStyleContribution,
+    DialogueContentSpecError, DialoguePresentationSnapshot,
 };
 pub use character_dialogue_style::{
     CharacterDialogueRichTextProjectionError, project_character_dialogue_rich_text_properties,
@@ -66,6 +65,7 @@ pub use rich_effects::{
 };
 pub use rich_text::{
     DialogueHostEvent, DialogueVoiceSource, RichTextControl, RichTextDocument, RichTextNode,
+    RichTextStyleOrigin, RichTextStyleSource, RichTextStyleSourceError,
 };
 pub use style::{
     RichTextColor, RichTextFontFamily, RichTextPresentationStyle, RichTextStyle,

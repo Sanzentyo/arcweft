@@ -736,22 +736,56 @@ fn plan_json_lists_runtime_task_graph() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("\"lines\"")
-            && stdout.contains("\"child_tasks\": 2")
-            && stdout.contains("mark .release"),
-        "plan JSON should include runtime graph metadata: {stdout}"
-    );
     let json: serde_json::Value =
         serde_json::from_str(&stdout).expect("plan output is structured JSON");
-    let dialogue_content = json["dialogue_content_catalog"]
+    let lines = json["lines"].as_array().unwrap();
+    assert_eq!(lines.len(), 1);
+    assert_eq!(lines[0]["child_tasks"], 2);
+    let children = lines[0]["root"]["children"][0]["children"]
+        .as_array()
+        .unwrap();
+    assert_eq!(children.len(), 2);
+    assert_eq!(children[0]["task"]["trigger"], "immediate");
+    assert_eq!(children[1]["task"]["trigger"], "mark 1");
+    let catalog = &json["dialogue_content_catalog"];
+    let decoded: arcweft_text_model::DialogueContentCatalog =
+        serde_json::from_value(catalog.clone()).unwrap();
+    assert_eq!(serde_json::to_value(decoded).unwrap(), *catalog);
+    let dialogue_content = catalog["records"]
         .as_array()
         .and_then(|catalog| catalog.first())
         .expect("plan JSON includes dialogue content catalog");
-    let contributions = dialogue_content["inline_styles"]
+    let templates = catalog["templates"]
         .as_array()
-        .expect("dialogue content includes inline style contributions");
-    assert_plan_style_contributions(&stdout, contributions);
+        .expect("plan includes the canonical typed content templates");
+    let template = templates
+        .iter()
+        .find(|template| {
+            template["id"] == dialogue_content["template"]
+                && template["digest"] == dialogue_content["template_digest"]
+        })
+        .expect("line selects its exact content authority");
+    let nodes = template["content"]["nodes"].as_array().unwrap();
+    let source = fs::read_to_string(&path).unwrap();
+    assert_plan_style_scope(&nodes[0], dialogue_content, &source, "color", "#202122");
+    assert_plan_style_scope(
+        &nodes[0]["body"][1],
+        dialogue_content,
+        &source,
+        "color",
+        "#404142",
+    );
+    assert_eq!(nodes[0]["body"][0]["text"], "先");
+    assert_eq!(nodes[0]["body"][2]["text"], "後");
+    assert_plan_style_scope(
+        &nodes[1],
+        dialogue_content,
+        &source,
+        "layout",
+        "ruby_size=14px",
+    );
+    assert_eq!(nodes[1]["body"][0]["kind"], "ruby");
+    assert_plan_style_scope(&nodes[2], dialogue_content, &source, "color", "#505152");
 }
 
 fn runtime_plan_fixture_path() -> PathBuf {
@@ -760,27 +794,17 @@ fn runtime_plan_fixture_path() -> PathBuf {
         r##"
 pub view PlanDialogue(dialogue: DialogueView) {
     Panel {
-        Text(dialogue.character_display_name)
+        Text(dialogue.character.display_name)
         RichText(dialogue.content)
     }
 }
 
 pub character alice {
-    dialogue_style {
-        rich_text {
-            ruby {
-                size = 14px
-            }
-            text {
-                color = "#202122"
-            }
-        }
-    }
+    display = "Alice"
 }
 
 flow plan {
-    let alice_preset = alice(text_color="#404142")
-    alice_preset(text_color="#505152")[|[待](ま)って。[mark @.release][p]]
+    alice()[#color(rgb("#202122"))[先#color(rgb("#404142"))[中]後]#layout(.ruby_over, ruby_size=14px)[|[待](ま)]#color(rgb("#505152"))[って。][mark @.release][p]]
     with:
         thread motion:
             wait(0.1s)
@@ -834,90 +858,61 @@ flow plan {
     assert_eq!(children[1]["task"]["trigger"], "mark 1");
 }
 
-fn assert_plan_style_contributions(stdout: &str, contributions: &[serde_json::Value]) {
-    assert_plan_style_contribution(
-        stdout,
-        contributions,
-        PlanStyleContribution {
-            layer: "character_dialogue_style",
-            path: "rich_text.ruby.size",
-            value: "14px",
-            active: None,
-            requires_range: true,
-            context: "character dialogue_style",
-        },
-    );
-    assert_plan_style_contribution(
-        stdout,
-        contributions,
-        PlanStyleContribution {
-            layer: "character_dialogue_style",
-            path: "rich_text.text.color",
-            value: "\"#202122\"",
-            active: None,
-            requires_range: true,
-            context: "character dialogue_style",
-        },
-    );
-    assert_plan_style_contribution(
-        stdout,
-        contributions,
-        PlanStyleContribution {
-            layer: "speaker_preset",
-            path: "text_color",
-            value: "\"#404142\"",
-            active: Some(false),
-            requires_range: true,
-            context: "speaker preset",
-        },
-    );
-    assert_plan_style_contribution(
-        stdout,
-        contributions,
-        PlanStyleContribution {
-            layer: "line_options",
-            path: "text_color",
-            value: "\"#505152\"",
-            active: Some(true),
-            requires_range: false,
-            context: "line option",
-        },
-    );
-}
-
-#[derive(Clone, Copy)]
-struct PlanStyleContribution<'a> {
-    layer: &'a str,
-    path: &'a str,
-    value: &'a str,
-    active: Option<bool>,
-    requires_range: bool,
-    context: &'a str,
-}
-
-fn assert_plan_style_contribution(
-    stdout: &str,
-    contributions: &[serde_json::Value],
-    expected: PlanStyleContribution<'_>,
+fn assert_plan_style_scope(
+    scope: &serde_json::Value,
+    line: &serde_json::Value,
+    source: &str,
+    kind: &str,
+    authored_value: &str,
 ) {
+    use arcweft_text_model::{CheckedLength, RichTextColor, RichTextStyle};
+    assert_eq!(scope["kind"], "scope");
+    assert_eq!(scope["style"]["kind"], kind);
+    let style: RichTextStyle = serde_json::from_value(scope["style"].clone()).unwrap();
+    match (authored_value, style) {
+        ("#202122", RichTextStyle::Color { value }) => assert_eq!(
+            value,
+            RichTextColor::Rgba8 {
+                value: [32, 33, 34, 255]
+            }
+        ),
+        ("#404142", RichTextStyle::Color { value }) => assert_eq!(
+            value,
+            RichTextColor::Rgba8 {
+                value: [64, 65, 66, 255]
+            }
+        ),
+        ("#505152", RichTextStyle::Color { value }) => assert_eq!(
+            value,
+            RichTextColor::Rgba8 {
+                value: [80, 81, 82, 255]
+            }
+        ),
+        ("ruby_size=14px", RichTextStyle::Layout { layout }) => {
+            assert_eq!(layout.ruby_font_size, Some(CheckedLength::px(14_000)));
+            assert_eq!(
+                layout.ruby_position,
+                Some(arcweft_text_model::RichTextRubyPosition::Over)
+            );
+        }
+        other => panic!("unexpected typed style: {other:?}"),
+    }
+    assert_eq!(scope["origin"]["kind"], "authored");
+    let origin = &scope["origin"]["source"];
+    assert_eq!(
+        origin["source"], line["source"],
+        "exact product source/revision/length"
+    );
+    let start = usize::try_from(origin["start"].as_u64().unwrap()).unwrap();
+    let end = usize::try_from(origin["end"].as_u64().unwrap()).unwrap();
+    let authored = source
+        .get(start..end)
+        .expect("bounded original UTF-8 byte coordinates");
     assert!(
-        contributions.iter().any(|contribution| {
-            contribution["layer"] == expected.layer
-                && contribution["path"] == expected.path
-                && contribution["value"] == expected.value
-                && contribution["source"]["kind"] == "source_file"
-                && expected
-                    .active
-                    .is_none_or(|active| contribution["active"] == active)
-                && (!expected.requires_range
-                    || (contribution["source"]["range"]["start"].is_number()
-                        && contribution["source"]["range"]["end"].is_number()))
-        }),
-        "plan JSON should include {} provenance: {stdout}",
-        expected.context
+        authored.contains(authored_value),
+        "source-backed style: {authored:?}"
     );
 }
-
 fn assert_budgeted_dialogue_prefix(output: &std::process::Output, expected_statuses: &[&str]) {
     assert!(
         output.status.success(),

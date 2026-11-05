@@ -59,7 +59,6 @@ fn context() -> RuntimeLineContext {
             InlineFailurePolicy::FailLine,
         ),
         Vec::new(),
-        Vec::new(),
     )
 }
 
@@ -86,7 +85,6 @@ fn line(nodes: Vec<RichTextNode>) -> TestLine {
             support::dialogue_profile(),
             support::dialogue_profile_revision(),
         ),
-        Vec::new(),
         source_ref(),
     )
     .expect("test dialogue spec");
@@ -286,12 +284,15 @@ fn direct_rich_text_resolution_preserves_ruby_style_and_presentation() {
         ..RichTextLayoutUpdate::default()
     };
     let document = RichTextDocument::new(vec![RichTextNode::Scope {
+        origin: arcweft_text_model::RichTextStyleOrigin::Generated,
         style: Box::new(RichTextStyle::Strong),
         body: vec![RichTextNode::Scope {
+            origin: arcweft_text_model::RichTextStyleOrigin::Generated,
             style: Box::new(RichTextStyle::Layout {
                 layout: layout.clone(),
             }),
             body: vec![RichTextNode::Scope {
+                origin: arcweft_text_model::RichTextStyleOrigin::Generated,
                 style: Box::new(RichTextStyle::Presentation {
                     presentation: RichTextPresentationStyle {
                         opacity: Some(Milli(625)),
@@ -350,16 +351,19 @@ fn direct_rich_text_resolution_preserves_ruby_style_and_presentation() {
 #[test]
 fn cascade_applies_closed_color_and_font_values_without_losing_presentation() {
     let document = RichTextDocument::new(vec![RichTextNode::Scope {
+        origin: arcweft_text_model::RichTextStyleOrigin::Generated,
         style: Box::new(RichTextStyle::Font {
             family: RichTextFontFamily::Monospace,
         }),
         body: vec![RichTextNode::Scope {
+            origin: arcweft_text_model::RichTextStyleOrigin::Generated,
             style: Box::new(RichTextStyle::Color {
                 value: RichTextColor::Rgba8 {
                     value: [0x12, 0x34, 0x56, 0xff],
                 },
             }),
             body: vec![RichTextNode::Scope {
+                origin: arcweft_text_model::RichTextStyleOrigin::Generated,
                 style: Box::new(RichTextStyle::Presentation {
                     presentation: RichTextPresentationStyle {
                         opacity: Some(Milli(500)),
@@ -385,6 +389,7 @@ fn cascade_applies_closed_color_and_font_values_without_losing_presentation() {
 #[test]
 fn nested_ruby_layout_does_not_reset_the_inherited_vertical_flow() {
     let document = RichTextDocument::new(vec![RichTextNode::Scope {
+        origin: arcweft_text_model::RichTextStyleOrigin::Generated,
         style: Box::new(RichTextStyle::Layout {
             layout: RichTextLayoutUpdate {
                 writing_mode: Some(RichTextWritingMode::VerticalRl),
@@ -392,6 +397,7 @@ fn nested_ruby_layout_does_not_reset_the_inherited_vertical_flow() {
             },
         }),
         body: vec![RichTextNode::Scope {
+            origin: arcweft_text_model::RichTextStyleOrigin::Generated,
             style: Box::new(RichTextStyle::Layout {
                 layout: RichTextLayoutUpdate {
                     ruby_position: Some(RichTextRubyPosition::Under),
@@ -421,6 +427,7 @@ fn nested_ruby_layout_does_not_reset_the_inherited_vertical_flow() {
 #[test]
 fn nested_explicit_horizontal_layout_resets_the_resolved_vertical_flow() {
     let document = RichTextDocument::new(vec![RichTextNode::Scope {
+        origin: arcweft_text_model::RichTextStyleOrigin::Generated,
         style: Box::new(RichTextStyle::Layout {
             layout: RichTextLayoutUpdate {
                 writing_mode: Some(RichTextWritingMode::VerticalRl),
@@ -429,6 +436,7 @@ fn nested_explicit_horizontal_layout_resets_the_resolved_vertical_flow() {
             },
         }),
         body: vec![RichTextNode::Scope {
+            origin: arcweft_text_model::RichTextStyleOrigin::Generated,
             style: Box::new(RichTextStyle::Layout {
                 layout: RichTextLayoutUpdate {
                     writing_mode: Some(RichTextWritingMode::HorizontalTb),
@@ -517,6 +525,7 @@ fn authored_point_and_pixel_sizes_resolve_to_the_same_logical_metrics() {
 #[test]
 fn style_resolution_rejects_zero_sized_authored_text() {
     let document = RichTextDocument::new(vec![RichTextNode::Scope {
+        origin: arcweft_text_model::RichTextStyleOrigin::Generated,
         style: Box::new(RichTextStyle::Size {
             length: CheckedLength::px(0),
         }),

@@ -503,7 +503,6 @@ mod dynamic_character_dialogue_context_tests {
                     DialoguePresentationProfile::engine_default(),
                     profile_revision(),
                 ),
-                Vec::new(),
                 source,
             )
             .expect("canonical dialogue content spec")

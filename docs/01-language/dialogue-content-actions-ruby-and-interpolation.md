@@ -52,6 +52,14 @@ declared content type is dialogue/rich text, are point controls, host actions,
 typed `#name(args)[content]` calls, and `#[...]` interpreted as dialogue markup.
 In normal typed code, brackets keep their normal meaning.
 
+An accepted modifier owns one lexical scope in the canonical Content tree.
+Its typed style and original product-source revision and byte range stay on
+that scope through nested Content expansion, frame resolution and saved-frame
+round trips. Formatting may generate a scope without an authored location;
+that origin is represented explicitly. Nested scopes determine the affected
+body and local override order. Static inspection exposes these same templates,
+without a separate flat cascade list or a global active/shadowed flag.
+
 Apostrophes in dialogue body text are ordinary text. Double-quoted source
 ranges retain their text and protect enclosed delimiters.
 Quoted argument values belong to point-action heads, and string literals belong

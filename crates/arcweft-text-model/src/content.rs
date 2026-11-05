@@ -1125,10 +1125,15 @@ impl MaterializationState<'_> {
                         }
                     }
                 }
-                RichTextNode::Scope { style, body } => {
+                RichTextNode::Scope {
+                    style,
+                    origin,
+                    body,
+                } => {
                     self.record_origin(template, occurrence, node_index)?;
                     expanded.push(RichTextNode::Scope {
                         style: style.clone(),
+                        origin: origin.clone(),
                         body: self.expand_nodes(
                             template, value, depth, occurrence, slots, marks, effects, body,
                         )?,
@@ -1273,6 +1278,7 @@ impl MaterializationState<'_> {
                         self.origins.extend(child_origins);
                         Ok(vec![RichTextNode::Scope {
                             style: Box::new(color_style(*color)),
+                            origin: crate::RichTextStyleOrigin::Generated,
                             body: nodes,
                         }])
                     } else {
@@ -1562,6 +1568,7 @@ fn colored_text_nodes(
     match color {
         Some(color) => vec![RichTextNode::Scope {
             style: Box::new(color_style(color)),
+            origin: crate::RichTextStyleOrigin::Generated,
             body: vec![RichTextNode::Text {
                 text: text.to_owned(),
             }],
@@ -1745,6 +1752,7 @@ mod tests {
         assert_eq!(
             materialized.document().nodes,
             vec![RichTextNode::Scope {
+                origin: crate::RichTextStyleOrigin::Generated,
                 style: Box::new(RichTextStyle::Color {
                     value: RichTextColor::Rgba8 {
                         value: [1, 2, 3, 255]

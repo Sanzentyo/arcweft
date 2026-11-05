@@ -490,7 +490,6 @@ mod tests {
                 crate::test_dialogue_profile(),
                 crate::test_dialogue_profile_revision(),
             ),
-            Vec::new(),
             source,
         )
         .expect("dialogue spec");

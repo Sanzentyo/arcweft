@@ -17,7 +17,7 @@ use arcweft_runtime_host::{
 };
 use arcweft_runtime_plan::flow::{RuntimePlanLowerReport, RuntimePlanLowerStats};
 use arcweft_test::{ScriptBench, ScriptTest};
-use arcweft_text_model::DialogueContentSpec;
+use arcweft_text_model::DialogueContentCatalog;
 use arcweft_tooling::runtime_diagnostic::{
     RuntimeAssertionDiagnosticIdentity, project_runtime_assertion_fault,
 };
@@ -178,9 +178,9 @@ struct SourceDiagnosticCommandReport<'a> {
 }
 
 #[derive(serde::Serialize)]
-pub(crate) struct RuntimePlanReport {
+pub(crate) struct RuntimePlanReport<'a> {
     pub(crate) lines: Vec<RuntimeLinePlanSummary>,
-    pub(crate) dialogue_content_catalog: Vec<DialogueContentSpec>,
+    pub(crate) dialogue_content_catalog: &'a DialogueContentCatalog,
     pub(crate) streams: Vec<RuntimeStreamPlanSummary>,
     pub(crate) verifier_diagnostics: usize,
     pub(crate) verifier_obligations: usize,
@@ -227,10 +227,10 @@ struct RuntimeTaskSummary {
     scope: Box<RuntimeScopeSummary>,
 }
 
-impl RuntimePlanReport {
+impl<'a> RuntimePlanReport<'a> {
     pub(crate) fn from_lowered(
         checked: &CheckedModule,
-        runtime_report: &RuntimePlanLowerReport,
+        runtime_report: &'a RuntimePlanLowerReport,
     ) -> Result<Self, ExitCode> {
         let verification = verify_compiled_project(
             &checked.compiled,
@@ -248,7 +248,7 @@ impl RuntimePlanReport {
                 .iter()
                 .map(RuntimeLinePlanSummary::from_lowered)
                 .collect(),
-            dialogue_content_catalog: runtime_report.dialogue_content_catalog.records().to_vec(),
+            dialogue_content_catalog: &runtime_report.dialogue_content_catalog,
             streams: runtime_report
                 .plan
                 .stream_plans()

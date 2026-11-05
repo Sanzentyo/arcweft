@@ -2961,7 +2961,6 @@ fn project_dialogue_application(
         &template,
         plan,
         presentation,
-        Vec::new(),
         source,
     )
     .map_err(|error| RuntimeSemanticProjectionError::Dialogue {
@@ -3155,6 +3154,35 @@ fn character_presentation_record(
     .map_err(|error| RuntimeSemanticProjectionError::Dialogue {
         owner: None,
         reason: error.to_string(),
+    })
+}
+
+fn lower_content_style_origin(
+    project: HirAnalysisProjectView<'_>,
+    application: ExprId,
+) -> Result<arcweft_text_model::RichTextStyleOrigin, RuntimeSemanticProjectionError> {
+    use arcweft_lang_hir::source_index::{HirExprSourceRole, HirSourceQuery};
+
+    let error = |reason: String| RuntimeSemanticProjectionError::Dialogue {
+        owner: Some(application),
+        reason,
+    };
+    let module = project
+        .modules()
+        .find_map(|(_, module)| (module.module_id() == application.module()).then_some(module))
+        .ok_or_else(|| error("content style application module is absent".to_owned()))?;
+    let span = module
+        .source_anchor(HirSourceQuery::Expr {
+            owner: application,
+            role: HirExprSourceRole::Whole,
+        })
+        .map_err(|cause| error(cause.to_string()))?
+        .ok_or_else(|| error("content style application has no original source span".to_owned()))?;
+    Ok(arcweft_text_model::RichTextStyleOrigin::Authored {
+        source: Box::new(
+            arcweft_text_model::RichTextStyleSource::try_from(&span)
+                .map_err(|cause| error(cause.to_string()))?,
+        ),
     })
 }
 
@@ -3552,6 +3580,7 @@ fn lower_checked_rich_text(
                         merge_child_marks(owner, &mut marks, child_marks)?;
                         nodes.push(RichTextNode::Scope {
                             style: Box::new(lower_content_modifier(owner, modifier)?),
+                            origin: lower_content_style_origin(project, insertion.site().raw())?,
                             body,
                         });
                         nested_fragments.extend(child_nested);
@@ -3586,6 +3615,7 @@ fn lower_checked_rich_text(
                         effects.extend(child_effects);
                         merge_child_marks(owner, &mut marks, child_marks)?;
                         nodes.push(RichTextNode::Scope {
+                            origin: lower_content_style_origin(project, insertion.site().raw())?,
                             style: Box::new(lower_content_fx_application(
                                 owner,
                                 application,
@@ -3699,6 +3729,7 @@ fn lower_checked_rich_text(
                         merge_child_marks(owner, &mut marks, child_marks)?;
                         nodes.push(RichTextNode::Scope {
                             style: Box::new(RichTextStyle::Object { proxy }),
+                            origin: lower_content_style_origin(project, insertion.site().raw())?,
                             body,
                         });
                         nested_fragments.extend(child_nested);
@@ -4015,8 +4046,13 @@ fn rebase_structured_node(
             slot: rebase_slot(slot)?,
             on_error,
         },
-        RichTextNode::Scope { style, body } => RichTextNode::Scope {
+        RichTextNode::Scope {
             style,
+            origin,
+            body,
+        } => RichTextNode::Scope {
+            style,
+            origin,
             body: body
                 .into_iter()
                 .map(|node| {

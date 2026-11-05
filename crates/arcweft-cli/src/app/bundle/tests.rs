@@ -559,7 +559,6 @@ fn bundle_hydrates_default_view_localization_from_matching_content_text_key() {
             DialoguePresentationProfile::engine_default(),
             test_dialogue_profile_revision(),
         ),
-        Vec::new(),
         ProductSourceRef::try_for_identity(source.identity()).expect("product source"),
     )
     .expect("dialogue spec");

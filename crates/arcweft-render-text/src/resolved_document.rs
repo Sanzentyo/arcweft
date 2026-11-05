@@ -1059,7 +1059,7 @@ impl<'a> StaticDocumentResolver<'a> {
                 RichTextNode::Raw { text } => {
                     self.push_text(text, current_index, styles, self.source)?;
                 }
-                RichTextNode::Scope { style, body } => {
+                RichTextNode::Scope { style, body, .. } => {
                     let mut nested_styles = styles.to_vec();
                     nested_styles.push(style.as_ref().clone());
                     self.resolve_nodes(body, &nested_styles, node_index, in_ruby, ruby)?;

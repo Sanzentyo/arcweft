@@ -846,7 +846,6 @@ fn ordinary_and_dialogue_restore_roots_cannot_share_a_handle_identity() {
         ),
         text: String::new(),
         base_styles: Vec::new(),
-        style_contributions: Vec::new(),
         nodes: Vec::new(),
         display_map: arcweft_text_model::RichTextDisplayMap::default(),
         host_events: Vec::new(),

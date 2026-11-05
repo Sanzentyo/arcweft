@@ -1283,7 +1283,6 @@ fn dialogue_content_catalog(
             DialoguePresentationProfile::engine_default(),
             test_dialogue_profile_revision(),
         ),
-        Vec::new(),
         source_map
             .primary_document()
             .expect("fixture source map retains its source")

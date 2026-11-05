@@ -836,7 +836,6 @@ impl CatalogBudget {
                     frame.display_map.ruby_annotations.len(),
                     frame.display_map.controls.len(),
                     frame.display_map.host_events.len(),
-                    frame.style_contributions.len(),
                     frame.inline_failures.len(),
                     frame.unresolved.len(),
                 ]

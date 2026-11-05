@@ -67,7 +67,6 @@ fn test_line_context() -> RuntimeLineContext {
             InlineFailurePolicy::FailLine,
         ),
         Vec::new(),
-        Vec::new(),
     )
 }
 
@@ -543,6 +542,7 @@ fn mounted_view_rich_text_preserves_vertical_ruby_in_prepared_painter_order() {
     };
     presentation.view.mounts[0].text[0].value = BundleViewTextValue::RichTextDocument {
         document: Box::new(RichTextDocument::new(vec![RichTextNode::Scope {
+            origin: arcweft_text_model::RichTextStyleOrigin::Generated,
             style: Box::new(RichTextStyle::Layout {
                 layout: RichTextLayoutUpdate {
                     writing_mode: Some(RichTextWritingMode::VerticalRl),
@@ -658,7 +658,6 @@ fn mounted_view_localized_and_display_stage_sources_prepare_without_plain_fallba
             support::dialogue_profile(),
             support::dialogue_profile_revision(),
         ),
-        Vec::new(),
         test_source_ref(),
     )
     .expect("dialogue spec");
