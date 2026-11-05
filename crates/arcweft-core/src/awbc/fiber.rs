@@ -574,6 +574,8 @@ pub struct FiberFrame<
     pub instance: RuntimeFrameInstanceId,
     pub function: AwbcFunctionId,
     pub type_instantiation: Option<B>,
+    /// Original logical input order, independent of parameter register layout.
+    pub input_order: std::sync::Arc<crate::value::RuntimeInputOrder>,
     pub layout: AwbcFrameLayoutId,
     pub return_to: Option<R>,
     pub registers: Vec<RuntimePlaceStorage<V>>,
@@ -595,6 +597,7 @@ impl<V: InertRuntimeValueStorage + Clone, B: Clone, R: Clone, G: Clone> Clone
             instance: self.instance,
             function: self.function,
             type_instantiation: self.type_instantiation.clone(),
+            input_order: std::sync::Arc::clone(&self.input_order),
             layout: self.layout,
             return_to: self.return_to.clone(),
             registers: self.registers.clone(),
@@ -1329,6 +1332,9 @@ impl AwbcFiberStateSnapshot {
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
     ) -> AwbcSaveResult<()> {
+        for frame in &self.frames {
+            admission.validate_metadata(&frame.input_order)?;
+        }
         admission.admit_composite(
             crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
             |owner, resources| {
@@ -1438,6 +1444,7 @@ impl AwbcFiberFrameSnapshot {
             instance: frame.instance,
             function: frame.function,
             type_instantiation: frame.type_instantiation.as_deref().cloned(),
+            input_order: std::sync::Arc::clone(&frame.input_order),
             layout: frame.layout,
             return_to: frame
                 .return_to
@@ -1486,6 +1493,7 @@ impl AwbcFiberFrameSnapshot {
             instance: self.instance,
             function: self.function,
             type_instantiation: self.type_instantiation.map(std::sync::Arc::new),
+            input_order: self.input_order,
             layout: self.layout,
             return_to: self
                 .return_to
@@ -1805,6 +1813,8 @@ impl<P, V> FiberReturnContinuation<P, V> {
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum FiberStateError {
+    #[error(transparent)]
+    InputOrder(#[from] crate::value::RuntimeInputOrderError),
     #[error("Program capture {position} requires unrestricted Copy custody")]
     ProgramCaptureCopy { position: usize },
     #[error("Program capture moves register {register:?} more than once")]
@@ -1959,6 +1969,9 @@ impl FiberState {
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
     ) -> AwbcSaveResult<()> {
+        for frame in &self.frames {
+            admission.validate_metadata(&frame.input_order)?;
+        }
         admission.admit_composite(
             crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
             |owner, resources| {
@@ -2461,13 +2474,15 @@ impl FiberState {
         );
         let mut values = invocation.captures;
         values.extend(invocation.arguments);
-        Self::for_function_with_arguments_prepared(
+        let mut fiber = Self::for_function_with_arguments_prepared(
             program,
             AwbcFiberRoot::Function(function),
             values,
             input_layout,
             creation,
-        )
+        );
+        fiber.frames[0].input_order = std::sync::Arc::new(invocation.input_order);
+        fiber
     }
 
     /// Transactionally binds checked Flow parameter coordinates to the active
@@ -3624,6 +3639,43 @@ impl FiberState {
         return_to: FiberReturnPoint,
         args: Vec<RuntimeValue>,
     ) -> Result<(), FiberStateError> {
+        let order = crate::value::RuntimeInputOrder::for_arity(args.len())?;
+        self.push_call_frame_at_owned_ordered(program, function, return_to, args, order)
+    }
+
+    /// Transfers the original callable packet into its actual execution frame.
+    pub(crate) fn push_callable_invocation(
+        &mut self,
+        program: &AwbcProgram,
+        invocation: crate::value::RuntimeCallableInvocation,
+        return_to: FiberReturnPoint,
+    ) -> Result<(), FiberStateError> {
+        let crate::value::RuntimeCallableBodyReference::Awbc(function) = invocation.body else {
+            return Err(FiberStateError::InvalidFrame);
+        };
+        invocation
+            .input_order
+            .validate_arity(invocation.captures.len() + invocation.arguments.len())?;
+        let mut values = invocation.captures;
+        values.extend(invocation.arguments);
+        self.push_call_frame_at_owned_ordered(
+            program,
+            function,
+            return_to,
+            values,
+            invocation.input_order,
+        )
+    }
+
+    fn push_call_frame_at_owned_ordered(
+        &mut self,
+        program: &AwbcProgram,
+        function: AwbcFunctionId,
+        return_to: FiberReturnPoint,
+        args: Vec<RuntimeValue>,
+        input_order: crate::value::RuntimeInputOrder,
+    ) -> Result<(), FiberStateError> {
+        input_order.validate_arity(args.len())?;
         self.require_status(FiberStatus::Running)?;
         match return_to.continuation {
             FiberReturnContinuation::FormatOperand { .. } if self.cursor != return_to.cursor => {
@@ -3655,6 +3707,7 @@ impl FiberState {
             next_frame_instance.take_next(RuntimeIdNamespace::FrameInstance)?,
         );
         let mut frame = FiberFrame::new(frame_instance, program, function, Some(return_to))?;
+        frame.input_order = std::sync::Arc::new(input_order);
         frame.bind_positional_arguments_owned(program, args)?;
         self.next_frame_instance = next_frame_instance;
         self.frames.push(frame);
@@ -4088,6 +4141,7 @@ impl FiberState {
                 frame.layout,
                 frame.type_instantiation.as_deref(),
                 frame.registers.len(),
+                &frame.input_order,
                 &resources.work(),
             )?;
         }
@@ -4326,6 +4380,7 @@ fn validate_frame_layout<'program>(
     layout: AwbcFrameLayoutId,
     instantiation: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
     register_count: usize,
+    input_order: &crate::value::RuntimeInputOrder,
     work: &crate::entry::schema::value_budget::ValidationWork,
 ) -> Result<&'program super::schema::AwbcFrameLayout, FiberStateError> {
     work.clone()
@@ -4341,6 +4396,11 @@ fn validate_frame_layout<'program>(
     if function.frame_layout != layout {
         return Err(FiberStateError::InvalidFrame);
     }
+    let signature = program
+        .signatures
+        .get(function.signature.index())
+        .ok_or(FiberStateError::InvalidFrame)?;
+    input_order.validate_arity(signature.params.len())?;
     match (function.type_context, instantiation) {
         (None, None) => {}
         (Some(context), Some(binding))
@@ -4374,6 +4434,7 @@ fn validate_frame(
         frame.layout,
         frame.type_instantiation.as_deref(),
         frame.registers.len(),
+        &frame.input_order,
         &resources.work(),
     )?;
     let context = frame.value_context(program)?;
@@ -5444,10 +5505,17 @@ impl FiberFrame {
             .ok_or(FiberStateError::UnknownFrameLayout(
                 function_record.frame_layout.0,
             ))?;
+        let signature = program
+            .signatures
+            .get(function_record.signature.index())
+            .ok_or(FiberStateError::InvalidFrame)?;
         Ok(Self {
             instance,
             function,
             type_instantiation: None,
+            input_order: std::sync::Arc::new(crate::value::RuntimeInputOrder::for_arity(
+                signature.params.len(),
+            )?),
             layout: function_record.frame_layout,
             return_to,
             registers: vec![RuntimePlaceStorage::default(); layout.slots.len()],
@@ -6039,6 +6107,79 @@ mod tests {
             crate::plan::RuntimePlanBuilder::default().finish().unwrap(),
         ));
         assert!(image.into_live_for_program(&foreign).is_err());
+    }
+
+    #[test]
+    fn frame_order_survives_json_restore_and_rejects_wrong_arity_before_values() {
+        let mut program = one_unit_parameter_entry_program();
+        program.signatures[0].params.push(AwbcTypeId(0));
+        let second_slot = program.frame_layouts[0].slots[0].clone();
+        program.frame_layouts[0].slots.push(second_slot);
+        program.functions[0]
+            .input_ownership
+            .push(AwbcFunctionInputOwnership::parameter(
+                manual_awbc_formal_identity("arcweft-core.fixture.awbc.frame-order.second"),
+                1,
+                crate::plan::RuntimeFunctionParameterPassing::Value,
+            ));
+        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
+        let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).unwrap();
+        fiber
+            .bind_function_argument_values_owned(
+                &program,
+                vec![RuntimeValue::Unit, RuntimeValue::Unit],
+            )
+            .unwrap();
+        fiber.frames[0].input_order =
+            std::sync::Arc::new(crate::value::RuntimeInputOrder::try_new([1, 0]).unwrap());
+        let saved = AwbcFiberStateSnapshot::from_live(
+            &fiber,
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                owner.clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )
+        .unwrap();
+        let decoded: AwbcFiberStateSnapshot =
+            serde_json::from_slice(&serde_json::to_vec(&saved).unwrap()).unwrap();
+        let restored = decoded.into_live_for_program(&owner).unwrap();
+        assert_eq!(restored.frames[0].input_order.slots(), [1, 0]);
+        let mut malformed = saved.clone();
+        malformed.frames[0].input_order =
+            std::sync::Arc::new(crate::value::RuntimeInputOrder::canonical(1));
+        malformed.frames[0].registers[0] =
+            AwbcRuntimeValueSnapshot::Callable(crate::value::AwbcRuntimeCallableSnapshot {
+                state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(999).unwrap(),
+                retained: vec![],
+                retained_order: crate::value::RuntimeInputOrder::canonical(0),
+            })
+            .into();
+        assert!(
+            malformed
+                .into_live_for_program(&owner)
+                .unwrap_err()
+                .to_string()
+                .contains("input order has 1 slots, expected 2")
+        );
+        let mut wire = serde_json::to_value(&saved).unwrap();
+        wire["frames"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("input_order");
+        assert!(serde_json::from_value::<AwbcFiberStateSnapshot>(wire).is_err());
+        let error = AwbcFiberStateSnapshot::from_live(
+            &fiber,
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                owner,
+                crate::entry::RuntimeSchemaLimits {
+                    max_metadata_bytes: 0,
+                    ..crate::entry::RuntimeSchemaLimits::engine_default()
+                },
+            ),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("metadata_bytes"));
+        assert_eq!(fiber.frames[0].input_order.slots(), [1, 0]);
     }
 
     #[test]

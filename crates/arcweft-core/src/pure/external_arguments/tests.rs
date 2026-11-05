@@ -140,6 +140,105 @@ fn context(plan: Arc<RuntimePlan>, limits: RuntimeSchemaLimits) -> RuntimeExtern
 }
 
 #[test]
+fn forwarded_order_changes_descriptors_while_abi_values_and_inner_none_stay_in_place() {
+    use crate::value::{RuntimeExternalCallOperandOrder as OrderSource, RuntimeInputOrder};
+    let plan = plan();
+    let mut rows = target().operands().to_vec();
+    rows.sort_unstable_by_key(|row| row.abi_position);
+    let forwarded = target()
+        .with_operands(rows.into_boxed_slice())
+        .unwrap()
+        .with_operand_order(OrderSource::InvocationInputs)
+        .unwrap();
+    let order = Arc::new(RuntimeInputOrder::try_new([3, 2, 0, 1]).unwrap());
+    let execution =
+        RuntimeProgramExecutionContext::native(Arc::clone(&plan), RuntimeFormatContext::default())
+            .with_input_order(Some(&order));
+    let original = RuntimeExternalCallContext::for_program(
+        execution,
+        [OPTION, STRING, OPTION, NESTED_OPTION],
+        BOOL,
+        RuntimeSchemaLimits::engine_default(),
+    )
+    .unwrap();
+    let prepared = original
+        .prepare_external_bindings(&forwarded, arguments("kept"))
+        .unwrap();
+    let RuntimeCallTarget::External(call) = prepared.callee else {
+        panic!("external target")
+    };
+    assert_eq!(call.operand_order(), OrderSource::Authored);
+    assert_eq!(
+        call.operands()
+            .iter()
+            .map(|row| (row.parameter.unwrap().parameter, row.abi_position))
+            .collect::<Vec<_>>(),
+        [(3, 2), (0, 0), (1, 1)]
+    );
+    assert_eq!(
+        prepared.arguments,
+        [
+            RuntimeValue::Bool(true),
+            RuntimeValue::String("kept".into()),
+            RuntimeValue::option_none()
+        ]
+    );
+    assert_eq!(
+        prepared.context.argument_types(),
+        Some([BOOL, STRING, OPTION].as_slice())
+    );
+    assert_eq!(
+        prepared
+            .context
+            .execution_context()
+            .unwrap()
+            .input_order()
+            .unwrap()
+            .slots(),
+        [3, 2, 0, 1]
+    );
+}
+
+#[test]
+fn forwarding_requires_the_actual_complete_invocation_order() {
+    use crate::value::{RuntimeExternalCallOperandOrder, RuntimeInputOrder};
+    let plan = plan();
+    let mut rows = target().operands().to_vec();
+    rows.sort_unstable_by_key(|row| row.abi_position);
+    let forwarded = target()
+        .with_operands(rows.into_boxed_slice())
+        .unwrap()
+        .with_operand_order(RuntimeExternalCallOperandOrder::InvocationInputs)
+        .unwrap();
+    let missing = context(Arc::clone(&plan), RuntimeSchemaLimits::engine_default())
+        .prepare_external_bindings(&forwarded, arguments("kept"))
+        .unwrap_err();
+    assert!(matches!(
+        *missing,
+        RuntimeExternalCallArgumentError::MissingInputOrder
+    ));
+    let order = Arc::new(RuntimeInputOrder::canonical(3));
+    let execution = RuntimeProgramExecutionContext::native(plan, RuntimeFormatContext::default())
+        .with_input_order(Some(&order));
+    let wrong = RuntimeExternalCallContext::for_program(
+        execution,
+        [OPTION, STRING, OPTION, NESTED_OPTION],
+        BOOL,
+        RuntimeSchemaLimits::engine_default(),
+    )
+    .unwrap()
+    .prepare_external_bindings(&forwarded, arguments("kept"))
+    .unwrap_err();
+    assert!(matches!(
+        *wrong,
+        RuntimeExternalCallArgumentError::InputOrder(crate::value::RuntimeInputOrderError::Arity {
+            expected: 4,
+            actual: 3
+        })
+    ));
+}
+
+#[test]
 fn external_optional_bindings_preserve_owner_limits_source_order_and_inner_none() {
     let plan = plan();
     let limits = RuntimeSchemaLimits {

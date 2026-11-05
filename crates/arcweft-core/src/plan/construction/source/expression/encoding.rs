@@ -605,6 +605,7 @@ impl Sink<'_, '_> {
                     }
                 }
                 self.raw(&declaration.overload().to_le_bytes())?;
+                self.byte(callable.operand_order().semantic_tag())?;
                 self.counts.array(
                     callable.operands().len(),
                     size_of::<RuntimeExternalCallOperand>()

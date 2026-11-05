@@ -434,6 +434,7 @@ pub trait VmHost {
         program: &AwbcProgram,
         intrinsic: AwbcIntrinsicId,
         args: Vec<RuntimeValue>,
+        _input_order: &std::sync::Arc<crate::value::RuntimeInputOrder>,
     ) -> Result<Option<RuntimeValue>, VmError>;
 
     /// Returns a backend result when one is available. The VM enters the
@@ -472,6 +473,7 @@ impl VmHost for RejectingVmHost {
         _program: &AwbcProgram,
         intrinsic: AwbcIntrinsicId,
         _args: Vec<RuntimeValue>,
+        _input_order: &std::sync::Arc<crate::value::RuntimeInputOrder>,
     ) -> Result<Option<RuntimeValue>, VmError> {
         Err(VmError::MissingIntrinsic(intrinsic))
     }
@@ -2005,8 +2007,12 @@ fn execute_instruction(
                         }
                     }
                 }
-            } else if let Some(value) = host.call_intrinsic(program, *intrinsic, args)?
-                && let Some(dst) = dst
+            } else if let Some(value) = host.call_intrinsic(
+                program,
+                *intrinsic,
+                args,
+                &fiber.active_frame()?.input_order,
+            )? && let Some(dst) = dst
             {
                 fiber.active_frame_mut()?.set_register(*dst, value)?;
             }
@@ -2982,18 +2988,14 @@ fn apply_runtime_callable(
             Ok(InstructionControl::Continue)
         }
         RuntimeCallableApplication::Invoke(invocation) => {
-            let function = invocation_function(&invocation)?;
-            let values = invocation_values(invocation)?;
             let return_to = FiberReturnPoint::ordinary(return_cursor, Some(destination));
-            fiber.push_call_frame_at_owned(program, function, return_to, values)?;
+            fiber.push_callable_invocation(program, invocation, return_to)?;
             Ok(InstructionControl::Transferred)
         }
         RuntimeCallableApplication::AttachedDefault {
             invocation,
             pending,
         } => {
-            let function = invocation_function(&invocation)?;
-            let values = invocation_values(invocation)?;
             let return_to = FiberReturnPoint {
                 cursor: return_cursor,
                 destination: None,
@@ -3002,25 +3004,10 @@ fn apply_runtime_callable(
                     destination,
                 },
             };
-            fiber.push_call_frame_with_owned_continuation(program, function, return_to, values)?;
+            fiber.push_callable_invocation(program, invocation, return_to)?;
             Ok(InstructionControl::Transferred)
         }
     }
-}
-
-fn invocation_function(invocation: &RuntimeCallableInvocation) -> Result<AwbcFunctionId, VmError> {
-    match invocation.body {
-        RuntimeCallableBodyReference::Awbc(function) => Ok(function),
-        RuntimeCallableBodyReference::Plan(_) => Err(VmError::Runtime(
-            "an AWBC callable selected a structured function body".to_owned(),
-        )),
-    }
-}
-
-fn invocation_values(invocation: RuntimeCallableInvocation) -> Result<Vec<RuntimeValue>, VmError> {
-    let mut values = invocation.captures;
-    values.extend(invocation.arguments);
-    Ok(values)
 }
 
 fn context_intrinsic_kind(
@@ -3078,17 +3065,14 @@ fn enter_context_callback_frame(
     invocation: RuntimeCallableInvocation,
     continuation: FiberReturnContinuation,
 ) -> Result<(), VmError> {
-    let function = invocation_function(&invocation)?;
-    let values = invocation_values(invocation)?;
-    fiber.push_call_frame_with_owned_continuation(
+    fiber.push_callable_invocation(
         program,
-        function,
+        invocation,
         FiberReturnPoint {
             cursor: fiber.cursor,
             destination: None,
             continuation,
         },
-        values,
     )?;
     host.record_context_callback_vm_call();
     Ok(())
@@ -4071,27 +4055,23 @@ fn execute_project_call(
             jump(fiber, resume.block);
         }
         RuntimeCallableApplication::Invoke(invocation) => {
-            let function = invocation_function(&invocation)?;
-            let args = invocation_values(invocation)?;
             let point = project_call_return_point(program, fiber, call.resume, site)?;
             let return_to = FiberReturnPoint {
                 continuation: FiberReturnContinuation::ProjectCallTarget { site },
                 ..point
             };
-            fiber.push_call_frame_with_owned_continuation(program, function, return_to, args)?;
+            fiber.push_callable_invocation(program, invocation, return_to)?;
         }
         RuntimeCallableApplication::AttachedDefault {
             invocation,
             pending,
         } => {
-            let function = invocation_function(&invocation)?;
-            let args = invocation_values(invocation)?;
             let point = project_call_return_point(program, fiber, call.resume, site)?;
             let return_to = FiberReturnPoint {
                 continuation: FiberReturnContinuation::ProjectCallDefault { site, pending },
                 ..point
             };
-            fiber.push_call_frame_with_owned_continuation(program, function, return_to, args)?;
+            fiber.push_callable_invocation(program, invocation, return_to)?;
         }
     }
     Ok(VmExit::Running)
@@ -4174,12 +4154,8 @@ fn complete_project_call_return(
                     fiber.active_frame_mut()?.set_register(destination, value)?;
                 }
                 RuntimeCallableApplication::Invoke(invocation) => {
-                    let function = invocation_function(&invocation)?;
-                    let args = invocation_values(invocation)?;
                     let return_to = FiberReturnPoint::ordinary(return_cursor, Some(destination));
-                    fiber.push_call_frame_with_owned_continuation(
-                        program, function, return_to, args,
-                    )?;
+                    fiber.push_callable_invocation(program, invocation, return_to)?;
                 }
                 RuntimeCallableApplication::AttachedDefault { .. } => {
                     return Err(VmError::Runtime(
@@ -4264,16 +4240,12 @@ fn complete_project_call_return(
                     jump(fiber, resume.block);
                 }
                 RuntimeCallableApplication::Invoke(invocation) => {
-                    let function = invocation_function(&invocation)?;
-                    let args = invocation_values(invocation)?;
                     let point = project_call_return_point(program, fiber, call.resume, site)?;
                     let return_to = FiberReturnPoint {
                         continuation: FiberReturnContinuation::ProjectCallTarget { site },
                         ..point
                     };
-                    fiber.push_call_frame_with_owned_continuation(
-                        program, function, return_to, args,
-                    )?;
+                    fiber.push_callable_invocation(program, invocation, return_to)?;
                 }
                 RuntimeCallableApplication::AttachedDefault { .. } => {
                     return Err(VmError::Runtime(

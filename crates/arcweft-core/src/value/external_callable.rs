@@ -47,8 +47,37 @@ impl RuntimeExternalCallOperandProjection {
     }
 }
 
+/// Source of descriptor order. A declaration wrapper forwards its complete
+/// enclosing input ABI; ordinary authored calls own their operand order.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum RuntimeExternalCallOperandOrder {
+    Authored,
+    InvocationInputs,
+}
+
+impl RuntimeExternalCallOperandOrder {
+    #[must_use]
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Authored => 0,
+            Self::InvocationInputs => 1,
+        }
+    }
+
+    #[must_use]
+    pub const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        match tag {
+            0 => Some(Self::Authored),
+            1 => Some(Self::InvocationInputs),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, thiserror::Error, Eq, PartialEq)]
 pub enum RuntimeExternalCallOperandError {
+    #[error("external invocation-input forwarding requires one formal per ABI slot in input order")]
+    InvocationInputLayout,
     #[error("external operands do not cover one contiguous ABI range")]
     InvalidRange,
     #[error("external optional operand {operand} must name one formal and one binding")]
@@ -204,6 +233,7 @@ pub struct RuntimeExternalCallable {
     identity: RuntimeCallableId,
     declaration: RuntimeExternalCallableDeclaration,
     operands: Box<[RuntimeExternalCallOperand]>,
+    operand_order: RuntimeExternalCallOperandOrder,
 }
 
 #[derive(Deserialize)]
@@ -212,13 +242,16 @@ struct CallableFields {
     identity: RuntimeCallableId,
     declaration: RuntimeExternalCallableDeclaration,
     operands: Box<[RuntimeExternalCallOperand]>,
+    operand_order: RuntimeExternalCallOperandOrder,
 }
 
 impl TryFrom<CallableFields> for RuntimeExternalCallable {
     type Error = RuntimeExternalCallOperandError;
 
     fn try_from(fields: CallableFields) -> Result<Self, Self::Error> {
-        Self::new(fields.identity, fields.declaration).with_operands(fields.operands)
+        Self::new(fields.identity, fields.declaration)
+            .with_operands(fields.operands)?
+            .with_operand_order(fields.operand_order)
     }
 }
 
@@ -231,6 +264,7 @@ impl RuntimeExternalCallable {
             identity,
             declaration,
             operands: Box::new([]),
+            operand_order: RuntimeExternalCallOperandOrder::Authored,
         }
     }
 
@@ -242,7 +276,43 @@ impl RuntimeExternalCallable {
     ) -> Result<Self, RuntimeExternalCallOperandError> {
         RuntimeExternalCallOperand::preflight_layout(operands.iter().copied())?;
         self.operands = operands;
+        self.validate_operand_order()?;
         Ok(self)
+    }
+
+    pub fn with_operand_order(
+        mut self,
+        order: RuntimeExternalCallOperandOrder,
+    ) -> Result<Self, RuntimeExternalCallOperandError> {
+        self.operand_order = order;
+        self.validate_operand_order()?;
+        Ok(self)
+    }
+
+    fn validate_operand_order(&self) -> Result<(), RuntimeExternalCallOperandError> {
+        if self.operand_order == RuntimeExternalCallOperandOrder::InvocationInputs
+            && self.operands.iter().enumerate().any(|(position, row)| {
+                row.parameter.is_none()
+                    || row.expansion_width != 1
+                    || row.abi_position as usize != position
+            })
+        {
+            return Err(RuntimeExternalCallOperandError::InvocationInputLayout);
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub const fn operand_order(&self) -> RuntimeExternalCallOperandOrder {
+        self.operand_order
+    }
+
+    pub(crate) fn requires_binding_projection(&self) -> bool {
+        self.operand_order == RuntimeExternalCallOperandOrder::InvocationInputs
+            || self
+                .operands
+                .iter()
+                .any(|row| row.projection == RuntimeExternalCallOperandProjection::OptionalBinding)
     }
 
     #[must_use]
@@ -335,6 +405,7 @@ impl RuntimeExternalCallable {
             }
         }
         encoder.ordinal(u32::from(self.declaration.overload()));
+        encoder.tag(self.operand_order.semantic_tag());
         encoder.count(self.operands.len());
         for row in &self.operands {
             encoder.enter_element();
@@ -490,6 +561,51 @@ mod tests {
         assert_ne!(original, digest(other));
         other.parameter = None;
         assert_ne!(original, digest(other));
+    }
+
+    #[test]
+    fn forwarding_order_is_required_strict_metadata_and_changes_the_body_digest() {
+        let authored = declaration()
+            .with_operands(Box::new([operand(0, 0, 1)]))
+            .unwrap();
+        let forwarded = authored
+            .clone()
+            .with_operand_order(RuntimeExternalCallOperandOrder::InvocationInputs)
+            .unwrap();
+        let digest = |call: &RuntimeExternalCallable| {
+            let mut meter = TaskSemanticMeter::new(u64::MAX, u64::MAX);
+            let mut encoder =
+                TaskSemanticEncoder::new(b"arcweft.test.external-order.v1\0", &mut meter);
+            call.encode_body_metadata(&mut encoder);
+            encoder.finish().unwrap()
+        };
+        assert_ne!(digest(&authored), digest(&forwarded));
+        assert_eq!(
+            serde_json::from_slice::<RuntimeExternalCallable>(
+                &serde_json::to_vec(&forwarded).unwrap()
+            )
+            .unwrap(),
+            forwarded
+        );
+        let mut json = serde_json::to_value(&forwarded).unwrap();
+        json.as_object_mut().unwrap().remove("operand_order");
+        assert!(serde_json::from_value::<RuntimeExternalCallable>(json).is_err());
+        for rows in [
+            vec![operand(0, 0, 2)],
+            vec![operand(0, 1, 1), operand(1, 0, 1)],
+            vec![RuntimeExternalCallOperand {
+                parameter: None,
+                ..operand(0, 0, 1)
+            }],
+        ] {
+            assert!(matches!(
+                declaration()
+                    .with_operands(rows.into_boxed_slice())
+                    .unwrap()
+                    .with_operand_order(RuntimeExternalCallOperandOrder::InvocationInputs),
+                Err(RuntimeExternalCallOperandError::InvocationInputLayout)
+            ));
+        }
     }
 
     #[test]

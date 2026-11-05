@@ -41,6 +41,7 @@ impl Wire for RuntimeExternalCallable {
             }
         }
         self.declaration().overload().write_wire(writer)?;
+        self.operand_order().semantic_tag().write_wire(writer)?;
         writer.write_table(self.operands())
     }
 
@@ -104,6 +105,15 @@ impl Wire for RuntimeExternalCallable {
             message: error.to_string(),
             offset,
         })?;
+        let order_offset = reader.offset();
+        let tag = u8::read_wire(reader)?;
+        let order = crate::value::RuntimeExternalCallOperandOrder::from_semantic_tag(tag).ok_or(
+            AwbcCodecError::UnknownTag {
+                kind: "external operand order",
+                tag,
+                offset: order_offset,
+            },
+        )?;
         let operands = reader
             .read_table::<RuntimeExternalCallOperand>(
                 "external call operands",
@@ -112,6 +122,7 @@ impl Wire for RuntimeExternalCallable {
             .into_boxed_slice();
         Self::new(identity, declaration)
             .with_operands(operands)
+            .and_then(|call| call.with_operand_order(order))
             .map_err(|error| AwbcCodecError::InvalidMetadata {
                 kind: "external call operand layout",
                 message: error.to_string(),
@@ -293,5 +304,69 @@ mod tests {
         let mut json = serde_json::to_value(&target).unwrap();
         json["declaration"]["export"]["Function"] = serde_json::json!([]);
         assert!(serde_json::from_value::<RuntimeExternalCallable>(json).is_err());
+    }
+
+    #[test]
+    fn external_operand_order_round_trips_and_unknown_mode_is_rejected() {
+        let call = RuntimeExternalCallable::new(
+            RuntimeCallableId::from_checked_digest([0xb4; 32]),
+            RuntimeExternalCallableDeclaration::try_new(
+                RuntimeExternalCallableProvider::Standard(StandardEnvironmentId::Core),
+                RuntimeExternalCallableExport::Function(Box::new(["forward".into()])),
+                0,
+            )
+            .unwrap(),
+        )
+        .with_operands(
+            (0..2)
+                .map(|position| RuntimeExternalCallOperand {
+                    projection: crate::value::RuntimeExternalCallOperandProjection::Value,
+                    parameter: Some(crate::plan::RuntimeCallableParameterCoordinate {
+                        group: 0,
+                        parameter: position,
+                    }),
+                    abi_position: position,
+                    expansion_width: 1,
+                })
+                .collect(),
+        )
+        .unwrap();
+        let encoded = |call: &RuntimeExternalCallable| {
+            let mut writer = Writer::default();
+            call.write_wire(&mut writer).unwrap();
+            writer.into_bytes()
+        };
+        let authored = encoded(&call);
+        let forwarded = call
+            .with_operand_order(crate::value::RuntimeExternalCallOperandOrder::InvocationInputs)
+            .unwrap();
+        let mut bytes = encoded(&forwarded);
+        assert_eq!(
+            RuntimeExternalCallable::read_wire(&mut Reader::new(
+                &bytes,
+                &AwbcDecodeBudget::default()
+            ))
+            .unwrap(),
+            forwarded
+        );
+        let differences = authored
+            .iter()
+            .zip(&bytes)
+            .enumerate()
+            .filter_map(|(index, (a, b))| (a != b).then_some(index))
+            .collect::<Vec<_>>();
+        assert_eq!(differences.len(), 1);
+        bytes[differences[0]] = 255;
+        assert!(matches!(
+            RuntimeExternalCallable::read_wire(&mut Reader::new(
+                &bytes,
+                &AwbcDecodeBudget::default()
+            )),
+            Err(AwbcCodecError::UnknownTag {
+                kind: "external operand order",
+                tag: 255,
+                ..
+            })
+        ));
     }
 }

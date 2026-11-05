@@ -15,6 +15,10 @@ mod tests;
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum RuntimeExternalCallArgumentError {
+    #[error("external declaration forwarding requires its original invocation input order")]
+    MissingInputOrder,
+    #[error(transparent)]
+    InputOrder(#[from] crate::value::RuntimeInputOrderError),
     #[error("declaration binding projection requires the original program context")]
     Unbound,
     #[error("external bindings have {actual} values, expected {expected}")]
@@ -184,6 +188,19 @@ impl RuntimeExternalCallContext {
                 actual: arguments.len(),
             }));
         }
+        let input_order = if callee.operand_order()
+            == crate::value::RuntimeExternalCallOperandOrder::InvocationInputs
+        {
+            let order = execution
+                .input_order()
+                .ok_or_else(|| Box::new(Error::MissingInputOrder))?;
+            order
+                .validate_arity(arguments.len())
+                .map_err(|error| Box::new(Error::InputOrder(error)))?;
+            Some(order)
+        } else {
+            None
+        };
         let projections = AdmittedArgument::inspect_bindings(
             execution,
             callee,
@@ -203,6 +220,12 @@ impl RuntimeExternalCallContext {
         let operands = callee
             .operands()
             .iter()
+            .enumerate()
+            .map(|(position, row)| {
+                input_order.map_or(row, |order| {
+                    &callee.operands()[order.slots()[position] as usize]
+                })
+            })
             .filter_map(|row| {
                 let index = row.abi_position as usize;
                 if row.projection == Projection::OptionalBinding
@@ -220,6 +243,8 @@ impl RuntimeExternalCallContext {
             .collect();
         let callee = callee
             .clone()
+            .with_operand_order(crate::value::RuntimeExternalCallOperandOrder::Authored)
+            .map_err(|source| Box::new(Error::Layout(source)))?
             .with_operands(operands)
             .map_err(|source| Box::new(Error::Layout(source)))?;
         let values = arguments

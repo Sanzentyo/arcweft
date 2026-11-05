@@ -12,6 +12,7 @@ impl VmHost for IssuedHandleHost {
         _: &AwbcProgram,
         _: AwbcIntrinsicId,
         args: Vec<RuntimeValue>,
+        _input_order: &std::sync::Arc<crate::value::RuntimeInputOrder>,
     ) -> Result<Option<RuntimeValue>, VmError> {
         assert!(args.is_empty());
         Ok(self.0.take())

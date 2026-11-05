@@ -54,6 +54,7 @@ mod tests {
             bytes.extend(1_u32.to_le_bytes());
             text(&mut bytes, "fixture");
             bytes.extend(0_u16.to_le_bytes());
+            bytes.push(crate::value::RuntimeExternalCallOperandOrder::Authored.semantic_tag());
             bytes.extend(2_u32.to_le_bytes());
             for position in [0_u32, u32::from(!overlap)] {
                 bytes.extend([
@@ -734,6 +735,9 @@ impl<'a> Cursor<'a> {
                     _ => return Err(self.invalid("external export")),
                 }
                 self.u16()?;
+                let order =
+                    crate::value::RuntimeExternalCallOperandOrder::from_semantic_tag(self.byte()?)
+                        .ok_or_else(|| self.invalid("external operand order"))?;
                 let n = self.count()?;
                 counts.array(
                     n,
@@ -741,8 +745,15 @@ impl<'a> Cursor<'a> {
                         + RuntimeExternalCallOperand::validation_scratch_element_bytes(),
                 )?;
                 let start = self.offset;
-                for _ in 0..n {
-                    self.external_operand().map_err(|error| *error)?;
+                for position in 0..n {
+                    let row = self.external_operand().map_err(|error| *error)?;
+                    if order == crate::value::RuntimeExternalCallOperandOrder::InvocationInputs
+                        && (row.parameter.is_none()
+                            || row.expansion_width != 1
+                            || row.abi_position as usize != position)
+                    {
+                        return Err(self.invalid("external invocation-input layout"));
+                    }
                 }
                 let mut rows = Cursor::new(self.bytes, self.limits);
                 rows.offset = start;

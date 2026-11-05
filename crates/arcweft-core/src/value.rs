@@ -59,7 +59,7 @@ mod expression_locals;
 mod expression_semantic;
 mod external_callable;
 pub use external_callable::{
-    RuntimeExternalCallOperand, RuntimeExternalCallOperandError,
+    RuntimeExternalCallOperand, RuntimeExternalCallOperandError, RuntimeExternalCallOperandOrder,
     RuntimeExternalCallOperandProjection, RuntimeExternalCallable,
     RuntimeExternalCallableDeclaration, RuntimeExternalCallableExport,
     RuntimeExternalCallableProvider, StandardEnvironmentId,

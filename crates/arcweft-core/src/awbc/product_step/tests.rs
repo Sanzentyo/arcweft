@@ -212,6 +212,7 @@ fn suspend_fixture_dialogue(executor: &mut AwbcProductStepExecutor, captures: Ve
             _: &AwbcProgram,
             _: crate::awbc::schema::AwbcIntrinsicId,
             args: Vec<RuntimeValue>,
+            _input_order: &std::sync::Arc<crate::value::RuntimeInputOrder>,
         ) -> Result<Option<RuntimeValue>, crate::awbc::vm::VmError> {
             assert!(args.is_empty());
             Ok(self.0.pop_front())

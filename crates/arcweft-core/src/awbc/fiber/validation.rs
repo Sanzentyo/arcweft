@@ -104,6 +104,7 @@ impl<V, O, N, B, P, G> FiberState<V, O, N, B, FiberReturnPoint<FiberReturnContin
                 frame.layout,
                 frame.type_instantiation.as_ref().map(Borrow::borrow),
                 frame.registers.len(),
+                &frame.input_order,
                 &resources.work(),
             )
             .map_err(|error| {

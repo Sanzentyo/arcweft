@@ -847,6 +847,9 @@ impl Decoder<'_, '_> {
                 };
                 let declaration =
                     RuntimeExternalCallableDeclaration::try_new(provider, export, r.u16()?)?;
+                let order =
+                    crate::value::RuntimeExternalCallOperandOrder::from_semantic_tag(r.byte()?)
+                        .ok_or_else(|| r.invalid("external operand order"))?;
                 let count = r.count()?;
                 let operands = (0..count)
                     .map(|_| r.external_operand())
@@ -855,6 +858,7 @@ impl Decoder<'_, '_> {
                 RuntimeCallTarget::External(
                     RuntimeExternalCallable::new(identity, declaration)
                         .with_operands(operands)
+                        .and_then(|call| call.with_operand_order(order))
                         .map_err(|_| r.invalid("external operand layout"))?,
                 )
             }

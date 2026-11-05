@@ -41,6 +41,7 @@ impl<B: RuntimeCallBackend> VmHost for ProductVmHost<'_, B> {
         program: &AwbcProgram,
         intrinsic: crate::awbc::schema::AwbcIntrinsicId,
         args: Vec<RuntimeValue>,
+        input_order: &std::sync::Arc<crate::value::RuntimeInputOrder>,
     ) -> Result<Option<RuntimeValue>, VmError> {
         let record = program
             .intrinsics
@@ -78,7 +79,9 @@ impl<B: RuntimeCallBackend> VmHost for ProductVmHost<'_, B> {
             })?;
             let result_type = semantic_type_for_awbc(program, result_type)?;
             RuntimeExternalCallContext::for_program(
-                self.context.execution_context(program)?,
+                self.context
+                    .execution_context(program)?
+                    .with_input_order(Some(input_order)),
                 argument_types,
                 result_type,
                 RuntimeSchemaLimits::engine_default(),

@@ -218,6 +218,7 @@ impl super::FiberFrame {
             self.layout,
             self.type_instantiation.as_deref(),
             self.registers.len(),
+            &self.input_order,
             &admission.work(),
         )?;
         let worker_source = original
@@ -307,6 +308,7 @@ impl super::FiberFrame {
             self.layout,
             self.type_instantiation.as_deref(),
             self.registers.len(),
+            &self.input_order,
             &admission.work(),
         )?;
         let plan = program
@@ -419,6 +421,7 @@ impl super::FiberFrame {
                 self.layout,
                 self.type_instantiation.as_deref(),
                 self.registers.len(),
+                &self.input_order,
                 &resources.work(),
             )?,
             binding: self.type_instantiation.as_deref(),
@@ -490,6 +493,7 @@ impl super::FiberFrame {
             self.layout,
             self.type_instantiation.as_deref(),
             self.registers.len(),
+            &self.input_order,
             &resources.work(),
         )?;
         let mut occurrences = std::collections::BTreeMap::new();

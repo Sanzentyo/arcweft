@@ -742,6 +742,7 @@ impl<'a> ExternalDefinition<'a> {
                     .collect();
                 target = arcweft_core::value::RuntimeCallTarget::External(
                     call.with_operands(operands)
+                        .and_then(|call| call.with_operand_order(arcweft_core::value::RuntimeExternalCallOperandOrder::InvocationInputs))
                         .map_err(|cause| error(&cause.to_string()))?,
                 );
             }

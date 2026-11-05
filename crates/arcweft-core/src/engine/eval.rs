@@ -1484,9 +1484,7 @@ pub(crate) fn evaluate_runtime_call(
         return value;
     }
     if let RuntimeCallTarget::External(call) = callee
-        && call.operands().iter().any(|row| {
-            row.projection == crate::value::RuntimeExternalCallOperandProjection::OptionalBinding
-        })
+        && call.requires_binding_projection()
     {
         let prepared = external_context.prepare_external_bindings(call, args)?;
         return evaluate_runtime_call_after_intrinsics(

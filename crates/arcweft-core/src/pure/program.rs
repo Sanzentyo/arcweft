@@ -247,10 +247,8 @@ impl PureEvaluator<'_> {
             return call.evaluate_in_context(&context, &values);
         }
         let prepared = if let RuntimeCallTarget::External(call) = callee
-            && call.operands().iter().any(|row| {
-                row.projection
-                    == crate::value::RuntimeExternalCallOperandProjection::OptionalBinding
-            }) {
+            && call.requires_binding_projection()
+        {
             Some(context.prepare_external_bindings(call, std::mem::take(&mut values))?)
         } else {
             None

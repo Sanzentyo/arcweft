@@ -356,6 +356,7 @@ impl VmHost for CharacterDialogueVmHost<'_> {
         program: &AwbcProgram,
         intrinsic: arcweft_core::awbc::schema::AwbcIntrinsicId,
         mut args: Vec<RuntimeValue>,
+        _input_order: &std::sync::Arc<arcweft_core::value::RuntimeInputOrder>,
     ) -> Result<Option<RuntimeValue>, VmError> {
         if let Some(identity) = program
             .intrinsics
