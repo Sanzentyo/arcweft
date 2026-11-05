@@ -4043,6 +4043,7 @@ pub(crate) enum AnalyzerDetachedConsideredCandidate {
 pub(crate) enum AnalyzerPreparedCalleeExpression {
     None,
     RetainExisting { expression: ExprId },
+    VariantHead { expression: ExprId },
     SealCallable { expression: ExprId },
 }
 
@@ -4055,6 +4056,10 @@ impl AnalyzerPreparedCalleeExpression {
         Self::RetainExisting { expression }
     }
 
+    pub(crate) const fn variant_head(expression: ExprId) -> Self {
+        Self::VariantHead { expression }
+    }
+
     pub(crate) const fn callable(expression: ExprId) -> Self {
         Self::SealCallable { expression }
     }
@@ -4062,16 +4067,16 @@ impl AnalyzerPreparedCalleeExpression {
     pub(crate) const fn semantic_expression(self) -> Option<ExprId> {
         match self {
             Self::None => None,
-            Self::RetainExisting { expression } | Self::SealCallable { expression } => {
-                Some(expression)
-            }
+            Self::RetainExisting { expression }
+            | Self::VariantHead { expression }
+            | Self::SealCallable { expression } => Some(expression),
         }
     }
 
     pub(crate) const fn callable_type_projection(self) -> Option<ExprId> {
         match self {
             Self::SealCallable { expression } => Some(expression),
-            Self::None | Self::RetainExisting { .. } => None,
+            Self::None | Self::RetainExisting { .. } | Self::VariantHead { .. } => None,
         }
     }
 }
@@ -5007,6 +5012,26 @@ pub(crate) fn validate_and_prepare_call_constraints(
             receiver_constraints.push(PreparedCallTypeConstraint {
                 source: receiver_source,
                 pattern: declared.clone(),
+                actual: actual.clone(),
+                acceptance: ConstraintAcceptance::PatternAcceptsActual,
+            });
+        }
+        (
+            PreparedCallCalleeConstraintInputs::AssociatedType { actual },
+            CallableInstantiation::EnumConstructor,
+        ) => {
+            let pattern = candidate
+                .schema()
+                .value_type()
+                .filter(|_| callee_inputs.validates_candidate(&candidate))
+                .ok_or(CallAnalysisFailure::Invariant(
+                    CallAnalysisInvariant::Constraint(
+                        CallConstraintInvariant::MalformedSchemaInventory,
+                    ),
+                ))?;
+            receiver_constraints.push(PreparedCallTypeConstraint {
+                source: AnalyzerCallConstraintSource::BaseInstantiation,
+                pattern: pattern.clone(),
                 actual: actual.clone(),
                 acceptance: ConstraintAcceptance::PatternAcceptsActual,
             });

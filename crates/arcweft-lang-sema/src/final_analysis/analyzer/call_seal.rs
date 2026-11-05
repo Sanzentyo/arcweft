@@ -365,6 +365,26 @@ fn checked_receiver_projection(
     }
     match (selected.instantiation(), &record.callee_inputs) {
         (
+            ResolvedCallableBaseInstantiation::EnumConstructor,
+            crate::callable::PreparedCallCalleeConstraintInputs::AssociatedType { actual },
+        ) => {
+            if !selected.accepts_semantic_type_receiver(actual) {
+                return Err(final_call_seal_error(
+                    location,
+                    CallConstraintInvariant::PreparedBaseMismatch,
+                ));
+            }
+            Ok((
+                CheckedCallReceiverProjection::SemanticOnly {
+                    mode: CallableReceiverMode::Type {
+                        receiver: actual.clone(),
+                    },
+                    ty: actual.clone(),
+                },
+                0,
+            ))
+        }
+        (
             ResolvedCallableBaseInstantiation::None
             | ResolvedCallableBaseInstantiation::EnumConstructor
             | ResolvedCallableBaseInstantiation::Result { .. }
@@ -1281,9 +1301,15 @@ impl SealedSelectedCall {
             self.callee_expression,
             AnalyzerPreparedCalleeExpression::RetainExisting { .. }
         ) {
+            return Ok(None);
+        }
+        if matches!(
+            self.callee_expression,
+            AnalyzerPreparedCalleeExpression::VariantHead { .. }
+        ) {
             let selected = self.application.core().candidates().selected();
             let crate::callable::CallableCandidateId::EnumVariant(candidate) = selected.id() else {
-                return Ok(None);
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             };
             let PreparedExpressionFact::Variant(prepared) = previous else {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);

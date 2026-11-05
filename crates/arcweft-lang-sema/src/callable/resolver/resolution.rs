@@ -247,6 +247,17 @@ fn resolve_associated_type_call(
     arguments: &[HirCallArgument],
 ) -> Result<Option<ResolvedCallTarget>, ResolveCallError> {
     let receiver_type = receiver.ty();
+    check_query_step(request)?;
+    if let Some(seed) = super::AcceptedEnumVariantCase::try_from_environment_receiver(
+        request.authority,
+        receiver,
+        member,
+        request.limits,
+    )
+    .map_err(|_| ResolveCallError::InvalidResolvedCallable)?
+    {
+        return resolve_enum_constructor(request, &seed).map(Some);
+    }
     if let Some(target) = resolve_associated_environment_method(request, receiver, member)? {
         return Ok(Some(target));
     }

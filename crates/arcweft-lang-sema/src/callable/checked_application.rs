@@ -2649,19 +2649,21 @@ impl CheckedCallApplicationCore {
     /// dispatch from a direct callee alone because value-receiver and free
     /// calls are direct as well.
     pub fn direct_type_receiver(&self) -> Option<&TypeKind> {
-        match (
-            &self.callee,
-            self.execution.receiver(),
-            self.candidates.selected().instantiation(),
-        ) {
+        match (&self.callee, self.execution.receiver()) {
             (
                 CheckedCallCalleeExecution::Direct,
                 CheckedCallReceiverProjection::SemanticOnly {
                     mode: CallableReceiverMode::Type { receiver: mode },
                     ty,
                 },
-                ResolvedCallableBaseInstantiation::TypeReceiver { receiver },
-            ) if mode == ty && receiver.receiver() == ty => Some(ty),
+            ) if mode == ty
+                && self
+                    .candidates
+                    .selected()
+                    .accepts_semantic_type_receiver(ty) =>
+            {
+                Some(ty)
+            }
             _ => None,
         }
     }
@@ -3449,6 +3451,23 @@ fn validate_callee(
     }
 }
 
+impl ResolvedCallable {
+    /// Checks the semantic-only receiver against this selected declaration.
+    pub(crate) fn accepts_semantic_type_receiver(&self, ty: &TypeKind) -> bool {
+        match self.instantiation() {
+            ResolvedCallableBaseInstantiation::TypeReceiver { receiver } => {
+                receiver.receiver() == ty
+            }
+            ResolvedCallableBaseInstantiation::EnumConstructor => {
+                matches!(self.id(), CallableCandidateId::EnumVariant(case)
+                    if ty.semantic_identity_digest() == Ok(case.owner()))
+                    && self.schema().value_type() == Some(ty)
+            }
+            _ => false,
+        }
+    }
+}
+
 fn validate_receiver(
     receiver: &CheckedCallReceiverProjection,
     selected: &ResolvedCallable,
@@ -3473,8 +3492,8 @@ fn validate_receiver(
                 mode: CallableReceiverMode::Type { receiver: mode },
                 ty,
             },
-            ResolvedCallableBaseInstantiation::TypeReceiver { receiver },
-        ) => mode == ty && receiver.receiver() == ty,
+            _,
+        ) => mode == ty && selected.accepts_semantic_type_receiver(ty),
         (
             CheckedCallReceiverProjection::Contextual { kind, source, ty },
             ResolvedCallableBaseInstantiation::Receiver { receiver },

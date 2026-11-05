@@ -71,23 +71,37 @@ impl FinalAnalysisExecutionProjection<'_> {
                 let HirExprKind::Call(call) = expression.kind() else {
                     return Err(invalid());
                 };
-                let HirCallCallee::Value { value } = call.callee() else {
-                    return Err(invalid());
-                };
-                let CheckedExpressionResolution::Variant(variant) = self
-                    .analysis
-                    .expression(*value)
-                    .ok_or(FinalAnalysisExecutionProjectionError::MissingExpression {
-                        owner: *value,
-                    })?
-                    .resolution()
-                else {
-                    return Err(invalid());
-                };
-                if variant.ordinal() != candidate.case() {
-                    return Err(invalid());
+                match call.callee() {
+                    HirCallCallee::Value { value } => {
+                        let CheckedExpressionResolution::Variant(variant) = self
+                            .analysis
+                            .expression(*value)
+                            .ok_or(FinalAnalysisExecutionProjectionError::MissingExpression {
+                                owner: *value,
+                            })?
+                            .resolution()
+                        else {
+                            return Err(invalid());
+                        };
+                        if variant.ordinal() != candidate.case() {
+                            return Err(invalid());
+                        }
+                        variant.clone()
+                    }
+                    HirCallCallee::UnresolvedDot { .. } | HirCallCallee::Associated { .. } => {
+                        let semantic = result.semantic_identity_digest().map_err(|_| invalid())?;
+                        if semantic != candidate.owner() {
+                            return Err(invalid());
+                        }
+                        let variant_owner = self
+                            .analysis
+                            .accepted_closed_variant_owner(semantic)
+                            .filter(|owner| owner.ty() == *result)
+                            .ok_or_else(invalid)?;
+                        CheckedVariantResolution::try_new(variant_owner.clone(), candidate.case())
+                            .ok_or_else(invalid)?
+                    }
                 }
-                variant.clone()
             }
             ResolvedCallableBaseInstantiation::Option => {
                 let TypeKind::Option(item) = result else {

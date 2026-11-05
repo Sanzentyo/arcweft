@@ -5579,7 +5579,7 @@ impl Analyzer<'_, '_, '_> {
                     .publish_new_expression(value, prepared)
                     .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
             }
-            return Ok(AnalyzerPreparedCalleeExpression::semantic(value));
+            return Ok(AnalyzerPreparedCalleeExpression::variant_head(value));
         }
         if matches!(
             callee_inputs,
@@ -5617,7 +5617,7 @@ impl Analyzer<'_, '_, '_> {
                     | CheckedValueResolution::Registered(_),
                 )) => existing.checked_resolution().cloned(),
                 None if matches!(existing, super::PreparedExpressionFact::Variant(_)) => {
-                    return Ok(AnalyzerPreparedCalleeExpression::semantic(value));
+                    return Ok(AnalyzerPreparedCalleeExpression::variant_head(value));
                 }
                 _ if matches!(
                     callee_inputs,

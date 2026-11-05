@@ -621,6 +621,16 @@ impl PreparedCallCalleeConstraintInputs {
                 candidate.id() == &super::CallableCandidateId::Content(static_callee.identity())
                     && candidate.schema().semantic_digest() == static_callee.schema()
             }
+            Self::AssociatedType { actual }
+                if matches!(
+                    candidate.instantiation(),
+                    CallableInstantiation::EnumConstructor
+                ) =>
+            {
+                matches!(candidate.id(), super::CallableCandidateId::EnumVariant(case)
+                    if actual.semantic_identity_digest() == Ok(case.owner()))
+                    && candidate.schema().value_type() == Some(actual)
+            }
             Self::Free
             | Self::EnumConstructor
             | Self::ValueReceiver { .. }
@@ -650,6 +660,9 @@ impl PreparedCallCalleeConstraintInputs {
                 | CallableInstantiation::Character { .. },
             ) => Ok(None),
             (Self::StaticContentCallee(_), CallableInstantiation::None) => Ok(None),
+            (Self::AssociatedType { actual }, CallableInstantiation::EnumConstructor) => {
+                Ok(Some(actual))
+            }
             (Self::AssociatedType { actual }, CallableInstantiation::TypeReceiver { receiver })
                 if actual == receiver.receiver() =>
             {
@@ -944,17 +957,30 @@ impl AcceptedEnumVariantCase {
         prepared: &crate::final_analysis::PreparedVariantExpression,
         limits: &CallableLimits,
     ) -> Result<Self, super::CallableSchemaError> {
-        let selected = prepared
-            .owner()
-            .case(prepared.selected_ordinal())
-            .expect("prepared variant retains its selected case");
-        let expected = prepared.owner().ty();
+        Self::try_from_owner(
+            authority,
+            prepared.owner(),
+            prepared.selected_ordinal(),
+            limits,
+        )
+    }
+
+    fn try_from_owner(
+        authority: CallResolverAuthority<'_>,
+        owner_seed: &crate::final_analysis::PreparedVariantOwnerSeed,
+        ordinal: u32,
+        limits: &CallableLimits,
+    ) -> Result<Self, super::CallableSchemaError> {
+        let selected = owner_seed
+            .case(ordinal)
+            .ok_or(super::CallableSchemaError::InvalidCandidateIssuer)?;
+        let expected = owner_seed.ty();
         let owner = expected.semantic_identity_digest()?;
         let payload = match selected.payload() {
             None => VariantPayloadShape::Unit,
             Some(payload) => payload
                 .try_seal(
-                    prepared.owner().payload_owner_family(),
+                    owner_seed.payload_owner_family(),
                     owner,
                     selected.ordinal(),
                     &crate::types::GenericScope::default(),
@@ -980,6 +1006,35 @@ impl AcceptedEnumVariantCase {
             limits,
         )?;
         Ok(Self { id, schema })
+    }
+
+    pub(crate) fn try_from_environment_receiver(
+        authority: CallResolverAuthority<'_>,
+        receiver: ResolvedAssociatedTypeReceiver<'_>,
+        member: &CallableName,
+        limits: &CallableLimits,
+    ) -> Result<Option<Self>, super::CallableSchemaError> {
+        let Some(schema) = authority
+            .world()
+            .environment()
+            .typecheck_env()
+            .closed_enum(receiver.ty())
+        else {
+            return Ok(None);
+        };
+        let Some(ordinal) = schema
+            .variants()
+            .iter()
+            .position(|case| case.name() == member.as_str())
+        else {
+            return Ok(None);
+        };
+        let owner =
+            crate::final_analysis::PreparedVariantOwnerSeed::try_environment(schema, receiver.ty())
+                .map_err(|_| super::CallableSchemaError::InvalidCandidateIssuer)?;
+        let ordinal = u32::try_from(ordinal)
+            .map_err(|_| super::CallableSchemaError::InvalidCandidateIssuer)?;
+        Self::try_from_owner(authority, &owner, ordinal, limits).map(Some)
     }
 
     pub(crate) const fn id(&self) -> &super::EnumVariantSignatureId {

@@ -1854,7 +1854,7 @@ impl Analyzer<'_, '_, '_> {
             )),
             HirExprKind::Literal(literal) => {
                 if matches!(literal, HirLiteral::String(_))
-                    && let Some(TypeKind::CompileTimeScalar(scalar)) = expected
+                    && let Some(expected @ TypeKind::CompileTimeScalar(scalar)) = expected
                     && scalar.kind() == crate::types::CompileTimeScalarKind::FontFamily
                 {
                     crate::checked_text_proxy::reduce_scalar_literal(
@@ -1863,7 +1863,7 @@ impl Analyzer<'_, '_, '_> {
                     )
                     .map_err(|_| AnalyzerExpressionError::rejected(owner))?;
                     return Ok(Some(CheckedExpression::value(
-                        expected.expect("matched font-family expectation").clone(),
+                        expected.clone(),
                         CheckedTypeSelection::Expected,
                         EffectSet::new(),
                         CheckedExpressionResolution::Literal(literal.clone()),
