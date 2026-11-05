@@ -9482,5 +9482,1046 @@
         "| workspace check／Clippy・fmt・構造gate | **共有productionコードの全98 check／Clippy・構造gateは終了0、警告は残存** | Source0345cb6ed70b8ce83a7b3a200ba790a385efa4e8のAPI修正後、all-target／all-feature／lockedのcheck／Clippyと構造gateが終了0。新しい長さ型の不要なexpectを削除し、その新規警告も解消した。1a79392a06654f563c5f46d0db77fff4898f8adfはCompiler fixtureのみでfmt・対象4件PASS、全98を再実行したとはしない。全体cargo cleanはSource187fb586261ac6ba381546532143fa20854dba8bで終了0、ソース・記録・Git差分0。doctest／wasm専用検証は未再実行。[全観測・失敗・clean・原本](acceptance-evidence/task-rich-text-property-identity.json)。 |"
       ]
     }
+  },
+  "fontFamily": {
+    "version": 1,
+    "recordedAt": "2026-11-05T11:09:53.7882650Z",
+    "inspectedHead": "54c8089a144576d887df678063583d7f31d7a914",
+    "sources": {
+      "model": {
+        "version": 1,
+        "commit": "8fcabc7e3dfc498df6c96e231a424a66cdf4c95d",
+        "parent": "929ec477c13f139defa759ce815b5bbe1624289c",
+        "tree": "691bffd4a0ade6d270289688761e2897b453bb28",
+        "remote": "8fcabc7e3dfc498df6c96e231a424a66cdf4c95d",
+        "paths": [
+          {
+            "path": "crates/arcweft-agent-protocol/src/proxy.rs",
+            "blob": "95feee3aed185a8888ea44e51d483cd2339cf7c6"
+          },
+          {
+            "path": "crates/arcweft-compiler/src/lower.rs",
+            "blob": "d4f9ca02d18c461f2a5ed58fe066b3a83381c576"
+          },
+          {
+            "path": "crates/arcweft-compiler/src/lower/literal.rs",
+            "blob": "8e2ac2a95a4b918481094bc5899c5986fffa38d6"
+          },
+          {
+            "path": "crates/arcweft-compiler/src/lower/text_proxy.rs",
+            "blob": "c0fb8bd1b87df5e7d4d451dcfb03f585dad4083e"
+          },
+          {
+            "path": "crates/arcweft-compiler/src/project/tests/layout_presence.rs",
+            "blob": "22ffade5ee96a4393a872aa572dfe35fcbd80dcc"
+          },
+          {
+            "path": "crates/arcweft-compiler/tests/callable_execution/rich_text_factories.rs",
+            "blob": "3e3f4019dc493975a718a1c57dfbf23df1eff9b5"
+          },
+          {
+            "path": "crates/arcweft-dialogue/src/character_dialogue/schema/role_payload.rs",
+            "blob": "6c406baa28fb5727ef91598acdebf3b038760e0c"
+          },
+          {
+            "path": "crates/arcweft-dialogue/src/character_dialogue/schema/role_payload/construction.rs",
+            "blob": "d31d7c5a5c5bfdda4068437f65d81af5c876e1be"
+          },
+          {
+            "path": "crates/arcweft-dialogue/src/character_dialogue/style_factory.rs",
+            "blob": "91ed3f8f59d95724185ba7a51f452ed1d639d4a0"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/callable/checked_application.rs",
+            "blob": "7c896e7aab2f182ed45935e383c47c29223e245a"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/callable/schema.rs",
+            "blob": "f811955f19160d6d2224828e0c8b8605c9da57c8"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/callable/schema/families.rs",
+            "blob": "0fc8b9625abadd6046583b810e9452435c64f098"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/checked_compile_time.rs",
+            "blob": "d2069ec7bccd31ee4d8201d7b39af618c6cef202"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/checked_rich_text/value.rs",
+            "blob": "29d04f46c28e5c917b6e2cb90e8a37d391bb3710"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/checked_text_proxy.rs",
+            "blob": "4327893f8376bd484cfc2fefb1c1796fa762c8b6"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/checked_text_proxy/defaults.rs",
+            "blob": "75c21476566ad79c41106058774dbf736512387a"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/checked_text_proxy/prepared.rs",
+            "blob": "2a5e380d977eaaecd1fe93dc5c390d482cebc4d2"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/env/base.rs",
+            "blob": "1a2ef62a0de6e138858f032042c2cce0166209f4"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls/constraints.rs",
+            "blob": "d921c5551eb6ab0855325dcecec728b3fd76555c"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/dialogue_line_plan.rs",
+            "blob": "8fa9b8f4fff1bc4350ee621385f11ff58d13403b"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+            "blob": "150ede00dbd5ff0570a6d6f7da58084f57ee77a1"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/fx_definition.rs",
+            "blob": "15d787a3039b075951eefdc3eb70e9b10a98e96c"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/text_proxy.rs",
+            "blob": "dbc9e30b4338a8d30058011022287c02edd6d508"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/view_fx.rs",
+            "blob": "aeeda0038ae28260244cdda24ff5aed5dc0ce357"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/execution_plan.rs",
+            "blob": "15311d68835fcff2e12d1f7f80aaec397f418b19"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/fx_application.rs",
+            "blob": "2a9d66a84e72d882ca886d2b0ff170a44092ebd7"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/model.rs",
+            "blob": "6a014120d64e00b296285bbc98f44c5c2caf23a2"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/nominal_schema/graph.rs",
+            "blob": "91bcd6c41a6bc678b6ca4d914810fccb5e8324c3"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs",
+            "blob": "c53de0647b59192464ce0a2566380df7ad561c74"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/registration/model.rs",
+            "blob": "98ada42f25f6a4b4a28fc75d1629c4ce5642b9e3"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/types.rs",
+            "blob": "97b85de02f58ecd8a2697cd0311bdd3f96fdce3e"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/types/match_domain.rs",
+            "blob": "c1af69d332ab44d7ab85a13dc672a317dd5e3da0"
+          },
+          {
+            "path": "crates/arcweft-presentation/src/rich_text.rs",
+            "blob": "d45b8c0e1a09bc7fae414c3b0aca604c931da28d"
+          },
+          {
+            "path": "crates/arcweft-presentation/src/rich_text/authoring_schema.rs",
+            "blob": "6d670fcf1e2379080b3032d45327d4490939458d"
+          },
+          {
+            "path": "crates/arcweft-presentation/src/rich_text/authoring_schema/direct_style.rs",
+            "blob": "1d041772b1e1ddae2ac9d59c042f1b478ee8cd4f"
+          },
+          {
+            "path": "crates/arcweft-presentation/src/rich_text/content_catalog.rs",
+            "blob": "7bc2165f57d9ba141c5008f561e0cf00c0d7a2f7"
+          },
+          {
+            "path": "crates/arcweft-presentation/src/rich_text/font_family.rs",
+            "blob": "854a569d28aa2f323627f94c35d6d1cc58e4ee00"
+          },
+          {
+            "path": "crates/arcweft-rich-text-schema/src/lib.rs",
+            "blob": "b1a56725525701489a5f730f2180f384193952ca"
+          },
+          {
+            "path": "crates/arcweft-text-model/src/character_dialogue_style.rs",
+            "blob": "793e2304e6cd6352ccefd7c8548e92ce79a5284e"
+          },
+          {
+            "path": "crates/arcweft-text-model/src/rich_effects.rs",
+            "blob": "34a68270f44bb9bc7b12ea243305bb86fda8b8c7"
+          },
+          {
+            "path": "crates/arcweft-text-model/src/style.rs",
+            "blob": "4201f863d2884f647feef76b38f0703c8d4ab304"
+          },
+          {
+            "path": "docs/01-language/dialogue-content-actions-ruby-and-interpolation.md",
+            "blob": "2a8dbcd3e93fb9872489338ac98160a58b2515a5"
+          }
+        ],
+        "blobDrift": 0,
+        "patchSha256": "159ebd883d3a2b2765557b9a237d38dcaed7757a2f0b84c56eadf254c88c78a9",
+        "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+        "separatelyHeld": [],
+        "indexEmpty": true,
+        "at": "2026-11-05T10:28:45.3292497Z"
+      },
+      "associatedConstructors": {
+        "version": 1,
+        "commit": "dc79d70a073d2660d9e5801699ffadf692ac560d",
+        "parent": "8fcabc7e3dfc498df6c96e231a424a66cdf4c95d",
+        "tree": "82e4677bd1637c10591b078dd86ce2fb48de490a",
+        "remote": "dc79d70a073d2660d9e5801699ffadf692ac560d",
+        "paths": [
+          {
+            "path": "crates/arcweft-lang-sema/src/callable/checked_application.rs",
+            "blob": "fbcfb7d9fe8fd535c9a29f19cd195ab195c1cd21"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/callable/resolver.rs",
+            "blob": "d6553a40fb9fa32a6b6b1c4735cf24f7c74cf94d"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/callable/resolver/resolution.rs",
+            "blob": "540494ca285bb7d3a66e6a9179943069bfaed24c"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/call_seal.rs",
+            "blob": "8edbab91a6f00e58e78ff5bd64cdf9868c61e7ae"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls.rs",
+            "blob": "cdf1361adce964cbc99f6bbe7ec9fa1b18c0f053"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls/constraints.rs",
+            "blob": "e8236cdc1db40c3782e58173e84fc9a8a6a6bc2c"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+            "blob": "69b4de424f9f309ddf75d8f36580db764f1b56a7"
+          },
+          {
+            "path": "crates/arcweft-lang-sema/src/final_analysis/report/variants.rs",
+            "blob": "79d89de381d64ea19b84b6bff0e12108f25cfd51"
+          }
+        ],
+        "blobDrift": 0,
+        "patchSha256": "222e5f976572ca6355717bbdf269cb26b9708d429e6d31dba7c8da37440d90f7",
+        "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+        "separatelyHeld": [],
+        "indexEmpty": true,
+        "at": "2026-11-05T10:55:28.6596742Z"
+      },
+      "consumers": {
+        "version": 1,
+        "commit": "54c8089a144576d887df678063583d7f31d7a914",
+        "parent": "dc79d70a073d2660d9e5801699ffadf692ac560d",
+        "tree": "8770ab60f97b8300e5e1df8d5807081ddbb3a31b",
+        "remote": "54c8089a144576d887df678063583d7f31d7a914",
+        "paths": [
+          {
+            "path": "crates/arcweft-agent-protocol/src/proxy.rs",
+            "blob": "934dddc6938d86019779da26fb584b5ea3a6bb09"
+          },
+          {
+            "path": "crates/arcweft-cli/tests/check/agent_observe_native/native_length_units.rs",
+            "blob": "52adb34e7d6836d4addd31930d9a21489895ac85"
+          },
+          {
+            "path": "crates/arcweft-dialogue/src/tests/character_dialogue/runtime_schema/property_construction.rs",
+            "blob": "8df9313bc36344a05f38f028b4b37d46c8f2958d"
+          },
+          {
+            "path": "crates/arcweft-presentation/tests/rich_text_authoring_schema.rs",
+            "blob": "c734da32efd987eff87d7b0a9266bdcbd62a05ab"
+          },
+          {
+            "path": "crates/arcweft-text-model/src/character_dialogue_style.rs",
+            "blob": "72834b91488af4ef37df721d5e5c856603da9279"
+          }
+        ],
+        "blobDrift": 0,
+        "patchSha256": "6358cc4f283faf7ea10c20aacaa374d230b64dcdc8071ef923db910dff03ce53",
+        "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+        "separatelyHeld": [],
+        "indexEmpty": true,
+        "at": "2026-11-05T11:07:16.4275818Z"
+      }
+    },
+    "state": "Typed FontFamily source/model/codec and owner consumers published and validated at the stated boundaries. Full48 reverse closure, workspace quality and Native-Web parity are separate pending validation; do not infer whole-engine completion.",
+    "ownership": "Presentation owns RichTextFontFamily<S>, the five generic cases and named(String) case, ordinals and256 UTF-8-byte name bound. TextModel reexports this type. Direct and reusable Content font schemas share one FontFamily kind and limit policy. Source bare serif/sans_serif/monospace/cursive/fantasy remain distinct from quoted named values including \"serif\". All owned contract markers remain1.",
+    "projection": "Sema registers the accepted closed FontFamily domain and preserves literal/constructor identity through typed/alias/generic calls, generated instances and all-six-case match. Compiler projects actual closed nominal types/values from the analysis schema; Dialogue stores tuple(U32 ordinal,String name), borrows and validates before copying; TextModel, renderer and proxy fields preserve the same family distinction. No source-text guessing, font-name special cases, Core RuntimeValue addition, compatibility reader or Cargo dependency change.",
+    "associatedConstructorRepair": "Shared registered closed-enum associated resolution now uses the actual type receiver and existing EnumConstructor owner. Owner/schema/result constraints, C2 VariantHead facts, semantic-only type receiver admission, accepted type reports and execution projection agree. Ordinary retained type receivers are not rewritten as variant heads. Applies to registered enum constructors generally, not FontFamily factory names.",
+    "limits": "Use the original direct-font256-byte maximum for the shared typed named family, rather than the former reusable-font generic4096-byte String allowance. This prevents direct/reusable/runtime factories from disagreeing about one family domain. Names must be nonempty; exact256 bytes admitted,257 and86 three-byte Japanese characters rejected. Original4097-byte negative, program/result ownership, production property-input maximum and small max_string_bytes checks remain.",
+    "runs": [
+      {
+        "stem": "font-family-source-owner2-20261105",
+        "command": [
+          "nextest",
+          "run",
+          "-p",
+          "arcweft-compiler",
+          "--lib",
+          "--test",
+          "callable_execution",
+          "--all-features",
+          "--locked",
+          "-E",
+          "test(source_style_factories_) | test(source_fonts_keep_generic_and_quoted_named_identity_in_templates)",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast",
+          "--status-level",
+          "all",
+          "--final-status-level",
+          "all"
+        ],
+        "terminal": {
+          "version": 1,
+          "base": "929ec477c13f139defa759ce815b5bbe1624289c",
+          "run": "font-family-source-owner2-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   3.694s] 10 tests run: 8 passed, 2 failed, 488 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 10,
+          "passed": 8,
+          "failed": 2,
+          "skipped": 488,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler::callable_execution",
+              "test": "rich_text_factories::source_style_factories_keep_complete_font_matches_in_native_and_saved_awbc"
+            },
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler::callable_execution",
+              "test": "rich_text_factories::source_style_factories_construct_dynamic_named_families_and_reject_foreign_enums"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T10:27:28.7696709Z"
+        }
+      },
+      {
+        "stem": "font-family-source-owner3-20261105",
+        "command": [
+          "nextest",
+          "run",
+          "-p",
+          "arcweft-compiler",
+          "--lib",
+          "--test",
+          "callable_execution",
+          "--all-features",
+          "--locked",
+          "-E",
+          "test(source_style_factories_) | test(source_fonts_keep_generic_and_quoted_named_identity_in_templates)",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast",
+          "--status-level",
+          "all",
+          "--final-status-level",
+          "all"
+        ],
+        "terminal": {
+          "version": 1,
+          "base": "8fcabc7e3dfc498df6c96e231a424a66cdf4c95d",
+          "run": "font-family-source-owner3-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   3.653s] 10 tests run: 8 passed, 2 failed, 488 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 10,
+          "passed": 8,
+          "failed": 2,
+          "skipped": 488,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler::callable_execution",
+              "test": "rich_text_factories::source_style_factories_keep_complete_font_matches_in_native_and_saved_awbc"
+            },
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler::callable_execution",
+              "test": "rich_text_factories::source_style_factories_construct_dynamic_named_families_and_reject_foreign_enums"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T10:34:18.3129183Z"
+        }
+      },
+      {
+        "stem": "font-family-source-owner5-20261105",
+        "command": [
+          "nextest",
+          "run",
+          "-p",
+          "arcweft-compiler",
+          "--lib",
+          "--test",
+          "callable_execution",
+          "--all-features",
+          "--locked",
+          "-E",
+          "test(source_style_factories_) | test(source_fonts_keep_generic_and_quoted_named_identity_in_templates)",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast",
+          "--status-level",
+          "all",
+          "--final-status-level",
+          "all"
+        ],
+        "terminal": {
+          "version": 1,
+          "base": "8fcabc7e3dfc498df6c96e231a424a66cdf4c95d",
+          "run": "font-family-source-owner5-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   3.772s] 10 tests run: 8 passed, 2 failed, 488 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 10,
+          "passed": 8,
+          "failed": 2,
+          "skipped": 488,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler::callable_execution",
+              "test": "rich_text_factories::source_style_factories_construct_dynamic_named_families_and_reject_foreign_enums"
+            },
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler::callable_execution",
+              "test": "rich_text_factories::source_style_factories_keep_complete_font_matches_in_native_and_saved_awbc"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T10:39:03.8550824Z"
+        }
+      },
+      {
+        "stem": "font-family-source-owner6-20261105",
+        "command": [
+          "nextest",
+          "run",
+          "-p",
+          "arcweft-compiler",
+          "--lib",
+          "--test",
+          "callable_execution",
+          "--all-features",
+          "--locked",
+          "-E",
+          "test(source_style_factories_) | test(source_fonts_keep_generic_and_quoted_named_identity_in_templates)",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast",
+          "--status-level",
+          "all",
+          "--final-status-level",
+          "all"
+        ],
+        "terminal": {
+          "version": 1,
+          "base": "8fcabc7e3dfc498df6c96e231a424a66cdf4c95d",
+          "run": "font-family-source-owner6-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   3.702s] 10 tests run: 8 passed, 2 failed, 488 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 10,
+          "passed": 8,
+          "failed": 2,
+          "skipped": 488,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler::callable_execution",
+              "test": "rich_text_factories::source_style_factories_construct_dynamic_named_families_and_reject_foreign_enums"
+            },
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler::callable_execution",
+              "test": "rich_text_factories::source_style_factories_keep_complete_font_matches_in_native_and_saved_awbc"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T10:43:23.8839551Z"
+        }
+      },
+      {
+        "stem": "font-family-source-owner7-20261105",
+        "command": [
+          "nextest",
+          "run",
+          "-p",
+          "arcweft-compiler",
+          "--lib",
+          "--test",
+          "callable_execution",
+          "--all-features",
+          "--locked",
+          "-E",
+          "test(source_style_factories_) | test(source_fonts_keep_generic_and_quoted_named_identity_in_templates)",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast",
+          "--status-level",
+          "all",
+          "--final-status-level",
+          "all"
+        ],
+        "terminal": {
+          "version": 1,
+          "base": "8fcabc7e3dfc498df6c96e231a424a66cdf4c95d",
+          "run": "font-family-source-owner7-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   3.913s] 10 tests run: 9 passed, 1 failed, 488 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 10,
+          "passed": 9,
+          "failed": 1,
+          "skipped": 488,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler::callable_execution",
+              "test": "rich_text_factories::source_style_factories_construct_dynamic_named_families_and_reject_foreign_enums"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T10:48:43.7626016Z"
+        }
+      },
+      {
+        "stem": "font-family-source-owner8-20261105",
+        "command": [
+          "nextest",
+          "run",
+          "-p",
+          "arcweft-compiler",
+          "--lib",
+          "--test",
+          "callable_execution",
+          "--all-features",
+          "--locked",
+          "-E",
+          "test(source_style_factories_) | test(source_fonts_keep_generic_and_quoted_named_identity_in_templates)",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast",
+          "--status-level",
+          "all",
+          "--final-status-level",
+          "all"
+        ],
+        "terminal": {
+          "version": 1,
+          "base": "8fcabc7e3dfc498df6c96e231a424a66cdf4c95d",
+          "run": "font-family-source-owner8-20261105.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [   3.673s] 10 tests run: 10 passed, 488 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 10,
+          "passed": 10,
+          "failed": 0,
+          "skipped": 488,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-05T10:53:20.3105238Z"
+        }
+      },
+      {
+        "stem": "font-family-data-owner1-20261105",
+        "command": [
+          "nextest",
+          "run",
+          "-p",
+          "arcweft-presentation",
+          "-p",
+          "arcweft-dialogue",
+          "-p",
+          "arcweft-text-model",
+          "-p",
+          "arcweft-agent-protocol",
+          "-p",
+          "arcweft-rich-text-schema",
+          "--all-targets",
+          "--all-features",
+          "--locked",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast",
+          "--status-level",
+          "all",
+          "--final-status-level",
+          "all"
+        ],
+        "terminal": {
+          "version": 1,
+          "base": "dc79d70a073d2660d9e5801699ffadf692ac560d",
+          "run": "font-family-data-owner1-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   7.482s] 352 tests run: 348 passed, 4 failed, 0 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 352,
+          "passed": 348,
+          "failed": 4,
+          "skipped": 0,
+          "selectedPackages": 5,
+          "matchedPackages": 5,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-dialogue",
+              "test": "tests::character_dialogue::runtime_schema::property_construction::borrowed_properties_construct_and_restore_under_both_exact_programs"
+            },
+            {
+              "status": "FAIL",
+              "binary": "arcweft-dialogue",
+              "test": "tests::character_dialogue::runtime_schema::property_construction::call_property_construction_keeps_original_result_type_and_resource_limits"
+            },
+            {
+              "status": "FAIL",
+              "binary": "arcweft-dialogue",
+              "test": "tests::character_dialogue::runtime_schema::property_construction::rich_text_producer_rejects_foreign_executables_and_excess_inputs"
+            },
+            {
+              "status": "FAIL",
+              "binary": "arcweft-presentation::rich_text_authoring_schema",
+              "test": "direct_style_schemas_preserve_required_values_defaults_and_limits"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T10:56:24.9958204Z"
+        }
+      },
+      {
+        "stem": "font-family-data-owner2-20261105",
+        "command": [
+          "nextest",
+          "run",
+          "-p",
+          "arcweft-presentation",
+          "-p",
+          "arcweft-dialogue",
+          "-p",
+          "arcweft-text-model",
+          "-p",
+          "arcweft-agent-protocol",
+          "-p",
+          "arcweft-rich-text-schema",
+          "--all-targets",
+          "--all-features",
+          "--locked",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast",
+          "--status-level",
+          "all",
+          "--final-status-level",
+          "all"
+        ],
+        "terminal": {
+          "version": 1,
+          "base": "dc79d70a073d2660d9e5801699ffadf692ac560d",
+          "run": "font-family-data-owner2-20261105.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [   7.440s] 354 tests run: 354 passed, 0 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 354,
+          "passed": 354,
+          "failed": 0,
+          "skipped": 0,
+          "selectedPackages": 5,
+          "matchedPackages": 5,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-05T11:02:30.3100663Z"
+        }
+      },
+      {
+        "stem": "font-family-cli-owner1-20261105",
+        "command": [
+          "nextest",
+          "run",
+          "-p",
+          "arcweft-cli",
+          "--test",
+          "check",
+          "--all-features",
+          "--locked",
+          "-E",
+          "test(agent_observe_native_renderer_keeps_generic_and_quoted_named_font_families)",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast",
+          "--status-level",
+          "all",
+          "--final-status-level",
+          "all"
+        ],
+        "terminal": {
+          "version": 1,
+          "base": "dc79d70a073d2660d9e5801699ffadf692ac560d",
+          "run": "font-family-cli-owner1-20261105.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [  13.851s] 1 test run: 1 passed, 487 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 1,
+          "passed": 1,
+          "failed": 0,
+          "skipped": 487,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-05T11:05:47.5548515Z"
+        }
+      },
+      {
+        "stem": "font-family-codec-rejections2-20261105",
+        "command": [
+          "nextest",
+          "run",
+          "-p",
+          "arcweft-dialogue",
+          "--all-targets",
+          "--all-features",
+          "--locked",
+          "-E",
+          "test(stored_font_properties_reject_erased_unknown_and_malformed_family_payloads)",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast",
+          "--status-level",
+          "all",
+          "--final-status-level",
+          "all"
+        ],
+        "terminal": {
+          "version": 1,
+          "base": "dc79d70a073d2660d9e5801699ffadf692ac560d",
+          "run": "font-family-codec-rejections2-20261105.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [   0.013s] 1 test run: 1 passed, 75 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 1,
+          "passed": 1,
+          "failed": 0,
+          "skipped": 75,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-05T11:06:51.4455199Z"
+        }
+      }
+    ],
+    "compileAttempts": [
+      {
+        "version": 1,
+        "base": "929ec477c13f139defa759ce815b5bbe1624289c",
+        "command": [
+          "check",
+          "-p",
+          "arcweft-compiler",
+          "-p",
+          "arcweft-text-model",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 101,
+        "sourceInputs": 4110,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T10:10:25.1280861Z",
+        "finishedAt": "2026-11-05T10:11:56.6442151Z"
+      },
+      {
+        "version": 1,
+        "base": "929ec477c13f139defa759ce815b5bbe1624289c",
+        "command": [
+          "check",
+          "-p",
+          "arcweft-compiler",
+          "-p",
+          "arcweft-text-model",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 101,
+        "sourceInputs": 4110,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T10:14:00.6960091Z",
+        "finishedAt": "2026-11-05T10:14:25.4335979Z"
+      },
+      {
+        "version": 1,
+        "base": "929ec477c13f139defa759ce815b5bbe1624289c",
+        "command": [
+          "check",
+          "-p",
+          "arcweft-compiler",
+          "-p",
+          "arcweft-text-model",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4110,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T10:15:26.1239779Z",
+        "finishedAt": "2026-11-05T10:15:47.7867324Z"
+      },
+      {
+        "version": 1,
+        "base": "929ec477c13f139defa759ce815b5bbe1624289c",
+        "command": [
+          "nextest",
+          "list",
+          "-p",
+          "arcweft-compiler",
+          "-p",
+          "arcweft-presentation",
+          "-p",
+          "arcweft-dialogue",
+          "-p",
+          "arcweft-text-model",
+          "-p",
+          "arcweft-agent-protocol",
+          "-p",
+          "arcweft-rich-text-schema",
+          "--all-targets",
+          "--all-features",
+          "--locked",
+          "-E",
+          "test(source_style_factories_) | test(source_fonts_keep_generic_and_quoted_named_identity_in_templates) | package(arcweft-presentation) | package(arcweft-dialogue) | package(arcweft-text-model) | package(arcweft-agent-protocol) | package(arcweft-rich-text-schema)",
+          "--message-format",
+          "json"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/font-family-owner1-20261105.catalog.log",
+        "exitCode": 101,
+        "sourceInputs": 4110,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T10:20:36.8671812Z",
+        "finishedAt": "2026-11-05T10:24:15.1944588Z"
+      },
+      {
+        "version": 1,
+        "base": "8fcabc7e3dfc498df6c96e231a424a66cdf4c95d",
+        "command": [
+          "nextest",
+          "list",
+          "-p",
+          "arcweft-compiler",
+          "--lib",
+          "--test",
+          "callable_execution",
+          "--all-features",
+          "--locked",
+          "-E",
+          "test(source_style_factories_) | test(source_fonts_keep_generic_and_quoted_named_identity_in_templates)",
+          "--message-format",
+          "json"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/font-family-source-owner4-20261105.catalog.log",
+        "exitCode": 101,
+        "sourceInputs": 4110,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T10:36:07.3796945Z",
+        "finishedAt": "2026-11-05T10:36:13.4984436Z"
+      },
+      {
+        "version": 1,
+        "base": "dc79d70a073d2660d9e5801699ffadf692ac560d",
+        "command": [
+          "nextest",
+          "list",
+          "-p",
+          "arcweft-dialogue",
+          "--all-targets",
+          "--all-features",
+          "--locked",
+          "-E",
+          "test(stored_font_properties_reject_erased_unknown_and_malformed_family_payloads)",
+          "--message-format",
+          "json"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/font-family-codec-rejections1-20261105.catalog.log",
+        "exitCode": 101,
+        "sourceInputs": 4110,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T11:06:17.4038706Z",
+        "finishedAt": "2026-11-05T11:06:20.4184802Z"
+      }
+    ],
+    "failureHistory": [
+      "Context1 check101:13 missing exhaustive scalar/kind consumers; migrated all typed encoders and unsupported Fx classifications. Context2 check101:proxy scalar query match missing; added typed JSON comparison. Context3 check0 predates final limits/match/tests and is not final-source workspace quality.",
+      "First broad owner catalog101:rustc reported arcweft_lang_sema rlib not found while building untouched Compiler generic_continuation_snapshot. No runtime executed; cause unestablished. No ICE/cache/resource explanation is asserted.",
+      "Source2:8PASS2FAIL unknown associated named constructor. Source3:8PASS2FAIL MalformedSchemaInventory. Source4 catalog101 Arc candidate borrowing E0308. Source5:8PASS2FAIL WrongPayloadFamily. Source6:8PASS2FAIL TypeResolutionReportMismatch. Shared typed owner/constraint/receiver fixes preserve the complete failure logs.",
+      "Source7:9PASS1FAIL. All-six-case match passed; the remaining case was an extra FontFamily::named test form I introduced after the model cut. This untyped namespace path is not the adopted associated-dot grammar. Restore canonical FontFamily.named(name), retaining dynamic named, foreign enum and all invalid-name rejection assertions. Source8 is10/10PASS with Native and decoded AWBC public JSON restore after every OneOp step.",
+      "Data-owner1:352run348PASS4FAIL, old Font Text fixtures3 and old direct Text/enum_values expectation1. Migrate fixtures to typed Named and schema to FontFamily, preserve original ownership/save/resource assertions. Separate data-owner2:354/354PASS, not a recomputed352 run.",
+      "Actual Native CLI:1/1PASS487skip, seven sources (all five generic families, quoted serif and quoted Noto Sans JP), exact typed catalog family plus nonempty image and original source range. Does not require distinct pixels for fallback fonts.",
+      "Malformed stored-font rejection test first catalog101:E0283 from redundant Into on an impl Into argument. Remove only the ambiguous conversion. Separate final1/1PASS75skip rejects erased Text, generic-with-name, empty named, unknown/max ordinals, oversized name, missing tuple field and wrong integer width through owned and borrowed codecs."
+    ],
+    "graph": {
+      "version": 1,
+      "base": "54c8089a144576d887df678063583d7f31d7a914",
+      "roots": [
+        "arcweft-agent-protocol",
+        "arcweft-compiler",
+        "arcweft-dialogue",
+        "arcweft-lang-sema",
+        "arcweft-presentation",
+        "arcweft-rich-text-schema",
+        "arcweft-text-model"
+      ],
+      "workspacePackages": 98,
+      "selection": [
+        "arcweft",
+        "arcweft-adapter-desktop",
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-policy",
+        "arcweft-agent-protocol",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-bundle",
+        "arcweft-bundle-assets",
+        "arcweft-character-view",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-debug-model",
+        "arcweft-debug-sqlite",
+        "arcweft-desktop-native",
+        "arcweft-dialogue",
+        "arcweft-glyphon",
+        "arcweft-lang-hir",
+        "arcweft-lang-sema",
+        "arcweft-lang-syntax",
+        "arcweft-launch",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-text-input",
+        "arcweft-player-web",
+        "arcweft-presentation",
+        "arcweft-project",
+        "arcweft-project-loader",
+        "arcweft-rag",
+        "arcweft-render-text",
+        "arcweft-render-web",
+        "arcweft-render-wgpu",
+        "arcweft-rich-text-schema",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-text-layout",
+        "arcweft-text-model",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3",
+        "arcweft-view"
+      ],
+      "selectedPackages": 48,
+      "target": "all",
+      "features": "all",
+      "dependencyKinds": [
+        "normal",
+        "build",
+        "dev"
+      ],
+      "metadataTreeDrift": 0,
+      "runtimeAcceptance": "Pending. Component owner runs are not the complete reverse closure."
+    },
+    "validationScope": "Source8 ten cases: original five source-factory cases plus four new generic/named constructor/function/generated-instance/match cases and one compiler template JSON case. Native and canonical decoded AWBC keep the existing512-step/OneOp bounds; AWBC public JSON save/restore occurs after every step. Data354 and later codec1 are independent runs. No synthetic aggregate or full-closure claim.",
+    "workingTree": "Original12 tracked WIP patch SHA25646402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac and6 original untracked files retained; tests observe the working tree, not pristine HEAD.",
+    "correctionReason": "Supersedes the current-list pending typed bare serif statement with published typed source/owner results. Retain every failed attempt and full commit identity as history; static inline_styles provenance and other CLI/parity conditions remain separate. Generic Match acceptance/publication is unchanged; a new six-case FontFamily test is additional coverage, not reopening accepted Generic Match.",
+    "supersededCurrentRows": [
+      "| RichTextの部分layout指定／source factory | **既受入を維持。順序・px／pt・CLI論理px整合を公開・対象検証済み** | 単位保持d693a3fcc4b4716ac9d608e9c075d8f1ff96bcdf、共有API0345cb6ed70b8ce83a7b3a200ba790a385efa4e8、CLI fixture 44dfe5f7113a6b4823f78a64b55e5c845f1c59a0。6 owner309／309、Compiler318／318、負例fixture修復の別4／4を保持する。CLI Native observe親moduleは246実行／240 PASS／6 FAIL、単位付きruby JSON検査の修復後は対象2／2 PASS。新CLIは横書き・縦書き左右すべてで18ptと24pxの実glyph geometry一致を確認した。45 size入力を元の数値・text・viewport・予算・全geometry assertionを保ったpxへ訂正した。旧full55 FAILと後続修復を合算しない。typed bare serif、static inline_styles出典、残るCLI条件と最終画像parityは継続する。[訂正理由・全実測・公開SHA・原本](acceptance-evidence/task-rich-text-property-identity.json)。 |"
+    ],
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-rich-text-font-family-owners.raw.zip",
+      "bytes": 4404602,
+      "sha256": "058f26be10663d902df93acc7676a9100c4198e2d9c8272b815957c9333de3ac",
+      "entries": 142,
+      "entryDrift": 0
+    }
   }
 }
