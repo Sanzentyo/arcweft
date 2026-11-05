@@ -152,18 +152,6 @@ const FONT_LIMITS: RichTextValueLimits = RichTextValueLimits {
     max_encoded_bytes: 4_096,
     max_decoded_bytes: 256,
 };
-const SIZE_LIMITS: RichTextValueLimits = RichTextValueLimits {
-    numeric: Some(RichTextNumericLimits {
-        inclusive_min_milli: Some(1_000),
-        inclusive_max_milli: Some(512_000),
-        max_integer_digits: 19,
-        max_fraction_digits: 3,
-    }),
-    units: &[RichTextUnit::Pt],
-    enum_values: &[],
-    max_encoded_bytes: 64,
-    max_decoded_bytes: 64,
-};
 const RUBY_TEXT_LIMITS: RichTextValueLimits = RichTextValueLimits {
     numeric: None,
     units: &[],
@@ -205,7 +193,7 @@ const SIZE_VALUE: RichTextPropertySpec<RichTextDirectStyleProperty> = RichTextPr
     kind: RichTextValueKind::Length,
     presence: PropertyPresence::Required,
     multiplicity: SINGLE,
-    limits: SIZE_LIMITS,
+    limits: super::FONT_SIZE_LIMITS,
     allow_empty: false,
 };
 const RUBY_TEXT: RichTextPropertySpec<RichTextDirectStyleProperty> = RichTextPropertySpec {

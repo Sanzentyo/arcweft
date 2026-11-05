@@ -143,7 +143,10 @@ fn direct_style_schemas_preserve_required_values_defaults_and_limits() {
     assert_eq!(size.properties[0].id, RichTextDirectStyleProperty::Value);
     assert_eq!(size.properties[0].kind, RichTextValueKind::Length);
     assert_eq!(size.properties[0].presence, PropertyPresence::Required);
-    assert_eq!(size.properties[0].limits.units, [RichTextUnit::Pt]);
+    assert_eq!(
+        size.properties[0].limits.units,
+        [RichTextUnit::Px, RichTextUnit::Pt]
+    );
 
     let font = RichTextDirectStyle::Font.property_schema();
     assert_eq!(font.properties[0].kind, RichTextValueKind::Text);

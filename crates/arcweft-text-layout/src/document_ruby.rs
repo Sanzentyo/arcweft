@@ -2,9 +2,12 @@
 
 use std::collections::BTreeMap;
 
-use arcweft_render_text::{ResolvedTextDocument, ResolvedTextRuby};
+use arcweft_render_text::{
+    ResolvedTextDocument, ResolvedTextLength, ResolvedTextRuby, TextLengthResolutionError,
+};
 use arcweft_text_model::{
-    Milli, RichTextInlineDirection, RichTextRange, RichTextRubyPosition, RichTextWritingMode,
+    CheckedLength, RichTextInlineDirection, RichTextRange, RichTextRubyPosition,
+    RichTextWritingMode,
 };
 
 use crate::{
@@ -80,7 +83,7 @@ impl<'a> RubyMeasurements<'a> {
                 let writing_mode = document.runs()[annotation.base_runs().as_usize_range().start]
                     .style()
                     .writing_mode();
-                let metrics = ruby_metrics(annotation);
+                let metrics = ruby_metrics(annotation)?;
                 let authored_position = ruby_position(annotation);
                 let position = effective_ruby_position(writing_mode, authored_position);
                 let font_size_milli = pixels_to_milli(metrics.font_size)
@@ -628,10 +631,12 @@ fn place_vertical_cells(
     out
 }
 
-pub(crate) fn resolve_collisions(ruby: &mut [TextLayoutRuby]) {
+pub(crate) fn resolve_collisions(
+    ruby: &mut [TextLayoutRuby],
+) -> Result<(), TextLengthResolutionError> {
     let mut placed = Vec::<LayoutRect>::new();
     for annotation in ruby {
-        let gap = collision_gap(annotation);
+        let gap = collision_gap(annotation)?;
         while let Some(collision) = placed
             .iter()
             .copied()
@@ -642,6 +647,7 @@ pub(crate) fn resolve_collisions(ruby: &mut [TextLayoutRuby]) {
         }
         placed.push(annotation.ruby_bounds);
     }
+    Ok(())
 }
 
 fn collision_shift(annotation: &TextLayoutRuby, collision: LayoutRect, gap: f32) -> (f32, f32) {
@@ -762,36 +768,31 @@ fn validate_ruby_shape<E: std::error::Error + 'static>(
     Ok(())
 }
 
-fn ruby_metrics(annotation: &ResolvedTextRuby) -> RubyMetrics {
+fn ruby_metrics(annotation: &ResolvedTextRuby) -> Result<RubyMetrics, TextLengthResolutionError> {
     let default_size = milli_to_pixels(annotation.style().font_size_milli()) * 0.5;
     let layout = annotation.presentation().layout.as_ref();
-    let font_size = layout
-        .and_then(|layout| positive_milli(layout.ruby_font_size))
+    let font_size = resolve_optional_length(layout.and_then(|layout| layout.ruby_font_size))?
         .unwrap_or(default_size);
-    RubyMetrics {
+    Ok(RubyMetrics {
         font_size,
-        gap: layout
-            .and_then(|layout| nonnegative_milli(layout.ruby_gap))
+        gap: resolve_optional_length(layout.and_then(|layout| layout.ruby_gap))?
             .unwrap_or(DEFAULT_RUBY_GAP),
-        overhang: layout
-            .and_then(|layout| nonnegative_milli(layout.ruby_overhang))
+        overhang: resolve_optional_length(layout.and_then(|layout| layout.ruby_overhang))?
             .unwrap_or(font_size * 0.5),
-        collision_gap: layout
-            .and_then(|layout| nonnegative_milli(layout.ruby_collision_gap))
-            .unwrap_or(DEFAULT_COLLISION_GAP),
-    }
+        collision_gap: resolve_optional_length(
+            layout.and_then(|layout| layout.ruby_collision_gap),
+        )?
+        .unwrap_or(DEFAULT_COLLISION_GAP),
+    })
 }
 
-fn positive_milli(value: Option<Milli>) -> Option<f32> {
+fn resolve_optional_length(
+    value: Option<CheckedLength>,
+) -> Result<Option<f32>, TextLengthResolutionError> {
     value
-        .map(Milli::as_f32)
-        .filter(|value| value.is_finite() && *value > 0.0)
-}
-
-fn nonnegative_milli(value: Option<Milli>) -> Option<f32> {
-    value
-        .map(Milli::as_f32)
-        .filter(|value| value.is_finite() && *value >= 0.0)
+        .map(ResolvedTextLength::try_resolve)
+        .transpose()
+        .map(|value| value.map(ResolvedTextLength::pixels))
 }
 
 fn ruby_position(annotation: &ResolvedTextRuby) -> RichTextRubyPosition {
@@ -833,13 +834,15 @@ fn ruby_track_is_right(writing_mode: RichTextWritingMode, position: RichTextRuby
     }
 }
 
-fn collision_gap(annotation: &TextLayoutRuby) -> f32 {
-    annotation
-        .presentation
-        .layout
-        .as_ref()
-        .and_then(|layout| nonnegative_milli(layout.ruby_collision_gap))
-        .unwrap_or(DEFAULT_COLLISION_GAP)
+fn collision_gap(annotation: &TextLayoutRuby) -> Result<f32, TextLengthResolutionError> {
+    Ok(resolve_optional_length(
+        annotation
+            .presentation
+            .layout
+            .as_ref()
+            .and_then(|layout| layout.ruby_collision_gap),
+    )?
+    .unwrap_or(DEFAULT_COLLISION_GAP))
 }
 
 fn pixels_to_milli(value: f32) -> Option<u32> {

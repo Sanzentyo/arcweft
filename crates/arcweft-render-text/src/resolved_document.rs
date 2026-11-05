@@ -12,6 +12,9 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{self, Write};
 use thiserror::Error;
 
+mod length;
+pub use length::{ResolvedTextLength, TextLengthResolutionError};
+
 /// Deterministic revision of an owning resolved-text source record.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct TextDocumentRevision(u64);
@@ -350,7 +353,7 @@ impl ResolvedTextStyle {
         self.language.as_ref()
     }
 
-    fn apply(&mut self, rich_style: &RichTextStyle) {
+    fn apply(&mut self, rich_style: &RichTextStyle) -> Result<(), TextResolveError> {
         match rich_style {
             RichTextStyle::Em | RichTextStyle::Italic => {
                 self.slant = TextSlant::Italic;
@@ -363,11 +366,10 @@ impl ResolvedTextStyle {
             RichTextStyle::Font { family } => {
                 self.font_families = vec![TextFontFamily::from(family)];
             }
-            RichTextStyle::Size { milli_points } => {
-                if let Ok(milli_points) = u32::try_from(milli_points.0) {
-                    self.font_size_milli = milli_points;
-                    self.line_height_milli = milli_points.saturating_mul(1_350) / 1_000;
-                }
+            RichTextStyle::Size { length } => {
+                let milli_pixels = ResolvedTextLength::try_resolve(*length)?.milli_pixels();
+                self.font_size_milli = milli_pixels;
+                self.line_height_milli = milli_pixels.saturating_mul(1_350) / 1_000;
             }
             RichTextStyle::Layout { layout } => {
                 if let Some(writing_mode) = layout.writing_mode {
@@ -383,6 +385,7 @@ impl ResolvedTextStyle {
             | RichTextStyle::Object { .. }
             | RichTextStyle::Presentation { .. } => {}
         }
+        Ok(())
     }
 
     fn validate(&self) -> Result<(), TextResolveError> {
@@ -468,10 +471,10 @@ impl TextStyleCascade {
     ) -> Result<ResolvedTextStyle, TextResolveError> {
         let resolved = styles
             .into_iter()
-            .fold(self.style.clone(), |mut style, rich| {
-                style.apply(rich);
-                style
-            });
+            .try_fold(self.style.clone(), |mut style, rich| {
+                style.apply(rich)?;
+                Ok::<_, TextResolveError>(style)
+            })?;
         resolved.validate()?;
         Ok(resolved)
     }
@@ -799,6 +802,8 @@ impl<'a> ResolvedTextDocument<'a> {
 /// Structured rejection raised while constructing canonical text.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum TextResolveError {
+    #[error(transparent)]
+    Length(#[from] TextLengthResolutionError),
     #[error(transparent)]
     InvalidDisplayFrame(#[from] LineDisplayFrameValidationError),
     #[error("display stage belongs to a different line display frame")]

@@ -1,5 +1,5 @@
 use super::*;
-use arcweft_text_model::{Milli, PreparedTextDocumentContext};
+use arcweft_text_model::{CheckedLength, Milli, PreparedTextDocumentContext};
 
 fn ruby_document(
     text: &'static str,
@@ -13,8 +13,8 @@ fn ruby_document(
     let presentation = RichTextPresentation {
         layout: Some(RichTextLayout {
             writing_mode: mode,
-            ruby_overhang: overhang,
-            ruby_collision_gap: gap,
+            ruby_overhang: overhang.map(|value| CheckedLength::px(value.0)),
+            ruby_collision_gap: gap.map(|value| CheckedLength::px(value.0)),
             ..Default::default()
         }),
         ..Default::default()
@@ -31,6 +31,66 @@ fn ruby_document(
     )
     .unwrap();
     document_with_presentation(text, base_style, presentation, vec![ruby], 80)
+}
+
+#[test]
+fn point_and_pixel_ruby_sizes_shape_identical_geometry_without_losing_the_authored_unit() {
+    for mode in [
+        RichTextWritingMode::HorizontalTb,
+        RichTextWritingMode::VerticalRl,
+        RichTextWritingMode::VerticalLr,
+    ] {
+        let mut geometry = None;
+        for size in [CheckedLength::pt(9_000), CheckedLength::px(12_000)] {
+            let text = "夢";
+            let base_style = style().with_flow(mode, RichTextInlineDirection::Auto);
+            let range = RichTextRange::new(0, text.len());
+            let presentation = RichTextPresentation {
+                layout: Some(RichTextLayout {
+                    writing_mode: mode,
+                    ruby_font_size: Some(size),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+            let ruby = ResolvedTextRuby::new(
+                RichTextNodeIndex::new(0),
+                RichTextNodeRange::new(RichTextNodeIndex::new(1), RichTextNodeIndex::new(2)),
+                RichTextTextRunRange::new(0, 1),
+                range,
+                range,
+                "ゆめ",
+                base_style.clone(),
+                presentation.clone(),
+            )
+            .unwrap();
+            let document =
+                document_with_presentation(text, base_style, presentation, vec![ruby], 80);
+            let layout =
+                layout_document(&document, request(), &mut MockShaper::new(b"font")).unwrap();
+            let annotation = &layout.ruby[0];
+            assert_eq!(annotation.style.font_size_milli(), 12_000);
+            assert_eq!(
+                annotation
+                    .presentation
+                    .layout
+                    .as_ref()
+                    .unwrap()
+                    .ruby_font_size,
+                Some(size)
+            );
+            let actual = (
+                annotation.base_bounds,
+                annotation.ruby_bounds,
+                annotation.glyphs.clone(),
+            );
+            if let Some(expected) = &geometry {
+                assert_eq!(&actual, expected);
+            } else {
+                geometry = Some(actual);
+            }
+        }
+    }
 }
 
 #[test]

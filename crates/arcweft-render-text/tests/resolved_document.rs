@@ -11,11 +11,11 @@ use arcweft_render_text::{
 };
 use arcweft_source::{ProductSourceRef, SourceDocument, SourceDocumentId, SourceName};
 use arcweft_text_model::{
-    CharacterDialoguePresentationConfig, DialogueContentFragmentTemplate, DialogueContentSpec,
-    DialoguePresentationCharacter, Milli, RichTextColor, RichTextControl, RichTextDocument,
-    RichTextFontFamily, RichTextInlineDirection, RichTextLayoutUpdate, RichTextNode,
-    RichTextPresentation, RichTextPresentationStyle, RichTextRange, RichTextRubyPosition,
-    RichTextStyle, RichTextWritingMode,
+    CharacterDialoguePresentationConfig, CheckedLength, DialogueContentFragmentTemplate,
+    DialogueContentSpec, DialoguePresentationCharacter, Milli, RichTextColor, RichTextControl,
+    RichTextDocument, RichTextFontFamily, RichTextInlineDirection, RichTextLayoutUpdate,
+    RichTextNode, RichTextPresentation, RichTextPresentationStyle, RichTextRange,
+    RichTextRubyPosition, RichTextStyle, RichTextWritingMode,
 };
 
 mod support;
@@ -489,10 +489,36 @@ fn direct_document_rejects_public_node_mutation_that_would_stale_the_borrowed_te
 }
 
 #[test]
+fn authored_point_and_pixel_sizes_resolve_to_the_same_logical_metrics() {
+    let cascade = TextStyleCascade::default();
+    for length in [CheckedLength::pt(18_000), CheckedLength::px(24_000)] {
+        let authored = RichTextStyle::Size { length };
+        let restored: RichTextStyle =
+            serde_json::from_slice(&serde_json::to_vec(&authored).unwrap()).unwrap();
+        assert_eq!(restored, authored);
+        let resolved = cascade.resolve_style([&restored]).unwrap();
+        assert_eq!(resolved.font_size_milli(), 24_000);
+        assert_eq!(resolved.line_height_milli(), 32_400);
+    }
+    for length in [
+        CheckedLength::px(-1),
+        CheckedLength {
+            milli: 1_000,
+            unit: arcweft_text_model::LengthUnit::Em,
+        },
+    ] {
+        assert!(matches!(
+            cascade.resolve_style([&RichTextStyle::Size { length }]),
+            Err(TextResolveError::Length(_))
+        ));
+    }
+}
+
+#[test]
 fn style_resolution_rejects_zero_sized_authored_text() {
     let document = RichTextDocument::new(vec![RichTextNode::Scope {
         style: Box::new(RichTextStyle::Size {
-            milli_points: Milli(0),
+            length: CheckedLength::px(0),
         }),
         body: vec![RichTextNode::Text {
             text: "invalid".to_owned(),

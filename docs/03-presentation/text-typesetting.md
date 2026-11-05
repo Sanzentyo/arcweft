@@ -65,6 +65,16 @@ RichText typography is configured as structured style data, not as a flat list
 of dialogue-only knobs. Dialogue, choices, View labels, logs, and HUD text can all
 consume the same model.
 
+Text and ruby font sizes accept logical pixels (`px`) and typographic points
+(`pt`). Authored quantities retain both their value and unit through function
+calls, reusable style composition, TextModel projection and saved execution.
+The shared text resolution and layout owners convert them to logical pixels
+when constructing geometry: `1pt = 4/3px`, using the
+[CSS absolute-length ratio](https://www.w3.org/TR/css-values-4/#absolute-lengths).
+Conversion rounds once to the nearest milli-pixel. Output/device scaling applies
+after this resolution and does not change the point-to-pixel ratio. A relative
+unit requires its own admitted layout context; it is never treated as `px`.
+
 ```arcw
 rich_text {
     text {

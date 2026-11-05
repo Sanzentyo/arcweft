@@ -2,7 +2,9 @@
 
 use std::collections::BTreeMap;
 
-use arcweft_render_text::{ResolvedTextDocument, ResolvedTextRun};
+use arcweft_render_text::{
+    ResolvedTextDocument, ResolvedTextLength, ResolvedTextRun, TextLengthResolutionError,
+};
 use arcweft_text_model::{RichTextRange, RichTextVerticalLatinMode, RichTextWritingMode};
 
 use crate::{
@@ -55,7 +57,7 @@ pub fn layout_document<S: TextShaper>(
                 .map_or(RichTextVerticalLatinMode::Mixed, |layout| {
                     layout.vertical_latin
                 });
-            vertical_placements(document, run_index, run, text, &shaped_run, vertical_latin)
+            vertical_placements(document, run_index, run, text, &shaped_run, vertical_latin)?
         };
         // Count the actual emitted product: a vertical placement can borrow
         // the same shaped glyph as another placement, so shaped-run length
@@ -123,7 +125,7 @@ pub fn layout_document<S: TextShaper>(
         &state.runs,
         &state.body_allocations,
     );
-    crate::document_ruby::resolve_collisions(&mut ruby);
+    crate::document_ruby::resolve_collisions(&mut ruby)?;
     for annotation in &ruby {
         state.include_bounds(annotation.base_bounds.union(annotation.ruby_bounds));
     }
@@ -689,10 +691,10 @@ fn vertical_placements(
     text: &str,
     shaped: &ShapedTextRun,
     vertical_latin: RichTextVerticalLatinMode,
-) -> Vec<VerticalPlacement> {
+) -> Result<Vec<VerticalPlacement>, TextLengthResolutionError> {
     let font_size = milli_to_pixels(run.style().font_size_milli());
-    let column_step = vertical_column_step(run);
-    vertical_clusters(text, vertical_latin)
+    let column_step = vertical_column_step(run)?;
+    Ok(vertical_clusters(text, vertical_latin)
         .into_iter()
         .filter_map(|cluster| {
             if cluster
@@ -740,7 +742,7 @@ fn vertical_placements(
                 break_allowed_before: cluster.break_allowed_before,
             })
         })
-        .collect()
+        .collect())
 }
 
 fn place_vertical_glyphs(
@@ -1007,18 +1009,16 @@ fn cluster_slices(glyphs: &[ShapedTextGlyph]) -> impl Iterator<Item = &[ShapedTe
     })
 }
 
-fn vertical_column_step(run: &ResolvedTextRun) -> f32 {
+fn vertical_column_step(run: &ResolvedTextRun) -> Result<f32, TextLengthResolutionError> {
     let line_height = milli_to_pixels(run.style().line_height_milli());
     let gap = run
         .presentation()
         .layout
         .as_ref()
-        .map_or(8.0, |layout| layout.column_gap.as_f32());
-    if gap.is_finite() && gap >= 0.0 {
-        line_height + gap
-    } else {
-        line_height + 8.0
-    }
+        .map(|layout| ResolvedTextLength::try_resolve(layout.column_gap))
+        .transpose()?
+        .map_or(8.0, ResolvedTextLength::pixels);
+    Ok(line_height + gap)
 }
 
 fn glyph_bounds(glyph: &TextLayoutGlyph) -> LayoutRect {

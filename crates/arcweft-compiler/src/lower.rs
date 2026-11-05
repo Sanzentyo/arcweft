@@ -4113,14 +4113,11 @@ fn lower_content_modifier(
         PresentationContentCallableDefinitionId::Size => {
             let length =
                 lower_checked_length(value(PresentationContentCallableParameterId::Value)?)?;
-            if length.1 != arcweft_primitives::LengthUnit::Pt {
-                return Err(content_modifier_error(
-                    owner,
-                    "RichText size emission requires a point length",
-                ));
-            }
             Ok(RichTextStyle::Size {
-                milli_points: Milli(length.0),
+                length: arcweft_primitives::CheckedLength {
+                    milli: length.0,
+                    unit: length.1,
+                },
             })
         }
         PresentationContentCallableDefinitionId::Style(selector) => {
@@ -4408,10 +4405,13 @@ fn lower_transform_modifier(
 fn lower_optional_length(
     modifier: &CheckedContentModifier,
     property: RichTextLayoutProperty,
-) -> Result<Option<Milli>, RuntimeSemanticProjectionError> {
+) -> Result<Option<arcweft_primitives::CheckedLength>, RuntimeSemanticProjectionError> {
     modifier
         .authored_parameter(PresentationContentCallableParameterId::Layout(property))
-        .map(|parameter| lower_checked_length(parameter.value()).map(|(value, _)| Milli(value)))
+        .map(|parameter| {
+            lower_checked_length(parameter.value())
+                .map(|(milli, unit)| arcweft_primitives::CheckedLength { milli, unit })
+        })
         .transpose()
 }
 

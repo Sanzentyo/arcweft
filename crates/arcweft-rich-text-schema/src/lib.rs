@@ -443,6 +443,25 @@ impl TryFrom<arcweft_primitives::LengthUnit> for RichTextUnit {
     }
 }
 
+/// Projects only length dimensions back to the shared quantity vocabulary.
+impl TryFrom<RichTextUnit> for arcweft_primitives::LengthUnit {
+    type Error = RichTextUnit;
+
+    fn try_from(unit: RichTextUnit) -> Result<Self, Self::Error> {
+        Ok(match unit {
+            RichTextUnit::Px => Self::Px,
+            RichTextUnit::Pt => Self::Pt,
+            RichTextUnit::Ch => Self::Ch,
+            RichTextUnit::Em => Self::Em,
+            RichTextUnit::Unitless
+            | RichTextUnit::Deg
+            | RichTextUnit::Ms
+            | RichTextUnit::S
+            | RichTextUnit::Cps => return Err(unit),
+        })
+    }
+}
+
 /// Presence and defaulting policy for one owner-defined property.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PropertyPresence<P: Copy + Eq + 'static> {
@@ -787,6 +806,7 @@ mod unit_codec_tests {
             (LengthUnit::Em, Unit::Em),
         ] {
             assert_eq!(Unit::try_from(source), Ok(expected));
+            assert_eq!(LengthUnit::try_from(expected), Ok(source));
             assert_ne!(source.encoded(), expected.semantic_tag());
         }
         for source in [

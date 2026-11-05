@@ -1,10 +1,10 @@
 //! Projects admitted `CharacterDialogue` `RichText` properties into text styles.
 
 use crate::{
-    Milli, RichTextAngle, RichTextColor, RichTextFontFamily, RichTextInlineDirection,
-    RichTextJlreqStrictness, RichTextLayoutUpdate, RichTextPresentationStyle, RichTextRubyPosition,
-    RichTextStyle, RichTextTransform, RichTextTransformOrigin, RichTextVerticalLatinMode,
-    RichTextWritingMode,
+    CheckedLength, Milli, RichTextAngle, RichTextColor, RichTextFontFamily,
+    RichTextInlineDirection, RichTextJlreqStrictness, RichTextLayoutUpdate,
+    RichTextPresentationStyle, RichTextRubyPosition, RichTextStyle, RichTextTransform,
+    RichTextTransformOrigin, RichTextVerticalLatinMode, RichTextWritingMode,
 };
 use arcweft_dialogue::{
     CharacterDialogueRichTextColor, CharacterDialogueRichTextProperties,
@@ -119,8 +119,8 @@ fn project_scalar(
         (PropertyId::Font, Value::Text(name)) => RichTextStyle::Font {
             family: RichTextFontFamily::Named { name: name.clone() },
         },
-        (PropertyId::Size, Value::Length { milli, .. }) => RichTextStyle::Size {
-            milli_points: Milli(*milli),
+        (PropertyId::Size, Value::Length { .. }) => RichTextStyle::Size {
+            length: length(property)?,
         },
         (PropertyId::Italic, Value::ClosedEnum { .. })
             if closed_enum_variant(property, RichTextStyleSelector::Italic.schema_id())?
@@ -208,12 +208,12 @@ fn apply_layout(
                 _ => return Err(invalid(property.id())),
             });
         }
-        PropertyId::ColumnGap => layout.column_gap = Some(Milli(length_milli(property)?)),
-        PropertyId::RubySize => layout.ruby_font_size = Some(Milli(length_milli(property)?)),
-        PropertyId::RubyGap => layout.ruby_gap = Some(Milli(length_milli(property)?)),
-        PropertyId::RubyOverhang => layout.ruby_overhang = Some(Milli(length_milli(property)?)),
+        PropertyId::ColumnGap => layout.column_gap = Some(length(property)?),
+        PropertyId::RubySize => layout.ruby_font_size = Some(length(property)?),
+        PropertyId::RubyGap => layout.ruby_gap = Some(length(property)?),
+        PropertyId::RubyOverhang => layout.ruby_overhang = Some(length(property)?),
         PropertyId::RubyCollisionGap => {
-            layout.ruby_collision_gap = Some(Milli(length_milli(property)?));
+            layout.ruby_collision_gap = Some(length(property)?);
         }
         _ => return Err(invalid(property.id())),
     }
@@ -291,13 +291,16 @@ fn closed_enum_variant(
     Ok(*variant)
 }
 
-fn length_milli(
+fn length(
     property: &CharacterDialogueRichTextProperty,
-) -> Result<i32, CharacterDialogueRichTextProjectionError> {
-    let Value::Length { milli, .. } = property.value() else {
+) -> Result<CheckedLength, CharacterDialogueRichTextProjectionError> {
+    let Value::Length { milli, unit } = property.value() else {
         return Err(invalid(property.id()));
     };
-    Ok(*milli)
+    Ok(CheckedLength {
+        milli: *milli,
+        unit: (*unit).try_into().map_err(|_| invalid(property.id()))?,
+    })
 }
 
 const fn invalid(property: PropertyId) -> CharacterDialogueRichTextProjectionError {
@@ -400,7 +403,7 @@ mod tests {
                 },
             },
             RichTextStyle::Size {
-                milli_points: Milli(18_000),
+                length: CheckedLength::pt(18_000),
             },
             RichTextStyle::Italic,
             RichTextStyle::Presentation {
@@ -413,7 +416,7 @@ mod tests {
                 layout: RichTextLayoutUpdate {
                     writing_mode: Some(RichTextWritingMode::VerticalRl),
                     vertical_latin: Some(RichTextVerticalLatinMode::Upright),
-                    column_gap: Some(Milli(9_500)),
+                    column_gap: Some(CheckedLength::px(9_500)),
                     ..RichTextLayoutUpdate::default()
                 },
             },
@@ -436,6 +439,32 @@ mod tests {
         assert_eq!(
             project_character_dialogue_rich_text_properties(&properties).unwrap(),
             expected_representative_styles()
+        );
+    }
+
+    #[test]
+    fn projection_keeps_distinct_text_and_ruby_units_through_json() {
+        let properties = policy_with([
+            (PropertyId::Size, length(24_000, 1)),
+            (PropertyId::RubySize, length(9_000, 2)),
+        ]);
+        let styles = project_character_dialogue_rich_text_properties(&properties).unwrap();
+        let restored: Vec<RichTextStyle> =
+            serde_json::from_slice(&serde_json::to_vec(&styles).unwrap()).unwrap();
+        assert_eq!(restored, styles);
+        assert_eq!(
+            restored,
+            [
+                RichTextStyle::Size {
+                    length: CheckedLength::px(24_000)
+                },
+                RichTextStyle::Layout {
+                    layout: RichTextLayoutUpdate {
+                        ruby_font_size: Some(CheckedLength::pt(9_000)),
+                        ..Default::default()
+                    }
+                },
+            ]
         );
     }
 
@@ -478,7 +507,7 @@ mod tests {
             styles,
             vec![RichTextStyle::Layout {
                 layout: RichTextLayoutUpdate {
-                    ruby_font_size: Some(Milli(11_000)),
+                    ruby_font_size: Some(CheckedLength::px(11_000)),
                     ..RichTextLayoutUpdate::default()
                 }
             }]
@@ -491,8 +520,8 @@ mod tests {
                 layout: RichTextLayoutUpdate {
                     writing_mode: Some(RichTextWritingMode::VerticalLr),
                     ruby_position: Some(position),
-                    ruby_gap: Some(Milli(3_000)),
-                    column_gap: Some(Milli(15_000)),
+                    ruby_gap: Some(CheckedLength::px(3_000)),
+                    column_gap: Some(CheckedLength::px(15_000)),
                     ..RichTextLayoutUpdate::default()
                 },
             };
@@ -501,9 +530,9 @@ mod tests {
             let resolved = presentation.layout.unwrap();
             assert_eq!(resolved.writing_mode, RichTextWritingMode::VerticalLr);
             assert_eq!(resolved.ruby_position, position);
-            assert_eq!(resolved.ruby_gap, Some(Milli(3_000)));
-            assert_eq!(resolved.column_gap, Milli(15_000));
-            assert_eq!(resolved.ruby_font_size, Some(Milli(11_000)));
+            assert_eq!(resolved.ruby_gap, Some(CheckedLength::px(3_000)));
+            assert_eq!(resolved.column_gap, CheckedLength::px(15_000));
+            assert_eq!(resolved.ruby_font_size, Some(CheckedLength::px(11_000)));
         }
     }
 }

@@ -16,6 +16,8 @@ pub mod rich_effects;
 pub mod rich_text;
 pub mod style;
 
+pub use arcweft_primitives::{CheckedLength, LengthUnit};
+
 pub use catalog::{
     DialogueContentCatalog, DialogueContentCatalogError, DialogueContentSpec,
     DialogueContentSpecError, DialoguePresentationSnapshot, RichTextAssignOp, RichTextCascadeLayer,

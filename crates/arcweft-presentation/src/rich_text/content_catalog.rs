@@ -403,18 +403,6 @@ const TRANSFORM_SELECTOR_LIMITS: RichTextValueLimits = closed_enum_limits();
 const COLOR_LIMITS: RichTextValueLimits = text_limits(4_096, 4_096);
 const STRING_LIMITS: RichTextValueLimits = text_limits(4_096, 4_096);
 const FX_LIMITS: RichTextValueLimits = text_limits(4_096, 4_096);
-const SIZE_LIMITS: RichTextValueLimits = RichTextValueLimits {
-    numeric: Some(RichTextNumericLimits {
-        inclusive_min_milli: Some(1_000),
-        inclusive_max_milli: Some(512_000),
-        max_integer_digits: 19,
-        max_fraction_digits: 3,
-    }),
-    units: &[RichTextUnit::Pt],
-    enum_values: &[],
-    max_encoded_bytes: 64,
-    max_decoded_bytes: 64,
-};
 
 const fn closed_enum_limits() -> RichTextValueLimits {
     RichTextValueLimits {
@@ -874,7 +862,7 @@ const SIZE_PARAMETERS: &[PresentationContentCallableParameterSpec] = &[required_
     PresentationContentCallableParameterId::Value,
     "value",
     RichTextValueKind::Length,
-    SIZE_LIMITS,
+    super::authoring_schema::FONT_SIZE_LIMITS,
 )];
 const RUBY_PARAMETERS: &[PresentationContentCallableParameterSpec] = &[required_positional(
     PresentationContentCallableParameterId::Value,

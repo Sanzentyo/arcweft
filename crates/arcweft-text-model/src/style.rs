@@ -1,8 +1,8 @@
 //! Authored rich-text styles and deterministic presentation cascade.
 
 use crate::{
-    Milli, RichTextAngle, RichTextLayoutUpdate, RichTextObjectProxy, RichTextPresentation,
-    RichTextTransform,
+    CheckedLength, Milli, RichTextAngle, RichTextLayoutUpdate, RichTextObjectProxy,
+    RichTextPresentation, RichTextTransform,
 };
 use arcweft_presentation::fx::FxApplication;
 use serde::{Deserialize, Serialize};
@@ -24,7 +24,7 @@ pub enum RichTextStyle {
         family: RichTextFontFamily,
     },
     Size {
-        milli_points: Milli,
+        length: CheckedLength,
     },
     Speed {
         milli_cps: Milli,
@@ -167,8 +167,8 @@ mod tests {
                 vertical_latin: Some(RichTextVerticalLatinMode::Upright),
                 ruby_position: Some(RichTextRubyPosition::Under),
                 jlreq_strictness: Some(RichTextJlreqStrictness::Strict),
-                column_gap: Some(Milli(15_000)),
-                ruby_gap: Some(Milli(3_000)),
+                column_gap: Some(CheckedLength::px(15_000)),
+                ruby_gap: Some(CheckedLength::px(3_000)),
                 ..RichTextLayoutUpdate::default()
             },
         };
@@ -179,8 +179,8 @@ mod tests {
                 vertical_latin: Some(RichTextVerticalLatinMode::Mixed),
                 ruby_position: Some(RichTextRubyPosition::Auto),
                 jlreq_strictness: Some(RichTextJlreqStrictness::Auto),
-                column_gap: Some(Milli(8_000)),
-                ruby_gap: Some(Milli::ZERO),
+                column_gap: Some(CheckedLength::px(8_000)),
+                ruby_gap: Some(CheckedLength::px(0)),
                 ..RichTextLayoutUpdate::default()
             },
         };
@@ -195,13 +195,13 @@ mod tests {
         assert_eq!(resolved.vertical_latin, RichTextVerticalLatinMode::Mixed);
         assert_eq!(resolved.ruby_position, RichTextRubyPosition::Auto);
         assert_eq!(resolved.jlreq_strictness, RichTextJlreqStrictness::Auto);
-        assert_eq!(resolved.column_gap, Milli(8_000));
-        assert_eq!(resolved.ruby_gap, Some(Milli::ZERO));
+        assert_eq!(resolved.column_gap, CheckedLength::px(8_000));
+        assert_eq!(resolved.ruby_gap, Some(CheckedLength::px(0)));
         let reversed = presentation_from_styles([&decoded, &inherited])
             .layout
             .unwrap();
         assert_eq!(reversed.writing_mode, RichTextWritingMode::VerticalRl);
         assert_eq!(reversed.ruby_position, RichTextRubyPosition::Under);
-        assert_eq!(reversed.column_gap, Milli(15_000));
+        assert_eq!(reversed.column_gap, CheckedLength::px(15_000));
     }
 }

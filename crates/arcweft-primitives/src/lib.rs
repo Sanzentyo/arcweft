@@ -97,6 +97,26 @@ pub struct CheckedLength {
     pub unit: LengthUnit,
 }
 
+impl CheckedLength {
+    /// Constructs a length in thousandths of a logical pixel.
+    #[must_use]
+    pub const fn px(milli: i32) -> Self {
+        Self {
+            milli,
+            unit: LengthUnit::Px,
+        }
+    }
+
+    /// Constructs a length in thousandths of a typographic point.
+    #[must_use]
+    pub const fn pt(milli: i32) -> Self {
+        Self {
+            milli,
+            unit: LengthUnit::Pt,
+        }
+    }
+}
+
 /// Angle normalized to milli-degrees.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CheckedAngle {

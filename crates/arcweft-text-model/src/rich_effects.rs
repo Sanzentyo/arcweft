@@ -3,6 +3,7 @@
 //! This module intentionally stores only deterministic, serializable data.
 
 use arcweft_presentation::fx::{FxApplication, FxTarget};
+use arcweft_primitives::CheckedLength;
 use serde::{Deserialize, Serialize};
 
 /// Fixed-point scalar for stable snapshots and Eq-friendly display sidecars.
@@ -158,15 +159,15 @@ pub struct RichTextLayoutUpdate {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub jlreq_strictness: Option<RichTextJlreqStrictness>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub column_gap: Option<Milli>,
+    pub column_gap: Option<CheckedLength>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ruby_font_size: Option<Milli>,
+    pub ruby_font_size: Option<CheckedLength>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ruby_gap: Option<Milli>,
+    pub ruby_gap: Option<CheckedLength>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ruby_overhang: Option<Milli>,
+    pub ruby_overhang: Option<CheckedLength>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ruby_collision_gap: Option<Milli>,
+    pub ruby_collision_gap: Option<CheckedLength>,
 }
 
 impl RichTextLayoutUpdate {
@@ -226,19 +227,19 @@ pub struct RichTextLayout {
     #[serde(default)]
     pub jlreq_strictness: RichTextJlreqStrictness,
     #[serde(default = "default_column_gap")]
-    pub column_gap: Milli,
+    pub column_gap: CheckedLength,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ruby_font_size: Option<Milli>,
+    pub ruby_font_size: Option<CheckedLength>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ruby_gap: Option<Milli>,
+    pub ruby_gap: Option<CheckedLength>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ruby_overhang: Option<Milli>,
+    pub ruby_overhang: Option<CheckedLength>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ruby_collision_gap: Option<Milli>,
+    pub ruby_collision_gap: Option<CheckedLength>,
 }
 
-const fn default_column_gap() -> Milli {
-    Milli(8000)
+const fn default_column_gap() -> CheckedLength {
+    CheckedLength::px(8000)
 }
 
 impl Default for RichTextLayout {

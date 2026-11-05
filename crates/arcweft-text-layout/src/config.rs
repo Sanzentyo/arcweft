@@ -15,6 +15,9 @@ pub enum TextLayoutError<E = std::convert::Infallible>
 where
     E: StdError + 'static,
 {
+    /// An authored typography length has no valid logical-pixel resolution.
+    #[error(transparent)]
+    Length(#[from] arcweft_render_text::TextLengthResolutionError),
     /// Host constraints contain non-finite or negative geometry.
     #[error("text layout request contains invalid geometry")]
     InvalidRequestGeometry,
