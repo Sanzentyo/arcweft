@@ -6854,6 +6854,304 @@
       "entries": 45,
       "entryDrift": 0,
       "indexEntry": "callable-input-order.archive-inputs.json"
+    },
+    "nativeFrames": {
+      "version": 1,
+      "recordedAt": "2026-11-05T07:18:19.0725181Z",
+      "source": {
+        "version": 1,
+        "commit": "bfb7e39cb26299185cf498e1ad8ec16e33b02e10",
+        "parent": "53defec18dcc581789b22ac40f61d2079cf24955",
+        "tree": "045ec973ff7d534af61a7d20e10755fdbc0b6ca2",
+        "remote": "bfb7e39cb26299185cf498e1ad8ec16e33b02e10",
+        "paths": [
+          {
+            "path": "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+            "blob": "da6f6ffe0a972ed6747397881fb2932355663768"
+          },
+          {
+            "path": "crates/arcweft-core/src/engine.rs",
+            "blob": "7e9b257f2237c07655cd96adb48b8c9c1e4d300c"
+          },
+          {
+            "path": "crates/arcweft-core/src/engine/eval/callable.rs",
+            "blob": "b0e86bb885095c7dfdbc24705c24c29ef4eee790"
+          },
+          {
+            "path": "crates/arcweft-core/src/engine/eval/calls.rs",
+            "blob": "f859b97dc12c94f685466e2c69b5ad22084a53c6"
+          },
+          {
+            "path": "crates/arcweft-core/src/engine/eval/function/tests.rs",
+            "blob": "5e659b358462444d04a47bf943a2fee160469189"
+          },
+          {
+            "path": "crates/arcweft-core/src/engine/fanout.rs",
+            "blob": "d481f2a629959a43817de76858578a848cddf741"
+          },
+          {
+            "path": "crates/arcweft-core/src/engine/flow/callable.rs",
+            "blob": "08433c80fafc6ee643c24ecb20e1007dbec03925"
+          },
+          {
+            "path": "crates/arcweft-core/src/engine/flow/function_call.rs",
+            "blob": "41d4282bb6c76b1508a0dcde406b29aa5062983f"
+          },
+          {
+            "path": "crates/arcweft-core/src/engine/flow/function_call/tests.rs",
+            "blob": "be888b0f1fa908f6384b487e1dae643826214831"
+          },
+          {
+            "path": "crates/arcweft-core/src/engine/line.rs",
+            "blob": "c4c5582032fcb1a773589419fbb2fea590016029"
+          },
+          {
+            "path": "crates/arcweft-core/src/engine/presentation_tests/replacement.rs",
+            "blob": "cbfa6a7035ac0002d317ac3604136e51980d10b6"
+          },
+          {
+            "path": "crates/arcweft-core/src/engine/program.rs",
+            "blob": "b0cc6518637a4c130c867210aefee6e5836e8b9c"
+          },
+          {
+            "path": "crates/arcweft-core/src/engine/rollback/await_state/many_tests.rs",
+            "blob": "4935b2042e210a22c0a20cd74d4703bd803fa5f6"
+          },
+          {
+            "path": "crates/arcweft-core/src/engine/rollback/await_state/tests.rs",
+            "blob": "8a630607dff6ac96ac89b50b6ea482209ca90eb8"
+          },
+          {
+            "path": "crates/arcweft-core/src/engine/root.rs",
+            "blob": "250a4382418723b5d0059c8f7f9ee50de07acf95"
+          },
+          {
+            "path": "crates/arcweft-core/src/plan/function_inputs.rs",
+            "blob": "47a9334bbbe8c79c83302b343b512ed70d4dad9c"
+          },
+          {
+            "path": "crates/arcweft-core/src/pure.rs",
+            "blob": "e974bcb7cda67608c9f57d8b6cd0843caab4cd5a"
+          },
+          {
+            "path": "crates/arcweft-core/src/pure/callable.rs",
+            "blob": "c91552d27386e1c24b8c00b86255d8baee33de9c"
+          },
+          {
+            "path": "crates/arcweft-core/src/pure/program.rs",
+            "blob": "3c14fa54d0659a58a8736f96a7c5c438156ce5bb"
+          },
+          {
+            "path": "crates/arcweft-core/src/pure/program_context.rs",
+            "blob": "30f0174ec7fda54006252a5d26d5f605cc5d059f"
+          },
+          {
+            "path": "crates/arcweft-core/src/value.rs",
+            "blob": "f7770c87e31a22b31c1238ba66bf9f0fd1e7106e"
+          },
+          {
+            "path": "crates/arcweft-core/src/value/callable/application.rs",
+            "blob": "07c16c3feb03c190faa8568e32f0188df74b943b"
+          },
+          {
+            "path": "crates/arcweft-core/src/value/env.rs",
+            "blob": "c2826be3dbdd2194eb20974135003265ac909050"
+          }
+        ],
+        "blobDrift": 0,
+        "patchSha256": "10615be9050bff5cbea0e73cf91bcc78c29a2ef760b0585d43230e72044f6f16",
+        "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+        "separatelyHeld": [],
+        "indexEmpty": true,
+        "at": "2026-11-05T07:16:14.1754654Z"
+      },
+      "state": "Intermediate Native/PureEvaluator scope transport. AWBC frames, explicit external forwarding and final alias/full-goal acceptance remain pending.",
+      "implementation": [
+        "Pass the complete RuntimeCallableInvocation to synchronous and suspended Native function ingress. RuntimeFunctionInputAdmission projects its order through actual Capture/CapturedParameter/Parameter coordinates and shares its owned pattern binder with PureEvaluator; delete the duplicate pure binder.",
+        "RuntimeScopeFunctionContext replaces the narrower type-only name and owns site, original effect/type instantiation and immutable Arc<RuntimeInputOrder>. Root/program/reducer/callback/deferred activation, suspended await/fanout and environment rollback preserve the scope context. Original-site/arity/resource admission precedes retained snapshots.",
+        "RuntimeProgramExecutionContext leases the current scope order through Native and pure external-call bridges. Arc cloning does not duplicate the permutation payload. New direct host/program ingress constructs positional order explicitly; applied invocations retain their actual order. No legacy alias, provider-name special case or version increase."
+      ],
+      "validation": {
+        "owner": {
+          "version": 1,
+          "base": "53defec18dcc581789b22ac40f61d2079cf24955",
+          "run": "callable-input-order-native-owner4-20261105.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [  19.555s] 2273 tests run: 2273 passed, 0 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 2273,
+          "passed": 2273,
+          "failed": 0,
+          "skipped": 0,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4105,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-05T07:13:12.7216661Z"
+        },
+        "command": [
+          "nextest",
+          "run",
+          "-p",
+          "arcweft-core",
+          "--lib",
+          "--all-features",
+          "--locked",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast",
+          "--status-level",
+          "all",
+          "--final-status-level",
+          "all"
+        ],
+        "scope": "One full Core library/all-features/locked run:2273/2273 PASS,0 skipped. New noncanonical Native activation scope survives authenticated environment rollback and the original-program external execution context. This does not establish public Native session-save or alias composition acceptance.",
+        "sourceRelation": "4105 frozen repository inputs on53defec18dcc581789b22ac40f61d2079cf24955 plus23 paths published asbfb7e39cb26299185cf498e1ad8ec16e33b02e10. Source/case/executable drift0; observed working tree/relevant original WIP, not pristineHEAD.",
+        "initialCatalog": {
+          "version": 1,
+          "base": "53defec18dcc581789b22ac40f61d2079cf24955",
+          "command": [
+            "nextest",
+            "list",
+            "-p",
+            "arcweft-core",
+            "--lib",
+            "--all-features",
+            "--locked",
+            "--message-format",
+            "json"
+          ],
+          "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/callable-input-order-native-owner1-20261105.catalog.log",
+          "exitCode": 101,
+          "sourceInputs": 4105,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-05T07:03:10.7719539Z",
+          "finishedAt": "2026-11-05T07:04:04.4969416Z"
+        },
+        "initialReason": "Compile101 from two fixture-relative imports and a private error constructor; corrected without widening visibility.",
+        "earlierFull": {
+          "version": 1,
+          "base": "53defec18dcc581789b22ac40f61d2079cf24955",
+          "run": "callable-input-order-native-owner2-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [  20.740s] 2272 tests run: 2269 passed, 3 failed, 0 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 2272,
+          "passed": 2269,
+          "failed": 3,
+          "skipped": 0,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4105,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-core",
+              "test": "engine::rollback::await_state::tests::native_waits_reject_wrong_types_correlations_and_cursor_frontiers_before_projection"
+            },
+            {
+              "status": "FAIL",
+              "binary": "arcweft-core",
+              "test": "engine::rollback::await_state::tests::native_waits_share_live_inert_and_parent_node_limits"
+            },
+            {
+              "status": "FAIL",
+              "binary": "arcweft-core",
+              "test": "engine::rollback_tests::await_observer_admits_the_whole_selection_before_moving_affine_ready"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T07:06:57.6901496Z"
+        },
+        "earlierReason": "2269 PASS/3 FAIL: existing fixtures declared0 input slots for an original function with1 input. The new arity check rejected them before projection. Correct fixtures to canonical1; keep budgets/cases/affine checks unchanged.",
+        "repairSubset": {
+          "version": 1,
+          "base": "53defec18dcc581789b22ac40f61d2079cf24955",
+          "run": "callable-input-order-native-owner3-20261105.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [   0.044s] 3 tests run: 3 passed, 2269 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 3,
+          "passed": 3,
+          "failed": 0,
+          "skipped": 2269,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4105,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-05T07:08:42.8840198Z"
+        },
+        "repairScope": "Separate3/3 run,2269 skipped. It is not merged with the earlier full run. Owner4 later provides its own full2273 result.",
+        "fmt": "All23 changed Rust paths fmt/whitespace0.",
+        "structure": {
+          "version": 1,
+          "base": "53defec18dcc581789b22ac40f61d2079cf24955",
+          "command": [
+            "+nightly",
+            "-Zscript",
+            "tools/structure-audit.rs",
+            "--root",
+            ".",
+            "--fail-on-blocking",
+            "--write",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/callable-input-order-native.structure-report"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 4105,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-05T07:14:54.9493237Z",
+          "finishedAt": "2026-11-05T07:14:58.9049451Z"
+        }
+      },
+      "graphReuse": {
+        "record": "callableInputOrder.validation.graph",
+        "source": "466c2d7bf8245d1f7dd0c3560db27d0d2f53f893",
+        "roots": [
+          "arcweft-core",
+          "arcweft-rich-text-schema",
+          "arcweft-dialogue",
+          "arcweft-lang-sema",
+          "arcweft-runtime-plan"
+        ],
+        "reversePackages": 58,
+        "checkedManifestInputs": 101,
+        "manifestDrift": 0,
+        "reason": "No Cargo input changed from the recorded metadata/tree0-difference graph. Full58 runtime and98 check/Clippy remain pending."
+      },
+      "ownershipReview": "Current23-path exact owner/physical/code/embedded-test LOC and full structure metrics are archived. Function scope now owns its complete original execution context. Invocation/input projection and pattern binding stay in the admitted plan boundary; synchronous/suspended evaluators consume it. Existing callback/deferred ownership and Sans-I/O direction remain intact. No crate/dependency/API widening for file splitting. Scanner98 packages,385 review triggers,0 blocking.",
+      "correctionReason": "Supersedes only the Native/PureEvaluator portion of source466 remaining text, which is historical for that source. AWBC frame/provider forwarding is still open. Current status lists this implemented Native boundary without claiming the actual alias regression is fixed or reopening accepted Generic Match.",
+      "supersededCurrentRows": [
+        "| RichTextの部分layout指定／source factory | **既受入を維持。callableの順序保持を中間公開、frame・単位は継続** | Source 466c2d7bf8245d1f7dd0c3560db27d0d2f53f893で実引数順をformal格納順と独立したtyped permutationとしてcallable・継続packet・保存形式へ接続し、Core library2272／2272 PASS。最終frame／providerへの転送は未接続で、aliasの受入とはしない。直近のfactory実測Source187fb586261ac6ba381546532143fa20854dba8bはgeneric関数／closure quantityとAWBC各OneOp公開保存がPASS、一方pt合成は直接24pt／alias11pt、px2条件もpt限定schemaでFAIL。単位consumer・typed bare serif・static inline_stylesと全体受入を継続する。部分layout・共通property等の既受入は維持する。[順序ownerの実測・旧失敗・公開SHA・原本](acceptance-evidence/task-rich-text-property-identity.json)。 |",
+        "| 共有契約／推移的逆依存matrix | **直近の全53実測を保持。今回の全58逆依存は未実行** | Source2aaa0480b171d15274737d7bd49a3c391ce19096の全53実runは7808件中7793 PASS／15 CLI FAIL、40 skipped。50 packageに実テストがあり、3 packageはbuildのみ。source／case／EXE drift0。中間Source466c2d7bf8245d1f7dd0c3560db27d0d2f53f893はCoreを含む5 ownerの実graphで58 package、normal／build／dev・all target／all featureのmetadata／tree差分0。Core library2272件のPASSを全58の実行とは扱わない。[全実測・新graph・原本](acceptance-evidence/task-rich-text-property-identity.json)。 |",
+        "| CLI全target照合 | **統合受入は未完了。直近の全698実測は683 PASS／15 FAIL** | Source 2aaa0480b171d15274737d7bd49a3c391ce19096、4102入力、全53逆依存の同じ実runに含む。従来の14 failed IDと、新たなMCP stdioのChildExitDeadline 1件を保持する。同じsource・feature・全224 EXE hashの単独再実行では追加1件がPASSしたが、全体runの15 FAILは変更しない。原因は未確定で、ID一致や単独PASSから原因を推定しない。中間Source 466c2d7bf8245d1f7dd0c3560db27d0d2f53f893の全CLIは未再実行。[全失敗・単独再実行・原本](acceptance-evidence/task-rich-text-property-identity.json)。別境界の失敗でGeneric Matchや既受入のtyped ownerを未完了へ戻さない。 |",
+        "| workspace check／Clippy・fmt・構造gate | **中間cutはfmt・構造gateが終了0。全体check／Clippyは未再実行** | Source466c2d7bf8245d1f7dd0c3560db27d0d2f53f893は変更Rust28件のfmt・staged whitespaceと全98 packageの構造gateが終了0（blocking0、review trigger385）。全98 check／Clippy（all-target／all-feature／locked）の直近の終了0はSource2aaa0480b171d15274737d7bd49a3c391ce19096で、警告は残存する。ユーザー指定の全体cargo cleanはSource187fb586261ac6ba381546532143fa20854dba8bで終了0、ソース・記録・Git差分0。doctest／wasm専用検証は未再実行。[測定・owner review・cleanを含む履歴とraw](acceptance-evidence/task-rich-text-property-identity.json)。 |"
+      ],
+      "historyPrefix": {
+        "bytes": 1846330,
+        "sha256": "7d91ff224492ee0a419f14d2c83691124a5a4820f2872e5472ecb44b2ec0f01c"
+      },
+      "raw": {
+        "path": "docs/implementation/acceptance-evidence/task-callable-input-order-native.raw.zip",
+        "bytes": 1683083,
+        "sha256": "34788ed73ca8a13de7ab87a8d7d0ecfc8f3291cb61d524a7f57e07d764437ee9",
+        "entries": 48,
+        "entryDrift": 0,
+        "indexEntry": "callable-input-order-native.archive-inputs.json"
+      }
     }
   }
 }
