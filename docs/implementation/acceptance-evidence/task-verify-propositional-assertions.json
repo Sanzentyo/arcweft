@@ -862,5 +862,673 @@
       }
     ],
     "warnings": "Workspace check and Clippy exited 0 with warnings. Structure review triggers were nonblocking. Retain the checks and the 13-package tests as separate invocations."
+  },
+  "runtimeAdmission": {
+    "version": 1,
+    "recordedAt": "2026-11-05T22:59:37.7169154Z",
+    "source": "3a1e48c2a2a0070b2f2fa390c45c48d18b004b17",
+    "scope": "The executable compiler checks each bounded Boolean query with a finite proof in the verifier. Only all conditions proved on the original semantic generation authorize omission for the statement in ordinary or specialized lowering. The CLI reuses the compiled report. Runtime admission consumes private evidence, not serialized tooling results.",
+    "publication": {
+      "version": 1,
+      "commit": "3a1e48c2a2a0070b2f2fa390c45c48d18b004b17",
+      "parent": "5587c11c096b74799344853a5ee8df6c6c5a9445",
+      "tree": "3adc7fa06e1e357ac7e573e4ab9a54f07ea09b0a",
+      "remote": "3a1e48c2a2a0070b2f2fa390c45c48d18b004b17",
+      "paths": [
+        {
+          "path": "crates/arcweft-cli/src/app/bundle.rs",
+          "blob": "d53573c80c67339da26b5318f99d97700e7c224b"
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/project.rs",
+          "blob": "9b97711c21c26dfc26b06d1494126d5a8f0d6c2c"
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/project_commands.rs",
+          "blob": "69f6e5a12000df203cc6d21616b548aaa6c3b67c"
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/runtime/plan.rs",
+          "blob": "c02f04583c75bee8bac737ebfcd0e330dad7b322"
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/runtime/run.rs",
+          "blob": "fa2d0cdbea6479668915ca0313f5ea761c5a2cae"
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/verify.rs",
+          "blob": "a337ae17c418ea527bdf575b3bdd31a0ad79d4ee"
+        },
+        {
+          "path": "crates/arcweft-cli/src/output.rs",
+          "blob": "efdf02fa2983cec3f40cb255413bc3fa561fc240"
+        },
+        {
+          "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+          "blob": "465fae730f98f4fac0795a38d9bcdb5cec33a27b"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/lower.rs",
+          "blob": "4c6fec6433d1b88df91fd68dfc3046f473dc4169"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/lower/closure_instances.rs",
+          "blob": "79bd99de58dc5636462031268b0d762cbc211499"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/lower/display_text.rs",
+          "blob": "4ec5e145ac6aa436bb2711fa50686d308d35b644"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/lower/programs.rs",
+          "blob": "b3c976530e81935bb4e3ed36e0d80460a5eee9a7"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/project.rs",
+          "blob": "41a48c23417859c0fa23f8734f9a2efbcce730eb"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/assertions.rs",
+          "blob": "fccb8bff9deea74c5ab21920d55b9a44395418d0"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/callable_execution.rs",
+          "blob": "ad4cc1c657dd83b50df2e3d238312c78768292f5"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/model/statement.rs",
+          "blob": "67964f4e8c8b3392f1cc6fbe43ff2598138c0914"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs",
+          "blob": "1ef23ee0262455ec84fdb700aa7947c7897c718f"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+          "blob": "f0755b0cce9525a4cdba77df309378035ffd358d"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests/statement_contextual.rs",
+          "blob": "389e61607ca1f6b7188b98b93ea17f6f8f1a5479"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests/statement_producers.rs",
+          "blob": "2b02168df205e95a22b22192e1e8548d1df136e5"
+        },
+        {
+          "path": "crates/arcweft-verify/src/lib.rs",
+          "blob": "3fa096f1e1c22956bc99c4f272a9f6216b61d4f7"
+        },
+        {
+          "path": "crates/arcweft-verify/src/propositional_proof.rs",
+          "blob": "292e3da536f1406f8c783e986caab0ad0515f34f"
+        },
+        {
+          "path": "docs/01-language/proofs-and-unsafe-audits.md",
+          "blob": "14713f8ee899bb6c34350502f37072a90b6f1b1d"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "359d9156c84a70d5ef708cc957ecdbb21cc68dc829f7f14167cf99f094253802",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-05T22:55:41.4288099Z"
+    },
+    "initial": {
+      "terminal": {
+        "version": 1,
+        "base": "6b9cf1d617e02b2ec706bb13d664069b9ce89860",
+        "run": "runtime-assertion-owner1-20261106.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   2.072s] 20 tests run: 16 passed, 4 failed, 801 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 20,
+        "passed": 16,
+        "failed": 4,
+        "skipped": 801,
+        "selectedPackages": 2,
+        "matchedPackages": 2,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4126,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::callable_execution",
+            "test": "proved_assertions_allow_native_and_decoded_awbc_flow_and_generic_function_execution"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_records_required_solver_checks"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_reports_missing_promotion_proof"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_respects_semantic_defer_cancel_discharge"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-05T22:51:26.8297969Z"
+      },
+      "cause": "The authored execution regression lacked the public entrypoint required by decoded AWBC Product admission. The compiler and Native return had already succeeded. Added the normal CLI entry to the fixture."
+    },
+    "focused": {
+      "terminal": {
+        "version": 1,
+        "base": "5587c11c096b74799344853a5ee8df6c6c5a9445",
+        "run": "runtime-assertion-owner2-20261106.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   2.843s] 34 tests run: 30 passed, 4 failed, 2549 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 34,
+        "passed": 30,
+        "failed": 4,
+        "skipped": 2549,
+        "selectedPackages": 3,
+        "matchedPackages": 3,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4126,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_records_required_solver_checks"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_reports_missing_promotion_proof"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_respects_semantic_defer_cancel_discharge"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "spec_rejected_edge_fixtures_fail_with_diagnostics"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-05T22:54:18.642998Z"
+      },
+      "receipt": {
+        "version": 1,
+        "base": "5587c11c096b74799344853a5ee8df6c6c5a9445",
+        "command": [
+          "nextest",
+          "run",
+          "-p",
+          "arcweft-compiler",
+          "-p",
+          "arcweft-cli",
+          "-p",
+          "arcweft-lang-sema",
+          "--lib",
+          "--test",
+          "assertions",
+          "--test",
+          "callable_execution",
+          "--test",
+          "check",
+          "--all-features",
+          "--locked",
+          "-E",
+          "test(assertion) | test(prove) | test(verify_json) | test(spec_rejected_edge_fixtures)",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast",
+          "--status-level",
+          "all",
+          "--final-status-level",
+          "all"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/runtime-assertion-owner2-20261106.runtime.log",
+        "exitCode": 100,
+        "sourceInputs": 4126,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T22:54:10.6192872Z",
+        "finishedAt": "2026-11-05T22:54:16.1840232Z"
+      },
+      "newFailureIds": [],
+      "referenceRun": "assertion-smt-reverse13-20261106.runtime",
+      "scopedFmtExitCode": 0,
+      "stagedDiffCheckExitCode": 0,
+      "sourceAgreement": 0,
+      "passedRegressionRows": [
+        "        PASS [   0.126s] ( 9/34) arcweft-compiler::assertions proved_assertion_uses_the_original_analysis_and_emits_no_runtime_guard",
+        "        PASS [   0.223s] (17/34) arcweft-compiler::callable_execution proved_assertions_allow_native_and_decoded_awbc_flow_and_generic_function_execution",
+        "        PASS [   2.210s] (30/34) arcweft-cli::check plan_json_reuses_proved_assertions_from_the_compiled_project"
+      ]
+    },
+    "beforeProbe": {
+      "version": 1,
+      "head": "6b9cf1d617e02b2ec706bb13d664069b9ce89860",
+      "sourceSha256": "80521d2c261bd8b9b498eeba9988dfc7513cd8ffec8115b86609f6452301ffcb",
+      "binarySha256": "4df249454c63044502652f4e2e28977e36e9cf2ff4f9c3900edcf2029fa3b83e",
+      "exitCode": 1,
+      "stage": "runtime-plan-lower",
+      "codes": [
+        "verify.proof.unresolved",
+        "verify.proof.unresolved"
+      ],
+      "messages": [
+        "assert.prove condition 0 requires compile-time discharge",
+        "assert.prove condition 0 requires compile-time discharge"
+      ]
+    },
+    "afterProbe": {
+      "version": 1,
+      "head": "5587c11c096b74799344853a5ee8df6c6c5a9445",
+      "sourceFreeze": "runtime-assertion-owner2-20261106",
+      "binarySha256": "90d475146ae1c04d6c370c701619eb8a25d62bf2baa86dcaaa9a3b9a5d059ec2",
+      "binaryDrift": 0,
+      "cases": [
+        {
+          "name": "plan",
+          "command": [
+            "plan",
+            "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\runtime-assertion-after-20261106.arcw",
+            "--json"
+          ],
+          "exitCode": 0,
+          "sourceSha256": "b2d618c02ca88a29e9167aa46d67268797cb7095a54f087b0fd114a7acdcb9e7",
+          "verifierObligations": 2,
+          "verifierDiagnostics": 0,
+          "executor": null,
+          "status": null,
+          "finalStatus": null,
+          "stepCount": 0,
+          "maximumExecutedOps": null,
+          "stage": null,
+          "diagnosticCodes": [],
+          "diagnosticMessages": [],
+          "stdoutSha256": "2b27c7ebfdfd7549d793bb4934bb0afc137166b5c7ced1985d1c1a626ce62894",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "bytecode-vm",
+          "command": [
+            "run",
+            "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\runtime-assertion-after-20261106.arcw",
+            "--entry",
+            "entry.main",
+            "--executor",
+            "bytecode-vm",
+            "--mode",
+            "one-op",
+            "--max-ops",
+            "1",
+            "--steps",
+            "16",
+            "--json"
+          ],
+          "exitCode": 0,
+          "sourceSha256": "b2d618c02ca88a29e9167aa46d67268797cb7095a54f087b0fd114a7acdcb9e7",
+          "verifierObligations": null,
+          "verifierDiagnostics": null,
+          "executor": "bytecode_vm",
+          "status": null,
+          "finalStatus": "done Return(\"42\")",
+          "stepCount": 4,
+          "maximumExecutedOps": 1.0,
+          "stage": null,
+          "diagnosticCodes": [],
+          "diagnosticMessages": [],
+          "stdoutSha256": "51aee864becbb7528482c255b6e279281eac3ea892bb67a81863b46aa6f9bcc0",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "awbc-product",
+          "command": [
+            "run",
+            "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\runtime-assertion-after-20261106.arcw",
+            "--entry",
+            "entry.main",
+            "--executor",
+            "awbc-product",
+            "--mode",
+            "one-op",
+            "--max-ops",
+            "1",
+            "--steps",
+            "16",
+            "--json"
+          ],
+          "exitCode": 0,
+          "sourceSha256": "b2d618c02ca88a29e9167aa46d67268797cb7095a54f087b0fd114a7acdcb9e7",
+          "verifierObligations": null,
+          "verifierDiagnostics": null,
+          "executor": "awbc_product",
+          "status": null,
+          "finalStatus": "done Return(\"42\")",
+          "stepCount": 14,
+          "maximumExecutedOps": 1.0,
+          "stage": null,
+          "diagnosticCodes": [],
+          "diagnosticMessages": [],
+          "stdoutSha256": "33358679eacad31995f2a42ad57064cbda58d5e77271c88657971ac881df1702",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "unproved",
+          "command": [
+            "plan",
+            "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\runtime-assertion-after-20261106.negative.arcw",
+            "--json"
+          ],
+          "exitCode": 1,
+          "sourceSha256": "3d81119c153c16760fc65755dba390ad6d976ea5f75e87e8c0b71737138648b6",
+          "verifierObligations": null,
+          "verifierDiagnostics": null,
+          "executor": null,
+          "status": "denied",
+          "finalStatus": null,
+          "stepCount": 0,
+          "maximumExecutedOps": null,
+          "stage": "runtime-plan-lower",
+          "diagnosticCodes": [
+            "verify.proof.unresolved"
+          ],
+          "diagnosticMessages": [
+            "assert.prove condition 1 requires compile-time discharge"
+          ],
+          "stdoutSha256": "62e9322e0c5050f73e68880e8bb577335c97d1f5274f7d4db2e53057f52f0091",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    "proofBudgetProbe": {
+      "version": 1,
+      "source": "3a1e48c2a2a0070b2f2fa390c45c48d18b004b17",
+      "sourceSha256": "38b106f6c52a9fc7141e286d2de53f65cb694be338e203ec4c1763524cb70353",
+      "binarySha256": "90d475146ae1c04d6c370c701619eb8a25d62bf2baa86dcaaa9a3b9a5d059ec2",
+      "binaryDrift": 0,
+      "conditions": 1,
+      "inputs": 20,
+      "cases": [
+        {
+          "verb": "plan",
+          "args": [
+            "plan",
+            "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\runtime-assertion-proof-budget-20261106.arcw",
+            "--json"
+          ],
+          "exitCode": 1,
+          "stage": "runtime-plan-lower",
+          "diagnostics": [
+            "verify.proof.unresolved"
+          ],
+          "symbols": 0,
+          "solverOutcome": null
+        },
+        {
+          "verb": "verify",
+          "args": [
+            "verify",
+            "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\runtime-assertion-proof-budget-20261106.arcw",
+            "--json",
+            "--mode",
+            "test",
+            "--backend",
+            "oxiz"
+          ],
+          "exitCode": 0,
+          "stage": null,
+          "diagnostics": [],
+          "symbols": 20,
+          "solverOutcome": "unsat"
+        }
+      ]
+    },
+    "quality": {
+      "check": {
+        "version": 1,
+        "base": "3a1e48c2a2a0070b2f2fa390c45c48d18b004b17",
+        "command": [
+          "check",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4126,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T22:55:56.6945975Z",
+        "finishedAt": "2026-11-05T22:56:41.5000178Z"
+      },
+      "clippy": {
+        "version": 1,
+        "base": "3a1e48c2a2a0070b2f2fa390c45c48d18b004b17",
+        "command": [
+          "clippy",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4126,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T22:56:41.958974Z",
+        "finishedAt": "2026-11-05T22:57:31.4934673Z"
+      },
+      "structure": {
+        "version": 1,
+        "base": "3a1e48c2a2a0070b2f2fa390c45c48d18b004b17",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/runtime-assertion-quality-20261106.structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4126,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T22:57:31.9892444Z",
+        "finishedAt": "2026-11-05T22:57:37.1921237Z"
+      }
+    },
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-verify-propositional-runtime.raw.zip",
+      "bytes": 229397,
+      "sha256": "7b74b7c8335be581688e2f44ab9b1426235648154e189f25fcaeeb9aec1f4510",
+      "entryDrift": 0,
+      "entries": [
+        {
+          "entry": "checkpoint-runtime-assertion-20261106.verified.json",
+          "bytes": 3753,
+          "sha256": "9e7df41d81e8877426287e3d51cf9c8590f6854f8f42034bb4ff951c5932574a"
+        },
+        {
+          "entry": "runtime-assertion-after-20261106.arcw",
+          "bytes": 237,
+          "sha256": "b2d618c02ca88a29e9167aa46d67268797cb7095a54f087b0fd114a7acdcb9e7"
+        },
+        {
+          "entry": "runtime-assertion-after-20261106.awbc-product.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "runtime-assertion-after-20261106.awbc-product.stdout.json",
+          "bytes": 26495,
+          "sha256": "33358679eacad31995f2a42ad57064cbda58d5e77271c88657971ac881df1702"
+        },
+        {
+          "entry": "runtime-assertion-after-20261106.bytecode-vm.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "runtime-assertion-after-20261106.bytecode-vm.stdout.json",
+          "bytes": 10462,
+          "sha256": "51aee864becbb7528482c255b6e279281eac3ea892bb67a81863b46aa6f9bcc0"
+        },
+        {
+          "entry": "runtime-assertion-after-20261106.negative.arcw",
+          "bytes": 61,
+          "sha256": "3d81119c153c16760fc65755dba390ad6d976ea5f75e87e8c0b71737138648b6"
+        },
+        {
+          "entry": "runtime-assertion-after-20261106.plan.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "runtime-assertion-after-20261106.plan.stdout.json",
+          "bytes": 169,
+          "sha256": "2b27c7ebfdfd7549d793bb4934bb0afc137166b5c7ced1985d1c1a626ce62894"
+        },
+        {
+          "entry": "runtime-assertion-after-20261106.receipt.json",
+          "bytes": 4150,
+          "sha256": "cea09c6a2174a6996ca58efe80186ad3b8ecc770899ee475633fc04f9457f96e"
+        },
+        {
+          "entry": "runtime-assertion-after-20261106.unproved.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "runtime-assertion-after-20261106.unproved.stdout.json",
+          "bytes": 1603,
+          "sha256": "62e9322e0c5050f73e68880e8bb577335c97d1f5274f7d4db2e53057f52f0091"
+        },
+        {
+          "entry": "runtime-assertion-before-20261106.arcw",
+          "bytes": 195,
+          "sha256": "80521d2c261bd8b9b498eeba9988dfc7513cd8ffec8115b86609f6452301ffcb"
+        },
+        {
+          "entry": "runtime-assertion-before-20261106.receipt.json",
+          "bytes": 538,
+          "sha256": "a5b9338a1db771f6fc2e10e882f7379a0e7ccc940e24fe8b8dcfadfc9039bd34"
+        },
+        {
+          "entry": "runtime-assertion-before-20261106.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "runtime-assertion-before-20261106.stdout.json",
+          "bytes": 3053,
+          "sha256": "ab1ab4294ac1d3b4c6c4cf5c33b3a2ad423847e84139f31e4014b8e236ad733c"
+        },
+        {
+          "entry": "runtime-assertion-owner1-20261106.runtime.json",
+          "bytes": 835,
+          "sha256": "0912f8cde01fc6fb02ca523cca050f1131fb1a6964f6a766592972e88b46beba"
+        },
+        {
+          "entry": "runtime-assertion-owner1-20261106.runtime.log",
+          "bytes": 332302,
+          "sha256": "ecb42c58ec8fb2f330fa977db17f3b8b5acacb2b66e335d0be83a771c3102a06"
+        },
+        {
+          "entry": "runtime-assertion-owner1-20261106.runtime.terminal-audit.json",
+          "bytes": 1260,
+          "sha256": "b38585c44b3f3aa139c39a0a277004219733446507234a8e711698f8e4f02881"
+        },
+        {
+          "entry": "runtime-assertion-owner2-20261106.binaries-before.json",
+          "bytes": 1342,
+          "sha256": "bfffeca8a7c8d58ceed70672492b638ed80252761617eb675472e5c5c859f4fd"
+        },
+        {
+          "entry": "runtime-assertion-owner2-20261106.catalog.inventory.json",
+          "bytes": 659221,
+          "sha256": "f68eb4d592dd172e2d1cbe130da860c8372cea91772f3afed69511c131e8a7ba"
+        },
+        {
+          "entry": "runtime-assertion-owner2-20261106.catalog.json",
+          "bytes": 828,
+          "sha256": "7fd620e07b8e611917caeef6ae81f477d9f5d748e796607d187c75078ed0b3b9"
+        },
+        {
+          "entry": "runtime-assertion-owner2-20261106.runtime.json",
+          "bytes": 922,
+          "sha256": "e95e44a837be1b6933f28a3c3ceea92e6dbaa914f550f43516b22b0f94174cdc"
+        },
+        {
+          "entry": "runtime-assertion-owner2-20261106.runtime.log",
+          "bytes": 899220,
+          "sha256": "ac8f029e4b94b2c006873c8a1a0a52e05971e61272f810180386583b2e436f78"
+        },
+        {
+          "entry": "runtime-assertion-owner2-20261106.runtime.terminal-audit.json",
+          "bytes": 1210,
+          "sha256": "eef0da3e2c97f0948a39ce3b30c5a6148918fe96f4e04983866cd35cb29e40fb"
+        },
+        {
+          "entry": "runtime-assertion-proof-budget-20261106.arcw",
+          "bytes": 556,
+          "sha256": "38b106f6c52a9fc7141e286d2de53f65cb694be338e203ec4c1763524cb70353"
+        },
+        {
+          "entry": "runtime-assertion-proof-budget-20261106.receipt.json",
+          "bytes": 1190,
+          "sha256": "9b4993eaf328b9894f0ee29dd09a43a6db1de9e869049222efe0d253a52ecf14"
+        },
+        {
+          "entry": "runtime-assertion-proof-budget-20261106.retry.plan.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "runtime-assertion-proof-budget-20261106.retry.plan.stdout.json",
+          "bytes": 1601,
+          "sha256": "8fd5c2e49ec442ec47e4eb95e5e9761024f2177cfd44b779cd055bd312e60068"
+        },
+        {
+          "entry": "runtime-assertion-proof-budget-20261106.retry.verify.stderr.log",
+          "bytes": 45,
+          "sha256": "bd1f4d19031082bc0de64f7b657ee56884472c49c2fa90901719d9f0f0d7df79"
+        },
+        {
+          "entry": "runtime-assertion-proof-budget-20261106.retry.verify.stdout.json",
+          "bytes": 48282,
+          "sha256": "4b903ac38787400934ccefbdcdc4c90af28567c97e7fc3ee44daab6689bef5c1"
+        },
+        {
+          "entry": "runtime-assertion-quality-20261106-check.json",
+          "bytes": 355,
+          "sha256": "922a9f1445896933df20b04c170099bb7cd81a0c4a06ca6b37d237f3c2934fb2"
+        },
+        {
+          "entry": "runtime-assertion-quality-20261106-clippy.json",
+          "bytes": 356,
+          "sha256": "901970520db0110d690bb915cfc21072b978337cf985d3ec6828ba57c4053d2f"
+        },
+        {
+          "entry": "runtime-assertion-quality-20261106-structure.json",
+          "bytes": 529,
+          "sha256": "804d3e6f4b35f9e7e3f3f22a30a75456c9e75b0dfeede2833442e84b992a63bc"
+        },
+        {
+          "entry": "runtime-assertion.reverse-selection.json",
+          "bytes": 18717,
+          "sha256": "172118002c65f9283b263389779c34a677b6f5cd535559c783ccc9bf0b6d7a2a"
+        }
+      ]
+    }
   }
 }
