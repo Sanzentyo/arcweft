@@ -41,6 +41,8 @@ pub struct AgentPresentationObjectProxyRef {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AgentPresentationObjectProxyParamQuery {
     pub key: String,
+    /// Font-family fields use tagged JSON, such as `{"kind":"serif"}` or
+    /// `{"kind":"named","name":"serif"}`, to preserve generic/named identity.
     pub value: Option<String>,
 }
 

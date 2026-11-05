@@ -150,7 +150,8 @@ fn direct_style_schemas_preserve_required_values_defaults_and_limits() {
 
     let font = RichTextDirectStyle::Font.property_schema();
     assert_eq!(font.properties[0].kind, RichTextValueKind::FontFamily);
-    assert!(font.properties[0].limits.enum_values.is_empty());
+    let no_text_cases: [&str; 0] = [];
+    assert_eq!(font.properties[0].limits.enum_values, no_text_cases);
     assert_eq!(font.properties[0].limits.max_decoded_bytes, 256);
 
     let ruby = RichTextDirectStyle::Ruby.property_schema();

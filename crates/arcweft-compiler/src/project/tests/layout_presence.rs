@@ -153,3 +153,72 @@ fn source_fonts_keep_generic_and_quoted_named_identity_in_templates() {
             .collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn source_text_proxy_font_defaults_and_overrides_keep_typed_family_identity() {
+    use arcweft_text_model::{
+        RichTextFontFamily as Font, RichTextObjectProxy, RichTextTextProxyFieldKind as Kind,
+        RichTextTextProxyScalar as Scalar,
+    };
+
+    fn visit(nodes: &[RichTextNode], proxies: &mut Vec<RichTextObjectProxy>) {
+        for node in nodes {
+            if let RichTextNode::Scope { style, body } = node {
+                if let RichTextStyle::Object { proxy } = style.as_ref() {
+                    proxies.push(proxy.clone());
+                }
+                visit(body, proxies);
+            }
+        }
+    }
+    let source = r#"
+#[text_proxy(font=serif)]
+pub struct FontHit { font: FontFamily }
+pub character alice { display = "Alice" }
+flow main() {
+    alice[
+        #object(id=@.default_font, type=FontHit)[a]
+        #object(id=@.named_serif, type=FontHit, font="serif")[b]
+        #object(id=@.sans, type=FontHit, font=sans_serif)[c]
+        #object(id=@.named_font, type=FontHit, font="Noto Sans JP")[夢][p]
+    ];
+}
+"#;
+    let (project, context) = removed_role_dialogue_project(source);
+    let (mut session, parsed) = compilation_state(&project);
+    let compiled = compile_project(&mut session, &project, &parsed, &context).unwrap();
+    let mut proxies = Vec::new();
+    for template in compiled.runtime_plan().dialogue_content_catalog.templates() {
+        visit(&template.content().nodes, &mut proxies);
+    }
+    assert_eq!(proxies.len(), 4);
+    for (proxy, expected) in proxies.into_iter().zip([
+        Font::Serif,
+        Font::Named {
+            name: "serif".into(),
+        },
+        Font::SansSerif,
+        Font::Named {
+            name: "Noto Sans JP".into(),
+        },
+    ]) {
+        let bytes = serde_json::to_vec(&proxy).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<RichTextObjectProxy>(&bytes).unwrap(),
+            proxy
+        );
+        let fields = &proxy.schema.as_ref().unwrap().fields;
+        assert_eq!(fields.len(), 1);
+        assert_eq!(fields[0].kind, Kind::FontFamily);
+        assert_eq!(
+            fields[0].default,
+            Some(Scalar::FontFamily { value: Font::Serif })
+        );
+        assert_eq!(proxy.fields.len(), 1);
+        assert_eq!(proxy.fields[0].name, "font");
+        assert_eq!(
+            proxy.fields[0].value,
+            Scalar::FontFamily { value: expected }
+        );
+    }
+}

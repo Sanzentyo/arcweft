@@ -427,12 +427,19 @@ with effective zero opacity is reported as not visible and is excluded from
 the derived visible source ranges; observation must not expose the pre-mask
 paint alpha as if it were rendered coverage.
 For `text_object_proxy` hit regions, the region itself carries the proxy id,
-type, declaration provenance, role, layer, depth, and `proxy_params`.
+type, declaration provenance, role, layer, depth, `proxy_schema`, and
+declaration-ordered `proxy_fields`.
 `proxy_declaration` records the Arcweft struct name and attribute family that
 supplied the defaults when the proxy came from a visible `#[text_proxy]` /
-`#[rich_text_proxy]` struct. `proxy_params` is the typed `RichTextParam` map
-after struct-attribute defaults and inline overrides have been resolved, and
-the same region shape is returned by `arcw agent hit-test` and MCP
+`#[rich_text_proxy]` struct. Each field retains its schema identity, name, and
+typed scalar after struct-attribute defaults and inline overrides have been
+resolved. Font-family fields use `kind: "font_family"` and a tagged family
+value: `{"kind":"serif"}` differs from
+`{"kind":"named","name":"serif"}`. Object-proxy parameter queries use
+these tagged JSON values for font fields; an untagged `serif` query does not
+select either family. The separate `proxy_params` map belongs to image-object
+resource parameters.
+The same region shape is returned by `arcw agent hit-test` and MCP
 `arcweft.hit_test`. Hit-test hits also carry the observed object's
 `capture_refs`, including object-id color and color/object-id/mask resource
 URIs, so hit consumers can treat text objects as directly capturable debug
