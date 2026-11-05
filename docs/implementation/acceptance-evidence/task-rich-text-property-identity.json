@@ -25215,5 +25215,1545 @@
       "entries": 45,
       "entryDrift": 0
     }
+  },
+  "fullGrammarConstructs": {
+    "version": 1,
+    "recordedAt": "2026-11-05T21:26:48.6127450Z",
+    "source": {
+      "version": 1,
+      "commit": "3bd77a9e200cb882f6dd516e3644fc42d38111cd",
+      "parent": "75562d0d0350aa85fd40a038c903019ee046c375",
+      "tree": "c833072864ab6a82f3a6a16882cdf535c363c5cb",
+      "remote": "3bd77a9e200cb882f6dd516e3644fc42d38111cd",
+      "paths": [
+        {
+          "path": "crates/arcweft-cli/src/app/agent/native/player_observation/full_grammar.rs",
+          "blob": "381dab6938ba77135809d9d310da9ca876c7a62d"
+        },
+        {
+          "path": "crates/arcweft-cli/tests/check/agent_observe_native.rs",
+          "blob": "405d8fe99fb5510769a3ea0193509da3ca017bf4"
+        },
+        {
+          "path": "crates/arcweft-cli/tests/check/agent_observe_native/native_full_grammar.rs",
+          "blob": "d54726b2a33780c064efa35ab6c9f60a3352853c"
+        },
+        {
+          "path": "crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs",
+          "blob": "ada6d43be0abf7e36ccf1bde9864e87274395141"
+        },
+        {
+          "path": "crates/arcweft-cli/tests/check/agent_observe_native/shared.rs",
+          "blob": "48b16e7f627f318d0524694c0d3f7e1a012ec634"
+        },
+        {
+          "path": "crates/arcweft-presentation/src/fx/render_resource.rs",
+          "blob": "a9ca117aa752ceccfbf8e79c5e671a1b60efc88e"
+        },
+        {
+          "path": "docs/03-presentation/rich-text-effects-transforms.md",
+          "blob": "6c827ef100d876b8c6c2e2e80848d1d2cbe91f8e"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "eab1a1cc9c77f722f68da504b161fd392cd9df4de5d160ec5f227264ae16ed20",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-05T21:00:51.8603935Z"
+    },
+    "ownership": {
+      "version": 1,
+      "base": "75562d0d0350aa85fd40a038c903019ee046c375",
+      "tree": "c833072864ab6a82f3a6a16882cdf535c363c5cb",
+      "patchSha256": "eab1a1cc9c77f722f68da504b161fd392cd9df4de5d160ec5f227264ae16ed20",
+      "files": [
+        {
+          "path": "crates/arcweft-cli/src/app/agent/native/player_observation/full_grammar.rs",
+          "owner": "arcweft-cli",
+          "classification": "test",
+          "bytes": 11026,
+          "loc": 269,
+          "baseBytes": 5710,
+          "baseLoc": 134,
+          "sha256": "f9899d29d1020979993802ca6ba094cd3349d3160cf133f205fe1b9598d05cc4",
+          "stagedBlob": "381dab6938ba77135809d9d310da9ca876c7a62d",
+          "workspaceFanIn": 0,
+          "workspaceFanOut": 55,
+          "embeddedTestLoc": 0
+        },
+        {
+          "path": "crates/arcweft-cli/tests/check/agent_observe_native.rs",
+          "owner": "arcweft-cli",
+          "classification": "test",
+          "bytes": 1192,
+          "loc": 26,
+          "baseBytes": 1135,
+          "baseLoc": 25,
+          "sha256": "88370b9c7525ccc3fe720dd1c27258364325edcfd91069efaee8125cae4bebb1",
+          "stagedBlob": "405d8fe99fb5510769a3ea0193509da3ca017bf4",
+          "workspaceFanIn": 0,
+          "workspaceFanOut": 55,
+          "embeddedTestLoc": 0
+        },
+        {
+          "path": "crates/arcweft-cli/tests/check/agent_observe_native/native_full_grammar.rs",
+          "owner": "arcweft-cli",
+          "classification": "test",
+          "bytes": 12742,
+          "loc": 326,
+          "baseBytes": 0,
+          "baseLoc": 0,
+          "sha256": "95d896f0e80dd4680fcd05dd18df4eb1f4fcfcc4e1a00a23c83da730268a0df4",
+          "stagedBlob": "d54726b2a33780c064efa35ab6c9f60a3352853c",
+          "workspaceFanIn": 0,
+          "workspaceFanOut": 55,
+          "embeddedTestLoc": 0
+        },
+        {
+          "path": "crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs",
+          "owner": "arcweft-cli",
+          "classification": "test",
+          "bytes": 222531,
+          "loc": 6005,
+          "baseBytes": 237499,
+          "baseLoc": 6398,
+          "sha256": "06a51fa84d1c524be50bf310aff6ddf8451a620a76193ceddbd329e73d2e790d",
+          "stagedBlob": "ada6d43be0abf7e36ccf1bde9864e87274395141",
+          "workspaceFanIn": 0,
+          "workspaceFanOut": 55,
+          "embeddedTestLoc": 0
+        },
+        {
+          "path": "crates/arcweft-cli/tests/check/agent_observe_native/shared.rs",
+          "owner": "arcweft-cli",
+          "classification": "test",
+          "bytes": 40763,
+          "loc": 1182,
+          "baseBytes": 61960,
+          "baseLoc": 1718,
+          "sha256": "083fb0acd1eee012868494471df97cdb02675bbc24bb644c4af3ea8aff1ec63f",
+          "stagedBlob": "48b16e7f627f318d0524694c0d3f7e1a012ec634",
+          "workspaceFanIn": 0,
+          "workspaceFanOut": 55,
+          "embeddedTestLoc": 0
+        },
+        {
+          "path": "crates/arcweft-presentation/src/fx/render_resource.rs",
+          "owner": "arcweft-presentation",
+          "classification": "production",
+          "bytes": 31538,
+          "loc": 893,
+          "baseBytes": 27146,
+          "baseLoc": 785,
+          "sha256": "5f5e6abafa04c0e0d9782b3e2ac3582fc6aab0fdc4a1538189c09eca524f2007",
+          "stagedBlob": "a9ca117aa752ceccfbf8e79c5e671a1b60efc88e",
+          "workspaceFanIn": 23,
+          "workspaceFanOut": 4,
+          "embeddedTestLoc": 191
+        },
+        {
+          "path": "docs/03-presentation/rich-text-effects-transforms.md",
+          "owner": "maintained Native capture contract",
+          "classification": "maintained specification",
+          "bytes": 15452,
+          "loc": 349,
+          "baseBytes": 15210,
+          "baseLoc": 346,
+          "sha256": "9579052daef299c94a68197c5313388ce2578f6b91b850b4b6952ae59200c9ec",
+          "stagedBlob": "6c827ef100d876b8c6c2e2e80848d1d2cbe91f8e",
+          "workspaceFanIn": 0,
+          "workspaceFanOut": 0,
+          "embeddedTestLoc": 0
+        }
+      ],
+      "graph": "full-grammar-constructs.reverse-selection.json; retained all-feature target-all normal/build/dev graph,101pins0;47complete reverse packages",
+      "ownership": "Presentation FxRenderResourceTable owns the closed shader-resource uniform schema and backend-neutral finite output; glow now consumes the same direction parameter as the canonical builtin graph/catalog, with no alias, fallback, contract version change or adapter-specific resolver. Embedded resource tests exercise3phases, normalized offsets and wrong-type/zero/duplicate refusal. This cohesive resource module remains below1200LOC. CLI is the actual retained-frame/capture IO owner. New326LOC integration child groups the full-grammar current-frame metadata and typed catalog assertions; existing Native unit child owns real same-frame raw attachments and sampled pixel checks. No public API, Cargo, dependency, feature, OS or capture budget changes. Large native_samples/shared tests shrink by deleting their replaced helpers, including opaque object-ID parsing and foreign-frame CLI replay; unused raw ID helper removed. Original Scroll9/9 remains unstaged and proven by replay.",
+      "correctionReason": "One observation exposes its active frame, not11simultaneousSource lines. Current authored content uses content transforms, typed fields, literal cue text with leadingLF, two named sparkle runs and canonical Fx specialization IDs. Keep all metadata/hit/depth/proxy/PageLine coverage and move positive Mask/ObjectId reads to local Native owner because MCP mandatory publication withholds them. Capture metadata uses AgentImageObjectRef and report.steps=tick+1. Visual time controls ordinary stage reveal plus Fx; 1s has not revealed the long Source005 effects section, while AdvanceText consumes its page and gives a run-less transition at59. Preserve actual zero-time hidden masks and compare completed visual60s/61s and60.125s/60.375s pixels at entered005/tick55 with original4steps/128ops; no synthetic completed flag, budget increase or step-count assertion of1after55.",
+      "state": "Original12tracked/6untracked WIP participates in tests. Only the owned native_samples hunks are published; original Scroll WIP replay is proven in full-grammar-constructs.preservation-proof.json. Raw private full snapshots/original-user.patch must not be archived."
+    },
+    "graph": {
+      "version": 1,
+      "base": "75562d0d0350aa85fd40a038c903019ee046c375",
+      "roots": [
+        "arcweft-presentation",
+        "arcweft-cli"
+      ],
+      "selection": [
+        "arcweft",
+        "arcweft-adapter-desktop",
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-policy",
+        "arcweft-agent-protocol",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-bundle",
+        "arcweft-bundle-assets",
+        "arcweft-character-view",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-debug-model",
+        "arcweft-debug-sqlite",
+        "arcweft-desktop-native",
+        "arcweft-dialogue",
+        "arcweft-glyphon",
+        "arcweft-lang-hir",
+        "arcweft-lang-sema",
+        "arcweft-lang-syntax",
+        "arcweft-launch",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-text-input",
+        "arcweft-player-web",
+        "arcweft-presentation",
+        "arcweft-project",
+        "arcweft-project-loader",
+        "arcweft-rag",
+        "arcweft-render-text",
+        "arcweft-render-web",
+        "arcweft-render-wgpu",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-text-layout",
+        "arcweft-text-model",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3",
+        "arcweft-view"
+      ],
+      "selectedPackages": 47,
+      "metadata": "rag-project-summary.metadata.json",
+      "metadataReuse": "Actual retained target-all/feature-all normal-build-dev resolve graph;101 current Cargo/toolchain input hashes unchanged. No new Cargo invocation during the active test chain.",
+      "cargoInputPins": [
+        {
+          "path": "Cargo.lock",
+          "bytes": 219178,
+          "sha256": "3d77909e468ade39ac7a519e1fb4e7b69b1b60be99ac3c0ab720bb0623e52297"
+        },
+        {
+          "path": "Cargo.toml",
+          "bytes": 13015,
+          "sha256": "cc8cd0b1581030d3b3d1ac13f8bbedec6297148fc28324b50309cab4714d78db"
+        },
+        {
+          "path": "crates/arcweft-adapter-context/Cargo.toml",
+          "bytes": 471,
+          "sha256": "c1fa89cef41d4a3f9d6b913ab5d3128148af84bf5f5d5d3de8377353bcb7b6fa"
+        },
+        {
+          "path": "crates/arcweft-adapter-desktop/Cargo.toml",
+          "bytes": 564,
+          "sha256": "b0f68e7c7b22216b32dd14e8c21e8e58d9e188f392956142ffcbb41e2a7ee911"
+        },
+        {
+          "path": "crates/arcweft-adapter-metadata/Cargo.toml",
+          "bytes": 366,
+          "sha256": "ea548990289f194de5b881a4e153c35715863bc42c2be9ffbe94560bd2b9f057"
+        },
+        {
+          "path": "crates/arcweft-adapter-sema/Cargo.toml",
+          "bytes": 571,
+          "sha256": "51b2b951ce1108a30a6ee2b588778db089350fed409f58f3b9b5393df303a53b"
+        },
+        {
+          "path": "crates/arcweft-adt/Cargo.toml",
+          "bytes": 210,
+          "sha256": "eb4d514ee056867d74d1de2e0b4d3a7880bdc950890529ecbdce24ba7a2af2fd"
+        },
+        {
+          "path": "crates/arcweft-agent-mcp-client/Cargo.toml",
+          "bytes": 462,
+          "sha256": "2b2c046bf870a7b8786fcd070e3d198b8eaf11f4052189d9e9fc137d21355146"
+        },
+        {
+          "path": "crates/arcweft-agent-mcp/Cargo.toml",
+          "bytes": 758,
+          "sha256": "48723bbd679cc189d962f9c9ff1bd767fe0d237a3588db9a6db9ce80df1d3081"
+        },
+        {
+          "path": "crates/arcweft-agent-policy/Cargo.toml",
+          "bytes": 513,
+          "sha256": "f6ac162ae26ec94f1be8e1b3aa07976f6eb2c47667dac1be1f91395f6d7f70b4"
+        },
+        {
+          "path": "crates/arcweft-agent-protocol/Cargo.toml",
+          "bytes": 805,
+          "sha256": "f28584e17e3d107cd828a8849ec63ed226fd8f1456e87df8c1e40cd94b83da6a"
+        },
+        {
+          "path": "crates/arcweft-agent-repl/Cargo.toml",
+          "bytes": 1129,
+          "sha256": "f8466e6fd547dee4d8949144be1bf1892f5a695d6e7da7b0ee59dbf25ffe7428"
+        },
+        {
+          "path": "crates/arcweft-agent-runner/Cargo.toml",
+          "bytes": 731,
+          "sha256": "fc85d7388021cb1f849961b6823c121371b00e6dabc8290d8e2e92860fd888e1"
+        },
+        {
+          "path": "crates/arcweft-audio-codec/Cargo.toml",
+          "bytes": 616,
+          "sha256": "262f243913d939ae54d91f57e78b694eca13d85be93ec90a8c452ef832ac082a"
+        },
+        {
+          "path": "crates/arcweft-audio-core/Cargo.toml",
+          "bytes": 390,
+          "sha256": "d70e2b9a50dab58311c83c9f70edb27face75c36f41d78b3be845095066725a6"
+        },
+        {
+          "path": "crates/arcweft-audio-device-cpal/Cargo.toml",
+          "bytes": 1466,
+          "sha256": "63b920d334efa39b2ce239bf0144d55a1d9480692cca261d97dc157f733e3b72"
+        },
+        {
+          "path": "crates/arcweft-audio-mixer/Cargo.toml",
+          "bytes": 362,
+          "sha256": "1bb235c34d9d27e339cc15b2f6b76c8a9086c3d4f36ce1bbc41e5a550636d998"
+        },
+        {
+          "path": "crates/arcweft-browser-bench/Cargo.toml",
+          "bytes": 908,
+          "sha256": "3b11549ca3203d8c46a0546c186aa571d739c18ee26570be52f197723970c40d"
+        },
+        {
+          "path": "crates/arcweft-bundle-assets/Cargo.toml",
+          "bytes": 459,
+          "sha256": "977c683c5cbc208a87bd9c8ef99f5eaa4fe8051df0b8a81efa2f579388d3268a"
+        },
+        {
+          "path": "crates/arcweft-bundle/Cargo.toml",
+          "bytes": 1775,
+          "sha256": "abf5f084b5de2a010e6e0f62b5996afb880d647720f1d20c9d4c6cad8e707a5a"
+        },
+        {
+          "path": "crates/arcweft-character-psd/Cargo.toml",
+          "bytes": 386,
+          "sha256": "57e32f7c057d95c7cc50fa64592f606b8595daefba0a2ddf3dd4c56a9a198867"
+        },
+        {
+          "path": "crates/arcweft-character-view/Cargo.toml",
+          "bytes": 481,
+          "sha256": "cb4bf9950d6faff602cf4d112a577e8bafe77c40cfd9ec5cff1fbce889359983"
+        },
+        {
+          "path": "crates/arcweft-character/Cargo.toml",
+          "bytes": 443,
+          "sha256": "65d433bab694f47bf5af653beea78336d876a214b4baf9be226370b250fec0a4"
+        },
+        {
+          "path": "crates/arcweft-cli/Cargo.toml",
+          "bytes": 3655,
+          "sha256": "98233c14ea88afabb8b4bf8b10f0aadb30f21e052eff6cfb1871e0e92df56434"
+        },
+        {
+          "path": "crates/arcweft-codec-arrow/Cargo.toml",
+          "bytes": 366,
+          "sha256": "b4e37abbdebd430a205e6e0ab4ae566cb6a648eb866522a6c1b0c11ee5331f0e"
+        },
+        {
+          "path": "crates/arcweft-codec-avro/Cargo.toml",
+          "bytes": 372,
+          "sha256": "40be5a6999f6cec6fc23100d9c61bc2857f687cda25dfd04aeb23c889f4f7755"
+        },
+        {
+          "path": "crates/arcweft-codec-binary/Cargo.toml",
+          "bytes": 568,
+          "sha256": "469ca885fcdc7fff485fd76abfa668de187e7d0446b12d18ca8e980e55ead7fe"
+        },
+        {
+          "path": "crates/arcweft-codec-cbor/Cargo.toml",
+          "bytes": 351,
+          "sha256": "eb4a6fa90dc1f4b7dad7117fc754d24823a6dd846a6c26f9443201b72734a1c4"
+        },
+        {
+          "path": "crates/arcweft-codec-csv/Cargo.toml",
+          "bytes": 340,
+          "sha256": "3550c9fb328c0e547fce36e43a3e151640b183fe5030c956bc4b714a4f831776"
+        },
+        {
+          "path": "crates/arcweft-codec-json/Cargo.toml",
+          "bytes": 379,
+          "sha256": "32a8de49fb5cb258dd370783e7080454034a516b71c155c1a2d9775a199a15f2"
+        },
+        {
+          "path": "crates/arcweft-codec-msgpack/Cargo.toml",
+          "bytes": 316,
+          "sha256": "8f7ad1516850313150645abedd19381cda0448204d1efc9a47c088ceecf752ae"
+        },
+        {
+          "path": "crates/arcweft-codec-toml/Cargo.toml",
+          "bytes": 385,
+          "sha256": "63986cf4e70025ad54148b1f95ba42200dcee18566795e0175958ff6e836db96"
+        },
+        {
+          "path": "crates/arcweft-codec-yaml/Cargo.toml",
+          "bytes": 319,
+          "sha256": "18d271030aad8d31a317527a834c4b7ec09abb3209368471dae89a5e59efad54"
+        },
+        {
+          "path": "crates/arcweft-compiler/Cargo.toml",
+          "bytes": 1838,
+          "sha256": "c7c284f8902bcd3d36757fe562504bc499c07419a0e551ebb55bcc341d4420f2"
+        },
+        {
+          "path": "crates/arcweft-config/Cargo.toml",
+          "bytes": 275,
+          "sha256": "398af8609e81eee972ecb0ae0c745609b055777cfb20afdc37a0aac7ca587804"
+        },
+        {
+          "path": "crates/arcweft-content-policy/Cargo.toml",
+          "bytes": 313,
+          "sha256": "490da5d1803ac020e64b9ccccadd8f17e48584a0b3fc7352d583c5ae8162c810"
+        },
+        {
+          "path": "crates/arcweft-core/Cargo.toml",
+          "bytes": 1066,
+          "sha256": "3d9c65437451c702ab25edb02666ec24336cd5f9539fa3f0d59eae0ab5a0222b"
+        },
+        {
+          "path": "crates/arcweft-data-derive-support/Cargo.toml",
+          "bytes": 402,
+          "sha256": "ad81c2b2d33785a22491de7ba6c301e963b3aa6bf917f2a89dd32a524e3614f4"
+        },
+        {
+          "path": "crates/arcweft-data-derive/Cargo.toml",
+          "bytes": 500,
+          "sha256": "4cb2417d8ff076ab4bbdd66401274714b8ad0a2ffcdbd82d82905f072d6373cd"
+        },
+        {
+          "path": "crates/arcweft-data/Cargo.toml",
+          "bytes": 408,
+          "sha256": "c9fcaa6f84153224481e2fe106ec184301c928e951978b286411cc426d42bab6"
+        },
+        {
+          "path": "crates/arcweft-debug-model/Cargo.toml",
+          "bytes": 319,
+          "sha256": "d655dcb965ec0963c9022a0edd563f3f84b52b6ed19364cb05c539a58b74c4ad"
+        },
+        {
+          "path": "crates/arcweft-debug-sqlite/Cargo.toml",
+          "bytes": 401,
+          "sha256": "24a00ef6ad4a0f4cfdbe69ecadaa5da5a70179c4b7196da0accc5d0015e7927c"
+        },
+        {
+          "path": "crates/arcweft-desktop-contract/Cargo.toml",
+          "bytes": 310,
+          "sha256": "cdea30b4301e9d1bba019cc91931368e3eb2a4970cacfcdaf90cfc3eb81342c1"
+        },
+        {
+          "path": "crates/arcweft-desktop-host/Cargo.toml",
+          "bytes": 256,
+          "sha256": "90ae48d4f444e6a06d2cfe6363397933970f3106cd8d1c907ab9f82e8eabcb3a"
+        },
+        {
+          "path": "crates/arcweft-desktop-native/Cargo.toml",
+          "bytes": 1767,
+          "sha256": "be8c973953db7967e5c005017d6f4014272816dabbb553849b79760d3d18bcd9"
+        },
+        {
+          "path": "crates/arcweft-dialogue/Cargo.toml",
+          "bytes": 770,
+          "sha256": "af86042433bf6d4052b26f3ce8d8161dc9d5e83a948cdb2549dc6e5ff0e3237b"
+        },
+        {
+          "path": "crates/arcweft-glyphon/Cargo.toml",
+          "bytes": 484,
+          "sha256": "6dc8b193f3cb5097b14152161716bfc938f62474b3dd274fe44c1bd66ba95827"
+        },
+        {
+          "path": "crates/arcweft-host-adapter/Cargo.toml",
+          "bytes": 318,
+          "sha256": "f4f74414448a89a6b6c96f074745d6684970743e63a49c81844ffafc999f94f6"
+        },
+        {
+          "path": "crates/arcweft-http-codec/Cargo.toml",
+          "bytes": 313,
+          "sha256": "682c0a456c257ac432ee4626225fee6b7c84d97ffafa2f7bd348496afadbc90e"
+        },
+        {
+          "path": "crates/arcweft-id/Cargo.toml",
+          "bytes": 402,
+          "sha256": "26956290534245daa0422aa80c58535fa16a5288dffdec24e6b79967f3c411ab"
+        },
+        {
+          "path": "crates/arcweft-image/Cargo.toml",
+          "bytes": 378,
+          "sha256": "712fc6225922b77d7541deeb70abda0058bf2328673965251c57ff1325610c5f"
+        },
+        {
+          "path": "crates/arcweft-interaction-model/Cargo.toml",
+          "bytes": 387,
+          "sha256": "a7e203539fb85e01625755dc336a990a42262e8934eebc307c984599d3f67ff2"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/Cargo.toml",
+          "bytes": 516,
+          "sha256": "b8924c8de799e9672fb9b7c7febd0ae41e5b19bf41444030d9a33be2d4c59dd1"
+        },
+        {
+          "path": "crates/arcweft-lang-jit-cranelift/Cargo.toml",
+          "bytes": 649,
+          "sha256": "fc6571885fe6cbe3d76455a0cd0b7766dac0eafb71458b93dc87442e97946d34"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/Cargo.toml",
+          "bytes": 923,
+          "sha256": "47c3ca017e89395f4be79ce06b3a200fc3609ac37c51d4c87fa5ecdc44f2fd3b"
+        },
+        {
+          "path": "crates/arcweft-lang-syntax/Cargo.toml",
+          "bytes": 493,
+          "sha256": "2afe87428ada9770a6cb3f7f0c7cbe9301961eeb9b05c05945e05a544d95cb87"
+        },
+        {
+          "path": "crates/arcweft-launch/Cargo.toml",
+          "bytes": 574,
+          "sha256": "5a4e8f268fe1d77adce4c391e80215e531e8f53f094a6921cf5e89fcb8fac68a"
+        },
+        {
+          "path": "crates/arcweft-layout/Cargo.toml",
+          "bytes": 336,
+          "sha256": "e3c26ebbd36e6c1418e9bec42077ebf1cb5c93c0dbfa7a8680b55aaf3bce76dc"
+        },
+        {
+          "path": "crates/arcweft-lsp/Cargo.toml",
+          "bytes": 1769,
+          "sha256": "9adbaa1535ae4232d0c86f6bd4bdc74af87303fc4a77270d0f15af04e1666033"
+        },
+        {
+          "path": "crates/arcweft-manifest-model/Cargo.toml",
+          "bytes": 370,
+          "sha256": "619a0d8f7c720dd9157c75efa3320b5a7a379471db06b00a8c73c65f1510bdaa"
+        },
+        {
+          "path": "crates/arcweft-memory/Cargo.toml",
+          "bytes": 213,
+          "sha256": "d8fe9fa92305c08fb4b53458d2e23e4b732d71b23643c2bc6a5fdcf8ec3e963e"
+        },
+        {
+          "path": "crates/arcweft-need/Cargo.toml",
+          "bytes": 325,
+          "sha256": "6153ab36cd7d6ab8639e88cc37c501a55446fac993bc79331bdefa9677a65104"
+        },
+        {
+          "path": "crates/arcweft-player-native/Cargo.toml",
+          "bytes": 2516,
+          "sha256": "43875992fc090ce210fc3d142ab75371533d2289793e96fdb196585f3f7cb8e3"
+        },
+        {
+          "path": "crates/arcweft-player-scene/Cargo.toml",
+          "bytes": 1183,
+          "sha256": "ad800e09409d3690be930e096cdb5e450e3f0e8cad2b21f45eefa8632baea954"
+        },
+        {
+          "path": "crates/arcweft-player-text-input/Cargo.toml",
+          "bytes": 401,
+          "sha256": "857f6cd5833300f38617f7317042add6aab939d137af42a4c8395969f67774e6"
+        },
+        {
+          "path": "crates/arcweft-player-web/Cargo.toml",
+          "bytes": 1978,
+          "sha256": "608975f178ea4d53e95c8040074be326ab9526dace69ccc3c3a5ba8f661c9a9a"
+        },
+        {
+          "path": "crates/arcweft-presentation/Cargo.toml",
+          "bytes": 525,
+          "sha256": "c4a4921cdcaeb9e06272b8a3889dc4d4174187c3498f463b8a1b73ec7f61a1d4"
+        },
+        {
+          "path": "crates/arcweft-primitives/Cargo.toml",
+          "bytes": 256,
+          "sha256": "a00aeaba7d26eac5d984552eed283996951ae912beac16af19e9a176940ec7e6"
+        },
+        {
+          "path": "crates/arcweft-project-loader/Cargo.toml",
+          "bytes": 1308,
+          "sha256": "4b3f0320ffd6519d5670c6c4c1fc5c0b0c73882a0ac25992adba9e904da66b48"
+        },
+        {
+          "path": "crates/arcweft-project/Cargo.toml",
+          "bytes": 518,
+          "sha256": "4f60bec416f2daeb69c5770789987f51b37185d8a2583e10322f7eb64fc0aa7d"
+        },
+        {
+          "path": "crates/arcweft-rag/Cargo.toml",
+          "bytes": 257,
+          "sha256": "485e11c67baa26ebf02438664c2c1c913490e0eb2ae9f2eaa976af5e1f0c000f"
+        },
+        {
+          "path": "crates/arcweft-ref/Cargo.toml",
+          "bytes": 260,
+          "sha256": "756435e5c633d809d345b4a8734cef3fb78f949ee354b881dea717f170a73759"
+        },
+        {
+          "path": "crates/arcweft-render-text/Cargo.toml",
+          "bytes": 735,
+          "sha256": "1c54223ba6a0f5dc4bec8e15e755d53b3afc7e3cc6c94edf7d72a9b0510d9a16"
+        },
+        {
+          "path": "crates/arcweft-render-web/Cargo.toml",
+          "bytes": 499,
+          "sha256": "1f7afc441a36291c28234e6920b170ffeaae47558f26bfdbea8090c1dd26491f"
+        },
+        {
+          "path": "crates/arcweft-render-wgpu/Cargo.toml",
+          "bytes": 1056,
+          "sha256": "1e93150af4218eb3ebe5e7dad5bcb646bc864343fe331c11c863eeddb43ee75c"
+        },
+        {
+          "path": "crates/arcweft-resource-manifest/Cargo.toml",
+          "bytes": 599,
+          "sha256": "6551c8b18f994af912cdf4cc3c23283cd56ed6877b03f07ac5aa78bb50ac0023"
+        },
+        {
+          "path": "crates/arcweft-resource-model/Cargo.toml",
+          "bytes": 587,
+          "sha256": "dc488745726746d2a3708e9ae3d3762498d19ae5c3cdf85d966b524c367bc692"
+        },
+        {
+          "path": "crates/arcweft-rich-text-schema/Cargo.toml",
+          "bytes": 333,
+          "sha256": "99aaf174234c9934382effc08a8e35aec158e3f367a135e55f9ba0377896117f"
+        },
+        {
+          "path": "crates/arcweft-runtime-accelerator/Cargo.toml",
+          "bytes": 2102,
+          "sha256": "63e650c655d69f9003946960a0924b81eacc80ace4980745e8db27087fbc1ab3"
+        },
+        {
+          "path": "crates/arcweft-runtime-codegen/Cargo.toml",
+          "bytes": 361,
+          "sha256": "7bf1f9f68525db0039644e752403af469cd1b759acfbcebb527060e608ff2bed"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/Cargo.toml",
+          "bytes": 1180,
+          "sha256": "6089dd4bcacc09f96ab38ed446a1a7aa3d3076eff08e9bd9c991f84a6048f5d9"
+        },
+        {
+          "path": "crates/arcweft-runtime-host/Cargo.toml",
+          "bytes": 1347,
+          "sha256": "e38a8f282dc1de34c1307bc81aa1744225cf1c6585dbe7804a54f337a14c618b"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/Cargo.toml",
+          "bytes": 781,
+          "sha256": "ddbc53d77771880439596906c4f59537449efb36424afb535839a7f31a442df7"
+        },
+        {
+          "path": "crates/arcweft-runtime-scheduler/Cargo.toml",
+          "bytes": 276,
+          "sha256": "491a222e45c470d5639bbfacbeaf62073113e602175afc17cb7c6486035e5cad"
+        },
+        {
+          "path": "crates/arcweft-rust-abi-build/Cargo.toml",
+          "bytes": 301,
+          "sha256": "831ddc454401dba25dfd22bd0e2aacf72fba0dd1f8c3d9ba9b2b885f970e0bb6"
+        },
+        {
+          "path": "crates/arcweft-rust-abi-macros/Cargo.toml",
+          "bytes": 461,
+          "sha256": "a7378d1a69dedcd68332824bc30439c18aa7e3dff4aa853b456949f8ec92637e"
+        },
+        {
+          "path": "crates/arcweft-rust-abi/Cargo.toml",
+          "bytes": 399,
+          "sha256": "cb548aa5ac4ca59fea4ede57a57239d5d632c81f417a476479873cbfed66eb7c"
+        },
+        {
+          "path": "crates/arcweft-save/Cargo.toml",
+          "bytes": 509,
+          "sha256": "29136a6ec2564f916ed5f9df0bbf99a553d801cb2649f797dbad2815f6962b3c"
+        },
+        {
+          "path": "crates/arcweft-serde-bridge/Cargo.toml",
+          "bytes": 441,
+          "sha256": "970a35d6640d2bcda6c5746687c1d9a375ba01f5c9baf7ace094efa3ac13e1a4"
+        },
+        {
+          "path": "crates/arcweft-source/Cargo.toml",
+          "bytes": 414,
+          "sha256": "78c056664ca58f705e00d18a3f801481b671c1b5cb74f4ffc75a255c7826e2a6"
+        },
+        {
+          "path": "crates/arcweft-test/Cargo.toml",
+          "bytes": 550,
+          "sha256": "7426e2de75c2ae682bffe6c4884c2920225e9a963b4853ceb5da1248d7de4205"
+        },
+        {
+          "path": "crates/arcweft-text-layout/Cargo.toml",
+          "bytes": 517,
+          "sha256": "ff0f7e7295ba558fe5252623d99936ad7deb47b4dae35b95a7b811cd2ec8b321"
+        },
+        {
+          "path": "crates/arcweft-text-model/Cargo.toml",
+          "bytes": 790,
+          "sha256": "18f0f481941b7b8cb874212bb1d9e1702f12f702cee9a756d1765f32bcfe4f78"
+        },
+        {
+          "path": "crates/arcweft-tooling/Cargo.toml",
+          "bytes": 641,
+          "sha256": "815a42c42b381e304a5c5ca18aaa4ecbfe006526918da3c9487596c2b402cd96"
+        },
+        {
+          "path": "crates/arcweft-verify-lsp/Cargo.toml",
+          "bytes": 583,
+          "sha256": "3373ed4abfdc54cc679bbc9a081db75b9348130aaa29b4b4eabe4b0beb10b539"
+        },
+        {
+          "path": "crates/arcweft-verify-oxiz/Cargo.toml",
+          "bytes": 348,
+          "sha256": "2406f28520ef7737f58d8227c13556ffe45bdb81aa22af0358bf0f2bb387db80"
+        },
+        {
+          "path": "crates/arcweft-verify-z3/Cargo.toml",
+          "bytes": 297,
+          "sha256": "6ff99c7088d32bce5b22f9efcdb6ad8bec9c4c0b45a53a612c2f288dfe1e290c"
+        },
+        {
+          "path": "crates/arcweft-verify/Cargo.toml",
+          "bytes": 470,
+          "sha256": "474d57f0ca3bfe45828706daaaab7882cc28c7005d10226f40342c7c4104f426"
+        },
+        {
+          "path": "crates/arcweft-view/Cargo.toml",
+          "bytes": 616,
+          "sha256": "3ab59e15e40dd17ecc54618cd50f96fe713a5230d7a127d63d8550a024ef365d"
+        },
+        {
+          "path": "crates/arcweft/Cargo.toml",
+          "bytes": 645,
+          "sha256": "202f79748ca64b1165897317ea6311dce25823730f401c965589a03e5003fc4d"
+        },
+        {
+          "path": "vendor/glyphon/Cargo.toml",
+          "bytes": 1790,
+          "sha256": "7c0b81f441c7f63ea4cef99d864c11501f04263feced1dda37513803b4086357"
+        }
+      ],
+      "inputDrift": 0,
+      "boundary": "Shared typed glow shader resource resolution plus real retained Native and public MCP full-grammar consumers; complete normal/build/dev reverse closure from retained all-feature resolve. No manifest, feature, target or toolchain changes."
+    },
+    "preservation": {
+      "version": 1,
+      "base": "75562d0d0350aa85fd40a038c903019ee046c375",
+      "path": "crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs",
+      "originalWipPatchSha256": "1a1d975747c193cc89af68ded0a5ca746b56d7b0796d7c0647b71e7b9609b843",
+      "originalHeldSnapshotSha256": "7581d41be03ca620d0e4bfa1f01023d1e61b3d2340e698c25f3daf6b3ab61421",
+      "expectedResidualWipPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "stagedCodeBlob": "ada6d43be0abf7e36ccf1bde9864e87274395141",
+      "originalUserPatchPreserved": true,
+      "heldCanonicalBlobDrift": 0,
+      "expectedHeldBlobs": {
+        "crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs": "1eb72833e10c054450dc2ebb4886f5ebb0997ecd",
+        "crates/arcweft-cli/tests/check/agent_script_debug.rs": "1911bcf7d90ab7a20237b2948ec6856cef1fb93f",
+        "crates/arcweft-cli/tests/check/profile_entry_selection.rs": "d7109fcbd25177b244ff2e626536a2247a6ef158",
+        "crates/arcweft-runtime-host/src/native_task.rs": "b06ac4c9450d7a97aeecce989435b2957ff9dbd1",
+        "samples/agent-script/cli-read-resource-metadata-smoke.awfagent": "b64dfa16bbc56601d4c70397a29b9a0832d8aaa0",
+        "samples/agent-script/cli-read-resource-smoke.awfagent": "b151b67feedfe4f42c63949cc334bd62b96693e3",
+        "samples/agent-script/cli-read-resource-value-smoke.awfagent": "313aa453b9abd75d6085296bba07ba86ed718b0d",
+        "samples/agent-script/native-choice-dispatch.arcw": "ab0d14a956551c627ee0e585f3ffa5b9965b3c0d",
+        "samples/agent-script/native-project-graph-relations.arcw": "c9b7335f70859a44a82c42b2fc347ab0443be8ec",
+        "samples/agent-script/native-visual-regression.arcw": "68e938de7dad9e13f1ece2316bce9bc4bd1426cb",
+        "samples/rich-text-full-grammar.arcw": "63e369ec7b2e2767f1b1eb2553e0a71f0ebcdd89",
+        "samples/rich-text-windows-fonts.arcw": "469421620e54d3e0dec5a6b408523b1f4762aa3e"
+      },
+      "reason": "Apply only the owned constructs/current-frame patch to the clean HEAD blob, replay the original Scroll WIP onto that candidate, and byte-compare normalized complete working source. Other11 held file hashes match the prior baseline. Compute residual patch through a private index; no real index/worktree/source or branch changes."
+    },
+    "owner": {
+      "combinedBeforeFinalSampleRepair": {
+        "version": 1,
+        "base": "75562d0d0350aa85fd40a038c903019ee046c375",
+        "run": "full-grammar-constructs-owner4-20261106.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [ 126.174s] 8 tests run: 7 passed (1 slow), 1 failed, 904 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 8,
+        "passed": 7,
+        "failed": 1,
+        "skipped": 904,
+        "selectedPackages": 2,
+        "matchedPackages": 2,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4122,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli",
+            "test": "app::agent::native::player_observation::full_grammar::progressed_full_grammar_effect_samples_keep_typewriter_masks_and_motion_pixels"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-05T20:53:37.3899972Z"
+      },
+      "finalSampleOwner": {
+        "version": 1,
+        "base": "75562d0d0350aa85fd40a038c903019ee046c375",
+        "run": "full-grammar-constructs-owner6-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [  29.222s] 1 test run: 1 passed, 729 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 729,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4122,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-05T20:58:49.0149042Z"
+      },
+      "scope": "Owner4 actual8run7PASS1FAIL includes publicMCP all11actualSourceframes, canonicalFx/transform/proxy/PageLine assertions, priorverticalgeometry, Native12positiveMask/ObjectIdreads plusactualshadercolor/tint and3glowresourcecases. Final sampledNative owner6 is separate1PASS/29.222s, not a fabricated fresh8/8. The complete reverse run replays all final regular cases."
+    },
+    "quality": {
+      "check": {
+        "version": 1,
+        "base": "75562d0d0350aa85fd40a038c903019ee046c375",
+        "command": [
+          "check",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4122,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T20:58:56.1987382Z",
+        "finishedAt": "2026-11-05T20:59:38.3716209Z"
+      },
+      "clippy": {
+        "version": 1,
+        "base": "75562d0d0350aa85fd40a038c903019ee046c375",
+        "command": [
+          "clippy",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4122,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T20:59:38.8363729Z",
+        "finishedAt": "2026-11-05T21:00:33.4846196Z"
+      },
+      "structure": {
+        "version": 1,
+        "base": "75562d0d0350aa85fd40a038c903019ee046c375",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/full-grammar-constructs-quality1-20261106.structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4122,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T21:00:33.9609315Z",
+        "finishedAt": "2026-11-05T21:00:37.9708304Z"
+      },
+      "format": {
+        "version": 1,
+        "base": "75562d0d0350aa85fd40a038c903019ee046c375",
+        "command": [
+          "rustfmt",
+          "--edition",
+          "2024",
+          "--check",
+          "crates/arcweft-presentation/src/fx/render_resource.rs",
+          "crates/arcweft-cli/src/app/agent/native/player_observation/full_grammar.rs",
+          "crates/arcweft-cli/tests/check/agent_observe_native.rs",
+          "crates/arcweft-cli/tests/check/agent_observe_native/native_full_grammar.rs",
+          "crates/arcweft-cli/tests/check/agent_observe_native/shared.rs",
+          "crates/arcweft-cli/tests/check/agent_observe_native/native_samples_effects.rs"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4122,
+        "sourceDrift": 0
+      }
+    },
+    "reverse": {
+      "version": 1,
+      "source": "3bd77a9e200cb882f6dd516e3644fc42d38111cd",
+      "terminal": {
+        "version": 1,
+        "base": "3bd77a9e200cb882f6dd516e3644fc42d38111cd",
+        "run": "full-grammar-constructs-reverse47-20261106.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [ 849.473s] 7169 tests run: 7162 passed (40 slow), 7 failed, 49 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 7169,
+        "passed": 7162,
+        "failed": 7,
+        "skipped": 49,
+        "selectedPackages": 47,
+        "matchedPackages": 44,
+        "noMatchingSelectedTests": [
+          "arcweft",
+          "arcweft-bundle-assets",
+          "arcweft-render-web"
+        ],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4122,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "spec_valid_run_edge_fixture_now_executes"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "unsafe_json_lists_audit_regions"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_records_required_solver_checks"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_reports_missing_promotion_proof"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_respects_semantic_defer_cancel_discharge"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "spec_rejected_edge_fixtures_fail_with_diagnostics"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-05T21:25:15.9508868Z"
+      },
+      "packages": [
+        {
+          "package": "arcweft-adapter-desktop",
+          "executed": 7,
+          "passed": 7,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-adapter-sema",
+          "executed": 13,
+          "passed": 13,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-agent-mcp",
+          "executed": 31,
+          "passed": 31,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-agent-mcp-client",
+          "executed": 2,
+          "passed": 2,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-agent-policy",
+          "executed": 19,
+          "passed": 19,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-agent-protocol",
+          "executed": 55,
+          "passed": 55,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-agent-repl",
+          "executed": 37,
+          "passed": 37,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-agent-runner",
+          "executed": 69,
+          "passed": 69,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-bundle",
+          "executed": 329,
+          "passed": 329,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-character-view",
+          "executed": 2,
+          "passed": 2,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-cli",
+          "executed": 707,
+          "passed": 700,
+          "failed": 7
+        },
+        {
+          "package": "arcweft-compiler",
+          "executed": 824,
+          "passed": 824,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-debug-model",
+          "executed": 2,
+          "passed": 2,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-debug-sqlite",
+          "executed": 22,
+          "passed": 22,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-desktop-native",
+          "executed": 18,
+          "passed": 18,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-dialogue",
+          "executed": 76,
+          "passed": 76,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-glyphon",
+          "executed": 24,
+          "passed": 24,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-lang-hir",
+          "executed": 977,
+          "passed": 977,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-lang-sema",
+          "executed": 1397,
+          "passed": 1397,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-lang-syntax",
+          "executed": 748,
+          "passed": 748,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-launch",
+          "executed": 45,
+          "passed": 45,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-lsp",
+          "executed": 223,
+          "passed": 223,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-player-native",
+          "executed": 63,
+          "passed": 63,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-player-scene",
+          "executed": 128,
+          "passed": 128,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-player-text-input",
+          "executed": 13,
+          "passed": 13,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-player-web",
+          "executed": 36,
+          "passed": 36,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-presentation",
+          "executed": 182,
+          "passed": 182,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-project",
+          "executed": 42,
+          "passed": 42,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-project-loader",
+          "executed": 158,
+          "passed": 158,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-rag",
+          "executed": 2,
+          "passed": 2,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-render-text",
+          "executed": 23,
+          "passed": 23,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-render-wgpu",
+          "executed": 149,
+          "passed": 149,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-runtime-driver",
+          "executed": 153,
+          "passed": 153,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-runtime-host",
+          "executed": 72,
+          "passed": 72,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-runtime-plan",
+          "executed": 165,
+          "passed": 165,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-test",
+          "executed": 4,
+          "passed": 4,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-text-layout",
+          "executed": 59,
+          "passed": 59,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-text-model",
+          "executed": 39,
+          "passed": 39,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-tooling",
+          "executed": 27,
+          "passed": 27,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-verify",
+          "executed": 8,
+          "passed": 8,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-verify-lsp",
+          "executed": 14,
+          "passed": 14,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-verify-oxiz",
+          "executed": 5,
+          "passed": 5,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-verify-z3",
+          "executed": 2,
+          "passed": 2,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-view",
+          "executed": 198,
+          "passed": 198,
+          "failed": 0
+        }
+      ],
+      "runtimePackages": 44,
+      "hostBuildOnly": [
+        "arcweft",
+        "arcweft-bundle-assets",
+        "arcweft-render-web"
+      ],
+      "cli": [
+        {
+          "package": "arcweft-cli",
+          "executed": 707,
+          "passed": 700,
+          "failed": 7
+        }
+      ],
+      "nonCli": {
+        "executed": 6462,
+        "passed": 6462,
+        "failed": 0
+      },
+      "failureComparison": {
+        "referenceSource": "dce4f3da5d64b6edce97fd01431d58e8fed2f260",
+        "referenceRun": "native-coverage-region-reverse6-20261106.runtime",
+        "previousFailureCount": 9,
+        "currentFailureCount": 7,
+        "newFailureIds": [],
+        "noLongerFailingIds": [
+          "arcweft-cli::check\tagent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs",
+          "arcweft-cli::check\tagent_observe_native::agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures"
+        ],
+        "note": "Compare actual terminal IDs. The current result is a fresh full run, not arithmetic recomputation of the older result."
+      },
+      "quality": {
+        "sourceInputs": 4122,
+        "sourceDrift": 0,
+        "matchingInput": "full-grammar-constructs-reverse47-20261106",
+        "check": {
+          "version": 1,
+          "base": "75562d0d0350aa85fd40a038c903019ee046c375",
+          "command": [
+            "check",
+            "--workspace",
+            "--all-targets",
+            "--all-features",
+            "--locked"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 4122,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-05T20:58:56.1987382Z",
+          "finishedAt": "2026-11-05T20:59:38.3716209Z"
+        },
+        "clippy": {
+          "version": 1,
+          "base": "75562d0d0350aa85fd40a038c903019ee046c375",
+          "command": [
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--all-features",
+            "--locked"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 4122,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-05T20:59:38.8363729Z",
+          "finishedAt": "2026-11-05T21:00:33.4846196Z"
+        },
+        "structure": {
+          "version": 1,
+          "base": "75562d0d0350aa85fd40a038c903019ee046c375",
+          "command": [
+            "+nightly",
+            "-Zscript",
+            "tools/structure-audit.rs",
+            "--root",
+            ".",
+            "--fail-on-blocking",
+            "--write",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/full-grammar-constructs-quality1-20261106.structure-report"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 4122,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-05T21:00:33.9609315Z",
+          "finishedAt": "2026-11-05T21:00:37.9708304Z"
+        },
+        "warnings": "Warnings remain."
+      },
+      "genericMatch": {
+        "expected": 151,
+        "passed": 151,
+        "missing": 0,
+        "failed": 0,
+        "referenceSha256": "82b6519b1ccbfcd4aee95d3ef8b69db686037924a7f9137de0fef0201d86b996"
+      },
+      "workingTree": "The recorded original12 tracked WIP (including the two required borrowed summary reads) participated in the frozen Source input; this is not a pristine committed-tree claim. The overlapping test publication contains only its owned RAG assertion hunk.",
+      "recordedAt": "2026-11-05T21:26:08.1238222Z"
+    },
+    "tier2": {
+      "version": 1,
+      "base": "3bd77a9e200cb882f6dd516e3644fc42d38111cd",
+      "run": "full-grammar-constructs-tier2-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   2.442s] 7 tests run: 7 passed, 4 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 7,
+      "passed": 7,
+      "failed": 0,
+      "skipped": 4,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4122,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-05T21:26:00.3105355Z"
+    },
+    "wasm": {
+      "version": 1,
+      "base": "3bd77a9e200cb882f6dd516e3644fc42d38111cd",
+      "command": [
+        "check",
+        "-p",
+        "arcweft-render-web",
+        "-p",
+        "arcweft-player-web",
+        "--lib",
+        "--target",
+        "wasm32-unknown-unknown",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4122,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-05T21:26:00.7878138Z",
+      "finishedAt": "2026-11-05T21:26:18.2015418Z",
+      "scope": "wasm library check; no browser runtime or final image parity claim"
+    },
+    "attempts": {
+      "firstCatalog": {
+        "version": 1,
+        "base": "75562d0d0350aa85fd40a038c903019ee046c375",
+        "command": [
+          "nextest",
+          "list",
+          "-p",
+          "arcweft-cli",
+          "--all-features",
+          "--locked",
+          "-E",
+          "test(full_grammar)",
+          "--message-format",
+          "json"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/full-grammar-constructs-owner1-20261106.catalog.log",
+        "exitCode": 101,
+        "sourceInputs": 4121,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T20:43:14.3167647Z",
+        "finishedAt": "2026-11-05T20:43:21.3280217Z"
+      },
+      "secondCatalog": {
+        "version": 1,
+        "base": "75562d0d0350aa85fd40a038c903019ee046c375",
+        "command": [
+          "nextest",
+          "list",
+          "-p",
+          "arcweft-cli",
+          "--all-features",
+          "--locked",
+          "-E",
+          "test(full_grammar)",
+          "--message-format",
+          "json"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/full-grammar-constructs-owner2-20261106.catalog.log",
+        "exitCode": 101,
+        "sourceInputs": 4121,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T20:43:46.2805163Z",
+        "finishedAt": "2026-11-05T20:44:32.8311319Z"
+      },
+      "firstRuntime": {
+        "version": 1,
+        "base": "75562d0d0350aa85fd40a038c903019ee046c375",
+        "run": "full-grammar-constructs-owner3-20261106.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [  95.364s] 5 tests run: 1 passed, 4 failed, 725 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 5,
+        "passed": 1,
+        "failed": 4,
+        "skipped": 725,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4121,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli",
+            "test": "app::agent::native::player_observation::full_grammar::progressed_full_grammar_proxies_page_line_and_shader_keep_actual_readback"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli",
+            "test": "app::agent::native::player_observation::full_grammar::progressed_full_grammar_frame_keeps_issued_cluster_mask_and_object_id_readback"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli",
+            "test": "app::agent::native::player_observation::full_grammar::progressed_full_grammar_effect_samples_keep_typewriter_masks_and_motion_pixels"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-05T20:47:30.01329Z"
+      },
+      "firstRuntimeDiagnostic": {
+        "tick": 63,
+        "diagnostics": [
+          {
+            "step": 63,
+            "severity": "error",
+            "source": "fx",
+            "code": "program_validation",
+            "effect_id": "arcweft.builtin::shader.hd38192ff186e2b19cfd5cd70b6118d3b02c7d93a7cfc02ed4c465794bd3ccbab",
+            "message": "Fx shader property `direction` has the wrong closed value type"
+          }
+        ]
+      },
+      "combined": {
+        "version": 1,
+        "base": "75562d0d0350aa85fd40a038c903019ee046c375",
+        "run": "full-grammar-constructs-owner4-20261106.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [ 126.174s] 8 tests run: 7 passed (1 slow), 1 failed, 904 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 8,
+        "passed": 7,
+        "failed": 1,
+        "skipped": 904,
+        "selectedPackages": 2,
+        "matchedPackages": 2,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4122,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli",
+            "test": "app::agent::native::player_observation::full_grammar::progressed_full_grammar_effect_samples_keep_typewriter_masks_and_motion_pixels"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-05T20:53:37.3899972Z"
+      },
+      "rejectedPageAdvance": {
+        "version": 1,
+        "base": "75562d0d0350aa85fd40a038c903019ee046c375",
+        "run": "full-grammar-constructs-owner5-20261106.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [  15.130s] 1 test run: 0 passed, 1 failed, 729 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 1,
+        "passed": 0,
+        "failed": 1,
+        "skipped": 729,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4122,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli",
+            "test": "app::agent::native::player_observation::full_grammar::progressed_full_grammar_effect_samples_keep_typewriter_masks_and_motion_pixels"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-05T20:55:27.3697672Z"
+      },
+      "finalSample": {
+        "version": 1,
+        "base": "75562d0d0350aa85fd40a038c903019ee046c375",
+        "run": "full-grammar-constructs-owner6-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [  29.222s] 1 test run: 1 passed, 729 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 729,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4122,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-05T20:58:49.0149042Z"
+      },
+      "correction": "Keep E0277 (metadata u32 vsOption test assertion), E0425 (removed shared proxy helper still used by another test), actual5run1PASS4FAIL/95.364s, actual8run7PASS1FAIL/126.174s, actual1FAIL/15.130s and final1PASS/29.222s. First runtime exposed the real shared glow schema mismatch: builtin graph supplies direction but glow accepted/read dir, producing Fx program_validation at63. Fix the shared consumer in place, preserving typedvec2 and3phases, without aliases or backend exceptions. Other fixture repairs use canonical AgentImageObjectRef and report.steps. 1s samples had not revealed longline005effects; real AdvanceText consumes its page and removes runs at59. Final entered55samples retain original4steps/128ops and use0hidden/60visible,60vs61motion,60.125vs60.375wave. No synthetic reveal policy or budget inflation."
+    },
+    "behavior": "One real publicMCP session visits11currentSourceframes separately, without repeatedobserve resets, foreign-frame IDs or aggregated reports. Canonical builtin specialization/catalog identity, typedshaderresource, transforms, proxydeclarations/defaults/overrides/nesting/hits/depth/layers/fields, selectedproxyparents and Page/Line source ranges are retained. Positive rawMask/ObjectId checks read URIs issued by exactly the retained local Native frame, strictcodec/context/parent/objectmetadata/bytecount/alpha/tint; MCP mandatory publication remains unchanged. Shader adds actualbluepixels>32. Typewriterzero mask differs fromcompleted visible mask; shake andbothsparkleapplications change at60s/61s; wave changesat60.125s/60.375s. Geometry andviewportPNG remain their own accepted conditions.",
+    "correctionReason": "Replace impossible11simultaneousactiveframes and foreign-replay rawreads. Current Source explicitlyauthored content target, fields ratherthanparams, cue literalwithleadingLF, two named sparkle runs and no caption/hover scalar parameters; preserve exact currentconditions ratherthanrestoredeletedwiremodels. Deriveparentsfromtypedissuedcontext, never opaque ID spelling. The concrete shaderdirectiondiagnostic is scoped newevidence forglow only; existingGenericMatch151acceptance remains public and is exactly replayed here. All old testresults/fullSHAs remain historical, and current-status is the sole current list.",
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-full-grammar-constructs.raw.zip",
+      "bytes": 4985732,
+      "sha256": "29393ebd757f63ebaf74566d23355efabbb08f06c7f371e62301cbfc497689cd",
+      "entries": 146,
+      "entryDrift": 0
+    }
   }
 }
