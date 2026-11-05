@@ -12140,5 +12140,130 @@
         "supersededRow": "| 共有契約／推移的逆依存matrix | **全59実行を終端照合・失敗の修復を継続** | Source0345cb6ed70b8ce83a7b3a200ba790a385efa4e8、4107入力、9757 run／9702 PASS／55 FAIL／48 skipped、1527.819秒。56 packageに実テスト、3 packageはhost上でbuildのみ。source／case／EXE drift0。CLI52 FAIL、Compiler負例準備3 FAILを保持し、後者の別Source4／4修復をfull runへ合算しない。先行catalog101のrustc ICE、同59条件check0、未変更retryのcatalog0も別観測として保持する。実graphはnormal／build／dev・all target／all featureのmetadata／tree差分0。[全case・package・失敗・原本](acceptance-evidence/task-rich-text-property-identity.json)。 |"
       }
     }
+  },
+  "cliPresentationZIndex": {
+    "version": 1,
+    "recordedAt": "2026-11-05T11:57:03.2488873Z",
+    "source": {
+      "version": 1,
+      "commit": "7e392754aadc9fb435ca2ccebd768159f9ae4b68",
+      "parent": "ff55f477d1a4b71fe72fdad4947ebcc2a16d3e51",
+      "tree": "b715accd366d91519a530f75e6d51cd285124b0a",
+      "remote": "7e392754aadc9fb435ca2ccebd768159f9ae4b68",
+      "paths": [
+        {
+          "path": "crates/arcweft-cli/tests/check/agent_observe_native/core.rs",
+          "blob": "96f2b20db6712b0d135abed0ac91603998925781"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "1891ced5d9dd02da952f83dcc98ae256a12d7e0494d83423381557dbe45e0005",
+      "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-05T11:55:49.9161931Z"
+    },
+    "reason": "The unchanged source authors only layer=hud,z_index=7,opacity=0.5; no object-proxy declaration/call or role/hover/weight values exist. RichTextPresentation has typed fields and no generic params map. Both actual full48 and previous CLI parent runs failed on the fabricated caption expectation. Do not introduce an unowned map or infer unauthored values to satisfy that stale assertion.",
+    "correction": "Replace the five params role/hover/weight expectations with exact absence of params and object proxies plus typed layer/z_index/opacity assertions on all three run/page/line objects. This strengthens page/line scalar coverage. Preserve every original valid layer/depth/geometry/capture/hit-test assertion, exact source, viewport and4-step/64-op bounds. No production/Cargo/API change.",
+    "runtime": {
+      "version": 1,
+      "base": "ff55f477d1a4b71fe72fdad4947ebcc2a16d3e51",
+      "run": "cli-presentation-z-index-owner1-20261105.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [  15.379s] 3 tests run: 3 passed, 485 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 485,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4110,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-05T11:53:02.7821673Z"
+    },
+    "command": [
+      "nextest",
+      "run",
+      "-p",
+      "arcweft-cli",
+      "--test",
+      "check",
+      "--all-features",
+      "--locked",
+      "-E",
+      "test(agent_observe_reports_text_presentation_z_index_depth) | test(agent_hit_test_reports_depth_sorted_rich_text_proxy) | test(agent_observe_reports_explicit_rich_text_proxy_struct_metadata)",
+      "--no-tests",
+      "fail",
+      "--no-fail-fast",
+      "--status-level",
+      "all",
+      "--final-status-level",
+      "all"
+    ],
+    "runtimeScope": "One actual3/3PASS485skip15.379s run: original z-index case, depth-sorted typed rich-text proxy hit-test, and explicit rich_text_proxy struct declaration/default/override observation with image metadata and hit-test. Positive authored proxies still retain schema/declaration/field metadata; the no-proxy z-index source cannot acquire it.4110 source/case/EXE drift0.",
+    "quality": {
+      "check": {
+        "version": 1,
+        "base": "ff55f477d1a4b71fe72fdad4947ebcc2a16d3e51",
+        "command": [
+          "check",
+          "-p",
+          "arcweft-cli",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4110,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T11:53:33.8957414Z",
+        "finishedAt": "2026-11-05T11:54:23.7470549Z"
+      },
+      "clippy": {
+        "version": 1,
+        "base": "ff55f477d1a4b71fe72fdad4947ebcc2a16d3e51",
+        "command": [
+          "clippy",
+          "-p",
+          "arcweft-cli",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4110,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T11:54:24.243069Z",
+        "finishedAt": "2026-11-05T11:55:19.1211605Z"
+      }
+    },
+    "qualityScope": "CLI package all-target/all-feature/locked check and Clippy exit0; existing warnings remain. Format changed Rust. Reuse unaffected production/shared/structure evidence: this only repairs one CLI test expectation, with no dependency/ownership change; do not claim a fresh workspace/full48/structure/doctest/wasm/parity run.",
+    "previousFailure": {
+      "run": "font-family-reverse1-20261105.runtime",
+      "source": "afdf8773b3743df2fd16691e0ea4deec6183db46",
+      "binary": "arcweft-cli::check",
+      "test": "agent_observe_native::agent_observe_reports_text_presentation_z_index_depth",
+      "result": "FAIL;presentation.params.role was Null, stale expectation caption"
+    },
+    "correctionReason": "Supersedes only the current outstanding z-index assertion condition. Preserve actual full7140=7126PASS14FAIL and CLI700=686PASS14FAIL; this later3-case source/run is independent, not a recomputed700/13FAIL result. The13 other failure IDs have unchanged inputs and remain the current repair scope. Generic Match and all other accepted boundaries remain accepted.",
+    "supersededCurrentRows": [
+      "| 共有契約／推移的逆依存matrix | **対象ごとの全逆依存runを終端照合。最新のCLI14失敗を修復中** | Fontの実Cargo graphは48 packageで、Source afdf8773b3743df2fd16691e0ea4deec6183db46に対する7140実行は7126 PASS／14 FAIL／48 skipped、964.555秒。45 packageに実テスト、3 packageはhost上でbuildのみ。source／case／EXE drift0、normal／build／dev・all target／all featureのmetadata／tree差分0。非CLI6440／6440 PASS、14失敗はCLI行へ集約する。以前の長さ・順序契約の全59 run（Source0345cb6ed70b8ce83a7b3a200ba790a385efa4e8、9757／55 FAIL）と先行catalog ICEは別入力の履歴へ保持し、今回を全59再実行や旧失敗の修復合算とは扱わない。[全case・package・失敗・原本](acceptance-evidence/task-rich-text-property-identity.json)。 |",
+      "| CLI全target照合 | **統合受入は未完了。最新の全700は686 PASS／14 FAIL** | Source afdf8773b3743df2fd16691e0ea4deec6183db46の全48逆依存runから実CLI700 IDを照合した。14失敗は以前のfull runにもあるIDで、full-grammar現在line選択3件、Scroll解決1件、未記述param期待1件、RAG1件、旧plan／unsafe fixture2件、run-edge1件、負例診断1件、verifier fixture4件。新規失敗ID0でも全CLI成功とはしない。以前の698／52 FAIL・246／6 FAILと後続owner修復は、それぞれの入力と結果のまま履歴へ保持し、合算しない。[全失敗・訂正・原本](acceptance-evidence/task-rich-text-property-identity.json)。Generic Matchと他の既受入境界は維持する。 |",
+      "| workspace check／Clippy・fmt・構造gate | **共有Font Sourceの全98 check／Clippy・構造gateは終了0。警告は残る** | 全48 runtime Source afdf8773b3743df2fd16691e0ea4deec6183db46と、workspace qualityの4110入力は完全一致した。全98 all-target／all-feature／locked check・Clippyと構造gateは終了0。その後のtest／docのみのde91d1b1dd5e78e536c7cd06c6b99900aded0bedはCompiler／Presentation／AgentProtocolのcheck・Clippyと全98構造gateが終了0。変更Rustをfmtし、新しいFont assertionの警告を解消した。専用wasm・doctest・最終Native-Web parityを、このhost検証で完了とはしない。[実入力・差分照合・終端・raw](acceptance-evidence/task-rich-text-property-identity.json)。 |"
+    ],
+    "workingTree": "Original12 tracked WIP patch SHA25646402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac retained through verified publication; original6 untracked files retained.",
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-cli-presentation-z-index.raw.zip",
+      "bytes": 849524,
+      "sha256": "94041442c9ba215d57d8afc4aaacd975bdeba307bb894481f7e3ede277c9211d",
+      "entries": 23,
+      "entryDrift": 0
+    }
   }
 }
