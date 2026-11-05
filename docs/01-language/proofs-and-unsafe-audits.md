@@ -205,3 +205,12 @@ tracks direct local borrow drops through path-sensitive branch merges. A
 well-typed callable proof is not currently treated as a completed formal proof.
 CLI/LSP consume the verifier report schema through `arcweft-verify`.
 
+`arcw verify` checks the accepted semantic generation before runtime plan
+generation. For `assert.prove`, the verifier emits counterexample queries for
+Boolean literals, checked local bindings, and the Boolean
+operators `!`, `&&`, `||`, `=>`, `==`, and `!=`. Each assertion condition
+has its own obligation. An unsatisfiable counterexample query discharges the
+condition in the report. A satisfiable query retains its counterexample, and
+conditions outside the supported fragment remain pending. Runtime plan
+generation still requires proof discharge at its own admission boundary.
+

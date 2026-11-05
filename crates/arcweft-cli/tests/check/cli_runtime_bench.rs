@@ -388,6 +388,87 @@ flow verify {
 }
 
 #[test]
+fn verify_oxiz_solves_typed_boolean_assertions_and_reports_counterexamples() {
+    let source = "flow verify(flag: bool) { assert.prove(flag || !flag) }\n";
+    let path = temp_arcw("verify-propositional-proof", source);
+    let smt_dir = path.with_extension("smt");
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .args(["verify", "--mode", "test", "--backend", "oxiz", "--json"])
+        .arg(&path)
+        .arg("--emit-smt")
+        .arg(&smt_dir)
+        .output()
+        .expect("arcw verifies a Boolean tautology through OxiZ");
+    assert!(
+        output.status.success(),
+        "stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let [obligation] = report["obligations"].as_array().unwrap().as_slice() else {
+        panic!("one exact condition obligation: {report}");
+    };
+    let [check] = report["solver_checks"].as_array().unwrap().as_slice() else {
+        panic!("one actual solver check: {report}");
+    };
+    assert_eq!(obligation["kind"], "assertion_proof");
+    assert_eq!(obligation["discharge"]["kind"], "solver");
+    assert_eq!(check["backend"], "oxiz");
+    assert_eq!(check["obligation"], obligation["id"]);
+    assert_eq!(check["outcome"], "unsat");
+    assert_eq!(check["required"], true);
+    assert!(report["diagnostics"].as_array().unwrap().is_empty());
+    let artifact = smt_dir.join(format!("{}.smt2", obligation["id"].as_str().unwrap()));
+    let query = fs::read_to_string(&artifact).expect("emitted SMT-LIB input");
+    assert_eq!(query.matches("(declare-const ").count(), 1);
+    assert!(query.contains("(declare-const bool_0 Bool)"));
+    assert!(query.contains("(check-sat)"));
+    fs::remove_file(artifact).unwrap();
+    fs::remove_dir(smt_dir).unwrap();
+    fs::remove_file(path).unwrap();
+
+    let path = temp_arcw(
+        "verify-propositional-counterexample",
+        concat!(
+            "fn passthrough(flag: bool) -> bool { flag }\n",
+            "flow verify(flag: bool) { assert.prove(flag, passthrough(flag)) }\n",
+        ),
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .args(["verify", "--mode", "test", "--backend", "oxiz", "--json"])
+        .arg(&path)
+        .output()
+        .expect("arcw verifies the accepted assertion inputs");
+    fs::remove_file(path).unwrap();
+    assert!(!output.status.success());
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let [refuted, unsupported] = report["obligations"].as_array().unwrap().as_slice() else {
+        panic!("both undischarged obligations remain: {report}");
+    };
+    let [check] = report["solver_checks"].as_array().unwrap().as_slice() else {
+        panic!("only the representable condition reaches the backend: {report}");
+    };
+    assert_eq!(check["obligation"], refuted["id"]);
+    assert_eq!(check["outcome"], "sat");
+    assert_eq!(check["required"], true);
+    assert_eq!(check["model"]["bool_0"], "false");
+    assert_eq!(refuted["discharge"]["kind"], "missing");
+    assert_eq!(unsupported["discharge"]["kind"], "missing");
+    assert!(unsupported["smt"].is_null());
+    assert!(
+        report["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|diagnostic| {
+                diagnostic["id"] == "verify.proof.unresolved"
+                    && diagnostic["obligation"] == unsupported["id"]
+            })
+    );
+}
+
+#[test]
 fn verify_json_reports_semantic_thread_join_conflict() {
     for source in [
         r#"

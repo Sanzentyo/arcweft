@@ -1,8 +1,8 @@
 use super::diagnostics::emit_diagnostics;
 use super::project::{
-    CheckedModule, ProfileOptions, ProjectDiagnosticOutput, SourceSelection,
+    CheckedModule, ProfileOptions, ProjectDiagnosticOutput, SourceSelection, analyze_selection,
     load_and_check_selection, resolve_source_selection, runtime_pure_config_for_selection,
-    verify_compiled_project,
+    verify_analysis, verify_compiled_project,
 };
 use super::runtime::entry::select_runtime_entry;
 use super::runtime::executor::RuntimeExecutorInstance;
@@ -42,13 +42,10 @@ const Z3_BIN_ENV: &str = "ARCWEFT_Z3_BIN";
 
 pub(super) fn verify_command(options: &VerifyOptions) -> Result<(), ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
-    let checked = load_and_check_selection(
-        &selection,
-        None,
-        ProjectDiagnosticOutput::for_json(options.json),
-    )?;
-    let mut report = verify_compiled_project(
-        &checked.compiled,
+    let (analysis, source) =
+        analyze_selection(&selection, ProjectDiagnosticOutput::for_json(options.json))?;
+    let mut report = verify_analysis(
+        &analysis,
         VerificationPolicy {
             mode: options.mode,
             backend: options.backend,
@@ -69,7 +66,7 @@ pub(super) fn verify_command(options: &VerifyOptions) -> Result<(), ExitCode> {
     if options.json {
         print_json(&report)?;
     } else {
-        emit_verifier_diagnostics(&checked.source_document, &report);
+        emit_verifier_diagnostics(&source, &report);
         let status = if report.has_errors() || report.has_solver_failures() {
             "failed"
         } else {
@@ -462,27 +459,22 @@ fn z3_command_from_bin(value: OsString) -> OsString {
 }
 
 fn solve_report(report: &mut VerificationReport, backend: BackendKind, z3_command: Option<&OsStr>) {
-    let checks = report
-        .obligations
-        .iter()
-        .filter_map(|obligation| {
-            obligation
-                .smt
-                .clone()
-                .map(|problem| (obligation.id.clone(), problem))
-        })
-        .collect::<Vec<_>>();
-    for (obligation, problem) in checks {
+    for index in 0..report.obligations.len() {
+        let obligation = &report.obligations[index];
+        let Some(problem) = &obligation.smt else {
+            continue;
+        };
         let outcome = match backend {
             BackendKind::Emit => continue,
-            BackendKind::Oxiz => OxizBackend.check(&problem),
+            BackendKind::Oxiz => OxizBackend.check(problem),
             BackendKind::Z3 => {
                 let backend = z3_command.map_or_else(ExternalZ3Backend::default, |command| {
                     ExternalZ3Backend::new(command.to_os_string())
                 });
-                backend.check(&problem)
+                backend.check(problem)
             }
         };
+        let obligation = obligation.id.clone();
         match &outcome {
             Ok(check) if check.model.is_empty() => {
                 eprintln!("solver[{backend:?}] {obligation}: {:?}", check.outcome);

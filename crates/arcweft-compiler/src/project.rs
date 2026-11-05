@@ -561,10 +561,6 @@ pub fn compile_project(
 ///
 /// Panics only if the module graph inside `ProjectSources` references a module
 /// that is absent from the same validated `ProjectSources` inventory.
-#[allow(
-    clippy::too_many_lines,
-    reason = "one function owns the explicit pending-cache transaction through every project-wide stage"
-)]
 pub fn compile_project_with_cache<C>(
     session: &mut ProjectCompilationSession,
     project: &ProjectSources,
@@ -572,6 +568,344 @@ pub fn compile_project_with_cache<C>(
     context: &ProjectCompilationContext,
     cache: &mut C,
 ) -> Result<CompiledProject, ProjectCompileError>
+where
+    C: ProjectCompileCache,
+{
+    assemble_project_with_cache(
+        session,
+        project,
+        parsed_sources,
+        context,
+        cache,
+        |analysis, executable| compile_analyzed_project(analysis, executable, project, context),
+    )
+}
+
+/// Admits the project through final semantic analysis for verification and tooling.
+/// The lease contains the exact HIR and checked facts used by full compilation.
+pub fn analyze_project(
+    session: &mut ProjectCompilationSession,
+    project: &ProjectSources,
+    parsed_sources: &BTreeMap<CanonicalModulePath, ParsedSource>,
+    context: &ProjectCompilationContext,
+) -> Result<Arc<ProjectAnalysisLease>, ProjectCompileError> {
+    assemble_project_with_cache(
+        session,
+        project,
+        parsed_sources,
+        context,
+        &mut NoProjectCompileCache,
+        |analysis, _| {
+            validate_entry_selection(analysis.checked_entries(), context.entry_selection())?;
+            Ok(Arc::clone(analysis))
+        },
+    )
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "the runtime artifact transaction assembles and seals the products of one checked project"
+)]
+fn compile_analyzed_project(
+    analysis: &Arc<ProjectAnalysisLease>,
+    executable: arcweft_lang_hir::project::HirAnalysisProjectView<'_>,
+    project: &ProjectSources,
+    context: &ProjectCompilationContext,
+) -> Result<CompiledProject, ProjectCompileError> {
+    let hir_project = analysis.hir_project();
+    let registered_world = analysis.registered_world();
+    let final_analysis = analysis.final_analysis();
+    let checked_entries = final_analysis.checked_entries();
+    let verification = Arc::new(
+        verify_project(
+            executable,
+            registered_world.symbols(),
+            final_analysis.as_ref(),
+            VerificationPolicy::default(),
+        )
+        .map_err(|error| {
+            linked_error(
+                ProjectCompileStage::RuntimePlanLower,
+                [
+                    Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                        .with_code("verify.project.input"),
+                ],
+            )
+        })?,
+    );
+    let verification_errors = verification
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.severity == VerificationSeverity::Error)
+        .map(|diagnostic| project_verification_diagnostic(diagnostic, context))
+        .collect::<Vec<_>>();
+    if !verification_errors.is_empty() {
+        return Err(linked_error_with_compilation_sources(
+            ProjectCompileStage::RuntimePlanLower,
+            context,
+            verification_errors,
+        ));
+    }
+    validate_entry_selection(checked_entries, context.entry_selection())?;
+    let runtime_reachability = lower::project_runtime_reachability(
+        executable,
+        registered_world.symbols(),
+        final_analysis.as_ref(),
+        checked_entries,
+        context.entry_selection().map_or(
+            lower::RuntimeEmissionMode::CheckAll,
+            lower::RuntimeEmissionMode::SelectedEntry,
+        ),
+    )
+    .and_then(|reachability| {
+        lower::validate_reachable_runtime_callables(
+            registered_world.symbols(),
+            final_analysis.as_ref(),
+            &reachability,
+        )?;
+        Ok(reachability)
+    })
+    .map_err(|error| {
+        let code = error.diagnostic_code();
+        linked_error(
+            ProjectCompileStage::RuntimePlanLower,
+            [Diagnostic::new(DiagnosticSeverity::Error, error.to_string()).with_code(code)],
+        )
+    })?;
+    let style = style::lower_project_view_styles(hir_project, final_analysis.as_ref()).map_err(
+        |error| {
+            linked_error(
+                ProjectCompileStage::StyleLower,
+                [
+                    Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                        .with_code("style.lower"),
+                ],
+            )
+        },
+    )?;
+    let fx_catalog = CompiledFxCatalog::lower(final_analysis.as_ref()).map_err(|error| {
+        linked_error(
+            ProjectCompileStage::FxLower,
+            [Diagnostic::new(DiagnosticSeverity::Error, error.to_string()).with_code("fx.lower")],
+        )
+    })?;
+    let view_product = view::ViewProjectLowerer::for_project(
+        hir_project,
+        final_analysis.as_ref(),
+        registered_world.symbols(),
+        registered_world,
+        &style,
+        &fx_catalog,
+        project,
+        context.resource_types(),
+    )
+    .and_then(view::ViewProjectLowerer::lower)
+    .map_err(|error| {
+        linked_error_with_registration_sources(
+            ProjectCompileStage::ViewLower,
+            context.facts(),
+            [error.diagnostic()],
+        )
+    })?;
+    let pure_programs = view_product.runtime_programs().iter().map(|program| {
+        let fact = lower::programs::project_view(program,
+            registered_world.symbols(), registered_world, final_analysis)?;
+        if fact.result().identity().as_bytes() != program.result().as_bytes() {
+            return Err(lower::RuntimeSemanticProjectionError::Facts(Box::new(
+                arcweft_runtime_plan::semantic_facts::RuntimeSemanticFactsError::InvalidPureProgram { program: program.id() },
+            )));
+        }
+        Ok(fact)
+    }).collect::<Result<Vec<_>, lower::RuntimeSemanticProjectionError>>().map_err(|error| {
+        linked_error(ProjectCompileStage::RuntimePlanLower,
+            [Diagnostic::new(DiagnosticSeverity::Error, error.to_string()).with_code(error.diagnostic_code())])
+    })?;
+    let program_reachability = lower::project_program_reachability(
+        executable,
+        registered_world.symbols(),
+        final_analysis.as_ref(),
+        pure_programs.iter().map(|program| program.admission()),
+    )
+    .and_then(|reachability| {
+        lower::validate_reachable_runtime_callables(
+            registered_world.symbols(),
+            final_analysis.as_ref(),
+            &reachability,
+        )?;
+        Ok(reachability)
+    })
+    .map_err(|error| {
+        let code = error.diagnostic_code();
+        linked_error(
+            ProjectCompileStage::RuntimePlanLower,
+            [Diagnostic::new(DiagnosticSeverity::Error, error.to_string()).with_code(code)],
+        )
+    })?;
+    let dialogue_profile_input = if let Some(input) = context.accepted_launch_profile() {
+        dialogue_profile::DialogueProfileAdmissionInput::Launch(input)
+    } else {
+        let topology_sources = SourceSetRevision::try_for_identities(
+            std::iter::once(project.manifest_document().identity()).chain(
+                project
+                    .modules()
+                    .map(|source| source.document().identity()),
+            ),
+        )
+        .map_err(|error| {
+            linked_error(
+                ProjectCompileStage::DialogueProfileAdmission,
+                [Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                    .with_code("profile.dialogue.project-source-revision")
+                    .with_label(DiagnosticLabel::primary(
+                        project.manifest_document().start_span(),
+                        Some(
+                            "the project-default dialogue profile could not bind this source inventory"
+                                .to_owned(),
+                        ),
+                    ))],
+            )
+        })?;
+        dialogue_profile::DialogueProfileAdmissionInput::ProjectDefault {
+            manifest: project.manifest_document(),
+            topology_sources,
+        }
+    };
+    let dialogue_profile = CheckedDialogueProfile::try_admit(
+        dialogue_profile_input,
+        &view_product,
+        context.resource_types(),
+    )
+    .map_err(|error| {
+        linked_error_with_compilation_sources(
+            ProjectCompileStage::DialogueProfileAdmission,
+            context,
+            [error.diagnostic()],
+        )
+    })?;
+    let runtime_facts = lower::project_runtime_semantic_facts_with_programs_and_fx(
+        executable,
+        registered_world.symbols(),
+        registered_world,
+        final_analysis,
+        &runtime_reachability,
+        &program_reachability,
+        &pure_programs,
+        Some(&dialogue_profile),
+        &fx_catalog,
+        context.instantiation_control(),
+    )
+    .map_err(|error| {
+        linked_error(
+            ProjectCompileStage::RuntimePlanLower,
+            [
+                Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                    .with_code(error.diagnostic_code()),
+            ],
+        )
+    })?;
+    let entry_runtime_input = runtime_entry_lowering_input(
+        executable,
+        registered_world,
+        registered_world.symbols(),
+        final_analysis,
+        &runtime_reachability,
+        &runtime_facts,
+        context.command_policy(),
+    )
+    .map_err(|error| {
+        linked_error(
+            ProjectCompileStage::RuntimePlanLower,
+            [
+                Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                    .with_code("compiler.entry_runtime_projection"),
+            ],
+        )
+    })?;
+    let prepared = arcweft_runtime_plan::flow::prepare_runtime_plan_with_stats(
+        executable,
+        &runtime_facts,
+        &entry_runtime_input,
+    )
+    .map_err(|errors| {
+        linked_error(
+            ProjectCompileStage::RuntimePlanLower,
+            errors.into_iter().map(|error| {
+                Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                    .with_code("compiler.runtime_plan_lower")
+            }),
+        )
+    })?;
+    view_product
+        .bind_runtime_task_plans(
+            prepared.view_task_plans(),
+            final_analysis,
+            executable,
+            arcweft_bundle::resource_codec::ViewProductValidationLimits::default(),
+        )
+        .map_err(|error| linked_error(ProjectCompileStage::ViewLower, [error.diagnostic()]))?;
+    let authority = view_product
+        .product()
+        .program()
+        .map(|program| program as &dyn arcweft_core::task::ViewTaskPlanAuthority);
+    let runtime_plan = prepared
+        .finish(
+            arcweft_core::plan::RuntimeTaskPlanSealLimits::default(),
+            authority,
+        )
+        .map_err(|errors| {
+            linked_error(
+                ProjectCompileStage::RuntimePlanLower,
+                errors.into_iter().map(|error| {
+                    Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                        .with_code("compiler.runtime_plan_lower")
+                }),
+            )
+        })?;
+    runtime_plan.plan.verify().map_err(|error| {
+        linked_error(
+            ProjectCompileStage::RuntimePlanLower,
+            [
+                Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                    .with_code("compiler.runtime_plan_verify"),
+            ],
+        )
+    })?;
+
+    view_product
+        .seal_runtime_task_plans(
+            arcweft_bundle::resource_codec::ViewProductValidationLimits::default(),
+        )
+        .map_err(|error| linked_error(ProjectCompileStage::ViewLower, [error.diagnostic()]))?;
+
+    Ok(CompiledProject {
+        analysis: Arc::clone(analysis),
+        verification,
+        style,
+        fx_definitions: fx_catalog.into_definitions(),
+        view_product,
+        dialogue_profile,
+        locale: context.project_locale().clone(),
+        runtime_plan,
+        #[cfg(test)]
+        runtime_facts,
+    })
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "semantic analysis owns the pending cache transaction through the selected assembly boundary"
+)]
+fn assemble_project_with_cache<C, T>(
+    session: &mut ProjectCompilationSession,
+    project: &ProjectSources,
+    parsed_sources: &BTreeMap<CanonicalModulePath, ParsedSource>,
+    context: &ProjectCompilationContext,
+    cache: &mut C,
+    assemble: impl FnOnce(
+        &Arc<ProjectAnalysisLease>,
+        arcweft_lang_hir::project::HirAnalysisProjectView<'_>,
+    ) -> Result<T, ProjectCompileError>,
+) -> Result<T, ProjectCompileError>
 where
     C: ProjectCompileCache,
 {
@@ -766,8 +1100,7 @@ where
         .map_err(|error: ProjectCompileError| {
             error.with_compilation_lease(ProjectCompilationLease::Hir(Arc::clone(&tooling)))
         })?;
-        (|| {
-            let registered_world = analysis.registered_world();
+        let assembled = (|| {
             let final_analysis = analysis.final_analysis();
             let callable_errors = final_analysis
                 .call_diagnostics()
@@ -784,275 +1117,24 @@ where
                     callable_errors,
                 ));
             }
-            let checked_entries = final_analysis.checked_entries();
-            let verification = Arc::new(
-                verify_project(
-                    executable,
-                    registered_world.symbols(),
-                    final_analysis.as_ref(),
-                    VerificationPolicy::default(),
-                )
-                .map_err(|error| {
-                    linked_error(
-                        ProjectCompileStage::RuntimePlanLower,
-                        [
-                            Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
-                                .with_code("verify.project.input"),
-                        ],
-                    )
-                })?,
-            );
-            let verification_errors = verification
-                .diagnostics
-                .iter()
-                .filter(|diagnostic| diagnostic.severity == VerificationSeverity::Error)
-                .map(|diagnostic| project_verification_diagnostic(diagnostic, context))
-                .collect::<Vec<_>>();
-            if !verification_errors.is_empty() {
-                return Err(linked_error_with_compilation_sources(
-                    ProjectCompileStage::RuntimePlanLower,
-                    context,
-                    verification_errors,
-                ));
-            }
-            validate_entry_selection(checked_entries, context.entry_selection())?;
-            let runtime_reachability = lower::project_runtime_reachability(
-                executable,
-                registered_world.symbols(),
-                final_analysis.as_ref(),
-                checked_entries,
-                context.entry_selection().map_or(
-                    lower::RuntimeEmissionMode::CheckAll,
-                    lower::RuntimeEmissionMode::SelectedEntry,
-                ),
-            )
-            .and_then(|reachability| {
-                lower::validate_reachable_runtime_callables(
-                    registered_world.symbols(),
-                    final_analysis.as_ref(),
-                    &reachability,
-                )?;
-                Ok(reachability)
-            })
-            .map_err(|error| {
-                let code = error.diagnostic_code();
-                linked_error(
-                    ProjectCompileStage::RuntimePlanLower,
-                    [Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
-                        .with_code(code)],
-                )
-            })?;
-            let style = style::lower_project_view_styles(&hir_project, final_analysis.as_ref())
-                .map_err(|error| {
-                    linked_error(
-                        ProjectCompileStage::StyleLower,
-                        [
-                            Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
-                                .with_code("style.lower"),
-                        ],
-                    )
-                })?;
-            let fx_catalog = CompiledFxCatalog::lower(final_analysis.as_ref())
-            .map_err(|error| {
-                linked_error(
-                    ProjectCompileStage::FxLower,
-                    [Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
-                        .with_code("fx.lower")],
-                )
-            })?;
-            let view_product = view::ViewProjectLowerer::for_project(
-                &hir_project,
-                final_analysis.as_ref(),
-                registered_world.symbols(),
-                registered_world,
-                &style,
-                &fx_catalog,
-                project,
-                context.resource_types(),
-            )
-            .and_then(view::ViewProjectLowerer::lower)
-            .map_err(|error| {
-                linked_error_with_registration_sources(
-                    ProjectCompileStage::ViewLower,
-                    context.facts(),
-                    [error.diagnostic()],
-                )
-            })?;
-            let pure_programs = view_product.runtime_programs().iter().map(|program| {
-                let fact = lower::programs::project_view(program,
-                    registered_world.symbols(), registered_world, final_analysis)?;
-                if fact.result().identity().as_bytes() != program.result().as_bytes() {
-                    return Err(lower::RuntimeSemanticProjectionError::Facts(Box::new(
-                        arcweft_runtime_plan::semantic_facts::RuntimeSemanticFactsError::InvalidPureProgram { program: program.id() },
-                    )));
-                }
-                Ok(fact)
-            }).collect::<Result<Vec<_>, lower::RuntimeSemanticProjectionError>>().map_err(|error| {
-                linked_error(ProjectCompileStage::RuntimePlanLower,
-                    [Diagnostic::new(DiagnosticSeverity::Error, error.to_string()).with_code(error.diagnostic_code())])
-            })?;
-            let program_reachability = lower::project_program_reachability(
-                executable,
-                registered_world.symbols(),
-                final_analysis.as_ref(),
-                pure_programs.iter().map(|program| program.admission()),
-            )
-            .and_then(|reachability| {
-                lower::validate_reachable_runtime_callables(
-                    registered_world.symbols(),
-                    final_analysis.as_ref(),
-                    &reachability,
-                )?;
-                Ok(reachability)
-            })
-            .map_err(|error| {
-                let code = error.diagnostic_code();
-                linked_error(
-                    ProjectCompileStage::RuntimePlanLower,
-                    [Diagnostic::new(DiagnosticSeverity::Error, error.to_string()).with_code(code)],
-                )
-            })?;
-            let dialogue_profile_input = if let Some(input) = context.accepted_launch_profile() {
-                dialogue_profile::DialogueProfileAdmissionInput::Launch(input)
-            } else {
-                let topology_sources = SourceSetRevision::try_for_identities(
-                    std::iter::once(project.manifest_document().identity()).chain(
-                        project
-                            .modules()
-                            .map(|source| source.document().identity()),
-                    ),
-                )
-                .map_err(|error| {
-                    linked_error(
-                        ProjectCompileStage::DialogueProfileAdmission,
-                        [Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
-                            .with_code("profile.dialogue.project-source-revision")
-                            .with_label(DiagnosticLabel::primary(
-                                project.manifest_document().start_span(),
-                                Some(
-                                    "the project-default dialogue profile could not bind this source inventory"
-                                        .to_owned(),
-                                ),
-                            ))],
-                    )
-                })?;
-                dialogue_profile::DialogueProfileAdmissionInput::ProjectDefault {
-                    manifest: project.manifest_document(),
-                    topology_sources,
-                }
-            };
-            let dialogue_profile = CheckedDialogueProfile::try_admit(
-                dialogue_profile_input,
-                &view_product,
-                context.resource_types(),
-            )
-            .map_err(|error| {
-                linked_error_with_compilation_sources(
-                    ProjectCompileStage::DialogueProfileAdmission,
-                    context,
-                    [error.diagnostic()],
-                )
-            })?;
-            let runtime_facts = lower::project_runtime_semantic_facts_with_programs_and_fx(
-                executable,
-                registered_world.symbols(),
-                registered_world,
-                final_analysis,
-                &runtime_reachability,
-                &program_reachability,
-                &pure_programs,
-                Some(&dialogue_profile),
-                &fx_catalog,
-                context.instantiation_control(),
-            )
-            .map_err(|error| {
-                linked_error(
-                    ProjectCompileStage::RuntimePlanLower,
-                    [
-                        Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
-                            .with_code(error.diagnostic_code()),
-                    ],
-                )
-            })?;
-            let entry_runtime_input = runtime_entry_lowering_input(
-                executable,
-                registered_world,
-                registered_world.symbols(),
-                final_analysis,
-                &runtime_reachability,
-                &runtime_facts,
-                context.command_policy(),
-            )
-            .map_err(|error| {
-                linked_error(
-                    ProjectCompileStage::RuntimePlanLower,
-                    [
-                        Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
-                            .with_code("compiler.entry_runtime_projection"),
-                    ],
-                )
-            })?;
-            let prepared =
-                arcweft_runtime_plan::flow::prepare_runtime_plan_with_stats(executable, &runtime_facts, &entry_runtime_input)
-                    .map_err(|errors| {
-                        linked_error(
-                            ProjectCompileStage::RuntimePlanLower,
-                            errors.into_iter().map(|error| {
-                                Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
-                                    .with_code("compiler.runtime_plan_lower")
-                            }),
-                        )
-                    })?;
-            view_product.bind_runtime_task_plans(prepared.view_task_plans(), final_analysis, executable,
-                arcweft_bundle::resource_codec::ViewProductValidationLimits::default())
-                .map_err(|error| linked_error(ProjectCompileStage::ViewLower, [error.diagnostic()]))?;
-            let authority = view_product.product().program()
-                .map(|program| program as &dyn arcweft_core::task::ViewTaskPlanAuthority);
-            let runtime_plan = prepared.finish(arcweft_core::plan::RuntimeTaskPlanSealLimits::default(), authority)
-                .map_err(|errors| linked_error(ProjectCompileStage::RuntimePlanLower,
-                    errors.into_iter().map(|error| Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
-                        .with_code("compiler.runtime_plan_lower"))))?;
-            runtime_plan.plan.verify().map_err(|error| {
-                linked_error(
-                    ProjectCompileStage::RuntimePlanLower,
-                    [
-                        Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
-                            .with_code("compiler.runtime_plan_verify"),
-                    ],
-                )
-            })?;
-
-            view_product.seal_runtime_task_plans(arcweft_bundle::resource_codec::ViewProductValidationLimits::default())
-                .map_err(|error| linked_error(ProjectCompileStage::ViewLower, [error.diagnostic()]))?;
-
-            Ok(CompiledProject {
-                analysis: Arc::clone(&analysis),
-                verification,
-                style,
-                fx_definitions: fx_catalog.into_definitions(),
-                view_product,
-                dialogue_profile,
-                locale: context.project_locale().clone(),
-                runtime_plan,
-                #[cfg(test)]
-                runtime_facts,
-            })
+            assemble(&analysis, executable)
         })()
         .map_err(|error: ProjectCompileError| {
             error.with_compilation_lease(ProjectCompilationLease::Analyzed(Arc::clone(&analysis)))
-        })
+        })?;
+        Ok((analysis, assembled))
     })();
     match result {
-        Ok(compiled) => {
+        Ok((analysis, assembled)) => {
             session.accepted_hir_project = Some((
                 attempted_project_cache_key
-                    .expect("successful compilation constructed one exact HIR project cache key"),
-                Arc::clone(compiled.analysis_lease().hir_project()),
+                    .expect("successful assembly constructed one exact HIR project cache key"),
+                Arc::clone(analysis.hir_project()),
             ));
             pending_stores
                 .flush(cache)
                 .expect("pending compiler stores are finalized exactly once after assembly");
-            Ok(compiled)
+            Ok(assembled)
         }
         Err(error) => {
             pending_stores.discard();

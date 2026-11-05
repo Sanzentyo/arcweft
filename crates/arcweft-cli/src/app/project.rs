@@ -8,9 +8,9 @@ use crate::output::RuntimeProfilePhase;
 use arcweft_adapter_context::{manifest::AdapterManifest, standard};
 use arcweft_adapter_sema::registration::AdapterSemanticRegistration;
 use arcweft_compiler::project::{
-    AcceptedLaunchProfileInput, CompiledProject, ProjectCompilationContext,
+    AcceptedLaunchProfileInput, CompiledProject, ProjectAnalysisLease, ProjectCompilationContext,
     ProjectCompilationSession, ProjectCompileDiagnostic, ProjectCompileError,
-    ProjectEntrySelection, ProjectEntrySelectionKind, compile_project,
+    ProjectEntrySelection, ProjectEntrySelectionKind, analyze_project, compile_project,
 };
 use arcweft_core::entry::{RootExecutionLimits, RuntimeCommandPolicy};
 use arcweft_host_adapter::HostCallPolicy;
@@ -775,12 +775,73 @@ pub(in crate::app) fn load_and_check_selection(
     adapter_override: Option<&str>,
     diagnostic_output: ProjectDiagnosticOutput,
 ) -> Result<CheckedModule, ExitCode> {
+    load_project_selection(
+        selection,
+        adapter_override,
+        diagnostic_output,
+        load_and_check_project_sources,
+    )
+}
+
+pub(in crate::app) fn analyze_selection(
+    selection: &SourceSelection,
+    diagnostic_output: ProjectDiagnosticOutput,
+) -> Result<(Arc<ProjectAnalysisLease>, Arc<SourceDocument>), ExitCode> {
+    load_project_selection(
+        selection,
+        None,
+        diagnostic_output,
+        |sources, parsed_sources, compiler, context, _, mut phases, diagnostic_output| {
+            let analysis = with_project_compiler(compiler, |session| {
+                run_profile_phase(&mut phases, "project_analyze", || {
+                    analyze_project(session, sources, parsed_sources, context)
+                        .map_err(|error| diagnostic_output.emit(&error))
+                })
+            })?;
+            emit_project_source_lints(sources, &analysis);
+            Ok((analysis, Arc::clone(sources.root_module().document())))
+        },
+    )
+}
+
+type ProcessProjectSources<T> = fn(
+    &ProjectSources,
+    &BTreeMap<CanonicalModulePath, ParsedSource>,
+    Option<&Arc<Mutex<ProjectCompilationSession>>>,
+    &ProjectCompilationContext,
+    &SourceSelection,
+    Vec<RuntimeProfilePhase>,
+    ProjectDiagnosticOutput,
+) -> Result<T, ExitCode>;
+
+fn load_project_selection<T>(
+    selection: &SourceSelection,
+    adapter_override: Option<&str>,
+    diagnostic_output: ProjectDiagnosticOutput,
+    process: ProcessProjectSources<T>,
+) -> Result<T, ExitCode> {
     let mut phases = Vec::new();
     let semantic = semantic_context_for_selection(selection, adapter_override)?;
-    if let Some(topology) = semantic.profile_topology() {
-        let context = profile_project_compilation_context(topology, &semantic)?;
-        return load_and_check_loaded_project(
+    let loaded = if let Some(topology) = semantic.profile_topology() {
+        Some((
             topology.loaded_project(),
+            profile_project_compilation_context(topology, &semantic)?,
+        ))
+    } else if selection.project_manifest().is_some() {
+        let loaded = selection
+            .loaded_project()
+            .expect("project selections retain their accepted loaded project");
+        Some((
+            loaded,
+            project_compilation_context(loaded, selection, &semantic)?,
+        ))
+    } else {
+        None
+    };
+    if let Some((loaded, context)) = loaded {
+        return process(
+            loaded.sources(),
+            loaded.module_parsed_source_map(),
             selection.compiler_session(),
             &context,
             selection,
@@ -788,11 +849,8 @@ pub(in crate::app) fn load_and_check_selection(
             diagnostic_output,
         );
     }
-    if selection.project_manifest().is_some() {
-        return load_and_check_project_with_env(selection, &semantic, phases, diagnostic_output);
-    }
     let direct = direct_project_compilation_input(selection, &semantic, &mut phases)?;
-    load_and_check_project_sources(
+    process(
         direct.sources(),
         direct.parsed_sources(),
         None,
@@ -803,43 +861,35 @@ pub(in crate::app) fn load_and_check_selection(
     )
 }
 
-fn load_and_check_project_with_env(
-    selection: &SourceSelection,
-    semantic: &SelectionSemanticContext,
-    phases: Vec<RuntimeProfilePhase>,
-    diagnostic_output: ProjectDiagnosticOutput,
-) -> Result<CheckedModule, ExitCode> {
-    let loaded = selection
-        .loaded_project()
-        .expect("project selections retain their accepted loaded project");
-    let context = project_compilation_context(loaded, selection, semantic)?;
-    load_and_check_loaded_project(
-        loaded,
-        selection.compiler_session(),
-        &context,
-        selection,
-        phases,
-        diagnostic_output,
-    )
+fn with_project_compiler<T>(
+    compiler: Option<&Arc<Mutex<ProjectCompilationSession>>>,
+    process: impl FnOnce(&mut ProjectCompilationSession) -> Result<T, ExitCode>,
+) -> Result<T, ExitCode> {
+    let Some(compiler) = compiler else {
+        let mut session = ProjectCompilationSession::try_new().map_err(|error| {
+            eprintln!("error: failed to create project compiler session: {error}");
+            ExitCode::FAILURE
+        })?;
+        return process(&mut session);
+    };
+    let mut session = compiler.lock().map_err(|_| {
+        eprintln!("error: project compiler session lock is poisoned");
+        ExitCode::FAILURE
+    })?;
+    process(&mut session)
 }
 
-fn load_and_check_loaded_project(
-    loaded: &LoadedProject,
-    compiler: Option<&Arc<Mutex<ProjectCompilationSession>>>,
-    context: &ProjectCompilationContext,
-    selection: &SourceSelection,
-    phases: Vec<RuntimeProfilePhase>,
-    diagnostic_output: ProjectDiagnosticOutput,
-) -> Result<CheckedModule, ExitCode> {
-    load_and_check_project_sources(
-        loaded.sources(),
-        loaded.module_parsed_source_map(),
-        compiler,
-        context,
-        selection,
-        phases,
-        diagnostic_output,
-    )
+fn emit_project_source_lints(sources: &ProjectSources, analysis: &ProjectAnalysisLease) {
+    let emitter = DiagnosticEmitter::stderr();
+    for compiled_module in analysis.modules() {
+        let source = sources
+            .module(compiled_module.module())
+            .expect("compiled project modules originate from the accepted project sources");
+        let diagnostic_source = DiagnosticSource::new(source.document());
+        for lint in compiled_module.syntax_lints() {
+            emitter.emit(&lint.diagnostic(source.document()), &diagnostic_source);
+        }
+    }
 }
 
 fn load_and_check_project_sources(
@@ -852,35 +902,13 @@ fn load_and_check_project_sources(
     diagnostic_output: ProjectDiagnosticOutput,
 ) -> Result<CheckedModule, ExitCode> {
     let source_document = Arc::clone(sources.root_module().document());
-    let compiled_project = if let Some(compiler) = compiler {
-        let mut session = compiler.lock().map_err(|_| {
-            eprintln!("error: project compiler session lock is poisoned");
-            ExitCode::FAILURE
-        })?;
+    let compiled_project = with_project_compiler(compiler, |session| {
         run_profile_phase(&mut phases, "project_compile", || {
-            compile_project(&mut session, sources, parsed_sources, context)
+            compile_project(session, sources, parsed_sources, context)
                 .map_err(|error| diagnostic_output.emit(&error))
-        })?
-    } else {
-        let mut session = ProjectCompilationSession::try_new().map_err(|error| {
-            eprintln!("error: failed to create project compiler session: {error}");
-            ExitCode::FAILURE
-        })?;
-        run_profile_phase(&mut phases, "project_compile", || {
-            compile_project(&mut session, sources, parsed_sources, context)
-                .map_err(|error| diagnostic_output.emit(&error))
-        })?
-    };
-    let emitter = DiagnosticEmitter::stderr();
-    for compiled_module in compiled_project.analysis_lease().modules() {
-        let source = sources
-            .module(compiled_module.module())
-            .expect("compiled project modules originate from the accepted project sources");
-        let diagnostic_source = DiagnosticSource::new(source.document());
-        for lint in compiled_module.syntax_lints() {
-            emitter.emit(&lint.diagnostic(source.document()), &diagnostic_source);
-        }
-    }
+        })
+    })?;
+    emit_project_source_lints(sources, compiled_project.analysis_lease());
     let execution_diagnostics = crate::app::runtime_artifact::bind_execution_diagnostics(
         selection,
         sources,
@@ -1415,18 +1443,21 @@ pub(crate) fn verify_compiled_project(
     compiled: &CompiledProject,
     policy: VerificationPolicy,
 ) -> Result<VerificationReport, ExitCode> {
-    let project = compiled
-        .analysis_lease()
-        .hir_project()
-        .analysis_view()
-        .map_err(|error| {
-            eprintln!("error: compiled HIR project is not executable: {error}");
-            ExitCode::FAILURE
-        })?;
+    verify_analysis(compiled.analysis_lease(), policy)
+}
+
+pub(in crate::app) fn verify_analysis(
+    analysis: &ProjectAnalysisLease,
+    policy: VerificationPolicy,
+) -> Result<VerificationReport, ExitCode> {
+    let project = analysis.hir_project().analysis_view().map_err(|error| {
+        eprintln!("error: compiled HIR project is not executable: {error}");
+        ExitCode::FAILURE
+    })?;
     verify_project(
         project,
-        compiled.analysis_lease().project_symbols(),
-        compiled.analysis_lease().final_analysis(),
+        analysis.project_symbols(),
+        analysis.final_analysis(),
         policy,
     )
     .map_err(|error| {

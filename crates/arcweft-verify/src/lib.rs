@@ -39,6 +39,7 @@ use thiserror::Error;
 use crate::insertion::{VerifierInsertionInventory, proof_stub_edit};
 use crate::smt::{SmtCheck, SmtError, SmtOutcome, SmtProblem};
 
+mod assertion_smt;
 mod call_witness;
 mod insertion;
 pub mod smt;
@@ -795,16 +796,19 @@ impl ProjectVerifier<'_, '_> {
             return Ok(());
         }
         let source = statement_source(module, owner)?;
-        for (index, _) in conditions.iter().enumerate() {
+        let assertion = self.report.obligations.len();
+        for (index, condition) in conditions.into_iter().enumerate() {
+            let id = format!("assertion.{assertion}.condition.{index}");
+            let smt = assertion_smt::counterexample(&id, module, self.semantics, condition);
             let obligation = ProofObligation {
-                id: format!("assertion.{owner:?}.condition.{index}"),
+                id,
                 kind: ProofObligationKind::AssertionProof,
                 message: format!("assert.prove condition {index} requires compile-time discharge"),
                 subject: Some(format!("condition.{index}")),
                 source: Some(source.clone()),
                 insertion_target: None,
                 discharge: ProofDischarge::Missing,
-                smt: None,
+                smt,
                 proof_artifact: None,
                 statement: Some(owner),
             };
@@ -1158,7 +1162,17 @@ impl VerificationReport {
         backend: BackendKind,
         result: Result<SmtCheck, SmtError>,
     ) {
-        let required = self.solver_check_required(obligation);
+        let Some(item) = self
+            .obligations
+            .iter_mut()
+            .find(|item| item.id == obligation && item.smt.is_some())
+        else {
+            return;
+        };
+        let required = matches!(
+            self.policy.mode,
+            VerificationMode::Test | VerificationMode::Release
+        ) && item.discharge.is_missing();
         let (outcome, model, raw_output, error) = match result {
             Ok(check) => (Some(check.outcome), check.model, check.raw_output, None),
             Err(error) => (
@@ -1177,37 +1191,26 @@ impl VerificationReport {
             error,
             required,
         };
-        if check.proves_claim()
-            && let Some(item) = self
-                .obligations
-                .iter_mut()
-                .find(|item| item.id == obligation)
-        {
+        if check.proves_claim() && item.discharge.is_missing() {
+            let pending = match item.kind {
+                ProofObligationKind::AssertionProof => unresolved_prove_diagnostic(item),
+                _ => missing_obligation_diagnostic(item, self.policy.mode),
+            };
             item.discharge = ProofDischarge::Solver { backend };
+            self.diagnostics.retain(|diagnostic| *diagnostic != pending);
         }
         if check.is_failure() {
             self.diagnostics.push(VerificationDiagnostic {
                 id: format!("diagnostic.solver.{}", self.solver_checks.len() + 1),
                 severity: Severity::Error,
                 message: check.failure_message(),
-                source: None,
+                source: item.source.clone(),
                 obligation: Some(obligation.to_owned()),
                 related_ids: vec![obligation.to_owned()],
                 actions: vec![ToolAction::show_obligation()],
             });
         }
         self.solver_checks.push(check);
-    }
-
-    fn solver_check_required(&self, obligation: &str) -> bool {
-        matches!(
-            self.policy.mode,
-            VerificationMode::Test | VerificationMode::Release
-        ) && self
-            .obligations
-            .iter()
-            .find(|item| item.id == obligation)
-            .is_some_and(|item| item.discharge.is_missing())
     }
 }
 
