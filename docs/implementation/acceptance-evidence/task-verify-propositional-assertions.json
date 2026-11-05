@@ -538,5 +538,329 @@
         "sha256": "ae0f4ea6cc472bfe6ca81f5589df3c0b3cb2407a311295f779feb4e7a94104e2"
       }
     ]
+  },
+  "consumerValidation": {
+    "record": {
+      "version": 1,
+      "source": "019c06f9094ea5b8aa36722d7ed20476d7190290",
+      "documentationInput": "6b9cf1d617e02b2ec706bb13d664069b9ce89860",
+      "terminal": {
+        "version": 1,
+        "base": "6b9cf1d617e02b2ec706bb13d664069b9ce89860",
+        "run": "assertion-smt-reverse13-20261106.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [ 596.417s] 2025 tests run: 2018 passed (30 slow), 7 failed, 23 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 2025,
+        "passed": 2018,
+        "failed": 7,
+        "skipped": 23,
+        "selectedPackages": 13,
+        "matchedPackages": 13,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4125,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "spec_valid_run_edge_fixture_now_executes"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "unsafe_json_lists_audit_regions"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_records_required_solver_checks"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "spec_rejected_edge_fixtures_fail_with_diagnostics"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_reports_missing_promotion_proof"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_respects_semantic_defer_cancel_discharge"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-05T22:48:36.5260526Z"
+      },
+      "packages": [
+        {
+          "package": "arcweft-agent-mcp",
+          "executed": 31,
+          "passed": 31,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-agent-mcp-client",
+          "executed": 2,
+          "passed": 2,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-agent-repl",
+          "executed": 37,
+          "passed": 37,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-cli",
+          "executed": 708,
+          "passed": 701,
+          "failed": 7
+        },
+        {
+          "package": "arcweft-compiler",
+          "executed": 824,
+          "passed": 824,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-lsp",
+          "executed": 223,
+          "passed": 223,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-player-native",
+          "executed": 63,
+          "passed": 63,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-player-web",
+          "executed": 36,
+          "passed": 36,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-runtime-host",
+          "executed": 72,
+          "passed": 72,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-verify",
+          "executed": 8,
+          "passed": 8,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-verify-lsp",
+          "executed": 14,
+          "passed": 14,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-verify-oxiz",
+          "executed": 5,
+          "passed": 5,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-verify-z3",
+          "executed": 2,
+          "passed": 2,
+          "failed": 0
+        }
+      ],
+      "runtimePackages": 13,
+      "hostBuildOnly": [],
+      "cli": [
+        {
+          "package": "arcweft-cli",
+          "executed": 708,
+          "passed": 701,
+          "failed": 7
+        }
+      ],
+      "nonCli": {
+        "executed": 1317,
+        "passed": 1317,
+        "failed": 0
+      },
+      "failureComparison": {
+        "referenceSource": "9a719aacb210b69b981ea2940c8c184766acaa19",
+        "referenceRun": "lifetime-selector-reverse-20261106.runtime",
+        "previousFailureCount": 7,
+        "currentFailureCount": 7,
+        "newFailureIds": [],
+        "noLongerFailingIds": [],
+        "note": "Compare actual terminal IDs. The current result is a fresh full run, not arithmetic recomputation of the older result."
+      },
+      "quality": {
+        "sourceInputs": 4125,
+        "sourceDrift": 0,
+        "check": {
+          "version": 1,
+          "base": "019c06f9094ea5b8aa36722d7ed20476d7190290",
+          "command": [
+            "check",
+            "--workspace",
+            "--all-targets",
+            "--all-features",
+            "--locked"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 4125,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-05T22:29:53.144903Z",
+          "finishedAt": "2026-11-05T22:31:15.374129Z"
+        },
+        "clippy": {
+          "version": 1,
+          "base": "019c06f9094ea5b8aa36722d7ed20476d7190290",
+          "command": [
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--all-features",
+            "--locked"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 4125,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-05T22:31:15.8350316Z",
+          "finishedAt": "2026-11-05T22:32:43.6878638Z"
+        },
+        "structure": {
+          "version": 1,
+          "base": "019c06f9094ea5b8aa36722d7ed20476d7190290",
+          "command": [
+            "+nightly",
+            "-Zscript",
+            "tools/structure-audit.rs",
+            "--root",
+            ".",
+            "--fail-on-blocking",
+            "--write",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/assertion-smt-quality-20261106.structure-report"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 4125,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-05T22:32:44.2028177Z",
+          "finishedAt": "2026-11-05T22:32:49.2129989Z"
+        }
+      },
+      "genericMatch": {
+        "expected": 7,
+        "passed": 7,
+        "missing": 0,
+        "failed": 0,
+        "referenceSha256": "82b6519b1ccbfcd4aee95d3ef8b69db686037924a7f9137de0fef0201d86b996"
+      },
+      "workingTree": "The recorded original12 tracked WIP (including the two required borrowed summary reads) participated in the frozen Source input; this is not a pristine committed-tree claim. The Boolean solver source publication has no overlapping WIP paths.",
+      "recordedAt": "2026-11-05T22:49:00.5067413Z"
+    },
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-verify-propositional-assertions-consumers.raw.zip",
+      "bytes": 237803,
+      "sha256": "c3b85c685313ff8056ba770c03011a24b07e56fe7b83bb43a1807499f8128481",
+      "entryDrift": 0,
+      "entries": [
+        {
+          "entry": "assertion-smt-quality-20261106-check.json",
+          "bytes": 355,
+          "sha256": "c969bca47a213598a65aefa3b7d026b05966d0ea6e5f4a1ad891133b02bb3f43"
+        },
+        {
+          "entry": "assertion-smt-quality-20261106-clippy.json",
+          "bytes": 356,
+          "sha256": "1a17a8472b503a4e5a997123731d82196f13bb9b25ea77dda09ea7ab67bc5741"
+        },
+        {
+          "entry": "assertion-smt-quality-20261106-structure.json",
+          "bytes": 525,
+          "sha256": "88db08b1ebbec7552031dc565c60c341e72642d4db1a8c331bc161d41d3d58d8"
+        },
+        {
+          "entry": "assertion-smt-reverse13-20261106.binaries-before.json",
+          "bytes": 18657,
+          "sha256": "7d0f71b239c00fc189f8ed133b420efea1a55f8a33c040866d152dfafb757ec6"
+        },
+        {
+          "entry": "assertion-smt-reverse13-20261106.catalog.inventory.json",
+          "bytes": 498917,
+          "sha256": "a7e6b3483f15c78f0927f5e2581bc04dd798f6a0145da627b8164e302ba91bc0"
+        },
+        {
+          "entry": "assertion-smt-reverse13-20261106.catalog.json",
+          "bytes": 983,
+          "sha256": "171745fae4efa6eea95d2081af397b9231f1549282e3a2e93247dfba989f109b"
+        },
+        {
+          "entry": "assertion-smt-reverse13-20261106.catalog.log",
+          "bytes": 433561,
+          "sha256": "7148b968a804ccebc06fb054dfd1425671d570e4dceaa17c956af9d26d0e9c01"
+        },
+        {
+          "entry": "assertion-smt-reverse13-20261106.consumer-audit.json",
+          "bytes": 6234,
+          "sha256": "7d95ec441743eb1f5f3bbd6c5af36550a15bb986813c4d64a2c35416d3c732ff"
+        },
+        {
+          "entry": "assertion-smt-reverse13-20261106.generic-match.json",
+          "bytes": 2427,
+          "sha256": "1288840871f98eed790cbf0251c1c27f7e2e5adfc5741fa060995a2480b86ad3"
+        },
+        {
+          "entry": "assertion-smt-reverse13-20261106.runtime.json",
+          "bytes": 1077,
+          "sha256": "d34cbadc3c8a7824f9198a60130adf8956fb2786fff6cec96e356076c06cb513"
+        },
+        {
+          "entry": "assertion-smt-reverse13-20261106.runtime.log",
+          "bytes": 694998,
+          "sha256": "8e9ce19d01483acfd0af281fd20936f26d4b70bd0c6d45c41846c10c762354c7"
+        },
+        {
+          "entry": "assertion-smt-reverse13-20261106.runtime.terminal-audit.json",
+          "bytes": 1681,
+          "sha256": "246b8ebecee1c29347d17ee54a250a877ff2aa5406ceaa0aac3d9e0ac30ee8d0"
+        },
+        {
+          "entry": "assertion-smt.reverse-selection.json",
+          "bytes": 18442,
+          "sha256": "9eaf9d7a471eac514dafa1fba1181f238248be4b39227c48bc23053adab4abbb"
+        }
+      ]
+    },
+    "qualityLogPins": [
+      {
+        "name": "check",
+        "bytes": 108096,
+        "sha256": "3c2011e60665da702fcdab81017f3d87c6a9329c29af1a4c18c414e6dc1638f6"
+      },
+      {
+        "name": "clippy",
+        "bytes": 8872318,
+        "sha256": "02cedbc388ede7fd07ea6c3a4f70bf1ec16cbe4f1e299f2cb089f441f3f5111b"
+      },
+      {
+        "name": "structure",
+        "bytes": 65586,
+        "sha256": "5deca14792a7bf4f38e233bf7fbafb5295c9e5845470f0ca501375fdfdbcbad4"
+      }
+    ],
+    "warnings": "Workspace check and Clippy exited 0 with warnings. Structure review triggers were nonblocking. Retain the checks and the 13-package tests as separate invocations."
   }
 }
