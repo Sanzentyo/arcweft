@@ -15,7 +15,7 @@ use arcweft_core::{
 use arcweft_id::{PublicId, closed_enum::ClosedEnumDomainId};
 use arcweft_presentation::rich_text::{
     Jlreq, LayoutDirection, PRESENTATION_CONTENT_CALLABLE_CATALOG,
-    PresentationReusableStylePropertyId, PresentationReusableStylePropertySpec,
+    PresentationReusableStylePropertyId, PresentationReusableStylePropertySpec, RichTextFontFamily,
     RichTextLayoutSelector, RichTextStyleSelector, RichTextTransformSelector, TransformOrigin,
     TransformTarget, VerticalLatin,
 };
@@ -100,6 +100,7 @@ pub enum CharacterDialogueRichTextPropertyValue<S = String, I = PublicId> {
     },
     PublicId(I),
     Text(S),
+    FontFamily(RichTextFontFamily<S>),
     Color(CharacterDialogueRichTextColor<I>),
     Vec2 {
         x_milli: i32,
@@ -415,6 +416,9 @@ fn policy_value_type(
             return Err(schema_error("closed selector lacks an owning enum domain"));
         }
         RichTextValueKind::Text => Checked::String,
+        RichTextValueKind::FontFamily => {
+            Checked::Tuple(vec![Checked::Unsigned(U32), Checked::String])
+        }
         RichTextValueKind::Color => Checked::Choice(vec![
             Checked::String,
             Checked::Tuple(vec![
@@ -614,6 +618,28 @@ fn decode_property_value(
             validate_text(parameter, value)?;
             PropertyValue::Text(value)
         }
+        RichTextValueKind::FontFamily => {
+            let fields = value
+                .tuple()
+                .filter(|fields| fields.len() == 2)
+                .ok_or_else(invalid)?;
+            let (Some(Scalar::UInt(RuntimeUInt::U32(ordinal))), Some(Scalar::String(name))) = (
+                fields.get(0).and_then(RuntimeBorrowedValue::scalar),
+                fields.get(1).and_then(RuntimeBorrowedValue::scalar),
+            ) else {
+                return Err(invalid());
+            };
+            let family = if ordinal == RichTextFontFamily::<&str>::NAMED_ORDINAL {
+                validate_text(parameter, name)?;
+                RichTextFontFamily::Named { name }
+            } else {
+                if !name.is_empty() {
+                    return Err(invalid());
+                }
+                RichTextFontFamily::from_generic_ordinal(ordinal).ok_or_else(invalid)?
+            };
+            PropertyValue::FontFamily(family)
+        }
         RichTextValueKind::Color => PropertyValue::Color(decode_color(parameter, value)?),
         RichTextValueKind::Vec2 => {
             let Some(fields) = value.tuple().filter(|fields| fields.len() == 2) else {
@@ -690,6 +716,7 @@ impl CharacterDialogueRichTextPropertyValue<&str, &str> {
                     .map_err(|_| schema_error("invalid admitted public identity"))?,
             ),
             Self::Text(value) => Value::Text(value.to_owned()),
+            Self::FontFamily(value) => Value::FontFamily(value.map_name(str::to_owned)),
             Self::Color(CharacterDialogueRichTextColor::Rgba8(value)) => {
                 Value::Color(CharacterDialogueRichTextColor::Rgba8(value))
             }

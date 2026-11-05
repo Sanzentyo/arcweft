@@ -51,6 +51,18 @@ impl<'a> PropertyRecipe<'a> {
                 true,
             ),
             Value::Duration(value) => (vec![Recipe::from(RuntimeUInt::U64(*value))], false),
+            Value::FontFamily(family) => (
+                vec![
+                    Recipe::from(RuntimeUInt::U32(family.variant_ordinal())),
+                    Recipe::from(match family {
+                        arcweft_presentation::rich_text::RichTextFontFamily::Named { name } => {
+                            *name
+                        }
+                        _ => "",
+                    }),
+                ],
+                true,
+            ),
             Value::PublicId(value) | Value::Text(value) | Value::Color(Color::Resource(value)) => {
                 (vec![Recipe::from(*value)], false)
             }

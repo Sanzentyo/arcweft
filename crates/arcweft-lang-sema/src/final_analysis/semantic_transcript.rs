@@ -3451,6 +3451,13 @@ fn write_compile_time_scalar(
                 }
             }
         }
+        CheckedCompileTimeScalar::FontFamily(family) => {
+            transcript_update!(hasher, &[11]);
+            transcript_update!(hasher, &family.variant_ordinal().to_le_bytes());
+            if let arcweft_presentation::rich_text::RichTextFontFamily::Named { name } = family {
+                write_bytes(hasher, name.as_bytes())?;
+            }
+        }
     }
     write_resolution_payload(
         hasher,

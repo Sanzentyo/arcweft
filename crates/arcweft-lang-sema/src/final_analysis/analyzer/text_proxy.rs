@@ -510,7 +510,8 @@ impl Analyzer<'_, '_, '_> {
             | CheckedCompileTimeScalarKind::Duration
             | CheckedCompileTimeScalarKind::ClosedEnum(_)
             | CheckedCompileTimeScalarKind::Text
-            | CheckedCompileTimeScalarKind::Color => Some(CompileTimeScalarSourceMode::Typed(
+            | CheckedCompileTimeScalarKind::Color
+            | CheckedCompileTimeScalarKind::FontFamily => Some(CompileTimeScalarSourceMode::Typed(
                 self.compile_time_scalar_type(kind),
             )),
         }
@@ -575,6 +576,9 @@ impl Analyzer<'_, '_, '_> {
             CheckedCompileTimeScalarKind::Color => {
                 scalars.type_for(CompileTimeScalarTypeRoleId::Color).clone()
             }
+            CheckedCompileTimeScalarKind::FontFamily => scalars
+                .type_for(CompileTimeScalarTypeRoleId::FontFamily)
+                .clone(),
             CheckedCompileTimeScalarKind::ClosedEnum(schema) => {
                 TypeKind::ProjectNominal(crate::types::ProjectNominalType::new(
                     schema.declaration().clone(),
@@ -671,6 +675,20 @@ fn reduce_compile_time_scalar(
         && matches!(kind, CheckedCompileTimeScalarKind::PublicId)
     {
         return Ok(CheckedCompileTimeScalar::PublicId(item.public_id().clone()));
+    }
+    if matches!(kind, CheckedCompileTimeScalarKind::FontFamily)
+        && let PreparedExpressionFact::Variant(variant) = fact
+    {
+        if !matches!(variant.owner().ty(), TypeKind::CompileTimeScalar(scalar)
+            if scalar.kind() == crate::types::CompileTimeScalarKind::FontFamily)
+        {
+            return Err(CompileTimeScalarReductionError::WrongEnumDeclaration);
+        }
+        let family = arcweft_presentation::rich_text::RichTextFontFamily::from_generic_ordinal(
+            variant.selected_ordinal(),
+        )
+        .ok_or(CompileTimeScalarReductionError::WrongEnumCase)?;
+        return Ok(CheckedCompileTimeScalar::FontFamily(family));
     }
     if let CheckedCompileTimeScalarKind::ClosedEnum(schema) = kind {
         let PreparedExpressionFact::Variant(variant) = fact else {

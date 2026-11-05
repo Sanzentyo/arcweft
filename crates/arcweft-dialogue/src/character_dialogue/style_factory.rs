@@ -9,8 +9,7 @@ use arcweft_core::{
     pure::RuntimeExternalCallContext,
     value::{
         RuntimeBorrowedValue, RuntimeExternalCallable, RuntimeExternalCallableExport,
-        RuntimeExternalCallableProvider, RuntimeQuantity, RuntimeScalarView, RuntimeValue,
-        StandardEnvironmentId,
+        RuntimeExternalCallableProvider, RuntimeQuantity, RuntimeValue, StandardEnvironmentId,
     },
 };
 use arcweft_presentation::rich_text::{
@@ -185,12 +184,29 @@ impl CharacterDialogueStyleFactory {
             if let Some(property) = parameter.property {
                 let value = match property {
                     Property::Font => {
-                        let Some(RuntimeScalarView::String(value)) =
-                            RuntimeBorrowedValue::from(value).scalar()
-                        else {
+                        use arcweft_presentation::rich_text::RichTextFontFamily;
+                        let RuntimeValue::Variant(value) = value else {
                             return Err(invalid());
                         };
-                        Value::Text(value)
+                        let family = if value.ordinal() == RichTextFontFamily::<&str>::NAMED_ORDINAL
+                        {
+                            let Some(RuntimeValue::Tuple(fields)) = value.payload() else {
+                                return Err(invalid());
+                            };
+                            let [RuntimeValue::String(name)] = fields.as_slice() else {
+                                return Err(invalid());
+                            };
+                            RichTextFontFamily::Named {
+                                name: name.as_str(),
+                            }
+                        } else {
+                            if value.payload().is_some() {
+                                return Err(invalid());
+                            }
+                            RichTextFontFamily::from_generic_ordinal(value.ordinal())
+                                .ok_or_else(invalid)?
+                        };
+                        Value::FontFamily(family)
                     }
                     Property::Color => {
                         let RuntimeValue::Color(value) = value else {

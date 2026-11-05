@@ -597,7 +597,11 @@ fn execution_plan_for_expression_with_roles(
             }
         }
         CheckedExpressionResolution::CompileTimeScalar(scalar)
-            if scalar.value().runtime_quantity().is_some() =>
+            if scalar.value().runtime_quantity().is_some()
+                || matches!(
+                    scalar.value(),
+                    super::CheckedCompileTimeScalar::FontFamily(_)
+                ) =>
         {
             if matches!(scalar.original(), CheckedExpressionResolution::Call) {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);

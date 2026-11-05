@@ -256,6 +256,8 @@ pub enum RichTextValueKind {
     Seed32,
     /// One exact typed Fx application.
     Fx,
+    /// A generic family or a distinct, explicitly named font family.
+    FontFamily,
 }
 
 /// Typed membership constraint for a closed enum parameter.

@@ -359,6 +359,7 @@ pub enum RichTextTextProxyFieldKind {
     PublicId,
     Text,
     Color,
+    FontFamily,
 }
 
 /// Declaration-order value for one typed text-proxy field.
@@ -406,6 +407,9 @@ pub enum RichTextTextProxyScalar {
     },
     Color {
         value: crate::style::RichTextColor,
+    },
+    FontFamily {
+        value: crate::style::RichTextFontFamily,
     },
 }
 

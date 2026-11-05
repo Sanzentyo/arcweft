@@ -194,6 +194,18 @@ fn source_style_factories_preserve_typography_values_and_units_during_compositio
         assert_eq!(values.len(), 3);
         let final_value = values.last().unwrap();
         assert_eq!(final_value.len(), 5);
+        assert_eq!(
+            final_value
+                .iter()
+                .find(|field| field.id() == Property::Font)
+                .unwrap()
+                .value(),
+            &PropertyValue::FontFamily(
+                arcweft_presentation::rich_text::RichTextFontFamily::Named {
+                    name: "Noto Sans JP".to_owned(),
+                }
+            ),
+        );
         for (property, milli, unit) in [
             (Property::Size, 24_000, RichTextUnit::Px),
             (Property::RubySize, 11_000, RichTextUnit::Pt),
@@ -283,6 +295,151 @@ fn source_style_factories_keep_quantity_constants_in_generated_instances() {
                     milli: 24_000,
                     unit: RichTextUnit::Pt
                 }
+            );
+        }
+    }
+}
+
+#[test]
+fn source_style_factories_keep_generic_and_named_font_identity_in_native_and_saved_awbc() {
+    use arcweft_presentation::rich_text::RichTextFontFamily as Font;
+    let cases = Font::GENERIC
+        .into_iter()
+        .map(|font| (font.variant_name().to_owned(), font))
+        .chain([
+            (
+                "\"serif\"".to_owned(),
+                Font::Named {
+                    name: "serif".to_owned(),
+                },
+            ),
+            (
+                "\"Noto Sans JP\"".to_owned(),
+                Font::Named {
+                    name: "Noto Sans JP".to_owned(),
+                },
+            ),
+        ]);
+    for (source, expected) in cases {
+        for (functions, body) in [
+            ("", format!("let settings = text_style(font = {source})")),
+            (
+                "",
+                format!("let make = text_style; let settings = make(font = {source})"),
+            ),
+            (
+                "fn identity(value: FontFamily) -> FontFamily { value }",
+                format!("let settings = text_style(font = identity({source}))"),
+            ),
+            (
+                "fn identity<T>(value: T) -> T { value }",
+                format!("let settings = text_style(font = identity({source}))"),
+            ),
+        ] {
+            for values in execute_with_functions(functions, &body) {
+                assert_eq!(values.len(), 1, "{functions} {body}");
+                let properties = values[0].iter().collect::<Vec<_>>();
+                let [property] = properties.as_slice() else {
+                    panic!("exactly one font property");
+                };
+                assert_eq!(property.id(), Property::Font);
+                assert_eq!(
+                    property.value(),
+                    &PropertyValue::FontFamily(expected.clone()),
+                    "{functions} {body}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn source_style_factories_keep_font_constants_in_generated_instances() {
+    use arcweft_presentation::rich_text::RichTextFontFamily as Font;
+    for (source, expected) in [
+        ("serif", Font::Serif),
+        (
+            "\"serif\"",
+            Font::Named {
+                name: "serif".to_owned(),
+            },
+        ),
+    ] {
+        let functions =
+            format!("fn make<T>(value: T) -> RichTextStyle {{ text_style(font = {source}) }}");
+        for values in execute_with_functions(&functions, "let settings = make(7i64)") {
+            assert_eq!(values.len(), 1);
+            assert_eq!(
+                values[0].iter().next().unwrap().value(),
+                &PropertyValue::FontFamily(expected.clone())
+            );
+        }
+    }
+}
+
+#[test]
+fn source_style_factories_construct_dynamic_named_families_and_reject_foreign_enums() {
+    use arcweft_presentation::rich_text::RichTextFontFamily as Font;
+    for values in
+        execute("let name = \"serif\"; let settings = text_style(font = FontFamily.named(name))")
+    {
+        assert_eq!(values.len(), 1);
+        assert_eq!(
+            values[0].iter().next().unwrap().value(),
+            &PropertyValue::FontFamily(Font::Named {
+                name: "serif".to_owned()
+            })
+        );
+    }
+    assert!(compile_source("enum Foreign { serif }\npub character alice { display = \"Alice\" }\nflow main() { let settings = text_style(font = Foreign.serif) }\nentry cli @entry.main { goto @flow.main }").is_err());
+    for name in [String::new(), "a".repeat(257), "夢".repeat(86)] {
+        let name = serde_json::to_string(&name).unwrap();
+        let source = format!(
+            "pub character alice {{ display = \"Alice\" }}\nflow main() {{ let settings = text_style(font = {name}) }}\nentry cli @entry.main {{ goto @flow.main }}"
+        );
+        assert!(
+            compile_source(&source).is_err(),
+            "invalid named-family literal: {name}"
+        );
+    }
+}
+
+#[test]
+fn source_style_factories_keep_complete_font_matches_in_native_and_saved_awbc() {
+    use arcweft_presentation::rich_text::RichTextFontFamily as Font;
+    let functions = r#"
+fn remap(value: FontFamily) -> FontFamily {
+    match value {
+        .serif => .sans_serif,
+        .sans_serif => .monospace,
+        .monospace => .cursive,
+        .cursive => .fantasy,
+        .fantasy => .serif,
+        .named(name) => FontFamily.named(name),
+    }
+}
+"#;
+    for (source, expected) in [
+        ("serif", Font::SansSerif),
+        ("sans_serif", Font::Monospace),
+        ("monospace", Font::Cursive),
+        ("cursive", Font::Fantasy),
+        ("fantasy", Font::Serif),
+        (
+            "\"serif\"",
+            Font::Named {
+                name: "serif".to_owned(),
+            },
+        ),
+    ] {
+        for values in execute_with_functions(
+            functions,
+            &format!("let settings = text_style(font = remap({source}))"),
+        ) {
+            assert_eq!(values.len(), 1);
+            assert_eq!(
+                values[0].iter().next().unwrap().value(),
+                &PropertyValue::FontFamily(expected.clone())
             );
         }
     }

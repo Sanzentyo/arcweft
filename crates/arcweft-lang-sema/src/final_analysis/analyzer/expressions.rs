@@ -1853,6 +1853,22 @@ impl Analyzer<'_, '_, '_> {
                 CheckedTypeSelection::Inferred,
             )),
             HirExprKind::Literal(literal) => {
+                if matches!(literal, HirLiteral::String(_))
+                    && let Some(TypeKind::CompileTimeScalar(scalar)) = expected
+                    && scalar.kind() == crate::types::CompileTimeScalarKind::FontFamily
+                {
+                    crate::checked_text_proxy::reduce_scalar_literal(
+                        literal,
+                        &crate::checked_text_proxy::CheckedCompileTimeScalarKind::FontFamily,
+                    )
+                    .map_err(|_| AnalyzerExpressionError::rejected(owner))?;
+                    return Ok(Some(CheckedExpression::value(
+                        expected.expect("matched font-family expectation").clone(),
+                        CheckedTypeSelection::Expected,
+                        EffectSet::new(),
+                        CheckedExpressionResolution::Literal(literal.clone()),
+                    )));
+                }
                 if let HirLiteral::UnitNumber(arcweft_lang_hir::leaf::HirUnitNumberLiteral::Value {
                     unit,
                     ..

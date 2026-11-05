@@ -90,6 +90,10 @@ fn text_proxy_scalar_matches_query_value(param: &RichTextTextProxyScalar, value:
             }
             arcweft_text_model::RichTextColor::Resource { id } => value == id,
         },
+        RichTextTextProxyScalar::FontFamily { value: param_value } => {
+            serde_json::from_str::<arcweft_text_model::RichTextFontFamily>(value)
+                .is_ok_and(|family| &family == param_value)
+        }
     }
 }
 

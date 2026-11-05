@@ -343,6 +343,9 @@ impl Analyzer<'_, '_, '_> {
             crate::registration::CompileTimeScalarTypeRoleId::Color => {
                 crate::checked_compile_time::CheckedCompileTimeScalarKind::Color
             }
+            crate::registration::CompileTimeScalarTypeRoleId::FontFamily => {
+                crate::checked_compile_time::CheckedCompileTimeScalarKind::FontFamily
+            }
             crate::registration::CompileTimeScalarTypeRoleId::Text => {
                 crate::checked_compile_time::CheckedCompileTimeScalarKind::Text
             }

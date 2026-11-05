@@ -2510,7 +2510,7 @@ pub(crate) fn checked_project_fx_parameter_type(
             CompileTimeScalarKind::Length => FxRuntimeType::Length,
             CompileTimeScalarKind::Angle => FxRuntimeType::Angle,
             CompileTimeScalarKind::Color => FxRuntimeType::Color,
-            CompileTimeScalarKind::PublicId => return None,
+            CompileTimeScalarKind::PublicId | CompileTimeScalarKind::FontFamily => return None,
         },
         TypeKind::FixedVector(vector)
             if vector.dimensions() == crate::callable::VectorDimensions::Two

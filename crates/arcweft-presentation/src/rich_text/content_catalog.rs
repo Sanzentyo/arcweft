@@ -855,8 +855,8 @@ const COLOR_PARAMETERS: &[PresentationContentCallableParameterSpec] = &[required
 const FONT_PARAMETERS: &[PresentationContentCallableParameterSpec] = &[required_positional(
     PresentationContentCallableParameterId::Value,
     "value",
-    RichTextValueKind::Text,
-    STRING_LIMITS,
+    RichTextValueKind::FontFamily,
+    super::authoring_schema::FONT_FAMILY_LIMITS,
 )];
 const SIZE_PARAMETERS: &[PresentationContentCallableParameterSpec] = &[required_positional(
     PresentationContentCallableParameterId::Value,
@@ -1179,6 +1179,7 @@ fn encode_value_kind(bytes: &mut Vec<u8>, kind: RichTextValueKind) {
         RichTextValueKind::Vec2 => bytes.push(12),
         RichTextValueKind::Seed32 => bytes.push(13),
         RichTextValueKind::Fx => bytes.push(14),
+        RichTextValueKind::FontFamily => bytes.push(15),
     }
 }
 

@@ -6,6 +6,7 @@ mod object;
 mod style;
 mod transform;
 
+pub(super) use direct_style::FONT_FAMILY_LIMITS;
 pub use direct_style::{RichTextDirectStyle, RichTextDirectStyleProperty};
 pub use layout::{RichTextLayoutProperty, RichTextLayoutSelector};
 pub use object::{RichTextObjectProperty, RichTextObjectSelector};

@@ -2,6 +2,7 @@
 
 mod authoring_schema;
 mod content_catalog;
+mod font_family;
 mod inventories;
 
 pub use crate::fx::{FxPhase, FxTarget};
@@ -21,6 +22,7 @@ pub use content_catalog::{
     PresentationReusableStylePropertySpec, PresentationReusableStyleSchema,
     PresentationReusableStyleSchemaError,
 };
+pub use font_family::RichTextFontFamily;
 pub use inventories::{Jlreq, LayoutDirection, TransformOrigin, TransformTarget, VerticalLatin};
 
 pub use RichTextLayoutSelector as LayoutSelector;

@@ -2496,7 +2496,7 @@ fn fx_runtime_type(ty: &TypeKind) -> Option<FxRuntimeType> {
             CompileTimeScalarKind::Length => FxRuntimeType::Length,
             CompileTimeScalarKind::Angle => FxRuntimeType::Angle,
             CompileTimeScalarKind::Color => FxRuntimeType::Color,
-            CompileTimeScalarKind::PublicId => return None,
+            CompileTimeScalarKind::PublicId | CompileTimeScalarKind::FontFamily => return None,
         },
         TypeKind::FixedVector(vector)
             if vector.dimensions() == VectorDimensions::Two

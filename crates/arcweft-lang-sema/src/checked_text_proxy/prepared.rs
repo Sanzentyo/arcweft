@@ -838,6 +838,7 @@ fn field_type_matches_kind(
             CheckedCompileTimeScalarKind::PublicId => CompileTimeScalarTypeRoleId::PublicId,
             CheckedCompileTimeScalarKind::Text => CompileTimeScalarTypeRoleId::Text,
             CheckedCompileTimeScalarKind::Color => CompileTimeScalarTypeRoleId::Color,
+            CheckedCompileTimeScalarKind::FontFamily => CompileTimeScalarTypeRoleId::FontFamily,
             CheckedCompileTimeScalarKind::ClosedEnum(_) => return false,
         };
         return registered == scalar_types.row(role) && registered.ty() == inner;
@@ -1552,6 +1553,7 @@ fn classify_scalar(
             CompileTimeScalarTypeRoleId::PublicId => CheckedCompileTimeScalarKind::PublicId,
             CompileTimeScalarTypeRoleId::Color => CheckedCompileTimeScalarKind::Color,
             CompileTimeScalarTypeRoleId::Text => CheckedCompileTimeScalarKind::Text,
+            CompileTimeScalarTypeRoleId::FontFamily => CheckedCompileTimeScalarKind::FontFamily,
         };
         return Some((kind, Some(scalars.row(role).clone())));
     }

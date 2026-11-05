@@ -145,12 +145,12 @@ const COLOR_LIMITS: RichTextValueLimits = RichTextValueLimits {
     max_encoded_bytes: 4_096,
     max_decoded_bytes: 4_096,
 };
-const FONT_LIMITS: RichTextValueLimits = RichTextValueLimits {
+pub(crate) const FONT_FAMILY_LIMITS: RichTextValueLimits = RichTextValueLimits {
     numeric: None,
     units: &[],
-    enum_values: &["serif", "sans-serif", "monospace", "cursive", "fantasy"],
+    enum_values: &[],
     max_encoded_bytes: 4_096,
-    max_decoded_bytes: 256,
+    max_decoded_bytes: crate::rich_text::RichTextFontFamily::<String>::MAX_NAME_BYTES,
 };
 const RUBY_TEXT_LIMITS: RichTextValueLimits = RichTextValueLimits {
     numeric: None,
@@ -181,10 +181,10 @@ const COLOR_VALUE: RichTextPropertySpec<RichTextDirectStyleProperty> = RichTextP
 const FONT_VALUE: RichTextPropertySpec<RichTextDirectStyleProperty> = RichTextPropertySpec {
     id: RichTextDirectStyleProperty::Value,
     source_name: "value",
-    kind: RichTextValueKind::Text,
+    kind: RichTextValueKind::FontFamily,
     presence: PropertyPresence::Required,
     multiplicity: SINGLE,
-    limits: FONT_LIMITS,
+    limits: FONT_FAMILY_LIMITS,
     allow_empty: false,
 };
 const SIZE_VALUE: RichTextPropertySpec<RichTextDirectStyleProperty> = RichTextPropertySpec {

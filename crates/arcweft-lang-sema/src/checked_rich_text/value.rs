@@ -152,7 +152,9 @@ pub(crate) fn parse_checked_value<P: Copy + Eq + 'static>(
         RichTextValueKind::Seed32 => parse_seed(source).map(CheckedRichTextValue::Seed),
         // Fx applications are checked by the callable resolver and are not
         // representable as a scalar text attribute value.
-        RichTextValueKind::Fx => Err(RichTextDiagnosticCode::InvalidKind),
+        RichTextValueKind::Fx | RichTextValueKind::FontFamily => {
+            Err(RichTextDiagnosticCode::InvalidKind)
+        }
     }
 }
 

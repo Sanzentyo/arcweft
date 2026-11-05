@@ -677,6 +677,7 @@ pub enum CompileTimeScalarKind {
     Angle,
     PublicId,
     Color,
+    FontFamily,
 }
 
 impl CompileTimeScalarKind {
@@ -688,17 +689,18 @@ impl CompileTimeScalarKind {
             Self::Ratio => Some(RuntimeQuantityKind::Ratio),
             Self::Length => Some(RuntimeQuantityKind::Length),
             Self::Angle => Some(RuntimeQuantityKind::Angle),
-            Self::PublicId | Self::Color => None,
+            Self::PublicId | Self::Color | Self::FontFamily => None,
         }
     }
     /// All closed scalar kinds in their canonical declaration order.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Milli,
         Self::Ratio,
         Self::Length,
         Self::Angle,
         Self::PublicId,
         Self::Color,
+        Self::FontFamily,
     ];
 
     /// Stable semantic tag in declaration order.
@@ -710,6 +712,7 @@ impl CompileTimeScalarKind {
             Self::Angle => 3,
             Self::PublicId => 4,
             Self::Color => 5,
+            Self::FontFamily => 6,
         }
     }
 
@@ -722,6 +725,7 @@ impl CompileTimeScalarKind {
             Self::Angle => "Angle",
             Self::PublicId => "PublicId",
             Self::Color => "Color",
+            Self::FontFamily => "FontFamily",
         }
     }
 }

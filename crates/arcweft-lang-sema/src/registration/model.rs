@@ -242,6 +242,7 @@ pub enum CompileTimeScalarTypeRoleId {
     PublicId,
     Color,
     Text,
+    FontFamily,
 }
 
 /// Language-owned builtin atom used by the compile-time scalar catalog.
@@ -1178,7 +1179,7 @@ impl StatementIngressTypePublicationInput {
 }
 
 impl CompileTimeScalarTypeRoleId {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Bool,
         Self::Int,
         Self::Milli,
@@ -1189,6 +1190,7 @@ impl CompileTimeScalarTypeRoleId {
         Self::PublicId,
         Self::Color,
         Self::Text,
+        Self::FontFamily,
     ];
 
     const fn index(self) -> usize {
@@ -1203,6 +1205,7 @@ impl CompileTimeScalarTypeRoleId {
             Self::PublicId => 7,
             Self::Color => 8,
             Self::Text => 9,
+            Self::FontFamily => 10,
         }
     }
 
@@ -1217,7 +1220,8 @@ impl CompileTimeScalarTypeRoleId {
             | Self::Length
             | Self::Angle
             | Self::PublicId
-            | Self::Color => None,
+            | Self::Color
+            | Self::FontFamily => None,
         }
     }
 
@@ -1238,7 +1242,8 @@ impl CompileTimeScalarTypeRoleId {
             | Self::Length
             | Self::Angle
             | Self::PublicId
-            | Self::Color => return None,
+            | Self::Color
+            | Self::FontFamily => return None,
         };
         Some(CompileTimeScalarTypeIdentity::Builtin(identity))
     }
@@ -1251,6 +1256,7 @@ impl CompileTimeScalarTypeRoleId {
             Self::Angle => Some(CompileTimeScalarKind::Angle),
             Self::PublicId => Some(CompileTimeScalarKind::PublicId),
             Self::Color => Some(CompileTimeScalarKind::Color),
+            Self::FontFamily => Some(CompileTimeScalarKind::FontFamily),
             Self::Bool | Self::Int | Self::Duration | Self::Text => None,
         }
     }

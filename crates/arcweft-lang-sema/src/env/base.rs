@@ -637,6 +637,11 @@ impl TypeCheckEnv {
                                     .accepted_compile_time_scalar_type(
                                         CompileTimeScalarKind::Color,
                                     ),
+                                arcweft_rich_text_schema::RichTextValueKind::FontFamily => {
+                                    environment.accepted_compile_time_scalar_type(
+                                        CompileTimeScalarKind::FontFamily,
+                                    )
+                                }
                                 arcweft_rich_text_schema::RichTextValueKind::Length => environment
                                     .accepted_compile_time_scalar_type(
                                         CompileTimeScalarKind::Length,
@@ -848,6 +853,7 @@ impl TypeCheckEnv {
 
         let environment = [
             CompileTimeScalarKind::Color,
+            CompileTimeScalarKind::FontFamily,
             CompileTimeScalarKind::Length,
             CompileTimeScalarKind::Angle,
         ]
@@ -984,13 +990,34 @@ impl TypeCheckEnv {
 
     #[must_use]
     fn with_standard_dialogue_value_enums(self) -> Self {
-        self.try_with_enum_variants(
-            EnvironmentBindingId::try_new("DialogueVoice")
-                .expect("DialogueVoice owner identity is valid"),
-            TypeKind::Named("DialogueVoice".to_owned()),
-            ["auto"],
-        )
-        .expect("DialogueVoice has one canonical source-visible enum inventory")
+        use arcweft_presentation::rich_text::RichTextFontFamily;
+        let font = self.accepted_compile_time_scalar_type(CompileTimeScalarKind::FontFamily);
+        let environment = self
+            .try_with_enum_variants(
+                EnvironmentBindingId::try_new("FontFamily").expect("font-family owner is valid"),
+                font.clone(),
+                RichTextFontFamily::<String>::GENERIC
+                    .iter()
+                    .map(RichTextFontFamily::variant_name),
+            )
+            .and_then(|environment| {
+                environment.try_with_enum_variant_payload(
+                    EnvironmentBindingId::try_new("FontFamily")
+                        .expect("font-family owner is valid"),
+                    font,
+                    RichTextFontFamily::<String>::NAMED_VARIANT_NAME,
+                    EnumVariantPayload::Tuple(vec![TypeKind::String]),
+                )
+            })
+            .expect("font families have one complete typed variant inventory");
+        environment
+            .try_with_enum_variants(
+                EnvironmentBindingId::try_new("DialogueVoice")
+                    .expect("DialogueVoice owner identity is valid"),
+                TypeKind::Named("DialogueVoice".to_owned()),
+                ["auto"],
+            )
+            .expect("DialogueVoice has one canonical source-visible enum inventory")
     }
 
     #[must_use]

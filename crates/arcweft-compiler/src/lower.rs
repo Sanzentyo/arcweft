@@ -18,6 +18,8 @@ mod environment_record_pattern_tests;
 #[path = "lower/evaluated_effects.rs"]
 mod evaluated_effects;
 mod executable_types;
+mod literal;
+use literal::RuntimeLiteralContext;
 #[path = "lower/fx.rs"]
 pub(crate) mod fx;
 mod nominals;
@@ -1260,12 +1262,12 @@ fn project_runtime_semantic_fact_inventories(
             CheckedExpressionResolution::Literal(literal) => {
                 input.push_expression_literal(
                     owner,
-                    runtime_literal(literal, checked_expression_type(expression, owner)?).map_err(
-                        |reason| RuntimeSemanticProjectionError::ExpressionLiteral {
+                    RuntimeLiteralContext::new(world, analysis)
+                        .literal(literal, checked_expression_type(expression, owner)?)
+                        .map_err(|reason| RuntimeSemanticProjectionError::ExpressionLiteral {
                             owner,
                             reason,
-                        },
-                    )?,
+                        })?,
                 );
             }
             CheckedExpressionResolution::Value(value) => {
@@ -1276,6 +1278,7 @@ fn project_runtime_semantic_fact_inventories(
                     Some(value.clone())
                 } else {
                     runtime_value_resolution(
+                        world,
                         analysis,
                         owner,
                         value,
@@ -1482,6 +1485,14 @@ fn project_runtime_semantic_fact_inventories(
                             reason: error.to_string(),
                         })?;
                     input.push_expression_literal(owner, value);
+                } else if let CheckedCompileTimeScalar::FontFamily(family) = scalar.value() {
+                    let value = RuntimeLiteralContext::new(world, analysis)
+                        .font_family(family, checked_expression_type(expression, owner)?)
+                        .map_err(|reason| RuntimeSemanticProjectionError::Value {
+                            owner,
+                            reason,
+                        })?;
+                    input.push_expression_literal(owner, value);
                 } else if let CheckedCompileTimeScalar::Color(
                     arcweft_lang_sema::checked_rich_text::CheckedColor::Rgba8(rgba),
                 ) = scalar.value()
@@ -1571,9 +1582,12 @@ fn project_runtime_semantic_fact_inventories(
             CheckedPatternResolution::Literal(literal) => {
                 input.push_pattern_literal(
                     owner,
-                    runtime_literal(literal, pattern.ty()).map_err(|reason| {
-                        RuntimeSemanticProjectionError::PatternLiteral { owner, reason }
-                    })?,
+                    RuntimeLiteralContext::new(world, analysis)
+                        .literal(literal, pattern.ty())
+                        .map_err(|reason| RuntimeSemanticProjectionError::PatternLiteral {
+                            owner,
+                            reason,
+                        })?,
                 );
             }
             CheckedPatternResolution::Record(record) => {
@@ -4106,8 +4120,16 @@ fn lower_content_modifier(
             value: lower_checked_color(value(PresentationContentCallableParameterId::Value)?)?,
         }),
         PresentationContentCallableDefinitionId::Font => Ok(RichTextStyle::Font {
-            family: RichTextFontFamily::Named {
-                name: lower_checked_text(value(PresentationContentCallableParameterId::Value)?)?,
+            family: match value(PresentationContentCallableParameterId::Value)? {
+                CheckedCompileTimeValue::Scalar(CheckedCompileTimeScalar::FontFamily(family)) => {
+                    family.clone()
+                }
+                _ => {
+                    return Err(content_modifier_error(
+                        owner,
+                        "font modifier has a different checked value kind",
+                    ));
+                }
             },
         }),
         PresentationContentCallableDefinitionId::Size => {
@@ -4449,20 +4471,6 @@ fn lower_checked_color(
         _ => Err(RuntimeSemanticProjectionError::Dialogue {
             owner: None,
             reason: "checked Content modifier color parameter has the wrong type".to_owned(),
-        }),
-    }
-}
-
-fn lower_checked_text(
-    value: &CheckedCompileTimeValue,
-) -> Result<String, RuntimeSemanticProjectionError> {
-    match value {
-        CheckedCompileTimeValue::Scalar(CheckedCompileTimeScalar::Text(value)) => {
-            Ok(value.to_string())
-        }
-        _ => Err(RuntimeSemanticProjectionError::Dialogue {
-            owner: None,
-            reason: "checked Content modifier text parameter has the wrong type".to_owned(),
         }),
     }
 }
@@ -5574,6 +5582,11 @@ fn runtime_type_scoped_at(
         {
             RuntimeTypeShape::Color
         }
+        TypeKind::CompileTimeScalar(value)
+            if value.kind() == arcweft_lang_sema::types::CompileTimeScalarKind::FontFamily =>
+        {
+            nominals::closed_variant_type(ty, identity, world, analysis)?
+        }
         TypeKind::CompileTimeScalar(scalar) if scalar.kind().runtime_quantity_kind().is_some() => {
             let owner = scalar
                 .kind()
@@ -5814,62 +5827,6 @@ fn projection_index(index: usize) -> u32 {
     u32::try_from(index).expect("semantic type collections fit the u32 projection path contract")
 }
 
-fn runtime_literal(literal: &HirLiteral, ty: &TypeKind) -> Result<RuntimeValue, String> {
-    if let TypeKind::CompileTimeScalar(scalar) = ty
-        && scalar.kind().runtime_quantity_kind().is_some()
-    {
-        use arcweft_lang_sema::checked_compile_time::{
-            CheckedCompileTimeScalarKind, reduce_scalar_literal,
-        };
-        use arcweft_lang_sema::types::CompileTimeScalarKind;
-        let kind = match scalar.kind() {
-            CompileTimeScalarKind::Milli => CheckedCompileTimeScalarKind::Milli,
-            CompileTimeScalarKind::Ratio => CheckedCompileTimeScalarKind::Ratio,
-            CompileTimeScalarKind::Length => CheckedCompileTimeScalarKind::Length,
-            CompileTimeScalarKind::Angle => CheckedCompileTimeScalarKind::Angle,
-            _ => return Err("scalar has no quantity representation".to_owned()),
-        };
-        let value = reduce_scalar_literal(literal, &kind)
-            .map_err(|error| error.to_string())?
-            .runtime_quantity()
-            .ok_or_else(|| "literal reducer returned a different quantity kind".to_owned())?;
-        return value
-            .into_runtime_value(RuntimeSemanticTypeId::from(
-                ty.semantic_identity_digest()
-                    .map_err(|error| error.to_string())?,
-            ))
-            .map_err(|error| error.to_string());
-    }
-    match literal {
-        HirLiteral::String(HirStringLiteral::Value(value)) => {
-            Ok(RuntimeValue::String(value.to_string()))
-        }
-        HirLiteral::Character(HirCharacterLiteral::Value(value)) => Ok(RuntimeValue::Char(*value)),
-        HirLiteral::Integer(HirIntegerLiteral::Value { magnitude, .. }) => {
-            runtime_integer_magnitude(magnitude, ty)
-        }
-        HirLiteral::Float(HirFloatLiteral::Value { decimal, .. }) => runtime_decimal(decimal, ty),
-        HirLiteral::UnitNumber(HirUnitNumberLiteral::Value { decimal, .. }) => {
-            runtime_decimal(decimal, ty)
-        }
-        HirLiteral::Boolean(value) => Ok(RuntimeValue::Bool(*value)),
-        HirLiteral::Duration(HirDurationLiteral::Value(value)) => {
-            let nanos = big_uint_to_u128(value.semantic_value().nanoseconds())
-                .and_then(|value| u64::try_from(value).ok())
-                .ok_or_else(|| {
-                    "Duration literal exceeds the runtime u64 nanosecond domain".to_owned()
-                })?;
-            Ok(RuntimeValue::Duration(LogicalDuration::from_nanos(nanos)))
-        }
-        HirLiteral::String(HirStringLiteral::Invalid(issue)) => Err(issue.to_string()),
-        HirLiteral::Character(HirCharacterLiteral::Invalid(issue)) => Err(issue.to_string()),
-        HirLiteral::Integer(HirIntegerLiteral::Invalid(issue)) => Err(issue.to_string()),
-        HirLiteral::Float(HirFloatLiteral::Invalid(issue)) => Err(issue.to_string()),
-        HirLiteral::UnitNumber(HirUnitNumberLiteral::Invalid(issue)) => Err(issue.to_string()),
-        HirLiteral::Duration(HirDurationLiteral::Invalid(issue)) => Err(issue.to_string()),
-    }
-}
-
 fn runtime_integer_magnitude(
     magnitude: &HirBigUint,
     ty: &TypeKind,
@@ -5937,6 +5894,7 @@ fn runtime_decimal(decimal: &HirDecimal, ty: &TypeKind) -> Result<RuntimeValue, 
 }
 
 fn runtime_value_resolution(
+    world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
     owner: ExprId,
     value: &CheckedValueResolution,
@@ -5991,7 +5949,7 @@ fn runtime_value_resolution(
             RuntimeRegisteredValueId::from_bytes(*registered.as_bytes()),
         ),
         CheckedValueResolution::Constant(literal) => {
-            RuntimeResolvedValue::Constant(runtime_literal(literal, ty)?)
+            RuntimeResolvedValue::Constant(RuntimeLiteralContext::new(world, analysis).literal(literal, ty)?)
         }
     }))
 }
@@ -8155,9 +8113,22 @@ fn runtime_executable_semantic_facts<'abi>(
                 let closed_ty = lexical.instantiate_type(checked_ty)?;
                 let value = match (checked.resolution(), hir.kind()) {
                     (CheckedExpressionResolution::Literal(literal), _) => {
-                        runtime_literal(literal, &closed_ty).map_err(|reason| {
-                            RuntimeSemanticProjectionError::ExpressionLiteral { owner, reason }
-                        })?
+                        RuntimeLiteralContext::new(world, analysis)
+                            .literal(literal, &closed_ty)
+                            .map_err(|reason| RuntimeSemanticProjectionError::ExpressionLiteral {
+                                owner,
+                                reason,
+                            })?
+                    }
+                    (CheckedExpressionResolution::CompileTimeScalar(scalar), _)
+                        if matches!(scalar.value(), CheckedCompileTimeScalar::FontFamily(_)) =>
+                    {
+                        let CheckedCompileTimeScalar::FontFamily(family) = scalar.value() else {
+                            unreachable!()
+                        };
+                        RuntimeLiteralContext::new(world, analysis)
+                            .font_family(family, &closed_ty)
+                            .map_err(|failure| error(owner, &failure))?
                     }
                     (CheckedExpressionResolution::CompileTimeScalar(scalar), _)
                         if scalar.value().runtime_quantity().is_some() =>
@@ -8266,6 +8237,7 @@ fn runtime_executable_semantic_facts<'abi>(
                             )?
                         } else {
                             runtime_value_resolution(
+                                world,
                                 analysis,
                                 owner,
                                 value,
@@ -8715,9 +8687,12 @@ fn runtime_executable_semantic_facts<'abi>(
                 CheckedExecutableRuntimePatternFactFamily::Literal,
                 CheckedPatternResolution::Literal(literal),
             ) => RuntimeProjectFunctionPatternPayload::Literal(
-                runtime_literal(literal, &lexical.instantiate_type(checked.ty())?).map_err(
-                    |reason| RuntimeSemanticProjectionError::PatternLiteral { owner, reason },
-                )?,
+                RuntimeLiteralContext::new(world, analysis)
+                    .literal(literal, &lexical.instantiate_type(checked.ty())?)
+                    .map_err(|reason| RuntimeSemanticProjectionError::PatternLiteral {
+                        owner,
+                        reason,
+                    })?,
             ),
             (
                 CheckedExecutableRuntimePatternFactFamily::Entity,

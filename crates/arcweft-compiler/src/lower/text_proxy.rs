@@ -119,6 +119,7 @@ fn lower_kind(kind: &CheckedCompileTimeScalarKind) -> RichTextTextProxyFieldKind
         CheckedCompileTimeScalarKind::PublicId => RichTextTextProxyFieldKind::PublicId,
         CheckedCompileTimeScalarKind::Text => RichTextTextProxyFieldKind::Text,
         CheckedCompileTimeScalarKind::Color => RichTextTextProxyFieldKind::Color,
+        CheckedCompileTimeScalarKind::FontFamily => RichTextTextProxyFieldKind::FontFamily,
     }
 }
 
@@ -158,6 +159,9 @@ fn lower_scalar(value: &CheckedCompileTimeScalar) -> RichTextTextProxyScalar {
                     id: value.as_str().to_owned(),
                 },
             },
+        },
+        CheckedCompileTimeScalar::FontFamily(value) => RichTextTextProxyScalar::FontFamily {
+            value: value.clone(),
         },
     }
 }

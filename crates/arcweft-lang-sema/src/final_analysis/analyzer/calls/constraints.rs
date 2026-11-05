@@ -5347,6 +5347,15 @@ fn prepare_compile_time_scalar_type_admission(
                     .clone(),
             ),
         ),
+        crate::types::CompileTimeScalarKind::FontFamily => (
+            CheckedCompileTimeScalarKind::FontFamily,
+            CompileTimeScalarTypeRoleId::FontFamily,
+            CompileTimeScalarSourceMode::Typed(
+                scalar_types
+                    .type_for(CompileTimeScalarTypeRoleId::FontFamily)
+                    .clone(),
+            ),
+        ),
     };
     if scalar_types.type_for(role) != value_type {
         return None;
@@ -5426,9 +5435,11 @@ fn prepare_parameter_source_constraint(
         ))
     })?;
     let compile_time_only_scalar = match &declared {
-        TypeKind::CompileTimeScalar(value) => {
-            value.kind() != crate::types::CompileTimeScalarKind::Color
-        }
+        TypeKind::CompileTimeScalar(value) => !matches!(
+            value.kind(),
+            crate::types::CompileTimeScalarKind::Color
+                | crate::types::CompileTimeScalarKind::FontFamily
+        ),
         _ => false,
     };
     if runtime_override.is_none() && compile_time_only_scalar {

@@ -497,6 +497,7 @@ impl<'a> NominalGraphProjection<'a> {
                 | TypeKind::CharacterNominal(_)
                 | TypeKind::Named(_)
                 | TypeKind::AcceptedNominal(_)
+                | TypeKind::CompileTimeScalar(_)
         ) {
             let semantic = self.semantic_identity(ty)?;
             if let Some(owner) = self

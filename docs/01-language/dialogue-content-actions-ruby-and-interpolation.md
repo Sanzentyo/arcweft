@@ -559,12 +559,16 @@ alice()[
 
 ## Typed style spans
 
-Style spans are typed content calls. Canonical generic font families are
-`serif`, `sans-serif`, `monospace`, `cursive`, and `fantasy`; a quoted value is
-a requested named family that renderers may resolve through their font system.
+Style spans are typed content calls. `FontFamily` has the generic values
+`serif`, `sans_serif`, `monospace`, `cursive`, and `fantasy`. A quoted string
+in a `FontFamily` argument is a requested named family, including `"serif"`;
+its text is never reclassified as a generic family. Named families are nonempty
+and limited to 256 UTF-8 bytes. `FontFamily.named(name)` constructs a named
+family from a runtime `String`; the consuming style applies the same name limits.
+The renderer resolves requested families through its font system.
 
 ```arcw
-alice: #font("serif")[Serif text][p]
+alice: #font(serif)[Serif text][p]
 alice: #font("Noto Sans JP")[日本語フォント指定][p]
 alice: #color(rgb("#a8b5ff"))[夜]、#strong()[本当に]変だった。[p]
 ```
@@ -573,9 +577,9 @@ Line-level presentation style can set the base font for the whole line. Inline
 `#font(...)` calls override that base font only for their span:
 
 ```arcw
-alice(style=font(monospace)): 全体は monospace。#font("serif")[ここだけ serif][p]
+alice(rich_text=text_style(font=monospace)): 全体は monospace。#font(serif)[ここだけ serif][p]
 
-let alice_serif = alice(style=text_style(font=serif, color=rgb("#f7e8ff")))
+let alice_serif = alice(rich_text=text_style(font=serif, color=rgb("#f7e8ff")))
 alice_serif: この preset の通常表示は serif です。[p]
 ```
 

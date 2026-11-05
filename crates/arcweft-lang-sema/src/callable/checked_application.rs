@@ -2396,7 +2396,8 @@ pub(crate) fn checked_view_fx_runtime_parameter(
             crate::types::CompileTimeScalarKind::Length => FxRuntimeType::Length,
             crate::types::CompileTimeScalarKind::Angle => FxRuntimeType::Angle,
             crate::types::CompileTimeScalarKind::Color => FxRuntimeType::Color,
-            crate::types::CompileTimeScalarKind::PublicId => return None,
+            crate::types::CompileTimeScalarKind::PublicId
+            | crate::types::CompileTimeScalarKind::FontFamily => return None,
         },
         TypeKind::FixedVector(vector)
             if vector.dimensions() == super::VectorDimensions::Two

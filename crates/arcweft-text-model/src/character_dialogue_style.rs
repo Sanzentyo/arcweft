@@ -116,8 +116,8 @@ fn project_scalar(
                 },
             },
         },
-        (PropertyId::Font, Value::Text(name)) => RichTextStyle::Font {
-            family: RichTextFontFamily::Named { name: name.clone() },
+        (PropertyId::Font, Value::FontFamily(family)) => RichTextStyle::Font {
+            family: family.clone(),
         },
         (PropertyId::Size, Value::Length { .. }) => RichTextStyle::Size {
             length: length(property)?,
@@ -362,7 +362,12 @@ mod tests {
             ),
             (
                 PropertyId::Font,
-                RuntimeValue::String("Yu Gothic".to_owned()),
+                RuntimeValue::Tuple(vec![
+                    RuntimeValue::UInt(RuntimeUInt::U32(
+                        RichTextFontFamily::<String>::NAMED_ORDINAL,
+                    )),
+                    RuntimeValue::String("Yu Gothic".to_owned()),
+                ]),
             ),
             (PropertyId::Size, length(18_000, 2)),
             (

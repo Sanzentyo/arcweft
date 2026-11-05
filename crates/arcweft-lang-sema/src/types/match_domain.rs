@@ -153,6 +153,11 @@ impl TypeKind {
     fn match_domain_input(&self) -> MatchDomainInput<'_> {
         match self {
             Self::Error(_) => MatchDomainInput::Invalid(MatchDomainInvalidity::Poison),
+            Self::CompileTimeScalar(scalar)
+                if scalar.kind() == super::CompileTimeScalarKind::FontFamily =>
+            {
+                MatchDomainInput::Immediate(MatchDomainFamily::RequiresClosedVariant)
+            }
             Self::Projection { .. }
             | Self::DialogueLine(_)
             | Self::CompileTimeCallable(_)

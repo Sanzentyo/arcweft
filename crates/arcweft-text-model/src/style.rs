@@ -5,6 +5,7 @@ use crate::{
     RichTextPresentation, RichTextTransform,
 };
 use arcweft_presentation::fx::FxApplication;
+pub use arcweft_presentation::rich_text::RichTextFontFamily;
 use serde::{Deserialize, Serialize};
 
 /// One typed lexical modifier carried by a structural rich-text scope.
@@ -64,18 +65,6 @@ pub struct RichTextPresentationStyle {
 pub enum RichTextColor {
     Rgba8 { value: [u8; 4] },
     Resource { id: String },
-}
-
-/// Font family requested by authored rich text.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum RichTextFontFamily {
-    Serif,
-    SansSerif,
-    Monospace,
-    Cursive,
-    Fantasy,
-    Named { name: String },
 }
 
 /// Aggregates presentation metadata from active rich-text styles.

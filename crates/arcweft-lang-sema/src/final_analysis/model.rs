@@ -2032,6 +2032,7 @@ impl CheckedCompileTimeValue {
             Self::Vector(_) => 11,
             Self::Seed32(_) => 12,
             Self::Scalar(CheckedCompileTimeScalar::Enum(_)) => 13,
+            Self::Scalar(CheckedCompileTimeScalar::FontFamily(_)) => 14,
         }
     }
 }

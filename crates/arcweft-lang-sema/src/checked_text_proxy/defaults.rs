@@ -267,6 +267,22 @@ fn reduce_literal(
             Ok(CheckedCompileTimeScalar::Text(value.to_string()))
         }
         (
+            HirLiteral::String(HirStringLiteral::Value(value)),
+            CheckedCompileTimeScalarKind::FontFamily,
+        ) if !negative
+            && !value.is_empty()
+            && value.len()
+                <= usize::from(
+                    arcweft_presentation::rich_text::RichTextFontFamily::<String>::MAX_NAME_BYTES,
+                ) =>
+        {
+            Ok(CheckedCompileTimeScalar::FontFamily(
+                arcweft_presentation::rich_text::RichTextFontFamily::Named {
+                    name: value.to_string(),
+                },
+            ))
+        }
+        (
             HirLiteral::String(HirStringLiteral::Value(_)),
             CheckedCompileTimeScalarKind::PublicId | CheckedCompileTimeScalarKind::Text,
         ) if negative => Err(CompileTimeScalarReductionError::WrongSign),

@@ -294,6 +294,7 @@ pub enum CheckedCompileTimeScalarKind {
     PublicId,
     Text,
     Color,
+    FontFamily,
 }
 
 impl CheckedCompileTimeScalarKind {
@@ -314,6 +315,7 @@ impl CheckedCompileTimeScalarKind {
             Self::PublicId => crate::callable::CallableCompileTimeScalarKind::PublicId,
             Self::Text => crate::callable::CallableCompileTimeScalarKind::Text,
             Self::Color => crate::callable::CallableCompileTimeScalarKind::Color,
+            Self::FontFamily => crate::callable::CallableCompileTimeScalarKind::FontFamily,
         }
     }
 }
@@ -332,6 +334,7 @@ pub enum CheckedCompileTimeScalar {
     PublicId(PublicId),
     Text(String),
     Color(CheckedColor),
+    FontFamily(arcweft_presentation::rich_text::RichTextFontFamily),
 }
 
 impl CheckedCompileTimeScalar {
@@ -644,6 +647,7 @@ impl CheckedTextProxyDefinitionDigestEncoder {
             CheckedCompileTimeScalarKind::PublicId => self.tag(8),
             CheckedCompileTimeScalarKind::Text => self.tag(9),
             CheckedCompileTimeScalarKind::Color => self.tag(10),
+            CheckedCompileTimeScalarKind::FontFamily => self.tag(11),
         }
         Ok(())
     }
@@ -727,6 +731,14 @@ impl CheckedTextProxyDefinitionDigestEncoder {
                         self.tag(1);
                         self.string(id.as_str())?;
                     }
+                }
+            }
+            CheckedCompileTimeScalar::FontFamily(family) => {
+                self.tag(11);
+                self.u32(family.variant_ordinal());
+                if let arcweft_presentation::rich_text::RichTextFontFamily::Named { name } = family
+                {
+                    self.string(name)?;
                 }
             }
         }
@@ -939,6 +951,14 @@ impl CheckedTextProxyApplicationSemanticDigestEncoder {
                         self.tag(1);
                         self.public_id(id)?;
                     }
+                }
+            }
+            CheckedCompileTimeScalar::FontFamily(family) => {
+                self.tag(11);
+                self.u32(family.variant_ordinal());
+                if let arcweft_presentation::rich_text::RichTextFontFamily::Named { name } = family
+                {
+                    self.bytes(name.as_bytes())?;
                 }
             }
         }
@@ -1837,7 +1857,10 @@ fn scalar_matches_kind(
         | (CheckedCompileTimeScalar::Duration(_), CheckedCompileTimeScalarKind::Duration)
         | (CheckedCompileTimeScalar::PublicId(_), CheckedCompileTimeScalarKind::PublicId)
         | (CheckedCompileTimeScalar::Text(_), CheckedCompileTimeScalarKind::Text)
-        | (CheckedCompileTimeScalar::Color(_), CheckedCompileTimeScalarKind::Color) => true,
+        | (CheckedCompileTimeScalar::Color(_), CheckedCompileTimeScalarKind::Color)
+        | (CheckedCompileTimeScalar::FontFamily(_), CheckedCompileTimeScalarKind::FontFamily) => {
+            true
+        }
         (
             CheckedCompileTimeScalar::Enum(value),
             CheckedCompileTimeScalarKind::ClosedEnum(schema),

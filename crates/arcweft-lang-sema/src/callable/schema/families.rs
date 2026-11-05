@@ -309,6 +309,7 @@ fn content_parameter_type(
         | RichTextValueKind::PublicId => scalar(CompileTimeScalarTypeRoleId::PublicId),
         RichTextValueKind::Text => scalar(CompileTimeScalarTypeRoleId::Text),
         RichTextValueKind::Color => scalar(CompileTimeScalarTypeRoleId::Color),
+        RichTextValueKind::FontFamily => scalar(CompileTimeScalarTypeRoleId::FontFamily),
         RichTextValueKind::Vec2 => {
             TypeKind::FixedVector(FixedVectorType::new(VectorDimensions::Two, TypeKind::F32))
         }

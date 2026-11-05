@@ -66,6 +66,9 @@ impl PreparedCompileTimeScalarAdmission {
                     | CheckedCompileTimeScalarKind::Text
                     | CheckedCompileTimeScalarKind::Color,
                 CompileTimeScalarSourceMode::Typed(_),
+            ) | (
+                CheckedCompileTimeScalarKind::FontFamily,
+                CompileTimeScalarSourceMode::Typed(_),
             )
         );
         valid_mode.then_some(Self {

@@ -1273,6 +1273,7 @@ pub enum CallableCompileTimeScalarKind {
     PublicId,
     Text,
     Color,
+    FontFamily,
 }
 
 impl CallableCompileTimeScalarKind {
@@ -1290,6 +1291,7 @@ impl CallableCompileTimeScalarKind {
             Self::PublicId => 8,
             Self::Text => 9,
             Self::Color => 10,
+            Self::FontFamily => 11,
         }
     }
 }
@@ -1330,6 +1332,9 @@ impl CallableCompileTimeScalarAdmission {
             }
             (CallableCompileTimeScalarKind::Color, TypeKind::CompileTimeScalar(value)) => {
                 value.kind() == crate::types::CompileTimeScalarKind::Color
+            }
+            (CallableCompileTimeScalarKind::FontFamily, TypeKind::CompileTimeScalar(value)) => {
+                value.kind() == crate::types::CompileTimeScalarKind::FontFamily
             }
             (CallableCompileTimeScalarKind::ClosedEnum(owner), value) => {
                 value

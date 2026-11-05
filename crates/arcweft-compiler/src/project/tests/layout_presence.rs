@@ -111,3 +111,45 @@ fn source_font_and_ruby_lengths_retain_units_in_materialized_templates() {
         assert_eq!(lengths, expected, "{source}");
     }
 }
+
+#[test]
+fn source_fonts_keep_generic_and_quoted_named_identity_in_templates() {
+    use arcweft_text_model::RichTextFontFamily as Font;
+    fn visit(nodes: &[RichTextNode], fonts: &mut Vec<Font>) {
+        for node in nodes {
+            if let RichTextNode::Scope { style, body } = node {
+                if let RichTextStyle::Font { family } = style.as_ref() {
+                    fonts.push(family.clone());
+                }
+                visit(body, fonts);
+            }
+        }
+    }
+    let source = "pub character alice { display = \"Alice\" }\nflow main() { alice[#font(serif)[a]#font(sans_serif)[b]#font(monospace)[c]#font(cursive)[d]#font(fantasy)[e]#font(\"serif\")[f]#font(\"Noto Sans JP\")[夢][p]]; }";
+    let (project, context) = removed_role_dialogue_project(source);
+    let (mut session, parsed) = compilation_state(&project);
+    let compiled = compile_project(&mut session, &project, &parsed, &context).unwrap();
+    let mut fonts = Vec::new();
+    for template in compiled.runtime_plan().dialogue_content_catalog.templates() {
+        visit(&template.content().nodes, &mut fonts);
+        let bytes = serde_json::to_vec(template.content()).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<arcweft_text_model::RichTextDocument>(&bytes).unwrap(),
+            *template.content()
+        );
+    }
+    assert_eq!(
+        fonts,
+        Font::GENERIC
+            .into_iter()
+            .chain([
+                Font::Named {
+                    name: "serif".to_owned()
+                },
+                Font::Named {
+                    name: "Noto Sans JP".to_owned()
+                },
+            ])
+            .collect::<Vec<_>>()
+    );
+}
