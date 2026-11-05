@@ -16,12 +16,15 @@ use arcweft_lang_sema::project_index::{
     ProjectGraphSymbolRef, ProjectSemanticIndex,
 };
 use arcweft_source::SourceAnchor;
+use std::collections::BTreeMap;
 use thiserror::Error;
 
 /// Failure while converting exact semantic graph references into durable
 /// Agent protocol identities.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum AgentProjectGraphError {
+    #[error("project graph summary counter `{counter}` exceeds u32::MAX")]
+    SummaryCountOverflow { counter: &'static str },
     #[error(transparent)]
     Identifier(Box<arcweft_agent_protocol::ids::IdentifierError>),
     #[error("checked callable {checked:?} lookup failed: {reason:?}")]
@@ -109,6 +112,17 @@ fn required_agent_entity(
 fn agent_project_graph_symbols(
     project: &ProjectSemanticIndex,
 ) -> Result<Vec<AgentProjectGraphSymbol>, AgentProjectGraphError> {
+    let summary = agent_project_graph_summary(project)?;
+    let description = format!(
+        "Project with {} entities, {} Agent actions, {} project callables, {} relations, {} dependency edges, {} dynamic-control flows, and {} debug queries",
+        summary.entity_count,
+        summary.agent_action_count,
+        summary.project_callable_count,
+        summary.relation_count,
+        summary.dependency_edge_count,
+        summary.dynamic_control_flow_count,
+        summary.debug_query_count,
+    );
     let mut symbols = vec![AgentProjectGraphSymbol {
         symbol_id: agent_project_summary_symbol_id(),
         public_id: None,
@@ -116,17 +130,8 @@ fn agent_project_graph_symbols(
         kind: "project_summary".to_owned(),
         semantic_hash: None,
         flow_control: None,
-        project_summary: Some(agent_project_graph_summary(project)),
-        summary: format!(
-            "Project with {} entities, {} Agent actions, {} project callables, {} relations, {} dependency edges, {} dynamic-control flows, and {} debug queries",
-            project.entities().len(),
-            agent_project_action_count(project),
-            project.project_callables().len(),
-            project.relations().len(),
-            project.dependency_relations().len(),
-            agent_dynamic_control_flow_count(project),
-            project.debug_queries().len()
-        ),
+        project_summary: Some(summary),
+        summary: description,
     }];
     for (identity, entity) in project.entities() {
         let control_summary = agent_flow_control_summary_text(project, identity);
@@ -474,26 +479,71 @@ fn agent_dynamic_control_flow_count(project: &ProjectSemanticIndex) -> usize {
         .count()
 }
 
-fn agent_project_action_count(project: &ProjectSemanticIndex) -> usize {
-    project
+/// Projects the accepted semantic index into its complete Agent graph summary.
+/// Counters are checked before publication; kind labels use their owning registries.
+pub fn agent_project_graph_summary(
+    project: &ProjectSemanticIndex,
+) -> Result<AgentProjectGraphSummary, AgentProjectGraphError> {
+    let count = |value, counter| {
+        u32::try_from(value).map_err(|_| AgentProjectGraphError::SummaryCountOverflow { counter })
+    };
+    let agent_actions = project
         .entities()
         .values()
-        .map(|entity| entity.agent_actions().len())
-        .sum()
+        .try_fold(0_u32, |total, entity| {
+            total
+                .checked_add(count(entity.agent_actions().len(), "agent_actions")?)
+                .ok_or(AgentProjectGraphError::SummaryCountOverflow {
+                    counter: "agent_actions",
+                })
+        })?;
+    Ok(AgentProjectGraphSummary {
+        entity_count: count(project.entities().len(), "entities")?,
+        agent_action_count: agent_actions,
+        project_callable_count: count(project.project_callables().len(), "project_callables")?,
+        relation_count: count(project.relations().len(), "relations")?,
+        dependency_edge_count: count(project.dependency_relations().len(), "dependency_edges")?,
+        dynamic_control_flow_count: count(
+            agent_dynamic_control_flow_count(project),
+            "dynamic_control_flows",
+        )?,
+        debug_query_count: count(project.debug_queries().len(), "debug_queries")?,
+        entity_kind_counts: graph_kind_counts(
+            project
+                .entities()
+                .values()
+                .map(|entity| entity.ty().kind().as_str()),
+            "entity_kinds",
+        )?,
+        relation_kind_counts: graph_kind_counts(
+            project
+                .relations()
+                .iter()
+                .map(|relation| relation.edge_kind().as_str()),
+            "relation_kinds",
+        )?,
+        dependency_edge_kind_counts: graph_kind_counts(
+            project
+                .dependency_relations()
+                .iter()
+                .map(|relation| relation.edge_kind().as_str()),
+            "dependency_edge_kinds",
+        )?,
+    })
 }
 
-fn agent_project_graph_summary(project: &ProjectSemanticIndex) -> AgentProjectGraphSummary {
-    AgentProjectGraphSummary {
-        entity_count: usize_to_u32_saturating(project.entities().len()),
-        agent_action_count: usize_to_u32_saturating(agent_project_action_count(project)),
-        project_callable_count: usize_to_u32_saturating(project.project_callables().len()),
-        relation_count: usize_to_u32_saturating(project.relations().len()),
-        dependency_edge_count: usize_to_u32_saturating(project.dependency_relations().len()),
-        dynamic_control_flow_count: usize_to_u32_saturating(agent_dynamic_control_flow_count(
-            project,
-        )),
-        debug_query_count: usize_to_u32_saturating(project.debug_queries().len()),
+fn graph_kind_counts<'a>(
+    kinds: impl IntoIterator<Item = &'a str>,
+    counter: &'static str,
+) -> Result<BTreeMap<String, u32>, AgentProjectGraphError> {
+    let mut counts = BTreeMap::<String, u32>::new();
+    for kind in kinds {
+        let total = counts.entry(kind.to_owned()).or_default();
+        *total = total
+            .checked_add(1)
+            .ok_or(AgentProjectGraphError::SummaryCountOverflow { counter })?;
     }
+    Ok(counts)
 }
 
 fn agent_project_flow_control_summary(

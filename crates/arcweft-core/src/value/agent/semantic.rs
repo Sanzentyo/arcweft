@@ -92,6 +92,9 @@ impl RuntimeAgentField {
         Self::ReferenceName,
         Self::ViewportX,
         Self::ViewportY,
+        Self::ProjectGraphSummaryEntityKindCounts,
+        Self::ProjectGraphSummaryRelationKindCounts,
+        Self::ProjectGraphSummaryDependencyEdgeKindCounts,
     ];
 
     /// Stable semantic tag. Removed unreleased coordinates leave no reader or
@@ -186,6 +189,9 @@ impl RuntimeAgentField {
             Self::ReferenceName => 92,
             Self::ViewportX => 93,
             Self::ViewportY => 94,
+            Self::ProjectGraphSummaryEntityKindCounts => 95,
+            Self::ProjectGraphSummaryRelationKindCounts => 96,
+            Self::ProjectGraphSummaryDependencyEdgeKindCounts => 97,
         }
     }
 }

@@ -3170,6 +3170,9 @@ fn write_agent_field_value(
         arcweft_core::value::RuntimeAgentFieldValue::AgentValueMap => {
             transcript_update!(hasher, &[7]);
         }
+        arcweft_core::value::RuntimeAgentFieldValue::BTreeStringU32Map => {
+            transcript_update!(hasher, &[8]);
+        }
     }
     Ok(())
 }

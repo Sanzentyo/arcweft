@@ -2800,10 +2800,25 @@ fn agent_rag_query_indexes_multiple_sources() {
         assert!(
             search["hits"].as_array().is_some_and(|hits| {
                 hits.iter().any(|hit| {
+                    let Some(body) = hit["body"]
+                        .as_str()
+                        .and_then(|body| serde_json::from_str::<serde_json::Value>(body).ok())
+                    else {
+                        return false;
+                    };
+                    let (Some(identity), Some(source_key), Some(chunk_id)) = (
+                        body["identity"].as_str(),
+                        hit["source_key"].as_str(),
+                        hit["chunk_id"].as_str(),
+                    ) else {
+                        return false;
+                    };
                     hit["source_kind"] == "symbol"
-                        && hit["chunk_id"]
-                            .as_str()
-                            .is_some_and(|id| id.contains(query))
+                        && body["kind"] == "project_entity"
+                        && body["public_id"] == query
+                        && source_key.starts_with("source.blake3:")
+                        && source_key.ends_with(&format!(".project.entity.{identity}"))
+                        && chunk_id.starts_with(&format!("cli:{source_key}:"))
                 })
             }),
             "debug db search should expose persisted project symbol chunks for {query}: {search}"

@@ -179,6 +179,9 @@ pub enum RuntimeAgentField {
     ProjectGraphSummaryDependencyEdgeCount,
     ProjectGraphSummaryDynamicControlFlowCount,
     ProjectGraphSummaryDebugQueryCount,
+    ProjectGraphSummaryEntityKindCounts,
+    ProjectGraphSummaryRelationKindCounts,
+    ProjectGraphSummaryDependencyEdgeKindCounts,
     ProjectGraphEdgeFromSymbolId,
     ProjectGraphEdgeToSymbolId,
     ProjectGraphEdgeKind,
@@ -230,6 +233,7 @@ pub enum RuntimeAgentFieldValue {
     BuiltinVariant(RuntimeBuiltinVariantIdentity),
     VecAgent(RuntimeAgentOperationalType),
     AgentValueMap,
+    BTreeStringU32Map,
 }
 
 /// Closed cardinality and value family for one Agent protocol field
@@ -444,6 +448,15 @@ impl RuntimeAgentField {
             (RuntimeAgentOperationalType::ProjectGraphSummary, "debug_query_count") => {
                 Self::ProjectGraphSummaryDebugQueryCount
             }
+            (RuntimeAgentOperationalType::ProjectGraphSummary, "entity_kind_counts") => {
+                Self::ProjectGraphSummaryEntityKindCounts
+            }
+            (RuntimeAgentOperationalType::ProjectGraphSummary, "relation_kind_counts") => {
+                Self::ProjectGraphSummaryRelationKindCounts
+            }
+            (RuntimeAgentOperationalType::ProjectGraphSummary, "dependency_edge_kind_counts") => {
+                Self::ProjectGraphSummaryDependencyEdgeKindCounts
+            }
             (RuntimeAgentOperationalType::ProjectGraphEdge, "from_symbol_id") => {
                 Self::ProjectGraphEdgeFromSymbolId
             }
@@ -578,7 +591,10 @@ impl RuntimeAgentField {
             | Self::ProjectGraphSummaryRelationCount
             | Self::ProjectGraphSummaryDependencyEdgeCount
             | Self::ProjectGraphSummaryDynamicControlFlowCount
-            | Self::ProjectGraphSummaryDebugQueryCount => Some(agent_owner(
+            | Self::ProjectGraphSummaryDebugQueryCount
+            | Self::ProjectGraphSummaryEntityKindCounts
+            | Self::ProjectGraphSummaryRelationKindCounts
+            | Self::ProjectGraphSummaryDependencyEdgeKindCounts => Some(agent_owner(
                 RuntimeAgentOperationalType::ProjectGraphSummary,
             )),
             Self::ProjectGraphEdgeFromSymbolId
@@ -612,6 +628,11 @@ impl RuntimeAgentField {
                 RuntimeAgentOperationalType::ObservedObject,
             )),
             Self::ObservationSignals => required(RuntimeAgentFieldValue::AgentValueMap),
+            Self::ProjectGraphSummaryEntityKindCounts
+            | Self::ProjectGraphSummaryRelationKindCounts
+            | Self::ProjectGraphSummaryDependencyEdgeKindCounts => {
+                required(RuntimeAgentFieldValue::BTreeStringU32Map)
+            }
             Self::ObservedObjectId => required(RuntimeAgentFieldValue::Agent(
                 RuntimeAgentOperationalType::ObservedObjectId,
             )),
@@ -810,6 +831,9 @@ impl RuntimeAgentField {
             Self::ProjectGraphSummaryDependencyEdgeCount => "dependency_edge_count",
             Self::ProjectGraphSummaryDynamicControlFlowCount => "dynamic_control_flow_count",
             Self::ProjectGraphSummaryDebugQueryCount => "debug_query_count",
+            Self::ProjectGraphSummaryEntityKindCounts => "entity_kind_counts",
+            Self::ProjectGraphSummaryRelationKindCounts => "relation_kind_counts",
+            Self::ProjectGraphSummaryDependencyEdgeKindCounts => "dependency_edge_kind_counts",
             Self::ProjectGraphEdgeFromSymbolId => "from_symbol_id",
             Self::ProjectGraphEdgeToSymbolId => "to_symbol_id",
             Self::ReferenceFamily => "family",

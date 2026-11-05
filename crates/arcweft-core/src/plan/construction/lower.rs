@@ -2790,6 +2790,20 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
                     RuntimePlanTypeProjection::AgentValue,
                 )
             ),
+            (
+                RuntimeAgentFieldValue::BTreeStringU32Map,
+                RuntimePlanTypeProjection::Map {
+                    kind: crate::entry::RuntimeMapKind::BTree,
+                    key,
+                    value,
+                },
+            ) => matches!(
+                (self.projection(*key)?, self.projection(*value)?),
+                (
+                    RuntimePlanTypeProjection::String,
+                    RuntimePlanTypeProjection::Unsigned(RuntimeUnsignedIntWidth::U32)
+                )
+            ),
             _ => false,
         })
     }

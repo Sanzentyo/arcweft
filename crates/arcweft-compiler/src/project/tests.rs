@@ -2902,6 +2902,31 @@ fn agent_project_graph_preserves_canonical_public_flow_ids_across_modules() {
         compiled.analysis_lease().semantic_index(),
     )
     .expect("typed Agent project graph");
+    let summary = graph
+        .symbols
+        .iter()
+        .find_map(|symbol| symbol.project_summary.as_ref())
+        .expect("one typed project summary");
+    let index = compiled.analysis_lease().semantic_index();
+    assert_eq!(summary.entity_count as usize, index.entities().len());
+    assert_eq!(summary.entity_kind_counts.get("flow"), Some(&2));
+    assert_eq!(summary.entity_kind_counts.get("character"), Some(&2));
+    assert_eq!(summary.entity_kind_counts.get("style"), Some(&2));
+    assert_eq!(
+        summary.entity_kind_counts.values().sum::<u32>(),
+        summary.entity_count
+    );
+    assert_eq!(
+        summary.relation_kind_counts.values().sum::<u32>(),
+        summary.relation_count
+    );
+    assert_eq!(
+        summary.dependency_edge_kind_counts.values().sum::<u32>(),
+        summary.dependency_edge_count
+    );
+    let round_trip: arcweft_agent_protocol::protocol::AgentProjectGraph =
+        serde_json::from_slice(&serde_json::to_vec(&graph).unwrap()).unwrap();
+    assert_eq!(round_trip, graph);
     let flow_symbols = graph
         .symbols
         .iter()

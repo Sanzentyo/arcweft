@@ -1085,7 +1085,7 @@ pub(in crate::app::agent) fn agent_script_project_graph_metadata(
         .symbols
         .iter()
         .find(|symbol| symbol.kind == "project_summary");
-    let project_summary = summary_symbol.and_then(|symbol| symbol.project_summary);
+    let project_summary = summary_symbol.and_then(|symbol| symbol.project_summary.as_ref());
     serde_json::json!({
         "symbol_count": graph.symbols.len(),
         "edge_count": graph.edges.len(),

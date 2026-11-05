@@ -533,66 +533,6 @@ pub(in crate::app::agent) fn agent_source_file_graph_symbol_id(source_key_prefix
     format!("{source_key_prefix}.source_file")
 }
 
-pub(in crate::app::agent) fn agent_dynamic_control_flow_count(
-    project: &ProjectSemanticIndex,
-) -> usize {
-    project
-        .flow_control_summaries()
-        .values()
-        .filter(|summary| summary.has_dynamic_control())
-        .count()
-}
-
-pub(in crate::app::agent) fn agent_project_action_count(project: &ProjectSemanticIndex) -> usize {
-    project
-        .entities()
-        .values()
-        .map(|entity| entity.agent_actions().len())
-        .sum()
-}
-
-pub(in crate::app::agent) fn agent_project_entity_kind_counts(
-    project: &ProjectSemanticIndex,
-) -> BTreeMap<String, usize> {
-    project
-        .entities()
-        .values()
-        .fold(BTreeMap::new(), |mut counts, entity| {
-            *counts
-                .entry(format!("{:?}", entity.ty().kind()))
-                .or_insert(0) += 1;
-            counts
-        })
-}
-
-pub(in crate::app::agent) fn agent_project_relation_kind_counts(
-    project: &ProjectSemanticIndex,
-) -> BTreeMap<String, usize> {
-    project
-        .relations()
-        .iter()
-        .fold(BTreeMap::new(), |mut counts, relation| {
-            *counts
-                .entry(relation.edge_kind().as_str().to_owned())
-                .or_insert(0) += 1;
-            counts
-        })
-}
-
-pub(in crate::app::agent) fn agent_project_dependency_edge_kind_counts(
-    project: &ProjectSemanticIndex,
-) -> BTreeMap<String, usize> {
-    project
-        .dependency_relations()
-        .iter()
-        .fold(BTreeMap::new(), |mut counts, relation| {
-            *counts
-                .entry(relation.edge_kind().as_str().to_owned())
-                .or_insert(0) += 1;
-            counts
-        })
-}
-
 pub(in crate::app::agent) fn agent_project_flow_control_counts_json(
     project: &ProjectSemanticIndex,
 ) -> serde_json::Value {
@@ -885,29 +825,27 @@ pub(in crate::app::agent) fn agent_project_summary_rag_candidate(
     project: &ProjectSemanticIndex,
     source_key_prefix: &str,
 ) -> Result<AgentRagCandidate, String> {
-    let entity_kind_counts = agent_project_entity_kind_counts(project);
-    let relation_kind_counts = agent_project_relation_kind_counts(project);
-    let dependency_edge_kind_counts = agent_project_dependency_edge_kind_counts(project);
+    let summary = arcweft_compiler::agent_project::agent_project_graph_summary(project)
+        .map_err(|error| error.to_string())?;
     let flow_control_counts = agent_project_flow_control_counts_json(project);
-    let agent_action_count = agent_project_action_count(project);
     let body = serde_json::to_string_pretty(&serde_json::json!({
         "schema_version": project.schema_version(),
         "kind": "project_semantic_index",
         "program_hash": project.program_hash().as_str(),
         "bundle_hash": project.bundle_hash().map(arcweft_lang_sema::project_index::BundleHash::as_str),
         "counts": {
-            "entities": project.entities().len(),
+            "entities": summary.entity_count,
             "callables": project.checked_callables().records().len(),
-            "project_callables": project.project_callables().len(),
-            "agent_actions": agent_action_count,
-            "relations": project.relations().len(),
-            "dependency_edges": project.dependency_relations().len(),
-            "dynamic_control_flows": agent_dynamic_control_flow_count(project),
+            "project_callables": summary.project_callable_count,
+            "agent_actions": summary.agent_action_count,
+            "relations": summary.relation_count,
+            "dependency_edges": summary.dependency_edge_count,
+            "dynamic_control_flows": summary.dynamic_control_flow_count,
             "types": project.types().len(),
-            "debug_queries": project.debug_queries().len(),
-            "entity_kinds": entity_kind_counts,
-            "relation_kinds": relation_kind_counts,
-            "dependency_edge_kinds": dependency_edge_kind_counts,
+            "debug_queries": summary.debug_query_count,
+            "entity_kinds": summary.entity_kind_counts,
+            "relation_kinds": summary.relation_kind_counts,
+            "dependency_edge_kinds": summary.dependency_edge_kind_counts,
             "flow_control": flow_control_counts,
         },
     }))
@@ -917,25 +855,10 @@ pub(in crate::app::agent) fn agent_project_summary_rag_candidate(
         "path".to_owned(),
         serde_json::Value::String(path.display().to_string()),
     );
-    metadata.insert(
-        "entity_kind_counts".to_owned(),
-        serde_json::json!(agent_project_entity_kind_counts(project)),
-    );
-    metadata.insert(
-        "relation_kind_counts".to_owned(),
-        serde_json::json!(agent_project_relation_kind_counts(project)),
-    );
-    metadata.insert(
-        "dependency_edge_kind_counts".to_owned(),
-        serde_json::json!(agent_project_dependency_edge_kind_counts(project)),
-    );
+    metadata.insert("project_summary".to_owned(), serde_json::json!(summary));
     metadata.insert(
         "flow_control_counts".to_owned(),
         agent_project_flow_control_counts_json(project),
-    );
-    metadata.insert(
-        "agent_action_count".to_owned(),
-        serde_json::json!(agent_action_count),
     );
     Ok(agent_rag_candidate(
         &format!("{source_key_prefix}.project.summary"),
@@ -986,7 +909,7 @@ pub(in crate::app::agent) fn agent_project_entity_rag_candidate(
         "kind": "project_entity",
         "identity": identity_key,
         "public_id": entity.public_id().as_str(),
-        "entity_kind": format!("{:?}", entity.ty().kind()),
+        "entity_kind": entity.ty().kind().as_str(),
         "value_type": entity.ty().value().map(|ty| format!("{ty:?}")),
         "source": source_anchor_json(entity.source()),
         "semantic_hash": entity.semantic_hash().as_str(),
@@ -997,7 +920,7 @@ pub(in crate::app::agent) fn agent_project_entity_rag_candidate(
     let mut metadata = BTreeMap::new();
     metadata.insert(
         "entity_kind".to_owned(),
-        serde_json::Value::String(format!("{:?}", entity.ty().kind())),
+        serde_json::Value::String(entity.ty().kind().as_str().to_owned()),
     );
     metadata.insert("flow_control".to_owned(), flow_control);
     Ok(agent_rag_candidate(
@@ -1006,9 +929,9 @@ pub(in crate::app::agent) fn agent_project_entity_rag_candidate(
             identity.canonical_key()
         ),
         &format!(
-            "Project entity {} {:?}{}",
+            "Project entity {} {}{}",
             entity.public_id().as_str(),
-            entity.ty().kind(),
+            entity.ty().kind().as_str(),
             agent_flow_control_summary_text(project, identity)
         ),
         ChunkSourceKind::Symbol,

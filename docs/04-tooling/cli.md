@@ -528,6 +528,16 @@ session, and the selected RAG query is recorded for later
 reconstructs the same persisted `RagContextPack` audit from `rag_queries` and
 `rag_query_hits`, reapplying chunk privacy filtering before returning selected
 items.
+
+The project summary graph symbol, persisted Source summary and RAG program
+summary carry the same typed `AgentProjectGraphSummary`. Its
+`entity_kind_counts`, `relation_kind_counts` and `dependency_edge_kind_counts`
+map canonical registry names to checked `u32` counts in sorted order. Empty
+inventories remain empty maps. Agent controller fields expose these as
+`BTreeMap<String, u32>` through the shared Native/AWBC field contract; the CLI
+does not maintain a second semantic histogram or infer kind names from Debug
+formatting. These shapes evolve in place under schema version `1`.
+
 With `native-capture` enabled and a native source or launch profile, the
 controller observes, captures, and reads resources through the same native Agent
 Debug Bus path as `arcw agent observe`. Native capture results return

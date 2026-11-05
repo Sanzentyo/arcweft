@@ -225,6 +225,11 @@ fn project_graph_summary_field(field: &str) -> Option<RuntimeAgentField> {
             RuntimeAgentField::ProjectGraphSummaryDynamicControlFlowCount
         }
         "debug_query_count" => RuntimeAgentField::ProjectGraphSummaryDebugQueryCount,
+        "entity_kind_counts" => RuntimeAgentField::ProjectGraphSummaryEntityKindCounts,
+        "relation_kind_counts" => RuntimeAgentField::ProjectGraphSummaryRelationKindCounts,
+        "dependency_edge_kind_counts" => {
+            RuntimeAgentField::ProjectGraphSummaryDependencyEdgeKindCounts
+        }
         _ => return None,
     })
 }
@@ -259,6 +264,11 @@ fn semantic_field_value(value: RuntimeAgentFieldValue) -> TypeKind {
             kind: MapKind::BTree,
             key: Box::new(TypeKind::AgentValue),
             value: Box::new(TypeKind::AgentValue),
+        },
+        RuntimeAgentFieldValue::BTreeStringU32Map => TypeKind::Map {
+            kind: MapKind::BTree,
+            key: Box::new(TypeKind::String),
+            value: Box::new(TypeKind::U32),
         },
     }
 }

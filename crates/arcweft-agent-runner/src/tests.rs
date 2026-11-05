@@ -808,6 +808,9 @@ fn project_neighbors_test_graph() -> AgentProjectGraph {
                     dependency_edge_count: 0,
                     dynamic_control_flow_count: 1,
                     debug_query_count: 0,
+                    entity_kind_counts: BTreeMap::from([("flow".to_owned(), 1)]),
+                    relation_kind_counts: BTreeMap::from([("flow_goto".to_owned(), 1)]),
+                    dependency_edge_kind_counts: BTreeMap::new(),
                 }),
                 summary: "Project".to_owned(),
             },
@@ -3382,6 +3385,28 @@ fn controller_awbc_resumes_project_graph_neighborhood_fields() {
         Ok(RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::U32(1)))
     ));
     assert!(runtime_record_get(&summary_fields, "has_project_summary").is_err());
+    for (field, expected) in [
+        (
+            "entity_kind_counts",
+            vec![RuntimeValue::Tuple(vec![
+                RuntimeValue::String("flow".to_owned()),
+                RuntimeValue::u32(1),
+            ])],
+        ),
+        (
+            "relation_kind_counts",
+            vec![RuntimeValue::Tuple(vec![
+                RuntimeValue::String("flow_goto".to_owned()),
+                RuntimeValue::u32(1),
+            ])],
+        ),
+        ("dependency_edge_kind_counts", vec![]),
+    ] {
+        assert_eq!(
+            runtime_record_get(project_summary_fields, field).unwrap(),
+            &RuntimeValue::Seq(arcweft_core::value::RuntimeSeq::values(expected))
+        );
+    }
     assert!(matches!(
         report.final_status,
         Some(FlowFiberStatus::Done(FlowExit::Return(_)))

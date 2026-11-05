@@ -6821,6 +6821,23 @@ fn agent_field_value_destination_matches(
             Some(AwbcRuntimeTypeShape::Dynamic) => true,
             _ => false,
         },
+        RuntimeAgentFieldValue::BTreeStringU32Map => match destination {
+            Some(AwbcRuntimeTypeShape::Map {
+                kind: crate::entry::RuntimeMapKind::BTree,
+                key,
+                value,
+            }) => {
+                matches!(
+                    runtime_shape(program, *key),
+                    Some(AwbcRuntimeTypeShape::String)
+                ) && matches!(
+                    runtime_shape(program, *value),
+                    Some(AwbcRuntimeTypeShape::UInt(AwbcUnsignedIntKind::U32))
+                )
+            }
+            Some(AwbcRuntimeTypeShape::Dynamic) => true,
+            _ => false,
+        },
         RuntimeAgentFieldValue::AgentValueMap => match destination {
             Some(AwbcRuntimeTypeShape::Map { key, value, .. }) => {
                 matches!(

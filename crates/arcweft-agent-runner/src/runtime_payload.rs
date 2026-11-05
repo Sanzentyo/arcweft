@@ -322,7 +322,7 @@ pub(crate) fn runtime_project_graph_symbol_payload(
         agent_field(
             RuntimeAgentField::ProjectGraphSymbolProjectSummary,
             runtime_optional(
-                symbol.project_summary,
+                symbol.project_summary.as_ref(),
                 runtime_project_graph_summary_payload,
             ),
         ),
@@ -372,7 +372,7 @@ fn runtime_project_flow_control_summary_payload(
     ])
 }
 
-fn runtime_project_graph_summary_payload(summary: AgentProjectGraphSummary) -> RuntimeValue {
+fn runtime_project_graph_summary_payload(summary: &AgentProjectGraphSummary) -> RuntimeValue {
     runtime_record(vec![
         agent_field(
             RuntimeAgentField::ProjectGraphSummaryEntityCount,
@@ -402,7 +402,33 @@ fn runtime_project_graph_summary_payload(summary: AgentProjectGraphSummary) -> R
             RuntimeAgentField::ProjectGraphSummaryDebugQueryCount,
             RuntimeValue::u32(summary.debug_query_count),
         ),
+        agent_field(
+            RuntimeAgentField::ProjectGraphSummaryEntityKindCounts,
+            runtime_kind_counts_payload(&summary.entity_kind_counts),
+        ),
+        agent_field(
+            RuntimeAgentField::ProjectGraphSummaryRelationKindCounts,
+            runtime_kind_counts_payload(&summary.relation_kind_counts),
+        ),
+        agent_field(
+            RuntimeAgentField::ProjectGraphSummaryDependencyEdgeKindCounts,
+            runtime_kind_counts_payload(&summary.dependency_edge_kind_counts),
+        ),
     ])
+}
+
+fn runtime_kind_counts_payload(counts: &BTreeMap<String, u32>) -> RuntimeValue {
+    RuntimeValue::Seq(arcweft_core::value::RuntimeSeq::values(
+        counts
+            .iter()
+            .map(|(kind, count)| {
+                RuntimeValue::Tuple(vec![
+                    RuntimeValue::String(kind.clone()),
+                    RuntimeValue::u32(*count),
+                ])
+            })
+            .collect(),
+    ))
 }
 
 fn runtime_project_graph_edge_payload(edge: &AgentProjectGraphEdge) -> RuntimeValue {
