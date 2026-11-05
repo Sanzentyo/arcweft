@@ -855,6 +855,16 @@ fn registry_write_retains_a_core_facing_static_key_with_unicode_components() {
             _ => None,
         })
         .expect("checked registry write");
+    let project = world.project.analysis_view().unwrap();
+    let module = project
+        .module(&arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root())
+        .unwrap();
+    let target = module.resolve_expr(write.address().target()).unwrap();
+    let arcweft_lang_hir::expr::HirExprKind::LifetimePath(path) = target.kind() else {
+        panic!("source registry target")
+    };
+    let path = path.as_resolved().unwrap();
+    assert!(std::ptr::eq(write.address().key(), path.key().as_ref()));
     assert_eq!(
         write.address().key().scope(),
         &arcweft_id::LifetimeScopeKind::Flow

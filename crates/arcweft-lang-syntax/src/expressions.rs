@@ -1095,14 +1095,14 @@ pub enum SyntaxPlaceholderKind {
 /// Runtime lifetime-registry path retained through typed recovery.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SyntaxLifetimeRegistryPath {
-    scope: SyntaxLifetimeRegistryScope,
+    scope: Result<arcweft_id::LifetimeScopeKind, SyntaxNameIssue>,
     segments: Box<[Result<SyntaxName, SyntaxNameIssue>]>,
     optional: bool,
 }
 
 impl SyntaxLifetimeRegistryPath {
     pub(crate) fn new(
-        scope: SyntaxLifetimeRegistryScope,
+        scope: Result<arcweft_id::LifetimeScopeKind, SyntaxNameIssue>,
         segments: Vec<Result<SyntaxName, SyntaxNameIssue>>,
         optional: bool,
     ) -> Self {
@@ -1114,8 +1114,8 @@ impl SyntaxLifetimeRegistryPath {
     }
 
     /// Scope selected by the lifetime token transaction.
-    pub const fn scope(&self) -> &SyntaxLifetimeRegistryScope {
-        &self.scope
+    pub const fn scope(&self) -> Result<&arcweft_id::LifetimeScopeKind, &SyntaxNameIssue> {
+        self.scope.as_ref()
     }
 
     /// Ordered registry-key segments, including typed recovered names.
@@ -1130,47 +1130,7 @@ impl SyntaxLifetimeRegistryPath {
 
     /// Whether the recognized lifetime-path family contains typed recovery.
     pub fn has_recovery(&self) -> bool {
-        self.scope.has_recovery() || self.segments.iter().any(Result::is_err)
-    }
-}
-
-/// Runtime registry scope selected before HIR lifetime-access checking.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum SyntaxLifetimeRegistryScope {
-    Frame,
-    Tick,
-    Cue,
-    Line,
-    Scene,
-    Flow,
-    Session,
-    Global,
-    Persistent,
-    Named(SyntaxName),
-    Recovered(SyntaxNameIssue),
-}
-
-impl SyntaxLifetimeRegistryScope {
-    pub(crate) fn from_name(name: Result<SyntaxName, SyntaxNameIssue>) -> Self {
-        match name {
-            Ok(name) => match name.as_str() {
-                "frame" => Self::Frame,
-                "tick" => Self::Tick,
-                "cue" => Self::Cue,
-                "line" => Self::Line,
-                "scene" => Self::Scene,
-                "flow" => Self::Flow,
-                "session" => Self::Session,
-                "global" => Self::Global,
-                "persistent" => Self::Persistent,
-                _ => Self::Named(name),
-            },
-            Err(issue) => Self::Recovered(issue),
-        }
-    }
-
-    pub const fn has_recovery(&self) -> bool {
-        matches!(self, Self::Recovered(_))
+        self.scope.is_err() || self.segments.iter().any(Result::is_err)
     }
 }
 

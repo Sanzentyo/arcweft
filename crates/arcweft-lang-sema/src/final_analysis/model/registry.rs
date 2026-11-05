@@ -1,6 +1,6 @@
 //! Statement-owned registry addresses are metadata, never ordinary values.
 
-use arcweft_id::{DeclarationName, LifetimeRegistryKey, LifetimeScopeKind};
+use arcweft_id::LifetimeRegistryKey;
 use std::sync::Arc;
 
 use arcweft_lang_hir::{
@@ -20,7 +20,7 @@ use crate::{effects::EffectId, types::TypeKind};
 pub struct CheckedRegistryAddress {
     statement: StmtId,
     target: ExprId,
-    key: LifetimeRegistryKey,
+    key: Arc<LifetimeRegistryKey>,
     effect: EffectId,
 }
 
@@ -50,19 +50,7 @@ impl CheckedRegistryAddress {
                 target: *target,
             },
         )?;
-        let invalid = |source| FinalSemanticAnalysisError::RegistryWriteIdentity {
-            owner,
-            target: *target,
-            source,
-        };
-        let scope = LifetimeScopeKind::parse(path.scope().as_str()).map_err(invalid)?;
-        let segments = path
-            .segments()
-            .iter()
-            .map(|segment| DeclarationName::try_new(segment.as_str()))
-            .collect::<Result<Box<[_]>, _>>()
-            .map_err(invalid)?;
-        let key = LifetimeRegistryKey::new(scope, segments);
+        let key = Arc::clone(path.key());
         let effect = EffectId::state_write(&key);
         Ok(Self {
             statement: owner,
@@ -78,18 +66,11 @@ impl CheckedRegistryAddress {
     pub const fn target(&self) -> ExprId {
         self.target
     }
-    pub const fn key(&self) -> &LifetimeRegistryKey {
+    pub fn key(&self) -> &LifetimeRegistryKey {
         &self.key
     }
     pub fn matches_path(&self, path: &HirLifetimeRegistryPath) -> bool {
-        !path.optional()
-            && path.scope().as_str() == self.key.scope().as_str()
-            && path.segments().len() == self.key.segments().len()
-            && path
-                .segments()
-                .iter()
-                .zip(self.key.segments())
-                .all(|(source, key)| source.as_str() == key.as_str())
+        !path.optional() && self.key == *path.key()
     }
     pub const fn effect(&self) -> &EffectId {
         &self.effect

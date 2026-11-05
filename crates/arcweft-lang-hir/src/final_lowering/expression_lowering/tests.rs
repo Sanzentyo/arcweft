@@ -23,8 +23,7 @@ use crate::identity::{
 };
 use crate::leaf::{
     HirDurationLiteral, HirIdRefIssue, HirIntegerIssue, HirIntegerLiteral, HirIntegerRadix,
-    HirIntegerSuffix, HirLifetimeRegistryScope, HirLiteral, HirNumericSequenceRecovery,
-    HirPathSegment,
+    HirIntegerSuffix, HirLiteral, HirNumericSequenceRecovery, HirPathSegment,
 };
 use crate::lowering::{HirLowerFailure, HirModuleKey, LoweringRequest};
 use crate::module::{HirModule, HirModuleStatus};
@@ -669,7 +668,7 @@ fn attached_e01_through_e07_leaf_matrix_uses_shared_final_payloads() {
     assert!(matches!(
         expression(&module, owners[3]).kind(),
         HirExprKind::LifetimePath(HirLifetimePathValue::Resolved(path))
-            if matches!(path.scope(), HirLifetimeRegistryScope::Line)
+            if matches!(path.scope(), arcweft_id::LifetimeScopeKind::Line)
                 && path.segments().len() == 1
                 && path.optional()
     ));
@@ -3169,6 +3168,44 @@ fn path_segment_limit_is_inclusive_and_one_over_publishes_nothing() {
     assert_eq!(transaction.diagnostics.len(), diagnostic_count);
     assert!(transaction.finish(&mut database).is_err());
     assert!(database.current(&module_key(&one_over)).is_none());
+}
+
+#[test]
+fn attached_lifetime_roots_select_scopes_without_granting_registry_members() {
+    use arcweft_id::LifetimeScopeKind;
+
+    let parsed = parsed_source(
+        "scope-selectors",
+        &[
+            "'flow".into(),
+            "'章".into(),
+            "'flow?".into(),
+            "'章.既読".into(),
+        ],
+    );
+    let (module, owners, _) = lower_and_publish(&parsed);
+    let paths = owners
+        .iter()
+        .map(|&owner| {
+            let HirExprKind::LifetimePath(HirLifetimePathValue::Resolved(path)) =
+                expression(&module, owner).kind()
+            else {
+                panic!("attached lifetime path")
+            };
+            path
+        })
+        .collect::<Vec<_>>();
+    let [flow, named, optional, member] = paths.as_slice() else {
+        panic!("four paths")
+    };
+    assert_eq!(flow.scope_selector(), Some(&LifetimeScopeKind::Flow));
+    let named_scope = LifetimeScopeKind::parse("章").unwrap();
+    assert_eq!(named.scope_selector(), Some(&named_scope));
+    assert_eq!(optional.scope(), &LifetimeScopeKind::Flow);
+    assert!(optional.optional() && optional.scope_selector().is_none());
+    assert_eq!(member.scope(), &named_scope);
+    assert_eq!(member.segments()[0].as_str(), "既読");
+    assert!(member.scope_selector().is_none());
 }
 
 #[test]

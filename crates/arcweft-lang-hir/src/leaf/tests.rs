@@ -270,38 +270,48 @@ fn type_regions_bind_elision_to_the_exact_type_owner() {
 #[test]
 fn runtime_registry_paths_remain_separate_from_type_regions() {
     let builtin_scopes = [
-        HirLifetimeRegistryScope::Frame,
-        HirLifetimeRegistryScope::Tick,
-        HirLifetimeRegistryScope::Cue,
-        HirLifetimeRegistryScope::Line,
-        HirLifetimeRegistryScope::Scene,
-        HirLifetimeRegistryScope::Flow,
-        HirLifetimeRegistryScope::Session,
-        HirLifetimeRegistryScope::Global,
-        HirLifetimeRegistryScope::Persistent,
+        LifetimeScopeKind::Frame,
+        LifetimeScopeKind::Tick,
+        LifetimeScopeKind::Cue,
+        LifetimeScopeKind::Line,
+        LifetimeScopeKind::Scene,
+        LifetimeScopeKind::Flow,
+        LifetimeScopeKind::Session,
+        LifetimeScopeKind::Global,
+        LifetimeScopeKind::Persistent,
     ];
-    for scope in builtin_scopes {
-        let path = HirLifetimeRegistryPath::try_new(scope.clone(), Box::new([]), false);
+    let named_scope = LifetimeScopeKind::parse("inventory").unwrap();
+    for scope in builtin_scopes.into_iter().chain([named_scope.clone()]) {
+        let key = LifetimeRegistryKey::new(scope.clone(), Box::new([]));
+        let path = HirLifetimeRegistryPath::new(key.clone(), false);
         assert_eq!(path.scope(), &scope);
-        assert!(path.segments().is_empty());
-        assert!(!path.optional());
+        assert_eq!(path.scope_selector(), Some(&scope));
+        assert!(
+            HirLifetimeRegistryPath::new(key, true)
+                .scope_selector()
+                .is_none()
+        );
     }
 
-    let named_scope = HirLifetimeRegistryScope::Named(name("inventory"));
-    let path = HirLifetimeRegistryPath::try_new(
-        named_scope.clone(),
-        vec![name("party"), name("gold")].into_boxed_slice(),
-        true,
+    let path = HirLifetimeRegistryPath::new(
+        LifetimeRegistryKey::new(
+            named_scope.clone(),
+            Box::new([
+                DeclarationName::try_new("party").unwrap(),
+                DeclarationName::try_new("gold").unwrap(),
+            ]),
+        ),
+        false,
     );
     assert_eq!(path.scope(), &named_scope);
     assert_eq!(
         path.segments()
             .iter()
-            .map(HirName::as_str)
+            .map(DeclarationName::as_str)
             .collect::<Vec<_>>(),
         ["party", "gold"]
     );
-    assert!(path.optional());
+    assert!(path.scope_selector().is_none());
 
     let modes = [
         HirLifetimeRegistryAccessMode::Read,

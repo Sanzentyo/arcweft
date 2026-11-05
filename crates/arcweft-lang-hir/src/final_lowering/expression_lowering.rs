@@ -11,6 +11,7 @@ pub(crate) use dialogue::CandidateCursor;
 
 use std::collections::BTreeSet;
 
+use arcweft_id::{DeclarationName, LifetimeRegistryKey, LifetimeScopeKind};
 use arcweft_lang_syntax::attachment::node::MissingExpressionKind;
 use arcweft_lang_syntax::attachment::{
     AstNode, AttachedAwaitBranch, AttachedAwaitBranchBody, AttachedExpressionChild,
@@ -23,10 +24,9 @@ use arcweft_lang_syntax::expressions::{
     SyntaxCallCalleeProjection, SyntaxCallProjection, SyntaxCallTypeApplicationSpelling,
     SyntaxCallTypeApplicationTerminator, SyntaxCallTypeArgumentProjection, SyntaxCallTypeChildRole,
     SyntaxComputationBlockKind, SyntaxExpressionSlot, SyntaxLifetimeRegistryPath,
-    SyntaxLifetimeRegistryScope, SyntaxMatchArmPart, SyntaxMatchBodyTerminator,
-    SyntaxMatchProjection, SyntaxNumericSequence, SyntaxNumericSequenceRecovery,
-    SyntaxPlaceholderKind, SyntaxPostfixBracketProjection, SyntaxRecordField,
-    SyntaxRequiredTokenState, SyntaxSelectedMember, SyntaxUnaryOperator,
+    SyntaxMatchArmPart, SyntaxMatchBodyTerminator, SyntaxMatchProjection, SyntaxNumericSequence,
+    SyntaxNumericSequenceRecovery, SyntaxPlaceholderKind, SyntaxPostfixBracketProjection,
+    SyntaxRecordField, SyntaxRequiredTokenState, SyntaxSelectedMember, SyntaxUnaryOperator,
 };
 use arcweft_lang_syntax::grammar::SyntaxAwaitBranchKind;
 use arcweft_lang_syntax::name::SyntaxNameIssue;
@@ -53,8 +53,8 @@ use crate::identity::{
 };
 use crate::leaf::{
     HirIntegerLiteral, HirLifetimePathRecovery, HirLifetimePathValue, HirLifetimeRegistryIssue,
-    HirLifetimeRegistryPath, HirLifetimeRegistryScope, HirNumericSequence,
-    HirNumericSequenceElement, HirNumericSequenceRecovery, HirPathValue, HirShortVariantName,
+    HirLifetimeRegistryPath, HirNumericSequence, HirNumericSequenceElement,
+    HirNumericSequenceRecovery, HirPathValue, HirShortVariantName,
 };
 use crate::lowering::{HirInvariantFailure, HirLimitError, HirLowerFailure, HirLoweringCheckpoint};
 use crate::scope::{CaptureAccess, HirPatternBindingPolicy, HirScope, HirScopeKind, HirScopeOwner};
@@ -2492,36 +2492,15 @@ fn project_lifetime_path(
         .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
 
     let (scope, scope_present, mut recovery, mut semantic_bytes) = match value.scope() {
-        SyntaxLifetimeRegistryScope::Frame => {
-            (Some(HirLifetimeRegistryScope::Frame), true, None, 0)
+        Ok(scope) => {
+            let bytes = match scope {
+                LifetimeScopeKind::Named(name) => name.as_str().len(),
+                _ => 0,
+            };
+            require_limit(HirLimit::NameBytes, bytes)?;
+            (Some(scope), true, None, bytes)
         }
-        SyntaxLifetimeRegistryScope::Tick => (Some(HirLifetimeRegistryScope::Tick), true, None, 0),
-        SyntaxLifetimeRegistryScope::Cue => (Some(HirLifetimeRegistryScope::Cue), true, None, 0),
-        SyntaxLifetimeRegistryScope::Line => (Some(HirLifetimeRegistryScope::Line), true, None, 0),
-        SyntaxLifetimeRegistryScope::Scene => {
-            (Some(HirLifetimeRegistryScope::Scene), true, None, 0)
-        }
-        SyntaxLifetimeRegistryScope::Flow => (Some(HirLifetimeRegistryScope::Flow), true, None, 0),
-        SyntaxLifetimeRegistryScope::Session => {
-            (Some(HirLifetimeRegistryScope::Session), true, None, 0)
-        }
-        SyntaxLifetimeRegistryScope::Global => {
-            (Some(HirLifetimeRegistryScope::Global), true, None, 0)
-        }
-        SyntaxLifetimeRegistryScope::Persistent => {
-            (Some(HirLifetimeRegistryScope::Persistent), true, None, 0)
-        }
-        SyntaxLifetimeRegistryScope::Named(scope) => {
-            let scope = name(scope)?;
-            let bytes = scope.as_str().len();
-            (
-                Some(HirLifetimeRegistryScope::Named(scope)),
-                true,
-                None,
-                bytes,
-            )
-        }
-        SyntaxLifetimeRegistryScope::Recovered(issue) => {
+        Err(issue) => {
             require_attempted_name_limit(issue)?;
             let bytes = attempted_name_bytes(issue);
             let (present, issue) = match issue {
@@ -2535,7 +2514,6 @@ fn project_lifetime_path(
         }
     };
 
-    let mut segments = Vec::with_capacity(value.segments().len());
     for (position, segment) in value.segments().iter().enumerate() {
         let bytes = match segment {
             Ok(name) => name.as_str().len(),
@@ -2545,15 +2523,11 @@ fn project_lifetime_path(
         semantic_bytes = semantic_bytes
             .checked_add(bytes)
             .ok_or_else(|| limit_overflow(HirLimit::RegistrySemanticBytes))?;
-        match segment {
-            Ok(segment) => segments.push(name(segment)?),
-            Err(_) if recovery.is_none() => {
-                recovery = Some(HirLifetimeRegistryIssue::InvalidKeySegment {
-                    ordinal: u32::try_from(position)
-                        .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
-                });
-            }
-            Err(_) => {}
+        if segment.is_err() && recovery.is_none() {
+            recovery = Some(HirLifetimeRegistryIssue::InvalidKeySegment {
+                ordinal: u32::try_from(position)
+                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
+            });
         }
     }
     require_limit(HirLimit::RegistrySemanticBytes, semantic_bytes)?;
@@ -2563,10 +2537,24 @@ fn project_lifetime_path(
             HirLifetimePathRecovery::new(scope_present, segment_count, value.is_optional(), issue),
         ));
     }
+    // Admit the complete path budget before copying any owned key data.
+    let segments = value
+        .segments()
+        .iter()
+        .map(|segment| {
+            let segment = segment
+                .as_ref()
+                .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+            DeclarationName::try_new(segment.as_str())
+                .map_err(|_| HirInvariantFailure::InvalidArenaCommit)
+        })
+        .collect::<Result<Box<[_]>, _>>()?;
+    let scope = scope
+        .ok_or(HirInvariantFailure::InvalidArenaCommit)?
+        .clone();
     Ok(HirLifetimePathValue::Resolved(
-        HirLifetimeRegistryPath::try_new(
-            scope.ok_or(HirInvariantFailure::InvalidArenaCommit)?,
-            segments.into_boxed_slice(),
+        HirLifetimeRegistryPath::new(
+            LifetimeRegistryKey::new(scope, segments),
             value.is_optional(),
         ),
     ))

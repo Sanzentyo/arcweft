@@ -31,10 +31,10 @@ use crate::identity::{
 use crate::leaf::{
     HirEntityReference, HirIdRef, HirIdRefInvariantError, HirIdRefIssue, HirIdRefRecovery,
     HirIdRefShape, HirIdRefValue, HirLifetimePathRecovery, HirLifetimePathValue,
-    HirLifetimeRegistryIssue, HirLifetimeRegistryPath, HirLifetimeRegistryScope, HirLiteral,
-    HirLiteralIssue, HirName, HirNameInvariantError, HirNumericSequence,
-    HirNumericSequenceRecovery, HirPath, HirPathIssue, HirPathRecovery, HirPathRoot,
-    HirPathSegment, HirPathValue, HirShortVariantName, HirStringIssue, HirStringLiteral,
+    HirLifetimeRegistryIssue, HirLifetimeRegistryPath, HirLiteral, HirLiteralIssue, HirName,
+    HirNameInvariantError, HirNumericSequence, HirNumericSequenceRecovery, HirPath, HirPathIssue,
+    HirPathRecovery, HirPathRoot, HirPathSegment, HirPathValue, HirShortVariantName,
+    HirStringIssue, HirStringLiteral,
 };
 use crate::source_index::{
     HirCallArgumentSourcePart, HirExprSourceRole, HirIdRefSourcePart, HirMatchArmSourcePart,
@@ -877,9 +877,11 @@ fn expression_resolved_leaf_rejects_leaf_poison() {
     let entity = HirIdRefValue::Resolved(HirIdRef::absolute(
         HirEntityReference::try_new("scene.entry".into()).expect("valid entity reference"),
     ));
-    let lifetime = HirLifetimePathValue::Resolved(HirLifetimeRegistryPath::try_new(
-        HirLifetimeRegistryScope::Frame,
-        Box::new([name("value")]),
+    let lifetime = HirLifetimePathValue::Resolved(HirLifetimeRegistryPath::new(
+        arcweft_id::LifetimeRegistryKey::new(
+            arcweft_id::LifetimeScopeKind::Frame,
+            Box::new([arcweft_id::DeclarationName::try_new("value").unwrap()]),
+        ),
         false,
     ));
     let path = HirPathValue::Resolved(
@@ -1012,9 +1014,11 @@ fn expression_source_roles_cover_the_closed_thirty_six_family_matrix() {
     let entity = HirIdRef::absolute(
         HirEntityReference::try_new("scene.entry".into()).expect("test entity reference"),
     );
-    let lifetime = HirLifetimeRegistryPath::try_new(
-        HirLifetimeRegistryScope::Frame,
-        Box::new([name("value")]),
+    let lifetime = HirLifetimeRegistryPath::new(
+        arcweft_id::LifetimeRegistryKey::new(
+            arcweft_id::LifetimeScopeKind::Frame,
+            Box::new([arcweft_id::DeclarationName::try_new("value").unwrap()]),
+        ),
         false,
     );
     let call = clean_call(
@@ -1569,9 +1573,11 @@ fn child_edges_have_independent_expected_children_and_role_families_for_every_va
     let entity = HirIdRefValue::Resolved(HirIdRef::absolute(
         HirEntityReference::try_new("scene.entry".into()).expect("test entity reference"),
     ));
-    let lifetime = HirLifetimePathValue::Resolved(HirLifetimeRegistryPath::try_new(
-        HirLifetimeRegistryScope::Frame,
-        Box::new([name("value")]),
+    let lifetime = HirLifetimePathValue::Resolved(HirLifetimeRegistryPath::new(
+        arcweft_id::LifetimeRegistryKey::new(
+            arcweft_id::LifetimeScopeKind::Frame,
+            Box::new([arcweft_id::DeclarationName::try_new("value").unwrap()]),
+        ),
         false,
     ));
     let path = HirPathValue::Resolved(

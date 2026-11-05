@@ -2,7 +2,6 @@
 
 use crate::expressions::{
     ExpressionComponentRole, PendingExpressionComponent, SyntaxLifetimeRegistryPath,
-    SyntaxLifetimeRegistryScope,
 };
 use crate::grammar::kinds::SyntaxKind;
 use crate::name::{SyntaxName, SyntaxNameIssue};
@@ -48,7 +47,9 @@ pub(in crate::parser) fn typed_lifetime_registry_path(
         ExpressionComponentRole::LifetimeScope,
         token_local_range(token, 0, scope_end),
     )];
-    let scope = SyntaxLifetimeRegistryScope::from_name(SyntaxName::try_new(scope_spelling));
+    let scope = SyntaxName::try_new(scope_spelling)
+        .map(arcweft_id::DeclarationName::from)
+        .map(arcweft_id::LifetimeScopeKind::from);
 
     let mut segments = Vec::new();
     let mut segment_start = scope_end;

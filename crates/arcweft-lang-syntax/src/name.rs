@@ -40,6 +40,13 @@ impl SyntaxName {
     }
 }
 
+impl From<SyntaxName> for arcweft_id::DeclarationName {
+    fn from(name: SyntaxName) -> Self {
+        Self::try_new(name.0.into_string())
+            .expect("a syntax identifier uses the declaration identifier grammar")
+    }
+}
+
 pub(crate) fn is_identifier_start(character: char) -> bool {
     character == '_' || character.is_alphabetic()
 }

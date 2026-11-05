@@ -4,8 +4,7 @@ use arcweft_lang_syntax::attachment::source_file::{
     AttachedPath, AttachedPathRoot, AttachedPathSegmentKind,
 };
 use arcweft_lang_syntax::expressions::{
-    SyntaxLifetimeRegistryPath, SyntaxLifetimeRegistryScope, SyntaxNumericSequence,
-    SyntaxNumericSequenceRecovery,
+    SyntaxLifetimeRegistryPath, SyntaxNumericSequence, SyntaxNumericSequenceRecovery,
 };
 use arcweft_lang_syntax::literal::{SyntaxLiteralIssue, SyntaxLiteralSyntax, SyntaxLiteralValue};
 use arcweft_lang_syntax::name::SyntaxNameIssue;
@@ -13,10 +12,9 @@ use arcweft_lang_syntax::name::SyntaxNameIssue;
 use crate::final_lowering::literal_projection::{integer_issue, integer_literal, integer_suffix};
 use crate::leaf::{
     HirCharacterLiteral, HirDurationLiteral, HirFloatLiteral, HirIdRef, HirIdRefShape,
-    HirIdRefValue, HirIntegerLiteral, HirLifetimePathValue, HirLifetimeRegistryIssue,
-    HirLifetimeRegistryScope, HirLiteral, HirNumericSequence, HirNumericSequenceRecovery, HirPath,
-    HirPathIssue, HirPathRoot, HirPathSegment, HirPathValue, HirShortVariantName, HirStringLiteral,
-    HirUnitNumberLiteral,
+    HirIdRefValue, HirIntegerLiteral, HirLifetimePathValue, HirLifetimeRegistryIssue, HirLiteral,
+    HirNumericSequence, HirNumericSequenceRecovery, HirPath, HirPathIssue, HirPathRoot,
+    HirPathSegment, HirPathValue, HirShortVariantName, HirStringLiteral, HirUnitNumberLiteral,
 };
 
 pub(super) fn numeric_sequence_matches(
@@ -200,7 +198,7 @@ pub(super) fn lifetime_projection_matches(
         HirLifetimePathValue::Resolved(actual) => {
             !expected.has_recovery()
                 && actual.optional() == expected.is_optional()
-                && lifetime_scope_matches(actual.scope(), expected.scope())
+                && expected.scope().is_ok_and(|scope| scope == actual.scope())
                 && actual.segments().len() == expected.segments().len()
                 && actual
                     .segments()
@@ -213,7 +211,7 @@ pub(super) fn lifetime_projection_matches(
                     })
         }
         HirLifetimePathValue::Recovered(actual) => {
-            actual.scope_present() == lifetime_scope_present(expected.scope())
+            actual.scope_present() != matches!(expected.scope(), Err(SyntaxNameIssue::Missing))
                 && usize::try_from(actual.segment_count()).ok() == Some(expected.segments().len())
                 && actual.optional_marker() == expected.is_optional()
                 && expected_lifetime_issue(expected).is_some_and(|issue| issue == actual.issue())
@@ -221,62 +219,10 @@ pub(super) fn lifetime_projection_matches(
     }
 }
 
-fn lifetime_scope_matches(
-    actual: &HirLifetimeRegistryScope,
-    expected: &SyntaxLifetimeRegistryScope,
-) -> bool {
-    matches!(
-        (actual, expected),
-        (
-            HirLifetimeRegistryScope::Frame,
-            SyntaxLifetimeRegistryScope::Frame
-        ) | (
-            HirLifetimeRegistryScope::Tick,
-            SyntaxLifetimeRegistryScope::Tick
-        ) | (
-            HirLifetimeRegistryScope::Cue,
-            SyntaxLifetimeRegistryScope::Cue
-        ) | (
-            HirLifetimeRegistryScope::Line,
-            SyntaxLifetimeRegistryScope::Line
-        ) | (
-            HirLifetimeRegistryScope::Scene,
-            SyntaxLifetimeRegistryScope::Scene
-        ) | (
-            HirLifetimeRegistryScope::Flow,
-            SyntaxLifetimeRegistryScope::Flow
-        ) | (
-            HirLifetimeRegistryScope::Session,
-            SyntaxLifetimeRegistryScope::Session
-        ) | (
-            HirLifetimeRegistryScope::Global,
-            SyntaxLifetimeRegistryScope::Global
-        ) | (
-            HirLifetimeRegistryScope::Persistent,
-            SyntaxLifetimeRegistryScope::Persistent
-        )
-    ) || matches!(
-        (actual, expected),
-        (HirLifetimeRegistryScope::Named(actual), SyntaxLifetimeRegistryScope::Named(expected))
-            if actual.as_str() == expected.as_str()
-    )
-}
-
-fn lifetime_scope_present(scope: &SyntaxLifetimeRegistryScope) -> bool {
-    !matches!(
-        scope,
-        SyntaxLifetimeRegistryScope::Recovered(SyntaxNameIssue::Missing)
-    )
-}
-
 fn expected_lifetime_issue(path: &SyntaxLifetimeRegistryPath) -> Option<HirLifetimeRegistryIssue> {
     match path.scope() {
-        SyntaxLifetimeRegistryScope::Recovered(SyntaxNameIssue::Missing) => {
-            Some(HirLifetimeRegistryIssue::MissingScope)
-        }
-        SyntaxLifetimeRegistryScope::Recovered(_) => {
-            Some(HirLifetimeRegistryIssue::InvalidNamedScope)
-        }
+        Err(SyntaxNameIssue::Missing) => Some(HirLifetimeRegistryIssue::MissingScope),
+        Err(_) => Some(HirLifetimeRegistryIssue::InvalidNamedScope),
         _ => path
             .segments()
             .iter()

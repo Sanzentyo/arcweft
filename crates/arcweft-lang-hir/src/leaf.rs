@@ -6,8 +6,11 @@
 //! reparsing source text.
 
 use crate::identity::{HirLimit, HirSnapshotId, ScopeId, SyntheticKey, SyntheticOwner, TypeId};
-use arcweft_id::{DeclarationIdentityFamily, PublicId};
+use arcweft_id::{
+    DeclarationIdentityFamily, DeclarationName, LifetimeRegistryKey, LifetimeScopeKind, PublicId,
+};
 use arcweft_lang_syntax::cst::is_identifier;
+use std::sync::Arc;
 use thiserror::Error;
 
 /// One parser-validated Arcweft identifier without source trivia.
@@ -727,70 +730,43 @@ pub enum HirTypeRegionIssue {
 /// Runtime lifetime-registry path, separate from type-region identity.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct HirLifetimeRegistryPath {
-    scope: HirLifetimeRegistryScope,
-    segments: Box<[HirName]>,
+    key: Arc<LifetimeRegistryKey>,
     optional: bool,
 }
 
 impl HirLifetimeRegistryPath {
-    pub(crate) fn try_new(
-        scope: HirLifetimeRegistryScope,
-        segments: Box<[HirName]>,
-        optional: bool,
-    ) -> Self {
+    pub(crate) fn new(key: LifetimeRegistryKey, optional: bool) -> Self {
         Self {
-            scope,
-            segments,
+            key: Arc::new(key),
             optional,
         }
     }
 
+    /// Static key admitted from the attached token. Sharing it grants no
+    /// authority to access a particular activation of its scope.
+    pub const fn key(&self) -> &Arc<LifetimeRegistryKey> {
+        &self.key
+    }
+
     /// Returns the registry scope.
-    pub const fn scope(&self) -> &HirLifetimeRegistryScope {
-        &self.scope
+    pub fn scope(&self) -> &LifetimeScopeKind {
+        self.key.scope()
     }
 
     /// Returns the ordered registry key segments.
-    pub fn segments(&self) -> &[HirName] {
-        &self.segments
+    pub fn segments(&self) -> &[DeclarationName] {
+        self.key.segments()
     }
 
     /// Returns whether a read treats a missing key as optional.
     pub const fn optional(&self) -> bool {
         self.optional
     }
-}
 
-/// Runtime registry scope.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum HirLifetimeRegistryScope {
-    Frame,
-    Tick,
-    Cue,
-    Line,
-    Scene,
-    Flow,
-    Session,
-    Global,
-    Persistent,
-    Named(HirName),
-}
-
-impl HirLifetimeRegistryScope {
-    /// Authored selector name. Final semantic identity is admitted separately.
-    pub fn as_str(&self) -> &str {
-        match self {
-            Self::Frame => "frame",
-            Self::Tick => "tick",
-            Self::Cue => "cue",
-            Self::Line => "line",
-            Self::Scene => "scene",
-            Self::Flow => "flow",
-            Self::Session => "session",
-            Self::Global => "global",
-            Self::Persistent => "persistent",
-            Self::Named(name) => name.as_str(),
-        }
+    /// Selects the scope itself, without a registry member or optional read.
+    /// An owning operation must still admit this selector in its own context.
+    pub fn scope_selector(&self) -> Option<&LifetimeScopeKind> {
+        (!self.optional && self.segments().is_empty()).then(|| self.scope())
     }
 }
 

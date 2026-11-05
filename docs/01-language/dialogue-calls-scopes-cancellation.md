@@ -391,6 +391,13 @@ registered, while `'line.focus?` is optional and returns an `Option`-like value.
 `focus=.soft` guarantees the default `'line.focus`; explicit keys such as
 `'line.focus.main` become guaranteed after an assignment with `<-`.
 
+The static scope selector and key do not grant access to a runtime scope
+activation. Syntax retains the shared typed selector. HIR checks the segment,
+name and total key limits before it copies the static key, and a checked write
+retains that same key. A bare, non-optional selector such as `'flow` can name the
+scope itself in an operation that admits a scope selector; `'flow.name` and
+`'flow?` are registry paths, not scope operands.
+
 `cleanup` is a line option/profile. `cleanup on ...:` is not part of the line
 plan grammar; use `defer { ... }` in the relevant runtime scope, line-level
 `defer { ... }`, cancellation rules, or explicit drop operations.

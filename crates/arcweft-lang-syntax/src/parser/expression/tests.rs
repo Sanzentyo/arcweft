@@ -1,8 +1,7 @@
 use super::*;
 use crate::expressions::{
     ExpressionProjection, ExpressionRecordFieldPart, SyntaxBinaryOperator,
-    SyntaxDialogueContentProjection, SyntaxLifetimeRegistryScope, SyntaxPostfixBracketProjection,
-    SyntaxRecordField,
+    SyntaxDialogueContentProjection, SyntaxPostfixBracketProjection, SyntaxRecordField,
 };
 use crate::grammar::budget::GrammarBudget;
 use crate::grammar::event::{PendingStartProjection, SyntaxEvent};
@@ -63,7 +62,7 @@ fn leaf_expression_matrix_projects_e01_through_e07_on_exact_start_events() {
     assert!(matches!(
         projection(&lifetime_events, SyntaxKind::LifetimePathExpression).projection(),
         ExpressionProjection::LifetimePath(path)
-            if matches!(path.scope(), SyntaxLifetimeRegistryScope::Line)
+            if matches!(path.scope(), Ok(arcweft_id::LifetimeScopeKind::Line))
                 && path.segments().len() == 1
                 && path.is_optional()
     ));
