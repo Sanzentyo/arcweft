@@ -12269,7 +12269,6 @@
   "viewNodeProperties": {
     "version": 1,
     "recordedAt": "2026-11-05T13:49:25.8761589Z",
-    "state": "Syntax continuation owner validated and published; remaining static View properties and Source Style identity integration are active, unaccepted implementation work.",
     "sampleCheckpoint": {
       "version": 1,
       "commit": "3fe5612b59eaeb387b73d32291d2944229e529d2",
@@ -13065,14 +13064,23 @@
       }
     ],
     "diagnosticBuild": "view-modifier-sema-check1-20261105 exited101 for a non-exhaustive new consumer match. Source was edited during this diagnostic build; it is not frozen validation evidence. Subsequent catalog/runtime attempts have their own frozen receipts.",
-    "concreteRemainingEvidence": [
+    "workingTree": "Original12 tracked WIP patch SHA25646402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac preserved by publication checks; original6 untracked files retained.",
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-view-member-continuation.raw.zip",
+      "bytes": 5002734,
+      "sha256": "4b5eb2dacd12a2854704c274da5fcb86ec17e12919f1dbf642f1143b700b7dd2",
+      "entries": 236,
+      "entryDrift": 0
+    },
+    "historicalScope": "Historical checkpoint recorded2026-11-05T13:49:25Z. Its original validation and full SHAs are retained. Current status is maintained only in docs/implementation/current-status.md.",
+    "historicalFailureObservations": [
       "Before the new typed property implementation, Panel(part=dialogue_panel) was rejected at Source572..586.",
       "After adding property schemas, nested newline .x was still a ShortVariant; the published parser cut repairs that root.",
       "The x method was rejected with a declared Named(Length) because standard method schemas were created before scalar registration. The pending registry change completes all View modifier signatures after the full standard environment is populated.",
       "Latest showcase6 rejects EntityReference Absolute(style.rich_text_panel), Source897..919, ValueResolutionFailed owner82. HIR symbol/table/retained.rs explicitly excludes HirItemKind::Style, while Compiler style lowering independently publishes the Style product. Style must join the shared declaration identity authority, not a fallback lookup or Source parser.",
-      "showcase6:4 executed,2PASS2FAIL919skip; missing-member recovery test first exposed the absent diagnostic, subsequently repaired in the separate743-case Syntax runs. The sample compile failure remains outstanding."
+      "showcase6 actually ran4 cases with2PASS2FAIL. The inference that Syntax must issue a new missing-member diagnostic was wrong: owner2 subsequently exposed four existing HIR recovery/budget failures. The HIR already owns that diagnostic."
     ],
-    "pending": {
+    "historicalCheckpointPatch": {
       "paths": [
         "crates/arcweft-bundle/src/resource_codec/view/model.rs",
         "crates/arcweft-compiler/src/lower.rs",
@@ -13095,15 +13103,1477 @@
         "crates/arcweft-view/src/element_argument.rs"
       ],
       "patchSha256": "81a96f7f87b1df92d8d8b9ceb5a9a365838e6c764fdd2e63df0e2bc63777ea12",
-      "state": "Uncommitted, not accepted production implementation. Frozen historical patch retained for continuation; final design and consumer migration are still being completed."
+      "scope": "Unaccepted working-tree patch at that historical input; replaced by the subsequently published integration."
     },
-    "notClaimed": "No passing RAG multi-source case, sample main-profile check, full reverse-dependency run, fresh workspace quality/structure, Native/AWBC product or image parity is claimed for the pending View changes. Earlier full7140/14FAIL, CLI700/14FAIL and the later z-index3PASS remain independent actual results. Generic Match and all other accepted feature boundaries remain accepted.",
-    "workingTree": "Original12 tracked WIP patch SHA25646402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac preserved by publication checks; original6 untracked files retained.",
+    "validationScopeAtRecord": "No passing RAG multi-source case, sample main-profile check, full reverse-dependency run, fresh workspace quality/structure, Native/AWBC product or image parity is claimed for the pending View changes. Earlier full7140/14FAIL, CLI700/14FAIL and the later z-index3PASS remain independent actual results. Generic Match and all other accepted feature boundaries remain accepted.",
+    "supersessionReason": "Delete the superseded residual-work/current-state enumeration because Style identity, modifiers and showcase compilation have since been implemented and validated at the owner boundary. Correct the extra Syntax diagnostic inference using four concrete HIR E13 failures; do not change earlier actual Syntax743PASS, command receipts, commit SHAs or raw archives."
+  },
+  "viewStaticProperties": {
+    "version": 1,
+    "recordedAt": "2026-11-05T14:55:04.3116218Z",
+    "scope": "Published static View-property integration checkpoint; full consumer execution is not claimed by this record. Current status has one list in current-status.md.",
+    "source": {
+      "version": 1,
+      "commit": "cb2fadea3b3f2a9790d7217423f19045b0e98b09",
+      "parent": "f1d51b7bdd8adecbf972c68d8306423e34f331b1",
+      "tree": "40edcc41832216f035e8115ce0ebaabe420da173",
+      "remote": "cb2fadea3b3f2a9790d7217423f19045b0e98b09",
+      "paths": [
+        {
+          "path": "crates/arcweft-bundle/src/resource_codec/view/model.rs",
+          "blob": "cea4196abd430e4f01c6ff1f3f88639643970b07"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/lower.rs",
+          "blob": "5ff405e2666331751015d43b4fff85fcf9f52165"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/project/tests.rs",
+          "blob": "dd79c3771fd392b334e50c1899670a23ba20082c"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/project/tests/layout_presence.rs",
+          "blob": "00215dcf4e1f2b026763fef8f6b83ee9262f0b39"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/project/tests/view_node_properties.rs",
+          "blob": "03b660f856223ac89d09471566b98c1a3e4c5883"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/style.rs",
+          "blob": "42614666bd17cb32a9df9f788229989df7ba4fed"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/view.rs",
+          "blob": "b7ac009854bbbe14291ff5e4aab1154adc148e15"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/final_lowering/item_lowering/retained.rs",
+          "blob": "9bf3ae2cc878e7ea71a8267b5ab88bbe0bbd2eb0"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/final_lowering/item_lowering/style.rs",
+          "blob": "2db716221c67758102e6b5a7f56d6ca057fc05e4"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/final_lowering/item_lowering/tests/style_freeze.rs",
+          "blob": "b10dbbbe69838d59254bc8cfb8d462655995ea49"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/item.rs",
+          "blob": "f64c2f42d8db5060411614958d2cea1704df8e85"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/item/host.rs",
+          "blob": "62252d1cd5ac99aac0aa56b12ef24f68d0972aae"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/item/host/tests.rs",
+          "blob": "463cf961a8604724a0b533f137a12bb0ff54d18f"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/item/retained.rs",
+          "blob": "363fc35c2d75f9e9aedb6e5982f7bc2e86d81c2b"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/item/tests.rs",
+          "blob": "99b2b779ba5e781fdebd5d24c757bb7b67596027"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/line_identity/sites.rs",
+          "blob": "5bca13db07c563078b2be2b6efdb2afc7caa861a"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/source_index/item_projection/declaration.rs",
+          "blob": "5444b648bd58ee8132463d9348ef8156a8d52962"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/source_index/item_projection/style.rs",
+          "blob": "b2ea6ff75468f2516e5b91e4a903ce4bea8af6b6"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/symbol/identity.rs",
+          "blob": "f4b06274b6c8cd466058b1cc660b42db7dbdba02"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/symbol/table/nominal.rs",
+          "blob": "1dceca3bd3855cefae2ee84ac9730d94410e6c84"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/symbol/table/retained.rs",
+          "blob": "c6a0e08a6ff2e4d9ec8750893a60c50c1c836025"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/symbol/tests.rs",
+          "blob": "2c1fe381a5bdcac3caf93f273de0635f13a1ad7b"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/symbol/tests/nominal_publication.rs",
+          "blob": "e9217d2080b1dbbb7b57cccd44ff1a53db35d791"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/symbol/tests/style_identity.rs",
+          "blob": "a06203e4d84e07241cbb6011c9e9d77a4fda3dca"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/view_modifier.rs",
+          "blob": "ca69e9f10f3d5e93a8e7d7fa2896172bc4b4ce5e"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/env/base.rs",
+          "blob": "7cddb56b61ee30dda13d86fd61da56b5f301af90"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls.rs",
+          "blob": "4c22c39c788adf8aec59b3f0e489ae64fdc7a3e3"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls/constraints.rs",
+          "blob": "b2b0bfd4c1ee8e58f1f2b16fe3db7b1a6533a33d"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expression_error.rs",
+          "blob": "22898ae84b4b4a93e65910a6cc188e5560da5d0d"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+          "blob": "602cd94760c9848338bbcfee7f186eb248d82068"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/text_proxy.rs",
+          "blob": "c8c14730c3dbe093a883cea6150678fc49a4c537"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/execution_plan.rs",
+          "blob": "d681069625c430b552fb98832a330368506bb615"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/match_edges/model.rs",
+          "blob": "500b56007798f18a984bbc6938710aa2b203b040"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/model.rs",
+          "blob": "8326d216cc397c5ace3cd0360743a440babed218"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/report.rs",
+          "blob": "711b2c116feff130dee1be20c6ec0afd9143de24"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs",
+          "blob": "187fb612693f7a2209088b50a866f3b1baafa91f"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests/semantic_transcript_acceptance/expression_corpus.rs",
+          "blob": "a584c782b29e34caec830edbcd55938df135a37e"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/validation.rs",
+          "blob": "b6632c80c021e111794a7646a156e456c2a88881"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/project_index/final_projection.rs",
+          "blob": "ff68b9a1f4a4fbb0f6b3e4ca53c93aba2192f4bf"
+        },
+        {
+          "path": "crates/arcweft-lang-syntax/src/parser/expression/composite.rs",
+          "blob": "b65bf14cc3909f5c9d17580cc1c95b07f74dbdc4"
+        },
+        {
+          "path": "crates/arcweft-lang-syntax/src/parser/view_grammar_tests.rs",
+          "blob": "8b0020c16266a25aaa55c5f579b546da8d94fffd"
+        },
+        {
+          "path": "crates/arcweft-view/src/element_argument.rs",
+          "blob": "20d494b31a516ffc054237ea969e358cb15daca5"
+        },
+        {
+          "path": "crates/arcweft-view/src/part.rs",
+          "blob": "3f4e4a86807fc9a86dcce0cced7a7f146c3ab9d8"
+        },
+        {
+          "path": "docs/03-presentation/view-reactive.md",
+          "blob": "8b430f7729dd98c6980214a2d46cae3b486d0d37"
+        },
+        {
+          "path": "samples/rich-text-showcase/src/main.arcw",
+          "blob": "c0acc6fe9bd0ff0a91708101847420898b5e0ad5"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "e4216e04cb97c20197fa2cdc55bcaea9106810e7b05fe5b1821f7b11fbaca5cd",
+      "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-05T14:51:10.8848473Z"
+    },
+    "diagnosticOwnershipCorrection": {
+      "version": 1,
+      "commit": "f1d51b7bdd8adecbf972c68d8306423e34f331b1",
+      "parent": "df4865ed16e8dc134d8c27897bdb798861f51db6",
+      "tree": "59a7b2563b75544108dbee753c7177ff87354b2d",
+      "remote": "f1d51b7bdd8adecbf972c68d8306423e34f331b1",
+      "paths": [
+        {
+          "path": "crates/arcweft-lang-syntax/src/parser/expression.rs",
+          "blob": "00d60a26276a565bcdcf60ab2f7bf87987a664ab"
+        },
+        {
+          "path": "crates/arcweft-lang-syntax/src/parser/view_grammar_tests.rs",
+          "blob": "ebc8d4c69a29171b92f237493d77c9e8fd5802c3"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "8bb0d88f3f32206be115253701fd91e52a89c418dde6cab9c061464177371376",
+      "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+      "separatelyHeld": [
+        {
+          "path": "crates/arcweft-bundle/src/resource_codec/view/model.rs",
+          "sha256": "28aebb3eee4a58182d2f58fbd176956ce3bba21df0d02db2ee2fb441cd092e2b"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/lower.rs",
+          "sha256": "9281384fd9b1bb8f1962873dc8233aa5754cdbaf33f1d8dd097469f635747c18"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/project/tests.rs",
+          "sha256": "129c12b395c39a6b668829c8ac784054bd76f826ba38cce9915732e5850f7a8e"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/project/tests/layout_presence.rs",
+          "sha256": "9311431c77d4f074411163f5cd3f420abb214819011a6aac423860458aa232e0"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/view.rs",
+          "sha256": "e22b844aea035f3049d2c505ec575a4cb3432abfd09197bbd03e888c8b6eae1a"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/final_lowering/item_lowering/retained.rs",
+          "sha256": "20d17763f61a5cb23d001d90de3f750bcdb3227e3ea2f61d69a3a300179632da"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/final_lowering/item_lowering/style.rs",
+          "sha256": "16458276a0740d87bceb1262927676de874def8bcf4e0671a0466287565b48d2"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/final_lowering/item_lowering/tests/style_freeze.rs",
+          "sha256": "1e76a0592cbf81c934d14f45671e572983314850528dd41d7635ef751fcc2d86"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/item.rs",
+          "sha256": "659e7f17a049094b4808f4db0acbcf0939bb60e7d3f75b30a9adfbc788aff026"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/item/host.rs",
+          "sha256": "67733805699eda20da471de86b2f94eeb05710e7dd72e8fac48e55269b5328c4"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/item/host/tests.rs",
+          "sha256": "14cf9c8744d84b291474938de10cbb949b0bcd7e7ed07f93e94bfd587035184e"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/item/retained.rs",
+          "sha256": "6e19adc618aaaf128bca7f067a8eaf07bccbd50b1dcce7622ccea39d5721bfaf"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/item/tests.rs",
+          "sha256": "6dac679392d446e5beef0a5f8f4e3ce71fa73c7fb5cce446198dd2d390a83937"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/line_identity/sites.rs",
+          "sha256": "04e13e2fb95c84c3d4f0080406871b45cda60041c5ca29976e159f40eb71c32d"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/source_index/item_projection/declaration.rs",
+          "sha256": "243f5f47daadab2e02930af14198d61021e4ce923a5e0eb359557ba44dc6068e"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/source_index/item_projection/style.rs",
+          "sha256": "32b9ed644edab0fe1e139f738aafd96f017e385b9e0069f16db756bfe164ccc8"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/symbol/identity.rs",
+          "sha256": "78abfa774a6e34c0d87833eb135b9c0de0636112838d5414dab901c966e93bb4"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/symbol/table/nominal.rs",
+          "sha256": "e2414a84f65ab16ad19d8727734b2eff645f9a838dd8c5243a776416e295e9f9"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/symbol/table/retained.rs",
+          "sha256": "53bff21367ef98d56a4661769df35326163b81bb950ff4669c21014807447e64"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/symbol/tests.rs",
+          "sha256": "484fdf20b73392adb4c2309e0f998f7330197711f3a67543f22290efe637489e"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/symbol/tests/nominal_publication.rs",
+          "sha256": "63b5c960466a7ef46d28e9852b8a5f2aa4db1cb8b1ec2d41bc4045298eb72ad2"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/view_modifier.rs",
+          "sha256": "62fc3f0d33b3e68ca0abb5618f2e4490d367a99803c7f3f98703402f22b96ca3"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/env/base.rs",
+          "sha256": "46526710ddfd4fd54dc6ef43339870324a0765693e8c71f309c6e7da120660f7"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls.rs",
+          "sha256": "99fb875392b133393f31e9a18d4083e1376c4e284c5391bcb72b8406def8fc8d"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls/constraints.rs",
+          "sha256": "84aa1d8b6849b6f44a91cfe8b5e834f47dd68a13d833c92884a4bf764834e46b"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expression_error.rs",
+          "sha256": "cf0dc1089646859f0c4b6413c85be418c72c6bf42f040c23747734da5accb7d6"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+          "sha256": "f9067de68c0d698066f25997cd69a8de7248db0c52e0cc824d9434379fb0ce66"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/text_proxy.rs",
+          "sha256": "775795bff6d95acf4c8a7f0aa0fcb5a40e866b2b3d8949689b7e52b2faec1f50"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/execution_plan.rs",
+          "sha256": "e5ea1e543a25f71e01a8c1ff606c75772db67ad75b840a02d844eb23b30bbe9b"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/match_edges/model.rs",
+          "sha256": "c5143fe66230caec39a8a8de0822c9f0a15cf605cc66589b6e9cbac268fea881"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/model.rs",
+          "sha256": "37fb8da63bc4414344283f5321d37f7a6f1d20ecf9cadfeaa78ad1ac6828949a"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/report.rs",
+          "sha256": "06ad3f4bf3452d351ac84fa52c71408e6e497a3b92d227664b702a0dbb5f5098"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs",
+          "sha256": "a194a97412d8a9fb58e15a2b56a55581e564bfcc77f2e0c3835597d96a23fd75"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests/semantic_transcript_acceptance/expression_corpus.rs",
+          "sha256": "ee345c583683c5121c7ee49eee7f5fb6043317883366854a2e446897bd6645ba"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/validation.rs",
+          "sha256": "8db3233a0017a0d102aefa28e1abba1ab06ed1f016900a1bbddbc50042f25393"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/project_index/final_projection.rs",
+          "sha256": "e12282c2fc90bd860140062d4183aaec43efd6cee3db318ba17f340da6079b5c"
+        },
+        {
+          "path": "crates/arcweft-view/src/element_argument.rs",
+          "sha256": "405945e5954e1cc1af91f5ca1925da8e1c13ce68d24f9f0c61d9295c7508e03d"
+        },
+        {
+          "path": "crates/arcweft-view/src/part.rs",
+          "sha256": "6a1ed9c8dda59b8819bfdf73fba2dd9c7300db36dfc975a70b0a83782cbad073"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/project/tests/view_node_properties.rs",
+          "sha256": "3acf9f01196115aa85125f80f08d311e8a185fa1de0321e009cec072d67739da"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/symbol/tests/style_identity.rs",
+          "sha256": "75622b3c11d70399b0c0184e94eea6dd1fd12cf1db83973e448f006465e215f9"
+        }
+      ],
+      "indexEmpty": true,
+      "at": "2026-11-05T14:29:04.6618336Z"
+    },
+    "owner": {
+      "version": 1,
+      "base": "f1d51b7bdd8adecbf972c68d8306423e34f331b1",
+      "run": "view-static-properties-owner-final1-20261105.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   0.565s] 12 tests run: 12 passed, 179 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 12,
+      "passed": 12,
+      "failed": 0,
+      "skipped": 179,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4112,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-05T14:49:51.2309447Z"
+    },
+    "implementation": [
+      "Style uses the shared retained declaration identity and one semantic-index producer; explicit ID-only Style has no fabricated lexical binding. Bare dotted names, visibility and aliases retain original identity.",
+      "Geometry/part/Style modifiers consume typed checked facts and attach to expression-returned nodes. Constructor geometry uses the same property roles. Part names preflight255UTF8 bytes and32segments, inclusive.",
+      "Compile the complete named-sheet/inline-patch catalog before validating program references. Source selectors map part/interaction/element state through shared registries. Runtime cascade retains authored application order.",
+      "Transparent grouping preserves View grammar context; If/Match branches retain container bodies and returned-node modifiers. Sample applies its sheet at Panel scope and its RichText part explicitly; all6 bodies/IDs/Fx/numbers remain."
+    ],
+    "attempts": [
+      {
+        "run": "view-style-identity-owner1-20261105",
+        "catalog": {
+          "version": 1,
+          "base": "df4865ed16e8dc134d8c27897bdb798861f51db6",
+          "command": [
+            "nextest",
+            "list",
+            "-p",
+            "arcweft-lang-hir",
+            "-p",
+            "arcweft-compiler",
+            "--lib",
+            "--all-features",
+            "--locked",
+            "-E",
+            "package(arcweft-lang-hir) | test(rich_text_showcase_compiles_with_typed_presentation_contracts)",
+            "--message-format",
+            "json"
+          ],
+          "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/view-style-identity-owner1-20261105.catalog.log",
+          "exitCode": 101,
+          "sourceInputs": 4111,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-05T13:56:17.3967237Z",
+          "finishedAt": "2026-11-05T13:57:06.4233842Z"
+        },
+        "runtime": "not run: catalog failed"
+      },
+      {
+        "run": "view-style-identity-owner2-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "df4865ed16e8dc134d8c27897bdb798861f51db6",
+          "run": "view-style-identity-owner2-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [ 229.464s] 971 tests run: 966 passed (1 slow), 5 failed, 187 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 971,
+          "passed": 966,
+          "failed": 5,
+          "skipped": 187,
+          "selectedPackages": 2,
+          "matchedPackages": 2,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4111,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler",
+              "test": "project::tests::layout_presence::rich_text_showcase_compiles_with_typed_presentation_contracts"
+            },
+            {
+              "status": "FAIL",
+              "binary": "arcweft-lang-hir",
+              "test": "final_lowering::expression_lowering::tests::select::e13_freeze_enforces_exact_missing_and_descendant_diagnostic_obligations"
+            },
+            {
+              "status": "FAIL",
+              "binary": "arcweft-lang-hir",
+              "test": "final_lowering::expression_lowering::tests::select::e13_trivia_preserves_missing_insertions_and_descendant_diagnostics"
+            },
+            {
+              "status": "FAIL",
+              "binary": "arcweft-lang-hir",
+              "test": "final_lowering::expression_lowering::tests::select_limits::e13_diagnostic_limit_retry_preserves_the_owner_after_a_smaller_revision"
+            },
+            {
+              "status": "FAIL",
+              "binary": "arcweft-lang-hir",
+              "test": "final_lowering::expression_lowering::tests::select::e13_recovery_diagnostic_deltas_enforce_exact_and_one_over_limits"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T14:02:50.3638723Z"
+        }
+      },
+      {
+        "run": "view-style-identity-owner3-20261105",
+        "catalog": {
+          "version": 1,
+          "base": "df4865ed16e8dc134d8c27897bdb798861f51db6",
+          "command": [
+            "nextest",
+            "list",
+            "-p",
+            "arcweft-lang-syntax",
+            "-p",
+            "arcweft-lang-hir",
+            "-p",
+            "arcweft-lang-sema",
+            "-p",
+            "arcweft-compiler",
+            "--lib",
+            "--all-features",
+            "--locked",
+            "-E",
+            "test(e13_) | test(member_chain) | test(malformed_continued_member) | test(rich_text_showcase_compiles) | test(static_view_) | test(checked_match_expression_corpus_tracks_accepted_root_families)",
+            "--message-format",
+            "json"
+          ],
+          "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/view-style-identity-owner3-20261105.catalog.log",
+          "exitCode": 101,
+          "sourceInputs": 4112,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-05T14:05:18.9061665Z",
+          "finishedAt": "2026-11-05T14:06:48.2219752Z"
+        },
+        "runtime": "not run: catalog failed"
+      },
+      {
+        "run": "view-style-identity-owner4-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "df4865ed16e8dc134d8c27897bdb798861f51db6",
+          "run": "view-style-identity-owner4-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [  15.089s] 23 tests run: 20 passed, 3 failed, 3253 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 23,
+          "passed": 20,
+          "failed": 3,
+          "skipped": 3253,
+          "selectedPackages": 4,
+          "matchedPackages": 4,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4112,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler",
+              "test": "project::tests::view_node_properties::static_view_constructor_part_keeps_the_same_checked_name"
+            },
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler",
+              "test": "project::tests::layout_presence::rich_text_showcase_compiles_with_typed_presentation_contracts"
+            },
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler",
+              "test": "project::tests::view_node_properties::static_view_style_reference_keeps_original_declaration"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T14:09:28.0889152Z"
+        }
+      },
+      {
+        "run": "view-style-identity-owner5-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "df4865ed16e8dc134d8c27897bdb798861f51db6",
+          "run": "view-style-identity-owner5-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [  12.843s] 25 tests run: 23 passed, 2 failed, 3253 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 25,
+          "passed": 23,
+          "failed": 2,
+          "skipped": 3253,
+          "selectedPackages": 4,
+          "matchedPackages": 4,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4112,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler",
+              "test": "project::tests::layout_presence::rich_text_showcase_compiles_with_typed_presentation_contracts"
+            },
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler",
+              "test": "project::tests::view_node_properties::static_view_style_reference_keeps_original_declaration"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T14:24:11.2267767Z"
+        }
+      },
+      {
+        "run": "view-style-identity-owner6-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "f1d51b7bdd8adecbf972c68d8306423e34f331b1",
+          "run": "view-style-identity-owner6-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   0.502s] 9 tests run: 8 passed, 1 failed, 1155 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 9,
+          "passed": 8,
+          "failed": 1,
+          "skipped": 1155,
+          "selectedPackages": 2,
+          "matchedPackages": 2,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4031,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler",
+              "test": "project::tests::layout_presence::rich_text_showcase_compiles_with_typed_presentation_contracts"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T14:30:24.1686322Z"
+        }
+      },
+      {
+        "run": "view-style-identity-owner7-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "f1d51b7bdd8adecbf972c68d8306423e34f331b1",
+          "run": "view-style-identity-owner7-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   0.543s] 12 tests run: 11 passed, 1 failed, 1155 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 12,
+          "passed": 11,
+          "failed": 1,
+          "skipped": 1155,
+          "selectedPackages": 2,
+          "matchedPackages": 2,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4112,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler",
+              "test": "project::tests::view_node_properties::static_view_style_aliases_and_explicit_ids_keep_original_sheet_identity"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T14:32:36.7046005Z"
+        }
+      },
+      {
+        "run": "view-style-identity-owner8-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "f1d51b7bdd8adecbf972c68d8306423e34f331b1",
+          "run": "view-style-identity-owner8-20261105.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [   0.498s] 10 tests run: 10 passed, 179 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 10,
+          "passed": 10,
+          "failed": 0,
+          "skipped": 179,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4112,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-05T14:33:32.4662218Z"
+        }
+      },
+      {
+        "run": "view-style-identity-owner9-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "f1d51b7bdd8adecbf972c68d8306423e34f331b1",
+          "run": "view-style-identity-owner9-20261105.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [   0.666s] 11 tests run: 11 passed, 179 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 11,
+          "passed": 11,
+          "failed": 0,
+          "skipped": 179,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4112,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-05T14:35:12.6753267Z"
+        }
+      },
+      {
+        "run": "view-style-identity-owner10-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "f1d51b7bdd8adecbf972c68d8306423e34f331b1",
+          "run": "view-style-identity-owner10-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   0.653s] 12 tests run: 11 passed, 1 failed, 179 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 12,
+          "passed": 11,
+          "failed": 1,
+          "skipped": 179,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4112,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler",
+              "test": "project::tests::view_node_properties::static_view_branch_modifiers_preserve_each_returned_node"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T14:41:48.0934418Z"
+        }
+      },
+      {
+        "run": "view-static-properties-branch1-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "f1d51b7bdd8adecbf972c68d8306423e34f331b1",
+          "run": "view-static-properties-branch1-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   0.063s] 1 test run: 0 passed, 1 failed, 190 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 1,
+          "passed": 0,
+          "failed": 1,
+          "skipped": 190,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4112,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler",
+              "test": "project::tests::view_node_properties::static_view_branch_modifiers_preserve_each_returned_node"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T14:43:40.3275965Z"
+        }
+      },
+      {
+        "run": "view-static-properties-branch2-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "f1d51b7bdd8adecbf972c68d8306423e34f331b1",
+          "run": "view-static-properties-branch2-20261105.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [   0.168s] 2 tests run: 2 passed, 933 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 2,
+          "passed": 2,
+          "failed": 0,
+          "skipped": 933,
+          "selectedPackages": 2,
+          "matchedPackages": 2,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4112,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-05T14:45:35.1998293Z"
+        }
+      },
+      {
+        "run": "view-static-properties-owner-final1-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "f1d51b7bdd8adecbf972c68d8306423e34f331b1",
+          "run": "view-static-properties-owner-final1-20261105.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [   0.565s] 12 tests run: 12 passed, 179 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 12,
+          "passed": 12,
+          "failed": 0,
+          "skipped": 179,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4112,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-05T14:49:51.2309447Z"
+        }
+      },
+      {
+        "run": "view-static-properties-cli-rag1-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "f1d51b7bdd8adecbf972c68d8306423e34f331b1",
+          "run": "view-static-properties-cli-rag1-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   2.318s] 1 test run: 0 passed, 1 failed, 487 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 1,
+          "passed": 0,
+          "failed": 1,
+          "skipped": 487,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4112,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-cli::check",
+              "test": "agent_rag_query_indexes_multiple_sources"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T14:38:33.8755889Z"
+        }
+      }
+    ],
+    "evidenceLimits": {
+      "owner6": "Diagnostic iteration8PASS1FAIL only: AdditionalPaths was incorrectly given a JSON path, so its4031 frozen inputs excluded the two new Rust files. Retain actual result without treating it as full frozen acceptance. Owner7 and later cover4112 inputs including both new Rust files.",
+      "mainCheck": "Actual CLI main-profile check exit0 at the earlier frozen RAG input. Later transparent-group/registry cleanup has owner and workspace evidence; this is not relabeled as a fresh CLI run.",
+      "rag": "Actual1run0PASS1FAIL487skip2.318s. Compilation/indexing and multi-source graph assertions passed; persisted summary failed the existing kind-count assertion. The briefly inferred program-hash cause was wrong. AgentProjectGraphSummary currently carries totals without kind-count maps; preserve coverage while connecting those facts through the owning typed summary."
+    },
+    "quality": {
+      "check": {
+        "version": 1,
+        "base": "f1d51b7bdd8adecbf972c68d8306423e34f331b1",
+        "command": [
+          "check",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4112,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T14:45:41.8652057Z",
+        "finishedAt": "2026-11-05T14:47:00.3040312Z"
+      },
+      "clippy": {
+        "version": 1,
+        "base": "f1d51b7bdd8adecbf972c68d8306423e34f331b1",
+        "command": [
+          "clippy",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4112,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T14:47:00.762156Z",
+        "finishedAt": "2026-11-05T14:48:25.7995414Z"
+      },
+      "structure": {
+        "version": 1,
+        "base": "f1d51b7bdd8adecbf972c68d8306423e34f331b1",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/view-static-properties-quality1-20261105.structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4112,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T14:48:26.2660563Z",
+        "finishedAt": "2026-11-05T14:48:30.5382679Z"
+      },
+      "warnings": "Warnings remain; exit0 does not mean warning-free."
+    },
+    "mainProfile": {
+      "version": 1,
+      "base": "f1d51b7bdd8adecbf972c68d8306423e34f331b1",
+      "command": [
+        "D:/git/arcweft/target/debug/arcw.exe",
+        "check",
+        "--manifest-path",
+        "samples/rich-text-showcase/arcw.toml",
+        "--profile",
+        "main"
+      ],
+      "exitCode": 0,
+      "binarySha256": "968327926231769635846ee61c2afd5804696d1f5a0452b9e4699e890fc9a693",
+      "sourceInputs": 4112,
+      "sourceDrift": 0,
+      "binaryDrift": 0,
+      "startedAt": "2026-11-05T14:40:07.4870567Z",
+      "finishedAt": "2026-11-05T14:40:08.9654814Z"
+    },
+    "graph": {
+      "version": 1,
+      "base": "cb2fadea3b3f2a9790d7217423f19045b0e98b09",
+      "roots": [
+        "arcweft-lang-syntax",
+        "arcweft-lang-hir",
+        "arcweft-lang-sema",
+        "arcweft-compiler",
+        "arcweft-view",
+        "arcweft-bundle"
+      ],
+      "workspacePackages": 98,
+      "selection": [
+        "arcweft",
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-policy",
+        "arcweft-agent-protocol",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-bundle",
+        "arcweft-bundle-assets",
+        "arcweft-character-view",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-debug-model",
+        "arcweft-debug-sqlite",
+        "arcweft-dialogue",
+        "arcweft-glyphon",
+        "arcweft-lang-hir",
+        "arcweft-lang-sema",
+        "arcweft-lang-syntax",
+        "arcweft-launch",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-text-input",
+        "arcweft-player-web",
+        "arcweft-project",
+        "arcweft-project-loader",
+        "arcweft-rag",
+        "arcweft-render-text",
+        "arcweft-render-web",
+        "arcweft-render-wgpu",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-text-layout",
+        "arcweft-text-model",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3",
+        "arcweft-view"
+      ],
+      "selectedPackages": 44,
+      "target": "all",
+      "features": "all",
+      "dependencyKinds": [
+        "normal",
+        "build",
+        "dev"
+      ],
+      "metadataTreeDrift": 0,
+      "runtimeAcceptance": "Pending. Component owner runs are not the complete reverse closure."
+    },
+    "ownership": {
+      "version": 1,
+      "base": "f1d51b7bdd8adecbf972c68d8306423e34f331b1",
+      "workingTree": "dirty; own typed View integration plus original12 tracked and6 untracked WIP",
+      "rows": [
+        {
+          "path": "crates/arcweft-bundle/src/resource_codec/view/model.rs",
+          "owner": "arcweft-bundle",
+          "classification": "production",
+          "bytes": 65934,
+          "physicalLoc": 1968,
+          "basePhysicalLoc": 1955,
+          "growth": 13
+        },
+        {
+          "path": "crates/arcweft-compiler/src/lower.rs",
+          "owner": "arcweft-compiler",
+          "classification": "production",
+          "bytes": 454889,
+          "physicalLoc": 10653,
+          "basePhysicalLoc": 10652,
+          "growth": 1
+        },
+        {
+          "path": "crates/arcweft-compiler/src/project/tests.rs",
+          "owner": "arcweft-compiler",
+          "classification": "test",
+          "bytes": 162899,
+          "physicalLoc": 4362,
+          "basePhysicalLoc": 4361,
+          "growth": 1
+        },
+        {
+          "path": "crates/arcweft-compiler/src/project/tests/layout_presence.rs",
+          "owner": "arcweft-compiler",
+          "classification": "test",
+          "bytes": 10981,
+          "physicalLoc": 265,
+          "basePhysicalLoc": 224,
+          "growth": 41
+        },
+        {
+          "path": "crates/arcweft-compiler/src/project/tests/view_node_properties.rs",
+          "owner": "arcweft-compiler",
+          "classification": "test",
+          "bytes": 12553,
+          "physicalLoc": 367,
+          "basePhysicalLoc": 0,
+          "growth": 367
+        },
+        {
+          "path": "crates/arcweft-compiler/src/style.rs",
+          "owner": "arcweft-compiler",
+          "classification": "production",
+          "bytes": 15262,
+          "physicalLoc": 397,
+          "basePhysicalLoc": 384,
+          "growth": 13
+        },
+        {
+          "path": "crates/arcweft-compiler/src/view.rs",
+          "owner": "arcweft-compiler",
+          "classification": "production",
+          "bytes": 124595,
+          "physicalLoc": 3083,
+          "basePhysicalLoc": 2959,
+          "growth": 124
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/final_lowering/item_lowering/retained.rs",
+          "owner": "arcweft-lang-hir",
+          "classification": "production",
+          "bytes": 17737,
+          "physicalLoc": 430,
+          "basePhysicalLoc": 430,
+          "growth": 0
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/final_lowering/item_lowering/style.rs",
+          "owner": "arcweft-lang-hir",
+          "classification": "production",
+          "bytes": 28239,
+          "physicalLoc": 651,
+          "basePhysicalLoc": 647,
+          "growth": 4
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/final_lowering/item_lowering/tests/style_freeze.rs",
+          "owner": "arcweft-lang-hir",
+          "classification": "test",
+          "bytes": 12592,
+          "physicalLoc": 346,
+          "basePhysicalLoc": 346,
+          "growth": 0
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/item.rs",
+          "owner": "arcweft-lang-hir",
+          "classification": "production",
+          "bytes": 43640,
+          "physicalLoc": 1243,
+          "basePhysicalLoc": 1212,
+          "growth": 31
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/item/host.rs",
+          "owner": "arcweft-lang-hir",
+          "classification": "production",
+          "bytes": 28428,
+          "physicalLoc": 1035,
+          "basePhysicalLoc": 1033,
+          "growth": 2
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/item/host/tests.rs",
+          "owner": "arcweft-lang-hir",
+          "classification": "test",
+          "bytes": 18681,
+          "physicalLoc": 597,
+          "basePhysicalLoc": 589,
+          "growth": 8
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/item/retained.rs",
+          "owner": "arcweft-lang-hir",
+          "classification": "production",
+          "bytes": 49493,
+          "physicalLoc": 1606,
+          "basePhysicalLoc": 1593,
+          "growth": 13
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/item/tests.rs",
+          "owner": "arcweft-lang-hir",
+          "classification": "test",
+          "bytes": 38121,
+          "physicalLoc": 1108,
+          "basePhysicalLoc": 1078,
+          "growth": 30
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/line_identity/sites.rs",
+          "owner": "arcweft-lang-hir",
+          "classification": "production",
+          "bytes": 12911,
+          "physicalLoc": 345,
+          "basePhysicalLoc": 343,
+          "growth": 2
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/source_index/item_projection/declaration.rs",
+          "owner": "arcweft-lang-hir",
+          "classification": "production",
+          "bytes": 16504,
+          "physicalLoc": 415,
+          "basePhysicalLoc": 425,
+          "growth": -10
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/source_index/item_projection/style.rs",
+          "owner": "arcweft-lang-hir",
+          "classification": "production",
+          "bytes": 41310,
+          "physicalLoc": 1136,
+          "basePhysicalLoc": 1136,
+          "growth": 0
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/symbol/identity.rs",
+          "owner": "arcweft-lang-hir",
+          "classification": "production",
+          "bytes": 43149,
+          "physicalLoc": 1342,
+          "basePhysicalLoc": 1338,
+          "growth": 4
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/symbol/table/nominal.rs",
+          "owner": "arcweft-lang-hir",
+          "classification": "production",
+          "bytes": 26951,
+          "physicalLoc": 685,
+          "basePhysicalLoc": 681,
+          "growth": 4
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/symbol/table/retained.rs",
+          "owner": "arcweft-lang-hir",
+          "classification": "production",
+          "bytes": 15977,
+          "physicalLoc": 410,
+          "basePhysicalLoc": 434,
+          "growth": -24
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/symbol/tests.rs",
+          "owner": "arcweft-lang-hir",
+          "classification": "test",
+          "bytes": 31117,
+          "physicalLoc": 942,
+          "basePhysicalLoc": 941,
+          "growth": 1
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/symbol/tests/nominal_publication.rs",
+          "owner": "arcweft-lang-hir",
+          "classification": "test",
+          "bytes": 18014,
+          "physicalLoc": 497,
+          "basePhysicalLoc": 494,
+          "growth": 3
+        },
+        {
+          "path": "crates/arcweft-lang-hir/src/symbol/tests/style_identity.rs",
+          "owner": "arcweft-lang-hir",
+          "classification": "test",
+          "bytes": 3208,
+          "physicalLoc": 84,
+          "basePhysicalLoc": 0,
+          "growth": 84
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/view_modifier.rs",
+          "owner": "arcweft-lang-sema",
+          "classification": "production",
+          "bytes": 8995,
+          "physicalLoc": 247,
+          "basePhysicalLoc": 177,
+          "growth": 70
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/env/base.rs",
+          "owner": "arcweft-lang-sema",
+          "classification": "production",
+          "bytes": 108784,
+          "physicalLoc": 2915,
+          "basePhysicalLoc": 2906,
+          "growth": 9
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls.rs",
+          "owner": "arcweft-lang-sema",
+          "classification": "production",
+          "bytes": 259445,
+          "physicalLoc": 5942,
+          "basePhysicalLoc": 5941,
+          "growth": 1
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls/constraints.rs",
+          "owner": "arcweft-lang-sema",
+          "classification": "production",
+          "bytes": 294396,
+          "physicalLoc": 7122,
+          "basePhysicalLoc": 7111,
+          "growth": 11
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expression_error.rs",
+          "owner": "arcweft-lang-sema",
+          "classification": "production",
+          "bytes": 37111,
+          "physicalLoc": 1063,
+          "basePhysicalLoc": 1044,
+          "growth": 19
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+          "owner": "arcweft-lang-sema",
+          "classification": "production",
+          "bytes": 249735,
+          "physicalLoc": 5834,
+          "basePhysicalLoc": 5755,
+          "growth": 79
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/text_proxy.rs",
+          "owner": "arcweft-lang-sema",
+          "classification": "production",
+          "bytes": 40849,
+          "physicalLoc": 823,
+          "basePhysicalLoc": 815,
+          "growth": 8
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/execution_plan.rs",
+          "owner": "arcweft-lang-sema",
+          "classification": "production",
+          "bytes": 31219,
+          "physicalLoc": 751,
+          "basePhysicalLoc": 750,
+          "growth": 1
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/match_edges/model.rs",
+          "owner": "arcweft-lang-sema",
+          "classification": "production",
+          "bytes": 25608,
+          "physicalLoc": 586,
+          "basePhysicalLoc": 583,
+          "growth": 3
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/model.rs",
+          "owner": "arcweft-lang-sema",
+          "classification": "production",
+          "bytes": 116605,
+          "physicalLoc": 3461,
+          "basePhysicalLoc": 3456,
+          "growth": 5
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/report.rs",
+          "owner": "arcweft-lang-sema",
+          "classification": "production",
+          "bytes": 124578,
+          "physicalLoc": 3094,
+          "basePhysicalLoc": 3093,
+          "growth": 1
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs",
+          "owner": "arcweft-lang-sema",
+          "classification": "production",
+          "bytes": 196074,
+          "physicalLoc": 4789,
+          "basePhysicalLoc": 4785,
+          "growth": 4
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests/semantic_transcript_acceptance/expression_corpus.rs",
+          "owner": "arcweft-lang-sema",
+          "classification": "test",
+          "bytes": 72050,
+          "physicalLoc": 1789,
+          "basePhysicalLoc": 1778,
+          "growth": 11
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/validation.rs",
+          "owner": "arcweft-lang-sema",
+          "classification": "production",
+          "bytes": 145113,
+          "physicalLoc": 3407,
+          "basePhysicalLoc": 3415,
+          "growth": -8
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/project_index/final_projection.rs",
+          "owner": "arcweft-lang-sema",
+          "classification": "production",
+          "bytes": 35372,
+          "physicalLoc": 940,
+          "basePhysicalLoc": 963,
+          "growth": -23
+        },
+        {
+          "path": "crates/arcweft-lang-syntax/src/parser/expression/composite.rs",
+          "owner": "arcweft-lang-syntax",
+          "classification": "production",
+          "bytes": 39732,
+          "physicalLoc": 1113,
+          "basePhysicalLoc": 1113,
+          "growth": 0
+        },
+        {
+          "path": "crates/arcweft-lang-syntax/src/parser/view_grammar_tests.rs",
+          "owner": "arcweft-lang-syntax",
+          "classification": "production",
+          "bytes": 14087,
+          "physicalLoc": 404,
+          "basePhysicalLoc": 385,
+          "growth": 19
+        },
+        {
+          "path": "crates/arcweft-view/src/element_argument.rs",
+          "owner": "arcweft-view",
+          "classification": "production",
+          "bytes": 3439,
+          "physicalLoc": 101,
+          "basePhysicalLoc": 90,
+          "growth": 11
+        },
+        {
+          "path": "crates/arcweft-view/src/part.rs",
+          "owner": "arcweft-view",
+          "classification": "production",
+          "bytes": 18321,
+          "physicalLoc": 562,
+          "basePhysicalLoc": 526,
+          "growth": 36
+        }
+      ],
+      "packageCoupling": [
+        {
+          "package": "arcweft-bundle",
+          "manifest": "crates/arcweft-bundle/Cargo.toml",
+          "workspace_fan_in": "11",
+          "workspace_fan_out": "19",
+          "development_workspace_fan_in": "0",
+          "development_workspace_fan_out": "0"
+        },
+        {
+          "package": "arcweft-compiler",
+          "manifest": "crates/arcweft-compiler/Cargo.toml",
+          "workspace_fan_in": "3",
+          "workspace_fan_out": "25",
+          "development_workspace_fan_in": "2",
+          "development_workspace_fan_out": "10"
+        },
+        {
+          "package": "arcweft-lang-hir",
+          "manifest": "crates/arcweft-lang-hir/Cargo.toml",
+          "workspace_fan_in": "10",
+          "workspace_fan_out": "3",
+          "development_workspace_fan_in": "1",
+          "development_workspace_fan_out": "0"
+        },
+        {
+          "package": "arcweft-lang-sema",
+          "manifest": "crates/arcweft-lang-sema/Cargo.toml",
+          "workspace_fan_in": "8",
+          "workspace_fan_out": "15",
+          "development_workspace_fan_in": "4",
+          "development_workspace_fan_out": "0"
+        },
+        {
+          "package": "arcweft-lang-syntax",
+          "manifest": "crates/arcweft-lang-syntax/Cargo.toml",
+          "workspace_fan_in": "12",
+          "workspace_fan_out": "2",
+          "development_workspace_fan_in": "1",
+          "development_workspace_fan_out": "1"
+        },
+        {
+          "package": "arcweft-view",
+          "manifest": "crates/arcweft-view/Cargo.toml",
+          "workspace_fan_in": "15",
+          "workspace_fan_out": "5",
+          "development_workspace_fan_in": "5",
+          "development_workspace_fan_out": "0"
+        }
+      ],
+      "ownershipDisposition": [
+        "HIR owns the shared retained declaration header, derived/explicit identity, authored lexical binding and Source freeze. IdentityOnly is valid only for explicit Style declarations; no public ID is reconstructed into a fake lexical name. The semantic index uses that catalog once and deletes its old independent Style producer.",
+        "Sema owns the closed modifier registry and contextual static name grammar, sharing candidate transaction and call-frame authority. It publishes one bounded ViewPartLocalName fact, its PublicId scalar projection and transcript payload; it does not parse Source text or run another runtime evaluator.",
+        "Compiler view.rs remains a cohesive3083-LOC producer owning its existing local/capture/output state. Its124-LOC growth tracks only nodes returned by an expression, applies modifiers there, and composes a complete Style catalog before product validation. No side node catalog, unrelated I/O state, fallback resolver or public API for physical splitting was introduced.",
+        "Bundle model.rs1968LOC adds legitimate compiler mutation access to existing node-owned fields before validated publication. View owns the name bounds, property roles and selector/state registries; no dependency direction or Cargo edge changed.",
+        "The367-LOC new compiler test owner follows the static-property boundary: original IDs and aliases, explicit identities, rejected families/units, inclusive UTF8/segment limits, root/child isolation, If/Match returned nodes, canonical product composition and actual runtime cascade. Existing large compiler/sema owners receive only their exhaustive projection cases; their broader responsibilities and I/O boundaries are unchanged."
+      ]
+    },
+    "correction": {
+      "reason": "The e555 Syntax-only743PASS did not prove cross-layer diagnostic ownership. Owner2 ran971 cases:966PASS5FAIL, including four HIR E13 diagnostic/budget regressions and one separate Style failure. Remove the newly added Syntax diagnostic; keep existing HIR diagnostics, limits and fixtures unchanged. Owner5 subsequently passed all selected E13 and continuation cases; its separate two Style failures were then repaired.",
+      "scope": "This reopens only the change-caused duplicate diagnostic boundary. Generic Match remains accepted/public; overall goal incompleteness is not evidence against completed features."
+    },
+    "workingTree": "Published45 owned paths with original12 tracked patchSHA25646402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac and6 untracked files preserved; empty index.",
     "raw": {
-      "path": "docs/implementation/acceptance-evidence/task-view-member-continuation.raw.zip",
-      "bytes": 5002734,
-      "sha256": "4b5eb2dacd12a2854704c274da5fcb86ec17e12919f1dbf642f1143b700b7dd2",
-      "entries": 236,
+      "path": "docs/implementation/acceptance-evidence/task-view-static-properties-integration.raw.zip",
+      "bytes": 5751907,
+      "sha256": "6875151bba1a83a0131cb45af5ab85f0ca7aaabd614c87e9f305ca0801b55da3",
+      "entries": 154,
       "entryDrift": 0
     }
   }
