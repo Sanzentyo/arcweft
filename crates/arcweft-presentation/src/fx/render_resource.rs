@@ -489,10 +489,10 @@ fn resolve_glow(
     phase: FxPhase,
     default_color: FxColor,
 ) -> Result<ResolvedFxResourceOutput, FxRenderResourceError> {
-    invocation.require_uniform_schema(&["amount", "dir", "color"])?;
+    invocation.require_uniform_schema(&["amount", "direction", "color"])?;
     let amount = shader_f32(invocation, "amount")?.unwrap_or(FiniteF32::ONE);
     non_negative(amount, "amount")?;
-    let direction = shader_vec2(invocation, "dir")?.unwrap_or(FxVec2 {
+    let direction = shader_vec2(invocation, "direction")?.unwrap_or(FxVec2 {
         x: FiniteF32::ZERO,
         y: FiniteF32::ONE,
     });
@@ -707,8 +707,8 @@ mod tests {
     };
     use crate::fx::{
         FiniteF32, FxDiagnosticCode, FxPhase, FxResourceId, FxRuntimeValue, FxShaderUniform,
-        FxTarget, Length, ResolvedFilterOperation, ResolvedMaskOperation,
-        ResolvedShaderUniformOperation,
+        FxTarget, FxVec2, Length, ResolvedFilterOperation, ResolvedFxPostProcess,
+        ResolvedMaskOperation, ResolvedShaderUniformOperation,
     };
 
     #[test]
@@ -731,6 +731,114 @@ mod tests {
         assert_eq!(output.glyph_passes.len(), 4);
         assert!(output.post_processes.is_empty());
         assert!((output.glyph_passes[0].offset_y.pixels() - 3.0).abs() <= f32::EPSILON);
+    }
+
+    #[test]
+    fn builtin_glow_preserves_typed_direction_across_shader_phases() {
+        let table = FxRenderResourceTable::arcweft_builtins();
+        let direction = FxVec2 {
+            x: FiniteF32::try_new(3.0).unwrap(),
+            y: FiniteF32::try_new(4.0).unwrap(),
+        };
+        for phase in [
+            FxPhase::GlyphColor,
+            FxPhase::OffscreenPass,
+            FxPhase::PostProcess,
+        ] {
+            let operation = ResolvedShaderUniformOperation {
+                phase,
+                target: FxTarget::Content,
+                resource: Some(FxResourceId::try_new("soft_glow").unwrap()),
+                stage: None,
+                uniforms: vec![
+                    FxShaderUniform::runtime(
+                        crate::fx::FxUniformName::try_new("amount").unwrap(),
+                        FxRuntimeValue::F32(FiniteF32::try_new(0.5).unwrap()),
+                    ),
+                    FxShaderUniform::runtime(
+                        crate::fx::FxUniformName::try_new("direction").unwrap(),
+                        FxRuntimeValue::Vec2(direction),
+                    ),
+                ],
+            };
+            let output = table.resolve_shader(&operation).unwrap();
+            match phase {
+                FxPhase::OffscreenPass => {
+                    assert_eq!(output.glyph_passes.len(), 4);
+                    assert!(output.post_processes.is_empty());
+                    // (3,4) normalizes to (.6,.8); amount .5 gives radius 3px.
+                    for (pass, x, y) in [
+                        (0, 1.8, 2.4),
+                        (1, -0.9, -1.2),
+                        (2, -1.2, 0.9),
+                        (3, 1.2, -0.9),
+                    ] {
+                        assert!(
+                            (output.glyph_passes[pass].offset_x.pixels() - x).abs() < 0.000_001
+                        );
+                        assert!(
+                            (output.glyph_passes[pass].offset_y.pixels() - y).abs() < 0.000_001
+                        );
+                    }
+                }
+                FxPhase::GlyphColor => {
+                    assert_eq!(output.glyph_passes.len(), 1);
+                    assert!(output.post_processes.is_empty());
+                    assert_eq!(output.glyph_passes[0].offset_x, Length::ZERO);
+                    assert_eq!(output.glyph_passes[0].offset_y, Length::ZERO);
+                }
+                FxPhase::PostProcess => {
+                    assert!(output.glyph_passes.is_empty());
+                    assert!(
+                        matches!(output.post_processes.as_slice(), [ResolvedFxPostProcess::Tint {amount, ..}] if amount.value().get() == 0.5)
+                    );
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    #[test]
+    fn builtin_glow_rejects_invalid_and_duplicate_direction_uniforms() {
+        let table = FxRenderResourceTable::arcweft_builtins();
+        let uniform = |value| {
+            FxShaderUniform::runtime(
+                crate::fx::FxUniformName::try_new("direction").unwrap(),
+                value,
+            )
+        };
+        let mut operation = ResolvedShaderUniformOperation {
+            phase: FxPhase::OffscreenPass,
+            target: FxTarget::Content,
+            resource: Some(FxResourceId::try_new("soft_glow").unwrap()),
+            stage: None,
+            uniforms: vec![uniform(FxRuntimeValue::F32(FiniteF32::ONE))],
+        };
+        assert_eq!(
+            table.resolve_shader(&operation),
+            Err(FxRenderResourceError::InvalidProperty {
+                property: "direction".to_owned()
+            })
+        );
+        operation.uniforms = vec![uniform(FxRuntimeValue::Vec2(FxVec2 {
+            x: FiniteF32::ZERO,
+            y: FiniteF32::ZERO,
+        }))];
+        assert_eq!(
+            table.resolve_shader(&operation),
+            Err(FxRenderResourceError::InvalidDirection)
+        );
+        let valid = uniform(FxRuntimeValue::Vec2(FxVec2 {
+            x: FiniteF32::ONE,
+            y: FiniteF32::ZERO,
+        }));
+        operation.uniforms = vec![valid.clone(), valid];
+        assert_eq!(
+            table.resolve_shader(&operation),
+            Err(FxRenderResourceError::DuplicateProperty {
+                property: "direction".to_owned()
+            })
+        );
     }
 
     #[test]

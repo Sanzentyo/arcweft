@@ -15,6 +15,7 @@ use base64::{Engine as _, engine::general_purpose};
 include!("agent_observe_native/shared.rs");
 include!("agent_observe_native/native_session.rs");
 include!("agent_observe_native/native_script_capture.rs");
+include!("agent_observe_native/native_full_grammar.rs");
 include!("agent_observe_native/core.rs");
 include!("agent_observe_native/native_vertical.rs");
 include!("agent_observe_native/native_length_units.rs");

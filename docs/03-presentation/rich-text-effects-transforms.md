@@ -265,6 +265,9 @@ layout, with `cursor_alpha` / `cursor_opacity` as an optional typed override.
 it does not embed shader source in dialogue text. Common parameters are
 `resource`, `amount`, `direction`, `color`, `target`, and `phase`. Shared evaluation resolves glyph,
 offscreen, and post-process operations before a backend adapter receives them.
+The glow resource consumes the same `direction: vec2` uniform. It normalizes
+the nonzero vector before deriving offscreen glyph-pass offsets; invalid types,
+zero vectors, and duplicate direction uniforms are rejected at this shared boundary.
 Unknown resources and invalid shader arguments are typed diagnostics rather
 than backend-local no-ops.
 
