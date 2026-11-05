@@ -1,10 +1,10 @@
 //! Projects admitted `CharacterDialogue` `RichText` properties into text styles.
 
 use crate::{
-    CheckedLength, Milli, RichTextAngle, RichTextColor, RichTextFontFamily,
-    RichTextInlineDirection, RichTextJlreqStrictness, RichTextLayoutUpdate,
-    RichTextPresentationStyle, RichTextRubyPosition, RichTextStyle, RichTextTransform,
-    RichTextTransformOrigin, RichTextVerticalLatinMode, RichTextWritingMode,
+    CheckedLength, Milli, RichTextAngle, RichTextColor, RichTextInlineDirection,
+    RichTextJlreqStrictness, RichTextLayoutUpdate, RichTextPresentationStyle, RichTextRubyPosition,
+    RichTextStyle, RichTextTransform, RichTextTransformOrigin, RichTextVerticalLatinMode,
+    RichTextWritingMode,
 };
 use arcweft_dialogue::{
     CharacterDialogueRichTextColor, CharacterDialogueRichTextProperties,
@@ -310,6 +310,7 @@ const fn invalid(property: PropertyId) -> CharacterDialogueRichTextProjectionErr
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::RichTextFontFamily;
     use arcweft_core::value::{RuntimeInt, RuntimeUInt, RuntimeValue};
     use arcweft_dialogue::CharacterDialogueRolePayloadCodec;
     use arcweft_presentation::rich_text::PRESENTATION_CONTENT_CALLABLE_CATALOG;

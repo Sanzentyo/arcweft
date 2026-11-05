@@ -133,3 +133,71 @@ pub(crate) fn agent_presentation_object_proxy_ref(
         params: BTreeMap::new(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arcweft_text_model::RichTextFontFamily;
+
+    #[test]
+    fn font_param_queries_preserve_family_identity_after_json_transport() {
+        let queries = [
+            r#"{"kind":"serif"}"#,
+            r#"{"kind":"named","name":"serif"}"#,
+            r#"{"kind":"named","name":"Noto Sans JP"}"#,
+        ];
+        for (index, family) in [
+            RichTextFontFamily::Serif,
+            RichTextFontFamily::Named {
+                name: "serif".into(),
+            },
+            RichTextFontFamily::Named {
+                name: "Noto Sans JP".into(),
+            },
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let proxy = AgentPresentationObjectProxyRef {
+                id: "font-proxy".into(),
+                type_name: None,
+                role: None,
+                layer: None,
+                depth: None,
+                declaration: None,
+                schema: None,
+                hit_test: false,
+                fields: vec![RichTextTextProxyField {
+                    id: 0,
+                    name: "font".into(),
+                    value: RichTextTextProxyScalar::FontFamily { value: family },
+                }],
+                params: BTreeMap::new(),
+            };
+            let bytes = serde_json::to_vec(&proxy).unwrap();
+            let restored = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(proxy, restored);
+            for (query_index, query) in queries.into_iter().enumerate() {
+                assert_eq!(
+                    proxy_matches_param_query(
+                        &restored,
+                        &AgentPresentationObjectProxyParamQuery {
+                            key: "font".into(),
+                            value: Some(query.into()),
+                        }
+                    ),
+                    index == query_index,
+                );
+            }
+            for invalid in ["serif", r#"{"kind":"named"}"#, r#"{"kind":"unknown"}"#] {
+                assert!(!proxy_matches_param_query(
+                    &restored,
+                    &AgentPresentationObjectProxyParamQuery {
+                        key: "font".into(),
+                        value: Some(invalid.into()),
+                    }
+                ));
+            }
+        }
+    }
+}

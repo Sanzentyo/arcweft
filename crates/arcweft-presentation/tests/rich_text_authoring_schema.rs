@@ -149,11 +149,8 @@ fn direct_style_schemas_preserve_required_values_defaults_and_limits() {
     );
 
     let font = RichTextDirectStyle::Font.property_schema();
-    assert_eq!(font.properties[0].kind, RichTextValueKind::Text);
-    assert_eq!(
-        font.properties[0].limits.enum_values,
-        ["serif", "sans-serif", "monospace", "cursive", "fantasy"]
-    );
+    assert_eq!(font.properties[0].kind, RichTextValueKind::FontFamily);
+    assert!(font.properties[0].limits.enum_values.is_empty());
     assert_eq!(font.properties[0].limits.max_decoded_bytes, 256);
 
     let ruby = RichTextDirectStyle::Ruby.property_schema();

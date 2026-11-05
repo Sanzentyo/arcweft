@@ -2,7 +2,9 @@ use super::*;
 use crate::{
     CharacterDialogueRichTextProperty as Property, CharacterDialogueRichTextPropertyValue as Value,
 };
-use arcweft_presentation::rich_text::PresentationReusableStylePropertyId as Id;
+use arcweft_presentation::rich_text::{
+    PresentationReusableStylePropertyId as Id, RichTextFontFamily,
+};
 use arcweft_rich_text_schema::{RichTextEnumDomain, RichTextUnit};
 
 #[test]
@@ -19,7 +21,13 @@ fn call_property_construction_keeps_original_result_type_and_resource_limits() {
     let context = |result, limits| {
         RuntimeExternalCallContext::for_program(execution.clone(), [], result, limits).unwrap()
     };
-    let property = Property::try_new(Id::Font, Value::Text("Noto Sans JP")).unwrap();
+    let property = Property::try_new(
+        Id::Font,
+        Value::FontFamily(RichTextFontFamily::Named {
+            name: "Noto Sans JP",
+        }),
+    )
+    .unwrap();
     let admitted = schema
         .construct_rich_text_properties_in_call(
             &context(
@@ -93,7 +101,13 @@ fn borrowed_properties_construct_and_restore_under_both_exact_programs() {
                     },
                 )
                 .unwrap(),
-                Property::try_new(Id::Font, Value::Text(font.as_str())).unwrap(),
+                Property::try_new(
+                    Id::Font,
+                    Value::FontFamily(RichTextFontFamily::Named {
+                        name: font.as_str(),
+                    }),
+                )
+                .unwrap(),
                 Property::try_new(
                     Id::RubySize,
                     Value::Length {
@@ -119,7 +133,9 @@ fn borrowed_properties_construct_and_restore_under_both_exact_programs() {
                 .find(|property| property.id() == Id::Font)
                 .unwrap()
                 .value(),
-            &Value::Text("Noto Sans JP")
+            &Value::FontFamily(RichTextFontFamily::Named {
+                name: "Noto Sans JP"
+            })
         );
         assert_eq!(
             borrowed
@@ -207,8 +223,29 @@ fn borrowed_property_admission_rejects_erased_domains_units_and_limits() {
         );
     }
     assert!(Property::try_new(Id::Opacity, Value::Ratio(1001)).is_err());
-    let oversized = "x".repeat(4097);
-    assert!(Property::try_new(Id::Font, Value::Text(oversized.as_str())).is_err());
+    assert!(Property::try_new(Id::Font, Value::Text("serif")).is_err());
+    let maximum = "x".repeat(256);
+    assert!(
+        Property::try_new(
+            Id::Font,
+            Value::FontFamily(RichTextFontFamily::Named { name: &maximum })
+        )
+        .is_ok()
+    );
+    for invalid in [
+        String::new(),
+        "x".repeat(257),
+        "夢".repeat(86),
+        "x".repeat(4097),
+    ] {
+        assert!(
+            Property::try_new(
+                Id::Font,
+                Value::FontFamily(RichTextFontFamily::Named { name: &invalid })
+            )
+            .is_err()
+        );
+    }
 }
 
 #[test]
@@ -224,7 +261,13 @@ fn rich_text_producer_rejects_foreign_executables_and_excess_inputs() {
                 .map_err(|error| *error),
             Err(CharacterDialogueValueError::ForeignProgramOwner)
         ));
-        let property = Property::try_new(Id::Font, Value::Text("Noto Sans JP")).unwrap();
+        let property = Property::try_new(
+            Id::Font,
+            Value::FontFamily(RichTextFontFamily::Named {
+                name: "Noto Sans JP",
+            }),
+        )
+        .unwrap();
         let maximum = usize::from(PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_structured_leaves);
         let excessive = vec![property; maximum + 1];
         assert!(
@@ -232,5 +275,90 @@ fn rich_text_producer_rejects_foreign_executables_and_excess_inputs() {
             Err(CharacterDialogueValueError::Limit{limit:"rich_text_property_inputs",maximum:observed}) if observed==maximum)
         );
         assert!(schema.construct_rich_text_properties(&program, &[]).is_ok());
+    }
+}
+
+#[test]
+fn font_families_keep_generic_and_named_identity_in_borrowed_and_saved_properties() {
+    let (_, characters, views, custom) = fixture();
+    let types = Types::new();
+    for program in types.program_owners() {
+        let schema = types.schema(&characters, &views, &custom, program.clone());
+        for family in RichTextFontFamily::<&str>::GENERIC.into_iter().chain([
+            RichTextFontFamily::Named { name: "serif" },
+            RichTextFontFamily::Named {
+                name: "Noto Sans JP",
+            },
+        ]) {
+            let property = Property::try_new(Id::Font, Value::FontFamily(family.clone())).unwrap();
+            let value = schema
+                .construct_rich_text_properties(&program, &[property])
+                .unwrap();
+            let snapshot =
+                arcweft_core::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                    &value, &program,
+                )
+                .unwrap();
+            let bytes = serde_json::to_vec(&snapshot).unwrap();
+            let restored: arcweft_core::value::AwbcRuntimeValueSnapshot =
+                serde_json::from_slice(&bytes).unwrap();
+            let restored = restored.into_runtime_value_for_program(&program).unwrap();
+            assert_eq!(restored, value);
+            let payload = arcweft_core::value::RuntimeBorrowedValue::from(&restored)
+                .opaque()
+                .unwrap()
+                .payload();
+            let properties = CharacterDialogueRolePayloadCodec::RichTextProperties
+                .borrow_properties(payload)
+                .unwrap();
+            assert_eq!(properties.len(), 1);
+            assert_eq!(
+                properties.iter().next().unwrap().value(),
+                &Value::FontFamily(family)
+            );
+        }
+    }
+}
+
+#[test]
+fn stored_font_properties_reject_erased_unknown_and_malformed_family_payloads() {
+    use arcweft_core::value::RuntimeUInt;
+    use arcweft_presentation::rich_text::PRESENTATION_CONTENT_CALLABLE_CATALOG;
+
+    let codec = CharacterDialogueRolePayloadCodec::RichTextProperties;
+    let schema = PRESENTATION_CONTENT_CALLABLE_CATALOG
+        .reusable_style_schema()
+        .unwrap();
+    let font = schema
+        .properties()
+        .iter()
+        .position(|field| field.id == Id::Font)
+        .unwrap();
+    let tuple = |ordinal, name: &str| {
+        RuntimeValue::Tuple(vec![
+            RuntimeValue::UInt(RuntimeUInt::U32(ordinal)),
+            RuntimeValue::String(name.into()),
+        ])
+    };
+    for malformed in [
+        RuntimeValue::String("serif".into()),
+        tuple(0, "serif"),
+        tuple(RichTextFontFamily::<&str>::NAMED_ORDINAL, ""),
+        tuple(6, ""),
+        tuple(u32::MAX, "serif"),
+        tuple(RichTextFontFamily::<&str>::NAMED_ORDINAL, &"x".repeat(257)),
+        RuntimeValue::Tuple(vec![RuntimeValue::UInt(RuntimeUInt::U32(0))]),
+        RuntimeValue::Tuple(vec![
+            RuntimeValue::UInt(RuntimeUInt::U16(0)),
+            RuntimeValue::String(String::new()),
+        ]),
+    ] {
+        let mut payload = codec.no_overrides_payload().unwrap();
+        let RuntimeValue::Tuple(slots) = &mut payload else {
+            panic!("property tuple")
+        };
+        slots[font] = RuntimeValue::option_some(malformed);
+        assert!(codec.decode_properties(&payload).is_err());
+        assert!(codec.borrow_properties(&payload).is_err());
     }
 }
