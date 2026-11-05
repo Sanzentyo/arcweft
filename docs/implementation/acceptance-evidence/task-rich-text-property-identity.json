@@ -14576,5 +14576,872 @@
       "entries": 154,
       "entryDrift": 0
     }
+  },
+  "ragProjectSummary": {
+    "version": 1,
+    "recordedAt": "2026-11-05T16:08:25.2537276Z",
+    "scope": "Published owner-validation checkpoint. Current status is maintained only in current-status.md. The combined55-package reverse run is ongoing and no terminal result is claimed here.",
+    "source": {
+      "version": 1,
+      "commit": "56b565f900fb59d0cb9521b89d0348dca0e5a630",
+      "parent": "203b0972aa96956bdca23c722e09142fc44f410f",
+      "tree": "a6e68e5cd497a05b39e68f9a9f41bd9338359a45",
+      "remote": "56b565f900fb59d0cb9521b89d0348dca0e5a630",
+      "paths": [
+        {
+          "path": "crates/arcweft-agent-protocol/src/protocol.rs",
+          "blob": "6b9ff7303a19897e7e74ce7e120ab563155949ab"
+        },
+        {
+          "path": "crates/arcweft-agent-runner/src/runtime_payload.rs",
+          "blob": "2f4da33d95b0e049b4b634a35b854e97aa9f71ca"
+        },
+        {
+          "path": "crates/arcweft-agent-runner/src/tests.rs",
+          "blob": "415a9132b6c0339b86e65444c1363263dd5aee4b"
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/agent/rag/source_index.rs",
+          "blob": "f5e7f39dc86157d4a8d61de764f8d35f52ee2722"
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/agent/script.rs",
+          "blob": "50b1fee04a4f743dc177dd41cdb6be50761daaf8"
+        },
+        {
+          "path": "crates/arcweft-cli/tests/check/agent_script_debug.rs",
+          "blob": "7965fc469fe1d878a15f23de25aa8fa3f02817ab"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/agent_project.rs",
+          "blob": "f8a649fafbbde2f5110c0467c204cbc9d64dfcfc"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/project/tests.rs",
+          "blob": "f77f209ccd1ad187ece886fdbc3f09560e64a3fe"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/agent_project_summary.rs",
+          "blob": "87b998bb62ed5627b2ea8c63c5e3937534bedf5e"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/verify/code.rs",
+          "blob": "49b1a384598ed484c7eb1e58ba338d6b3c932356"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/lower.rs",
+          "blob": "662958d47c03314f657729e21a3326a781a9693d"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/agent.rs",
+          "blob": "678cc83e46a2a3d11ad5760b5b27380a6ee2bf3c"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/agent/semantic.rs",
+          "blob": "6f7d3c9256bd57b6ff9c22174867636d6dd6d012"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs",
+          "blob": "2d913c7c972b34523d189fdbfbfeb2729c8d1036"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/types/agent_fields.rs",
+          "blob": "dab0ca6e0b554a7ab657e75a928c3af2fb7f3e68"
+        },
+        {
+          "path": "docs/04-tooling/cli.md",
+          "blob": "f6ced98b72b8753364945d3bba76ee09386c161a"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "a4a82395af67cf24166594257140ecccadb1546dc21cbd4e8237db8c3278c999",
+      "heldPatchSha256": "450c9a0d35f590fa234046cddf9c11acd60e7bf9072569f1c4a3b87cb39f6b5b",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-05T15:48:29.7762605Z"
+    },
+    "owner": {
+      "version": 1,
+      "base": "203b0972aa96956bdca23c722e09142fc44f410f",
+      "run": "rag-project-summary-owner3-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   0.130s] 5 tests run: 5 passed, 2533 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 2533,
+      "selectedPackages": 3,
+      "matchedPackages": 3,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4112,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-05T15:10:42.3428943Z"
+    },
+    "sourceMaps": {
+      "version": 1,
+      "base": "203b0972aa96956bdca23c722e09142fc44f410f",
+      "run": "rag-project-summary-source2-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   0.407s] 1 test run: 1 passed, 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4113,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-05T15:40:58.1914353Z"
+    },
+    "cli": {
+      "version": 1,
+      "base": "203b0972aa96956bdca23c722e09142fc44f410f",
+      "run": "rag-project-summary-cli4-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   2.814s] 2 tests run: 2 passed, 486 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 486,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4113,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-05T15:31:05.002064Z"
+    },
+    "implementation": [
+      "Extend AgentProjectGraphSummary with canonical entity/relation/dependency kind histograms. Compiler produces one checked projection and CLI deletes duplicate summary counters and Debug-derived kind names.",
+      "Source, persisted graph/session metadata and RAG program summaries retain the complete typed summary. Host payloads expose the same3 BTreeMap<String,u32> fields through existing runtime sequence-of-pair representation.",
+      "Core field tags95/96/97 append without changing existing tags. Sema and transcript, runtime-plan construction and AWBC verification retain exact BTree map kind, String keys and u32 values. Contract versions remain1; there is no legacy/default reader for missing maps.",
+      "One RAG assertion hunk checks body identity, public ID, Source namespace and exact chunk/source-key linkage instead of requiring a Flow display label in its structural ID. Keep both original Source inputs, all queries, limits, graph checks and persisted summary assertions."
+    ],
+    "attempts": [
+      {
+        "run": "rag-project-summary-owner1-20261106",
+        "catalog": {
+          "version": 1,
+          "base": "203b0972aa96956bdca23c722e09142fc44f410f",
+          "command": [
+            "nextest",
+            "list",
+            "-p",
+            "arcweft-core",
+            "-p",
+            "arcweft-agent-runner",
+            "-p",
+            "arcweft-compiler",
+            "--lib",
+            "--all-features",
+            "--locked",
+            "-E",
+            "test(project_graph) | test(project_neighbors) | test(runtime_agent_field)",
+            "--message-format",
+            "json"
+          ],
+          "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/rag-project-summary-owner1-20261106.catalog.log",
+          "exitCode": 101,
+          "sourceInputs": 4112,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-05T15:05:12.1053457Z",
+          "finishedAt": "2026-11-05T15:07:17.998323Z"
+        },
+        "runtime": "not run: catalog failed"
+      },
+      {
+        "run": "rag-project-summary-owner2-20261106",
+        "catalog": {
+          "version": 1,
+          "base": "203b0972aa96956bdca23c722e09142fc44f410f",
+          "command": [
+            "nextest",
+            "list",
+            "-p",
+            "arcweft-core",
+            "-p",
+            "arcweft-agent-runner",
+            "-p",
+            "arcweft-compiler",
+            "--lib",
+            "--all-features",
+            "--locked",
+            "-E",
+            "test(project_graph) | test(project_neighbors) | test(runtime_agent_field)",
+            "--message-format",
+            "json"
+          ],
+          "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/rag-project-summary-owner2-20261106.catalog.log",
+          "exitCode": 101,
+          "sourceInputs": 4112,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-05T15:08:04.810632Z",
+          "finishedAt": "2026-11-05T15:09:14.3084898Z"
+        },
+        "runtime": "not run: catalog failed"
+      },
+      {
+        "run": "rag-project-summary-owner3-20261106",
+        "runtime": {
+          "version": 1,
+          "base": "203b0972aa96956bdca23c722e09142fc44f410f",
+          "run": "rag-project-summary-owner3-20261106.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [   0.130s] 5 tests run: 5 passed, 2533 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 5,
+          "passed": 5,
+          "failed": 0,
+          "skipped": 2533,
+          "selectedPackages": 3,
+          "matchedPackages": 3,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4112,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-05T15:10:42.3428943Z"
+        }
+      },
+      {
+        "run": "rag-project-summary-cli1-20261106",
+        "catalog": {
+          "version": 1,
+          "base": "203b0972aa96956bdca23c722e09142fc44f410f",
+          "command": [
+            "nextest",
+            "list",
+            "-p",
+            "arcweft-cli",
+            "--test",
+            "check",
+            "--all-features",
+            "--locked",
+            "-E",
+            "test(agent_rag_query_indexes_multiple_sources) | test(agent_script_run_persists_debug_session_and_script_run)",
+            "--message-format",
+            "json"
+          ],
+          "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/rag-project-summary-cli1-20261106.catalog.log",
+          "exitCode": 101,
+          "sourceInputs": 4112,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-05T15:10:59.1739634Z",
+          "finishedAt": "2026-11-05T15:12:51.542174Z"
+        },
+        "runtime": "not run: catalog failed"
+      },
+      {
+        "run": "rag-project-summary-cli2-20261106",
+        "runtime": {
+          "version": 1,
+          "base": "203b0972aa96956bdca23c722e09142fc44f410f",
+          "run": "rag-project-summary-cli2-20261106.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   2.582s] 2 tests run: 1 passed, 1 failed, 486 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 2,
+          "passed": 1,
+          "failed": 1,
+          "skipped": 486,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4113,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-cli::check",
+              "test": "agent_rag_query_indexes_multiple_sources"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T15:20:04.0075968Z"
+        }
+      },
+      {
+        "run": "rag-project-summary-cli3-20261106",
+        "runtime": {
+          "version": 1,
+          "base": "203b0972aa96956bdca23c722e09142fc44f410f",
+          "run": "rag-project-summary-cli3-20261106.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [   2.518s] 2 tests run: 2 passed, 486 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 2,
+          "passed": 2,
+          "failed": 0,
+          "skipped": 486,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4113,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-05T15:25:39.2110123Z"
+        }
+      },
+      {
+        "run": "rag-project-summary-cli4-20261106",
+        "runtime": {
+          "version": 1,
+          "base": "203b0972aa96956bdca23c722e09142fc44f410f",
+          "run": "rag-project-summary-cli4-20261106.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [   2.814s] 2 tests run: 2 passed, 486 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 2,
+          "passed": 2,
+          "failed": 0,
+          "skipped": 486,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4113,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-05T15:31:05.002064Z"
+        }
+      },
+      {
+        "run": "rag-project-summary-source1-20261106",
+        "runtime": {
+          "version": 1,
+          "base": "203b0972aa96956bdca23c722e09142fc44f410f",
+          "run": "rag-project-summary-source1-20261106.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [   0.279s] 1 test run: 1 passed, 0 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 1,
+          "passed": 1,
+          "failed": 0,
+          "skipped": 0,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4113,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-05T15:15:51.3831653Z"
+        }
+      },
+      {
+        "run": "rag-project-summary-source2-20261106",
+        "runtime": {
+          "version": 1,
+          "base": "203b0972aa96956bdca23c722e09142fc44f410f",
+          "run": "rag-project-summary-source2-20261106.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [   0.407s] 1 test run: 1 passed, 0 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 1,
+          "passed": 1,
+          "failed": 0,
+          "skipped": 0,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4113,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-05T15:40:58.1914353Z"
+        }
+      }
+    ],
+    "failedAttemptReasons": [
+      "owner1 catalog101: the new field-value family lacked its exhaustive semantic-transcript arm. Add tag8, preserving prior tags.",
+      "owner2 catalog101: the histogram helper incorrectly required static strings, while custom entity-kind labels borrow from the semantic index. Accept the actual borrowed lifetime.",
+      "CLI1 catalog101: a session metadata read still moved a now-non-Copy summary from a borrowed symbol. Borrow the summary; migrate the two corresponding reads in existing WIP in the same way.",
+      "CLI2 actually ran2cases:1PASS1FAIL. Persisted summary data and session readback passed; the remaining RAG failure was the old Flow display-label-in-chunk-ID assertion. Its original structural identity is correct and must not be replaced by a fallback ID.",
+      "CLI3 and formatted-final CLI4 each ran2/2PASS. Later exact-map-kind hardening is separately validated by Source2 and fresh workspace quality; these are not combined into a fabricated single run."
+    ],
+    "sourceMapCoverage": "One integration test covers3 Source field roots: each returns the same exact map in Native and canonical encoded/decoded AWBC, with one-op steps and64-step bounds. Empty maps remain empty. For each field reject wrong u64 count width, Ordered map kind and u32 key type (9 negative compile cases). Source2:1PASS0skip0.407s;4113 source/case/EXE drift0.",
+    "quality": {
+      "check": {
+        "version": 1,
+        "base": "203b0972aa96956bdca23c722e09142fc44f410f",
+        "command": [
+          "check",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4113,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T15:41:44.9735886Z",
+        "finishedAt": "2026-11-05T15:42:33.0792765Z"
+      },
+      "clippy": {
+        "version": 1,
+        "base": "203b0972aa96956bdca23c722e09142fc44f410f",
+        "command": [
+          "clippy",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4113,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T15:42:33.5398816Z",
+        "finishedAt": "2026-11-05T15:43:37.5141009Z"
+      },
+      "structure": {
+        "version": 1,
+        "base": "203b0972aa96956bdca23c722e09142fc44f410f",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/rag-project-summary-quality2-20261106.structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4113,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T15:43:37.957205Z",
+        "finishedAt": "2026-11-05T15:43:41.6958844Z"
+      },
+      "earlierInput": {
+        "version": 1,
+        "base": "203b0972aa96956bdca23c722e09142fc44f410f",
+        "command": [
+          "check",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4113,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T15:32:28.3804719Z",
+        "finishedAt": "2026-11-05T15:33:34.4289755Z"
+      },
+      "warnings": "Warnings remain."
+    },
+    "graph": {
+      "version": 1,
+      "base": "203b0972aa96956bdca23c722e09142fc44f410f",
+      "roots": [
+        "arcweft-lang-syntax",
+        "arcweft-lang-hir",
+        "arcweft-lang-sema",
+        "arcweft-compiler",
+        "arcweft-view",
+        "arcweft-bundle",
+        "arcweft-core",
+        "arcweft-agent-protocol",
+        "arcweft-agent-runner",
+        "arcweft-cli"
+      ],
+      "workspacePackages": 98,
+      "selection": [
+        "arcweft",
+        "arcweft-adapter-desktop",
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-policy",
+        "arcweft-agent-protocol",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-browser-bench",
+        "arcweft-bundle",
+        "arcweft-bundle-assets",
+        "arcweft-character-view",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-core",
+        "arcweft-debug-model",
+        "arcweft-debug-sqlite",
+        "arcweft-dialogue",
+        "arcweft-glyphon",
+        "arcweft-host-adapter",
+        "arcweft-lang-hir",
+        "arcweft-lang-jit-cranelift",
+        "arcweft-lang-sema",
+        "arcweft-lang-syntax",
+        "arcweft-launch",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-text-input",
+        "arcweft-player-web",
+        "arcweft-project",
+        "arcweft-project-loader",
+        "arcweft-rag",
+        "arcweft-render-text",
+        "arcweft-render-web",
+        "arcweft-render-wgpu",
+        "arcweft-resource-manifest",
+        "arcweft-resource-model",
+        "arcweft-runtime-accelerator",
+        "arcweft-runtime-codegen",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-runtime-scheduler",
+        "arcweft-save",
+        "arcweft-test",
+        "arcweft-text-layout",
+        "arcweft-text-model",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3",
+        "arcweft-view"
+      ],
+      "selectedPackages": 55,
+      "target": "all",
+      "features": "all",
+      "dependencyKinds": [
+        "normal",
+        "build",
+        "dev"
+      ],
+      "metadataTreeDrift": 0,
+      "runtimeAcceptance": "Pending. Component owner runs are not the complete reverse closure."
+    },
+    "ownership": {
+      "version": 1,
+      "base": "203b0972aa96956bdca23c722e09142fc44f410f",
+      "commit": "56b565f900fb59d0cb9521b89d0348dca0e5a630",
+      "workingTree": "Original12 tracked WIP, with two required borrowed-summary reads, and6 untracked files retained. Only one owned test hunk from the overlapping path was published.",
+      "files": [
+        {
+          "path": "crates/arcweft-agent-protocol/src/protocol.rs",
+          "owner": "arcweft-agent-protocol",
+          "bytes": 11151,
+          "physicalLoc": 356,
+          "committedPhysicalLoc": 356,
+          "basePhysicalLoc": 353,
+          "classification": "production",
+          "partialStaging": false
+        },
+        {
+          "path": "crates/arcweft-agent-runner/src/runtime_payload.rs",
+          "owner": "arcweft-agent-runner",
+          "bytes": 31826,
+          "physicalLoc": 850,
+          "committedPhysicalLoc": 850,
+          "basePhysicalLoc": 824,
+          "classification": "production",
+          "partialStaging": false
+        },
+        {
+          "path": "crates/arcweft-agent-runner/src/tests.rs",
+          "owner": "arcweft-agent-runner",
+          "bytes": 148486,
+          "physicalLoc": 4045,
+          "committedPhysicalLoc": 4045,
+          "basePhysicalLoc": 4020,
+          "classification": "test",
+          "partialStaging": false
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/agent/rag/source_index.rs",
+          "owner": "arcweft-cli",
+          "bytes": 52826,
+          "physicalLoc": 1427,
+          "committedPhysicalLoc": 1427,
+          "basePhysicalLoc": 1504,
+          "classification": "production",
+          "partialStaging": false
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/agent/script.rs",
+          "owner": "arcweft-cli",
+          "bytes": 88064,
+          "physicalLoc": 2473,
+          "committedPhysicalLoc": 2473,
+          "basePhysicalLoc": 2473,
+          "classification": "production",
+          "partialStaging": false
+        },
+        {
+          "path": "crates/arcweft-cli/tests/check/agent_script_debug.rs",
+          "owner": "arcweft-cli",
+          "bytes": 175358,
+          "physicalLoc": 4719,
+          "committedPhysicalLoc": 4603,
+          "basePhysicalLoc": 4588,
+          "classification": "test",
+          "partialStaging": true
+        },
+        {
+          "path": "crates/arcweft-compiler/src/agent_project.rs",
+          "owner": "arcweft-compiler",
+          "bytes": 23828,
+          "physicalLoc": 601,
+          "committedPhysicalLoc": 601,
+          "basePhysicalLoc": 551,
+          "classification": "production",
+          "partialStaging": false
+        },
+        {
+          "path": "crates/arcweft-compiler/src/project/tests.rs",
+          "owner": "arcweft-compiler",
+          "bytes": 163937,
+          "physicalLoc": 4387,
+          "committedPhysicalLoc": 4387,
+          "basePhysicalLoc": 4362,
+          "classification": "test",
+          "partialStaging": false
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/agent_project_summary.rs",
+          "owner": "arcweft-compiler",
+          "bytes": 6476,
+          "physicalLoc": 173,
+          "committedPhysicalLoc": 173,
+          "basePhysicalLoc": 0,
+          "classification": "test",
+          "partialStaging": false
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/verify/code.rs",
+          "owner": "arcweft-core",
+          "bytes": 274028,
+          "physicalLoc": 6980,
+          "committedPhysicalLoc": 6980,
+          "basePhysicalLoc": 6963,
+          "classification": "production",
+          "partialStaging": false
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/lower.rs",
+          "owner": "arcweft-core",
+          "bytes": 272400,
+          "physicalLoc": 6326,
+          "committedPhysicalLoc": 6326,
+          "basePhysicalLoc": 6312,
+          "classification": "production",
+          "partialStaging": false
+        },
+        {
+          "path": "crates/arcweft-core/src/value/agent.rs",
+          "owner": "arcweft-core",
+          "bytes": 92394,
+          "physicalLoc": 2327,
+          "committedPhysicalLoc": 2327,
+          "basePhysicalLoc": 2303,
+          "classification": "production",
+          "partialStaging": false
+        },
+        {
+          "path": "crates/arcweft-core/src/value/agent/semantic.rs",
+          "owner": "arcweft-core",
+          "bytes": 8685,
+          "physicalLoc": 213,
+          "committedPhysicalLoc": 213,
+          "basePhysicalLoc": 207,
+          "classification": "production",
+          "partialStaging": false
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs",
+          "owner": "arcweft-lang-sema",
+          "bytes": 196206,
+          "physicalLoc": 4792,
+          "committedPhysicalLoc": 4792,
+          "basePhysicalLoc": 4789,
+          "classification": "production",
+          "partialStaging": false
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/types/agent_fields.rs",
+          "owner": "arcweft-lang-sema",
+          "bytes": 14782,
+          "physicalLoc": 343,
+          "committedPhysicalLoc": 343,
+          "basePhysicalLoc": 333,
+          "classification": "production",
+          "partialStaging": false
+        }
+      ],
+      "packages": [
+        {
+          "package": "arcweft-agent-protocol",
+          "manifest": "crates/arcweft-agent-protocol/Cargo.toml",
+          "workspace_fan_in": "11",
+          "workspace_fan_out": "5",
+          "development_workspace_fan_in": "0",
+          "development_workspace_fan_out": "6"
+        },
+        {
+          "package": "arcweft-agent-runner",
+          "manifest": "crates/arcweft-agent-runner/Cargo.toml",
+          "workspace_fan_in": "4",
+          "workspace_fan_out": "4",
+          "development_workspace_fan_in": "1",
+          "development_workspace_fan_out": "5"
+        },
+        {
+          "package": "arcweft-bundle",
+          "manifest": "crates/arcweft-bundle/Cargo.toml",
+          "workspace_fan_in": "11",
+          "workspace_fan_out": "19",
+          "development_workspace_fan_in": "0",
+          "development_workspace_fan_out": "0"
+        },
+        {
+          "package": "arcweft-cli",
+          "manifest": "crates/arcweft-cli/Cargo.toml",
+          "workspace_fan_in": "0",
+          "workspace_fan_out": "54",
+          "development_workspace_fan_in": "0",
+          "development_workspace_fan_out": "2"
+        },
+        {
+          "package": "arcweft-compiler",
+          "manifest": "crates/arcweft-compiler/Cargo.toml",
+          "workspace_fan_in": "3",
+          "workspace_fan_out": "25",
+          "development_workspace_fan_in": "2",
+          "development_workspace_fan_out": "10"
+        },
+        {
+          "package": "arcweft-core",
+          "manifest": "crates/arcweft-core/Cargo.toml",
+          "workspace_fan_in": "31",
+          "workspace_fan_out": "8",
+          "development_workspace_fan_in": "4",
+          "development_workspace_fan_out": "5"
+        },
+        {
+          "package": "arcweft-lang-hir",
+          "manifest": "crates/arcweft-lang-hir/Cargo.toml",
+          "workspace_fan_in": "10",
+          "workspace_fan_out": "3",
+          "development_workspace_fan_in": "1",
+          "development_workspace_fan_out": "0"
+        },
+        {
+          "package": "arcweft-lang-sema",
+          "manifest": "crates/arcweft-lang-sema/Cargo.toml",
+          "workspace_fan_in": "8",
+          "workspace_fan_out": "15",
+          "development_workspace_fan_in": "4",
+          "development_workspace_fan_out": "0"
+        },
+        {
+          "package": "arcweft-lang-syntax",
+          "manifest": "crates/arcweft-lang-syntax/Cargo.toml",
+          "workspace_fan_in": "12",
+          "workspace_fan_out": "2",
+          "development_workspace_fan_in": "1",
+          "development_workspace_fan_out": "1"
+        },
+        {
+          "package": "arcweft-view",
+          "manifest": "crates/arcweft-view/Cargo.toml",
+          "workspace_fan_in": "15",
+          "workspace_fan_out": "5",
+          "development_workspace_fan_in": "5",
+          "development_workspace_fan_out": "0"
+        }
+      ],
+      "disposition": [
+        "Compiler owns one checked Agent graph summary projection. All common counters and histograms come from the accepted semantic index, use canonical registry labels and checked u32 counts; CLI deletes its duplicate algorithms. Text descriptions and RAG metadata consume the same projection.",
+        "AgentProtocol owns the complete readback shape. Core owns the three new field coordinates and exact BTree/String/u32 result contract. Sema, semantic transcript, runtime-plan construction and AWBC verification share that contract. AgentRunner transports the maps through existing canonical sequence-of-pair values. No new evaluator, fallback reader, version or I/O/dependency edge was introduced.",
+        "The existing large Core type verifier/construction modules gain only their existing field-result contract cases. The large Sema transcript remains its sole canonical encoder, adding one tagged value shape. No unrelated state cluster was added or API widened to split files.",
+        "Compiler Source regression independently executes all3 fields through Native and canonical decoded AWBC with one-op steps, and rejects9 incompatible map-kind/key/count-width cases. Graph/module identity and protocol round-trip checks remain in the matching compiler owner. The one CLI test hunk replaces a stale label-in-ID assumption with original identity/public-ID/Source-namespace linkage and retains every query and limit."
+      ]
+    },
+    "wip": {
+      "borrowMigration": {
+        "version": 1,
+        "base": "203b0972aa96956bdca23c722e09142fc44f410f",
+        "path": "crates/arcweft-cli/tests/check/agent_script_debug.rs",
+        "originalHeldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+        "adaptedHeldPatchSha256": "809c8fae741f43dec5044da9a9357b0dce88ca7891cf596f33a03a8f672d3782",
+        "beforeFileSha256": "f8aba5f7befec01033269f75f0b4f4452ac88ff5f66739fce345e85edd11a025",
+        "afterFileSha256": "4eafda76ca504f769d52345a5f09dcf24eca31ed2b75e68a387e8830c5931eea",
+        "changedOccurrences": 2,
+        "reverseReplacementDrift": 0,
+        "assertionChanges": 0,
+        "scope": "Necessary non-Copy API migration inside existing WIP only. Borrow the two newly authored summary lookups; retain every user assertion and all other original text. This path remains held and is not staged with production work."
+      },
+      "ownedAssertion": {
+        "version": 1,
+        "base": "203b0972aa96956bdca23c722e09142fc44f410f",
+        "path": "crates/arcweft-cli/tests/check/agent_script_debug.rs",
+        "oldHeadBlob": "b91048eb570096d7326fc7953d73b5b7528693be",
+        "beforeWorkingSha256": "4eafda76ca504f769d52345a5f09dcf24eca31ed2b75e68a387e8830c5931eea",
+        "afterWorkingSha256": "504ccba804177ff3c610af66bf5db2d6c1f96d7c2c405a2462de7c64f51faf1f",
+        "reverseReplacementDrift": 0,
+        "scope": "Exactly one existing RAG assertion hunk: compare original entity identity, public ID and Source chunk namespace. Preserve both search queries, all existing assertions, input sources and limits. The staged file candidate is independently derived from HEAD, excluding every pre-existing WIP hunk."
+      },
+      "partialStaging": {
+        "version": 1,
+        "base": "203b0972aa96956bdca23c722e09142fc44f410f",
+        "partialPath": "crates/arcweft-cli/tests/check/agent_script_debug.rs",
+        "partialBlob": "7965fc469fe1d878a15f23de25aa8fa3f02817ab",
+        "stagedCandidateDerivedFromHead": true,
+        "ownedRagHunks": 1,
+        "userHunksStaged": 0,
+        "reverseOwnedReplacementDrift": 0,
+        "otherOriginalWipDrift": 0,
+        "priorHeldPatchSha256": "809c8fae741f43dec5044da9a9357b0dce88ca7891cf596f33a03a8f672d3782",
+        "remainingHeldPatchSha256": "450c9a0d35f590fa234046cddf9c11acd60e7bf9072569f1c4a3b87cb39f6b5b",
+        "reason": "Rebase only the held patch coordinates over one staged RAG assertion hunk. Preserve both borrowed-summary reads within user WIP and all other user text; no user-authored hunk is staged."
+      },
+      "scope": "Two required Copy-to-borrow reads within existing WIP are retained unstaged. The published overlapping file blob is derived from HEAD plus only the owned RAG assertion hunk. Exact reverse replacement preserves all other user text. Full user WIP snapshots and the full held patch remain local, outside the raw publication."
+    },
+    "combinedReverse": {
+      "stem": "view-agent-summary-reverse55-20261106",
+      "base": "56b565f900fb59d0cb9521b89d0348dca0e5a630",
+      "selectedPackages": 55,
+      "phase": "catalog build/runtime in progress; no terminal claim",
+      "sourceInputs": 4113
+    },
+    "correctionReason": "The previously failing RAG boundary now has passing owner evidence. Delete it from the current residual list while retaining actual earlier full700/14FAIL and7140/14FAIL results. The remaining12 old failure IDs require their own current validation; no subtraction creates a new full run. Generic Match remains accepted/public.",
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-rag-project-summary.raw.zip",
+      "bytes": 4415293,
+      "sha256": "178b74fc3953611904d948ca3bf4cde61ffa10a48ff7a9ee6796cdcf0b83aaea",
+      "entries": 114,
+      "entryDrift": 0
+    }
   }
 }
