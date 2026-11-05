@@ -12265,5 +12265,846 @@
       "entries": 23,
       "entryDrift": 0
     }
+  },
+  "viewNodeProperties": {
+    "version": 1,
+    "recordedAt": "2026-11-05T13:49:25.8761589Z",
+    "state": "Syntax continuation owner validated and published; remaining static View properties and Source Style identity integration are active, unaccepted implementation work.",
+    "sampleCheckpoint": {
+      "version": 1,
+      "commit": "3fe5612b59eaeb387b73d32291d2944229e529d2",
+      "parent": "d83ccc48294885d6be70a46f1250b2c2b59295cc",
+      "tree": "406c49c09f1336c409d848a6858b48b52b45b85f",
+      "remote": "3fe5612b59eaeb387b73d32291d2944229e529d2",
+      "paths": [
+        {
+          "path": "samples/rich-text-showcase/src/main.arcw",
+          "blob": "0652db55ed07f7283b96076b099f982146e2774e"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "a2523815b9fe003e9fed769366de46c5eb3ef1443d49cbcf54390389ad68843e",
+      "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+      "separatelyHeld": [
+        {
+          "path": "crates/arcweft-compiler/src/project/tests/layout_presence.rs",
+          "sha256": "c2f4c40e728250d5f6d5203fa9734295133c581a3fc8015e0297d0c18083ffa7"
+        }
+      ],
+      "indexEmpty": true,
+      "at": "2026-11-05T13:09:39.1435387Z"
+    },
+    "sampleCorrection": "Use dialogue.character.display_name and compose text/ruby through rich_text_style(text=text_style(...),ruby=ruby_style(...)); remove two look requests with no registered Character manifest. Preserve all6 dialogue bodies, IDs, fonts, Fx and numerical parameters. This checkpoint explicitly retained the failing View compile condition.",
+    "correctionOfIntermediateAssumption": "The temporary flat text_style(ruby_size=...,ruby_gap=...) rewrite was incorrect: the current Source API retains rich_text_style(text,ruby) composition. Flat property storage does not imply flat Source factory arguments. Preserve the failed original, probe and compiler attempts; do not describe rich_text_style/ruby_style as removed.",
+    "syntaxSource": {
+      "version": 1,
+      "commit": "e555b15565617be65e520d759362be906b93b18a",
+      "parent": "3fe5612b59eaeb387b73d32291d2944229e529d2",
+      "tree": "d5b92b85cbf665dfeb1798e3830de6aaeb2e607a",
+      "remote": "e555b15565617be65e520d759362be906b93b18a",
+      "paths": [
+        {
+          "path": "crates/arcweft-lang-syntax/src/parser/expression.rs",
+          "blob": "eaf631972aa0dbe7970837aef351c52a5ef7344c"
+        },
+        {
+          "path": "crates/arcweft-lang-syntax/src/parser/shadow_recovery.rs",
+          "blob": "ba9275f5967c4133e8ae796bda795546f528fa3e"
+        },
+        {
+          "path": "crates/arcweft-lang-syntax/src/parser/view_grammar.rs",
+          "blob": "1c42c2cd0f9eda49ad5e1afdf8abd35f2cd02e75"
+        },
+        {
+          "path": "crates/arcweft-lang-syntax/src/parser/view_grammar_tests.rs",
+          "blob": "572e6ddc7a0d917cab4c1a26675b90671689a608"
+        },
+        {
+          "path": "docs/01-language/block-scopes.md",
+          "blob": "a930adb42f00e73417e42c190cf6703915e82a6a"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "a23668b9a55ecbd5a3f399612b901c81454e4a11b8fa0a0dda3df1a64a316322",
+      "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+      "separatelyHeld": [
+        {
+          "path": "crates/arcweft-bundle/src/resource_codec/view/model.rs",
+          "sha256": "28aebb3eee4a58182d2f58fbd176956ce3bba21df0d02db2ee2fb441cd092e2b"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/lower.rs",
+          "sha256": "a32286ef3ea4c970a73614e7a1f88805a1687e251b115f23910d237139f24bf7"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/project/tests/layout_presence.rs",
+          "sha256": "9311431c77d4f074411163f5cd3f420abb214819011a6aac423860458aa232e0"
+        },
+        {
+          "path": "crates/arcweft-compiler/src/view.rs",
+          "sha256": "e22b844aea035f3049d2c505ec575a4cb3432abfd09197bbd03e888c8b6eae1a"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/callable/view_modifier.rs",
+          "sha256": "62fc3f0d33b3e68ca0abb5618f2e4490d367a99803c7f3f98703402f22b96ca3"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/env/base.rs",
+          "sha256": "46526710ddfd4fd54dc6ef43339870324a0765693e8c71f309c6e7da120660f7"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls.rs",
+          "sha256": "99fb875392b133393f31e9a18d4083e1376c4e284c5391bcb72b8406def8fc8d"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls/constraints.rs",
+          "sha256": "84aa1d8b6849b6f44a91cfe8b5e834f47dd68a13d833c92884a4bf764834e46b"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expression_error.rs",
+          "sha256": "cf0dc1089646859f0c4b6413c85be418c72c6bf42f040c23747734da5accb7d6"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+          "sha256": "ee24482c37100d6fe1f60ebe558767de1a59d7cdb38d099311af4785805c46a1"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/text_proxy.rs",
+          "sha256": "775795bff6d95acf4c8a7f0aa0fcb5a40e866b2b3d8949689b7e52b2faec1f50"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/execution_plan.rs",
+          "sha256": "e5ea1e543a25f71e01a8c1ff606c75772db67ad75b840a02d844eb23b30bbe9b"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/match_edges/model.rs",
+          "sha256": "c5143fe66230caec39a8a8de0822c9f0a15cf605cc66589b6e9cbac268fea881"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/model.rs",
+          "sha256": "30d96c5fa2ed5e3923f79ff28f1fd6d79bc72d6032c5be863199121169fbbcbf"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/report.rs",
+          "sha256": "06ad3f4bf3452d351ac84fa52c71408e6e497a3b92d227664b702a0dbb5f5098"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs",
+          "sha256": "a194a97412d8a9fb58e15a2b56a55581e564bfcc77f2e0c3835597d96a23fd75"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests/semantic_transcript_acceptance/expression_corpus.rs",
+          "sha256": "ee345c583683c5121c7ee49eee7f5fb6043317883366854a2e446897bd6645ba"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/validation.rs",
+          "sha256": "65f62f77e208a4430dda7fd14e7a592a4a6a683ce00ee5a67191bad0277e15c7"
+        },
+        {
+          "path": "crates/arcweft-view/src/element_argument.rs",
+          "sha256": "405945e5954e1cc1af91f5ca1925da8e1c13ce68d24f9f0c61d9295c7508e03d"
+        }
+      ],
+      "indexEmpty": true,
+      "at": "2026-11-05T13:47:09.7619736Z"
+    },
+    "runtime": {
+      "version": 1,
+      "base": "3fe5612b59eaeb387b73d32291d2944229e529d2",
+      "run": "view-member-continuation-syntax2-20261105.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [  29.867s] 743 tests run: 743 passed, 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 743,
+      "passed": 743,
+      "failed": 0,
+      "skipped": 0,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4110,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-05T13:45:43.4072836Z"
+    },
+    "command": [
+      "nextest",
+      "run",
+      "-p",
+      "arcweft-lang-syntax",
+      "--lib",
+      "--all-features",
+      "--locked",
+      "--no-tests",
+      "fail",
+      "--no-fail-fast",
+      "--status-level",
+      "all",
+      "--final-status-level",
+      "all"
+    ],
+    "quality": {
+      "check": {
+        "version": 1,
+        "base": "3fe5612b59eaeb387b73d32291d2944229e529d2",
+        "command": [
+          "check",
+          "-p",
+          "arcweft-lang-syntax",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4110,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T13:45:44.7476218Z",
+        "finishedAt": "2026-11-05T13:45:49.7365818Z"
+      },
+      "clippy": {
+        "version": 1,
+        "base": "3fe5612b59eaeb387b73d32291d2944229e529d2",
+        "command": [
+          "clippy",
+          "-p",
+          "arcweft-lang-syntax",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4110,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T13:45:50.3001659Z",
+        "finishedAt": "2026-11-05T13:45:57.5915734Z"
+      }
+    },
+    "scope": "743/743 Syntax library cases, no skips, 29.867s;4110 source inputs/case/EXE drift0. LF/CRLF, comments and empty lines, root/nested View chains, explicit semicolon termination, missing-member diagnostic/recovery and following declaration retention. All-target/all-feature/locked Syntax check/Clippy exit0; warnings remain.",
+    "syntaxDecision": "The shared statement boundary owns leading-dot newline continuation. Remove the root-only View terminator, which also incorrectly joined across semicolons. Advance over continued trivia once so a long run of empty/comment lines does not cause quadratic rescanning.",
+    "attempts": [
+      {
+        "run": "rich-text-showcase-compiler1-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "d83ccc48294885d6be70a46f1250b2c2b59295cc",
+          "run": "rich-text-showcase-compiler1-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   0.175s] 1 test run: 0 passed, 1 failed, 179 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 1,
+          "passed": 0,
+          "failed": 1,
+          "skipped": 179,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler",
+              "test": "project::tests::layout_presence::rich_text_showcase_compiles_with_typed_presentation_contracts"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T12:19:00.286429Z"
+        }
+      },
+      {
+        "run": "rich-text-showcase-origin-trace1-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "d83ccc48294885d6be70a46f1250b2c2b59295cc",
+          "run": "rich-text-showcase-origin-trace1-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   0.176s] 1 test run: 0 passed, 1 failed, 179 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 1,
+          "passed": 0,
+          "failed": 1,
+          "skipped": 179,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler",
+              "test": "project::tests::layout_presence::rich_text_showcase_compiles_with_typed_presentation_contracts"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T12:31:33.3554422Z"
+        }
+      },
+      {
+        "run": "rich-text-showcase-origin-trace2-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "d83ccc48294885d6be70a46f1250b2c2b59295cc",
+          "run": "rich-text-showcase-origin-trace2-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   0.167s] 1 test run: 0 passed, 1 failed, 179 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 1,
+          "passed": 0,
+          "failed": 1,
+          "skipped": 179,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler",
+              "test": "project::tests::layout_presence::rich_text_showcase_compiles_with_typed_presentation_contracts"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T12:35:14.536983Z"
+        }
+      },
+      {
+        "run": "rich-text-showcase-origin-trace3-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "d83ccc48294885d6be70a46f1250b2c2b59295cc",
+          "run": "rich-text-showcase-origin-trace3-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   0.169s] 1 test run: 0 passed, 1 failed, 179 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 1,
+          "passed": 0,
+          "failed": 1,
+          "skipped": 179,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler",
+              "test": "project::tests::layout_presence::rich_text_showcase_compiles_with_typed_presentation_contracts"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T12:38:30.5568082Z"
+        }
+      },
+      {
+        "run": "rich-text-showcase-rejection-trace1-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "d83ccc48294885d6be70a46f1250b2c2b59295cc",
+          "run": "rich-text-showcase-rejection-trace1-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   0.171s] 1 test run: 0 passed, 1 failed, 179 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 1,
+          "passed": 0,
+          "failed": 1,
+          "skipped": 179,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler",
+              "test": "project::tests::layout_presence::rich_text_showcase_compiles_with_typed_presentation_contracts"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T12:41:59.3258331Z"
+        }
+      },
+      {
+        "run": "rich-text-showcase-variant-trace1-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "d83ccc48294885d6be70a46f1250b2c2b59295cc",
+          "run": "rich-text-showcase-variant-trace1-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   0.171s] 1 test run: 0 passed, 1 failed, 179 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 1,
+          "passed": 0,
+          "failed": 1,
+          "skipped": 179,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler",
+              "test": "project::tests::layout_presence::rich_text_showcase_compiles_with_typed_presentation_contracts"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T12:44:30.8473192Z"
+        }
+      },
+      {
+        "run": "rich-text-showcase-expectation-trace1-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "d83ccc48294885d6be70a46f1250b2c2b59295cc",
+          "run": "rich-text-showcase-expectation-trace1-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   0.181s] 1 test run: 0 passed, 1 failed, 179 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 1,
+          "passed": 0,
+          "failed": 1,
+          "skipped": 179,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler",
+              "test": "project::tests::layout_presence::rich_text_showcase_compiles_with_typed_presentation_contracts"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T12:53:30.6975885Z"
+        }
+      },
+      {
+        "run": "rich-text-showcase-compiler2-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "d83ccc48294885d6be70a46f1250b2c2b59295cc",
+          "run": "rich-text-showcase-compiler2-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   0.171s] 1 test run: 0 passed, 1 failed, 179 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 1,
+          "passed": 0,
+          "failed": 1,
+          "skipped": 179,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler",
+              "test": "project::tests::layout_presence::rich_text_showcase_compiles_with_typed_presentation_contracts"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T12:58:37.2820997Z"
+        }
+      },
+      {
+        "run": "rich-text-showcase-compiler3-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "d83ccc48294885d6be70a46f1250b2c2b59295cc",
+          "run": "rich-text-showcase-compiler3-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   0.233s] 1 test run: 0 passed, 1 failed, 179 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 1,
+          "passed": 0,
+          "failed": 1,
+          "skipped": 179,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler",
+              "test": "project::tests::layout_presence::rich_text_showcase_compiles_with_typed_presentation_contracts"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T13:02:05.7924394Z"
+        }
+      },
+      {
+        "run": "view-node-modifiers-showcase1-20261105",
+        "catalog": {
+          "version": 1,
+          "base": "3fe5612b59eaeb387b73d32291d2944229e529d2",
+          "command": [
+            "nextest",
+            "list",
+            "-p",
+            "arcweft-compiler",
+            "--lib",
+            "--all-features",
+            "--locked",
+            "-E",
+            "test(rich_text_showcase_compiles_with_typed_presentation_contracts)",
+            "--message-format",
+            "json"
+          ],
+          "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/view-node-modifiers-showcase1-20261105.catalog.log",
+          "exitCode": 101,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-05T13:20:03.004304Z",
+          "finishedAt": "2026-11-05T13:21:05.1869906Z"
+        },
+        "runtime": "not run: catalog failed"
+      },
+      {
+        "run": "view-node-modifiers-showcase2-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "3fe5612b59eaeb387b73d32291d2944229e529d2",
+          "run": "view-node-modifiers-showcase2-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   0.204s] 1 test run: 0 passed, 1 failed, 179 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 1,
+          "passed": 0,
+          "failed": 1,
+          "skipped": 179,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler",
+              "test": "project::tests::layout_presence::rich_text_showcase_compiles_with_typed_presentation_contracts"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T13:23:30.5946434Z"
+        }
+      },
+      {
+        "run": "view-node-modifiers-showcase3-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "3fe5612b59eaeb387b73d32291d2944229e529d2",
+          "run": "view-node-modifiers-showcase3-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   0.204s] 1 test run: 0 passed, 1 failed, 179 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 1,
+          "passed": 0,
+          "failed": 1,
+          "skipped": 179,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler",
+              "test": "project::tests::layout_presence::rich_text_showcase_compiles_with_typed_presentation_contracts"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T13:25:40.8936077Z"
+        }
+      },
+      {
+        "run": "view-node-modifiers-showcase4-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "3fe5612b59eaeb387b73d32291d2944229e529d2",
+          "run": "view-node-modifiers-showcase4-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   0.206s] 1 test run: 0 passed, 1 failed, 179 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 1,
+          "passed": 0,
+          "failed": 1,
+          "skipped": 179,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler",
+              "test": "project::tests::layout_presence::rich_text_showcase_compiles_with_typed_presentation_contracts"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T13:27:47.3786665Z"
+        }
+      },
+      {
+        "run": "view-node-modifiers-call-origin1-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "3fe5612b59eaeb387b73d32291d2944229e529d2",
+          "run": "view-node-modifiers-call-origin1-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   0.227s] 1 test run: 0 passed, 1 failed, 179 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 1,
+          "passed": 0,
+          "failed": 1,
+          "skipped": 179,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler",
+              "test": "project::tests::layout_presence::rich_text_showcase_compiles_with_typed_presentation_contracts"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T13:29:36.3760575Z"
+        }
+      },
+      {
+        "run": "view-node-modifiers-call-origin2-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "3fe5612b59eaeb387b73d32291d2944229e529d2",
+          "run": "view-node-modifiers-call-origin2-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   0.342s] 1 test run: 0 passed, 1 failed, 179 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 1,
+          "passed": 0,
+          "failed": 1,
+          "skipped": 179,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler",
+              "test": "project::tests::layout_presence::rich_text_showcase_compiles_with_typed_presentation_contracts"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T13:32:13.9363871Z"
+        }
+      },
+      {
+        "run": "view-node-modifiers-showcase5-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "3fe5612b59eaeb387b73d32291d2944229e529d2",
+          "run": "view-node-modifiers-showcase5-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   0.272s] 1 test run: 0 passed, 1 failed, 179 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 1,
+          "passed": 0,
+          "failed": 1,
+          "skipped": 179,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler",
+              "test": "project::tests::layout_presence::rich_text_showcase_compiles_with_typed_presentation_contracts"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T13:34:40.5991213Z"
+        }
+      },
+      {
+        "run": "view-node-modifiers-showcase6-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "3fe5612b59eaeb387b73d32291d2944229e529d2",
+          "run": "view-node-modifiers-showcase6-20261105.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [   0.476s] 4 tests run: 2 passed, 2 failed, 919 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 4,
+          "passed": 2,
+          "failed": 2,
+          "skipped": 919,
+          "selectedPackages": 2,
+          "matchedPackages": 2,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-lang-syntax",
+              "test": "parser::view_grammar_tests::malformed_continued_member_keeps_recovery_and_the_following_declaration"
+            },
+            {
+              "status": "FAIL",
+              "binary": "arcweft-compiler",
+              "test": "project::tests::layout_presence::rich_text_showcase_compiles_with_typed_presentation_contracts"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-05T13:37:51.2232639Z"
+        }
+      },
+      {
+        "run": "view-member-continuation-syntax1-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "3fe5612b59eaeb387b73d32291d2944229e529d2",
+          "run": "view-member-continuation-syntax1-20261105.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [  28.372s] 743 tests run: 743 passed, 0 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 743,
+          "passed": 743,
+          "failed": 0,
+          "skipped": 0,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-05T13:42:54.0746175Z"
+        }
+      },
+      {
+        "run": "view-member-continuation-syntax2-20261105",
+        "runtime": {
+          "version": 1,
+          "base": "3fe5612b59eaeb387b73d32291d2944229e529d2",
+          "run": "view-member-continuation-syntax2-20261105.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [  29.867s] 743 tests run: 743 passed, 0 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 743,
+          "passed": 743,
+          "failed": 0,
+          "skipped": 0,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4110,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-05T13:45:43.4072836Z"
+        }
+      }
+    ],
+    "diagnosticBuild": "view-modifier-sema-check1-20261105 exited101 for a non-exhaustive new consumer match. Source was edited during this diagnostic build; it is not frozen validation evidence. Subsequent catalog/runtime attempts have their own frozen receipts.",
+    "concreteRemainingEvidence": [
+      "Before the new typed property implementation, Panel(part=dialogue_panel) was rejected at Source572..586.",
+      "After adding property schemas, nested newline .x was still a ShortVariant; the published parser cut repairs that root.",
+      "The x method was rejected with a declared Named(Length) because standard method schemas were created before scalar registration. The pending registry change completes all View modifier signatures after the full standard environment is populated.",
+      "Latest showcase6 rejects EntityReference Absolute(style.rich_text_panel), Source897..919, ValueResolutionFailed owner82. HIR symbol/table/retained.rs explicitly excludes HirItemKind::Style, while Compiler style lowering independently publishes the Style product. Style must join the shared declaration identity authority, not a fallback lookup or Source parser.",
+      "showcase6:4 executed,2PASS2FAIL919skip; missing-member recovery test first exposed the absent diagnostic, subsequently repaired in the separate743-case Syntax runs. The sample compile failure remains outstanding."
+    ],
+    "pending": {
+      "paths": [
+        "crates/arcweft-bundle/src/resource_codec/view/model.rs",
+        "crates/arcweft-compiler/src/lower.rs",
+        "crates/arcweft-compiler/src/project/tests/layout_presence.rs",
+        "crates/arcweft-compiler/src/view.rs",
+        "crates/arcweft-lang-sema/src/callable/view_modifier.rs",
+        "crates/arcweft-lang-sema/src/env/base.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls/constraints.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/analyzer/expression_error.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/analyzer/text_proxy.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/execution_plan.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/match_edges/model.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/model.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/report.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/tests/semantic_transcript_acceptance/expression_corpus.rs",
+        "crates/arcweft-lang-sema/src/final_analysis/validation.rs",
+        "crates/arcweft-view/src/element_argument.rs"
+      ],
+      "patchSha256": "81a96f7f87b1df92d8d8b9ceb5a9a365838e6c764fdd2e63df0e2bc63777ea12",
+      "state": "Uncommitted, not accepted production implementation. Frozen historical patch retained for continuation; final design and consumer migration are still being completed."
+    },
+    "notClaimed": "No passing RAG multi-source case, sample main-profile check, full reverse-dependency run, fresh workspace quality/structure, Native/AWBC product or image parity is claimed for the pending View changes. Earlier full7140/14FAIL, CLI700/14FAIL and the later z-index3PASS remain independent actual results. Generic Match and all other accepted feature boundaries remain accepted.",
+    "workingTree": "Original12 tracked WIP patch SHA25646402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac preserved by publication checks; original6 untracked files retained.",
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-view-member-continuation.raw.zip",
+      "bytes": 5002734,
+      "sha256": "4b5eb2dacd12a2854704c274da5fcb86ec17e12919f1dbf642f1143b700b7dd2",
+      "entries": 236,
+      "entryDrift": 0
+    }
   }
 }
