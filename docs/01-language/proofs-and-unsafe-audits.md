@@ -214,6 +214,8 @@ condition in the report. A satisfiable query retains its counterexample, and
 conditions outside the supported fragment remain pending.
 
 The compiler checks the same Boolean queries with a bounded finite proof.
+It reduces the query to clauses and propagates forced values before trying
+unresolved assignments. Clause construction and search share the work limit.
 It admits a statement only when every condition is proved for the original
 checked generation. Runtime plan assembly omits that statement in both the
 ordinary body and each closed instance. A counterexample, unsupported

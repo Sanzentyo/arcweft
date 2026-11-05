@@ -99,6 +99,39 @@ fn proved_assertion_uses_the_original_analysis_and_emits_no_runtime_guard() {
 }
 
 #[test]
+fn independent_boolean_conditions_fit_the_executable_proof_budget() {
+    let names = (0..20).map(|index| format!("b{index}")).collect::<Vec<_>>();
+    let parameters = names
+        .iter()
+        .map(|name| format!("{name}: bool"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let claim = names
+        .iter()
+        .map(|name| format!("({name} || !{name})"))
+        .collect::<Vec<_>>()
+        .join(" && ");
+    let positive = format!("flow assertions({parameters}) {{ assert.prove({claim}) }}\n");
+    let compiled = compile_assertion_project(&positive, AssertionBuildProfile::Debug);
+    let [obligation] = compiled.verification().obligations.as_slice() else {
+        panic!("the statement has one complete checked assertion");
+    };
+    assert_eq!(obligation.discharge, ProofDischarge::Automatic);
+    assert_eq!(compiled.runtime_plan().assertion_site_count(), 0);
+
+    let negative = format!("flow assertions({parameters}) {{ assert.prove({claim} && b0) }}\n");
+    let denied = compile_source(&negative).expect_err("b0 = false refutes the assertion");
+    let [diagnostic] = denied.project().diagnostics() else {
+        panic!("expected one proof diagnostic");
+    };
+    assert_eq!(diagnostic.stage(), ProjectCompileStage::RuntimePlanLower);
+    assert_eq!(
+        diagnostic.diagnostic().code().unwrap().as_str(),
+        "verify.proof.unresolved",
+    );
+}
+
+#[test]
 fn proof_and_predicate_assertion_context_errors_are_final_sema_diagnostics() {
     for source in [
         "proof invalid() { assert.check(true) }\n",
