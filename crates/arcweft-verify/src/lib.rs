@@ -13,7 +13,7 @@ use std::{
 use arcweft_lang_hir::{
     body_edges::{HirBodyChild, HirBodyChildRole},
     identity::{ExprId, ItemId, StmtId},
-    item::{HirItemKind, HirPredicateBody, HirProofBody},
+    item::{HirItemKind, HirPredicateBody, HirProofBody, ProofTrust},
     leaf::{HirLiteral, HirStringLiteral},
     module::HirModule,
     project::HirAnalysisProjectView,
@@ -519,7 +519,11 @@ pub struct ProofSummary {
 pub enum ProofTrustSummary {
     Pending,
     Verified,
-    Trusted { reason: String },
+    /// Authored trust declaration retained alongside the proof-body obligation.
+    Trusted {
+        reason: String,
+        source: SourceSpan,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -813,6 +817,23 @@ impl ProjectVerifier<'_, '_> {
             .symbols
             .proof_artifact(self.project.project_view(), declaration)?;
         let source = item_source(module, owner)?;
+        let trust = match proof.trust() {
+            ProofTrust::Verified => ProofTrustSummary::Pending,
+            ProofTrust::Trusted { reason } => ProofTrustSummary::Trusted {
+                reason: reason.as_str().to_owned(),
+                source: source_lookup(
+                    module,
+                    HirSourceQuery::Item {
+                        owner,
+                        role: HirItemSourceRole::Declaration(
+                            HirDeclarationSourceRole::ProofTrustAttribute,
+                        ),
+                    },
+                    VerificationOwner::Item(owner),
+                )?,
+            },
+            ProofTrust::Recovery => return Err(VerificationInputError::ItemRoleMismatch { owner }),
+        };
         let label = declaration.qualified_name();
         let obligation_id = format!("proof.{label}.body");
         let obligation = ProofObligation {
@@ -837,7 +858,7 @@ impl ProjectVerifier<'_, '_> {
         self.report.proofs.push(ProofSummary {
             id: label,
             source,
-            trust: ProofTrustSummary::Pending,
+            trust,
             trusted_dependencies: Vec::new(),
         });
         self.report.proof_artifacts.push(artifact);
@@ -1124,12 +1145,7 @@ impl ProjectVerifier<'_, '_> {
             .calls()
             .map(|(_, facts)| ProofCallWitnessProjection::from_facts(facts))
             .collect();
-        self.report.diagnostics.sort_by(|left, right| {
-            source_sort_key(left.source.as_ref())
-                .cmp(&source_sort_key(right.source.as_ref()))
-                .then_with(|| left.id.cmp(&right.id))
-                .then_with(|| left.message.cmp(&right.message))
-        });
+        self.report.project_trusted_proof_policy();
         self.report
     }
 }
@@ -1214,7 +1230,7 @@ fn source_sort_key(source: Option<&SourceSpan>) -> (&str, usize, usize) {
 }
 
 impl VerificationReport {
-    /// Projects pending declaration and audit diagnostics under another policy.
+    /// Applies another policy to pending declarations, audits and trusted proof metadata.
     /// Proof and solver outcomes stay attached to the observed report.
     pub fn with_pending_policy(&self, policy: VerificationPolicy) -> Cow<'_, Self> {
         if self.policy == policy {
@@ -1229,7 +1245,41 @@ impl VerificationReport {
                 diagnostic.severity = pending_obligation_severity(policy.mode);
             }
         }
+        report.project_trusted_proof_policy();
         Cow::Owned(report)
+    }
+
+    fn project_trusted_proof_policy(&mut self) {
+        const DISALLOWED: &str = "verify.proof.trust_disallowed";
+
+        self.diagnostics
+            .retain(|diagnostic| diagnostic.id != DISALLOWED);
+        if !self.policy.allow_trusted_proofs {
+            self.diagnostics
+                .extend(self.proofs.iter().filter_map(|proof| {
+                    let ProofTrustSummary::Trusted { source, .. } = &proof.trust else {
+                        return None;
+                    };
+                    Some(VerificationDiagnostic {
+                        id: DISALLOWED.to_owned(),
+                        severity: Severity::Error,
+                        message: format!(
+                            "policy disallows the trust declaration on proof `{}`",
+                            proof.id
+                        ),
+                        source: Some(source.clone()),
+                        obligation: None,
+                        related_ids: vec![proof.id.clone()],
+                        actions: Vec::new(),
+                    })
+                }));
+        }
+        self.diagnostics.sort_by(|left, right| {
+            source_sort_key(left.source.as_ref())
+                .cmp(&source_sort_key(right.source.as_ref()))
+                .then_with(|| left.id.cmp(&right.id))
+                .then_with(|| left.message.cmp(&right.message))
+        });
     }
 
     /// Returns final-HIR-identity-ordered bounded Call evidence for this generation.
@@ -1245,9 +1295,10 @@ impl VerificationReport {
     }
 
     pub fn trusted_proofs(&self) -> impl Iterator<Item = &ProofSummary> {
-        self.proofs
-            .iter()
-            .filter(|proof| !proof.trusted_dependencies.is_empty())
+        self.proofs.iter().filter(|proof| {
+            matches!(proof.trust, ProofTrustSummary::Trusted { .. })
+                || !proof.trusted_dependencies.is_empty()
+        })
     }
 
     pub fn source_diagnostics(&self, document: &SourceDocument) -> Vec<SourceDiagnostic> {
@@ -1369,5 +1420,51 @@ impl SolverCheck {
             self.backend.label(),
             self.outcome.unwrap_or(SmtOutcome::Unknown).as_str()
         )
+    }
+}
+
+#[cfg(test)]
+mod trusted_proof_policy_tests {
+    use super::*;
+
+    #[test]
+    fn reprojecting_trusted_proof_policy_preserves_the_declaration() {
+        let document = SourceDocument::try_new(
+            arcweft_source::SourceDocumentId::try_new("memory:proof-policy").unwrap(),
+            arcweft_source::SourceName::Memory,
+            "#[verify.trusted(reason = \"signed\")]",
+        )
+        .unwrap();
+        let source = SourceSpan {
+            source: document.identity().clone(),
+            start: 0,
+            end: document.text().len(),
+        };
+        let report = VerificationReport {
+            proofs: vec![ProofSummary {
+                id: "manifest".to_owned(),
+                source: source.clone(),
+                trust: ProofTrustSummary::Trusted {
+                    reason: "signed".to_owned(),
+                    source: source.clone(),
+                },
+                trusted_dependencies: Vec::new(),
+            }],
+            ..VerificationReport::default()
+        };
+        assert_eq!(report.trusted_proofs().count(), 1);
+        let denied_policy = VerificationPolicy {
+            allow_trusted_proofs: false,
+            ..report.policy
+        };
+        let denied = report.with_pending_policy(denied_policy);
+        let [diagnostic] = denied.diagnostics.as_slice() else {
+            panic!("expected one policy diagnostic");
+        };
+        assert_eq!(diagnostic.id, "verify.proof.trust_disallowed");
+        assert_eq!(diagnostic.source.as_ref(), Some(&source));
+        assert!(denied.has_errors());
+        assert_eq!(denied.proofs, report.proofs);
+        assert_eq!(denied.with_pending_policy(report.policy).as_ref(), &report);
     }
 }

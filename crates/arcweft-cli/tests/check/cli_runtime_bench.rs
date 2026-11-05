@@ -714,6 +714,74 @@ proof requires_only() requires true = ()
 }
 
 #[test]
+fn verify_json_preserves_trusted_proof_metadata_and_enforces_policy() {
+    let source = r#"
+#[verify.trusted(reason = "  signed\nmanifest  ")]
+proof signed_manifest() = ()
+proof ordinary() = ()
+"#;
+    let path = temp_arcw("verify-trusted-proof", source);
+    let run = |mode| {
+        Command::new(env!("CARGO_BIN_EXE_arcw"))
+            .args(["verify", "--mode", mode, "--json"])
+            .arg(&path)
+            .output()
+            .expect("arcw verifies the proof declarations")
+    };
+    let dev = run("dev");
+    let release = run("release");
+    fs::remove_file(&path).unwrap();
+
+    for (output, allows_trust) in [(dev, true), (release, false)] {
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(output.status.success(), allows_trust, "{report}");
+        assert_eq!(report["policy"]["allow_trusted_proofs"], allows_trust);
+        let proofs = report["proofs"].as_array().unwrap();
+        let trusted = proofs
+            .iter()
+            .find(|proof| proof["id"] == "signed_manifest")
+            .unwrap();
+        let ordinary = proofs
+            .iter()
+            .find(|proof| proof["id"] == "ordinary")
+            .unwrap();
+        assert_eq!(trusted["trust"]["kind"], "trusted");
+        assert_eq!(trusted["trust"]["reason"], "  signed\nmanifest  ");
+        assert_eq!(ordinary["trust"]["kind"], "pending");
+        let attribute = &trusted["trust"]["source"];
+        let start = usize::try_from(attribute["start"].as_u64().unwrap()).unwrap();
+        let end = usize::try_from(attribute["end"].as_u64().unwrap()).unwrap();
+        assert_eq!(
+            &source[start..end],
+            r#"#[verify.trusted(reason = "  signed\nmanifest  ")]"#
+        );
+        let body = report["obligations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|obligation| obligation["id"] == "proof.signed_manifest.body")
+            .unwrap();
+        assert_eq!(body["discharge"]["kind"], "missing");
+
+        let trust_diagnostics: Vec<_> = report["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|diagnostic| diagnostic["id"] == "verify.proof.trust_disallowed")
+            .collect();
+        if allows_trust {
+            assert!(trust_diagnostics.is_empty());
+        } else {
+            let [diagnostic] = trust_diagnostics.as_slice() else {
+                panic!("expected one trust policy diagnostic: {report}");
+            };
+            assert_eq!(diagnostic["severity"], "error");
+            assert_eq!(diagnostic["source"], *attribute);
+        }
+    }
+}
+
+#[test]
 fn verify_json_reports_unknown_proof_dependency() {
     let source = r"
 proof missing_dependency() {

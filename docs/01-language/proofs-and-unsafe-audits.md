@@ -96,11 +96,10 @@ proof voice_manifest_safe() {
 }
 ```
 
-The attribute records the external trust declaration. It does not bypass typed
-call checking or turn a missing proof-body discharge into accepted evidence.
-The current proof collector reports pending body obligations for these
-declarations as well. Release policy and formal discharge remain separate from
-parsing the trust metadata.
+The verifier reports the trust declaration, its decoded reason, and the
+attribute's exact source range. A policy that forbids trusted proofs reports an
+error at that attribute. Trusted declarations pass through typed call checking
+and carry a separate pending proof-body obligation until formal discharge.
 
 ## Unsafe lifetime blocks
 
