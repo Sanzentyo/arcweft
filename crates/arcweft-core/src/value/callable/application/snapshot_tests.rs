@@ -81,6 +81,7 @@ fn pending_owner() -> RuntimeProgramOwner {
 fn packet() -> RuntimeCallablePendingSnapshot {
     RuntimeCallablePendingSnapshot {
         state: RuntimeCallableStateId::from_zero_based(0).unwrap(),
+        input_order: RuntimeInputOrder::try_new([1, 2, 0, 3]).unwrap(),
         retained: vec![
             Some(AwbcRuntimeValueSnapshot::Bool(true)),
             Some(AwbcRuntimeValueSnapshot::Bool(false)),
@@ -116,6 +117,78 @@ fn pending_round_trip_preserves_moved_slots_and_the_once_only_default_transition
         [RuntimeValue::Bool(true), RuntimeValue::Bool(false)]
     );
     assert_eq!(invocation.arguments, [RuntimeValue::Bool(true)]);
+    assert_eq!(invocation.input_order.slots(), [1, 0, 2]);
+}
+
+#[test]
+fn retained_order_survives_live_copy_snapshot_and_default_application() {
+    let owner = pending_owner();
+    let state = RuntimeCallableStateId::from_zero_based(0).unwrap();
+    let callable = RuntimeCallableValue::try_new_ordered(
+        owner.clone(),
+        state,
+        [RuntimeValue::Bool(true), RuntimeValue::Bool(false)],
+        RuntimeInputOrder::try_new([1, 0]).unwrap(),
+    )
+    .unwrap();
+    let value = RuntimeValue::Callable(callable);
+    let copied = value
+        .copy_unrestricted_for_program_with_limits(&owner, RuntimeSchemaLimits::engine_default())
+        .unwrap();
+    assert_eq!(copied, value);
+    let saved = AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner).unwrap();
+    let bytes = serde_json::to_vec(&saved).unwrap();
+    let saved: AwbcRuntimeValueSnapshot = serde_json::from_slice(&bytes).unwrap();
+    let RuntimeValue::Callable(callable) = saved.into_runtime_value_for_program(&owner).unwrap()
+    else {
+        panic!("restored callable");
+    };
+    assert_eq!(callable.retained_order().slots(), [1, 0]);
+    let RuntimeCallableApplication::AttachedDefault { pending, .. } = callable
+        .prepare_group(vec![RuntimeValue::Bool(true)], None)
+        .unwrap()
+    else {
+        panic!("default owns the original retained order");
+    };
+    let saved = RuntimeCallablePendingSnapshot::from_live(&pending, &owner).unwrap();
+    let pending = saved.into_live(&owner).unwrap();
+    let RuntimeCallableApplication::Invoke(invocation) =
+        pending.complete_default(RuntimeValue::Bool(false)).unwrap()
+    else {
+        panic!("terminal invocation");
+    };
+    assert_eq!(invocation.input_order.slots(), [1, 0, 2]);
+    assert_eq!(
+        invocation.captures,
+        [RuntimeValue::Bool(true), RuntimeValue::Bool(false)]
+    );
+    assert_eq!(invocation.arguments, [RuntimeValue::Bool(false)]);
+}
+
+#[test]
+fn pending_order_arity_and_required_wire_field_are_checked_before_restore() {
+    let owner = pending_owner();
+    let mut saved = packet();
+    saved.input_order = RuntimeInputOrder::canonical(3);
+    assert!(
+        saved
+            .into_live(&owner)
+            .unwrap_err()
+            .to_string()
+            .contains("input order has 3 slots, expected 4")
+    );
+    let mut json = serde_json::to_value(packet()).unwrap();
+    json.as_object_mut().unwrap().remove("input_order");
+    assert!(serde_json::from_value::<RuntimeCallablePendingSnapshot>(json).is_err());
+    assert!(
+        RuntimeCallableValue::try_new_ordered(
+            owner,
+            RuntimeCallableStateId::from_zero_based(0).unwrap(),
+            [RuntimeValue::Bool(true), RuntimeValue::Bool(false)],
+            RuntimeInputOrder::canonical(1)
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -125,6 +198,7 @@ fn pending_presence_mask_is_checked_before_any_input_constructor() {
     snapshot.retained[0] = Some(AwbcRuntimeValueSnapshot::Callable(
         AwbcRuntimeCallableSnapshot {
             state: RuntimeCallableStateId::from_zero_based(999).unwrap(),
+            retained_order: crate::value::RuntimeInputOrder::canonical(0),
             retained: vec![],
         },
     ));
@@ -143,6 +217,7 @@ fn pending_expected_row_rejects_wrong_input_before_constructing_callable() {
     snapshot.retained[0] = Some(AwbcRuntimeValueSnapshot::Callable(
         AwbcRuntimeCallableSnapshot {
             state: RuntimeCallableStateId::from_zero_based(999).unwrap(),
+            retained_order: crate::value::RuntimeInputOrder::canonical(0),
             retained: vec![],
         },
     ));
@@ -168,9 +243,9 @@ fn pending_values_share_exact_node_byte_and_work_allowances_for_live_and_inert()
     let limits = RuntimeSchemaLimits::engine_default();
     let exact = RuntimeSchemaLimits {
         max_nodes: 2,
-        max_encoded_bytes: 4,
-        // Header + five projection edges + three slots + four value visits.
-        max_validation_work: 13,
+        max_encoded_bytes: 9,
+        // Existing13 work plus the order header and four original input slots.
+        max_validation_work: 18,
         ..limits
     };
     for origin in [
@@ -193,11 +268,11 @@ fn pending_values_share_exact_node_byte_and_work_allowances_for_live_and_inert()
                 ..exact
             },
             RuntimeSchemaLimits {
-                max_encoded_bytes: 3,
+                max_encoded_bytes: 8,
                 ..exact
             },
             RuntimeSchemaLimits {
-                max_validation_work: 12,
+                max_validation_work: 17,
                 ..exact
             },
         ] {
@@ -217,7 +292,7 @@ fn pending_values_share_exact_node_byte_and_work_allowances_for_live_and_inert()
         }
         assert!(matches!(snapshot.validate_inputs(&owner, &mut resources),
             Err(RuntimeCallableValueError::PendingResource { source, .. })
-            if matches!(*source, RuntimeSchemaError::ValidationWork { limit: 13, consumed: 14, .. })));
+            if matches!(*source, RuntimeSchemaError::ValidationWork { limit: 18, consumed: 19, .. })));
     }
 }
 
@@ -249,11 +324,11 @@ fn pending_empty_slots_and_projection_edges_consume_work_without_inventing_value
     let mut snapshot = packet();
     snapshot.retained = vec![None, None];
     let before = snapshot.clone();
-    // Header + four projection edges + three empty slots, with no value nodes.
+    // Existing8 work plus the order header/four slots; no value nodes.
     let exact = RuntimeSchemaLimits {
-        max_validation_work: 8,
+        max_validation_work: 13,
         max_nodes: 0,
-        max_encoded_bytes: 0,
+        max_encoded_bytes: 5,
         ..RuntimeSchemaLimits::engine_default()
     };
     snapshot
@@ -267,7 +342,7 @@ fn pending_empty_slots_and_projection_edges_consume_work_without_inventing_value
             &owner,
             &mut ValueResourceAdmission::snapshot(
                 RuntimeSchemaLimits {
-                    max_validation_work: 7,
+                    max_validation_work: 12,
                     ..exact
                 },
                 ValueAdmissionOrigin::InertSnapshot,
@@ -280,8 +355,8 @@ fn pending_empty_slots_and_projection_edges_consume_work_without_inventing_value
     assert!(matches!(
         *source,
         RuntimeSchemaError::ValidationWork {
-            limit: 7,
-            consumed: 8,
+            limit: 12,
+            consumed: 13,
             ..
         }
     ));
@@ -326,6 +401,7 @@ fn pending_known_type_row_cannot_redirect_through_a_duplicate_semantic_identity(
     let pending = RuntimeCallablePendingGroup {
         owner: owner.clone(),
         state: packet().state,
+        input_order: packet().input_order,
         retained: vec![
             Some(RuntimeValue::Bool(true)),
             Some(RuntimeValue::Bool(false)),

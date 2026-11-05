@@ -559,6 +559,7 @@ fn awbc_callable_snapshot_rejects_a_forged_retained_type() {
 
     let forged = AwbcRuntimeValueSnapshot::Callable(AwbcRuntimeCallableSnapshot {
         state: prefix.state,
+        retained_order: arcweft_core::value::RuntimeInputOrder::canonical(1),
         retained: vec![AwbcRuntimeValueSnapshot::String("wrong type".to_owned())],
     });
     assert!(

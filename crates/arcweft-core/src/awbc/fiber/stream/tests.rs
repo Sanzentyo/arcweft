@@ -118,6 +118,7 @@ fn indexed_inventory_rejects_missing_duplicate_reordered_and_unknown_headers_fir
     let first = queue(AwbcRuntimeValueSnapshot::Callable(
         crate::value::AwbcRuntimeCallableSnapshot {
             state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(0).unwrap(),
+            retained_order: crate::value::RuntimeInputOrder::canonical(0),
             retained: vec![],
         },
     ));

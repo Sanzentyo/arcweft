@@ -687,6 +687,7 @@ fn context_cause_type_is_checked_before_capture_or_construction_in_both_stages()
             Value::Bool(true),
             Value::Callable(AwbcRuntimeCallableSnapshot {
                 state: RuntimeCallableStateId::from_zero_based(999).unwrap(),
+                retained_order: crate::value::RuntimeInputOrder::canonical(0),
                 retained: vec![],
             }),
         ] {

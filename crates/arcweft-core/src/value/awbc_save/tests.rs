@@ -44,6 +44,7 @@ fn standalone_snapshot_uses_the_shared_decoder_and_rejects_program_and_affine_le
 
     let callable = AwbcRuntimeValueSnapshot::Callable(AwbcRuntimeCallableSnapshot {
         state: RuntimeCallableStateId::from_zero_based(0).unwrap(),
+        retained_order: crate::value::RuntimeInputOrder::canonical(0),
         retained: vec![],
     });
     assert!(
@@ -186,6 +187,7 @@ fn inert_restore_rejects_bytes_before_resolving_a_missing_callable_state() {
         let snapshot = AwbcRuntimeValueSnapshot::Tuple(vec![AwbcRuntimeValueSnapshot::Callable(
             AwbcRuntimeCallableSnapshot {
                 state: RuntimeCallableStateId::from_zero_based(0).unwrap(),
+                retained_order: crate::value::RuntimeInputOrder::canonical(0),
                 retained: vec![],
             },
         )]);
@@ -451,6 +453,7 @@ fn inert_graph_limits_cover_dense_columnar_predicate_and_retained_values_before_
         let image = AwbcRuntimeValueSnapshot::Tuple(vec![AwbcRuntimeValueSnapshot::Callable(
             AwbcRuntimeCallableSnapshot {
                 state: RuntimeCallableStateId::from_zero_based(999).unwrap(),
+                retained_order: crate::value::RuntimeInputOrder::canonical(1),
                 retained: vec![AwbcRuntimeValueSnapshot::String("captured".into())],
             },
         )]);
@@ -725,6 +728,7 @@ fn unrestricted_restore_rejects_nested_affine_values_before_any_live_constructor
             }),
             AwbcRuntimeValueSnapshot::Callable(AwbcRuntimeCallableSnapshot {
                 state: RuntimeCallableStateId::from_zero_based(0).unwrap(),
+                retained_order: crate::value::RuntimeInputOrder::canonical(1),
                 retained: vec![leaf.clone()],
             }),
             AwbcRuntimeValueSnapshot::Agent(AwbcRuntimeAgentSnapshot::Predicate(
@@ -770,6 +774,7 @@ fn inert_restore_checks_complete_nesting_before_live_construction() {
         ));
         let mut hidden = AwbcRuntimeValueSnapshot::Callable(AwbcRuntimeCallableSnapshot {
             state: RuntimeCallableStateId::from_zero_based(0).unwrap(),
+            retained_order: crate::value::RuntimeInputOrder::canonical(0),
             retained: vec![],
         });
         for _ in 0..=super::super::MAX_RUNTIME_VALUE_NESTING_DEPTH {
@@ -954,9 +959,11 @@ fn original_callable_state_preflight_precedes_nested_live_construction() {
     let outer_state = crate::runtime_id::RuntimeCallableStateId::from_zero_based(0).unwrap();
     let image = AwbcRuntimeValueSnapshot::Callable(AwbcRuntimeCallableSnapshot {
         state: outer_state,
+        retained_order: crate::value::RuntimeInputOrder::canonical(1),
         retained: vec![AwbcRuntimeValueSnapshot::Callable(
             AwbcRuntimeCallableSnapshot {
                 state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(1).unwrap(),
+                retained_order: crate::value::RuntimeInputOrder::canonical(0),
                 retained: vec![],
             },
         )],
@@ -1640,6 +1647,7 @@ fn inert_expected_type_rejects_a_nominal_child_before_callable_construction() {
             record.fields[0].value =
                 AwbcRuntimeValueSnapshot::Callable(AwbcRuntimeCallableSnapshot {
                     state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(0).unwrap(),
+                    retained_order: crate::value::RuntimeInputOrder::canonical(0),
                     retained: vec![],
                 });
             let error = if unrestricted {

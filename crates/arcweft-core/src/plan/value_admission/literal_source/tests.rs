@@ -444,6 +444,7 @@ fn literal_views_reject_runtime_callable_and_witness_coordinates_inside_containe
     for value in [
         AwbcRuntimeValueSnapshot::Callable(AwbcRuntimeCallableSnapshot {
             state,
+            retained_order: crate::value::RuntimeInputOrder::canonical(0),
             retained: vec![],
         }),
         serde_json::from_value(serde_json::json!({

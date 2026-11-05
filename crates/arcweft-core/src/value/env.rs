@@ -1436,6 +1436,7 @@ mod tests {
                     super::super::AwbcRuntimeCallableSnapshot {
                         state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(999)
                             .unwrap(),
+                        retained_order: crate::value::RuntimeInputOrder::canonical(0),
                         retained: vec![],
                     },
                 ),

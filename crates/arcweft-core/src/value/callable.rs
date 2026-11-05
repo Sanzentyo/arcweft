@@ -16,6 +16,7 @@ use crate::task::RuntimeProgramOwner;
 use super::RuntimeValue;
 
 mod application;
+mod input_order;
 mod specialization;
 #[cfg(test)]
 mod tests;
@@ -25,6 +26,7 @@ pub(crate) use application::{
     RuntimeCallableZeroArgInvocationProof,
 };
 pub use application::{RuntimeCallablePendingGroup, RuntimeCallablePendingSnapshot};
+pub use input_order::{RuntimeInputOrder, RuntimeInputOrderError};
 
 /// A rejected application retains every evaluated input for the caller's
 /// failure/cleanup transaction. It is deliberately not Clone.
@@ -60,10 +62,13 @@ pub struct RuntimeCallableValue {
     owner: RuntimeProgramOwner,
     state: RuntimeCallableStateId,
     retained: Box<[RuntimeValue]>,
+    retained_order: RuntimeInputOrder,
 }
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimeCallableValueError {
+    #[error(transparent)]
+    InputOrder(#[from] RuntimeInputOrderError),
     #[error("pending callable {state} resource admission failed: {source}")]
     PendingResource {
         state: RuntimeCallableStateId,
@@ -142,10 +147,24 @@ impl RuntimeCallableValue {
         state: RuntimeCallableStateId,
         retained: impl IntoIterator<Item = RuntimeValue>,
     ) -> Result<Self, RuntimeCallableValueError> {
+        let retained = retained.into_iter().collect::<Box<[_]>>();
+        let order = RuntimeInputOrder::for_arity(retained.len())?;
+        Self::try_new_ordered(owner, state, retained, order)
+    }
+
+    /// Restores or transfers retained values with their original application
+    /// provenance. Captures created for a new callable use `try_new` instead.
+    pub fn try_new_ordered(
+        owner: RuntimeProgramOwner,
+        state: RuntimeCallableStateId,
+        retained: impl IntoIterator<Item = RuntimeValue>,
+        retained_order: RuntimeInputOrder,
+    ) -> Result<Self, RuntimeCallableValueError> {
         let value = Self {
             owner,
             state,
             retained: retained.into_iter().collect(),
+            retained_order,
         };
         value.validate_retained()?;
         Ok(value)
@@ -164,6 +183,11 @@ impl RuntimeCallableValue {
     #[must_use]
     pub const fn retained(&self) -> &[RuntimeValue] {
         &self.retained
+    }
+
+    #[must_use]
+    pub const fn retained_order(&self) -> &RuntimeInputOrder {
+        &self.retained_order
     }
 
     /// Duplicates a callable only after its complete retained graph is proven
@@ -403,6 +427,7 @@ impl RuntimeCallableValue {
     }
 
     pub(crate) fn validate_retained(&self) -> Result<(), RuntimeCallableValueError> {
+        self.retained_order.validate_arity(self.retained.len())?;
         let absent = || RuntimeCallableValueError::MissingState { state: self.state };
         let missing_type = || RuntimeCallableValueError::MissingType { state: self.state };
         let types = match &self.owner {
@@ -478,6 +503,7 @@ impl PartialEq for RuntimeCallableValue {
         self.owner.same_program(&other.owner)
             && self.state == other.state
             && self.retained == other.retained
+            && self.retained_order == other.retained_order
     }
 }
 
@@ -487,6 +513,7 @@ impl fmt::Debug for RuntimeCallableValue {
             .debug_struct("RuntimeCallableValue")
             .field("state", &self.state)
             .field("retained", &self.retained)
+            .field("retained_order", &self.retained_order)
             .finish_non_exhaustive()
     }
 }

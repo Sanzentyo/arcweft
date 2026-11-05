@@ -3953,6 +3953,24 @@ fn execute_project_call(
         None
     };
 
+    let order =
+        crate::value::RuntimeInputOrder::from_source_positions(call.ordinary.iter().map(|row| {
+            match row {
+                AwbcProjectCallOrdinaryMaterialization::Fixed { source_index, .. } => {
+                    Some(*source_index)
+                }
+                AwbcProjectCallOrdinaryMaterialization::Rest { source_indices, .. } => {
+                    source_indices.iter().min().copied()
+                }
+            }
+        }))
+        .map_err(|error| VmError::Runtime(error.to_string()))?;
+    let order = match &projection {
+        Some(projection) => projection
+            .project_order(&order)
+            .map_err(|error| VmError::Runtime(error.to_string()))?,
+        None => order,
+    };
     let mut transfer_registers = Vec::with_capacity(call.operands.len() + 1);
     transfer_registers.push(call.callee);
     transfer_registers.extend(call.operands.iter().map(|operand| operand.value));
@@ -4028,7 +4046,7 @@ fn execute_project_call(
         None => logical_values,
     };
     let application = callable
-        .prepare_group(logical_values, attached)
+        .prepare_group_in_order(logical_values, attached, order)
         .map_err(|error| VmError::Runtime(error.to_string()))?;
 
     let resume = program

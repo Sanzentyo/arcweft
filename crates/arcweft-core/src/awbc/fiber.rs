@@ -5996,6 +5996,7 @@ mod tests {
             candidate.frames[0].registers[0] =
                 AwbcRuntimeValueSnapshot::Callable(crate::value::AwbcRuntimeCallableSnapshot {
                     state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(0).unwrap(),
+                    retained_order: crate::value::RuntimeInputOrder::canonical(0),
                     retained: vec![],
                 })
                 .into();
@@ -6279,6 +6280,7 @@ mod tests {
         forged.terminal = Some(FiberTerminalValue::Returned(Some(
             AwbcRuntimeValueSnapshot::Callable(crate::value::AwbcRuntimeCallableSnapshot {
                 state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(0).unwrap(),
+                retained_order: crate::value::RuntimeInputOrder::canonical(0),
                 retained: vec![],
             }),
         )));
@@ -6414,6 +6416,7 @@ mod tests {
         forged.streams[0].queue[0] =
             AwbcRuntimeValueSnapshot::Callable(crate::value::AwbcRuntimeCallableSnapshot {
                 state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(0).unwrap(),
+                retained_order: crate::value::RuntimeInputOrder::canonical(0),
                 retained: vec![],
             });
         assert!(matches!(
@@ -6565,6 +6568,7 @@ mod tests {
         candidate.frames[0].registers[0] =
             AwbcRuntimeValueSnapshot::Callable(crate::value::AwbcRuntimeCallableSnapshot {
                 state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(999).unwrap(),
+                retained_order: crate::value::RuntimeInputOrder::canonical(0),
                 retained: vec![],
             })
             .into();

@@ -480,6 +480,7 @@ fn root_wire_uses_original_entry_roles_and_rejects_forged_payload_atomically() {
         serde_json::to_value(crate::value::AwbcRuntimeValueSnapshot::Callable(
             crate::value::AwbcRuntimeCallableSnapshot {
                 state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(0).unwrap(),
+                retained_order: crate::value::RuntimeInputOrder::canonical(0),
                 retained: vec![],
             },
         ))

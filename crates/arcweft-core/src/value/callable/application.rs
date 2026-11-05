@@ -16,7 +16,8 @@ use crate::runtime_id::{RuntimeCallableStateId, RuntimeFunctionSiteId};
 use crate::task::RuntimeProgramOwner;
 
 use super::{
-    RuntimeCallableOwnedInputError, RuntimeCallableValue, RuntimeCallableValueError, RuntimeValue,
+    RuntimeCallableOwnedInputError, RuntimeCallableValue, RuntimeCallableValueError,
+    RuntimeInputOrder, RuntimeValue,
 };
 
 mod declared;
@@ -70,6 +71,7 @@ pub(crate) struct RuntimeCallableInvocation {
     pub body: RuntimeCallableBodyReference,
     pub captures: Vec<RuntimeValue>,
     pub arguments: Vec<RuntimeValue>,
+    pub input_order: RuntimeInputOrder,
 }
 
 #[derive(Debug)]
@@ -100,6 +102,7 @@ pub struct RuntimeCallablePendingGroup {
     retained: Vec<Option<RuntimeValue>>,
     arguments: Vec<Option<RuntimeValue>>,
     attached: Option<RuntimeValue>,
+    input_order: RuntimeInputOrder,
 }
 
 /// Inert projection of the owner packet suspended by an attached default.
@@ -112,6 +115,7 @@ pub struct RuntimeCallablePendingSnapshot {
     pub retained: Vec<Option<crate::value::AwbcRuntimeValueSnapshot>>,
     pub arguments: Vec<Option<crate::value::AwbcRuntimeValueSnapshot>>,
     pub attached: Option<crate::value::AwbcRuntimeValueSnapshot>,
+    pub input_order: RuntimeInputOrder,
 }
 
 /// Borrowed coordinates of the same packet in live or inert storage. It
@@ -121,6 +125,7 @@ struct RuntimeCallablePendingInputs<'a, V> {
     retained: &'a [Option<V>],
     arguments: &'a [Option<V>],
     attached: Option<&'a V>,
+    input_order: &'a RuntimeInputOrder,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -173,6 +178,7 @@ impl PartialEq for RuntimeCallablePendingGroup {
             && self.retained == other.retained
             && self.arguments == other.arguments
             && self.attached == other.attached
+            && self.input_order == other.input_order
     }
 }
 
@@ -201,6 +207,7 @@ impl RuntimeCallablePendingGroup {
             &self.retained,
             &self.arguments,
             self.attached.as_ref(),
+            &self.input_order,
             RuntimeValue::view,
             resources,
         )
@@ -211,12 +218,47 @@ impl RuntimeCallablePendingGroup {
         arguments: Vec<RuntimeValue>,
         attached: Option<RuntimeValue>,
     ) -> Self {
+        let order = RuntimeInputOrder::for_arity(arguments.len())
+            .expect("runtime inputs fit the admitted u32 coordinate domain");
+        Self::new_ordered(callable, arguments, attached, order)
+    }
+
+    fn new_ordered(
+        callable: RuntimeCallableValue,
+        arguments: Vec<RuntimeValue>,
+        attached: Option<RuntimeValue>,
+        argument_order: RuntimeInputOrder,
+    ) -> Self {
+        let has_attached = match &callable.owner {
+            RuntimeProgramOwner::Plan(plan) => plan
+                .callable_states()
+                .get(callable.state)
+                .is_some_and(|state| {
+                    !matches!(state.attached, RuntimeCallableAttachedContract::None)
+                }),
+            RuntimeProgramOwner::Awbc(program) => program
+                .callable_states
+                .get(callable.state.index())
+                .is_some_and(|state| {
+                    !matches!(state.attached, RuntimeCallableAttachedContract::None)
+                }),
+        };
+        let mut input_order = callable
+            .retained_order
+            .then(&argument_order)
+            .expect("runtime inputs fit the admitted u32 coordinate domain");
+        if has_attached {
+            input_order = input_order
+                .then(&RuntimeInputOrder::canonical(1))
+                .expect("attached slot fits the admitted u32 coordinate domain");
+        }
         Self {
             owner: callable.owner,
             state: callable.state,
             retained: callable.retained.into_vec().into_iter().map(Some).collect(),
             arguments: arguments.into_iter().map(Some).collect(),
             attached,
+            input_order,
         }
     }
 
@@ -246,20 +288,31 @@ impl RuntimeCallablePendingGroup {
             RuntimeCallableValue,
             Vec<RuntimeValue>,
             Option<RuntimeValue>,
+            RuntimeInputOrder,
         ),
         Self,
     > {
         if self.retained.iter().any(Option::is_none) || self.arguments.iter().any(Option::is_none) {
             return Err(self);
         }
+        let retained_order = self
+            .input_order
+            .project(0..self.retained.len())
+            .expect("original retained slots are present in the pending input order");
+        let argument_order = self
+            .input_order
+            .project(self.retained.len()..self.retained.len() + self.arguments.len())
+            .expect("original argument slots are present in the pending input order");
         Ok((
             RuntimeCallableValue {
                 owner: self.owner,
                 state: self.state,
+                retained_order,
                 retained: self.retained.into_iter().map(Option::unwrap).collect(),
             },
             self.arguments.into_iter().map(Option::unwrap).collect(),
             self.attached,
+            argument_order,
         ))
     }
 
@@ -269,6 +322,7 @@ impl RuntimeCallablePendingGroup {
         retained: &[Option<V>],
         arguments: &[Option<V>],
         attached: Option<&V>,
+        input_order: &RuntimeInputOrder,
         view: impl Fn(&V) -> crate::value::RuntimeValueView<'_>,
         resources: &mut ValueResourceAdmission,
     ) -> Result<(), RuntimeCallableValueError> {
@@ -290,6 +344,7 @@ impl RuntimeCallablePendingGroup {
             retained,
             arguments,
             attached,
+            input_order,
         };
         match owner {
             RuntimeProgramOwner::Plan(plan) => plan
@@ -351,6 +406,24 @@ impl RuntimeCallablePendingGroup {
             source: Box::new(source),
         };
         let mut work = resources.work();
+        let order = inputs.input_order;
+        order.validate_arity(retained.len() + arguments.len() + 1)?;
+        work.collection(order.slots().len())
+            .map_err(resource_error)?;
+        work.charge(0).map_err(resource_error)?;
+        work.encoded_count(
+            crate::entry::schema::value_budget::ResourceByteKind::Value,
+            order.slots().len(),
+        )
+        .map_err(resource_error)?;
+        for &slot in order.slots() {
+            work.charge(0).map_err(resource_error)?;
+            work.encoded_count(
+                crate::entry::schema::value_budget::ResourceByteKind::Value,
+                slot as usize,
+            )
+            .map_err(resource_error)?;
+        }
         work.collection(captures.len()).map_err(resource_error)?;
         work.collection(state.transition.input_sources().count())
             .map_err(resource_error)?;
@@ -457,7 +530,16 @@ impl RuntimeCallablePendingGroup {
         &mut self,
         sources: &[RuntimeCallableInputSource],
         future: &[RuntimeCallableInputSource],
-    ) -> Result<Vec<RuntimeValue>, RuntimeCallableValueError> {
+    ) -> Result<(Vec<RuntimeValue>, RuntimeInputOrder), RuntimeCallableValueError> {
+        let order = self
+            .input_order
+            .project(sources.iter().map(|source| match source {
+                RuntimeCallableInputSource::Retained { position } => *position as usize,
+                RuntimeCallableInputSource::Argument { position } => {
+                    self.retained.len() + *position as usize
+                }
+                RuntimeCallableInputSource::Attached => self.retained.len() + self.arguments.len(),
+            }))?;
         let mut remaining = BTreeMap::<RuntimeCallableInputSource, usize>::new();
         for source in sources.iter().chain(future) {
             *remaining.entry(*source).or_default() += 1;
@@ -473,7 +555,7 @@ impl RuntimeCallablePendingGroup {
                 });
             }
         }
-        Ok(sources
+        let values = sources
             .iter()
             .map(|source| {
                 let count = remaining
@@ -489,7 +571,8 @@ impl RuntimeCallablePendingGroup {
                 *count -= 1;
                 value
             })
-            .collect())
+            .collect();
+        Ok((values, order))
     }
 
     fn prepare(
@@ -560,6 +643,14 @@ impl RuntimeCallablePendingGroup {
                 })
         };
         let validation = (|| {
+            self.input_order.validate_arity(
+                self.retained.len()
+                    + self.arguments.len()
+                    + usize::from(!matches!(
+                        state.attached,
+                        RuntimeCallableAttachedContract::None
+                    )),
+            )?;
             if matches!(
                 state.transition,
                 RuntimeCallableTransition::RequiresSpecialization
@@ -640,7 +731,7 @@ impl RuntimeCallablePendingGroup {
                 ));
             };
             let future = state.transition.input_sources().collect::<Vec<_>>();
-            let projected = match self.project(captures, &future) {
+            let (projected, input_order) = match self.project(captures, &future) {
                 Ok(values) => values,
                 Err(error) => return Err(RuntimeCallableOwnedInputError::new(error, self)),
             };
@@ -649,6 +740,7 @@ impl RuntimeCallablePendingGroup {
                     body: body(*function),
                     captures: projected,
                     arguments: Vec::new(),
+                    input_order,
                 },
                 pending: self,
             });
@@ -661,7 +753,7 @@ impl RuntimeCallablePendingGroup {
                 state: target,
                 values,
             } => {
-                let projected = match self.project(values, &[]) {
+                let (projected, retained_order) = match self.project(values, &[]) {
                     Ok(values) => values,
                     Err(error) => return Err(RuntimeCallableOwnedInputError::new(error, self)),
                 };
@@ -670,6 +762,7 @@ impl RuntimeCallablePendingGroup {
                         owner: self.owner,
                         state: *target,
                         retained: projected.into_boxed_slice(),
+                        retained_order,
                     }),
                 ))
             }
@@ -683,7 +776,7 @@ impl RuntimeCallablePendingGroup {
                     .chain(arguments)
                     .copied()
                     .collect::<Vec<_>>();
-                let projected = match self.project(&sources, &[]) {
+                let (projected, input_order) = match self.project(&sources, &[]) {
                     Ok(values) => values,
                     Err(error) => return Err(RuntimeCallableOwnedInputError::new(error, self)),
                 };
@@ -695,6 +788,7 @@ impl RuntimeCallablePendingGroup {
                         body: body(*function),
                         captures,
                         arguments,
+                        input_order,
                     },
                 ))
             }
@@ -726,6 +820,7 @@ impl RuntimeCallablePendingSnapshot {
         };
         Ok(Self {
             state: pending.state,
+            input_order: pending.input_order.clone(),
             retained: pending
                 .retained
                 .iter()
@@ -751,6 +846,7 @@ impl RuntimeCallablePendingSnapshot {
             &self.retained,
             &self.arguments,
             self.attached.as_ref(),
+            &self.input_order,
             crate::value::AwbcRuntimeValueSnapshot::view,
             resources,
         )
@@ -782,6 +878,7 @@ impl RuntimeCallablePendingSnapshot {
         Ok(RuntimeCallablePendingGroup {
             owner: owner.owner().clone(),
             state: self.state,
+            input_order: self.input_order,
             retained: self
                 .retained
                 .into_iter()
@@ -1228,6 +1325,19 @@ impl RuntimeCallableValue {
         RuntimeCallablePendingGroup::new(self, arguments, attached).prepare(false)
     }
 
+    pub(crate) fn prepare_group_in_order(
+        self,
+        arguments: Vec<RuntimeValue>,
+        attached: Option<RuntimeValue>,
+        argument_order: RuntimeInputOrder,
+    ) -> Result<
+        RuntimeCallableApplication,
+        RuntimeCallableOwnedInputError<RuntimeCallablePendingGroup>,
+    > {
+        RuntimeCallablePendingGroup::new_ordered(self, arguments, attached, argument_order)
+            .prepare(false)
+    }
+
     pub(crate) fn try_bind_prefix(
         self,
         values: Vec<RuntimeValue>,
@@ -1237,6 +1347,10 @@ impl RuntimeCallableValue {
             return Ok(RuntimeCallableValue {
                 owner: pending.owner,
                 state: pending.state,
+                retained_order: pending
+                    .input_order
+                    .project(0..pending.retained.len())
+                    .expect("unchanged callable retains its original input slots"),
                 retained: pending.retained.into_iter().map(Option::unwrap).collect(),
             });
         }
@@ -1338,7 +1452,7 @@ impl RuntimeCallableValue {
                 RuntimeCallableParameterKind::Optional => RuntimeValue::option_some(original),
             });
         }
-        let projected = match pending.project(&sources, &[]) {
+        let (projected, retained_order) = match pending.project(&sources, &[]) {
             Ok(values) => values,
             Err(error) => return Err(RuntimeCallableOwnedInputError::new(error, pending)),
         };
@@ -1346,6 +1460,7 @@ impl RuntimeCallableValue {
             owner: pending.owner,
             state: target,
             retained: projected.into_boxed_slice(),
+            retained_order,
         })
     }
 }

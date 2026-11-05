@@ -1631,10 +1631,21 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
         {
             writer.u8(26)?;
             writer.var_u32(callable.state().get().get())?;
-            writer.len(callable.retained().len())?;
-            if let Some(budget) = budget {
+            let order = callable.retained_order();
+            if let Some(budget) = budget.as_ref() {
+                budget.collection(order.slots().len())?;
                 budget.collection(callable.retained().len())?;
             }
+            order
+                .validate_arity(callable.retained().len())
+                .map_err(|error| RuntimeSchemaError::Encoding {
+                    message: error.to_string(),
+                })?;
+            writer.len(order.slots().len())?;
+            for &slot in order.slots() {
+                writer.var_u32(slot)?;
+            }
+            writer.len(callable.retained().len())?;
             work.push(Work::Tuple(callable.retained(), 0, depth + 1, children));
         }
         RuntimeValueView::PresentationResource(value) => {

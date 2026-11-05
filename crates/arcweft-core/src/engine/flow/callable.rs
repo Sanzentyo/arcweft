@@ -41,10 +41,13 @@ impl Engine {
         let arguments = callable
             .materialize_arrow_arguments(args)
             .map_err(|failure| RuntimeEvalError::Callable(failure.into_parts().0))?;
+        let order = crate::value::RuntimeInputOrder::for_arity(arguments.len())
+            .map_err(RuntimeCallableValueError::from)?;
         self.start_callable_group(
             callable,
             arguments,
             None,
+            order,
             result,
             next_op_index,
             output,
@@ -57,6 +60,7 @@ impl Engine {
         callable: RuntimeCallableValue,
         arguments: Vec<RuntimeValue>,
         attached: Option<RuntimeValue>,
+        argument_order: crate::value::RuntimeInputOrder,
         result: RuntimePattern,
         next_op_index: Option<usize>,
         output: &mut RuntimeStepOutput,
@@ -64,7 +68,7 @@ impl Engine {
     ) -> Result<(), RuntimeEvalError> {
         callable.validate_for_owner(&RuntimeProgramOwner::Plan(Arc::clone(&self.plan)))?;
         let application = callable
-            .prepare_group(arguments, attached)
+            .prepare_group_in_order(arguments, attached, argument_order)
             .map_err(|failure| RuntimeEvalError::Callable(failure.into_parts().0))?;
         self.start_callable_application(application, result, next_op_index, output, backend)
     }

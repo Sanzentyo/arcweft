@@ -36,6 +36,6 @@ impl RuntimeCallableValue {
                 specialization,
                 state: self.state,
             })?;
-        Self::try_new(self.owner, target, self.retained)
+        Self::try_new_ordered(self.owner, target, self.retained, self.retained_order)
     }
 }

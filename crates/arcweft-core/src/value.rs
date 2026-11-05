@@ -162,7 +162,7 @@ pub(crate) use callable::{
 };
 pub use callable::{
     RuntimeCallablePendingGroup, RuntimeCallablePendingSnapshot, RuntimeCallableValue,
-    RuntimeCallableValueError,
+    RuntimeCallableValueError, RuntimeInputOrder, RuntimeInputOrderError,
 };
 pub use character_dialogue::RuntimeCharacterDialogueProducerId;
 pub use color::RuntimeColor;

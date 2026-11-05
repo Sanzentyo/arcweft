@@ -366,6 +366,7 @@ pub enum AwbcRuntimeAgentPredicateSnapshot {
 pub struct AwbcRuntimeCallableSnapshot {
     pub state: RuntimeCallableStateId,
     pub retained: Vec<AwbcRuntimeValueSnapshot>,
+    pub retained_order: super::RuntimeInputOrder,
 }
 
 mod admission;
@@ -1532,6 +1533,7 @@ impl AwbcRuntimeValueSnapshot {
         }
         Ok(AwbcRuntimeCallableSnapshot {
             state: value.state(),
+            retained_order: value.retained_order().clone(),
             retained: value
                 .retained()
                 .iter()
@@ -1549,7 +1551,7 @@ impl AwbcRuntimeValueSnapshot {
             .into_iter()
             .map(|value| value.into_live_with_context(context))
             .collect::<Result<Vec<_>, _>>()?;
-        RuntimeCallableValue::try_new(
+        RuntimeCallableValue::try_new_ordered(
             context
                 .program()
                 .ok_or_else(|| {
@@ -1560,6 +1562,7 @@ impl AwbcRuntimeValueSnapshot {
                 .clone(),
             value.state,
             retained,
+            value.retained_order,
         )
         .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))
     }

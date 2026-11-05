@@ -8,7 +8,10 @@ use crate::{
     },
     runtime_id::RuntimeCallableStateId,
     task::RuntimeProgramOwner,
-    value::{RuntimeCallableValue, RuntimeCallableValueError, RuntimeValue},
+    value::{
+        RuntimeCallableValue, RuntimeCallableValueError, RuntimeInputOrder, RuntimeInputOrderError,
+        RuntimeValue,
+    },
 };
 
 enum DeclaredBinding {
@@ -23,6 +26,26 @@ pub(crate) struct RuntimeCallableDeclaredGroupProjection {
 }
 
 impl RuntimeCallableDeclaredGroupProjection {
+    pub(crate) fn project_order(
+        &self,
+        source_order: &RuntimeInputOrder,
+    ) -> Result<RuntimeInputOrder, RuntimeInputOrderError> {
+        source_order.validate_arity(self.sources)?;
+        let mut ranks = vec![0; self.sources];
+        for (rank, &slot) in source_order.slots().iter().enumerate() {
+            ranks[slot as usize] =
+                u32::try_from(rank).map_err(|_| RuntimeInputOrderError::CoordinateOverflow)?;
+        }
+        RuntimeInputOrder::from_source_positions(self.bindings.iter().map(
+            |binding| match binding {
+                DeclaredBinding::Value(index) | DeclaredBinding::Optional(Some(index)) => {
+                    Some(ranks[*index])
+                }
+                DeclaredBinding::Optional(None) | DeclaredBinding::EmptyRest => None,
+            },
+        ))
+    }
+
     /// Called only after all borrowed values and their ownership projection pass.
     pub(crate) fn materialize(self, values: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
         assert_eq!(values.len(), self.sources);

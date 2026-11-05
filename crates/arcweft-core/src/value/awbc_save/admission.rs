@@ -216,7 +216,7 @@ impl<'a> SnapshotStorageAdmission<'a> {
                 callable.state()
             ),
         };
-        Ok(match owner.types() {
+        let ty = match owner.types() {
             RuntimeProgramTypes::Plan(program) => RuntimeProgramValueType::Plan {
                 program,
                 ty: program
@@ -233,6 +233,17 @@ impl<'a> SnapshotStorageAdmission<'a> {
                     .ok_or_else(missing)?
                     .function_type,
             },
-        })
+        };
+        callable
+            .retained_order()
+            .validate_arity(callable.retained().len())
+            .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?;
+        let mut work = self.resources.work();
+        work.collection(callable.retained_order().slots().len())?;
+        work.charge(0)?;
+        for _ in callable.retained_order().slots() {
+            work.charge(0)?;
+        }
+        Ok(ty)
     }
 }

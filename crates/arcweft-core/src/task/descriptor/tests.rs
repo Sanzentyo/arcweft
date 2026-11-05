@@ -152,6 +152,7 @@ fn later_request_payload_budget_failure_precedes_earlier_callable_construction()
     *args = vec![
         AwbcRuntimeValueSnapshot::Callable(crate::value::AwbcRuntimeCallableSnapshot {
             state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(0).unwrap(),
+            retained_order: crate::value::RuntimeInputOrder::canonical(0),
             retained: vec![],
         }),
         AwbcRuntimeValueSnapshot::String("x".repeat(
@@ -196,6 +197,7 @@ fn later_request_original_state_failure_precedes_earlier_progress_construction()
         invalid_progress,
         AwbcRuntimeValueSnapshot::Callable(crate::value::AwbcRuntimeCallableSnapshot {
             state,
+            retained_order: crate::value::RuntimeInputOrder::canonical(0),
             retained: vec![],
         }),
     ];
@@ -232,6 +234,7 @@ fn original_outcome_row_precedes_request_construction() {
     args.push(AwbcRuntimeValueSnapshot::Callable(
         crate::value::AwbcRuntimeCallableSnapshot {
             state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(0).unwrap(),
+            retained_order: crate::value::RuntimeInputOrder::canonical(0),
             retained: vec![],
         },
     ));
@@ -327,6 +330,7 @@ fn submission_identity_is_admitted_before_request_callable_construction() {
         serde_json::to_value(vec![AwbcRuntimeValueSnapshot::Callable(
             crate::value::AwbcRuntimeCallableSnapshot {
                 state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(0).unwrap(),
+                retained_order: crate::value::RuntimeInputOrder::canonical(0),
                 retained: vec![],
             },
         )])

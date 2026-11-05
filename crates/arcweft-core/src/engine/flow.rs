@@ -1214,14 +1214,26 @@ impl Engine {
             } else {
                 None
             };
+            let order = crate::value::RuntimeInputOrder::from_source_positions(
+                plan.ordinary()
+                    .iter()
+                    .map(|row| row.source_indices().iter().min().copied()),
+            )
+            .map_err(crate::value::RuntimeCallableValueError::from)?;
+            let order = match &projection {
+                Some(projection) => projection
+                    .project_order(&order)
+                    .map_err(crate::value::RuntimeCallableValueError::from)?,
+                None => order,
+            };
             let (arguments, attached) = self.materialize_project_call_owned(plan, operands);
             let arguments = match projection {
                 Some(projection) => projection.materialize(arguments),
                 None => arguments,
             };
-            Ok::<_, RuntimeEvalError>((callable, arguments, attached))
+            Ok::<_, RuntimeEvalError>((callable, arguments, attached, order))
         })();
-        let (callable, arguments, attached) = match prepared {
+        let (callable, arguments, attached, order) = match prepared {
             Ok(values) => values,
             Err(error) => {
                 self.fail_format_aware_eval(error, output, pure_backend);
@@ -1232,6 +1244,7 @@ impl Engine {
             callable,
             arguments,
             attached,
+            order,
             row.result().clone(),
             next_op_index,
             output,

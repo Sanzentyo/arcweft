@@ -151,7 +151,7 @@ fn captured_identity_plan() -> RuntimePlan {
 }
 
 #[test]
-fn snapshot_byte_budget_counts_callable_state_header_and_retained_value() {
+fn snapshot_byte_budget_counts_callable_state_order_and_retained_value() {
     let owner = RuntimeProgramOwner::Plan(Arc::new(captured_identity_plan()));
     let value = RuntimeValue::Callable(
         RuntimeCallableValue::try_new(
@@ -163,7 +163,7 @@ fn snapshot_byte_budget_counts_callable_state_header_and_retained_value() {
     );
     let function = RuntimeSemanticTypeId::from_bytes([0x8b; 32]);
     let exact = crate::entry::RuntimeSchemaLimits {
-        max_encoded_bytes: 21,
+        max_encoded_bytes: 23,
         ..crate::entry::RuntimeSchemaLimits::engine_default()
     };
     owner
@@ -177,7 +177,7 @@ fn snapshot_byte_budget_counts_callable_state_header_and_retained_value() {
                 function,
                 &value,
                 crate::entry::RuntimeSchemaLimits {
-                    max_encoded_bytes: 20,
+                    max_encoded_bytes: 22,
                     ..exact
                 }
             )
@@ -295,6 +295,7 @@ fn inert_callable_admission_uses_original_retained_types_and_preserves_live_leas
         let candidate =
             AwbcRuntimeValueSnapshot::Callable(crate::value::AwbcRuntimeCallableSnapshot {
                 state,
+                retained_order: crate::value::RuntimeInputOrder::for_arity(retained.len()).unwrap(),
                 retained,
             });
         assert!(
@@ -1075,6 +1076,7 @@ fn native_pending_default_uses_the_same_inert_packet_and_original_owner() {
         .push(Some(crate::value::AwbcRuntimeValueSnapshot::Callable(
             crate::value::AwbcRuntimeCallableSnapshot {
                 state: RuntimeCallableStateId::from_zero_based(999).unwrap(),
+                retained_order: crate::value::RuntimeInputOrder::canonical(0),
                 retained: vec![],
             },
         )));

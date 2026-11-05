@@ -186,6 +186,13 @@ pub(crate) enum RuntimeCallableView<'a> {
 }
 
 impl<'a> RuntimeCallableView<'a> {
+    pub(crate) const fn retained_order(self) -> &'a crate::value::RuntimeInputOrder {
+        match self {
+            Self::Live(value) => value.retained_order(),
+            Self::Snapshot(value) => &value.retained_order,
+        }
+    }
+
     pub(crate) fn remaining_arity(
         self,
         original: Option<crate::program_types::RuntimeProgramTypes<'_>>,

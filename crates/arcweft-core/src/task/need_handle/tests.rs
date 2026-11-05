@@ -153,6 +153,7 @@ fn inert_handle_identity_rejects_before_request_callable_construction() {
         args: vec![crate::value::AwbcRuntimeValueSnapshot::Callable(
             crate::value::AwbcRuntimeCallableSnapshot {
                 state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(0).unwrap(),
+                retained_order: crate::value::RuntimeInputOrder::canonical(0),
                 retained: vec![],
             },
         )],

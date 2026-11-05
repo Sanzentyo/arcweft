@@ -299,6 +299,7 @@ fn static_literal_sources_reject_affine_and_runtime_only_descendants_before_live
         state: crate::runtime_id::RuntimeCallableStateId::from_accepted_ordinal(
             std::num::NonZeroU32::new(1).unwrap(),
         ),
+        retained_order: crate::value::RuntimeInputOrder::canonical(0),
         retained: vec![],
     });
     assert!(
