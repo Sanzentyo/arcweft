@@ -213,7 +213,8 @@ pub(super) fn find_statement_terminator(
 ) -> Option<(usize, bool)> {
     let mut delimiters = Vec::<&str>::new();
     let mut previous = None;
-    for index in start..end {
+    let mut index = start;
+    while index < end {
         let token = parser.token_at(index)?;
         let text = parser.text_of(token);
         if delimiters.is_empty()
@@ -223,6 +224,19 @@ pub(super) fn find_statement_terminator(
                 super::statement::indented_thread_expression_end(parser, index, end)
         {
             return Some((suite_end, false));
+        }
+        if delimiters.is_empty()
+            && token.kind() == SyntaxKind::NewlineToken
+            && previous.is_some()
+            && let Some(next) = first_significant(parser, index + 1, end)
+            && parser
+                .token_at(next)
+                .is_some_and(|next| parser.text_of(next) == ".")
+        {
+            // Consume trivia once; repeatedly looking through a long run of
+            // empty/comment lines would make this boundary scan quadratic.
+            index = next;
+            continue;
         }
         if delimiters.is_empty() && (text == ";" || token.kind() == SyntaxKind::NewlineToken) {
             return Some((index, text == ";"));
@@ -243,6 +257,7 @@ pub(super) fn find_statement_terminator(
         if !is_trivia(token.kind()) {
             previous = Some(text);
         }
+        index += 1;
     }
     None
 }

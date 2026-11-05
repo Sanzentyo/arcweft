@@ -380,7 +380,8 @@ fn emit_view_fragment(parser: &mut DocumentParser<'_, '_>, body_end: usize) {
         if parser.cursor() >= body_end {
             break;
         }
-        let entry_end = view_value_end(parser, parser.cursor(), body_end);
+        let entry_end = find_statement_terminator(parser, parser.cursor(), body_end)
+            .map_or(body_end, |(end, _)| end);
         let is_value = !parser.at("export");
         if is_value
             && !matches!(
@@ -520,26 +521,6 @@ fn project_view_part_local_name(
         PendingViewPartLocalName::Present(source)
     } else {
         PendingViewPartLocalName::Invalid(source)
-    }
-}
-
-fn view_value_end(parser: &DocumentParser<'_, '_>, start: usize, body_end: usize) -> usize {
-    let mut cursor = start;
-    loop {
-        let end =
-            find_statement_terminator(parser, cursor, body_end).map_or(body_end, |(end, _)| end);
-        let next_start = end.checked_add(1).unwrap_or(body_end);
-        let Some(next) = first_significant(parser, next_start, body_end) else {
-            return end;
-        };
-        if parser
-            .token_at(next)
-            .is_some_and(|token| parser.text_of(token) == ".")
-        {
-            cursor = next;
-            continue;
-        }
-        return end;
     }
 }
 

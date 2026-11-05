@@ -91,6 +91,52 @@ fn view_child_bodies_are_immediate_regions_and_handlers_remain_closures() {
 }
 
 #[test]
+fn member_chains_continue_across_newlines_in_root_and_nested_view_regions() {
+    for ending in ["\n", "\r\n"] {
+        let source = concat!(
+            "view Main() {\n",
+            "  Text(\"root\")\n    .width(20px)\n",
+            "  Panel() {\n",
+            "    Text(\"child\")\n      // continue the same expression\n\n      .x(1px)\n      .y(2px)\n",
+            "  }\n  .height(30px)\n",
+            "}\n",
+        ).replace('\n', ending);
+        let built = parse(&source);
+        assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+        assert_eq!(count_kind(&built, SyntaxKind::SelectExpression), 4);
+        assert_eq!(count_kind(&built, SyntaxKind::CallExpression), 7);
+        assert_eq!(count_kind(&built, SyntaxKind::ShortVariantExpression), 0);
+        assert_eq!(built.green().to_string(), source);
+    }
+}
+
+#[test]
+fn member_chain_continuation_preserves_explicit_statement_termination() {
+    for body in [
+        "Text(\"root\");\n  .width(20px)",
+        "Panel { Text(\"child\");\n .width(20px) }",
+    ] {
+        let source = format!("view Main() {{ {body} }}\n");
+        let built = parse(&source);
+        assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+        assert_eq!(count_kind(&built, SyntaxKind::SelectExpression), 0);
+        assert_eq!(count_kind(&built, SyntaxKind::ShortVariantExpression), 1);
+        assert_eq!(built.green().to_string(), source);
+    }
+}
+
+#[test]
+fn malformed_continued_member_keeps_recovery_and_the_following_declaration() {
+    let source =
+        "view Broken() { Panel { Text(\"child\")\n .(20px) } }\nview Next() { Text(\"next\") }\n";
+    let built = parse(source);
+    assert!(!built.diagnostics().is_empty());
+    assert_eq!(count_kind(&built, SyntaxKind::MissingName), 1);
+    assert_eq!(count_kind(&built, SyntaxKind::ViewDeclarationItem), 2);
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
 fn view_child_bodies_preserve_the_control_regions_that_own_them() {
     let source = concat!(
         "view Tree(show: bool, values: Vec<i64>) {\n",

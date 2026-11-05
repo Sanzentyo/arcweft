@@ -2,6 +2,11 @@
 
 Arcweft supports `{ ... }` blocks as lexical scopes. They can be used in typed code, expression arms, functions, loops, line plans, and cue blocks.
 
+A newline normally ends a statement. A following leading `.` continues member
+access on the preceding expression, including inside nested View child blocks.
+Whitespace, comments, and the choice of LF or CRLF do not change that rule.
+An explicit `;` always ends the statement and prevents this continuation.
+
 ## Lexical scope
 
 ```arcw
