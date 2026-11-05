@@ -20425,5 +20425,1310 @@
       "entries": 23,
       "entryDrift": 0
     }
+  },
+  "nativeSessionFrameRequest": {
+    "version": 1,
+    "recordedAt": "2026-11-05T19:21:12.3321731Z",
+    "source": {
+      "version": 1,
+      "commit": "ceca5955ab15bee03ac4ca020a708f5b12eea1be",
+      "parent": "bcc081105b87501ed23c322724df2ed282c4f1fc",
+      "tree": "432d89cf392ab7fd5982340a75e6a2e005951c31",
+      "remote": "ceca5955ab15bee03ac4ca020a708f5b12eea1be",
+      "paths": [
+        {
+          "path": "crates/arcweft-cli/src/app/agent/native.rs",
+          "blob": "68a1ce4fa7e5f19281b83b6b92ced282a85bcccf"
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/agent/native/capture.rs",
+          "blob": "a4c6d20c0a49276af27bd4e1800fad33f4a8a292"
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/agent/native/mcp_protocol.rs",
+          "blob": "3951c799f4c982b2a414d206698ee27323898fcb"
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/agent/native/mcp_resources.rs",
+          "blob": "f777fd654fea50f669e0f4c2c6e3107f8302d6b1"
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/agent/native/observe.rs",
+          "blob": "11b9d82f577b65a4a5c175705ff24b044ad3d6df"
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/agent/native/player_observation.rs",
+          "blob": "b26cc24ef0e61f08d06a95e110fb6e5bab80bc8f"
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/agent/native/player_observation/request.rs",
+          "blob": "e26f2797eea62e2f5aa2245f998619fee8f835a7"
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/agent/native/player_observation/tests.rs",
+          "blob": "d2334420dc55e322e06d3830398fe79ea595af82"
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/agent/native/repl.rs",
+          "blob": "bbcdf19760da826b6ce1bed6d2a8b7ed517e60fc"
+        },
+        {
+          "path": "crates/arcweft-cli/tests/check/agent_observe_native.rs",
+          "blob": "acf7ad671abfdee253d7b0c6999ba2b3c05eb448"
+        },
+        {
+          "path": "crates/arcweft-cli/tests/check/agent_observe_native/native_session.rs",
+          "blob": "b7bdd195d47c7a3d3724a6656b1db6a7d90b9c37"
+        },
+        {
+          "path": "docs/04-tooling/agent-observe-capture-contract.md",
+          "blob": "624c6011d05039001b2d2a3356677da1d4f7064f"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "c10d5eeb2901267fc2d9ec5a3a018f3cecf916cb9943f2488f52d1175aba7e98",
+      "heldPatchSha256": "450c9a0d35f590fa234046cddf9c11acd60e7bf9072569f1c4a3b87cb39f6b5b",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-05T19:07:11.6151661Z"
+    },
+    "owner": {
+      "version": 1,
+      "base": "bcc081105b87501ed23c322724df2ed282c4f1fc",
+      "run": "native-session-frame-request-owner3-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   8.028s] 111 tests run: 111 passed, 615 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 111,
+      "passed": 111,
+      "failed": 0,
+      "skipped": 615,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4116,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-05T18:58:42.3118901Z"
+    },
+    "fullCli": {
+      "version": 1,
+      "base": "bcc081105b87501ed23c322724df2ed282c4f1fc",
+      "run": "native-session-frame-request-cli-full1-20261106.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [ 526.897s] 703 tests run: 693 passed (24 slow), 10 failed, 23 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 703,
+      "passed": 693,
+      "failed": 10,
+      "skipped": 23,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4116,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "spec_valid_run_edge_fixture_now_executes"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "unsafe_json_lists_audit_regions"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_records_required_solver_checks"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_reports_missing_promotion_proof"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "spec_rejected_edge_fixtures_fail_with_diagnostics"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-cli::check",
+          "test": "verify_json_respects_semantic_defer_cancel_discharge"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-11-05T19:12:53.9617429Z"
+    },
+    "quality": {
+      "check": {
+        "version": 1,
+        "base": "bcc081105b87501ed23c322724df2ed282c4f1fc",
+        "command": [
+          "check",
+          "-p",
+          "arcweft-cli",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4116,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T19:01:35.3341408Z",
+        "finishedAt": "2026-11-05T19:02:36.3324815Z"
+      },
+      "clippy": {
+        "version": 1,
+        "base": "bcc081105b87501ed23c322724df2ed282c4f1fc",
+        "command": [
+          "clippy",
+          "-p",
+          "arcweft-cli",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4116,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T19:02:36.8984024Z",
+        "finishedAt": "2026-11-05T19:03:47.8513015Z"
+      },
+      "structure": {
+        "version": 1,
+        "base": "bcc081105b87501ed23c322724df2ed282c4f1fc",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/native-session-frame-request-quality1-20261106.structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4116,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T19:03:48.3260008Z",
+        "finishedAt": "2026-11-05T19:03:53.2560814Z"
+      }
+    },
+    "graph": {
+      "version": 1,
+      "base": "bcc081105b87501ed23c322724df2ed282c4f1fc",
+      "roots": [
+        "arcweft-cli"
+      ],
+      "selection": [
+        "arcweft-cli"
+      ],
+      "selectedPackages": 1,
+      "metadata": "rag-project-summary.metadata.json",
+      "metadataReuse": "Actual retained target-all/feature-all normal-build-dev resolve graph;101 current Cargo/toolchain input hashes unchanged. No new Cargo invocation during the active test chain.",
+      "cargoInputPins": [
+        {
+          "path": "Cargo.lock",
+          "bytes": 219178,
+          "sha256": "3d77909e468ade39ac7a519e1fb4e7b69b1b60be99ac3c0ab720bb0623e52297"
+        },
+        {
+          "path": "Cargo.toml",
+          "bytes": 13015,
+          "sha256": "cc8cd0b1581030d3b3d1ac13f8bbedec6297148fc28324b50309cab4714d78db"
+        },
+        {
+          "path": "crates/arcweft-adapter-context/Cargo.toml",
+          "bytes": 471,
+          "sha256": "c1fa89cef41d4a3f9d6b913ab5d3128148af84bf5f5d5d3de8377353bcb7b6fa"
+        },
+        {
+          "path": "crates/arcweft-adapter-desktop/Cargo.toml",
+          "bytes": 564,
+          "sha256": "b0f68e7c7b22216b32dd14e8c21e8e58d9e188f392956142ffcbb41e2a7ee911"
+        },
+        {
+          "path": "crates/arcweft-adapter-metadata/Cargo.toml",
+          "bytes": 366,
+          "sha256": "ea548990289f194de5b881a4e153c35715863bc42c2be9ffbe94560bd2b9f057"
+        },
+        {
+          "path": "crates/arcweft-adapter-sema/Cargo.toml",
+          "bytes": 571,
+          "sha256": "51b2b951ce1108a30a6ee2b588778db089350fed409f58f3b9b5393df303a53b"
+        },
+        {
+          "path": "crates/arcweft-adt/Cargo.toml",
+          "bytes": 210,
+          "sha256": "eb4d514ee056867d74d1de2e0b4d3a7880bdc950890529ecbdce24ba7a2af2fd"
+        },
+        {
+          "path": "crates/arcweft-agent-mcp-client/Cargo.toml",
+          "bytes": 462,
+          "sha256": "2b2c046bf870a7b8786fcd070e3d198b8eaf11f4052189d9e9fc137d21355146"
+        },
+        {
+          "path": "crates/arcweft-agent-mcp/Cargo.toml",
+          "bytes": 758,
+          "sha256": "48723bbd679cc189d962f9c9ff1bd767fe0d237a3588db9a6db9ce80df1d3081"
+        },
+        {
+          "path": "crates/arcweft-agent-policy/Cargo.toml",
+          "bytes": 513,
+          "sha256": "f6ac162ae26ec94f1be8e1b3aa07976f6eb2c47667dac1be1f91395f6d7f70b4"
+        },
+        {
+          "path": "crates/arcweft-agent-protocol/Cargo.toml",
+          "bytes": 805,
+          "sha256": "f28584e17e3d107cd828a8849ec63ed226fd8f1456e87df8c1e40cd94b83da6a"
+        },
+        {
+          "path": "crates/arcweft-agent-repl/Cargo.toml",
+          "bytes": 1129,
+          "sha256": "f8466e6fd547dee4d8949144be1bf1892f5a695d6e7da7b0ee59dbf25ffe7428"
+        },
+        {
+          "path": "crates/arcweft-agent-runner/Cargo.toml",
+          "bytes": 731,
+          "sha256": "fc85d7388021cb1f849961b6823c121371b00e6dabc8290d8e2e92860fd888e1"
+        },
+        {
+          "path": "crates/arcweft-audio-codec/Cargo.toml",
+          "bytes": 616,
+          "sha256": "262f243913d939ae54d91f57e78b694eca13d85be93ec90a8c452ef832ac082a"
+        },
+        {
+          "path": "crates/arcweft-audio-core/Cargo.toml",
+          "bytes": 390,
+          "sha256": "d70e2b9a50dab58311c83c9f70edb27face75c36f41d78b3be845095066725a6"
+        },
+        {
+          "path": "crates/arcweft-audio-device-cpal/Cargo.toml",
+          "bytes": 1466,
+          "sha256": "63b920d334efa39b2ce239bf0144d55a1d9480692cca261d97dc157f733e3b72"
+        },
+        {
+          "path": "crates/arcweft-audio-mixer/Cargo.toml",
+          "bytes": 362,
+          "sha256": "1bb235c34d9d27e339cc15b2f6b76c8a9086c3d4f36ce1bbc41e5a550636d998"
+        },
+        {
+          "path": "crates/arcweft-browser-bench/Cargo.toml",
+          "bytes": 908,
+          "sha256": "3b11549ca3203d8c46a0546c186aa571d739c18ee26570be52f197723970c40d"
+        },
+        {
+          "path": "crates/arcweft-bundle-assets/Cargo.toml",
+          "bytes": 459,
+          "sha256": "977c683c5cbc208a87bd9c8ef99f5eaa4fe8051df0b8a81efa2f579388d3268a"
+        },
+        {
+          "path": "crates/arcweft-bundle/Cargo.toml",
+          "bytes": 1775,
+          "sha256": "abf5f084b5de2a010e6e0f62b5996afb880d647720f1d20c9d4c6cad8e707a5a"
+        },
+        {
+          "path": "crates/arcweft-character-psd/Cargo.toml",
+          "bytes": 386,
+          "sha256": "57e32f7c057d95c7cc50fa64592f606b8595daefba0a2ddf3dd4c56a9a198867"
+        },
+        {
+          "path": "crates/arcweft-character-view/Cargo.toml",
+          "bytes": 481,
+          "sha256": "cb4bf9950d6faff602cf4d112a577e8bafe77c40cfd9ec5cff1fbce889359983"
+        },
+        {
+          "path": "crates/arcweft-character/Cargo.toml",
+          "bytes": 443,
+          "sha256": "65d433bab694f47bf5af653beea78336d876a214b4baf9be226370b250fec0a4"
+        },
+        {
+          "path": "crates/arcweft-cli/Cargo.toml",
+          "bytes": 3655,
+          "sha256": "98233c14ea88afabb8b4bf8b10f0aadb30f21e052eff6cfb1871e0e92df56434"
+        },
+        {
+          "path": "crates/arcweft-codec-arrow/Cargo.toml",
+          "bytes": 366,
+          "sha256": "b4e37abbdebd430a205e6e0ab4ae566cb6a648eb866522a6c1b0c11ee5331f0e"
+        },
+        {
+          "path": "crates/arcweft-codec-avro/Cargo.toml",
+          "bytes": 372,
+          "sha256": "40be5a6999f6cec6fc23100d9c61bc2857f687cda25dfd04aeb23c889f4f7755"
+        },
+        {
+          "path": "crates/arcweft-codec-binary/Cargo.toml",
+          "bytes": 568,
+          "sha256": "469ca885fcdc7fff485fd76abfa668de187e7d0446b12d18ca8e980e55ead7fe"
+        },
+        {
+          "path": "crates/arcweft-codec-cbor/Cargo.toml",
+          "bytes": 351,
+          "sha256": "eb4a6fa90dc1f4b7dad7117fc754d24823a6dd846a6c26f9443201b72734a1c4"
+        },
+        {
+          "path": "crates/arcweft-codec-csv/Cargo.toml",
+          "bytes": 340,
+          "sha256": "3550c9fb328c0e547fce36e43a3e151640b183fe5030c956bc4b714a4f831776"
+        },
+        {
+          "path": "crates/arcweft-codec-json/Cargo.toml",
+          "bytes": 379,
+          "sha256": "32a8de49fb5cb258dd370783e7080454034a516b71c155c1a2d9775a199a15f2"
+        },
+        {
+          "path": "crates/arcweft-codec-msgpack/Cargo.toml",
+          "bytes": 316,
+          "sha256": "8f7ad1516850313150645abedd19381cda0448204d1efc9a47c088ceecf752ae"
+        },
+        {
+          "path": "crates/arcweft-codec-toml/Cargo.toml",
+          "bytes": 385,
+          "sha256": "63986cf4e70025ad54148b1f95ba42200dcee18566795e0175958ff6e836db96"
+        },
+        {
+          "path": "crates/arcweft-codec-yaml/Cargo.toml",
+          "bytes": 319,
+          "sha256": "18d271030aad8d31a317527a834c4b7ec09abb3209368471dae89a5e59efad54"
+        },
+        {
+          "path": "crates/arcweft-compiler/Cargo.toml",
+          "bytes": 1838,
+          "sha256": "c7c284f8902bcd3d36757fe562504bc499c07419a0e551ebb55bcc341d4420f2"
+        },
+        {
+          "path": "crates/arcweft-config/Cargo.toml",
+          "bytes": 275,
+          "sha256": "398af8609e81eee972ecb0ae0c745609b055777cfb20afdc37a0aac7ca587804"
+        },
+        {
+          "path": "crates/arcweft-content-policy/Cargo.toml",
+          "bytes": 313,
+          "sha256": "490da5d1803ac020e64b9ccccadd8f17e48584a0b3fc7352d583c5ae8162c810"
+        },
+        {
+          "path": "crates/arcweft-core/Cargo.toml",
+          "bytes": 1066,
+          "sha256": "3d9c65437451c702ab25edb02666ec24336cd5f9539fa3f0d59eae0ab5a0222b"
+        },
+        {
+          "path": "crates/arcweft-data-derive-support/Cargo.toml",
+          "bytes": 402,
+          "sha256": "ad81c2b2d33785a22491de7ba6c301e963b3aa6bf917f2a89dd32a524e3614f4"
+        },
+        {
+          "path": "crates/arcweft-data-derive/Cargo.toml",
+          "bytes": 500,
+          "sha256": "4cb2417d8ff076ab4bbdd66401274714b8ad0a2ffcdbd82d82905f072d6373cd"
+        },
+        {
+          "path": "crates/arcweft-data/Cargo.toml",
+          "bytes": 408,
+          "sha256": "c9fcaa6f84153224481e2fe106ec184301c928e951978b286411cc426d42bab6"
+        },
+        {
+          "path": "crates/arcweft-debug-model/Cargo.toml",
+          "bytes": 319,
+          "sha256": "d655dcb965ec0963c9022a0edd563f3f84b52b6ed19364cb05c539a58b74c4ad"
+        },
+        {
+          "path": "crates/arcweft-debug-sqlite/Cargo.toml",
+          "bytes": 401,
+          "sha256": "24a00ef6ad4a0f4cfdbe69ecadaa5da5a70179c4b7196da0accc5d0015e7927c"
+        },
+        {
+          "path": "crates/arcweft-desktop-contract/Cargo.toml",
+          "bytes": 310,
+          "sha256": "cdea30b4301e9d1bba019cc91931368e3eb2a4970cacfcdaf90cfc3eb81342c1"
+        },
+        {
+          "path": "crates/arcweft-desktop-host/Cargo.toml",
+          "bytes": 256,
+          "sha256": "90ae48d4f444e6a06d2cfe6363397933970f3106cd8d1c907ab9f82e8eabcb3a"
+        },
+        {
+          "path": "crates/arcweft-desktop-native/Cargo.toml",
+          "bytes": 1767,
+          "sha256": "be8c973953db7967e5c005017d6f4014272816dabbb553849b79760d3d18bcd9"
+        },
+        {
+          "path": "crates/arcweft-dialogue/Cargo.toml",
+          "bytes": 770,
+          "sha256": "af86042433bf6d4052b26f3ce8d8161dc9d5e83a948cdb2549dc6e5ff0e3237b"
+        },
+        {
+          "path": "crates/arcweft-glyphon/Cargo.toml",
+          "bytes": 484,
+          "sha256": "6dc8b193f3cb5097b14152161716bfc938f62474b3dd274fe44c1bd66ba95827"
+        },
+        {
+          "path": "crates/arcweft-host-adapter/Cargo.toml",
+          "bytes": 318,
+          "sha256": "f4f74414448a89a6b6c96f074745d6684970743e63a49c81844ffafc999f94f6"
+        },
+        {
+          "path": "crates/arcweft-http-codec/Cargo.toml",
+          "bytes": 313,
+          "sha256": "682c0a456c257ac432ee4626225fee6b7c84d97ffafa2f7bd348496afadbc90e"
+        },
+        {
+          "path": "crates/arcweft-id/Cargo.toml",
+          "bytes": 402,
+          "sha256": "26956290534245daa0422aa80c58535fa16a5288dffdec24e6b79967f3c411ab"
+        },
+        {
+          "path": "crates/arcweft-image/Cargo.toml",
+          "bytes": 378,
+          "sha256": "712fc6225922b77d7541deeb70abda0058bf2328673965251c57ff1325610c5f"
+        },
+        {
+          "path": "crates/arcweft-interaction-model/Cargo.toml",
+          "bytes": 387,
+          "sha256": "a7e203539fb85e01625755dc336a990a42262e8934eebc307c984599d3f67ff2"
+        },
+        {
+          "path": "crates/arcweft-lang-hir/Cargo.toml",
+          "bytes": 516,
+          "sha256": "b8924c8de799e9672fb9b7c7febd0ae41e5b19bf41444030d9a33be2d4c59dd1"
+        },
+        {
+          "path": "crates/arcweft-lang-jit-cranelift/Cargo.toml",
+          "bytes": 649,
+          "sha256": "fc6571885fe6cbe3d76455a0cd0b7766dac0eafb71458b93dc87442e97946d34"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/Cargo.toml",
+          "bytes": 923,
+          "sha256": "47c3ca017e89395f4be79ce06b3a200fc3609ac37c51d4c87fa5ecdc44f2fd3b"
+        },
+        {
+          "path": "crates/arcweft-lang-syntax/Cargo.toml",
+          "bytes": 493,
+          "sha256": "2afe87428ada9770a6cb3f7f0c7cbe9301961eeb9b05c05945e05a544d95cb87"
+        },
+        {
+          "path": "crates/arcweft-launch/Cargo.toml",
+          "bytes": 574,
+          "sha256": "5a4e8f268fe1d77adce4c391e80215e531e8f53f094a6921cf5e89fcb8fac68a"
+        },
+        {
+          "path": "crates/arcweft-layout/Cargo.toml",
+          "bytes": 336,
+          "sha256": "e3c26ebbd36e6c1418e9bec42077ebf1cb5c93c0dbfa7a8680b55aaf3bce76dc"
+        },
+        {
+          "path": "crates/arcweft-lsp/Cargo.toml",
+          "bytes": 1769,
+          "sha256": "9adbaa1535ae4232d0c86f6bd4bdc74af87303fc4a77270d0f15af04e1666033"
+        },
+        {
+          "path": "crates/arcweft-manifest-model/Cargo.toml",
+          "bytes": 370,
+          "sha256": "619a0d8f7c720dd9157c75efa3320b5a7a379471db06b00a8c73c65f1510bdaa"
+        },
+        {
+          "path": "crates/arcweft-memory/Cargo.toml",
+          "bytes": 213,
+          "sha256": "d8fe9fa92305c08fb4b53458d2e23e4b732d71b23643c2bc6a5fdcf8ec3e963e"
+        },
+        {
+          "path": "crates/arcweft-need/Cargo.toml",
+          "bytes": 325,
+          "sha256": "6153ab36cd7d6ab8639e88cc37c501a55446fac993bc79331bdefa9677a65104"
+        },
+        {
+          "path": "crates/arcweft-player-native/Cargo.toml",
+          "bytes": 2516,
+          "sha256": "43875992fc090ce210fc3d142ab75371533d2289793e96fdb196585f3f7cb8e3"
+        },
+        {
+          "path": "crates/arcweft-player-scene/Cargo.toml",
+          "bytes": 1183,
+          "sha256": "ad800e09409d3690be930e096cdb5e450e3f0e8cad2b21f45eefa8632baea954"
+        },
+        {
+          "path": "crates/arcweft-player-text-input/Cargo.toml",
+          "bytes": 401,
+          "sha256": "857f6cd5833300f38617f7317042add6aab939d137af42a4c8395969f67774e6"
+        },
+        {
+          "path": "crates/arcweft-player-web/Cargo.toml",
+          "bytes": 1978,
+          "sha256": "608975f178ea4d53e95c8040074be326ab9526dace69ccc3c3a5ba8f661c9a9a"
+        },
+        {
+          "path": "crates/arcweft-presentation/Cargo.toml",
+          "bytes": 525,
+          "sha256": "c4a4921cdcaeb9e06272b8a3889dc4d4174187c3498f463b8a1b73ec7f61a1d4"
+        },
+        {
+          "path": "crates/arcweft-primitives/Cargo.toml",
+          "bytes": 256,
+          "sha256": "a00aeaba7d26eac5d984552eed283996951ae912beac16af19e9a176940ec7e6"
+        },
+        {
+          "path": "crates/arcweft-project-loader/Cargo.toml",
+          "bytes": 1308,
+          "sha256": "4b3f0320ffd6519d5670c6c4c1fc5c0b0c73882a0ac25992adba9e904da66b48"
+        },
+        {
+          "path": "crates/arcweft-project/Cargo.toml",
+          "bytes": 518,
+          "sha256": "4f60bec416f2daeb69c5770789987f51b37185d8a2583e10322f7eb64fc0aa7d"
+        },
+        {
+          "path": "crates/arcweft-rag/Cargo.toml",
+          "bytes": 257,
+          "sha256": "485e11c67baa26ebf02438664c2c1c913490e0eb2ae9f2eaa976af5e1f0c000f"
+        },
+        {
+          "path": "crates/arcweft-ref/Cargo.toml",
+          "bytes": 260,
+          "sha256": "756435e5c633d809d345b4a8734cef3fb78f949ee354b881dea717f170a73759"
+        },
+        {
+          "path": "crates/arcweft-render-text/Cargo.toml",
+          "bytes": 735,
+          "sha256": "1c54223ba6a0f5dc4bec8e15e755d53b3afc7e3cc6c94edf7d72a9b0510d9a16"
+        },
+        {
+          "path": "crates/arcweft-render-web/Cargo.toml",
+          "bytes": 499,
+          "sha256": "1f7afc441a36291c28234e6920b170ffeaae47558f26bfdbea8090c1dd26491f"
+        },
+        {
+          "path": "crates/arcweft-render-wgpu/Cargo.toml",
+          "bytes": 1056,
+          "sha256": "1e93150af4218eb3ebe5e7dad5bcb646bc864343fe331c11c863eeddb43ee75c"
+        },
+        {
+          "path": "crates/arcweft-resource-manifest/Cargo.toml",
+          "bytes": 599,
+          "sha256": "6551c8b18f994af912cdf4cc3c23283cd56ed6877b03f07ac5aa78bb50ac0023"
+        },
+        {
+          "path": "crates/arcweft-resource-model/Cargo.toml",
+          "bytes": 587,
+          "sha256": "dc488745726746d2a3708e9ae3d3762498d19ae5c3cdf85d966b524c367bc692"
+        },
+        {
+          "path": "crates/arcweft-rich-text-schema/Cargo.toml",
+          "bytes": 333,
+          "sha256": "99aaf174234c9934382effc08a8e35aec158e3f367a135e55f9ba0377896117f"
+        },
+        {
+          "path": "crates/arcweft-runtime-accelerator/Cargo.toml",
+          "bytes": 2102,
+          "sha256": "63e650c655d69f9003946960a0924b81eacc80ace4980745e8db27087fbc1ab3"
+        },
+        {
+          "path": "crates/arcweft-runtime-codegen/Cargo.toml",
+          "bytes": 361,
+          "sha256": "7bf1f9f68525db0039644e752403af469cd1b759acfbcebb527060e608ff2bed"
+        },
+        {
+          "path": "crates/arcweft-runtime-driver/Cargo.toml",
+          "bytes": 1180,
+          "sha256": "6089dd4bcacc09f96ab38ed446a1a7aa3d3076eff08e9bd9c991f84a6048f5d9"
+        },
+        {
+          "path": "crates/arcweft-runtime-host/Cargo.toml",
+          "bytes": 1347,
+          "sha256": "e38a8f282dc1de34c1307bc81aa1744225cf1c6585dbe7804a54f337a14c618b"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/Cargo.toml",
+          "bytes": 781,
+          "sha256": "ddbc53d77771880439596906c4f59537449efb36424afb535839a7f31a442df7"
+        },
+        {
+          "path": "crates/arcweft-runtime-scheduler/Cargo.toml",
+          "bytes": 276,
+          "sha256": "491a222e45c470d5639bbfacbeaf62073113e602175afc17cb7c6486035e5cad"
+        },
+        {
+          "path": "crates/arcweft-rust-abi-build/Cargo.toml",
+          "bytes": 301,
+          "sha256": "831ddc454401dba25dfd22bd0e2aacf72fba0dd1f8c3d9ba9b2b885f970e0bb6"
+        },
+        {
+          "path": "crates/arcweft-rust-abi-macros/Cargo.toml",
+          "bytes": 461,
+          "sha256": "a7378d1a69dedcd68332824bc30439c18aa7e3dff4aa853b456949f8ec92637e"
+        },
+        {
+          "path": "crates/arcweft-rust-abi/Cargo.toml",
+          "bytes": 399,
+          "sha256": "cb548aa5ac4ca59fea4ede57a57239d5d632c81f417a476479873cbfed66eb7c"
+        },
+        {
+          "path": "crates/arcweft-save/Cargo.toml",
+          "bytes": 509,
+          "sha256": "29136a6ec2564f916ed5f9df0bbf99a553d801cb2649f797dbad2815f6962b3c"
+        },
+        {
+          "path": "crates/arcweft-serde-bridge/Cargo.toml",
+          "bytes": 441,
+          "sha256": "970a35d6640d2bcda6c5746687c1d9a375ba01f5c9baf7ace094efa3ac13e1a4"
+        },
+        {
+          "path": "crates/arcweft-source/Cargo.toml",
+          "bytes": 414,
+          "sha256": "78c056664ca58f705e00d18a3f801481b671c1b5cb74f4ffc75a255c7826e2a6"
+        },
+        {
+          "path": "crates/arcweft-test/Cargo.toml",
+          "bytes": 550,
+          "sha256": "7426e2de75c2ae682bffe6c4884c2920225e9a963b4853ceb5da1248d7de4205"
+        },
+        {
+          "path": "crates/arcweft-text-layout/Cargo.toml",
+          "bytes": 517,
+          "sha256": "ff0f7e7295ba558fe5252623d99936ad7deb47b4dae35b95a7b811cd2ec8b321"
+        },
+        {
+          "path": "crates/arcweft-text-model/Cargo.toml",
+          "bytes": 790,
+          "sha256": "18f0f481941b7b8cb874212bb1d9e1702f12f702cee9a756d1765f32bcfe4f78"
+        },
+        {
+          "path": "crates/arcweft-tooling/Cargo.toml",
+          "bytes": 641,
+          "sha256": "815a42c42b381e304a5c5ca18aaa4ecbfe006526918da3c9487596c2b402cd96"
+        },
+        {
+          "path": "crates/arcweft-verify-lsp/Cargo.toml",
+          "bytes": 583,
+          "sha256": "3373ed4abfdc54cc679bbc9a081db75b9348130aaa29b4b4eabe4b0beb10b539"
+        },
+        {
+          "path": "crates/arcweft-verify-oxiz/Cargo.toml",
+          "bytes": 348,
+          "sha256": "2406f28520ef7737f58d8227c13556ffe45bdb81aa22af0358bf0f2bb387db80"
+        },
+        {
+          "path": "crates/arcweft-verify-z3/Cargo.toml",
+          "bytes": 297,
+          "sha256": "6ff99c7088d32bce5b22f9efcdb6ad8bec9c4c0b45a53a612c2f288dfe1e290c"
+        },
+        {
+          "path": "crates/arcweft-verify/Cargo.toml",
+          "bytes": 470,
+          "sha256": "474d57f0ca3bfe45828706daaaab7882cc28c7005d10226f40342c7c4104f426"
+        },
+        {
+          "path": "crates/arcweft-view/Cargo.toml",
+          "bytes": 616,
+          "sha256": "3ab59e15e40dd17ecc54618cd50f96fe713a5230d7a127d63d8550a024ef365d"
+        },
+        {
+          "path": "crates/arcweft/Cargo.toml",
+          "bytes": 645,
+          "sha256": "202f79748ca64b1165897317ea6311dce25823730f401c965589a03e5003fc4d"
+        },
+        {
+          "path": "vendor/glyphon/Cargo.toml",
+          "bytes": 1790,
+          "sha256": "7c0b81f441c7f63ea4cef99d864c11501f04263feced1dda37513803b4086357"
+        }
+      ],
+      "inputDrift": 0,
+      "boundary": "Private CLI request/configuration changes and CLI integration helpers only; no lower-layer public API/Cargo/dependency change. Separate style-origin whole30+Sema evidence remains unchanged."
+    },
+    "ownership": {
+      "version": 1,
+      "source": "ceca5955ab15bee03ac4ca020a708f5b12eea1be",
+      "base": "bcc081105b87501ed23c322724df2ed282c4f1fc",
+      "files": [
+        {
+          "path": "crates/arcweft-cli/src/app/agent/native.rs",
+          "bytes": 15503,
+          "loc": 331,
+          "baseBytes": 15580,
+          "baseLoc": 332,
+          "sha256": "725d34f216b2c634064622968543d580153afc039d028a9213e66a8b90670da5"
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/agent/native/capture.rs",
+          "bytes": 37419,
+          "loc": 1071,
+          "baseBytes": 36658,
+          "baseLoc": 1053,
+          "sha256": "eac56d1781213c681c753c18d963f30d044a7c4fc352bc97a85f9cc5a5aae713"
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/agent/native/mcp_protocol.rs",
+          "bytes": 63715,
+          "loc": 1630,
+          "baseBytes": 63777,
+          "baseLoc": 1635,
+          "sha256": "247c0c2f1985e420a52bcd1e8d194f565c4a78ec14a4850266800dfe4bd2c08a"
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/agent/native/mcp_resources.rs",
+          "bytes": 39616,
+          "loc": 1076,
+          "baseBytes": 39667,
+          "baseLoc": 1077,
+          "sha256": "b2cf70da1e9aa2a5f8f65058aba62e0129e0bf99b8873fbfc257a5ff9c64aeb8"
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/agent/native/observe.rs",
+          "bytes": 51009,
+          "loc": 1421,
+          "baseBytes": 50790,
+          "baseLoc": 1417,
+          "sha256": "15a1127752f3ab5a73b331fc98deca2cef28d520231a101aac41ca1de57c3627"
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/agent/native/player_observation.rs",
+          "bytes": 41667,
+          "loc": 1140,
+          "baseBytes": 43904,
+          "baseLoc": 1223,
+          "sha256": "cbaec3d6c95f06d5f986b5d6b2ffd19c57e54d68affdc374bc07959617251c75"
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/agent/native/player_observation/request.rs",
+          "bytes": 5417,
+          "loc": 139,
+          "baseBytes": 0,
+          "baseLoc": 0,
+          "sha256": "ac9271dec5bb16017751a28db21dcb9243a834020d0700f2c4c9258663b0a0c3"
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/agent/native/player_observation/tests.rs",
+          "bytes": 15521,
+          "loc": 425,
+          "baseBytes": 15967,
+          "baseLoc": 451,
+          "sha256": "2e2c2ba5ec927660d4dc3e36cc60fe5f181b63e4c4a8d3925d21289848a42a82"
+        },
+        {
+          "path": "crates/arcweft-cli/src/app/agent/native/repl.rs",
+          "bytes": 52063,
+          "loc": 1572,
+          "baseBytes": 52065,
+          "baseLoc": 1572,
+          "sha256": "bddf86a223aaf0a67011e0a793d48e22740b584e53a4f87040752aa6600032f9"
+        },
+        {
+          "path": "crates/arcweft-cli/tests/check/agent_observe_native.rs",
+          "bytes": 1076,
+          "loc": 24,
+          "baseBytes": 1024,
+          "baseLoc": 23,
+          "sha256": "3cfdc64ee9ed4f759b5a2803d6e369606600b8a593e06536c14b41141b2d02ae"
+        },
+        {
+          "path": "crates/arcweft-cli/tests/check/agent_observe_native/native_session.rs",
+          "bytes": 6844,
+          "loc": 193,
+          "baseBytes": 0,
+          "baseLoc": 0,
+          "sha256": "1db98bce6832f86b26261db12a68dc42e58a49aba083bb5070a34a23b97abf9e"
+        },
+        {
+          "path": "docs/04-tooling/agent-observe-capture-contract.md",
+          "bytes": 26630,
+          "loc": 568,
+          "baseBytes": 25945,
+          "baseLoc": 558,
+          "sha256": "6d0945665660c9b4c9e57c7dd34e547f1a9cf5e75e98029a54fe172f3e2c5659"
+        }
+      ],
+      "ownership": [
+        "Private CLI NativeFrameObservationRequest retains frame count/frontier, viewport, typed sample and initial scope diagnostic request. Persistent MCP state stores the progress request, not broad launch/image-output CLI args.",
+        "NativeFrameSample owns implicit/explicit/capture-step sampling. Initial capture-step stays request-local; progress retains explicit seconds and regular execution bounds. Explicit zero retains Some(0), distinct from implicit report time. Existing style-source/model data and all lower-layer typed contracts are unchanged.",
+        "All four native runtime observation producers/consumers use the one frame request. Initial CLI/MCP observation applies its original crop/output only once; action/step/wait publish actual current reports and retain prepared attachments without repeating an earlier image request or selecting a replacement crop.",
+        "Missing-scope diagnosis belongs to canonical AgentCaptureScope. Remove the duplicate RequestedCaptureScope/Kind model, array builder, observer and obsolete reexports/helper; retain exact missing-scope code/message/step and hidden/released source assertions.",
+        "Native AgentScript step_frames uses a per-call frame request. It no longer mutates configured steps cumulatively. The persistent public MCP regression validates2real Source lines, active report text context, no repeated initial image and exact1tick increments on one-frame steps. Child stdin/stdout/stderr and teardown are owned by the test session.",
+        "No new crate/public lower-layer API/dependency/feature/unsafe/runtime effect family, Source reconstruction, artifact move/copy, system setting or budget increase. CLI-only reverse closure from actual retained metadata. New test helper thread/child is isolated and reclaimed."
+      ],
+      "validation": "Owner3:111/111PASS,4116source/case/executable drift0. CLI alltarget/allfeature/locked check/Clippy and structure0, warnings remain. Owner1 import failure and owner2 guide-input guard rejection retained; completeCLI703 ongoing, not a703PASS claim."
+    },
+    "failureComparison": {
+      "referenceRun": "content-style-origin-reverse31-attempt2-20261106.runtime",
+      "referenceBase": "d0dd7b9af5c845fc1beeb8398f0a3a1ed9dfb870",
+      "previousFailures": 10,
+      "currentFailures": 10,
+      "newFailureIds": [],
+      "noLongerFailingIds": []
+    },
+    "initialAttempts": {
+      "catalogImportFailure": {
+        "version": 1,
+        "base": "bcc081105b87501ed23c322724df2ed282c4f1fc",
+        "command": [
+          "nextest",
+          "list",
+          "-p",
+          "arcweft-cli",
+          "--all-targets",
+          "--all-features",
+          "--locked",
+          "-E",
+          "test(app::agent::native::) | test(agent_mcp_native_dialogue_progress_does_not_reuse_initial_capture_scope)",
+          "--message-format",
+          "json"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/native-session-frame-request-owner1-20261106.catalog.log",
+        "exitCode": 101,
+        "sourceInputs": 4116,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T18:54:15.7249599Z",
+        "finishedAt": "2026-11-05T18:54:38.3555196Z"
+      },
+      "sourceGuard": {
+        "version": 1,
+        "base": "bcc081105b87501ed23c322724df2ed282c4f1fc",
+        "attempt": "native-session-frame-request-owner2-20261106",
+        "phase": "catalog Source guard aborted before catalog receipt/inventory/runtime",
+        "processExit": 1,
+        "actualCargoExit": null,
+        "oldGuideSha256": "cbb3910c2fd3edb57a5559fb18f85ed83d1905c8c7ff1b2658b64678272158d7",
+        "currentGuideSha256": "6d0945665660c9b4c9e57c7dd34e547f1a9cf5e75e98029a54fe172f3e2c5659",
+        "cause": "Owned maintained capture-contract guide was updated during the frozen catalog attempt. Guard rejected the input change. No runtime tests ran; do not relabel this attempt as owner acceptance. Source1 unresolved-import compile error is separately retained.",
+        "correction": "Fresh owner3 freeze includes the current guide and unchanged Rust input. No Source bytes are restored to hide the guard result.",
+        "recordedAt": "2026-11-05T18:58:19.8913661Z"
+      },
+      "reason": "Owner1 E0432 was repaired with the narrow runtime_observation import. Owner2 compiled but this agent edited the frozen capture guide; the guard aborted before receipt/inventory/runtime. Neither is passing validation. Owner3 reran the corrected complete input."
+    },
+    "probes": {
+      "before": {
+        "version": 1,
+        "base": "bcc081105b87501ed23c322724df2ed282c4f1fc",
+        "pins": {
+          "binarySha256": "4cf195527fc5e2583fcb53b28d01637be406abcb2b3d0447435499df08cf5c2b",
+          "sourceSha256": "ed62eec83a0b9fd32e422f6a4ecd28bb471e8fcb0a28ef3683bd403c7c4e90fa"
+        },
+        "processExit": 0,
+        "failure": "Rejected MCP call: {\"jsonrpc\":\"2.0\",\"id\":5,\"error\":{\"code\":-32603,\"message\":\"failed to build MCP action image output\"}}",
+        "frames": [
+          {
+            "index": 0,
+            "tick": 3,
+            "frame_id": "frame.3",
+            "steps": 4,
+            "lines": [
+              {
+                "path": {
+                  "segments": [
+                    "full",
+                    "001"
+                  ]
+                }
+              }
+            ],
+            "actions": [
+              {
+                "id": "action.advance_text.object.dialogue.0.0.mount.0.text.1.view_mount_0.part.dialogue.content",
+                "target": "object.dialogue.0.0.mount.0.text.1.view_mount_0.part.dialogue.content",
+                "action": "advance_text",
+                "kind": "semantic",
+                "enabled": true
+              }
+            ],
+            "diagnosticCount": 0
+          }
+        ],
+        "scope": "Actual public MCP persistent session;4steps/128max_ops per frame unchanged. No Source edits or reconstructed captures."
+      },
+      "after": {
+        "version": 1,
+        "base": "ceca5955ab15bee03ac4ca020a708f5b12eea1be",
+        "pins": {
+          "binarySha256": "197431aa685104e92eb49caa371c3d1edbf6b01edc9469587300506e9ce0e301",
+          "sourceSha256": "ed62eec83a0b9fd32e422f6a4ecd28bb471e8fcb0a28ef3683bd403c7c4e90fa"
+        },
+        "processExit": 0,
+        "failure": "Rejected MCP call: {\"jsonrpc\":\"2.0\",\"id\":41,\"error\":{\"code\":-32603,\"message\":\"failed to run player-backed MCP observe runtime\"}}",
+        "frames": [
+          {
+            "index": 0,
+            "tick": 3,
+            "frame_id": "frame.3",
+            "steps": 4,
+            "lines": [
+              {
+                "path": {
+                  "segments": [
+                    "full",
+                    "001"
+                  ]
+                }
+              }
+            ],
+            "actions": [
+              {
+                "id": "action.advance_text.object.dialogue.0.0.mount.0.text.1.view_mount_0.part.dialogue.content",
+                "target": "object.dialogue.0.0.mount.0.text.1.view_mount_0.part.dialogue.content",
+                "action": "advance_text",
+                "kind": "semantic",
+                "enabled": true
+              }
+            ],
+            "diagnosticCount": 0
+          },
+          {
+            "index": 1,
+            "tick": 7,
+            "frame_id": "frame.7",
+            "steps": 8,
+            "lines": [
+              {
+                "path": {
+                  "segments": [
+                    "full",
+                    "001"
+                  ]
+                }
+              }
+            ],
+            "actions": [
+              {
+                "id": "action.advance_text.object.dialogue.0.0.mount.0.text.1.view_mount_0.part.dialogue.content",
+                "target": "object.dialogue.0.0.mount.0.text.1.view_mount_0.part.dialogue.content",
+                "action": "advance_text",
+                "kind": "semantic",
+                "enabled": true
+              }
+            ],
+            "diagnosticCount": 0
+          },
+          {
+            "index": 2,
+            "tick": 11,
+            "frame_id": "frame.11",
+            "steps": 12,
+            "lines": [
+              {
+                "path": {
+                  "segments": [
+                    "full",
+                    "001",
+                    "extreme"
+                  ]
+                }
+              }
+            ],
+            "actions": [
+              {
+                "id": "action.advance_text.object.dialogue.0.1.mount.1.text.1.view_mount_1.part.dialogue.content",
+                "target": "object.dialogue.0.1.mount.1.text.1.view_mount_1.part.dialogue.content",
+                "action": "advance_text",
+                "kind": "semantic",
+                "enabled": true
+              }
+            ],
+            "diagnosticCount": 0
+          },
+          {
+            "index": 3,
+            "tick": 15,
+            "frame_id": "frame.15",
+            "steps": 16,
+            "lines": [
+              {
+                "path": {
+                  "segments": [
+                    "full",
+                    "001",
+                    "extreme"
+                  ]
+                }
+              }
+            ],
+            "actions": [
+              {
+                "id": "action.advance_text.object.dialogue.0.1.mount.1.text.1.view_mount_1.part.dialogue.content",
+                "target": "object.dialogue.0.1.mount.1.text.1.view_mount_1.part.dialogue.content",
+                "action": "advance_text",
+                "kind": "semantic",
+                "enabled": true
+              }
+            ],
+            "diagnosticCount": 0
+          },
+          {
+            "index": 4,
+            "tick": 19,
+            "frame_id": "frame.19",
+            "steps": 20,
+            "lines": [
+              {
+                "path": {
+                  "segments": [
+                    "full",
+                    "001",
+                    "vertical_extreme"
+                  ]
+                }
+              }
+            ],
+            "actions": [
+              {
+                "id": "action.advance_text.object.dialogue.0.2.mount.2.text.1.view_mount_2.part.dialogue.content",
+                "target": "object.dialogue.0.2.mount.2.text.1.view_mount_2.part.dialogue.content",
+                "action": "advance_text",
+                "kind": "semantic",
+                "enabled": true
+              }
+            ],
+            "diagnosticCount": 0
+          },
+          {
+            "index": 5,
+            "tick": 23,
+            "frame_id": "frame.23",
+            "steps": 24,
+            "lines": [
+              {
+                "path": {
+                  "segments": [
+                    "full",
+                    "001",
+                    "vertical_extreme"
+                  ]
+                }
+              }
+            ],
+            "actions": [
+              {
+                "id": "action.advance_text.object.dialogue.0.2.mount.2.text.1.view_mount_2.part.dialogue.content",
+                "target": "object.dialogue.0.2.mount.2.text.1.view_mount_2.part.dialogue.content",
+                "action": "advance_text",
+                "kind": "semantic",
+                "enabled": true
+              }
+            ],
+            "diagnosticCount": 0
+          },
+          {
+            "index": 6,
+            "tick": 27,
+            "frame_id": "frame.27",
+            "steps": 28,
+            "lines": [
+              {
+                "path": {
+                  "segments": [
+                    "full",
+                    "002"
+                  ]
+                }
+              }
+            ],
+            "actions": [
+              {
+                "id": "action.advance_text.object.dialogue.0.3.mount.3.text.1.view_mount_3.part.dialogue.content",
+                "target": "object.dialogue.0.3.mount.3.text.1.view_mount_3.part.dialogue.content",
+                "action": "advance_text",
+                "kind": "semantic",
+                "enabled": true
+              }
+            ],
+            "diagnosticCount": 0
+          },
+          {
+            "index": 7,
+            "tick": 31,
+            "frame_id": "frame.31",
+            "steps": 32,
+            "lines": [
+              {
+                "path": {
+                  "segments": [
+                    "full",
+                    "002"
+                  ]
+                }
+              }
+            ],
+            "actions": [
+              {
+                "id": "action.advance_text.object.dialogue.0.3.mount.3.text.1.view_mount_3.part.dialogue.content",
+                "target": "object.dialogue.0.3.mount.3.text.1.view_mount_3.part.dialogue.content",
+                "action": "advance_text",
+                "kind": "semantic",
+                "enabled": true
+              }
+            ],
+            "diagnosticCount": 0
+          },
+          {
+            "index": 8,
+            "tick": 35,
+            "frame_id": "frame.35",
+            "steps": 36,
+            "lines": [
+              {
+                "path": {
+                  "segments": [
+                    "full",
+                    "003"
+                  ]
+                }
+              }
+            ],
+            "actions": [
+              {
+                "id": "action.advance_text.object.dialogue.0.4.mount.4.text.1.view_mount_4.part.dialogue.content",
+                "target": "object.dialogue.0.4.mount.4.text.1.view_mount_4.part.dialogue.content",
+                "action": "advance_text",
+                "kind": "semantic",
+                "enabled": true
+              }
+            ],
+            "diagnosticCount": 0
+          },
+          {
+            "index": 9,
+            "tick": 39,
+            "frame_id": "frame.39",
+            "steps": 40,
+            "lines": [
+              {
+                "path": {
+                  "segments": [
+                    "full",
+                    "003"
+                  ]
+                }
+              }
+            ],
+            "actions": [
+              {
+                "id": "action.advance_text.object.dialogue.0.4.mount.4.text.1.view_mount_4.part.dialogue.content",
+                "target": "object.dialogue.0.4.mount.4.text.1.view_mount_4.part.dialogue.content",
+                "action": "advance_text",
+                "kind": "semantic",
+                "enabled": true
+              }
+            ],
+            "diagnosticCount": 0
+          },
+          {
+            "index": 10,
+            "tick": 43,
+            "frame_id": "frame.43",
+            "steps": 44,
+            "lines": [
+              {
+                "path": {
+                  "segments": [
+                    "full",
+                    "003"
+                  ]
+                }
+              }
+            ],
+            "actions": [
+              {
+                "id": "action.advance_text.object.dialogue.0.4.mount.4.text.1.view_mount_4.part.dialogue.content",
+                "target": "object.dialogue.0.4.mount.4.text.1.view_mount_4.part.dialogue.content",
+                "action": "advance_text",
+                "kind": "semantic",
+                "enabled": true
+              }
+            ],
+            "diagnosticCount": 0
+          },
+          {
+            "index": 11,
+            "tick": 47,
+            "frame_id": "frame.47",
+            "steps": 48,
+            "lines": [
+              {
+                "path": {
+                  "segments": [
+                    "full",
+                    "004"
+                  ]
+                }
+              }
+            ],
+            "actions": [
+              {
+                "id": "action.advance_text.object.dialogue.0.5.mount.5.text.1.view_mount_5.part.dialogue.content",
+                "target": "object.dialogue.0.5.mount.5.text.1.view_mount_5.part.dialogue.content",
+                "action": "advance_text",
+                "kind": "semantic",
+                "enabled": true
+              }
+            ],
+            "diagnosticCount": 0
+          },
+          {
+            "index": 12,
+            "tick": 51,
+            "frame_id": "frame.51",
+            "steps": 52,
+            "lines": [
+              {
+                "path": {
+                  "segments": [
+                    "full",
+                    "004"
+                  ]
+                }
+              }
+            ],
+            "actions": [
+              {
+                "id": "action.advance_text.object.dialogue.0.5.mount.5.text.1.view_mount_5.part.dialogue.content",
+                "target": "object.dialogue.0.5.mount.5.text.1.view_mount_5.part.dialogue.content",
+                "action": "advance_text",
+                "kind": "semantic",
+                "enabled": true
+              }
+            ],
+            "diagnosticCount": 0
+          }
+        ],
+        "scope": "Actual public MCP persistent session;4steps/128max_ops per frame unchanged. No Source edits or reconstructed captures."
+      },
+      "remaining": "Probe2 reaches line004 and transition tick51. Entering line005 then fails: prepared-text capture requires67276800 rendered pixels, limit66355200. Preserve this independent capacity condition and stderr; no claim of completed full-grammar progression. Full sample retains typed wave/shake/typewriter/arc/sparkle and jitter/shader/proxies; do not remove their assertions based on a partial source read."
+    },
+    "behavior": "One private typed NativeFrameObservationRequest owns bounded steps, viewport, sample and canonical diagnostic scope. Initial crop/image/frontier belongs to one request; persistent MCP/script progress retains execution/sample, publishes the actual current frame and does not repeat the initial image. Each step_frames count advances that call, not a cumulatively growing number. Delete duplicate capture-scope models; do not replace a missing target with a viewport image.",
+    "coverage": "CLI-only private owner.111/111PASS incl2request-unit cases and1public two-line MCP regression; fullCLI703run693PASS10FAIL23skip526.897s exit100. CLI all-target/all-feature/locked check and Clippy plus full workspace structure exit0,warnings remain. Source4116/case/executable drift0; original12tracked/6untrackedWIP participates. The exact10 failure IDs equal the previous full31 CLI run. Generic151 was not rerun for this CLI-only cut; last accepted151/151 replay remains in the previous field. No public save, browser runtime or final image parity acceptance inferred.",
+    "correctionReason": "Supersedes the older pending703 total with the actual complete run, and repairs the concrete initial-crop retention bug. A fresh public probe exposes a different bounded-render-work failure on line005, so the three full-grammar conditions remain incomplete with concrete evidence. Other completed features, including Generic Match and style provenance, remain accepted.",
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-native-session-frame-request.raw.zip",
+      "bytes": 2369145,
+      "sha256": "c6b7491931d50c8f1c5a76ff499b6879dff611525138228fd95cf6f53b91c4f7",
+      "entries": 98,
+      "entryDrift": 0
+    }
   }
 }
