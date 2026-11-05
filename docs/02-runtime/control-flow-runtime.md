@@ -73,6 +73,17 @@ See [the runtime step boundary](runtime-step-and-executors.md) and
 Evaluation and observable event order are deterministic under their admitted
 inputs. Debug loop counters do not replace the semantic continuation state.
 
+Callable application order is independent of formal ABI storage order. A
+retained value carries a complete typed permutation of its input slots;
+partial application, specialization and invocation project that same order.
+Omitted optional bindings keep their formal slots, and an attached default's
+pending packet keeps the original slots even after an exclusive input moves
+into the default body. Copying, retained identity and program-bound snapshots
+include this provenance under the original executable and shared resource
+allowance. External declaration function values forward the actual application
+order to their provider. A project function's own authored calls use their own
+operand order, independently of its caller's input order.
+
 ## Function semantic input evidence
 
 The function transcript uses the accepted function definition and its actual

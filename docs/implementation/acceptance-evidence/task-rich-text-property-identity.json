@@ -6520,5 +6520,340 @@
       }
     ],
     "precedingValidation": "Owner7 and Owner8 ran before this clean. Their actual results remain historical evidence, including failures; clean is not a validation rerun."
+  },
+  "callableInputOrder": {
+    "version": 1,
+    "recordedAt": "2026-11-05T06:52:09.1372673Z",
+    "source": {
+      "version": 1,
+      "commit": "466c2d7bf8245d1f7dd0c3560db27d0d2f53f893",
+      "parent": "092c356c0a50d4748d1b8fca02cb4626fc17baa6",
+      "tree": "f0d325eddc0fefa72a94a29e515e6c01c0e6a90c",
+      "remote": "466c2d7bf8245d1f7dd0c3560db27d0d2f53f893",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/generic_continuation_snapshot.rs",
+          "blob": "a40bf8dac8378210798bc233d7d7c23994e3bc51"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber.rs",
+          "blob": "f788dd53cd8af60cd404743419d3fbdec7b4b8ac"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber/stream/tests.rs",
+          "blob": "db0a03b79cdaee4224ef5853be61700db698eedc"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+          "blob": "ae820a8a42c9a07efe1e28aaa9944ec4289d17c7"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/tests/context_callback_execution.rs",
+          "blob": "5e7fde627d5809c37e3b1be72856ac30ea91e289"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/vm.rs",
+          "blob": "64c174ad2ad21686a55c5a56840ddccd318c0192"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/flow.rs",
+          "blob": "7065ca80b2b994daf15097e0c1a485974d528e4f"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/flow/callable.rs",
+          "blob": "6ae5ac6d5cc2a68ec64765f5ccc04d6b983ef3d0"
+        },
+        {
+          "path": "crates/arcweft-core/src/entry/schema/value_encoding.rs",
+          "blob": "9fa579e4c061d7d2bc235436d37d3d1b0d2835b3"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/body_semantic/entries/tests.rs",
+          "blob": "7ce205d8a0b39ab798e905a3ab3399991e45a725"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/lower/static_effect_tests.rs",
+          "blob": "99cc33386fb9e5a0f4490fede4f0cf72bf23f4f8"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/value_admission/literal_source/tests.rs",
+          "blob": "ee2a08b9e751319c37af0926299d403fcd17836f"
+        },
+        {
+          "path": "crates/arcweft-core/src/task/descriptor/tests.rs",
+          "blob": "8e955e364f2e046fabc7c3d3c7d6d2cf972b6547"
+        },
+        {
+          "path": "crates/arcweft-core/src/task/need_handle/tests.rs",
+          "blob": "b1b1625c9e5924e728a1797db3ee2960f970089f"
+        },
+        {
+          "path": "crates/arcweft-core/src/value.rs",
+          "blob": "fac1f7a5584dd6ab0b5fd51f980ca294b583396d"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/awbc_save.rs",
+          "blob": "6f23d63cd623077efdf540e855e6d416f60f55c4"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/awbc_save/admission.rs",
+          "blob": "e10c3e49232cc08b74e599acd026527f4a83e767"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/awbc_save/tests.rs",
+          "blob": "0aca33b268cd36a543b4c58d796fb60b83a701ac"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/callable.rs",
+          "blob": "b5fa7334d827cc823a063f7e7bf66b1cf8f8d8c9"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/callable/application.rs",
+          "blob": "3e1a1c40851cac7a2d1dd31492d026d29d3c9c0b"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/callable/application/declared.rs",
+          "blob": "60c2aae13ab846d4a188fa2196f134e1a471e1ef"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/callable/application/snapshot_tests.rs",
+          "blob": "070d61f3c82ee9f76e184a4cb1c1ac41539fece5"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/callable/input_order.rs",
+          "blob": "78fce92603988e752e502a49a596d20d2799d4e8"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/callable/specialization.rs",
+          "blob": "7d7e9442c8cfbed52eac1d71dc96cd56a68eef9f"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/callable/tests.rs",
+          "blob": "4d3acea08103e164547d0aa4d0f2f9123c4e416a"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/env.rs",
+          "blob": "a1e4fe9295acea349d086ff39fae4b495c588244"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/place_storage.rs",
+          "blob": "0f9352c75f43a59eeedd8e349d9e2f3285deb7c9"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/view/effects.rs",
+          "blob": "650df963aa1302274591755536c2dea9131cf65c"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "56b100ad0c8a430b8af87f9cfa7dd40656f3cf41510725d8c8af31e2eccfd479",
+      "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-05T06:42:28.1313063Z"
+    },
+    "state": "Intermediate ownership checkpoint. Application/snapshot provenance is implemented and owner-tested; executable-frame/provider forwarding and full acceptance remain pending.",
+    "implementation": [
+      "One typed complete RuntimeInputOrder permutation is independent of formal ABI value storage and belongs to the live retained callable, pending default packet and invocation. No source/name reconstruction or global side table. All contract versions remain1; snapshots require new fields without legacy readers.",
+      "Native/AWBC ProjectCall derives logical order from actual physical operand coordinates. Declared projection includes omitted Optional/empty Rest slots. Retain/partial/default/Invoke transitions project the same order using RuntimeCallableInputSource, and specialization preserves it.",
+      "Live/inert views, unrestricted deep copy, strict callable/pending snapshots and canonical retained encoding preserve order. Original program and cumulative shape/metadata work/byte admission precede retained graph copying."
+    ],
+    "validation": {
+      "ownerLibrary": {
+        "version": 1,
+        "base": "092c356c0a50d4748d1b8fca02cb4626fc17baa6",
+        "run": "callable-input-order-owner2-20261105.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [  19.675s] 2272 tests run: 2272 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 2272,
+        "passed": 2272,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4105,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-05T06:40:32.2303275Z"
+      },
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "--all-features",
+        "--locked",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "sourceRelation": "4105 frozen repository inputs on base092c356c0a50d4748d1b8fca02cb4626fc17baa6 plus28 paths published as466c2d7bf8245d1f7dd0c3560db27d0d2f53f893. Source/case/executable drift0. Tests use the observed working tree, including relevant original source WIP; no pristine-HEAD claim. Original12tracked and6untracked changes are preserved and excluded from the publication; untracked documentation/cache files are not claimed as build inputs.",
+      "positive": "All2272 Core library cases PASS with0 skipped. Noncanonical retained copy/JSON restore/default terminal projection, moved slots, malformed order/arity/missing field, original-owner, affine and exact resource boundaries are exercised.",
+      "firstAttempt": {
+        "version": 1,
+        "base": "092c356c0a50d4748d1b8fca02cb4626fc17baa6",
+        "command": [
+          "nextest",
+          "list",
+          "-p",
+          "arcweft-core",
+          "--lib",
+          "--all-features",
+          "--locked",
+          "--message-format",
+          "json"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/callable-input-order-owner1-20261105.catalog.log",
+        "exitCode": 101,
+        "sourceInputs": 4105,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T06:35:36.9178431Z",
+        "finishedAt": "2026-11-05T06:36:59.6289317Z"
+      },
+      "firstAttemptReason": "Catalog compile101: one direct pending-packet fixture omitted input_order; repaired before owner2. No owner1 runtime ran.",
+      "fmt": "Changed28 Rust paths: rustfmt edition2024/skip_children check0; staged whitespace0.",
+      "structure": {
+        "version": 1,
+        "base": "466c2d7bf8245d1f7dd0c3560db27d0d2f53f893",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/callable-input-order-structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4105,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T06:46:18.4768805Z",
+        "finishedAt": "2026-11-05T06:46:23.6547995Z"
+      },
+      "graph": {
+        "version": 1,
+        "base": "466c2d7bf8245d1f7dd0c3560db27d0d2f53f893",
+        "roots": [
+          "arcweft-core",
+          "arcweft-rich-text-schema",
+          "arcweft-dialogue",
+          "arcweft-lang-sema",
+          "arcweft-runtime-plan"
+        ],
+        "workspacePackages": 98,
+        "selection": [
+          "arcweft",
+          "arcweft-adapter-desktop",
+          "arcweft-adapter-sema",
+          "arcweft-agent-mcp",
+          "arcweft-agent-mcp-client",
+          "arcweft-agent-policy",
+          "arcweft-agent-protocol",
+          "arcweft-agent-repl",
+          "arcweft-agent-runner",
+          "arcweft-browser-bench",
+          "arcweft-bundle",
+          "arcweft-bundle-assets",
+          "arcweft-character-view",
+          "arcweft-cli",
+          "arcweft-compiler",
+          "arcweft-core",
+          "arcweft-debug-model",
+          "arcweft-debug-sqlite",
+          "arcweft-desktop-native",
+          "arcweft-dialogue",
+          "arcweft-glyphon",
+          "arcweft-host-adapter",
+          "arcweft-lang-hir",
+          "arcweft-lang-jit-cranelift",
+          "arcweft-lang-sema",
+          "arcweft-lang-syntax",
+          "arcweft-launch",
+          "arcweft-lsp",
+          "arcweft-player-native",
+          "arcweft-player-scene",
+          "arcweft-player-text-input",
+          "arcweft-player-web",
+          "arcweft-presentation",
+          "arcweft-project",
+          "arcweft-project-loader",
+          "arcweft-rag",
+          "arcweft-render-text",
+          "arcweft-render-web",
+          "arcweft-render-wgpu",
+          "arcweft-resource-manifest",
+          "arcweft-resource-model",
+          "arcweft-rich-text-schema",
+          "arcweft-runtime-accelerator",
+          "arcweft-runtime-codegen",
+          "arcweft-runtime-driver",
+          "arcweft-runtime-host",
+          "arcweft-runtime-plan",
+          "arcweft-runtime-scheduler",
+          "arcweft-save",
+          "arcweft-test",
+          "arcweft-text-layout",
+          "arcweft-text-model",
+          "arcweft-tooling",
+          "arcweft-verify",
+          "arcweft-verify-lsp",
+          "arcweft-verify-oxiz",
+          "arcweft-verify-z3",
+          "arcweft-view"
+        ],
+        "selectedPackages": 58,
+        "target": "all",
+        "features": "all",
+        "dependencyKinds": [
+          "normal",
+          "build",
+          "dev"
+        ],
+        "metadataTreeDrift": 0,
+        "runtimeAcceptance": "Pending. Core library2272/2272 is not this complete reverse closure."
+      },
+      "pending": "Core library is not the full58-package closure. Complete reverse runtime, Compiler/public snapshot integration, final alias regression, full98 check/Clippy and Tier2/display/CLI acceptance remain pending.",
+      "originalUntrackedDrift": 0
+    },
+    "resourceContract": {
+      "unchanged": "No engine defaults, jobs/profile, OneOp assertions, node counts, copy rules or capture conditions weakened.",
+      "callable": "The one-retained-i64 exact encoded boundary changes21→23 bytes for the new order length/slot;23 succeeds and22 rejects. The existing test name now includes order, with its original retained value and one-short assertion preserved.",
+      "pending": "Four original slots add5 bytes and5 work. The two-value boundary keeps max_nodes2 and becomes9 bytes/18 work; each one-short limit rejects in live/inert form. Empty moved slots still use0 value nodes but charge5 bytes/13 work, with12 work rejected."
+    },
+    "ownershipReview": {
+      "measurement": "Archive contains exact28-path owner/bytes/physical/code/embedded-test LOC and complete package/dependency metrics. Scanner:98 packages,3336 files,3205 Rust files,385 review triggers,0 blocking violations.",
+      "disposition": "RuntimeInputOrder owns permutation invariants, projection and strict serde. Callable application retains its cohesive state/affine/default algorithm; declared-group proof owns omission mapping. Existing Engine/VM dispatchers and borrowed value traversal gain only order transport/encoding; responsibility, I/O ownership and dependency direction are unchanged. Large owners touched only in malformed fixtures retain their existing disposition. Public exports are required by the same public snapshot contract, not physical splitting.",
+      "scope": "No manifest/dependency change. New reverse closure58; full runtime/quality acceptance remains pending."
+    },
+    "remaining": "Native synchronous/suspended function calls, PureEvaluator and AWBC frames still discard RuntimeCallableInvocation.input_order. Connect it to original scope/frame admission, rollback and public save, then explicitly forward it at external-declaration wrappers. Ordinary body-authored calls retain their own operand order. Source187 pt alias failure remains the last actual end-to-end evidence.",
+    "correctionReason": "Replace prior current row with observed owner implementation/results. Keep Generic Match and earlier accepted boundaries accepted. Owner-only tests do not establish alias/px acceptance.",
+    "supersededCurrentRows": [
+      "| RichTextの部分layout指定／source factory | **既受入を維持。factory・生成instanceを中間公開、単位とalias合成は未達** | Source 187fb586261ac6ba381546532143fa20854dba8bで、元contextの型・上限を使う3 factoryに加え、quantityを含むgeneric関数／closureのNative・decoded AWBC実行と各AWBC OneOp公開save／restoreを確認した。Compiler対象19件は16 PASS／3 FAIL、別runのDialogue／RichTextSchema libraryは6／6 PASS。元のpx2条件はpt限定schemaで拒否する。独立したpt条件では直接合成が最後の24ptを保持する一方、aliasはNative／AWBCとも11ptとなり、元の引数順が失われる。typed provenance、単位のconsumer接続、bare serifの型付きfont、static inline_stylesと全体検証を継続する。部分layout・共通property・生成API・省略alias等の既受入は維持する。[別runの範囲・全失敗・中間公開SHA・raw](acceptance-evidence/task-rich-text-property-identity.json)。 |",
+      "| 共有契約／推移的逆依存matrix | **直近の全53実測を保持。中間cutの全48逆依存は未再実行** | Source 2aaa0480b171d15274737d7bd49a3c391ce19096、4102入力。normal／build／dev・全targetの実Cargo graphとtree照合は差分0、53 package中50で実テストあり。同じall-target／all-feature／lockedの一回のrunは7,808件中7,793 PASS／15 FAIL、40 skipped。arcweft／arcweft-bundle-assets／arcweft-render-webはbuildのみ。Source／case／EXE drift 0。中間Source 187fb586261ac6ba381546532143fa20854dba8bの変更4 ownerに対する実graphは48 package、metadata／tree差分0。対象別の19件／6件を全48実行や一つのrunとは扱わない。[全件・case別coverage・graph・終端とraw](acceptance-evidence/task-rich-text-property-identity.json)。 |",
+      "| CLI全target照合 | **統合受入は未完了。直近の全698実測は683 PASS／15 FAIL** | Source 2aaa0480b171d15274737d7bd49a3c391ce19096、4102入力、全53逆依存の同じ実runに含む。従来の14 failed IDと、新たなMCP stdioのChildExitDeadline 1件を保持する。同じsource・feature・全224 EXE hashの単独再実行では追加1件がPASSしたが、全体runの15 FAILは変更しない。原因は未確定で、ID一致や単独PASSから原因を推定しない。中間Source 187fb586261ac6ba381546532143fa20854dba8bの全CLIは未再実行。[全失敗・単独再実行・原本](acceptance-evidence/task-rich-text-property-identity.json)。別境界の失敗でGeneric Matchや既受入のtyped ownerを未完了へ戻さない。 |",
+      "| workspace check／Clippy・fmt・構造gate | **中間cutの全体gateは未再実行。直近の全体gateは終了0** | 中間Source 187fb586261ac6ba381546532143fa20854dba8bでは変更Rust5件のfmtとstaged whitespaceが終了0、全98 packageのcheck／Clippy・構造gateは継続する。直近の全体検証Source 2aaa0480b171d15274737d7bd49a3c391ce19096では、4102入力のcheck／Clippy（all-target／all-feature／locked）と構造gateが終了0で、警告は残存する。[receipt・owner review・cleanを含む履歴・raw](acceptance-evidence/task-rich-text-property-identity.json)。ユーザー指定の全体cargo cleanは終了0（35,456 files／40.2 GiB）、4104 source入力と検証資料・Git差分0。これはテスト再実行ではない。doctest／wasm専用検証は未再実行。 |"
+    ],
+    "historyPrefix": {
+      "bytes": 1844658,
+      "sha256": "056c1fdd3871a908ec032a70d9b300497222d919b43bf1806197b6897158cad2"
+    },
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-callable-input-order.raw.zip",
+      "bytes": 1137424,
+      "sha256": "98e6b5076170bc7c8f4634914f96b169029a472a6780524ac308a8642e25340d",
+      "entries": 45,
+      "entryDrift": 0,
+      "indexEntry": "callable-input-order.archive-inputs.json"
+    }
   }
 }
