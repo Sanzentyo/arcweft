@@ -1015,7 +1015,7 @@ fn vertical_column_step(run: &ResolvedTextRun) -> Result<f32, TextLengthResoluti
         .presentation()
         .layout
         .as_ref()
-        .map(|layout| ResolvedTextLength::try_resolve(layout.column_gap))
+        .map(|layout| ResolvedTextLength::try_from(layout.column_gap))
         .transpose()?
         .map_or(8.0, ResolvedTextLength::pixels);
     Ok(line_height + gap)

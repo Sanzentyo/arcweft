@@ -367,7 +367,7 @@ impl ResolvedTextStyle {
                 self.font_families = vec![TextFontFamily::from(family)];
             }
             RichTextStyle::Size { length } => {
-                let milli_pixels = ResolvedTextLength::try_resolve(*length)?.milli_pixels();
+                let milli_pixels = ResolvedTextLength::try_from(*length)?.milli_pixels();
                 self.font_size_milli = milli_pixels;
                 self.line_height_milli = milli_pixels.saturating_mul(1_350) / 1_000;
             }

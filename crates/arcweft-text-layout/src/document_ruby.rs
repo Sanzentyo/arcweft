@@ -790,7 +790,7 @@ fn resolve_optional_length(
     value: Option<CheckedLength>,
 ) -> Result<Option<f32>, TextLengthResolutionError> {
     value
-        .map(ResolvedTextLength::try_resolve)
+        .map(ResolvedTextLength::try_from)
         .transpose()
         .map(|value| value.map(ResolvedTextLength::pixels))
 }

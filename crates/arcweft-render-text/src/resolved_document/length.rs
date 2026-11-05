@@ -4,7 +4,7 @@ use arcweft_text_model::{CheckedLength, LengthUnit, Milli};
 
 /// A nonnegative length admitted for text geometry in logical milli-pixels.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ResolvedTextLength(u32);
+pub struct ResolvedTextLength(Milli);
 
 /// A quantity cannot enter the absolute text-layout coordinate space.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
@@ -17,11 +17,13 @@ pub enum TextLengthResolutionError {
     Overflow { length: CheckedLength },
 }
 
-impl ResolvedTextLength {
+impl TryFrom<CheckedLength> for ResolvedTextLength {
+    type Error = TextLengthResolutionError;
+
     /// Resolves absolute quantities only at the text geometry boundary.
     /// Logical points follow the CSS ratio 1pt = 4/3px, independently of device
     /// scaling. Round once to the nearest milli-pixel; thirds never tie.
-    pub fn try_resolve(length: CheckedLength) -> Result<Self, TextLengthResolutionError> {
+    fn try_from(length: CheckedLength) -> Result<Self, Self::Error> {
         let (numerator, denominator) = match length.unit {
             LengthUnit::Px => (1_i64, 1_i64),
             LengthUnit::Pt => (4, 3),
@@ -34,17 +36,19 @@ impl ResolvedTextLength {
         let rounded = (scaled + denominator / 2) / denominator;
         let milli =
             i32::try_from(rounded).map_err(|_| TextLengthResolutionError::Overflow { length })?;
-        Ok(Self(milli.unsigned_abs()))
+        Ok(Self(Milli(milli)))
     }
+}
 
+impl ResolvedTextLength {
     #[must_use]
     pub const fn milli_pixels(self) -> u32 {
-        self.0
+        self.0.0.unsigned_abs()
     }
 
     #[must_use]
     pub fn pixels(self) -> f32 {
-        Milli(i32::try_from(self.0).expect("admitted signed milli-pixel domain")).as_f32()
+        self.0.as_f32()
     }
 }
 
@@ -63,18 +67,16 @@ mod tests {
             (CheckedLength::px(i32::MAX), i32::MAX.unsigned_abs()),
         ] {
             assert_eq!(
-                ResolvedTextLength::try_resolve(length)
-                    .unwrap()
-                    .milli_pixels(),
+                ResolvedTextLength::try_from(length).unwrap().milli_pixels(),
                 expected
             );
         }
         assert!(matches!(
-            ResolvedTextLength::try_resolve(CheckedLength::pt(i32::MAX)),
+            ResolvedTextLength::try_from(CheckedLength::pt(i32::MAX)),
             Err(TextLengthResolutionError::Overflow { .. })
         ));
         assert!(matches!(
-            ResolvedTextLength::try_resolve(CheckedLength::px(-1)),
+            ResolvedTextLength::try_from(CheckedLength::px(-1)),
             Err(TextLengthResolutionError::Negative { .. })
         ));
         for unit in [
@@ -86,7 +88,7 @@ mod tests {
             LengthUnit::Percent,
         ] {
             assert_eq!(
-                ResolvedTextLength::try_resolve(CheckedLength { milli: 1_000, unit }),
+                ResolvedTextLength::try_from(CheckedLength { milli: 1_000, unit }),
                 Err(TextLengthResolutionError::UnresolvedUnit { unit })
             );
         }
