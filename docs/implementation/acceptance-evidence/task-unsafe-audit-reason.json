@@ -1,0 +1,149 @@
+{
+  "version": 1,
+  "recordedAt": "2026-11-05T23:29:20.7359334Z",
+  "source": "9f459007999067966a0baa432f7241990aa1302b",
+  "publication": {
+    "version": 1,
+    "commit": "9f459007999067966a0baa432f7241990aa1302b",
+    "parent": "31d43b1c034bcacb336ef2d3e26b9fdf3ca36d15",
+    "tree": "442096a91780a516acd12bd68570e773bfd261b7",
+    "remote": "9f459007999067966a0baa432f7241990aa1302b",
+    "paths": [
+      {
+        "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+        "blob": "317a0bd27f8db3609afc899a3555e8b0c4879e5f"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/error.rs",
+        "blob": "f7360eb64eb6728c070bb753bb1903ab42469767"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/model/statement.rs",
+        "blob": "c1b8435f06363b5a08f32975452844e0293fc4ce"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/statement_seal.rs",
+        "blob": "eb560050438f0a5fcc196a053e2c59706d6742fa"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/tests.rs",
+        "blob": "7fb41a3dca5eed7b0ce981bf00e7c0d8443ea72e"
+      },
+      {
+        "path": "crates/arcweft-verify/src/lib.rs",
+        "blob": "3bc86c5009056991f32ee12c77b88579ae6b720a"
+      },
+      {
+        "path": "docs/01-language/proofs-and-unsafe-audits.md",
+        "blob": "f55861791f981d36a5665d6a97079450c652fa55"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "1eccf4ecaae6050726ec89c6cb49e6142d80beecc9387e34540cd57ee9c78516",
+    "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-05T23:26:43.1635512Z"
+  },
+  "scope": "The checked audit retains the exact reason operand. An authored reason must be a pure, nonempty string literal. The version-one verifier JSON preserves decoded text. Lifetime promotion and execution require their own authority.",
+  "focused": {
+    "version": 1,
+    "base": "0648aae6e708d90b06484d3caa615a35ea077ac8",
+    "run": "checked-unsafe-audit-reason-owner1-20261106.runtime",
+    "actualExitCode": 100,
+    "summary": "Summary [   2.080s] 8 tests run: 7 passed, 1 failed, 2266 skipped",
+    "caseRowSource": "final-status-after-summary",
+    "executed": 8,
+    "passed": 7,
+    "failed": 1,
+    "skipped": 2266,
+    "selectedPackages": 4,
+    "matchedPackages": 4,
+    "noMatchingSelectedTests": [],
+    "catalogCaseDrift": 0,
+    "sourceInputs": 4126,
+    "sourceDrift": 0,
+    "held": 12,
+    "failureSet": [
+      {
+        "status": "FAIL",
+        "binary": "arcweft-cli::check",
+        "test": "unsafe_json_lists_audit_regions"
+      }
+    ],
+    "isPassingRun": false,
+    "recordedAt": "2026-11-05T23:23:48.7860246Z"
+  },
+  "baselineFailure": {
+    "source": "3a1e48c2a2a0070b2f2fa390c45c48d18b004b17",
+    "run": "runtime-assertion-reverse22-20261106.runtime",
+    "binary": "arcweft-cli::check",
+    "test": "unsafe_json_lists_audit_regions"
+  },
+  "clean": {
+    "startedUtc": "2026-11-05T23:25:24.2149912Z",
+    "finishedUtc": "2026-11-05T23:26:40.3374673Z",
+    "exitCode": 0,
+    "removedFiles": 217383,
+    "reportedGiB": 274.7,
+    "freeBeforeBytes": 267886120960,
+    "freeAfterBytes": 549031985152,
+    "freeDeltaBytes": 281145864192,
+    "targetStillExistsAtExit": false,
+    "scope": "Full workspace Cargo target",
+    "statusComparison": "The raw shell status comparison included two intentional commits made during the clean. The publication verifies the original 12 tracked changes by patch hash. The same six original untracked files were checked after cleanup against their recorded byte hashes."
+  },
+  "raw": {
+    "path": "docs/implementation/acceptance-evidence/task-unsafe-audit-reason.raw.zip",
+    "bytes": 159413,
+    "sha256": "cd15b37f3cc4435b667d0f2faa561201c8cc33a0e7ab554f8d595fbc6626f0d9",
+    "entryDrift": 0,
+    "entries": [
+      {
+        "entry": "checked-unsafe-audit-reason-owner1-20261106.binaries-before.json",
+        "bytes": 1316,
+        "sha256": "180acd9d61ae89a5cfe7412572c11f787c722987e67cd6ce291b9877b0507ccc"
+      },
+      {
+        "entry": "checked-unsafe-audit-reason-owner1-20261106.catalog.inventory.json",
+        "bytes": 582196,
+        "sha256": "9193a9342253c8767b65795df09c7b62a2d65eec57aed2f44591326a4e8e2e2c"
+      },
+      {
+        "entry": "checked-unsafe-audit-reason-owner1-20261106.catalog.json",
+        "bytes": 867,
+        "sha256": "362d50451ea8a5d1cf14dfc905d198aa6c7c5c5cf917bc2425371d116b356c2f"
+      },
+      {
+        "entry": "checked-unsafe-audit-reason-owner1-20261106.runtime.json",
+        "bytes": 961,
+        "sha256": "2fe7df600784846c85a19182688f6d39ea71f8378a509ecd04f606f7b53dbc92"
+      },
+      {
+        "entry": "checked-unsafe-audit-reason-owner1-20261106.runtime.log",
+        "bytes": 776065,
+        "sha256": "d7fb1388f36760a5966b6f6d3a9a4f81db4dfe8ec30f45de8e10e2c8e4336706"
+      },
+      {
+        "entry": "checked-unsafe-audit-reason-owner1-20261106.runtime.terminal-audit.json",
+        "bytes": 770,
+        "sha256": "395faa1f7bf9479132555614076beff7ed09fac810e2b45441b4eb13b4ec0b0e"
+      },
+      {
+        "entry": "checkpoint-checked-unsafe-audit-reason-20261106.verified.json",
+        "bytes": 1549,
+        "sha256": "1db4682a7c40fe3ec9d61ee580eea58277f9b4aa904c70a4a7216108c0806e0c"
+      },
+      {
+        "entry": "user-authorized-cargo-clean-20261105-232524.json",
+        "bytes": 557,
+        "sha256": "8469c45dfc0aa1aa0f700c82982522b555246a47b31898a136ca86d53c6eaa0e"
+      },
+      {
+        "entry": "user-authorized-cargo-clean-20261105-232524.log",
+        "bytes": 43,
+        "sha256": "a1ee6c5553955034fce634be10c33cad8a532237a137f6e6a117fe0ab60087ee"
+      }
+    ]
+  }
+}
