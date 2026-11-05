@@ -7837,6 +7837,1442 @@
       "entries": 62,
       "entryDrift": 0,
       "indexEntry": "rich-text-length.archive-inputs.json"
+    },
+    "finalConsumers": {
+      "version": 1,
+      "recordedAt": "2026-11-05T09:29:25.8895902Z",
+      "source": {
+        "version": 1,
+        "commit": "0345cb6ed70b8ce83a7b3a200ba790a385efa4e8",
+        "parent": "64805196515e1b2c408e28b92c2e8c230e19df47",
+        "tree": "7ea319ecec88557df907b07c1fa59c47f3baba3d",
+        "remote": "0345cb6ed70b8ce83a7b3a200ba790a385efa4e8",
+        "paths": [
+          {
+            "path": "crates/arcweft-render-text/src/resolved_document.rs",
+            "blob": "47932905ad592b7f0e8d34ae6c854a6fb4873539"
+          },
+          {
+            "path": "crates/arcweft-render-text/src/resolved_document/length.rs",
+            "blob": "ac1d9c25f23d0c2bc9d5a2e7dbeffccb03932038"
+          },
+          {
+            "path": "crates/arcweft-text-layout/src/document_layout.rs",
+            "blob": "962aecaf90ab5cd14002aaf4b81794e21f224500"
+          },
+          {
+            "path": "crates/arcweft-text-layout/src/document_ruby.rs",
+            "blob": "358a8a91f3776d40ecf404c969307be6d3ad72d2"
+          }
+        ],
+        "blobDrift": 0,
+        "patchSha256": "a72f32a003fb0566bf6f1ca506da4099142b2ff4596c52f3b550ed898f06c71b",
+        "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+        "separatelyHeld": [],
+        "indexEmpty": true,
+        "at": "2026-11-05T08:23:32.3786336Z"
+      },
+      "implementation": "Use TryFrom<CheckedLength> for context-free resolution. Store the admitted nonnegative Milli directly, deleting a redundant expect and its new panic-doc warning. No suppression, geometry change, Cargo change or version increase.",
+      "quality": [
+        {
+          "epoch": 1,
+          "check": {
+            "version": 1,
+            "base": "d693a3fcc4b4716ac9d608e9c075d8f1ff96bcdf",
+            "command": [
+              "check",
+              "--workspace",
+              "--all-targets",
+              "--all-features",
+              "--locked"
+            ],
+            "exitCode": 0,
+            "sourceInputs": 4107,
+            "sourceDrift": 0,
+            "startedAt": "2026-11-05T08:12:17.6584061Z",
+            "finishedAt": "2026-11-05T08:16:06.3202726Z"
+          },
+          "clippy": {
+            "version": 1,
+            "base": "d693a3fcc4b4716ac9d608e9c075d8f1ff96bcdf",
+            "command": [
+              "clippy",
+              "--workspace",
+              "--all-targets",
+              "--all-features",
+              "--locked"
+            ],
+            "exitCode": 0,
+            "sourceInputs": 4107,
+            "sourceDrift": 0,
+            "startedAt": "2026-11-05T08:16:06.7885462Z",
+            "finishedAt": "2026-11-05T08:19:30.5062689Z"
+          },
+          "structure": {
+            "version": 1,
+            "base": "d693a3fcc4b4716ac9d608e9c075d8f1ff96bcdf",
+            "command": [
+              "+nightly",
+              "-Zscript",
+              "tools/structure-audit.rs",
+              "--root",
+              ".",
+              "--fail-on-blocking",
+              "--write",
+              "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/rich-text-length-quality1-20261105.structure-report"
+            ],
+            "exitCode": 0,
+            "sourceInputs": 4107,
+            "sourceDrift": 0,
+            "startedAt": "2026-11-05T08:19:31.0455899Z",
+            "finishedAt": "2026-11-05T08:19:35.1751193Z"
+          }
+        },
+        {
+          "epoch": 2,
+          "check": {
+            "version": 1,
+            "base": "64805196515e1b2c408e28b92c2e8c230e19df47",
+            "command": [
+              "check",
+              "--workspace",
+              "--all-targets",
+              "--all-features",
+              "--locked"
+            ],
+            "exitCode": 0,
+            "sourceInputs": 4107,
+            "sourceDrift": 0,
+            "startedAt": "2026-11-05T08:20:26.5707771Z",
+            "finishedAt": "2026-11-05T08:21:29.5970835Z"
+          },
+          "clippy": {
+            "version": 1,
+            "base": "64805196515e1b2c408e28b92c2e8c230e19df47",
+            "command": [
+              "clippy",
+              "--workspace",
+              "--all-targets",
+              "--all-features",
+              "--locked"
+            ],
+            "exitCode": 0,
+            "sourceInputs": 4107,
+            "sourceDrift": 0,
+            "startedAt": "2026-11-05T08:21:30.1877181Z",
+            "finishedAt": "2026-11-05T08:22:31.058895Z"
+          },
+          "structure": {
+            "version": 1,
+            "base": "64805196515e1b2c408e28b92c2e8c230e19df47",
+            "command": [
+              "+nightly",
+              "-Zscript",
+              "tools/structure-audit.rs",
+              "--root",
+              ".",
+              "--fail-on-blocking",
+              "--write",
+              "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/rich-text-length-quality2-20261105.structure-report"
+            ],
+            "exitCode": 0,
+            "sourceInputs": 4107,
+            "sourceDrift": 0,
+            "startedAt": "2026-11-05T08:22:31.6269703Z",
+            "finishedAt": "2026-11-05T08:22:35.5844908Z"
+          }
+        }
+      ],
+      "qualityScope": "Two separate full98 workspace check/Clippy/all-targets/all-features/locked and structure runs exit0, with existing warnings. Quality1 uses d693 feature code; quality2 freezes64805196515e1b2c408e28b92c2e8c230e19df47 plus4 API paths published as0345cb6ed70b8ce83a7b3a200ba790a385efa4e8. The new length.rs warning is absent in quality2. API rounding/domain/rejection case1/1 PASS. No doctest or dedicated wasm rerun.",
+      "apiOwner": {
+        "version": 1,
+        "base": "64805196515e1b2c408e28b92c2e8c230e19df47",
+        "run": "rich-text-length-api-owner1-20261105.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   0.022s] 1 test run: 1 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4107,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-05T08:20:25.2224018Z"
+      },
+      "firstCatalog": {
+        "version": 1,
+        "base": "0345cb6ed70b8ce83a7b3a200ba790a385efa4e8",
+        "command": [
+          "nextest",
+          "list",
+          "-p",
+          "arcweft",
+          "-p",
+          "arcweft-adapter-desktop",
+          "-p",
+          "arcweft-adapter-sema",
+          "-p",
+          "arcweft-agent-mcp",
+          "-p",
+          "arcweft-agent-mcp-client",
+          "-p",
+          "arcweft-agent-policy",
+          "-p",
+          "arcweft-agent-protocol",
+          "-p",
+          "arcweft-agent-repl",
+          "-p",
+          "arcweft-agent-runner",
+          "-p",
+          "arcweft-browser-bench",
+          "-p",
+          "arcweft-bundle",
+          "-p",
+          "arcweft-bundle-assets",
+          "-p",
+          "arcweft-character-view",
+          "-p",
+          "arcweft-cli",
+          "-p",
+          "arcweft-compiler",
+          "-p",
+          "arcweft-core",
+          "-p",
+          "arcweft-debug-model",
+          "-p",
+          "arcweft-debug-sqlite",
+          "-p",
+          "arcweft-desktop-native",
+          "-p",
+          "arcweft-dialogue",
+          "-p",
+          "arcweft-glyphon",
+          "-p",
+          "arcweft-host-adapter",
+          "-p",
+          "arcweft-lang-hir",
+          "-p",
+          "arcweft-lang-jit-cranelift",
+          "-p",
+          "arcweft-lang-sema",
+          "-p",
+          "arcweft-lang-syntax",
+          "-p",
+          "arcweft-launch",
+          "-p",
+          "arcweft-lsp",
+          "-p",
+          "arcweft-player-native",
+          "-p",
+          "arcweft-player-scene",
+          "-p",
+          "arcweft-player-text-input",
+          "-p",
+          "arcweft-player-web",
+          "-p",
+          "arcweft-presentation",
+          "-p",
+          "arcweft-primitives",
+          "-p",
+          "arcweft-project",
+          "-p",
+          "arcweft-project-loader",
+          "-p",
+          "arcweft-rag",
+          "-p",
+          "arcweft-render-text",
+          "-p",
+          "arcweft-render-web",
+          "-p",
+          "arcweft-render-wgpu",
+          "-p",
+          "arcweft-resource-manifest",
+          "-p",
+          "arcweft-resource-model",
+          "-p",
+          "arcweft-rich-text-schema",
+          "-p",
+          "arcweft-runtime-accelerator",
+          "-p",
+          "arcweft-runtime-codegen",
+          "-p",
+          "arcweft-runtime-driver",
+          "-p",
+          "arcweft-runtime-host",
+          "-p",
+          "arcweft-runtime-plan",
+          "-p",
+          "arcweft-runtime-scheduler",
+          "-p",
+          "arcweft-save",
+          "-p",
+          "arcweft-test",
+          "-p",
+          "arcweft-text-layout",
+          "-p",
+          "arcweft-text-model",
+          "-p",
+          "arcweft-tooling",
+          "-p",
+          "arcweft-verify",
+          "-p",
+          "arcweft-verify-lsp",
+          "-p",
+          "arcweft-verify-oxiz",
+          "-p",
+          "arcweft-verify-z3",
+          "-p",
+          "arcweft-view",
+          "--all-targets",
+          "--all-features",
+          "--locked",
+          "--message-format",
+          "json"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/rich-text-length-reverse1-20261105.catalog.log",
+        "exitCode": 101,
+        "sourceInputs": 4107,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T08:23:39.7270799Z",
+        "finishedAt": "2026-11-05T08:34:58.0114076Z"
+      },
+      "firstCatalogScope": "Compile101, no runtime: rustc1.99.1 import-resolution ICEs and cascading Compiler E0432/E0614/E0308. Referenced imports/exports are present. Cause remains unknown; no observed OS1455/page failure in this attempt.",
+      "sameSelectionCheck": {
+        "version": 1,
+        "base": "0345cb6ed70b8ce83a7b3a200ba790a385efa4e8",
+        "command": [
+          "check",
+          "-p",
+          "arcweft",
+          "-p",
+          "arcweft-adapter-desktop",
+          "-p",
+          "arcweft-adapter-sema",
+          "-p",
+          "arcweft-agent-mcp",
+          "-p",
+          "arcweft-agent-mcp-client",
+          "-p",
+          "arcweft-agent-policy",
+          "-p",
+          "arcweft-agent-protocol",
+          "-p",
+          "arcweft-agent-repl",
+          "-p",
+          "arcweft-agent-runner",
+          "-p",
+          "arcweft-browser-bench",
+          "-p",
+          "arcweft-bundle",
+          "-p",
+          "arcweft-bundle-assets",
+          "-p",
+          "arcweft-character-view",
+          "-p",
+          "arcweft-cli",
+          "-p",
+          "arcweft-compiler",
+          "-p",
+          "arcweft-core",
+          "-p",
+          "arcweft-debug-model",
+          "-p",
+          "arcweft-debug-sqlite",
+          "-p",
+          "arcweft-desktop-native",
+          "-p",
+          "arcweft-dialogue",
+          "-p",
+          "arcweft-glyphon",
+          "-p",
+          "arcweft-host-adapter",
+          "-p",
+          "arcweft-lang-hir",
+          "-p",
+          "arcweft-lang-jit-cranelift",
+          "-p",
+          "arcweft-lang-sema",
+          "-p",
+          "arcweft-lang-syntax",
+          "-p",
+          "arcweft-launch",
+          "-p",
+          "arcweft-lsp",
+          "-p",
+          "arcweft-player-native",
+          "-p",
+          "arcweft-player-scene",
+          "-p",
+          "arcweft-player-text-input",
+          "-p",
+          "arcweft-player-web",
+          "-p",
+          "arcweft-presentation",
+          "-p",
+          "arcweft-primitives",
+          "-p",
+          "arcweft-project",
+          "-p",
+          "arcweft-project-loader",
+          "-p",
+          "arcweft-rag",
+          "-p",
+          "arcweft-render-text",
+          "-p",
+          "arcweft-render-web",
+          "-p",
+          "arcweft-render-wgpu",
+          "-p",
+          "arcweft-resource-manifest",
+          "-p",
+          "arcweft-resource-model",
+          "-p",
+          "arcweft-rich-text-schema",
+          "-p",
+          "arcweft-runtime-accelerator",
+          "-p",
+          "arcweft-runtime-codegen",
+          "-p",
+          "arcweft-runtime-driver",
+          "-p",
+          "arcweft-runtime-host",
+          "-p",
+          "arcweft-runtime-plan",
+          "-p",
+          "arcweft-runtime-scheduler",
+          "-p",
+          "arcweft-save",
+          "-p",
+          "arcweft-test",
+          "-p",
+          "arcweft-text-layout",
+          "-p",
+          "arcweft-text-model",
+          "-p",
+          "arcweft-tooling",
+          "-p",
+          "arcweft-verify",
+          "-p",
+          "arcweft-verify-lsp",
+          "-p",
+          "arcweft-verify-oxiz",
+          "-p",
+          "arcweft-verify-z3",
+          "-p",
+          "arcweft-view",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4107,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T08:37:22.6007152Z",
+        "finishedAt": "2026-11-05T08:41:19.5184411Z"
+      },
+      "retryScope": "Same source and complete59-package/all-target/all-feature/locked selection: cargo check exits0; a separate unchanged nextest catalog retry exits0 and executes the full suite. No source/import rewrite, cleanup, job/profile/budget adjustment or toolchain change between these observations. Do not infer why the initial ICE occurred or claim the unobserved first-run binaries were identical.",
+      "runtime": {
+        "version": 1,
+        "base": "0345cb6ed70b8ce83a7b3a200ba790a385efa4e8",
+        "run": "rich-text-length-reverse2-20261105.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [1527.819s] 9757 tests run: 9702 passed (65 slow), 55 failed, 48 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 9757,
+        "passed": 9702,
+        "failed": 55,
+        "skipped": 48,
+        "selectedPackages": 59,
+        "matchedPackages": 56,
+        "noMatchingSelectedTests": [
+          "arcweft",
+          "arcweft-bundle-assets",
+          "arcweft-render-web"
+        ],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4107,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_expanded_jlreq_normal_pair_geometry"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_jlreq_paragraph_column_geometry"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_accented_latin_word_geometry"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_apostrophe_western_word_geometry"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_jlreq_preset_specific_column_geometry"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_greek_latin_unit_geometry"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_jlreq_punctuation_compression_and_hanging"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_latin_unit_geometry"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_numeric_abbreviation_geometry"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_numeric_unit_geometry"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_parenthesized_reference_mark_geometry"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_numeric_separator_geometry"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_subscript_object_geometry"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_published_jlreq_western_word_geometry"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_vertical_lr_jlreq_paragraph_column_geometry"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_strict_jlreq_closing_opening_column_plan"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_strict_jlreq_paragraph_class_mix_geometry"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_vertical_ruby_collision_geometry"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_writes_jlreq_small_kana_raw_crops"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_accented_latin_word_raw_crops"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_apostrophe_western_word_raw_crops"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_european_numeral_sequence_raw_crops"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_greek_latin_unit_raw_crops"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_ideographic_numeric_abbreviation_raw_crops"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_latin_unit_raw_crops"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_prefix_abbreviation_raw_crops"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_separator_raw_crops"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_suffix_abbreviation_raw_crops"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_numeric_unit_raw_crops"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_parenthesized_reference_mark_raw_crops"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_subscript_object_raw_crops"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_western_word_raw_crops"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_writes_published_jlreq_reference_mark_raw_crops"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_writes_strict_jlreq_closing_opening_raw_crops"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_writes_strict_jlreq_paragraph_class_mix_raw_crops"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_jlreq_small_kana_object_id_raw_crop"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_jlreq_small_kana_mask_raw_crop"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_writes_vertical_lr_strict_jlreq_closing_opening_raw_crops"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_rag_query_indexes_multiple_sources"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_reports_text_presentation_z_index_depth"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "plan_json_lists_runtime_task_graph"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "spec_valid_run_edge_fixture_now_executes"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "unsafe_json_lists_audit_regions"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "spec_rejected_edge_fixtures_fail_with_diagnostics"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_records_required_solver_checks"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_reports_missing_promotion_proof"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_reports_semantic_thread_join_conflict"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_respects_semantic_defer_cancel_discharge"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::project_cache_transaction",
+            "test": "static_selectors::effectful_external_callable_value_keeps_its_frame_and_source_order_across_awbc_restoration"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::project_cache_transaction",
+            "test": "static_selectors::external_callable_value_keeps_exact_source_order_in_native_and_awbc"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::project_cache_transaction",
+            "test": "static_selectors::external_callable_value_retains_groups_and_captured_arguments_in_native_and_awbc"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-05T09:16:47.6247353Z"
+      },
+      "runtimeCommand": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft",
+        "-p",
+        "arcweft-adapter-desktop",
+        "-p",
+        "arcweft-adapter-sema",
+        "-p",
+        "arcweft-agent-mcp",
+        "-p",
+        "arcweft-agent-mcp-client",
+        "-p",
+        "arcweft-agent-policy",
+        "-p",
+        "arcweft-agent-protocol",
+        "-p",
+        "arcweft-agent-repl",
+        "-p",
+        "arcweft-agent-runner",
+        "-p",
+        "arcweft-browser-bench",
+        "-p",
+        "arcweft-bundle",
+        "-p",
+        "arcweft-bundle-assets",
+        "-p",
+        "arcweft-character-view",
+        "-p",
+        "arcweft-cli",
+        "-p",
+        "arcweft-compiler",
+        "-p",
+        "arcweft-core",
+        "-p",
+        "arcweft-debug-model",
+        "-p",
+        "arcweft-debug-sqlite",
+        "-p",
+        "arcweft-desktop-native",
+        "-p",
+        "arcweft-dialogue",
+        "-p",
+        "arcweft-glyphon",
+        "-p",
+        "arcweft-host-adapter",
+        "-p",
+        "arcweft-lang-hir",
+        "-p",
+        "arcweft-lang-jit-cranelift",
+        "-p",
+        "arcweft-lang-sema",
+        "-p",
+        "arcweft-lang-syntax",
+        "-p",
+        "arcweft-launch",
+        "-p",
+        "arcweft-lsp",
+        "-p",
+        "arcweft-player-native",
+        "-p",
+        "arcweft-player-scene",
+        "-p",
+        "arcweft-player-text-input",
+        "-p",
+        "arcweft-player-web",
+        "-p",
+        "arcweft-presentation",
+        "-p",
+        "arcweft-primitives",
+        "-p",
+        "arcweft-project",
+        "-p",
+        "arcweft-project-loader",
+        "-p",
+        "arcweft-rag",
+        "-p",
+        "arcweft-render-text",
+        "-p",
+        "arcweft-render-web",
+        "-p",
+        "arcweft-render-wgpu",
+        "-p",
+        "arcweft-resource-manifest",
+        "-p",
+        "arcweft-resource-model",
+        "-p",
+        "arcweft-rich-text-schema",
+        "-p",
+        "arcweft-runtime-accelerator",
+        "-p",
+        "arcweft-runtime-codegen",
+        "-p",
+        "arcweft-runtime-driver",
+        "-p",
+        "arcweft-runtime-host",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-runtime-scheduler",
+        "-p",
+        "arcweft-save",
+        "-p",
+        "arcweft-test",
+        "-p",
+        "arcweft-text-layout",
+        "-p",
+        "arcweft-text-model",
+        "-p",
+        "arcweft-tooling",
+        "-p",
+        "arcweft-verify",
+        "-p",
+        "arcweft-verify-lsp",
+        "-p",
+        "arcweft-verify-oxiz",
+        "-p",
+        "arcweft-verify-z3",
+        "-p",
+        "arcweft-view",
+        "--all-targets",
+        "--all-features",
+        "--locked",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "packageResults": {
+        "version": 1,
+        "base": "0345cb6ed70b8ce83a7b3a200ba790a385efa4e8",
+        "source": "authoritative terminal audit and matching final-status case rows",
+        "executed": 9757,
+        "passed": 9702,
+        "failed": 55,
+        "skipped": 48,
+        "caseDrift": 0,
+        "cli": {
+          "executed": 698,
+          "passed": 646,
+          "failed": 52
+        },
+        "nonCli": {
+          "executed": 9059,
+          "passed": 9056,
+          "failed": 3
+        },
+        "packages": [
+          {
+            "package": "arcweft",
+            "executed": 0,
+            "passed": 0,
+            "failed": 0,
+            "runtime": false
+          },
+          {
+            "package": "arcweft-adapter-desktop",
+            "executed": 7,
+            "passed": 7,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-adapter-sema",
+            "executed": 13,
+            "passed": 13,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-agent-mcp",
+            "executed": 31,
+            "passed": 31,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-agent-mcp-client",
+            "executed": 2,
+            "passed": 2,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-agent-policy",
+            "executed": 19,
+            "passed": 19,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-agent-protocol",
+            "executed": 54,
+            "passed": 54,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-agent-repl",
+            "executed": 37,
+            "passed": 37,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-agent-runner",
+            "executed": 69,
+            "passed": 69,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-browser-bench",
+            "executed": 6,
+            "passed": 6,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-bundle",
+            "executed": 329,
+            "passed": 329,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-bundle-assets",
+            "executed": 0,
+            "passed": 0,
+            "failed": 0,
+            "runtime": false
+          },
+          {
+            "package": "arcweft-character-view",
+            "executed": 2,
+            "passed": 2,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-cli",
+            "executed": 698,
+            "passed": 646,
+            "failed": 52,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-compiler",
+            "executed": 804,
+            "passed": 801,
+            "failed": 3,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-core",
+            "executed": 2331,
+            "passed": 2331,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-debug-model",
+            "executed": 2,
+            "passed": 2,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-debug-sqlite",
+            "executed": 22,
+            "passed": 22,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-desktop-native",
+            "executed": 18,
+            "passed": 18,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-dialogue",
+            "executed": 74,
+            "passed": 74,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-glyphon",
+            "executed": 24,
+            "passed": 24,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-host-adapter",
+            "executed": 10,
+            "passed": 10,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-lang-hir",
+            "executed": 975,
+            "passed": 975,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-lang-jit-cranelift",
+            "executed": 25,
+            "passed": 25,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-lang-sema",
+            "executed": 1395,
+            "passed": 1395,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-lang-syntax",
+            "executed": 744,
+            "passed": 744,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-launch",
+            "executed": 45,
+            "passed": 45,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-lsp",
+            "executed": 223,
+            "passed": 223,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-player-native",
+            "executed": 63,
+            "passed": 63,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-player-scene",
+            "executed": 128,
+            "passed": 128,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-player-text-input",
+            "executed": 13,
+            "passed": 13,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-player-web",
+            "executed": 36,
+            "passed": 36,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-presentation",
+            "executed": 180,
+            "passed": 180,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-primitives",
+            "executed": 3,
+            "passed": 3,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-project",
+            "executed": 42,
+            "passed": 42,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-project-loader",
+            "executed": 158,
+            "passed": 158,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-rag",
+            "executed": 2,
+            "passed": 2,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-render-text",
+            "executed": 23,
+            "passed": 23,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-render-web",
+            "executed": 0,
+            "passed": 0,
+            "failed": 0,
+            "runtime": false
+          },
+          {
+            "package": "arcweft-render-wgpu",
+            "executed": 147,
+            "passed": 147,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-resource-manifest",
+            "executed": 20,
+            "passed": 20,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-resource-model",
+            "executed": 37,
+            "passed": 37,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-rich-text-schema",
+            "executed": 7,
+            "passed": 7,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-runtime-accelerator",
+            "executed": 126,
+            "passed": 126,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-runtime-codegen",
+            "executed": 17,
+            "passed": 17,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-runtime-driver",
+            "executed": 153,
+            "passed": 153,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-runtime-host",
+            "executed": 72,
+            "passed": 72,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-runtime-plan",
+            "executed": 165,
+            "passed": 165,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-runtime-scheduler",
+            "executed": 17,
+            "passed": 17,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-save",
+            "executed": 35,
+            "passed": 35,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-test",
+            "executed": 4,
+            "passed": 4,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-text-layout",
+            "executed": 59,
+            "passed": 59,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-text-model",
+            "executed": 37,
+            "passed": 37,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-tooling",
+            "executed": 27,
+            "passed": 27,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-verify",
+            "executed": 8,
+            "passed": 8,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-verify-lsp",
+            "executed": 14,
+            "passed": 14,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-verify-oxiz",
+            "executed": 5,
+            "passed": 5,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-verify-z3",
+            "executed": 2,
+            "passed": 2,
+            "failed": 0,
+            "runtime": true
+          },
+          {
+            "package": "arcweft-view",
+            "executed": 198,
+            "passed": 198,
+            "failed": 0,
+            "runtime": true
+          }
+        ]
+      },
+      "sourceRelation": "One actual complete59-package run on0345cb6ed70b8ce83a7b3a200ba790a385efa4e8 with4107 frozen repository inputs and relevant original user WIP, not pristine HEAD. Source/case/executable drift0.56 packages have runtime cases; arcweft,arcweft-bundle-assets,arcweft-render-web are build-only/no runtime tests on this host. Cargo all-targets denotes target kinds, not dedicated wasm validation.",
+      "failures": "55 actual failures: CLI52 and Compiler project_cache_transaction3. CLI full698 has646PASS/52FAIL; other9059 have9056PASS/3FAIL. Preserve every failure ID and full diagnostic. Rendering includes a concrete30pt->40000milli-px observation against an old30000 expectation plus changed column geometry; audit fixture intent before repairs. Matching an older failure ID does not establish the same cause. No overall or CLI acceptance claim.",
+      "genericMatch": {
+        "version": 1,
+        "source": "0345cb6ed70b8ce83a7b3a200ba790a385efa4e8",
+        "reference": "docs/implementation/acceptance-evidence/accepted-generic-c3-c5-closure-audit.json",
+        "referenceSha256": "82b6519b1ccbfcd4aee95d3ef8b69db686037924a7f9137de0fef0201d86b996",
+        "caseSource": "rich-text-length-reverse2-20261105.final-cases.csv in task-rich-text-length-validation.raw.zip",
+        "groups": [
+          {
+            "group": "transcript",
+            "expected": 115,
+            "passed": 115,
+            "missing": [],
+            "failed": []
+          },
+          {
+            "group": "coverage",
+            "expected": 24,
+            "passed": 24,
+            "missing": [],
+            "failed": []
+          },
+          {
+            "group": "query",
+            "expected": 5,
+            "passed": 5,
+            "missing": [],
+            "failed": []
+          },
+          {
+            "group": "native_awbc",
+            "expected": 7,
+            "passed": 7,
+            "missing": [],
+            "failed": []
+          }
+        ],
+        "expected": 151,
+        "passed": 151,
+        "caseIdDrift": 0
+      },
+      "externalFixtureRepair": {
+        "source": {
+          "version": 1,
+          "commit": "1a79392a06654f563c5f46d0db77fff4898f8adf",
+          "parent": "0345cb6ed70b8ce83a7b3a200ba790a385efa4e8",
+          "tree": "3ad9b8257d0c9c23f9aa8db76d86a846d52bad64",
+          "remote": "1a79392a06654f563c5f46d0db77fff4898f8adf",
+          "paths": [
+            {
+              "path": "crates/arcweft-compiler/tests/project_cache_transaction/static_selectors.rs",
+              "blob": "e37eecc5e1d5714d25b75d0a1571b4379fa36db7"
+            }
+          ],
+          "blobDrift": 0,
+          "patchSha256": "bbb4195fefd221d92fcbe76e3c18f6bc88bdeb12da1eb58045fda6778fc9e07d",
+          "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+          "separatelyHeld": [],
+          "indexEmpty": true,
+          "at": "2026-11-05T09:25:36.5303437Z"
+        },
+        "runtime": {
+          "version": 1,
+          "base": "0345cb6ed70b8ce83a7b3a200ba790a385efa4e8",
+          "run": "rich-text-external-layout-fixture-owner1-20261105.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [   1.157s] 4 tests run: 4 passed, 40 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 4,
+          "passed": 4,
+          "failed": 0,
+          "skipped": 40,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4107,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-05T09:23:26.1917932Z"
+        },
+        "reason": "Three full-run cases stopped while constructing intentionally malformed forwarding operands. The new owner correctly rejects width2 before program admission. Assert that exact typed InvocationInputLayout error, then use an Authored malformed inventory to retain the independent original program/signature rejection. All4 direct/alias/grouped/effectful cases retain the original execution/source-order/OneOp-save assertions and pass in a separate run;40 unrelated cases skipped. Do not merge this repair into the earlier full55FAIL result.",
+        "raw": {
+          "path": "docs/implementation/acceptance-evidence/task-rich-text-external-layout-fixture.raw.zip",
+          "bytes": 244824,
+          "sha256": "b911213bfe6bc4d31c54c5263973fd9c17bd69e042a318874634cfb133918e3e",
+          "entries": 16,
+          "entryDrift": 0
+        }
+      },
+      "inputAudit": {
+        "version": 1,
+        "head": "0345cb6ed70b8ce83a7b3a200ba790a385efa4e8",
+        "sourceInputs": 4107,
+        "sourceDrift": 0,
+        "originalUntracked": 6,
+        "untrackedDrift": 0,
+        "at": "2026-11-05T09:18:03.1910814Z",
+        "heldTracked": 12,
+        "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+        "heldDrift": 0
+      },
+      "raw": {
+        "version": 1,
+        "path": "docs/implementation/acceptance-evidence/task-rich-text-length-validation.raw.zip",
+        "bytes": 3717456,
+        "sha256": "9bd2a0ced69ba534e922e4de3a0b918fb503242b468438f638c51449671965e8",
+        "entries": 64,
+        "entryDrift": 0,
+        "indexEntry": "rich-text-length-validation.archive-inputs.json"
+      },
+      "correctionReason": "Replace the obsolete unrun full59/quality current statements with actual terminal results. Preserve all previous fields, failures and source SHAs. Generic Match remains accepted with a fresh exact151-ID/151PASS comparison. The concrete CLI/unit fixture work and remaining typed fonts/static provenance do not reopen other accepted boundaries.",
+      "supersededCurrentRows": [
+        "| RichTextの部分layout指定／source factory | **既受入を維持。呼出し順序とpx／pt保持・geometry解決を検証／公開済み、総合受入は継続** | Source d693a3fcc4b4716ac9d608e9c075d8f1ff96bcdfはCheckedLengthを本文・ruby・layoutに保持し、単一のfont-size policyと共有の論理px解決へ接続する。6 ownerの独立runは309／309 PASS、Compilerの別runは全316 callable integration＋source-layout 2件の318／318 PASS。元のpx2失敗は同じ条件でPASSとなり、このSourceの残作業から除く。直接／aliasの順序、Native／decoded AWBCと各OneOp公開JSON保存、本文18pt／24pxとruby9pt／12pxのgeometryをそれぞれの検証範囲で確認した。typed bare serif、static inline_stylesの出典、全体逆依存・CLI・最終画像parityを継続する。部分layout・共通property等の既受入は維持する。[旧失敗・訂正理由・公開SHA・原本](acceptance-evidence/task-rich-text-property-identity.json)。 |",
+        "| Generic Match `.1.2` C3/C5 | **受入・公開済み** | 受入850534b9e9bc8c8872f6528dd00050a5e6e7699e、公開f0e7ae9662b8f216d7f19dcbea3d4341fcfe7ca2。115 transcript、24 coverage、5公開query、7 Native／decoded-AWBC継続・保存の151件。完全transcript、uninhabited-domain、Never／let-else継続、exhaustive-only atomic publicationの受入を維持する。[元の受入監査](acceptance-evidence/accepted-generic-c3-c5-closure-audit.json)。Source 2aaa0480b171d15274737d7bd49a3c391ce19096の全53逆依存で、同じ151 IDが151／151新規PASS。[最新case照合と以前の全実測](acceptance-evidence/task-rich-text-property-identity.json)。公開SHAと過去の結果は[検証履歴](convergence-evidence-history.md)へ保持する。別境界や全体goalの未達だけで未完了へ戻さない。 |",
+        "| 共有契約／推移的逆依存matrix | **直近の全53実測を保持。今回の全59逆依存は未実行** | Source2aaa0480b171d15274737d7bd49a3c391ce19096の全53実runは7808件中7793 PASS／15 CLI FAIL、40 skipped。50 packageに実テストがあり、3 packageはbuildのみ。source／case／EXE drift0。中間Sourced693a3fcc4b4716ac9d608e9c075d8f1ff96bcdfの変更7 ownerは実graphで59 package、normal／build／dev・all target／all featureのmetadata／tree差分0。6 owner309件とCompiler318件の独立したPASSを、全59の実行へ合算しない。[全実測・新graph・原本](acceptance-evidence/task-rich-text-property-identity.json)。 |",
+        "| CLI全target照合 | **統合受入は未完了。直近の全698実測は683 PASS／15 FAIL** | Source 2aaa0480b171d15274737d7bd49a3c391ce19096、4102入力、全53逆依存の同じ実runに含む。従来の14 failed IDと、新たなMCP stdioのChildExitDeadline 1件を保持する。同じsource・feature・全224 EXE hashの単独再実行では追加1件がPASSしたが、全体runの15 FAILは変更しない。原因は未確定で、ID一致や単独PASSから原因を推定しない。中間Source d693a3fcc4b4716ac9d608e9c075d8f1ff96bcdfの全CLIは未再実行。[全失敗・単独再実行・原本](acceptance-evidence/task-rich-text-property-identity.json)。別境界の失敗でGeneric Matchや既受入のtyped ownerを未完了へ戻さない。 |",
+        "| workspace check／Clippy・fmt・構造gate | **中間cutはfmt・構造gateが終了0。全体check／Clippyは未再実行** | Sourced693a3fcc4b4716ac9d608e9c075d8f1ff96bcdfは変更Rust20件のfmt・staged whitespaceと全98 packageの構造gateが終了0（blocking0、review trigger385）。全98 check／Clippy（all-target／all-feature／locked）の直近の終了0はSource2aaa0480b171d15274737d7bd49a3c391ce19096で、警告は残存する。ユーザー指定の全体cargo cleanはSource187fb586261ac6ba381546532143fa20854dba8bで終了0、ソース・記録・Git差分0。doctest／wasm専用検証は未再実行。[測定・owner review・cleanを含む履歴とraw](acceptance-evidence/task-rich-text-property-identity.json)。 |"
+      ],
+      "historyPrefix": {
+        "bytes": 1850930,
+        "sha256": "a5204a6e70a5838c6c4f6fc42a7fc9faa04ea5f4881ab1f8f6c63b335c6da080"
+      }
     }
   }
 }
