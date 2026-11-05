@@ -1629,10 +1629,10 @@ entry cli @entry.main { goto @flow.main }
         let awbc = AwbcLowerer::new(&compiled.plan, &compiled.dialogue_content, "src/main.arcw")
             .lower()
             .expect("host fixture lowers the complete accepted type inventory");
+        let product = Arc::clone(compiled.view_product().product());
         let generation = compiled
             .character_dialogue_generation
             .expect("host fixture retains its original dialogue generation");
-        let (style, _, _) = compiled.style.into_parts();
         let bundle = ArcweftBundle::try_new(
             BundleManifest {
                 profile_id: None,
@@ -1656,8 +1656,8 @@ entry cli @entry.main { goto @flow.main }
             compiled.dialogue_content,
         )
         .expect("host fixture installs the standard dialogue resources")
-        .with_view_resources(None, Some(style))
-        .expect("host fixture installs its original compiled Style")
+        .try_with_validated_view_product(product.as_ref())
+        .expect("host fixture installs its complete accepted View product")
         .with_character_dialogue_generation(generation.as_ref().clone());
         (bundle, compiled.plan)
     }

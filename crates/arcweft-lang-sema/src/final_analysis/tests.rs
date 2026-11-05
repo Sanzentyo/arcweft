@@ -10180,8 +10180,11 @@ fn view_has_checked_callable_and_project_index_rows_from_a_single_retained_bindi
 }
 
 #[test]
-fn view_modifier_without_an_accepted_catalog_fails_at_the_call_owner() {
-    let fixture = fixture("view Main() {\n    Text(\"hello\").x(10px)\n}\n", None);
+fn unregistered_view_modifier_fails_at_the_call_owner() {
+    let fixture = fixture(
+        "view Main() {\n    Text(\"hello\").missing_modifier(10px)\n}\n",
+        None,
+    );
     let module = fixture
         .project
         .analysis_view()
@@ -10214,7 +10217,7 @@ fn view_modifier_without_an_accepted_catalog_fails_at_the_call_owner() {
                 kind: UnknownCallKind::Method,
                 name,
                 ..
-            }) if rejected == &owner && name == "x"
+            }) if rejected == &owner && name == "missing_modifier"
         ),
         "{result:?}"
     );

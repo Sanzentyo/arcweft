@@ -27,7 +27,7 @@ pub view Plain() {
   Text("plain")
 }
 
-pub style Mobile {
+pub style @style.Mobile {
   Button { color = rgba(10, 20, 30, 255) }
 }
 "#;
@@ -37,7 +37,7 @@ fn authored_dialogue_profile_retains_typed_text_extents_and_typography_sources()
     use arcweft_view::style::{ViewPropertyKind, ViewSpecifiedValue};
     let source = r#"
 pub view Mobile(dialogue: DialogueView) { RichText(dialogue.content) }
-pub style Mobile {
+pub style @style.Mobile {
   Text {
     width = 720px
     height = 84px
@@ -157,7 +157,7 @@ pub style Mobile {
 fn authored_dialogue_typography_rejects_unconverted_units_and_wrong_types() {
     for value in ["2pt", "2em", "2deg", "20%", "30", "true", "\"30px\""] {
         let source = format!(
-            "pub view Mobile(dialogue: DialogueView) {{ RichText(dialogue.content) }}\npub style Mobile {{\n Text {{\n font-size = {value}\n }}\n}}\n"
+            "pub view Mobile(dialogue: DialogueView) {{ RichText(dialogue.content) }}\npub style @style.Mobile {{\n Text {{\n font-size = {value}\n }}\n}}\n"
         );
         let fixture = Fixture::new(
             &source,
@@ -188,7 +188,7 @@ fn authored_dialogue_typography_rejects_unconverted_units_and_wrong_types() {
 fn authored_dialogue_typography_rejects_properties_outside_the_current_registry() {
     for property in ["font_size", "line_height", "unknown-property"] {
         let source = format!(
-            "pub view Mobile(dialogue: DialogueView) {{ RichText(dialogue.content) }}\npub style Mobile {{\n Text {{\n {property} = 30px\n }}\n}}\n"
+            "pub view Mobile(dialogue: DialogueView) {{ RichText(dialogue.content) }}\npub style @style.Mobile {{\n Text {{\n {property} = 30px\n }}\n}}\n"
         );
         let fixture = Fixture::new(
             &source,
@@ -543,7 +543,7 @@ fn fixture_document(id: &str, name: &str, text: impl Into<Arc<str>>) -> Arc<Sour
 #[test]
 fn authored_style_selector_targets_share_the_checked_text_and_control_schema() {
     use arcweft_view::{ViewElementKind, ViewStyleTargetKind};
-    let source = "pub view Mobile(dialogue: DialogueView) { RichText(dialogue.content) }\npub style Mobile {\n Text { font-size = 42px }\n RichText { line-height = 56.7px }\n Button { color = rgba(10, 20, 30, 255) }\n}\n";
+    let source = "pub view Mobile(dialogue: DialogueView) { RichText(dialogue.content) }\npub style @style.Mobile {\n Text { font-size = 42px }\n RichText { line-height = 56.7px }\n Button { color = rgba(10, 20, 30, 255) }\n}\n";
     let fixture = Fixture::new(
         source,
         "[profiles.dev.dialogue]\nview = \"view.Mobile\"\nstyle = \"style.Mobile\"\n",
@@ -585,7 +585,7 @@ fn authored_style_selector_targets_share_the_checked_text_and_control_schema() {
     );
     for selector in ["text", "rich_text", "Paragraph", "UnknownControl"] {
         let source = format!(
-            "pub view Mobile(dialogue: DialogueView) {{ RichText(dialogue.content) }}\npub style Mobile {{\n {selector} {{ font-size = 42px }}\n}}\n"
+            "pub view Mobile(dialogue: DialogueView) {{ RichText(dialogue.content) }}\npub style @style.Mobile {{\n {selector} {{ font-size = 42px }}\n}}\n"
         );
         let fixture = Fixture::new(
             &source,

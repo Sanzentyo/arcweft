@@ -210,6 +210,9 @@ Sourceのnameはidentifierを`.`でつないだ静的な名前で、UTF-8で255 
 を含む上限まで受理し、同じnodeへの重複指定を拒否する。
 `.style(reference)` は元のStyle宣言identityを保持した `Ref<Style>` を受け取り、
 import aliasでも参照先sheetは変わらない。明示IDだけのStyleはlexical nameを作らない。
+名前付きStyleは他のretained宣言と同じmoduleのvalue namespaceへbindingを作る。
+ViewとStyleに同じ末尾のpublic IDを使う場合は、たとえば `pub style @style.Mobile`
+と明示して、Viewの `Mobile` bindingと区別する。
 Styleのpart／interaction／element-state selectorは共有registryとruntime cascadeへ渡す。
 
 `Row`／`Column` の `spacing` は compile-time scalar の i32 整数pxを受け取る。

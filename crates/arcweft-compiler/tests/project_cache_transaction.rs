@@ -663,7 +663,7 @@ fn runtime_semantic_facts_retain_exact_runtime_domain_types_and_omit_presentatio
             "pub view Mobile(dialogue: DialogueView) {\n",
             "    RichText(dialogue.content)\n",
             "}\n",
-            "pub style Mobile {\n",
+            "pub style @style.Mobile {\n",
             "    Button { color = rgba(10, 20, 30, 255) }\n",
             "}\n",
             "fn tail(value: i64) -> i64 { value }\n",
