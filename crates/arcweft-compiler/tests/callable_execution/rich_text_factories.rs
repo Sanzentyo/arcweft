@@ -61,8 +61,15 @@ impl RuntimeExternalCallBackend for Observe<'_> {
 }
 
 fn execute(body: &str) -> [Vec<CharacterDialogueRichTextProperties>; 2] {
+    execute_with_functions("", body)
+}
+
+fn execute_with_functions(
+    functions: &str,
+    body: &str,
+) -> [Vec<CharacterDialogueRichTextProperties>; 2] {
     let source = format!(
-        "pub character alice {{ display = \"Alice\" }}\nflow main() {{ {body}\nlet configured = alice(rich_text = settings)\n}}\nentry cli @entry.main {{ goto @flow.main }}"
+        "{functions}\npub character alice {{ display = \"Alice\" }}\nflow main() {{ {body}\nlet configured = alice(rich_text = settings)\n}}\nentry cli @entry.main {{ goto @flow.main }}"
     );
     let compiled = compile_source(&source)
         .unwrap_or_else(|error| panic!("factory source compiles: {error:?}"));
@@ -225,6 +232,57 @@ fn source_style_factories_use_caller_order_for_conflicting_properties() {
                     unit: RichTextUnit::Px
                 },
                 "the last authored property wins for both direct and alias calls",
+            );
+        }
+    }
+}
+
+#[test]
+fn source_style_factories_use_caller_order_for_point_properties() {
+    for body in [
+        "let settings = rich_text_style(ruby = text_style(size = 11pt), text = text_style(size = 24pt))",
+        "let compose = rich_text_style; let settings = compose(ruby = text_style(size = 11pt), text = text_style(size = 24pt))",
+    ] {
+        for values in execute(body) {
+            assert_eq!(values.len(), 3);
+            assert_eq!(
+                values
+                    .last()
+                    .unwrap()
+                    .iter()
+                    .find(|field| field.id() == Property::Size)
+                    .unwrap()
+                    .value(),
+                &PropertyValue::Length {
+                    milli: 24_000,
+                    unit: RichTextUnit::Pt
+                },
+                "caller order: {body}"
+            );
+        }
+    }
+}
+
+#[test]
+fn source_style_factories_keep_quantity_constants_in_generated_instances() {
+    for (functions, body) in [
+        (
+            "",
+            "let make = || { text_style(size = 24pt) }; let settings = make()",
+        ),
+        (
+            "fn make<T>(value: T) -> RichTextStyle { text_style(size = 24pt) }",
+            "let settings = make(7i64)",
+        ),
+    ] {
+        for values in execute_with_functions(functions, body) {
+            assert_eq!(values.len(), 1);
+            assert_eq!(
+                values[0].iter().next().unwrap().value(),
+                &PropertyValue::Length {
+                    milli: 24_000,
+                    unit: RichTextUnit::Pt
+                }
             );
         }
     }

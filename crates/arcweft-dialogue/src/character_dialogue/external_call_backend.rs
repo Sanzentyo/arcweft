@@ -28,6 +28,22 @@ enum RuntimeSchemas<'a> {
     Retained(Vec<Arc<CharacterDialogueRuntimeSchema>>),
 }
 
+impl RuntimeSchemas<'_> {
+    fn for_program(
+        &self,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<&CharacterDialogueRuntimeSchema, RuntimeEvalError> {
+        match self {
+            Self::Borrowed(schema) => Ok(schema),
+            Self::Retained(schemas) => schemas
+                .iter()
+                .map(Arc::as_ref)
+                .find(|schema| schema.program_owner().same_program(owner))
+                .ok_or(RuntimeEvalError::CharacterDialogueProducerUnavailable),
+        }
+    }
+}
+
 impl<'a> CharacterDialogueRuntimeExternalCallBackend<'a> {
     /// Binds the adapter to the accepted `CharacterDialogue` generation.
     #[must_use]
@@ -63,14 +79,7 @@ impl RuntimeExternalCallBackend for CharacterDialogueRuntimeExternalCallBackend<
             let owner = context
                 .program_owner()
                 .ok_or(RuntimeEvalError::CharacterDialogueProducerUnavailable)?;
-            let schema = match &self.schemas {
-                RuntimeSchemas::Borrowed(schema) => *schema,
-                RuntimeSchemas::Retained(schemas) => schemas
-                    .iter()
-                    .map(Arc::as_ref)
-                    .find(|schema| schema.program_owner().same_program(&owner))
-                    .ok_or(RuntimeEvalError::CharacterDialogueProducerUnavailable)?,
-            };
+            let schema = self.schemas.for_program(&owner)?;
             factory
                 .construct(schema, context, callable, args)
                 .map_err(|error| RuntimeEvalError::CharacterDialogueConstruction(error.to_string()))
@@ -85,14 +94,7 @@ impl RuntimeExternalCallBackend for CharacterDialogueRuntimeExternalCallBackend<
         fields: &[CharacterDialoguePatchField<RuntimeValue>],
         result_type: RuntimeSemanticTypeId,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let schema = match &self.schemas {
-            RuntimeSchemas::Borrowed(schema) => *schema,
-            RuntimeSchemas::Retained(schemas) => schemas
-                .iter()
-                .map(Arc::as_ref)
-                .find(|schema| schema.program_owner().same_program(owner))
-                .ok_or(RuntimeEvalError::CharacterDialogueProducerUnavailable)?,
-        };
+        let schema = self.schemas.for_program(owner)?;
         schema
             .apply(owner, operation, target, fields, result_type)
             .map_err(|error| RuntimeEvalError::CharacterDialogueConstruction(error.to_string()))

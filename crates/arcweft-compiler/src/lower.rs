@@ -8159,6 +8159,20 @@ fn runtime_executable_semantic_facts<'abi>(
                             RuntimeSemanticProjectionError::ExpressionLiteral { owner, reason }
                         })?
                     }
+                    (CheckedExpressionResolution::CompileTimeScalar(scalar), _)
+                        if scalar.value().runtime_quantity().is_some() =>
+                    {
+                        scalar
+                            .value()
+                            .runtime_quantity()
+                            .expect("matched runtime quantity")
+                            .into_runtime_value(RuntimeSemanticTypeId::from(
+                                closed_ty
+                                    .semantic_identity_digest()
+                                    .map_err(|failure| error(owner, &failure.to_string()))?,
+                            ))
+                            .map_err(|failure| error(owner, &failure.to_string()))?
+                    }
                     (
                         CheckedExpressionResolution::Structural,
                         HirExprKind::NumericBracketSequence(sequence),

@@ -875,6 +875,11 @@ impl FinalAnalysisExecutionProjection<'_> {
                     CheckedExpressionResolution::Literal(_) => {
                         CheckedExecutableRuntimeExpressionFactFamily::Literal
                     }
+                    CheckedExpressionResolution::CompileTimeScalar(scalar)
+                        if scalar.value().runtime_quantity().is_some() =>
+                    {
+                        CheckedExecutableRuntimeExpressionFactFamily::Literal
+                    }
                     CheckedExpressionResolution::Value(value)
                         if matches!(
                             value,

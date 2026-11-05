@@ -58,6 +58,22 @@ fn call_property_construction_keeps_original_result_type_and_resource_limits() {
             .map_err(|e| *e),
         Err(CharacterDialogueValueError::ExternalCallContextRequired)
     ));
+    let [RuntimeProgramOwner::Plan(foreign), _] = Types::new().program_owners() else {
+        panic!("native fixture")
+    };
+    let foreign = RuntimeExternalCallContext::for_program(
+        RuntimeProgramExecutionContext::native(foreign, Default::default()),
+        [],
+        role_semantic(Role::RichText),
+        RuntimeSchemaLimits::engine_default(),
+    )
+    .unwrap();
+    assert!(matches!(
+        schema
+            .construct_rich_text_properties_in_call(&foreign, &[])
+            .map_err(|e| *e),
+        Err(CharacterDialogueValueError::ForeignProgramOwner)
+    ));
 }
 
 #[test]
