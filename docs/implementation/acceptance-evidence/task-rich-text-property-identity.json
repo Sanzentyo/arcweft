@@ -9273,6 +9273,214 @@
         "bytes": 1850930,
         "sha256": "a5204a6e70a5838c6c4f6fc42a7fc9faa04ea5f4881ab1f8f6c63b335c6da080"
       }
+    },
+    "cliLogicalPixelFixtures": {
+      "version": 1,
+      "recordedAt": "2026-11-05T09:58:13.6426993Z",
+      "source": {
+        "version": 1,
+        "commit": "44dfe5f7113a6b4823f78a64b55e5c845f1c59a0",
+        "parent": "28d8150a5e3281d0c27ed8d06e9386044ade1353",
+        "tree": "13a085189be20afbdbd8df243ae3474bc186eccb",
+        "remote": "44dfe5f7113a6b4823f78a64b55e5c845f1c59a0",
+        "paths": [
+          {
+            "path": "crates/arcweft-cli/tests/check/agent_observe_native.rs",
+            "blob": "523cac76a3f90cdb4b34bc78a6433fbcfdb8dc43"
+          },
+          {
+            "path": "crates/arcweft-cli/tests/check/agent_observe_native/native_length_units.rs",
+            "blob": "9efe99ef867c248c0e276c13228686a49264f2b8"
+          },
+          {
+            "path": "crates/arcweft-cli/tests/check/agent_observe_native/native_vertical.rs",
+            "blob": "d4e6cb0caeb22e3c828e078ffe70ee1a862a123d"
+          },
+          {
+            "path": "crates/arcweft-cli/tests/check/agent_observe_native/published_jlreq_class_mix.rs",
+            "blob": "313d0b0b931aa998f0cbc939fa8b6d50fdb0689f"
+          },
+          {
+            "path": "crates/arcweft-cli/tests/check/agent_observe_native/published_jlreq_units.rs",
+            "blob": "f7a0b926b153c012dd62b1dfb47169bb3e2eee69"
+          }
+        ],
+        "blobDrift": 0,
+        "patchSha256": "7647005a2d050b3f729ced1f0fbe4ec7362d2ec91d98cd3e0cb27b0cd309be33",
+        "heldPatchSha256": "46402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac",
+        "separatelyHeld": [],
+        "indexEmpty": true,
+        "at": "2026-11-05T09:56:07.2682611Z"
+      },
+      "reason": "Fixed-cell/column fixtures authored pt while asserting logical-pixel geometry under the former unit-dropping bug. Correct pt conversion made30pt become40000milli-px against the original30000 expectation. Express their original geometry in px:45 source size inputs (16 native_vertical,2 class_mix,27 units), preserving all numeric sizes, rendered text/source ranges, viewports, steps/max-ops, budgets and existing geometry/crop/mask assertions. Rename font_points to font_pixels and correct the old30pt comment.",
+      "owner": {
+        "version": 1,
+        "base": "28d8150a5e3281d0c27ed8d06e9386044ade1353",
+        "run": "cli-jlreq-logical-pixels-owner1-20261105.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [ 599.879s] 246 tests run: 240 passed (68 slow), 6 failed, 241 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 246,
+        "passed": 240,
+        "failed": 6,
+        "skipped": 241,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4108,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_vertical_ruby_collision_geometry"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_reports_text_presentation_z_index_depth"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-05T09:49:26.4876483Z"
+      },
+      "ownerCommand": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-cli",
+        "--test",
+        "check",
+        "--all-features",
+        "--locked",
+        "-E",
+        "test(agent_observe_native::)",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "ownerScope": "One actual246-case Native observe parent run,240PASS/6FAIL/241skip,599.879s. All4108 source/case/executable pins unchanged. Includes the new CLI unit case, full strict/normal class and unit geometry, exact offsets, raw crops, masks, object-id capture, pixels and tint. Five remaining failures belong to full-grammar current-line selection (3), Scroll shared-callable resolution (1), and the z-index fixture expecting unauthored params (1); these are concrete observed diagnostics, not acceptance claims. The sixth was the ruby collision unit-bearing JSON assertion repaired separately.",
+      "repair": {
+        "version": 1,
+        "base": "28d8150a5e3281d0c27ed8d06e9386044ade1353",
+        "run": "cli-jlreq-logical-pixels-repair1-20261105.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [  12.047s] 2 tests run: 2 passed, 485 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 485,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4108,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-05T09:51:28.8790413Z"
+      },
+      "repairReason": "The1px ruby_collision_gap was correctly reported as {milli:1000,unit:px}; the old assertion compared it to1000. Assert both amount and unit exactly, retaining all original separation/side/geometry assertions. Separate final2/2PASS/485skip verifies this case and the new point/pixel CLI case, not a new246-case run.",
+      "unitCase": "Actual CLI Native18pt/24px sources in horizontal_tb,vertical_rl,vertical_lr: typed context catalog,24k font,32.4k line-height,source0..9,3 glyphs,shape size24,and exact glyph source/bounds/advance equality plus nonempty native layer image. PASS in both runs. Inline flow-colon source is valid; no parser workaround.",
+      "quality": {
+        "check": {
+          "version": 1,
+          "base": "28d8150a5e3281d0c27ed8d06e9386044ade1353",
+          "command": [
+            "check",
+            "-p",
+            "arcweft-cli",
+            "--all-targets",
+            "--all-features",
+            "--locked"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 4108,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-05T09:51:54.117664Z",
+          "finishedAt": "2026-11-05T09:52:50.6305372Z"
+        },
+        "clippy": {
+          "version": 1,
+          "base": "28d8150a5e3281d0c27ed8d06e9386044ade1353",
+          "command": [
+            "clippy",
+            "-p",
+            "arcweft-cli",
+            "--all-targets",
+            "--all-features",
+            "--locked"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 4108,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-05T09:52:51.1889049Z",
+          "finishedAt": "2026-11-05T09:55:06.7455524Z"
+        },
+        "structure": {
+          "version": 1,
+          "base": "28d8150a5e3281d0c27ed8d06e9386044ade1353",
+          "command": [
+            "+nightly",
+            "-Zscript",
+            "tools/structure-audit.rs",
+            "--root",
+            ".",
+            "--fail-on-blocking",
+            "--write",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/cli-jlreq-logical-pixels-quality1-20261105.structure-report"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 4108,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-05T09:55:07.2904764Z",
+          "finishedAt": "2026-11-05T09:55:12.5369756Z"
+        }
+      },
+      "qualityScope": "CLI package check and Clippy all-targets/all-features/locked exit0; full98 structure exit0. Existing warnings remain. No production or Cargo changes; no repeated full59/workspace quality/doctest/wasm/parity claim.",
+      "held": "Original12 tracked WIP patch SHA25646402a98f9f04b9dab8bed33913b6ea35f9e0467ccc46f4b9f04d7b025da39ac retained through verified publication; all6 original untracked files retained. Tests observe the working tree with relevant original WIP, not pristine HEAD.",
+      "raw": {
+        "path": "docs/implementation/acceptance-evidence/task-cli-jlreq-logical-pixels.raw.zip",
+        "bytes": 1284547,
+        "sha256": "39c853082f588af335851704c4ad5f75f8409d248a9de68cce5bab91fa7fa706",
+        "entries": 39,
+        "entryDrift": 0
+      },
+      "correctionReason": "Replace the pending CLI unit-fixture current statement with actual source and independent run results. Keep prior full9757/9702PASS/55FAIL unchanged; do not subtract later repairs or combine the two owner runs. Previously accepted JLREQ numeric/accented/Greek-Latin conditions remain accepted; their source now uses the actual logical-pixel unit. Generic Match remains accepted/public.",
+      "supersededCurrentRows": [
+        "| RichTextの部分layout指定／source factory | **既受入を維持。順序・px／ptのowner実装は公開・検証済み、CLI整合は継続** | 単位保持d693a3fcc4b4716ac9d608e9c075d8f1ff96bcdf、共有解決API0345cb6ed70b8ce83a7b3a200ba790a385efa4e8。6 owner309／309とCompiler318／318の独立した実測を保持する。全59 runではCore全2331件がPASS、CLIに30ptを30000milli-pxと期待するfixture等の不整合が観測された。外部callableの負例準備3件は新しい早期拒否を確認し、元のsignature拒否・実行assertionも維持してSource1a79392a06654f563c5f46d0db77fff4898f8adfの別run4／4 PASSで修復した。旧full55 FAILへ合算しない。typed bare serif、static inline_stylesの出典、CLI geometry fixtureと最終画像parityを継続する。[実測・旧失敗・訂正理由・原本](acceptance-evidence/task-rich-text-property-identity.json)。 |",
+        "| Native JLREQのnumeric／accented／Greek-Latin fixture | **対象6条件を修復・検証・公開済み** | Source 15888388a085ab08849f6cc8bdb18d4f5bd39ec4。元の短文はdefault typographyで列送りの前提を作っていなかった。元text・Source範囲・viewport・steps／max-opsを保ち、numeric36pt／accented38pt／Greek-Latin42ptを明示して全単位が収まった後の列送りを検査する。既存6 caseと全assertionを保ち、両方向・原子wordと数値単位・mask／object-id raw cropの範囲、pixel数、tintが6／6 PASS。fmtの既存3箇所を正規化した後も6件を再実行した。[元観測・条件保全・実測と訂正理由](acceptance-evidence/task-cli-jlreq-fixture-sizing.json)。renderer／planner実装、ハイフン語、全Native-Web parityの完了へ拡張しない。 |",
+        "| CLI全target照合 | **統合受入は未完了。直近の全698実測は646 PASS／52 FAIL** | Source0345cb6ed70b8ce83a7b3a200ba790a385efa4e8の全59 runに含む同一実行。旧単位前提のgeometry等を含む全52 failed IDと診断を保持する。以前のSource2aaa0480b171d15274737d7bd49a3c391ce19096の683 PASS／15 FAILも履歴として保持し、ID一致だけで原因を同一視しない。現行契約・元の入力条件と個々の診断から修復する。[全実測と原本](acceptance-evidence/task-rich-text-property-identity.json)。別境界の失敗でGeneric Matchや既受入のtyped ownerを未完了へ戻さない。 |",
+        "| workspace check／Clippy・fmt・構造gate | **共有productionコードの全98 check／Clippy・構造gateは終了0、警告は残存** | Source0345cb6ed70b8ce83a7b3a200ba790a385efa4e8のAPI修正後、all-target／all-feature／lockedのcheck／Clippyと構造gateが終了0。新しい長さ型の不要なexpectを削除し、その新規警告も解消した。1a79392a06654f563c5f46d0db77fff4898f8adfはCompiler fixtureのみでfmt・対象4件PASS、全98を再実行したとはしない。全体cargo cleanはSource187fb586261ac6ba381546532143fa20854dba8bで終了0、ソース・記録・Git差分0。doctest／wasm専用検証は未再実行。[全観測・失敗・clean・原本](acceptance-evidence/task-rich-text-property-identity.json)。 |"
+      ]
     }
   }
 }
