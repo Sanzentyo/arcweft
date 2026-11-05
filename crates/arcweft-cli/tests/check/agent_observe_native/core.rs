@@ -658,18 +658,6 @@ flow main {
     assert_eq!(run["rich_text_ref"]["presentation"]["layer"], "hud");
     assert_eq!(run["rich_text_ref"]["presentation"]["z_index"], 7);
     assert_eq!(run["rich_text_ref"]["presentation"]["opacity"], 500);
-    assert_eq!(
-        run["rich_text_ref"]["presentation"]["params"]["role"]["value"],
-        "caption"
-    );
-    assert_eq!(
-        run["rich_text_ref"]["presentation"]["params"]["hover"]["value"],
-        true
-    );
-    assert_eq!(
-        run["rich_text_ref"]["presentation"]["params"]["weight"]["value"],
-        2
-    );
     assert_eq!(run["rich_text_ref"]["object_layer"], "hud");
     assert_eq!(run["rich_text_ref"]["object_depth"], 7000);
     assert_eq!(run["rich_text_ref"]["hit_test"], false);
@@ -681,10 +669,6 @@ flow main {
         .find(|object| object["role"] == "rich_text_page")
         .expect("rich-text page object is observed");
     assert_eq!(page["rich_text_ref"]["presentation"]["layer"], "hud");
-    assert_eq!(
-        page["rich_text_ref"]["presentation"]["params"]["role"]["value"],
-        "caption"
-    );
     assert_eq!(page["rich_text_ref"]["object_layer"], "hud");
     assert_eq!(page["rich_text_ref"]["object_depth"], 7000);
 
@@ -695,12 +679,19 @@ flow main {
         .find(|object| object["role"] == "rich_text_line")
         .expect("rich-text line object is observed");
     assert_eq!(line["rich_text_ref"]["presentation"]["layer"], "hud");
-    assert_eq!(
-        line["rich_text_ref"]["presentation"]["params"]["role"]["value"],
-        "caption"
-    );
     assert_eq!(line["rich_text_ref"]["object_layer"], "hud");
     assert_eq!(line["rich_text_ref"]["object_depth"], 7000);
+
+    for object in [run, page, line] {
+        let presentation = &object["rich_text_ref"]["presentation"];
+        assert!(presentation.get("params").is_none());
+        let typed: arcweft_text_model::RichTextPresentation =
+            serde_json::from_value(presentation.clone()).expect("typed presentation");
+        assert_eq!(typed.layer.as_deref(), Some("hud"));
+        assert_eq!(typed.z_index, 7);
+        assert_eq!(typed.opacity, Some(arcweft_text_model::Milli(500)));
+        assert_eq!(typed.object_proxies, Vec::new());
+    }
 
     assert_agent_observe_captures_presentation_layer(&path);
     assert_agent_observe_object_image_metadata_carries_object_layer(&path, line, "hud", 7000);
