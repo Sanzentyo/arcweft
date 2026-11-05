@@ -18156,5 +18156,341 @@
       "entries": 81,
       "entryDrift": 0
     }
+  },
+  "callableResultJoinReverse": {
+    "version": 1,
+    "recordedAt": "2026-11-05T17:43:27.6091227Z",
+    "source": "f2d9dc791bb0f7ecfc13b47792511086a5c31878",
+    "audit": {
+      "version": 1,
+      "source": "f2d9dc791bb0f7ecfc13b47792511086a5c31878",
+      "terminal": {
+        "version": 1,
+        "base": "f2d9dc791bb0f7ecfc13b47792511086a5c31878",
+        "run": "callable-result-join-reverse22-20261106.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [ 670.161s] 4130 tests run: 4119 passed (30 slow), 11 failed, 24 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 4130,
+        "passed": 4119,
+        "failed": 11,
+        "skipped": 24,
+        "selectedPackages": 22,
+        "matchedPackages": 22,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4113,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "plan_json_lists_runtime_task_graph"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "spec_valid_run_edge_fixture_now_executes"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "unsafe_json_lists_audit_regions"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "spec_rejected_edge_fixtures_fail_with_diagnostics"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_records_required_solver_checks"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_reports_missing_promotion_proof"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_respects_semantic_defer_cancel_discharge"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-05T17:42:01.3526969Z"
+      },
+      "packages": [
+        {
+          "package": "arcweft-adapter-sema",
+          "executed": 13,
+          "passed": 13,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-agent-mcp",
+          "executed": 31,
+          "passed": 31,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-agent-mcp-client",
+          "executed": 2,
+          "passed": 2,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-agent-repl",
+          "executed": 37,
+          "passed": 37,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-agent-runner",
+          "executed": 69,
+          "passed": 69,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-cli",
+          "executed": 700,
+          "passed": 689,
+          "failed": 11
+        },
+        {
+          "package": "arcweft-compiler",
+          "executed": 823,
+          "passed": 823,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-lang-sema",
+          "executed": 1397,
+          "passed": 1397,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-lsp",
+          "executed": 223,
+          "passed": 223,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-player-native",
+          "executed": 63,
+          "passed": 63,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-player-scene",
+          "executed": 128,
+          "passed": 128,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-player-web",
+          "executed": 36,
+          "passed": 36,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-project-loader",
+          "executed": 158,
+          "passed": 158,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-runtime-driver",
+          "executed": 153,
+          "passed": 153,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-runtime-host",
+          "executed": 72,
+          "passed": 72,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-runtime-plan",
+          "executed": 165,
+          "passed": 165,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-test",
+          "executed": 4,
+          "passed": 4,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-tooling",
+          "executed": 27,
+          "passed": 27,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-verify",
+          "executed": 8,
+          "passed": 8,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-verify-lsp",
+          "executed": 14,
+          "passed": 14,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-verify-oxiz",
+          "executed": 5,
+          "passed": 5,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-verify-z3",
+          "executed": 2,
+          "passed": 2,
+          "failed": 0
+        }
+      ],
+      "runtimePackages": 22,
+      "hostBuildOnly": [],
+      "cli": [
+        {
+          "package": "arcweft-cli",
+          "executed": 700,
+          "passed": 689,
+          "failed": 11
+        }
+      ],
+      "nonCli": {
+        "executed": 3430,
+        "passed": 3430,
+        "failed": 0
+      },
+      "failureComparison": {
+        "referenceSource": "56b565f900fb59d0cb9521b89d0348dca0e5a630",
+        "referenceRun": "view-agent-summary-reverse55-20261106.runtime",
+        "previousFailureCount": 26,
+        "currentFailureCount": 11,
+        "newFailureIds": [],
+        "noLongerFailingIds": [
+          "arcweft-cli::check\tverify_json_reports_semantic_thread_join_conflict",
+          "arcweft-compiler::dialogue_profile_admission\tauthored_dialogue_profile_retains_typed_text_extents_and_typography_sources",
+          "arcweft-compiler::dialogue_profile_admission\tauthored_dialogue_typography_rejects_properties_outside_the_current_registry",
+          "arcweft-compiler::dialogue_profile_admission\tauthored_dialogue_typography_rejects_unconverted_units_and_wrong_types",
+          "arcweft-compiler::dialogue_profile_admission\tauthored_style_selector_targets_share_the_checked_text_and_control_schema",
+          "arcweft-compiler::dialogue_profile_admission\tcompiler_admits_profile_against_the_same_view_product_and_revision",
+          "arcweft-compiler::dialogue_profile_admission\tdirect_project_compilation_admits_a_revision_bound_project_default",
+          "arcweft-compiler::dialogue_profile_admission\tomitted_dialogue_fields_admit_the_engine_standard_view",
+          "arcweft-compiler::dialogue_profile_admission\tprofile_admission_rejects_missing_or_non_dialogue_catalog_entries",
+          "arcweft-compiler::dialogue_profile_admission\tprofile_admission_requires_the_exact_resource_registry_arc",
+          "arcweft-compiler::project_cache_transaction\truntime_semantic_facts_retain_exact_runtime_domain_types_and_omit_presentation_owners",
+          "arcweft-lang-sema\tfinal_analysis::tests::view_modifier_without_an_accepted_catalog_fails_at_the_call_owner",
+          "arcweft-runtime-host\tbundle_runner::session::tests::terminal_session_step_registers_requests_before_publishing_body_retirement",
+          "arcweft-runtime-host\tbundle_runner::tests::bundle_runner_preserves_typed_flow_events_for_embedding_hosts",
+          "arcweft-runtime-host\tbundle_runner::tests::bundle_runner_session_captures_per_run_host_state_and_steps_incrementally"
+        ],
+        "note": "Compare actual terminal IDs. The current result is a fresh full run, not arithmetic recomputation of the older result."
+      },
+      "quality": {
+        "sourceInputs": 4113,
+        "sourceDrift": 0,
+        "matchingInput": "callable-result-join-reverse22-20261106",
+        "check": {
+          "version": 1,
+          "base": "4d7431389e603e417f37cc9b0dcfe83b262da037",
+          "command": [
+            "check",
+            "--workspace",
+            "--all-targets",
+            "--all-features",
+            "--locked"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 4113,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-05T17:18:24.1805621Z",
+          "finishedAt": "2026-11-05T17:18:47.0765375Z"
+        },
+        "clippy": {
+          "version": 1,
+          "base": "4d7431389e603e417f37cc9b0dcfe83b262da037",
+          "command": [
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--all-features",
+            "--locked"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 4113,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-05T17:18:47.5469098Z",
+          "finishedAt": "2026-11-05T17:19:19.7386891Z"
+        },
+        "structure": {
+          "version": 1,
+          "base": "4d7431389e603e417f37cc9b0dcfe83b262da037",
+          "command": [
+            "+nightly",
+            "-Zscript",
+            "tools/structure-audit.rs",
+            "--root",
+            ".",
+            "--fail-on-blocking",
+            "--write",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/callable-result-join-quality2-20261106.structure-report"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 4113,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-05T17:19:20.2515037Z",
+          "finishedAt": "2026-11-05T17:19:23.8301876Z"
+        },
+        "warnings": "Warnings remain."
+      },
+      "genericMatch": {
+        "expected": 151,
+        "passed": 151,
+        "missing": 0,
+        "failed": 0,
+        "referenceSha256": "82b6519b1ccbfcd4aee95d3ef8b69db686037924a7f9137de0fef0201d86b996"
+      },
+      "workingTree": "The recorded original12 tracked WIP (including the two required borrowed summary reads) participated in the frozen Source input; this is not a pristine committed-tree claim. The overlapping test publication contains only its owned RAG assertion hunk.",
+      "recordedAt": "2026-11-05T17:42:32.5369985Z"
+    },
+    "scope": "Complete22-package reverse closure for the typed diagnostic owner; not a complete workspace runtime or final platform acceptance.",
+    "correctionReason": "Replace only the pending22 consumer run and old CLI totals in the single current list with this fresh terminal result. Preserve earlier full55 and focused runs unchanged. The old renamed Sema ID is absent by renaming, while the new unregistered-modifier case passes in this run. No new failures; all11 failures are CLI conditions already retained. Generic Match remains accepted/public with151 exact cases passing.",
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-callable-result-join-reverse.raw.zip",
+      "bytes": 751756,
+      "sha256": "187518bf53932f115477534edc72fbda513989fb4f637857f2b736b30da73592",
+      "entries": 14,
+      "entryDrift": 0
+    }
   }
 }
