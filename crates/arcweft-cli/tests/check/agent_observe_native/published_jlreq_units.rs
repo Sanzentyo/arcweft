@@ -176,7 +176,7 @@ fn observe_native_published_jlreq_european_numeral_sequence_fixture(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30pt)[天地2026502671234人]][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30px)[天地2026502671234人]][p]
 }}
 "#
         ),
@@ -201,7 +201,7 @@ fn assert_native_published_jlreq_european_numeral_sequence_raw_crop(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30pt)[天地2026502671234人]][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30px)[天地2026502671234人]][p]
 }}
 "#
         ),
@@ -390,7 +390,7 @@ fn observe_native_published_jlreq_numeric_separator_fixture(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30pt)[{}]][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30px)[{}]][p]
 }}
 "#,
             case.text
@@ -437,7 +437,7 @@ fn assert_native_published_jlreq_numeric_separator_case_raw_crop(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30pt)[{}]][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30px)[{}]][p]
 }}
 "#,
             case.text
@@ -832,7 +832,7 @@ fn observe_native_published_jlreq_numeric_abbreviation_fixture(
     writing_mode: &str,
     label: &str,
 ) -> serde_json::Value {
-    let (text, font_points) = native_published_jlreq_numeric_abbreviation_fixture_source(label);
+    let (text, font_pixels) = native_published_jlreq_numeric_abbreviation_fixture_source(label);
     let (path, entry) = temp_main_cli_fixture(
         &format!(
             "agent-observe-native-{writing_mode}-published-jlreq-numeric-abbreviation-{label}"
@@ -842,7 +842,7 @@ fn observe_native_published_jlreq_numeric_abbreviation_fixture(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[#size({font_points}pt)[{text}]][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size({font_pixels}px)[{text}]][p]
 }}
 "#
         ),
@@ -860,7 +860,7 @@ fn assert_native_published_jlreq_numeric_abbreviation_raw_crop(
     capture_target: NativeTextCaptureTarget,
     capture_kind: &str,
 ) {
-    let (text, font_points) = native_published_jlreq_numeric_abbreviation_fixture_source(label);
+    let (text, font_pixels) = native_published_jlreq_numeric_abbreviation_fixture_source(label);
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-published-jlreq-numeric-abbreviation-{label}-{capture_kind}"
     );
@@ -871,7 +871,7 @@ fn assert_native_published_jlreq_numeric_abbreviation_raw_crop(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[#size({font_points}pt)[{text}]][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size({font_pixels}px)[{text}]][p]
 }}
 "#
         ),
@@ -1338,7 +1338,7 @@ fn observe_native_published_jlreq_reference_mark_fixture(writing_mode: &str) -> 
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(36pt)[本¹²。人]][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(36px)[本¹²。人]][p]
 }}
 "#
         ),
@@ -1374,7 +1374,7 @@ fn assert_native_published_jlreq_reference_mark_target_raw_crop(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(36pt)[本¹²。人]][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(36px)[本¹²。人]][p]
 }}
 "#
         ),
@@ -1592,7 +1592,7 @@ fn observe_native_published_jlreq_parenthesized_reference_mark_fixture(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30pt)[本⁽¹⁾。人]][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30px)[本⁽¹⁾。人]][p]
 }}
 "#
         ),
@@ -1639,7 +1639,7 @@ fn assert_native_published_jlreq_parenthesized_reference_mark_target_raw_crop(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30pt)[本⁽¹⁾。人]][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30px)[本⁽¹⁾。人]][p]
 }}
 "#
         ),
@@ -1870,7 +1870,7 @@ fn observe_native_published_jlreq_latin_unit_fixture(writing_mode: &str) -> serd
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(48pt)[天kg人]][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(48px)[天kg人]][p]
 }}
 "#
         ),
@@ -1894,7 +1894,7 @@ fn assert_native_published_jlreq_latin_unit_raw_crop(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(48pt)[天kg人]][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(48px)[天kg人]][p]
 }}
 "#
         ),
@@ -2043,7 +2043,7 @@ fn observe_native_published_jlreq_western_word_fixture(writing_mode: &str) -> se
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(32pt)[天Web人]][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(32px)[天Web人]][p]
 }}
 "#
         ),
@@ -2067,7 +2067,7 @@ fn assert_native_published_jlreq_western_word_raw_crop(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(32pt)[天Web人]][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(32px)[天Web人]][p]
 }}
 "#
         ),
@@ -2226,7 +2226,7 @@ fn observe_native_published_jlreq_numeric_unit_fixture(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(36pt)[{}]][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(36px)[{}]][p]
 }}
 "#,
             case.text
@@ -2269,7 +2269,7 @@ fn assert_native_published_jlreq_numeric_unit_case_raw_crop(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(36pt)[{}]][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(36px)[{}]][p]
 }}
 "#,
             case.text
@@ -2714,7 +2714,7 @@ fn observe_native_published_jlreq_apostrophe_western_word_fixture(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30pt)[{}]][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30px)[{}]][p]
 }}
 "#,
             case.text
@@ -2757,7 +2757,7 @@ fn assert_native_published_jlreq_apostrophe_western_word_case_raw_crop(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30pt)[{}]][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30px)[{}]][p]
 }}
 "#,
             case.text
@@ -2977,7 +2977,7 @@ fn observe_native_published_jlreq_accented_latin_word_fixture(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(38pt)[天café人]][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(38px)[天café人]][p]
 }}
 "#
         ),
@@ -3002,7 +3002,7 @@ fn assert_native_published_jlreq_accented_latin_word_raw_crop(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(38pt)[天café人]][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(38px)[天café人]][p]
 }}
 "#
         ),
@@ -3145,7 +3145,7 @@ fn observe_native_published_jlreq_greek_latin_unit_fixture(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(42pt)[天μm人]][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(42px)[天μm人]][p]
 }}
 "#
         ),
@@ -3166,7 +3166,7 @@ fn assert_native_published_jlreq_greek_latin_unit_raw_crop(writing_mode: &str, c
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(42pt)[天μm人]][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(42px)[天μm人]][p]
 }}
 "#
         ),
@@ -3322,7 +3322,7 @@ fn observe_native_published_jlreq_subscript_object_fixture(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30pt)[{}]][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30px)[{}]][p]
 }}
 "#,
             case.text
@@ -3365,7 +3365,7 @@ fn assert_native_published_jlreq_subscript_object_case_raw_crop(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30pt)[{}]][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30px)[{}]][p]
 }}
 "#,
             case.text
@@ -3965,7 +3965,7 @@ fn assert_native_jlreq_paragraph_overview(json: &serde_json::Value) {
         );
         assert_eq!(glyph.layout_bounds.height, glyph.advance.height);
     }
-    // This source's actual 30pt glyph advances and admitted text-container
+    // This source's actual 30px glyph advances and admitted text-container
     // capacity are covered by the owning balanced_v1 planner regression.
     let expected_offsets = vec![0, 12, 21, 33, 45, 54, 60, 72, 84];
     assert_eq!(
@@ -4134,7 +4134,7 @@ entry cli @entry.main {{ goto @flow.main }}
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.vertical_rl, jlreq=.{strictness})[#size(30pt)[#font("MS Mincho")[天地。」人山川海。『火水木]]][p]
+    alice: #layout(.vertical_rl, jlreq=.{strictness})[#size(30px)[#font("MS Mincho")[天地。」人山川海。『火水木]]][p]
 }}
 "##
         ),
@@ -4219,7 +4219,7 @@ fn observe_native_jlreq_closing_opening_fixture(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.{strictness})[#size(30pt)[天地。「人山川海]][p]
+    alice: #layout(.{writing_mode}, jlreq=.{strictness})[#size(30px)[天地。「人山川海]][p]
 }}
 "#
         ),
@@ -4237,7 +4237,7 @@ fn assert_native_strict_jlreq_closing_opening_raw_crop(writing_mode: &str, captu
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.strict)[#size(30pt)[天地。「人山川海]][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[#size(30px)[天地。「人山川海]][p]
 }}
 "#
         ),

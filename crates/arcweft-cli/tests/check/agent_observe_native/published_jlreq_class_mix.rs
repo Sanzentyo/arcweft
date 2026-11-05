@@ -987,7 +987,7 @@ fn observe_native_jlreq_paragraph_class_mix_fixture(
 pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: #layout(.{writing_mode}, jlreq=.{strictness})[#size(32pt)[天地春夏秋冬月火、山々人。「川」あっいおーえ―中・外………終]][p]
+    alice: #layout(.{writing_mode}, jlreq=.{strictness})[#size(32px)[天地春夏秋冬月火、山々人。「川」あっいおーえ―中・外………終]][p]
 }}
 "#
         ),
@@ -1008,7 +1008,7 @@ fn assert_native_strict_jlreq_paragraph_class_mix_raw_crop(writing_mode: &str, c
 pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: #layout(.{writing_mode}, jlreq=.strict)[#size(32pt)[天地春夏秋冬月火、山々人。「川」あっいおーえ―中・外………終]][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[#size(32px)[天地春夏秋冬月火、山々人。「川」あっいおーえ―中・外………終]][p]
 }}
 "#
         ),

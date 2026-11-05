@@ -3024,7 +3024,7 @@ flow main {{
     for ruby in [first, second] {
         assert_eq!(
             ruby["rich_text_ref"]["presentation"]["layout"]["ruby_collision_gap"],
-            1000
+            serde_json::json!({ "milli": 1000, "unit": "px" })
         );
         let base = &ruby["rich_text_ref"]["ruby_base_bbox"];
         let annotation = &ruby["rich_text_ref"]["ruby_annotation_bbox"];
@@ -3400,7 +3400,7 @@ fn assert_native_vertical_presentation_leader_chain_geometry(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(36pt)[天{leader}{leader}人]][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(36px)[天{leader}{leader}人]][p]
 }}
 "#,
         ),
@@ -3433,7 +3433,7 @@ fn assert_native_vertical_presentation_leader_raw_crop(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(36pt)[天{leader}{leader}人]][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(36px)[天{leader}{leader}人]][p]
 }}
 "#,
         ),
@@ -3748,7 +3748,7 @@ fn agent_observe_native_renderer_reports_expanded_jlreq_normal_pair_geometry() {
 pub character alice { display = "Alice" }
 
 flow main {
-    alice: #layout(.vertical_rl, jlreq=.normal)[#size(40pt)[天地春夏秋冬山々人「」川あっいおーえ]][p]
+    alice: #layout(.vertical_rl, jlreq=.normal)[#size(40px)[天地春夏秋冬山々人「」川あっいおーえ]][p]
 }
 "#,
     );
@@ -4414,7 +4414,7 @@ fn assert_native_jlreq_small_kana_raw_crop(writing_mode: &str, capture_kind: &st
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(40pt)[天地春夏秋冬山々人「」川あっいおーえ]][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(40px)[天地春夏秋冬山々人「」川あっいおーえ]][p]
 }}
 "#
     );
@@ -5767,7 +5767,7 @@ fn observe_native_jlreq_middle_dot_opening_fixture(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.{strictness})[#size(30pt)[天地・「人山川海]][p]
+    alice: #layout(.{writing_mode}, jlreq=.{strictness})[#size(30px)[天地・「人山川海]][p]
 }}
 "#
         ),
@@ -5792,7 +5792,7 @@ fn assert_native_strict_jlreq_middle_dot_opening_raw_crop(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.strict)[#size(30pt)[天地・「人山川海]][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[#size(30px)[天地・「人山川海]][p]
 }}
 "#
         ),
@@ -6057,7 +6057,7 @@ fn agent_observe_native_renderer_reports_jlreq_punctuation_compression_and_hangi
 pub character alice { display = "Alice" }
 
 flow main {
-    alice: #layout(.vertical_rl)[#size(36pt)[天地、人人]][p]
+    alice: #layout(.vertical_rl)[#size(36px)[天地、人人]][p]
 }
 "#,
     );
@@ -6088,7 +6088,7 @@ flow main {
 pub character alice { display = "Alice" }
 
 flow main {
-    alice: #layout(.vertical_rl)[#size(30pt)[天、。・人]][p]
+    alice: #layout(.vertical_rl)[#size(30px)[天、。・人]][p]
 }
 "#,
     );
@@ -6346,7 +6346,7 @@ fn assert_native_closing_punctuation_hanging_geometry(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode})[#size(36pt)[天地{mark}人人]][p]
+    alice: #layout(.{writing_mode})[#size(36px)[天地{mark}人人]][p]
 }}
 "#
         ),
@@ -6379,7 +6379,7 @@ fn assert_native_closing_punctuation_raw_crop(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode})[#size(36pt)[天地{mark}人人]][p]
+    alice: #layout(.{writing_mode})[#size(36px)[天地{mark}人人]][p]
 }}
 "#
         ),
@@ -6511,7 +6511,7 @@ fn agent_observe_native_renderer_reports_jlreq_line_end_prohibited_opening_punct
 pub character alice { display = "Alice" }
 
 flow main {
-    alice: #layout(.vertical_rl)[#size(30pt)[天地春「人外]][p]
+    alice: #layout(.vertical_rl)[#size(30px)[天地春「人外]][p]
 }
 "#,
     );
@@ -6550,7 +6550,7 @@ fn agent_observe_native_renderer_reports_vertical_lr_jlreq_edge_geometry() {
 pub character alice { display = "Alice" }
 
 flow main {
-    alice: #layout(.vertical_lr)[#size(30pt)[天地春「人外]][p]
+    alice: #layout(.vertical_lr)[#size(30px)[天地春「人外]][p]
 }
 "#,
     );
@@ -6582,7 +6582,7 @@ flow main {
 pub character alice { display = "Alice" }
 
 flow main {
-    alice: #layout(.vertical_lr)[#size(36pt)[天地、人人]][p]
+    alice: #layout(.vertical_lr)[#size(36px)[天地、人人]][p]
 }
 "#,
     );
@@ -6613,7 +6613,7 @@ flow main {
 pub character alice { display = "Alice" }
 
 flow main {
-    alice: #layout(.vertical_lr, jlreq=.normal)[#size(30pt)[天地………終]][p]
+    alice: #layout(.vertical_lr, jlreq=.normal)[#size(30px)[天地………終]][p]
 }
 "#,
     );
@@ -6697,7 +6697,7 @@ fn agent_observe_native_renderer_reports_jlreq_paragraph_column_geometry() {
 pub character alice { display = "Alice" }
 
 flow main {
-    alice: #layout(.vertical_rl, jlreq=.normal)[#size(30pt)[天地春夏秋冬月火、山々人「川」あっいおーえ―中・外………終]][p]
+    alice: #layout(.vertical_rl, jlreq=.normal)[#size(30px)[天地春夏秋冬月火、山々人「川」あっいおーえ―中・外………終]][p]
 }
 "#,
     );
@@ -6716,7 +6716,7 @@ fn agent_observe_native_renderer_reports_vertical_lr_jlreq_paragraph_column_geom
 pub character alice { display = "Alice" }
 
 flow main {
-    alice: #layout(.vertical_lr, jlreq=.normal)[#size(30pt)[天地春夏秋冬月火、山々人「川」あっいおーえ―中・外………終]][p]
+    alice: #layout(.vertical_lr, jlreq=.normal)[#size(30px)[天地春夏秋冬月火、山々人「川」あっいおーえ―中・外………終]][p]
 }
 "#,
     );
