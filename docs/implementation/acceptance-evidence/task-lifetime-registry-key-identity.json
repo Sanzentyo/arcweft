@@ -394,5 +394,318 @@
         "sha256": "701dd56ddeeb006c6282a1d57b27bcc914170ac0d5b6f30c5716bb8527d28baf"
       }
     ]
+  },
+  "consumerValidation": {
+    "record": {
+      "version": 1,
+      "source": "9a719aacb210b69b981ea2940c8c184766acaa19",
+      "terminal": {
+        "version": 1,
+        "base": "9a719aacb210b69b981ea2940c8c184766acaa19",
+        "run": "lifetime-selector-reverse-20261106.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [ 848.635s] 5906 tests run: 5899 passed (38 slow), 7 failed, 32 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 5906,
+        "passed": 5899,
+        "failed": 7,
+        "skipped": 32,
+        "selectedPackages": 25,
+        "matchedPackages": 25,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4123,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "spec_valid_run_edge_fixture_now_executes"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "unsafe_json_lists_audit_regions"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_records_required_solver_checks"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_reports_missing_promotion_proof"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "spec_rejected_edge_fixtures_fail_with_diagnostics"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_respects_semantic_defer_cancel_discharge"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-05T22:19:39.1822981Z"
+      },
+      "packages": [
+        {
+          "package": "arcweft-adapter-sema",
+          "executed": 13,
+          "passed": 13,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-agent-mcp",
+          "executed": 31,
+          "passed": 31,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-agent-mcp-client",
+          "executed": 2,
+          "passed": 2,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-agent-repl",
+          "executed": 37,
+          "passed": 37,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-agent-runner",
+          "executed": 69,
+          "passed": 69,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-cli",
+          "executed": 707,
+          "passed": 700,
+          "failed": 7
+        },
+        {
+          "package": "arcweft-compiler",
+          "executed": 824,
+          "passed": 824,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-lang-hir",
+          "executed": 978,
+          "passed": 978,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-lang-sema",
+          "executed": 1397,
+          "passed": 1397,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-lang-syntax",
+          "executed": 748,
+          "passed": 748,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-lsp",
+          "executed": 223,
+          "passed": 223,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-player-native",
+          "executed": 63,
+          "passed": 63,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-player-scene",
+          "executed": 128,
+          "passed": 128,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-player-web",
+          "executed": 36,
+          "passed": 36,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-project",
+          "executed": 42,
+          "passed": 42,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-project-loader",
+          "executed": 158,
+          "passed": 158,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-runtime-driver",
+          "executed": 153,
+          "passed": 153,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-runtime-host",
+          "executed": 72,
+          "passed": 72,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-runtime-plan",
+          "executed": 165,
+          "passed": 165,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-test",
+          "executed": 4,
+          "passed": 4,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-tooling",
+          "executed": 27,
+          "passed": 27,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-verify",
+          "executed": 8,
+          "passed": 8,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-verify-lsp",
+          "executed": 14,
+          "passed": 14,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-verify-oxiz",
+          "executed": 5,
+          "passed": 5,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-verify-z3",
+          "executed": 2,
+          "passed": 2,
+          "failed": 0
+        }
+      ],
+      "runtimePackages": 25,
+      "hostBuildOnly": [],
+      "cli": [
+        {
+          "package": "arcweft-cli",
+          "executed": 707,
+          "passed": 700,
+          "failed": 7
+        }
+      ],
+      "nonCli": {
+        "executed": 5199,
+        "passed": 5199,
+        "failed": 0
+      },
+      "failureComparison": {
+        "referenceSource": "3bd77a9e200cb882f6dd516e3644fc42d38111cd",
+        "referenceRun": "full-grammar-constructs-reverse47-20261106.runtime",
+        "previousFailureCount": 7,
+        "currentFailureCount": 7,
+        "newFailureIds": [],
+        "noLongerFailingIds": [],
+        "note": "Compare actual terminal IDs. The current result is a fresh full run, not arithmetic recomputation of the older result."
+      },
+      "ownerSourceAgreement": {
+        "sourceInputs": 4123,
+        "sourceDrift": 0,
+        "focusedRun": "63b88bb9e2108ef8fc3bcb4e83381a2b4545b555"
+      },
+      "genericMatch": {
+        "expected": 151,
+        "passed": 151,
+        "missing": 0,
+        "failed": 0,
+        "referenceSha256": "82b6519b1ccbfcd4aee95d3ef8b69db686037924a7f9137de0fef0201d86b996"
+      },
+      "workingTree": "The recorded original12 tracked WIP (including the two required borrowed summary reads) participated in the frozen Source input; this is not a pristine committed-tree claim. The lifetime selector source publication has no overlapping WIP paths.",
+      "recordedAt": "2026-11-05T22:19:51.257542Z"
+    },
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-lifetime-registry-key-consumers.raw.zip",
+      "bytes": 632360,
+      "sha256": "0d2139abab300b710b3da67ee07d27fe41a79a713f938b9bc3179c30453a011f",
+      "entryDrift": 0,
+      "entries": [
+        {
+          "entry": "lifetime-selector-reverse-20261106.binaries-before.json",
+          "bytes": 29529,
+          "sha256": "3f0a050667aa5a97cee65c0eaa6ebd4e876dc5115502edb01ddf2bee09099d4a"
+        },
+        {
+          "entry": "lifetime-selector-reverse-20261106.catalog.inventory.json",
+          "bytes": 1503902,
+          "sha256": "8d28355496eddeab3f61041f726266c5744b7631be534fa64fe40f6a89e14a4f"
+        },
+        {
+          "entry": "lifetime-selector-reverse-20261106.catalog.json",
+          "bytes": 1443,
+          "sha256": "d0ba8abeb6904752f0e2d9b66287d8dcf3b4f0cf9cd645c115215c2f3d7c18df"
+        },
+        {
+          "entry": "lifetime-selector-reverse-20261106.catalog.log",
+          "bytes": 1095318,
+          "sha256": "66f6d8b54874777e45af417e5d8a9c2c1d5fd7d64360b82d643507695d996637"
+        },
+        {
+          "entry": "lifetime-selector-reverse-20261106.consumer-audit.json",
+          "bytes": 6217,
+          "sha256": "9184b7e770990e5a46b948b5791b784d8b4c15979d81a70f5976f0d1f102175b"
+        },
+        {
+          "entry": "lifetime-selector-reverse-20261106.generic-match.json",
+          "bytes": 38154,
+          "sha256": "0033bfbd1d45e0d38c57c086239ad74ac2bdb10bb7f680116114d47e9503f42b"
+        },
+        {
+          "entry": "lifetime-selector-reverse-20261106.runtime.json",
+          "bytes": 1537,
+          "sha256": "3426039532f66c6500d0d1b9d2e810cc156c5cec05a9615331afa3ca7b668480"
+        },
+        {
+          "entry": "lifetime-selector-reverse-20261106.runtime.log",
+          "bytes": 1879829,
+          "sha256": "b1a0ba680e2c4aade6967bc96368fd0ca744e354c231733d8123ca3c4398e1c3"
+        },
+        {
+          "entry": "lifetime-selector-reverse-20261106.runtime.terminal-audit.json",
+          "bytes": 1683,
+          "sha256": "e84022337a099cce86e88858e839691896d05cb75cb85553284ec85d4e1c64ec"
+        },
+        {
+          "entry": "lifetime-selector.reverse-selection.json",
+          "bytes": 19039,
+          "sha256": "8e6d9207cbe18928d070668eed666bc96598533791df585ce897c84302a3bc97"
+        }
+      ]
+    },
+    "retainedHistory": "The focused evidence fields preserve their original state. This is a later, separately executed reverse matrix on the published source. Workspace check/Clippy are not reported as part of this run."
   }
 }
