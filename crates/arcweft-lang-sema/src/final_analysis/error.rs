@@ -455,6 +455,12 @@ pub enum FinalSemanticAnalysisError {
     },
     #[error("semantic expression {owner:?} has no admissible final type")]
     ExpressionTypeUnavailable { owner: ExprId },
+    #[error("callable result branches must produce one compatible type")]
+    IncompatibleCallableResults {
+        owner: ExprId,
+        source_span: SourceSpan,
+        result_sources: Box<[SourceSpan]>,
+    },
     #[error(
         "lifetime registry write {owner:?} requires a non-optional registry address at {target:?}"
     )]
@@ -750,6 +756,7 @@ impl FinalSemanticAnalysisError {
             Self::ReturnBoundaryUnavailable { .. } => "sema.return.boundary",
             Self::YieldOutsideGenerator { .. } => "sema.yield.context",
             Self::ReturnValueTypeMismatch { .. } => "sema.return.value_type",
+            Self::IncompatibleCallableResults { .. } => "sema.callable.result_type",
             Self::AssertionConditionNotBool { .. } => "sema.assert.condition_not_bool",
             Self::AssertionConditionNotPure { .. } => "sema.assert.condition_not_pure",
             Self::RecursiveCallableContract { .. } => "sema.callable.recursive_contract",
@@ -783,6 +790,25 @@ impl FinalSemanticAnalysisError {
     /// Source-backed semantic rejection retained by the final analyzer.
     pub fn source_diagnostic(&self) -> Option<Diagnostic> {
         match self {
+            Self::IncompatibleCallableResults {
+                source_span,
+                result_sources,
+                ..
+            } => {
+                let mut diagnostic = Diagnostic::new(DiagnosticSeverity::Error, self.to_string())
+                    .with_code(self.diagnostic_code())
+                    .with_label(DiagnosticLabel::primary(
+                        source_span.clone(),
+                        Some("this callable has incompatible result paths".to_owned()),
+                    ));
+                for source in result_sources.iter() {
+                    diagnostic = diagnostic.with_label(DiagnosticLabel::secondary(
+                        source.clone(),
+                        Some("this path contributes a result type".to_owned()),
+                    ));
+                }
+                Some(diagnostic)
+            }
             Self::YieldOutsideGenerator { source_span, .. } => Some(
                 Diagnostic::new(DiagnosticSeverity::Error, self.to_string())
                     .with_code(self.diagnostic_code())

@@ -25,6 +25,13 @@ that child's Result or Option result, or to a nearer carrier block. Returning a
 Thread handle from an ordinary function transfers the handle to its caller;
 it does not return the child's payload or execute the child as a pure expression.
 
+When inferred returns and normal completion cannot share a result type,
+type checking rejects the callable with `sema.callable.result_type`. The
+diagnostic identifies the original callable body and its own return-value
+sources, including normal completion when it contributes `Unit`. Nested
+callables retain separate return boundaries. This rejection does not publish
+an accepted verifier generation.
+
 ```arcw
 pub flow title(state: GameState) -> Result<FlowExit, FlowError> {
     if state.config.skip_title {

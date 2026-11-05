@@ -389,39 +389,73 @@ flow verify {
 
 #[test]
 fn verify_json_reports_semantic_thread_join_conflict() {
-    let path = temp_arcw(
-        "verify-thread-join",
+    for source in [
         r#"
-character alice { display = "Alice" }
-
 flow thread_join {
-    alice()[待って。[p]]
-    with:
-        thread worker:
-            out 1i32
-            out "bad"
+    let worker = thread {
+        if true {
+            return 1i32
+        } else {
+            return "bad"
+        }
+    }
 }
 "#,
-    );
+        r#"
+flow thread_join {
+    let worker = if true {
+        thread { if true { return 1i32 } else { return "bad" } }
+    } else {
+        thread { if true { return 2i32 } else { return "other" } }
+    }
+}
+"#,
+    ] {
+        let path = temp_arcw("verify-thread-join", source);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("verify")
-        .arg(&path)
-        .arg("--mode")
-        .arg("test")
-        .arg("--json")
-        .output()
-        .expect("arcw verify runs");
+        let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+            .arg("verify")
+            .arg(&path)
+            .arg("--mode")
+            .arg("test")
+            .arg("--json")
+            .output()
+            .expect("arcw verify runs");
 
-    assert!(
-        !output.status.success(),
-        "semantic thread join conflict should fail test-mode verification"
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("thread join result branches must produce one compatible type"),
-        "JSON report should include the semantic thread-join obligation: {stdout}"
-    );
+        assert!(
+            !output.status.success(),
+            "semantic thread join conflict should fail test-mode verification"
+        );
+        let report: serde_json::Value =
+            serde_json::from_slice(&output.stdout).expect("typed thread rejection is JSON");
+        assert_eq!(report["status"], "denied", "{report}");
+        assert_eq!(report["stage"], "type-check", "{report}");
+        let diagnostic = &report["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["diagnostic"]["code"] == "sema.callable.result_type")
+            .expect("the original child result conflict reaches the CLI")["diagnostic"];
+        assert_eq!(
+            diagnostic["message"],
+            "callable result branches must produce one compatible type"
+        );
+        let mut values = diagnostic["labels"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|label| label["style"] == "secondary")
+            .map(|label| {
+                let start = usize::try_from(label["span"]["start"].as_u64().unwrap()).unwrap();
+                let end = usize::try_from(label["span"]["end"].as_u64().unwrap()).unwrap();
+                &source[start..end]
+            })
+            .collect::<Vec<_>>();
+        values.sort_unstable();
+        assert_eq!(values, ["\"bad\"", "1i32"]);
+        assert!(!diagnostic["span"].is_null());
+        assert!(report.get("obligations").is_none());
+    }
 }
 
 #[test]

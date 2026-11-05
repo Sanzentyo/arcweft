@@ -1,6 +1,71 @@
 use super::*;
 
 #[test]
+fn incompatible_callable_results_retain_only_their_own_return_value_sources() {
+    for expression in [
+        "thread { thread nested { return true }; if true { return 1i32 } else { return \"猫\" } }",
+        "|| { if true { return 1i32 } else { return \"猫\" } }",
+        "if true { thread { if true { return 1i32 } else { return \"猫\" } } } else { thread { if true { return 2i32 } else { return \"dog\" } } }",
+        "if let .Some(_) = Some(true) { thread { if true { return 1i32 } else { return \"猫\" } } } else { thread { if true { return 2i32 } else { return \"dog\" } } }",
+        "match true { true => thread { if true { return 1i32 } else { return \"猫\" } }, false => thread { if true { return 2i32 } else { return \"dog\" } } }",
+    ] {
+        let source = format!("flow root() {{ let worker = {expression} }}");
+        let world = fixture(&source, None);
+        let error = analyze(&world).unwrap_err();
+        let FinalSemanticAnalysisError::IncompatibleCallableResults {
+            source_span,
+            result_sources,
+            ..
+        } = &error
+        else {
+            panic!("result conflict retains its typed rejection: {error:?}");
+        };
+        let project = world.project.analysis_view().unwrap();
+        let module = project.module(&CanonicalModulePath::crate_root()).unwrap();
+        assert_eq!(source_span.source(), module.provenance().source_identity());
+        let mut values = result_sources
+            .iter()
+            .map(|span| {
+                assert_eq!(span.source(), source_span.source());
+                &source[span.range().start()..span.range().end()]
+            })
+            .collect::<Vec<_>>();
+        values.sort_unstable();
+        assert_eq!(values, ["\"猫\"", "1i32"]);
+        assert_eq!(error.diagnostic_code(), "sema.callable.result_type");
+        let diagnostic = error.source_diagnostic().unwrap();
+        assert_eq!(
+            diagnostic
+                .code()
+                .map(arcweft_source::DiagnosticCode::as_str),
+            Some("sema.callable.result_type")
+        );
+    }
+}
+
+#[test]
+fn incompatible_callable_fallthrough_keeps_its_normal_completion_source() {
+    let source = "flow root() { let worker = thread { if true { return 1i32 } } }";
+    let world = fixture(source, None);
+    let error = analyze(&world).unwrap_err();
+    let FinalSemanticAnalysisError::IncompatibleCallableResults {
+        source_span,
+        result_sources,
+        ..
+    } = error
+    else {
+        panic!("normal completion conflicts with the child return: {error:?}");
+    };
+    assert_eq!(result_sources.len(), 2);
+    assert!(result_sources.contains(&source_span));
+    assert!(
+        result_sources
+            .iter()
+            .any(|span| { &source[span.range().start()..span.range().end()] == "1i32" })
+    );
+}
+
+#[test]
 fn direct_execution_frames_reject_own_yields_at_the_authored_statement() {
     for source in [
         "flow root() { yield 1i64\n }",

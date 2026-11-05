@@ -735,6 +735,11 @@ pub(super) enum AnalyzerExpressionRejection {
     Unavailable {
         owner: ExprId,
     },
+    ResultJoin {
+        owner: ExprId,
+        source_span: arcweft_source::SourceSpan,
+        result_sources: Box<[arcweft_source::SourceSpan]>,
+    },
     RecoveredInterpretation {
         owner: ExprId,
     },
@@ -866,6 +871,15 @@ impl AnalyzerExpressionError {
                 AnalyzerExpressionRejection::Unavailable { owner } => {
                     FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner }
                 }
+                AnalyzerExpressionRejection::ResultJoin {
+                    owner,
+                    source_span,
+                    result_sources,
+                } => FinalSemanticAnalysisError::IncompatibleCallableResults {
+                    owner,
+                    source_span,
+                    result_sources,
+                },
                 AnalyzerExpressionRejection::RecoveredInterpretation { .. } => {
                     FinalSemanticAnalysisError::RecoveredOwner
                 }

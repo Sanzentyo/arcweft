@@ -22,6 +22,7 @@ impl Analyzer<'_, '_, '_> {
         }
         let mut joined = None;
         let mut saw_branch = false;
+        let mut deferred_result_join = None;
         for branch in branches {
             saw_branch = true;
             let probe = self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(
@@ -33,22 +34,34 @@ impl Analyzer<'_, '_, '_> {
                         expectation.clone(),
                     );
                     drop(probe_context);
-                    let ty = match result {
-                        Ok(checked) => checked.value_type().cloned(),
+                    let synthesis = match result {
+                        Ok(checked) => Ok(checked.value_type().cloned()),
                         // Lack of a synthesis result does not accept a branch.
                         // The final contextual check must validate it in full.
                         Err(AnalyzerExpressionError::Rejected(
-                            AnalyzerExpressionRejection::Unavailable { .. },
-                        )) => None,
+                            rejection @ (AnalyzerExpressionRejection::Unavailable { .. }
+                            | AnalyzerExpressionRejection::ResultJoin { .. }),
+                        )) => Err(rejection),
                         Err(error) => return Err(error),
                     };
-                    Ok(CandidateFactTransactionAction::Rollback(ty))
+                    Ok(CandidateFactTransactionAction::Rollback(synthesis))
                 },
             )?;
-            let CandidateFactTransactionOutcome::RolledBack(ty) = probe else {
+            let CandidateFactTransactionOutcome::RolledBack(synthesis) = probe else {
                 return Err(AnalyzerExpressionError::fact(
                     crate::final_analysis::CandidateFactTransactionViolation::UnrecoverableLedger,
                 ));
+            };
+            let ty = match synthesis {
+                Ok(ty) => ty,
+                Err(rejection) => {
+                    if matches!(&rejection, AnalyzerExpressionRejection::ResultJoin { .. })
+                        && deferred_result_join.is_none()
+                    {
+                        deferred_result_join = Some(rejection);
+                    }
+                    None
+                }
             };
             if let Some(ty) = ty {
                 joined = Some(match joined {
@@ -59,7 +72,10 @@ impl Analyzer<'_, '_, '_> {
             }
         }
         if saw_branch && joined.is_none() {
-            return Err(AnalyzerExpressionError::rejected(owner));
+            return Err(deferred_result_join.map_or_else(
+                || AnalyzerExpressionError::rejected(owner),
+                AnalyzerExpressionError::Rejected,
+            ));
         }
         // A polymorphic function owns its binder. Its synthesized scheme
         // may join another branch, but is not a monomorphic function-use

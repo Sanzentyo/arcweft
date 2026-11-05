@@ -2385,7 +2385,40 @@ impl Analyzer<'_, '_, '_> {
         if results.is_empty() {
             return Ok(body_type);
         }
-        common_type(results, None).ok_or_else(|| AnalyzerExpressionError::rejected(body))
+        if let Some(result) = common_type(results, None) {
+            return Ok(result);
+        }
+        let source_span = expression_span(module, body).map_err(AnalyzerExpressionError::fatal)?;
+        let mut result_sources = continuation
+            .returns()
+            .iter()
+            .map(|statement| {
+                let source = module.resolve_stmt(*statement).map_err(|_| {
+                    AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+                })?;
+                let HirStmtEvaluationPlan::Value {
+                    kind: HirStmtValuePlanKind::Return,
+                    expression: Some(value),
+                    ..
+                } = source.kind().evaluation_plan()
+                else {
+                    return Err(AnalyzerExpressionError::fatal(
+                        FinalSemanticAnalysisError::WrongPayloadFamily,
+                    ));
+                };
+                expression_span(module, value).map_err(AnalyzerExpressionError::fatal)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if continuation.continues() {
+            result_sources.push(source_span.clone());
+        }
+        Err(AnalyzerExpressionError::Rejected(
+            super::expression_error::AnalyzerExpressionRejection::ResultJoin {
+                owner: body,
+                source_span,
+                result_sources: result_sources.into_boxed_slice(),
+            },
+        ))
     }
 
     fn check_control_block_expression(
