@@ -1,0 +1,398 @@
+{
+  "version": 1,
+  "recordedAt": "2026-11-05T21:58:13.3256193Z",
+  "source": "9a719aacb210b69b981ea2940c8c184766acaa19",
+  "workingTree": "main; original 12 tracked and 6 actual untracked WIP preserved; owner tests ran with the retained tracked inputs",
+  "contract": "docs/01-language/dialogue-calls-scopes-cancellation.md",
+  "scope": "One canonical lifetime scope in Syntax and HIR, a budgeted static key in HIR, and exact sharing of that key in Sema checked registry writes. Only bare nonoptional roots can select a scope. A selector cannot act as a value or grant an active runtime scope.",
+  "publication": {
+    "version": 1,
+    "commit": "9a719aacb210b69b981ea2940c8c184766acaa19",
+    "parent": "63b88bb9e2108ef8fc3bcb4e83381a2b4545b555",
+    "tree": "f903e16b3e771f6cc5b0dff4e76b42abc4a429de",
+    "remote": "9a719aacb210b69b981ea2940c8c184766acaa19",
+    "paths": [
+      {
+        "path": "crates/arcweft-lang-hir/src/expr/tests.rs",
+        "blob": "7842adcc0310834db17be8285385a5f8c1b94be2"
+      },
+      {
+        "path": "crates/arcweft-lang-hir/src/final_lowering/expression_lowering.rs",
+        "blob": "b7d5c5f0c396d75c3056c9cc2e844307844bdadc"
+      },
+      {
+        "path": "crates/arcweft-lang-hir/src/final_lowering/expression_lowering/tests.rs",
+        "blob": "b25ccd5aa4e5d5840bf5deaca219d7944173b899"
+      },
+      {
+        "path": "crates/arcweft-lang-hir/src/leaf.rs",
+        "blob": "33c944a932e6cf5be15f8a504eecdd2d0454a0f9"
+      },
+      {
+        "path": "crates/arcweft-lang-hir/src/leaf/tests.rs",
+        "blob": "420662ce87f300da0caa8540b38945cf7b440d89"
+      },
+      {
+        "path": "crates/arcweft-lang-hir/src/source_index/expression_manifest/leaf.rs",
+        "blob": "ab482b4295c830654813c61b83dadded8a462965"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/error.rs",
+        "blob": "561b7a4401995bb9e600a76b75d793f33849e6fc"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/model/registry.rs",
+        "blob": "f672b619b2bbc352a02da94fb0565894d16776fb"
+      },
+      {
+        "path": "crates/arcweft-lang-sema/src/final_analysis/tests/statement_producers.rs",
+        "blob": "003345dc15aa784d5886d55f495395cfe19317f3"
+      },
+      {
+        "path": "crates/arcweft-lang-syntax/src/expressions.rs",
+        "blob": "1ffb203524e946b10da3a475fce8f4fb6e7a8a6e"
+      },
+      {
+        "path": "crates/arcweft-lang-syntax/src/name.rs",
+        "blob": "881ed80f36deab6cb378e5d2172b4ed0918acc55"
+      },
+      {
+        "path": "crates/arcweft-lang-syntax/src/parser/expression/tests.rs",
+        "blob": "9c97464c593d260ed7006adc6104a6e700af1bb1"
+      },
+      {
+        "path": "crates/arcweft-lang-syntax/src/parser/lexer/lifetime.rs",
+        "blob": "272b8b4c7d19a05fde91c6f8484fa9736e2e680f"
+      },
+      {
+        "path": "docs/01-language/dialogue-calls-scopes-cancellation.md",
+        "blob": "8f41a64902e748dd0b9217efb971da5636ae3cfa"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "998e9af9bf4e6a6a81eb9363241b1e03653674ef479f5944e55b2ebf6f8e848e",
+    "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-05T21:54:43.6468661Z"
+  },
+  "validatedOwnedPaths": [
+    {
+      "path": "crates/arcweft-lang-hir/src/expr/tests.rs",
+      "blob": "7842adcc0310834db17be8285385a5f8c1b94be2",
+      "testedWorkingBytesSha256": "cd9f7655e30dc3918d8525d5daf8d917463f28c6cd99a2c6aa4a60ad25ba3994"
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/final_lowering/expression_lowering.rs",
+      "blob": "b7d5c5f0c396d75c3056c9cc2e844307844bdadc",
+      "testedWorkingBytesSha256": "f1bca1a23b3a997c59ceb516d4a86b714c6042d51882724af8f9c95ccb55b53d"
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/final_lowering/expression_lowering/tests.rs",
+      "blob": "b25ccd5aa4e5d5840bf5deaca219d7944173b899",
+      "testedWorkingBytesSha256": "b7bf4cd438afafbee3cd6ce43ef484c4a47d92558212939202ad6ad7a9a57ea5"
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/leaf.rs",
+      "blob": "33c944a932e6cf5be15f8a504eecdd2d0454a0f9",
+      "testedWorkingBytesSha256": "948c382197d1105a7e9221bc77e37a206f02b036ca103be52da298d3da8eb11c"
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/leaf/tests.rs",
+      "blob": "420662ce87f300da0caa8540b38945cf7b440d89",
+      "testedWorkingBytesSha256": "e625e621652181d923b681aac2a770f11da0d5d11fe6795559f455f783419992"
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/source_index/expression_manifest/leaf.rs",
+      "blob": "ab482b4295c830654813c61b83dadded8a462965",
+      "testedWorkingBytesSha256": "049f5c7d0465912a8af6a02cc8b9b68b0c70cb4db7ae1d6428bc521c22ec9fce"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/error.rs",
+      "blob": "561b7a4401995bb9e600a76b75d793f33849e6fc",
+      "testedWorkingBytesSha256": "55ba959979c5008e284bd9b19214888c1c41204701e2523c2a36b16eed42b7ac"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/model/registry.rs",
+      "blob": "f672b619b2bbc352a02da94fb0565894d16776fb",
+      "testedWorkingBytesSha256": "3f85aca6a02f057375526349f192fba90ffac3990746877ab076da8845aaa836"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/tests/statement_producers.rs",
+      "blob": "003345dc15aa784d5886d55f495395cfe19317f3",
+      "testedWorkingBytesSha256": "fd99d6b16278fc2fbdeba9ca56829aedf89f3137c5e73718b47d3a13ff412422"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/expressions.rs",
+      "blob": "1ffb203524e946b10da3a475fce8f4fb6e7a8a6e",
+      "testedWorkingBytesSha256": "1aa9f93ba040251a13369aaea282b8edcf5aa0d793e5758cf2d6ecff8624c758"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/name.rs",
+      "blob": "881ed80f36deab6cb378e5d2172b4ed0918acc55",
+      "testedWorkingBytesSha256": "e9ad0782ff0c8e0c2474e79bec1aaa19b117a67ea2aeae0a4e186bec84ac936c"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/parser/expression/tests.rs",
+      "blob": "9c97464c593d260ed7006adc6104a6e700af1bb1",
+      "testedWorkingBytesSha256": "c4dbba27ea9cdb1028b1ae7861d290d0c8953df764000734c3d535dd89856063"
+    },
+    {
+      "path": "crates/arcweft-lang-syntax/src/parser/lexer/lifetime.rs",
+      "blob": "272b8b4c7d19a05fde91c6f8484fa9736e2e680f",
+      "testedWorkingBytesSha256": "7a311149a55305ffda5d47da1891e84b52e811ea941e836a6e8248b180a7d804"
+    },
+    {
+      "path": "docs/01-language/dialogue-calls-scopes-cancellation.md",
+      "blob": "8f41a64902e748dd0b9217efb971da5636ae3cfa",
+      "testedWorkingBytesSha256": "2b0c435380eb24e609a2ceee685b542901c044278b6a22f7ecf5eb58c495766b"
+    }
+  ],
+  "initialCatalog": {
+    "receipt": {
+      "version": 1,
+      "base": "63b88bb9e2108ef8fc3bcb4e83381a2b4545b555",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-lang-syntax",
+        "-p",
+        "arcweft-lang-hir",
+        "-p",
+        "arcweft-lang-sema",
+        "-p",
+        "arcweft-runtime-plan",
+        "--all-features",
+        "--locked",
+        "-E",
+        "test(lifetime) | test(registry) | test(leaf_expression_matrix)",
+        "--message-format",
+        "json"
+      ],
+      "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/lifetime-selector-owner1-20261106.catalog.log",
+      "exitCode": 101,
+      "sourceInputs": 4123,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-05T21:49:14.2777658Z",
+      "finishedAt": "2026-11-05T21:51:29.7829304Z"
+    },
+    "diagnostic": "E0308: attached lifetime roots test passed &str literals where the existing fixture builder expects String; repaired the fixture argument",
+    "executedTests": 0
+  },
+  "focused": {
+    "receipt": {
+      "version": 1,
+      "base": "63b88bb9e2108ef8fc3bcb4e83381a2b4545b555",
+      "command": [
+        "nextest",
+        "run",
+        "-p",
+        "arcweft-lang-syntax",
+        "-p",
+        "arcweft-lang-hir",
+        "-p",
+        "arcweft-lang-sema",
+        "-p",
+        "arcweft-runtime-plan",
+        "--all-features",
+        "--locked",
+        "-E",
+        "test(lifetime) | test(registry) | test(leaf_expression_matrix)",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/lifetime-selector-owner2-20261106.runtime.log",
+      "exitCode": 0,
+      "sourceInputs": 4123,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-05T21:53:51.1720551Z",
+      "finishedAt": "2026-11-05T21:53:53.99952Z"
+    },
+    "terminal": {
+      "version": 1,
+      "base": "63b88bb9e2108ef8fc3bcb4e83381a2b4545b555",
+      "run": "lifetime-selector-owner2-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   0.692s] 35 tests run: 35 passed, 3262 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 35,
+      "passed": 35,
+      "failed": 0,
+      "skipped": 3262,
+      "selectedPackages": 4,
+      "matchedPackages": 4,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4123,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-05T21:53:55.4743072Z"
+    },
+    "packages": [
+      {
+        "package": "arcweft-lang-hir",
+        "passed": 16
+      },
+      {
+        "package": "arcweft-lang-sema",
+        "passed": 12
+      },
+      {
+        "package": "arcweft-lang-syntax",
+        "passed": 4
+      },
+      {
+        "package": "arcweft-runtime-plan",
+        "passed": 3
+      }
+    ],
+    "scopedRustfmtExitCode": 0,
+    "stagedDiffCheckExitCode": 0,
+    "frozenInputOwnedPathDrift": 0
+  },
+  "promotionProbe": {
+    "receipt": {
+      "version": 1,
+      "base": "63b88bb9e2108ef8fc3bcb4e83381a2b4545b555",
+      "command": [
+        "arcw",
+        "check",
+        "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d\\lifetime-promotion-receiver-probe1-20261106.arcw",
+        "--json"
+      ],
+      "exitCode": 1,
+      "sourceSha256": "16dcc2e9575c88279874a62a418e86e7023a3b533a07bbe23a4b4183197c7874",
+      "binary": "48cc3d3d3c2450d247a835233df4494ef4a7d08749fd40d0f750afba5d2f2483",
+      "binaryDrift": 0
+    },
+    "diagnostic": {
+      "module": null,
+      "stage": "type-check",
+      "diagnostic": {
+        "severity": "error",
+        "code": "sema.call.unknown_target",
+        "message": "unknown method `promote`",
+        "span": {
+          "source": {
+            "id": "arcweft-project://lifetime-promotion-receiver-probe1-20261106/lifetime-promotion-receiver-probe1-20261106.arcw",
+            "revision": "16b091c77dd9745963c09a991a652be47dd211e233fcb0df48b4ba57f27c1960",
+            "source_len": 70
+          },
+          "start": 48,
+          "end": 68
+        },
+        "labels": [
+          {
+            "style": "primary",
+            "span": {
+              "source": {
+                "id": "arcweft-project://lifetime-promotion-receiver-probe1-20261106/lifetime-promotion-receiver-probe1-20261106.arcw",
+                "revision": "16b091c77dd9745963c09a991a652be47dd211e233fcb0df48b4ba57f27c1960",
+                "source_len": 70
+              },
+              "start": 48,
+              "end": 68
+            },
+            "message": "no registered callable candidate matches this target"
+          }
+        ],
+        "notes": [],
+        "suggestions": [],
+        "commands": []
+      }
+    },
+    "scope": "Typed receiver spelling reaches semantic method resolution on the parent binary. The probe uses a borrowed receiver to locate the diagnostic; it is not a positive example of the owned-value safety requirement."
+  },
+  "broaderValidation": "A 25-package transitive reverse-dependency run was started after the published source checkpoint; no terminal result is claimed in this record.",
+  "raw": {
+    "path": "docs/implementation/acceptance-evidence/task-lifetime-registry-key-identity.raw.zip",
+    "bytes": 337959,
+    "sha256": "ca351e3578521f3a7b4a525640e7a992baa7c05b43f2f215cae84136c938a5c6",
+    "entryDrift": 0,
+    "entries": [
+      {
+        "entry": "checkpoint-lifetime-selector-20261106.verified.json",
+        "bytes": 2594,
+        "sha256": "27f70e1a69c736c8a3b48b951effcd6bd74a73a3759456f683aff7298006a5af"
+      },
+      {
+        "entry": "lifetime-promotion-receiver-probe1-20261106.arcw",
+        "bytes": 70,
+        "sha256": "16dcc2e9575c88279874a62a418e86e7023a3b533a07bbe23a4b4183197c7874"
+      },
+      {
+        "entry": "lifetime-promotion-receiver-probe1-20261106.receipt.json",
+        "bytes": 486,
+        "sha256": "8065ed3af3ce909987507f73ca71088f53a1d19877c6732d7b303320e26880b8"
+      },
+      {
+        "entry": "lifetime-promotion-receiver-probe1-20261106.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "lifetime-promotion-receiver-probe1-20261106.stdout.json",
+        "bytes": 1295,
+        "sha256": "a248bfadb549db88fc50d5a6f535a739e6b0bb5c2a6cd810b84bfeb73164e47b"
+      },
+      {
+        "entry": "lifetime-selector-owner1-20261106.catalog.json",
+        "bytes": 736,
+        "sha256": "521caf015d993c0dd34741d98793b7f833317de72c86a81f129b7d63d2a01dbd"
+      },
+      {
+        "entry": "lifetime-selector-owner1-20261106.catalog.log",
+        "bytes": 85865,
+        "sha256": "6b5b3d0400589f822772043cded35ed7294aa0746ba1092363d50510ee41cff6"
+      },
+      {
+        "entry": "lifetime-selector-owner2-20261106.binaries-before.json",
+        "bytes": 4094,
+        "sha256": "bbcf0abbe58d90c8f9f57a1dbae12e3183375264654ca9ca1ba8ece7958fc82c"
+      },
+      {
+        "entry": "lifetime-selector-owner2-20261106.catalog.inventory.json",
+        "bytes": 860435,
+        "sha256": "ff48f9676bddd62f02c20f58a7a9ba777cdd61acc5e9fe29c49d2256c266be20"
+      },
+      {
+        "entry": "lifetime-selector-owner2-20261106.catalog.json",
+        "bytes": 734,
+        "sha256": "3fbac7210f3342c40327b1b65d6924dba87d922b0d4d626cf64a248795655a4f"
+      },
+      {
+        "entry": "lifetime-selector-owner2-20261106.catalog.log",
+        "bytes": 720271,
+        "sha256": "48c06ee728ec7906c54b12984ec43bfbdb5b0e1521ffc92a320b1bd17a3a2e6d"
+      },
+      {
+        "entry": "lifetime-selector-owner2-20261106.passed-cases.txt",
+        "bytes": 5545,
+        "sha256": "e8609520ede85d5c9a86aac52d404be6019bf7e6ad79f9c9dfae58bf0bab4933"
+      },
+      {
+        "entry": "lifetime-selector-owner2-20261106.runtime.json",
+        "bytes": 826,
+        "sha256": "4e77066d42fe24cebcf6562753176b7f5e22c4de2f7b6a3d76a4a4467b2c4841"
+      },
+      {
+        "entry": "lifetime-selector-owner2-20261106.runtime.log",
+        "bytes": 1138554,
+        "sha256": "32aed86159d320fc45a6a65728399add705aa8b7a671c27eab3bd14b6198ec72"
+      },
+      {
+        "entry": "lifetime-selector-owner2-20261106.runtime.terminal-audit.json",
+        "bytes": 620,
+        "sha256": "701dd56ddeeb006c6282a1d57b27bcc914170ac0d5b6f30c5716bb8527d28baf"
+      }
+    ]
+  }
+}
