@@ -424,6 +424,25 @@ impl RichTextUnit {
     }
 }
 
+/// Projects an actual length unit without interpreting its unrelated wire tag
+/// as a RichText descriptor tag. Unsupported units stay explicit errors.
+impl TryFrom<arcweft_primitives::LengthUnit> for RichTextUnit {
+    type Error = arcweft_primitives::LengthUnit;
+
+    fn try_from(unit: arcweft_primitives::LengthUnit) -> Result<Self, Self::Error> {
+        use arcweft_primitives::LengthUnit;
+        Ok(match unit {
+            LengthUnit::Px => Self::Px,
+            LengthUnit::Pt => Self::Pt,
+            LengthUnit::Ch => Self::Ch,
+            LengthUnit::Em => Self::Em,
+            LengthUnit::Rem | LengthUnit::Vw | LengthUnit::Vh | LengthUnit::Percent => {
+                return Err(unit);
+            }
+        })
+    }
+}
+
 /// Presence and defaulting policy for one owner-defined property.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PropertyPresence<P: Copy + Eq + 'static> {
@@ -757,6 +776,28 @@ mod tests {
 #[cfg(test)]
 mod unit_codec_tests {
     use super::RichTextUnit as Unit;
+
+    #[test]
+    fn runtime_length_units_keep_their_meaning_across_distinct_wire_domains() {
+        use arcweft_primitives::LengthUnit;
+        for (source, expected) in [
+            (LengthUnit::Px, Unit::Px),
+            (LengthUnit::Pt, Unit::Pt),
+            (LengthUnit::Ch, Unit::Ch),
+            (LengthUnit::Em, Unit::Em),
+        ] {
+            assert_eq!(Unit::try_from(source), Ok(expected));
+            assert_ne!(source.encoded(), expected.semantic_tag());
+        }
+        for source in [
+            LengthUnit::Rem,
+            LengthUnit::Vw,
+            LengthUnit::Vh,
+            LengthUnit::Percent,
+        ] {
+            assert_eq!(Unit::try_from(source), Err(source));
+        }
+    }
 
     #[test]
     fn version_one_unit_tags_preserve_the_complete_closed_domain() {

@@ -51,11 +51,30 @@ impl<'a> CharacterDialogueRuntimeExternalCallBackend<'a> {
 impl RuntimeExternalCallBackend for CharacterDialogueRuntimeExternalCallBackend<'_> {
     fn call_external(
         &mut self,
-        _context: &RuntimeExternalCallContext,
-        _callee: &RuntimeCallTarget,
-        _args: &[RuntimeValue],
+        context: &RuntimeExternalCallContext,
+        callee: &RuntimeCallTarget,
+        args: &[RuntimeValue],
     ) -> Option<Result<RuntimeValue, RuntimeEvalError>> {
-        None
+        let RuntimeCallTarget::External(callable) = callee else {
+            return None;
+        };
+        let factory = super::CharacterDialogueStyleFactory::for_callable(callable)?;
+        Some((|| {
+            let owner = context
+                .program_owner()
+                .ok_or(RuntimeEvalError::CharacterDialogueProducerUnavailable)?;
+            let schema = match &self.schemas {
+                RuntimeSchemas::Borrowed(schema) => *schema,
+                RuntimeSchemas::Retained(schemas) => schemas
+                    .iter()
+                    .map(Arc::as_ref)
+                    .find(|schema| schema.program_owner().same_program(&owner))
+                    .ok_or(RuntimeEvalError::CharacterDialogueProducerUnavailable)?,
+            };
+            factory
+                .construct(schema, context, callable, args)
+                .map_err(|error| RuntimeEvalError::CharacterDialogueConstruction(error.to_string()))
+        })())
     }
 
     fn produce_character_dialogue(

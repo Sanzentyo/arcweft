@@ -30,6 +30,9 @@ pub use character_dialogue::{
     CharacterDialogueVoiceId, DialogueLocaleId, PRODUCTION_CHARACTER_DIALOGUE_LIMITS, PatchField,
     RuntimeFieldPath, StructuredPatch,
 };
+pub use character_dialogue::{
+    CharacterDialogueStyleFactory, CharacterDialogueStyleFactoryParameter,
+};
 pub use inline_failure::{
     FallbackStylePolicy, InlineFailurePolicy, InlineFailurePolicyDecodeError,
     InlineFailureSelection, InlineFallback, InlineTextFailure,

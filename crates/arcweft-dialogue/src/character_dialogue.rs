@@ -7,6 +7,7 @@ mod limits;
 mod patch;
 mod runtime_type;
 mod schema;
+mod style_factory;
 mod typed_value;
 
 use crate::InlineFailurePolicy;
@@ -51,6 +52,7 @@ pub use schema::{
     CharacterDialogueRuntimeRoleBody, CharacterDialogueRuntimeRoleType,
     CharacterDialogueRuntimeRoleTypes, CharacterDialogueRuntimeSchema, CharacterDialogueValue,
 };
+pub use style_factory::{CharacterDialogueStyleFactory, CharacterDialogueStyleFactoryParameter};
 pub use typed_value::{
     CharacterDialogueCleanupValue, CharacterDialogueCustomValue, CharacterDialogueFocusValue,
     CharacterDialogueHookValue, CharacterDialoguePortraitValue, CharacterDialogueRichTextValue,
@@ -158,6 +160,13 @@ pub enum CharacterDialogueValueError {
     ViewContractsMismatch,
     #[error("CharacterDialogue producer is bound to a different executable")]
     ForeignProgramOwner,
+    #[error("RichText construction requires a program-bound external call context")]
+    ExternalCallContextRequired,
+    #[error("RichText construction result {actual:?} differs from the call result {expected:?}")]
+    ExternalCallResultType {
+        expected: RuntimeSemanticTypeId,
+        actual: RuntimeSemanticTypeId,
+    },
     #[error("CharacterDialogue role {role:?} has an invalid type binding: {reason}")]
     RoleType {
         role: CharacterDialogueRuntimeRole,

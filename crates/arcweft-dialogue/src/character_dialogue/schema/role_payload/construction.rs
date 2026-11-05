@@ -12,6 +12,8 @@ use crate::character_dialogue::{
     CharacterDialogueRuntimeRole as Role, CharacterDialogueRuntimeSchema,
 };
 use arcweft_core::{
+    entry::RuntimeSchemaLimits,
+    pure::RuntimeExternalCallContext,
     task::RuntimeProgramOwner,
     value::{RuntimeInt, RuntimePlainValueRecipe as Recipe, RuntimeRetainedValueAdmission},
 };
@@ -152,6 +154,41 @@ impl CharacterDialogueRuntimeSchema {
         owner: &RuntimeProgramOwner,
         properties: &[CharacterDialogueRichTextProperty<&'a str, &'a str>],
     ) -> Result<RuntimeValue, Box<CharacterDialogueValueError>> {
+        self.construct_properties(owner, Self::limits(), properties)
+    }
+
+    /// Constructs the selected call's exact result using its original program
+    /// and resource allowance. An unbound call cannot substitute defaults.
+    pub fn construct_rich_text_properties_in_call<'a>(
+        &self,
+        context: &RuntimeExternalCallContext,
+        properties: &[CharacterDialogueRichTextProperty<&'a str, &'a str>],
+    ) -> Result<RuntimeValue, Box<CharacterDialogueValueError>> {
+        let (Some(owner), Some(expected), Some(limits)) = (
+            context.program_owner(),
+            context.result_type(),
+            context.limits(),
+        ) else {
+            return Err(Box::new(
+                CharacterDialogueValueError::ExternalCallContextRequired,
+            ));
+        };
+        self.ensure_program_owner(&owner)?;
+        let actual = self.policies.rich_text_owner().semantic_identity();
+        if expected != actual {
+            return Err(Box::new(
+                CharacterDialogueValueError::ExternalCallResultType { expected, actual },
+            ));
+        }
+        self.construct_properties(&owner, limits, properties)
+    }
+
+    fn construct_properties<'a>(
+        &self,
+        owner: &RuntimeProgramOwner,
+        mut limits: RuntimeSchemaLimits,
+        properties: &[CharacterDialogueRichTextProperty<&'a str, &'a str>],
+    ) -> Result<RuntimeValue, Box<CharacterDialogueValueError>> {
         self.ensure_program_owner(owner)?;
         let binding = self.roles.authored(Role::RichText).ok_or_else(|| {
             CharacterDialogueValueError::RoleType {
@@ -165,7 +202,6 @@ impl CharacterDialogueRuntimeSchema {
                 reason: "role has no accepted payload codec",
             }));
         };
-        let mut limits = Self::limits();
         limits.max_encoded_bytes = limits.max_encoded_bytes.min(u64::from(
             PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_config_encoded_bytes,
         ));

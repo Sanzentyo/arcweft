@@ -334,6 +334,22 @@ pub enum CheckedCompileTimeScalar {
     Color(CheckedColor),
 }
 
+impl CheckedCompileTimeScalar {
+    /// Borrows the exact fixed-point value that has a Core runtime carrier.
+    /// Scalar spelling and descriptor wire tags do not select its meaning.
+    #[must_use]
+    pub const fn runtime_quantity(&self) -> Option<arcweft_core::value::RuntimeQuantity> {
+        use arcweft_core::value::RuntimeQuantity;
+        Some(match self {
+            Self::Milli(value) => RuntimeQuantity::Milli(*value),
+            Self::Ratio(value) => RuntimeQuantity::Ratio(*value),
+            Self::Length(value) => RuntimeQuantity::Length(*value),
+            Self::Angle(value) => RuntimeQuantity::Angle(*value),
+            _ => return None,
+        })
+    }
+}
+
 /// Exact checked value of one payload-free project enum.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedCompileTimeScalarEnumValue {

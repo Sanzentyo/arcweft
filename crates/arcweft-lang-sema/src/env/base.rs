@@ -565,6 +565,7 @@ impl TypeCheckEnv {
             .with_standard_presentation_lifetimes()
             .with_standard_dialogue_value_enums()
             .with_standard_agent_enums();
+        let environment = environment.with_standard_rich_text_factories();
         let fmt_schema = fmt_schema(
             environment
                 .standard_dialogue_content_type()
@@ -612,6 +613,47 @@ impl TypeCheckEnv {
                     ],
                 ),
             )
+    }
+
+    fn with_standard_rich_text_factories(self) -> Self {
+        arcweft_dialogue::CharacterDialogueStyleFactory::ALL
+            .iter()
+            .fold(self, |environment, factory| {
+                let parameters = factory
+                    .parameters()
+                    .iter()
+                    .map(|parameter| {
+                        let ty = parameter.property().map_or_else(
+                            || {
+                                environment.canonical_accepted_type(TypeKind::Named(
+                                    "RichTextStyle".to_owned(),
+                                ))
+                            },
+                            |property| match property.kind {
+                                arcweft_rich_text_schema::RichTextValueKind::Text => {
+                                    TypeKind::String
+                                }
+                                arcweft_rich_text_schema::RichTextValueKind::Color => environment
+                                    .accepted_compile_time_scalar_type(
+                                        CompileTimeScalarKind::Color,
+                                    ),
+                                arcweft_rich_text_schema::RichTextValueKind::Length => environment
+                                    .accepted_compile_time_scalar_type(
+                                        CompileTimeScalarKind::Length,
+                                    ),
+                                _ => unreachable!(
+                                    "constructor property has a supported runtime scalar carrier"
+                                ),
+                            },
+                        );
+                        FunctionParam::defaulted(parameter.name(), ty)
+                    })
+                    .collect::<Vec<_>>();
+                environment.with_standard_function(
+                    [factory.name()],
+                    FunctionSignature::new(TypeKind::Named("RichTextStyle".to_owned()), parameters),
+                )
+            })
     }
 
     #[must_use]

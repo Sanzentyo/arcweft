@@ -596,6 +596,17 @@ fn execution_plan_for_expression_with_roles(
                 ))
             }
         }
+        CheckedExpressionResolution::CompileTimeScalar(scalar)
+            if scalar.value().runtime_quantity().is_some() =>
+        {
+            if matches!(scalar.original(), CheckedExpressionResolution::Call) {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+            Ok(super::CheckedExpressionExecutionPlan::structural(
+                value,
+                CheckedStructuralExecutionReason::Value,
+            ))
+        }
         CheckedExpressionResolution::CompileTimeCallee(_)
         | CheckedExpressionResolution::TypeValue(_)
         | CheckedExpressionResolution::CompileTimeScalar(_) => {

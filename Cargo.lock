@@ -1465,6 +1465,7 @@ name = "arcweft-rich-text-schema"
 version = "0.1.0"
 dependencies = [
  "arcweft-id",
+ "arcweft-primitives",
  "blake3",
 ]
 

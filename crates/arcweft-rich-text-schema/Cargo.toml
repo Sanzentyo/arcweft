@@ -11,6 +11,7 @@ path = "src/lib.rs"
 
 [dependencies]
 arcweft-id = { workspace = true }
+arcweft-primitives.workspace = true
 blake3.workspace = true
 
 [lints]

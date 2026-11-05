@@ -6,6 +6,61 @@ use arcweft_presentation::rich_text::PresentationReusableStylePropertyId as Id;
 use arcweft_rich_text_schema::{RichTextEnumDomain, RichTextUnit};
 
 #[test]
+fn call_property_construction_keeps_original_result_type_and_resource_limits() {
+    use arcweft_core::pure::{RuntimeExternalCallContext, RuntimeProgramExecutionContext};
+    let (_, characters, views, custom) = fixture();
+    let types = Types::new();
+    let [RuntimeProgramOwner::Plan(plan), _] = types.program_owners() else {
+        panic!("native fixture")
+    };
+    let owner = RuntimeProgramOwner::Plan(Arc::clone(&plan));
+    let schema = types.schema(&characters, &views, &custom, owner);
+    let execution = RuntimeProgramExecutionContext::native(plan, Default::default());
+    let context = |result, limits| {
+        RuntimeExternalCallContext::for_program(execution.clone(), [], result, limits).unwrap()
+    };
+    let property = Property::try_new(Id::Font, Value::Text("Noto Sans JP")).unwrap();
+    let admitted = schema
+        .construct_rich_text_properties_in_call(
+            &context(
+                role_semantic(Role::RichText),
+                RuntimeSchemaLimits::engine_default(),
+            ),
+            &[property.clone()],
+        )
+        .unwrap();
+    assert!(matches!(admitted, RuntimeValue::Opaque(_)));
+    let mut limits = RuntimeSchemaLimits::engine_default();
+    limits.max_string_bytes = 1;
+    assert!(
+        schema
+            .construct_rich_text_properties_in_call(
+                &context(role_semantic(Role::RichText), limits),
+                &[property]
+            )
+            .is_err()
+    );
+    assert!(matches!(
+        schema
+            .construct_rich_text_properties_in_call(
+                &context(
+                    role_semantic(Role::Stage),
+                    RuntimeSchemaLimits::engine_default()
+                ),
+                &[],
+            )
+            .map_err(|e| *e),
+        Err(CharacterDialogueValueError::ExternalCallResultType { .. })
+    ));
+    assert!(matches!(
+        schema
+            .construct_rich_text_properties_in_call(&RuntimeExternalCallContext::unbound(), &[])
+            .map_err(|e| *e),
+        Err(CharacterDialogueValueError::ExternalCallContextRequired)
+    ));
+}
+
+#[test]
 fn borrowed_properties_construct_and_restore_under_both_exact_programs() {
     let (_, characters, views, custom) = fixture();
     let types = Types::new();

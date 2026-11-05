@@ -11606,6 +11606,15 @@ pub enum RuntimeSemanticFactsError {
     },
     #[error("expression {expression:?} has a runtime call disposition but is not a Call")]
     InvalidRuntimeCallDisposition { expression: ExprId },
+    #[error(
+        "call {expression:?} operand {operand:?} expects {expected:?}, expression has {actual:?}"
+    )]
+    CallOperandTypeMismatch {
+        expression: ExprId,
+        operand: ExprId,
+        expected: RuntimeSemanticTypeId,
+        actual: Option<RuntimeSemanticTypeId>,
+    },
     #[error("Need producer fact for {expression:?} does not match its exact call result type")]
     InvalidNeedProducerFact { expression: ExprId },
     #[error("selected runtime call {expression:?} requires a runtime receiver but has none")]
@@ -13208,11 +13217,19 @@ fn validate_call(
                             ) => None,
                             _ => (*slot == 0).then_some(authored.value()),
                         };
-                        if Some(source) != expected_source
-                            || expression_types.get(&source) != Some(operand.ty())
-                        {
+                        if Some(source) != expected_source {
                             return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition {
                                 expression,
+                            });
+                        }
+                        if expression_types.get(&source) != Some(operand.ty()) {
+                            return Err(RuntimeSemanticFactsError::CallOperandTypeMismatch {
+                                expression,
+                                operand: source,
+                                expected: operand.ty().identity(),
+                                actual: expression_types
+                                    .get(&source)
+                                    .map(RuntimeNormalizedType::identity),
                             });
                         }
                     }

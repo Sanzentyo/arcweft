@@ -169,6 +169,16 @@ impl CharacterDialogueRolePayloadCodec {
 }
 
 impl CharacterDialogueRolePayloadSchema {
+    pub(in crate::character_dialogue) fn property_spec(
+        &self,
+        id: PresentationReusableStylePropertyId,
+    ) -> Option<PresentationReusableStylePropertySpec> {
+        self.fields
+            .iter()
+            .find(|field| field.spec.id == id)
+            .map(|field| field.spec)
+    }
+
     fn try_rich_text_properties() -> Result<Self, CharacterDialogueValueError> {
         let projection = PRESENTATION_CONTENT_CALLABLE_CATALOG
             .reusable_style_schema()
