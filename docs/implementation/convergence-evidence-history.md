@@ -14753,3 +14753,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 - Source 9f459007999067966a0baa432f7241990aa1302b retains the checked reason expression. The verifier publishes its decoded text in version-one JSON. Whitespace-only text and a local string reference each fail with `sema.unsafe.reason` on the authored operand.
 - Focused nextest ran 8 tests in 2.080 seconds. 7 passed, 1 failed, 2266 skipped, exit 100. The failure `arcweft-cli::check unsafe_json_lists_audit_regions` already failed in the recorded 22-package run at Source 3a1e48c2a2a0070b2f2fa390c45c48d18b004b17. The new CLI reason case passed.
 - The requested workspace `cargo clean` removed 217,383 files and 274.7 GiB, exit 0. The Cargo target was absent at exit. The raw shell status guard also saw two intentional publications made during the clean. The original 12 tracked changes and six untracked files were independently checked after cleanup. [Receipts, logs and exact source](acceptance-evidence/task-unsafe-audit-reason.json).
+
+## 2026-11-06 — Clean reverse build reached the Windows commit limit
+
+- The 22-package all-feature locked nextest catalog for Source 9f459007999067966a0baa432f7241990aa1302b exited 101 with zero drift across 4,126 inputs. Runtime tests did not start.
+- Windows returned OS error 1455 while mapping `arcweft_bundle` in multiple rustc processes. The same build emitted compiler diagnostics in the Compiler View tests and Runtime Driver library test. Their reproducibility is under separate test. [Original log and exact command](acceptance-evidence/task-unsafe-audit-reason.json).
