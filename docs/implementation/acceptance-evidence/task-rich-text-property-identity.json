@@ -19898,5 +19898,532 @@
       "entries": 61,
       "entryDrift": 0
     }
+  },
+  "contentStyleScopeReverse": {
+    "version": 1,
+    "recordedAt": "2026-11-05T18:33:43.6506288Z",
+    "implementationSource": "3a98722cd92a229fc77f33d4423ef18c171b7596",
+    "inputBase": "d0dd7b9af5c845fc1beeb8398f0a3a1ed9dfb870",
+    "audit": {
+      "version": 1,
+      "source": "d0dd7b9af5c845fc1beeb8398f0a3a1ed9dfb870",
+      "terminal": {
+        "version": 1,
+        "base": "d0dd7b9af5c845fc1beeb8398f0a3a1ed9dfb870",
+        "run": "content-style-origin-reverse31-attempt2-20261106.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [ 729.118s] 4824 tests run: 4814 passed (61 slow), 10 failed, 40 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 4824,
+        "passed": 4814,
+        "failed": 10,
+        "skipped": 40,
+        "selectedPackages": 31,
+        "matchedPackages": 29,
+        "noMatchingSelectedTests": [
+          "arcweft-bundle-assets",
+          "arcweft-render-web"
+        ],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4114,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "spec_valid_run_edge_fixture_now_executes"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "unsafe_json_lists_audit_regions"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_records_required_solver_checks"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_reports_missing_promotion_proof"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "spec_rejected_edge_fixtures_fail_with_diagnostics"
+          },
+          {
+            "status": "FAIL",
+            "binary": "arcweft-cli::check",
+            "test": "verify_json_respects_semantic_defer_cancel_discharge"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-05T18:30:09.4868664Z"
+      },
+      "packages": [
+        {
+          "package": "arcweft-agent-mcp",
+          "executed": 31,
+          "passed": 31,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-agent-mcp-client",
+          "executed": 2,
+          "passed": 2,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-agent-policy",
+          "executed": 19,
+          "passed": 19,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-agent-protocol",
+          "executed": 55,
+          "passed": 55,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-agent-repl",
+          "executed": 37,
+          "passed": 37,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-agent-runner",
+          "executed": 69,
+          "passed": 69,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-bundle",
+          "executed": 329,
+          "passed": 329,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-cli",
+          "executed": 700,
+          "passed": 690,
+          "failed": 10
+        },
+        {
+          "package": "arcweft-compiler",
+          "executed": 824,
+          "passed": 824,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-debug-model",
+          "executed": 2,
+          "passed": 2,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-debug-sqlite",
+          "executed": 22,
+          "passed": 22,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-glyphon",
+          "executed": 24,
+          "passed": 24,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-lang-sema",
+          "executed": 1397,
+          "passed": 1397,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-lsp",
+          "executed": 223,
+          "passed": 223,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-player-native",
+          "executed": 63,
+          "passed": 63,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-player-scene",
+          "executed": 128,
+          "passed": 128,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-player-web",
+          "executed": 36,
+          "passed": 36,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-project-loader",
+          "executed": 158,
+          "passed": 158,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-rag",
+          "executed": 2,
+          "passed": 2,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-render-text",
+          "executed": 23,
+          "passed": 23,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-render-wgpu",
+          "executed": 147,
+          "passed": 147,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-runtime-driver",
+          "executed": 153,
+          "passed": 153,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-runtime-host",
+          "executed": 72,
+          "passed": 72,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-runtime-plan",
+          "executed": 165,
+          "passed": 165,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-test",
+          "executed": 4,
+          "passed": 4,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-text-layout",
+          "executed": 59,
+          "passed": 59,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-text-model",
+          "executed": 39,
+          "passed": 39,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-tooling",
+          "executed": 27,
+          "passed": 27,
+          "failed": 0
+        },
+        {
+          "package": "arcweft-verify-lsp",
+          "executed": 14,
+          "passed": 14,
+          "failed": 0
+        }
+      ],
+      "runtimePackages": 29,
+      "hostBuildOnly": [
+        "arcweft-bundle-assets",
+        "arcweft-render-web"
+      ],
+      "cli": [
+        {
+          "package": "arcweft-cli",
+          "executed": 700,
+          "passed": 690,
+          "failed": 10
+        }
+      ],
+      "nonCli": {
+        "executed": 4124,
+        "passed": 4124,
+        "failed": 0
+      },
+      "failureComparison": {
+        "referenceSource": "f2d9dc791bb0f7ecfc13b47792511086a5c31878",
+        "referenceRun": "callable-result-join-reverse22-20261106.runtime",
+        "previousFailureCount": 11,
+        "currentFailureCount": 10,
+        "newFailureIds": [],
+        "noLongerFailingIds": [
+          "arcweft-cli::check\tplan_json_lists_runtime_task_graph"
+        ],
+        "note": "Compare actual terminal IDs. The current result is a fresh full run, not arithmetic recomputation of the older result."
+      },
+      "quality": {
+        "sourceInputs": 4114,
+        "sourceDrift": 0,
+        "matchingInput": "content-style-origin-reverse31-attempt2-20261106",
+        "check": {
+          "version": 1,
+          "base": "a605f0a24817dc7c38d69ab096eb0fb36b5fe703",
+          "command": [
+            "check",
+            "--workspace",
+            "--all-targets",
+            "--all-features",
+            "--locked"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 4114,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-05T18:04:39.8315485Z",
+          "finishedAt": "2026-11-05T18:05:40.5523975Z"
+        },
+        "clippy": {
+          "version": 1,
+          "base": "a605f0a24817dc7c38d69ab096eb0fb36b5fe703",
+          "command": [
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--all-features",
+            "--locked"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 4114,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-05T18:05:41.0324592Z",
+          "finishedAt": "2026-11-05T18:06:45.2230011Z"
+        },
+        "structure": {
+          "version": 1,
+          "base": "a605f0a24817dc7c38d69ab096eb0fb36b5fe703",
+          "command": [
+            "+nightly",
+            "-Zscript",
+            "tools/structure-audit.rs",
+            "--root",
+            ".",
+            "--fail-on-blocking",
+            "--write",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/content-style-origin-quality1-20261106.structure-report"
+          ],
+          "exitCode": 0,
+          "sourceInputs": 4114,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-05T18:06:45.6638008Z",
+          "finishedAt": "2026-11-05T18:06:50.7745347Z"
+        },
+        "warnings": "Warnings remain."
+      },
+      "genericMatch": {
+        "expected": 151,
+        "passed": 151,
+        "missing": 0,
+        "failed": 0,
+        "referenceSha256": "82b6519b1ccbfcd4aee95d3ef8b69db686037924a7f9137de0fef0201d86b996"
+      },
+      "workingTree": "The recorded original12 tracked WIP (including the two required borrowed summary reads) participated in the frozen Source input; this is not a pristine committed-tree claim. The overlapping test publication contains only its owned RAG assertion hunk.",
+      "recordedAt": "2026-11-05T18:30:31.1451346Z"
+    },
+    "firstCatalogAttempt": {
+      "receipt": {
+        "version": 1,
+        "base": "3a98722cd92a229fc77f33d4423ef18c171b7596",
+        "command": [
+          "nextest",
+          "list",
+          "-p",
+          "arcweft-agent-mcp",
+          "-p",
+          "arcweft-agent-mcp-client",
+          "-p",
+          "arcweft-agent-policy",
+          "-p",
+          "arcweft-agent-protocol",
+          "-p",
+          "arcweft-agent-repl",
+          "-p",
+          "arcweft-agent-runner",
+          "-p",
+          "arcweft-bundle",
+          "-p",
+          "arcweft-bundle-assets",
+          "-p",
+          "arcweft-cli",
+          "-p",
+          "arcweft-compiler",
+          "-p",
+          "arcweft-debug-model",
+          "-p",
+          "arcweft-debug-sqlite",
+          "-p",
+          "arcweft-glyphon",
+          "-p",
+          "arcweft-lang-sema",
+          "-p",
+          "arcweft-lsp",
+          "-p",
+          "arcweft-player-native",
+          "-p",
+          "arcweft-player-scene",
+          "-p",
+          "arcweft-player-web",
+          "-p",
+          "arcweft-project-loader",
+          "-p",
+          "arcweft-rag",
+          "-p",
+          "arcweft-render-text",
+          "-p",
+          "arcweft-render-web",
+          "-p",
+          "arcweft-render-wgpu",
+          "-p",
+          "arcweft-runtime-driver",
+          "-p",
+          "arcweft-runtime-host",
+          "-p",
+          "arcweft-runtime-plan",
+          "-p",
+          "arcweft-test",
+          "-p",
+          "arcweft-text-layout",
+          "-p",
+          "arcweft-text-model",
+          "-p",
+          "arcweft-tooling",
+          "-p",
+          "arcweft-verify-lsp",
+          "--all-targets",
+          "--all-features",
+          "--locked",
+          "--message-format",
+          "json"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/content-style-origin-reverse31-20261106.catalog.log",
+        "exitCode": 101,
+        "sourceInputs": 4114,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T18:06:55.0737108Z",
+        "finishedAt": "2026-11-05T18:07:26.3987903Z"
+      },
+      "environment": {
+        "version": 1,
+        "source": "3a98722cd92a229fc77f33d4423ef18c171b7596",
+        "attempt": "content-style-origin-reverse31-20261106",
+        "phase": "catalog/build only; runtime not started",
+        "exitCode": 101,
+        "physicalFreeKiB": 44015216,
+        "virtualFreeKiB": 25977800,
+        "virtualTotalKiB": 74969660,
+        "diskFreeBytes": 296641945600,
+        "reason": "Actual compiler diagnostic: failed to mmap metadata/rlib, Windows paging file too small, OS1455, cascading missing-rlib/ICE diagnostics. No Source error classification or runtime failure count is inferred. Preserve existing log; no clean, artifact moves, job flags or system setting changes.",
+        "recordedAt": "2026-11-05T18:09:50.9387709Z"
+      },
+      "scope": "Catalog/build exit101 from actual Windows1455 paging exhaustion and cascading metadata/rlib/ICE errors; runtime not started. Same source/package/features retry succeeds. No cargo clean, job flags, source changes, artifact copies or OS setting changes were used."
+    },
+    "portable": {
+      "doctest": {
+        "version": 1,
+        "source": "3a98722cd92a229fc77f33d4423ef18c171b7596",
+        "workingBase": "d0dd7b9af5c845fc1beeb8398f0a3a1ed9dfb870",
+        "command": [
+          "test",
+          "--doc",
+          "-p",
+          "arcweft-text-model",
+          "-p",
+          "arcweft-render-text",
+          "-p",
+          "arcweft-runtime-driver",
+          "-p",
+          "arcweft-compiler",
+          "-p",
+          "arcweft-agent-protocol",
+          "-p",
+          "arcweft-cli",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4114,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T18:30:32.5194852Z",
+        "finishedAt": "2026-11-05T18:30:39.3303601Z",
+        "summaries": [
+          "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+          "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+          "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+          "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+          "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.46s",
+          "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+        ]
+      },
+      "actualDoctests": 3,
+      "doctestCrates": 6,
+      "zeroCaseDoctestCrates": 5,
+      "wasm": {
+        "version": 1,
+        "source": "3a98722cd92a229fc77f33d4423ef18c171b7596",
+        "workingBase": "d0dd7b9af5c845fc1beeb8398f0a3a1ed9dfb870",
+        "command": [
+          "check",
+          "-p",
+          "arcweft-render-web",
+          "-p",
+          "arcweft-player-web",
+          "--lib",
+          "--target",
+          "wasm32-unknown-unknown",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4114,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-05T18:30:39.8298422Z",
+        "finishedAt": "2026-11-05T18:32:21.5720731Z"
+      },
+      "scope": "All-feature/locked doctest invocation exit0 with3actual tests. wasm32 render-web/player-web library check exit0, not browser execution, screenshots or Native-Web image parity."
+    },
+    "scope": "Actual30-package text-model reverse closure plusSema for accepted Generic151 replay:31selected,29runtime,2host-build-only(bundle-assets/render-web). Full4824run4814PASS10FAIL40skip729.118s exit100. CLI700/690PASS10FAIL,nonCLI4124allPASS. Graph and workspace98 quality from owner evidence;4114source/case/executable drift0. Original12tracked/6untracked participated; this is not a pristine-tree test claim.",
+    "correctionReason": "Replace the pending31 terminal and previous current CLI totals with this fresh actual run; preserve every older run unchanged. No new failure IDs; the plan provenance test now passes. The10 actual residual CLI failures remain incomplete owner conditions. Preserve Generic Match accepted/public;151exact IDs pass withmissing0/failed0. Static style provenance, units/factory/font and other accepted features are not reopened because of those independent conditions or the overall goal.",
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-content-style-scope-reverse.raw.zip",
+      "bytes": 1092948,
+      "sha256": "caa719e73ba3e8529fa5506de07ef20323262265739d399d00faf190a80a809e",
+      "entries": 23,
+      "entryDrift": 0
+    }
   }
 }
