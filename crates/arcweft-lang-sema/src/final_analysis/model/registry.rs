@@ -1,18 +1,109 @@
-//! Statement-owned registry addresses are metadata, never ordinary values.
+//! Checked source operands for the lifetime registry.
 
-use arcweft_id::LifetimeRegistryKey;
+use arcweft_id::{LifetimeRegistryKey, LifetimeScopeKind};
 use std::sync::Arc;
 
 use arcweft_lang_hir::{
-    expr::HirExprKind,
+    body_edges::HirBodyChildRole,
+    expr::{HirExprKind, HirExpressionChildRole, HirExpressionOwnedBodyRole},
     identity::{ExprId, StmtId},
     leaf::HirLifetimeRegistryPath,
     module::HirModule,
+    project::{
+        HirDeclarationBodyRootRole, HirProjectEvaluationTopology, HirSemanticPathOwnerId,
+        HirSemanticPathStep,
+    },
     stmt::HirStmtKind,
 };
 
 use super::super::FinalSemanticAnalysisError;
 use crate::{effects::EffectId, types::TypeKind};
+
+/// The checked key and presence mode of one registry value expression.
+/// The enclosing expression owns the result type. The runtime must still
+/// resolve the actual activation from the current execution.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedRegistryRead {
+    owner: ExprId,
+    key: Arc<LifetimeRegistryKey>,
+    kind: arcweft_core::effect::RuntimeRegistryReadKind,
+}
+
+impl CheckedRegistryRead {
+    pub(crate) fn from_path(
+        topology: &HirProjectEvaluationTopology,
+        owner: ExprId,
+        path: &HirLifetimeRegistryPath,
+    ) -> Result<Self, FinalSemanticAnalysisError> {
+        let location = topology
+            .semantic_path(HirSemanticPathOwnerId::Expression(owner))
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        let mut flow = false;
+        let mut line = false;
+        if let Some(location) = location {
+            let steps = location.path().steps();
+            flow = matches!(
+                steps.first(),
+                Some(HirSemanticPathStep::DeclarationBody(
+                    HirDeclarationBodyRootRole::FlowBody
+                ))
+            );
+            // The Flow body itself is represented as a ThreadItem. Only a
+            // nested body can introduce a distinct execution owner.
+            for step in steps.iter().skip(2) {
+                match step {
+                    HirSemanticPathStep::ExpressionOwned(
+                        HirExpressionOwnedBodyRole::DialogueLinePlanStatement { .. },
+                    ) => line = true,
+                    HirSemanticPathStep::Body(HirBodyChildRole::ThreadItem { .. })
+                    | HirSemanticPathStep::Expression(HirExpressionChildRole::ClosureBody) => {
+                        flow = false;
+                        line = false;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        if !match path.scope() {
+            LifetimeScopeKind::Flow => flow,
+            LifetimeScopeKind::Line => line,
+            _ => false,
+        } {
+            return Err(FinalSemanticAnalysisError::RegistryReadScope {
+                owner,
+                scope: path.scope().clone(),
+            });
+        }
+        let kind = if path.optional() {
+            arcweft_core::effect::RuntimeRegistryReadKind::Optional
+        } else {
+            arcweft_core::effect::RuntimeRegistryReadKind::Required
+        };
+        Ok(Self {
+            owner,
+            key: Arc::clone(path.key()),
+            kind,
+        })
+    }
+
+    pub fn key(&self) -> &LifetimeRegistryKey {
+        &self.key
+    }
+
+    pub const fn kind(&self) -> arcweft_core::effect::RuntimeRegistryReadKind {
+        self.kind
+    }
+
+    pub fn matches_path(&self, owner: ExprId, path: &HirLifetimeRegistryPath) -> bool {
+        self.owner == owner
+            && self.key == *path.key()
+            && path.optional()
+                == matches!(
+                    self.kind,
+                    arcweft_core::effect::RuntimeRegistryReadKind::Optional
+                )
+    }
+}
 
 /// The exact address operand owned by one lifetime-registry write.
 /// Its source identity does not grant a runtime scope or a value lease.

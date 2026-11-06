@@ -3041,6 +3041,21 @@ fn write_value_resolution(
         CheckedValueResolution::Local(local) => {
             transcript_update!(hasher, &coordinates.binding(*local)?.canonical_bytes()?);
         }
+        CheckedValueResolution::RegistryRead(read) => {
+            let key = read.key();
+            let presence = match read.kind() {
+                arcweft_core::effect::RuntimeRegistryReadKind::Required => 0,
+                arcweft_core::effect::RuntimeRegistryReadKind::Optional => 1,
+            };
+            transcript_update!(hasher, &[presence, key.scope().semantic_tag()]);
+            if let arcweft_id::LifetimeScopeKind::Named(name) = key.scope() {
+                write_bytes(hasher, name.as_str().as_bytes())?;
+            }
+            write_len(hasher, key.segments().len())?;
+            for segment in key.segments() {
+                write_bytes(hasher, segment.as_str().as_bytes())?;
+            }
+        }
         CheckedValueResolution::LineContext => {}
         CheckedValueResolution::CharacterField {
             receiver,

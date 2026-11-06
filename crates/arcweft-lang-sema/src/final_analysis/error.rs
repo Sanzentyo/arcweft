@@ -471,6 +471,11 @@ pub enum FinalSemanticAnalysisError {
         "lifetime registry write {owner:?} requires a non-optional registry address at {target:?}"
     )]
     RegistryWriteTarget { owner: StmtId, target: ExprId },
+    #[error("lifetime registry read {owner:?} has no reached {scope:?} scope")]
+    RegistryReadScope {
+        owner: ExprId,
+        scope: arcweft_id::LifetimeScopeKind,
+    },
     #[error("checked expression {owner:?} has no accepted eager execution region")]
     ExpressionExecutionUnavailable { owner: ExprId },
     #[error("expression input {site:?} has no checked local-access authority")]

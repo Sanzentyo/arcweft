@@ -5232,9 +5232,24 @@ impl Analyzer<'_, '_, '_> {
             HirExprKind::PostfixBracket(postfix) => self
                 .check_postfix_bracket(context, owner, postfix, expectation, transaction_authority)
                 .map_err(E::from),
-            HirExprKind::LifetimePath(_) | HirExprKind::Choice(_) => {
-                Err(AnalyzerExpressionError::rejected(owner).into())
+            HirExprKind::LifetimePath(path) => {
+                let Some(path) = path.as_resolved().filter(|path| path.optional()) else {
+                    return Err(AnalyzerExpressionError::rejected(owner).into());
+                };
+                let Some(ty @ TypeKind::Option(_)) = expectation.contextual_shape() else {
+                    return Err(AnalyzerExpressionError::rejected(owner).into());
+                };
+                let read =
+                    super::super::CheckedRegistryRead::from_path(&self.topology, owner, path)
+                        .map_err(AnalyzerExpressionError::fatal)?;
+                Ok(CheckedExpression::value(
+                    ty.clone(),
+                    CheckedTypeSelection::Expected,
+                    EffectSet::new(),
+                    CheckedExpressionResolution::Value(CheckedValueResolution::RegistryRead(read)),
+                ))
             }
+            HirExprKind::Choice(_) => Err(AnalyzerExpressionError::rejected(owner).into()),
             HirExprKind::Error(_) => Err(AnalyzerExpressionError::fatal(
                 FinalSemanticAnalysisError::RecoveredOwner,
             )

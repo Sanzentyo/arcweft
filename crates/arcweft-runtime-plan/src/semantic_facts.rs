@@ -2627,6 +2627,7 @@ impl RuntimeProjectItem {
 #[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeResolvedValue {
     Local(LocalId),
+    RegistryRead(arcweft_lang_sema::final_analysis::CheckedRegistryRead),
     Place(RuntimeResolvedPlace),
     ProjectCallable {
         callable: RuntimeProjectCallable,
@@ -8568,6 +8569,7 @@ impl RuntimePlanSemanticFacts {
                             | HirExprKind::Select(_)
                             | HirExprKind::EntityReference(_)
                             | HirExprKind::ShortVariant(_)
+                            | HirExprKind::LifetimePath(_)
                     )
                 },
             )?;
@@ -8637,6 +8639,7 @@ impl RuntimePlanSemanticFacts {
                     | RuntimeResolvedValue::Constant(_),
                 )
                 | (HirExprKind::Path(_), _) => {}
+                (HirExprKind::LifetimePath(_), RuntimeResolvedValue::RegistryRead(_)) => {}
                 (HirExprKind::Select(_), value) if value.has_static_qualifier() => {}
                 _ => {
                     return Err(RuntimeSemanticFactsError::WrongExpressionFamily {
@@ -11978,6 +11981,29 @@ fn validate_resolved_value(
                 .map_err(|_| RuntimeSemanticFactsError::UnresolvedLocal { local: *local })?;
             require_runtime_local_reference(runtime_owners, *local)
         }
+        RuntimeResolvedValue::RegistryRead(read) => {
+            let HirExprKind::LifetimePath(path) = resolve_expr(modules, expression)? else {
+                return Err(RuntimeSemanticFactsError::WrongExpressionFamily {
+                    expression,
+                    expected: RuntimeSemanticFactFamily::Value,
+                });
+            };
+            if path
+                .as_resolved()
+                .is_some_and(|path| read.matches_path(expression, path))
+                && matches!(
+                    expression_type.map(RuntimeNormalizedType::shape),
+                    Some(RuntimeTypeShape::Option { .. })
+                )
+            {
+                Ok(())
+            } else {
+                Err(RuntimeSemanticFactsError::WrongExpressionFamily {
+                    expression,
+                    expected: RuntimeSemanticFactFamily::Value,
+                })
+            }
+        }
         RuntimeResolvedValue::Place(place) => {
             let base = place.local();
             module_for(modules, base.module())?
@@ -14417,6 +14443,12 @@ fn validate_project_function_semantic_catalog(
                 ) && !matches!(
                     (hir, value),
                     (HirExprKind::Select(_), value) if value.has_static_qualifier()
+                ) && !matches!(
+                    (hir, value),
+                    (
+                        HirExprKind::LifetimePath(_),
+                        RuntimeResolvedValue::RegistryRead(_)
+                    )
                 ) {
                     return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
                 }

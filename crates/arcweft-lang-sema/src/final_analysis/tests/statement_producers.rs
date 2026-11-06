@@ -842,6 +842,29 @@ fn registry_write_rejects_value_and_optional_targets_before_publication() {
 }
 
 #[test]
+fn optional_registry_reads_require_a_reached_scope() {
+    use arcweft_id::LifetimeScopeKind;
+
+    for (source, expected) in [
+        (
+            "flow main() { let value: Option<bool> = 'line.flag? }",
+            LifetimeScopeKind::Line,
+        ),
+        (
+            "fn lookup() -> Option<bool> { let value: Option<bool> = 'flow.flag?; value }",
+            LifetimeScopeKind::Flow,
+        ),
+    ] {
+        let world = fixture(source, None);
+        let result = super::analyze(&world);
+        assert!(
+            matches!(&result, Err(FinalSemanticAnalysisError::RegistryReadScope { scope, .. }) if scope == &expected),
+            "{result:?}",
+        );
+    }
+}
+
+#[test]
 fn registry_write_retains_a_core_facing_static_key_with_unicode_components() {
     let world = fixture(
         "flow registry effects { state.write('flow) } { 'flow.旗.既読 <- true }",

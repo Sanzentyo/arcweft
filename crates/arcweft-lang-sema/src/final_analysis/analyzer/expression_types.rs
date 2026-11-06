@@ -175,7 +175,7 @@ pub(super) fn value_resolution_type(
     resolution: &CheckedValueResolution,
 ) -> Option<TypeKind> {
     match resolution {
-        CheckedValueResolution::Local(_) => None,
+        CheckedValueResolution::Local(_) | CheckedValueResolution::RegistryRead(_) => None,
         CheckedValueResolution::LineContext => Some(TypeKind::LineContext),
         CheckedValueResolution::CharacterField {
             character, field, ..

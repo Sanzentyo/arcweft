@@ -884,6 +884,7 @@ impl FinalAnalysisExecutionProjection<'_> {
                         if matches!(
                             value,
                             super::CheckedValueResolution::Local(_)
+                                | super::CheckedValueResolution::RegistryRead(_)
                                 | super::CheckedValueResolution::EnvironmentCallable(_)
                                 | super::CheckedValueResolution::CatalogAsset(_)
                                 | super::CheckedValueResolution::Registered(_)

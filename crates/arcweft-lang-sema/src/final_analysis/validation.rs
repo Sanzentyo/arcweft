@@ -1071,6 +1071,9 @@ fn expression_resolution_matches(
         (HirExprKind::LifetimePath(path), CheckedExpressionResolution::RegistryAddress(address)) => {
             path.as_resolved().is_some_and(|path| address.matches_path(path))
         }
+        (HirExprKind::LifetimePath(path), CheckedExpressionResolution::Value(CheckedValueResolution::RegistryRead(_))) => {
+            path.as_resolved().is_some()
+        }
         (HirExprKind::Pipe(authored), CheckedExpressionResolution::Pipe(checked)) => {
             authored.left() == checked.lookup_left() && authored.right() == checked.lookup_right()
         }
@@ -1249,6 +1252,19 @@ fn validate_expression_resolution(
         }
         CheckedExpressionResolution::RegistryAddress(_) => {
             Err(FinalSemanticAnalysisError::WrongPayloadFamily)
+        }
+        CheckedExpressionResolution::Value(CheckedValueResolution::RegistryRead(read)) => {
+            let authored = resolve_module(modules, owner.module())?
+                .resolve_expr(owner)
+                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+            let HirExprKind::LifetimePath(path) = authored.kind() else {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            };
+            let path = path.as_resolved().ok_or(FinalSemanticAnalysisError::RecoveredOwner)?;
+            let expected = super::CheckedRegistryRead::from_path(topology, owner, path)?;
+            (read == &expected && path.optional() && matches!(ty, TypeKind::Option(_)))
+                .then_some(())
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)
         }
         CheckedExpressionResolution::Closure(closure) => {
             validate_explicit_closure(topology, owner, closure)
@@ -2231,6 +2247,7 @@ fn validate_value(
             .validate_public_id(asset.as_public_id())
             .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily),
         CheckedValueResolution::LineContext
+        | CheckedValueResolution::RegistryRead(_)
         | CheckedValueResolution::PresentationAddress(_)
         | CheckedValueResolution::Registered(_)
         | CheckedValueResolution::Constant(_) => Ok(()),

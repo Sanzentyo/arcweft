@@ -47,8 +47,8 @@ const EXPRESSION_RESOLUTION_LIVE_TAGS: [u16; 36] = [
     0x021A, 0x021B, 0x021C, 0x021D, 0x021E, 0x021F, 0x0220, 0x0221, 0x0222, 0x0223, 0x0224, 0x0225,
 ];
 const VALUE_RESOLUTION_TAG_BASE: u16 = 0x0300;
-const VALUE_RESOLUTION_TAG_END: u16 = 0x030b;
-const VALUE_RESOLUTION_TAG_COUNT: u16 = 12;
+const VALUE_RESOLUTION_TAG_END: u16 = 0x030c;
+const VALUE_RESOLUTION_TAG_COUNT: u16 = 13;
 const PATTERN_RESOLUTION_TAG_BASE: u16 = 0x0600;
 const PATTERN_RESOLUTION_TAG_END: u16 = 0x0607;
 const PATTERN_RESOLUTION_TAG_COUNT: u16 = 8;
@@ -447,7 +447,8 @@ impl CheckedValueResolution {
             Self::CatalogAsset(_) => VALUE_RESOLUTION_TAG_BASE + 8,
             Self::ImportedProjectEntity(_) => VALUE_RESOLUTION_TAG_BASE + 9,
             Self::EnvironmentCallable(_) => VALUE_RESOLUTION_TAG_BASE + 10,
-            Self::PresentationAddress(_) => VALUE_RESOLUTION_TAG_END,
+            Self::PresentationAddress(_) => VALUE_RESOLUTION_TAG_BASE + 11,
+            Self::RegistryRead(_) => VALUE_RESOLUTION_TAG_END,
         }
     }
 }
@@ -529,7 +530,7 @@ mod tests {
 
         let value = (VALUE_RESOLUTION_TAG_BASE..=VALUE_RESOLUTION_TAG_END).collect::<Vec<_>>();
         assert_eq!(value.len(), usize::from(VALUE_RESOLUTION_TAG_COUNT));
-        assert_eq!(value, (0x0300_u16..=0x030b_u16).collect::<Vec<_>>());
+        assert_eq!(value, (0x0300_u16..=0x030c_u16).collect::<Vec<_>>());
         assert_unique(&value);
         assert_eq!(
             VALUE_RESOLUTION_TAG_END,

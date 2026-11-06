@@ -208,6 +208,7 @@ expression_family_inventory!(ExpressionResolutionFamily for CheckedExpressionRes
 
 expression_family_inventory!(ValueResolutionFamily for CheckedValueResolution, {
     CheckedValueResolution::Local(_) => Local => Accepted,
+    CheckedValueResolution::RegistryRead(_) => RegistryRead => Accepted,
     CheckedValueResolution::LineContext => LineContext => Accepted,
     CheckedValueResolution::CharacterField { .. } => CharacterField => Accepted,
     CheckedValueResolution::ProjectCallable(_) => ProjectCallable => Accepted,
@@ -753,6 +754,16 @@ fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
                 ValueResolutionFamily::Local,
                 ValueResolutionFamily::ProjectCallable,
             ],
+            selects: &[],
+        },
+        ExpressionCorpusRow {
+            name: "optional registry read",
+            exact_path_families: false,
+            source: "flow registry(flag: bool) { let selected = match flag { true => { let read: Option<bool> = 'flow.flags.seen?; 1i64 }, false => 0i64 } }".to_owned(),
+            fixture: ExpressionCorpusFixture::Standard,
+            shapes: &[ExprShapeFamily::LifetimePath],
+            resolutions: &[ExpressionResolutionFamily::Value],
+            values: &[ValueResolutionFamily::RegistryRead],
             selects: &[],
         },
         ExpressionCorpusRow {

@@ -5968,6 +5968,7 @@ fn runtime_value_resolution(
 ) -> Result<Option<RuntimeResolvedValue>, String> {
     Ok(Some(match value {
         CheckedValueResolution::Local(local) => RuntimeResolvedValue::Local(*local),
+        CheckedValueResolution::RegistryRead(read) => RuntimeResolvedValue::RegistryRead(read.clone()),
         CheckedValueResolution::EnvironmentCallable(id) => {
             let value = analysis
                 .external_callable_value_projection(owner)

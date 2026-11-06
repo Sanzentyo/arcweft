@@ -558,6 +558,7 @@ impl CheckedProjectNominal {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedValueResolution {
     Local(LocalId),
+    RegistryRead(CheckedRegistryRead),
     /// Runtime-owned line context available only inside an attached plan.
     LineContext,
     /// Standard Character-owned stage API projected from a typed receiver.
@@ -591,6 +592,7 @@ impl CheckedValueResolution {
                 .then(|| CharacterId::try_new(entity.target().symbol().public_id().as_str()).ok())
                 .flatten(),
             Self::Local(_)
+            | Self::RegistryRead(_)
             | Self::PresentationAddress(_)
             | Self::LineContext
             | Self::CharacterField { .. }
@@ -615,6 +617,7 @@ impl CheckedValueResolution {
                 visitor(&TypeKind::presentation_address_reference(identity.kind()))
             }
             Self::Local(_)
+            | Self::RegistryRead(_)
             | Self::LineContext
             | Self::ProjectCallable(_)
             | Self::EnvironmentCallable(_)
@@ -3050,7 +3053,7 @@ pub use place::CheckedPlace;
 
 #[path = "model/registry.rs"]
 mod registry;
-pub use registry::{CheckedRegistryAddress, CheckedRegistryWrite};
+pub use registry::{CheckedRegistryAddress, CheckedRegistryRead, CheckedRegistryWrite};
 #[path = "model/statement.rs"]
 mod statement;
 pub use statement::{

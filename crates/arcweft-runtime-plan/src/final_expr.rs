@@ -800,6 +800,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                 self.lower_unit_variant(id)?
             }
             HirExprKind::Path(_) => self.lower_resolved_value(id)?,
+            HirExprKind::LifetimePath(_) => self.lower_resolved_value(id)?,
             HirExprKind::ShortVariant(_) => self.lower_unit_variant(id)?,
             HirExprKind::Tuple(tuple) => RuntimeExprSeedKind::Tuple(
                 tuple
@@ -1032,7 +1033,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                     }
                 }
             }
-            HirExprKind::Error(_) | HirExprKind::ForSynthetic(_) | HirExprKind::LifetimePath(_) => {
+            HirExprKind::Error(_) | HirExprKind::ForSynthetic(_) => {
                 return Err(format!(
                     "final-HIR expression family {:?} at {id:?} is not a pure runtime expression",
                     expression.kind()
@@ -2041,6 +2042,10 @@ impl<'hir> FinalExprLowerer<'hir> {
             RuntimeResolvedValue::Local(local) => Ok(RuntimeExprSeedKind::Local(
                 self.checked_local_read(CheckedLocalUseSite::Expression(id), *local)?,
             )),
+            RuntimeResolvedValue::RegistryRead(read) => Ok(RuntimeExprSeedKind::RegistryRead {
+                key: read.key().clone(),
+                kind: read.kind(),
+            }),
             RuntimeResolvedValue::Place(place) => Ok(RuntimeExprSeedKind::Local(
                 self.checked_local_read(CheckedLocalUseSite::Expression(id), place.local())?,
             )),

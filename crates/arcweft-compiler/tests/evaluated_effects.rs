@@ -2996,6 +2996,121 @@ entry cli @entry.main { goto @flow.main }
 }
 
 #[test]
+fn source_optional_registry_reads_the_reached_flow_in_native_and_decoded_awbc() {
+    let compiled = compile_source(
+        r#"
+flow main() -> Unit effects { state.write('flow), log.write } {
+    let missing: Option<bool> = 'flow.flags.seen?
+    if let .None = missing {
+        log.info("absent")
+    }
+    'flow.flags.seen <- true
+    let present: Option<bool> = 'flow.flags.seen?
+    if let .Some(true) = present {
+        log.info("present")
+    }
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    )
+    .expect("typed optional registry reads compile through their checked value facts");
+    assert_simple_flow_logs_native_and_awbc(&compiled, &["absent", "present"]);
+}
+
+#[test]
+fn source_optional_registry_reads_reach_the_line_and_parent_flow() {
+    use arcweft_core::awbc::{
+        codec::AwbcDecodeBudget,
+        schema::{AwbcEntryId, AwbcProgram},
+    };
+    use arcweft_core::effect::RuntimeArtifactFingerprint;
+    use arcweft_core::executor::ArcweftRuntimeExecutor;
+    use arcweft_core::pure::VmRuntimePureCallBackend;
+
+    let compiled = compile_attached_dialogue_project(
+        r#"
+pub character alice { display = "Alice" }
+flow main() -> Unit effects { state.write('flow), state.write('line), log.write } {
+    let result = alice()[本文。[mark @.release][p]] with {
+        init {
+            let absent: Option<String> = 'line.saved?
+            if let .None = absent { log.info("line absent") }
+            'line.saved <- "line value"
+            'flow.saved <- "parent value"
+        }
+        on mark(@.release) {
+            log.info("mark-handler-enter")
+            let parent: Option<String> = 'flow.saved?
+            if let .Some(message) = parent { log.info(message) }
+            let local: Option<String> = 'line.saved?
+            if let .Some(message) = local {
+                out message
+            } else {
+                out "unexpected absence"
+            }
+        }
+    }
+    log.info(result)
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    )
+    .expect("authored optional reads in the line plan compile");
+    let runtime = compiled.runtime_plan();
+    let program = AwbcLowerer::new(
+        &runtime.plan,
+        &runtime.dialogue_content_catalog,
+        "registry.arcw",
+    )
+    .lower()
+    .unwrap()
+    .program;
+    let bytes = program.encode_canonical().unwrap();
+    let decoded = AwbcProgram::decode_canonical(&bytes, AwbcDecodeBudget::default()).unwrap();
+    let [flow] = runtime.plan.flows() else {
+        panic!("one Flow");
+    };
+    let mut plan = runtime.plan.clone();
+    plan.bind_artifact(
+        RuntimeArtifactFingerprint::try_from_bytes(*blake3::hash(&bytes).as_bytes()).unwrap(),
+    )
+    .unwrap();
+    let mut native = arcweft_core::engine::Engine::for_flow(plan, &flow.id).unwrap();
+    let native_schema = bind_test_character_dialogue_schema(
+        &compiled,
+        arcweft_core::task::RuntimeProgramOwner::Plan(native.program_plan()),
+    );
+    let mut native_backend = VmRuntimePureCallBackend::default().with_external_calls(
+        arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&native_schema),
+    );
+    let mut awbc = ArcweftRuntimeExecutor::from_awbc_product(decoded, AwbcEntryId(0)).unwrap();
+    let awbc_schema = bind_test_character_dialogue_schema(&compiled, awbc.program_owner());
+    let mut awbc_backend = VmRuntimePureCallBackend::default().with_external_calls(
+        arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&awbc_schema),
+    );
+    let expected = [
+        "line absent",
+        "mark-handler-enter",
+        "parent value",
+        "line value",
+    ];
+    let (logs, completed) = execute_dialogue_result_with_mark(
+        |input, options| native.step_with_pure_backend(input, options, &mut native_backend),
+        true,
+        "native optional registry",
+    );
+    assert!(completed);
+    assert_eq!(logs, expected);
+    let (logs, completed) = execute_dialogue_result_with_mark(
+        |input, options| awbc.step_with_pure_backend(input, options, &mut awbc_backend),
+        true,
+        "decoded AWBC optional registry",
+    );
+    assert!(completed);
+    assert_eq!(logs, expected);
+}
+
+#[test]
 fn project_function_effect_tails_have_one_closed_operation() {
     for tail in ["log.info(message)", "message |> log.info(^)"] {
         let compiled = compile_source(&format!(
