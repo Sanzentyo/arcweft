@@ -17973,5 +17973,234 @@
         }
       ]
     }
+  },
+  "deferBeforeUnwindReadBaseline": {
+    "source": "f3626f1a2ffc608dced6ac28916ab2b89134b0e5",
+    "command": [
+      "arcw",
+      "check",
+      "--manifest-path",
+      "<case>/arcw.toml",
+      "--json"
+    ],
+    "line": {
+      "version": 1,
+      "source": "f3626f1a2ffc608dced6ac28916ab2b89134b0e5",
+      "executable": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+      "executableSha256": "10b463cd01187d2c96a674ba8d5e291eaf86914b7e0678da352d17409f6d1d12",
+      "cases": [
+        {
+          "case": "no_defer",
+          "exitCode": 0,
+          "stage": null,
+          "status": "ok",
+          "diagnostics": [
+            null
+          ],
+          "stderr": null,
+          "sourceSha256": "a43cf7a4e698b6681fe4fc440ef5c2218c58db4d82ba00bf597f0ac370e67f46"
+        },
+        {
+          "case": "log_on_exit",
+          "exitCode": 0,
+          "stage": null,
+          "status": "ok",
+          "diagnostics": [
+            null
+          ],
+          "stderr": null,
+          "sourceSha256": "c13e2eff76c99478de5392e3937fa77b0150e4356f9e208a848ad187a2cbbb2e"
+        },
+        {
+          "case": "write_on_exit",
+          "exitCode": 1,
+          "stage": null,
+          "status": null,
+          "diagnostics": [
+            null
+          ],
+          "stderr": "error[sema.final_analysis]: lifetime registry read ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 34, kind: Expr }) requires a registration of the expected type on every reaching path for LifetimeRegistryKey { scope: Line, segments: [DeclarationName(\"flag\")] }\r\n",
+          "sourceSha256": "a371b1d63cc6b95558e76749144a1bdf43826ed68a144efa109cb0b8631a7278"
+        }
+      ]
+    },
+    "flow": {
+      "version": 1,
+      "source": "f3626f1a2ffc608dced6ac28916ab2b89134b0e5",
+      "executable": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+      "executableSha256": "10b463cd01187d2c96a674ba8d5e291eaf86914b7e0678da352d17409f6d1d12",
+      "cases": [
+        {
+          "case": "no_defer",
+          "exitCode": 0,
+          "stage": null,
+          "status": "ok",
+          "diagnostics": [
+            null
+          ],
+          "stderr": null,
+          "sourceSha256": "653b8d87a4372e7520b1af4f07eee8e694ca1e5e9520d3283bc81f0f5f07af0f"
+        },
+        {
+          "case": "log_on_exit",
+          "exitCode": 1,
+          "stage": null,
+          "status": null,
+          "diagnostics": [
+            null
+          ],
+          "stderr": "error[compiler.runtime_plan_lower]: defer StmtId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 17, kind: Stmt }) requires scope-owned runtime registration\r\n",
+          "sourceSha256": "bad014b630135525383871b3195ab48ded042227c87a00da22d6c159580922b6"
+        },
+        {
+          "case": "write_on_exit",
+          "exitCode": 1,
+          "stage": null,
+          "status": null,
+          "diagnostics": [
+            null
+          ],
+          "stderr": "error[sema.final_analysis]: lifetime registry read ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 28, kind: Expr }) requires a registration of the expected type on every reaching path for LifetimeRegistryKey { scope: Flow, segments: [DeclarationName(\"flag\")] }\r\n",
+          "sourceSha256": "a82b1914af62182b892e286661daefd96e1b7d592f42aa406c5dc85f58fcd53b"
+        }
+      ]
+    },
+    "boundary": "A Line already contains the required typed key. A deferred write to that same key prevents a read before cleanup, although the write is only registered. The log-only Line defer control succeeds. For Flow, the corresponding log-only control passes semantics and stops later at scope-owned runtime registration.",
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-defer-read-before-unwind.raw.zip",
+      "sha256": "50fcbee311bfcb57f44a176946f6a7d27bb0b03886b83186c7460a92a3ee0eb2",
+      "entries": [
+        {
+          "entry": "registry-defer-read-cli-20261107-valid.receipt.json",
+          "bytes": 1559,
+          "sha256": "f7266d8fce82487fbb2763822e43581b46bda1a6f54e038cd39379815bb0b612"
+        },
+        {
+          "entry": "registry-defer-read-cli-20261107-valid-no_defer/src/main.arcw",
+          "bytes": 224,
+          "sha256": "653b8d87a4372e7520b1af4f07eee8e694ca1e5e9520d3283bc81f0f5f07af0f"
+        },
+        {
+          "entry": "registry-defer-read-cli-20261107-valid-no_defer/arcw.toml",
+          "bytes": 212,
+          "sha256": "e171ed71b32873e4f902f26561b27f7e8a4076acef9e22a3edd7a40dc1c822e3"
+        },
+        {
+          "entry": "registry-defer-read-cli-20261107-valid-no_defer.json",
+          "bytes": 1076,
+          "sha256": "f80c6730fbc99dd0b5b018049c53593fbafd22fadd051705f09a8b4cd8e07f72"
+        },
+        {
+          "entry": "registry-defer-read-cli-20261107-valid-no_defer.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "registry-defer-read-cli-20261107-valid-log_on_exit/src/main.arcw",
+          "bytes": 253,
+          "sha256": "bad014b630135525383871b3195ab48ded042227c87a00da22d6c159580922b6"
+        },
+        {
+          "entry": "registry-defer-read-cli-20261107-valid-log_on_exit/arcw.toml",
+          "bytes": 212,
+          "sha256": "e171ed71b32873e4f902f26561b27f7e8a4076acef9e22a3edd7a40dc1c822e3"
+        },
+        {
+          "entry": "registry-defer-read-cli-20261107-valid-log_on_exit.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "registry-defer-read-cli-20261107-valid-log_on_exit.stderr.log",
+          "bytes": 188,
+          "sha256": "c72fb62b6f31750cb1b1bbccb1d513002d57bcbae1f9d44d959158fd6a231ec6"
+        },
+        {
+          "entry": "registry-defer-read-cli-20261107-valid-write_on_exit/src/main.arcw",
+          "bytes": 274,
+          "sha256": "a82b1914af62182b892e286661daefd96e1b7d592f42aa406c5dc85f58fcd53b"
+        },
+        {
+          "entry": "registry-defer-read-cli-20261107-valid-write_on_exit/arcw.toml",
+          "bytes": 212,
+          "sha256": "e171ed71b32873e4f902f26561b27f7e8a4076acef9e22a3edd7a40dc1c822e3"
+        },
+        {
+          "entry": "registry-defer-read-cli-20261107-valid-write_on_exit.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "registry-defer-read-cli-20261107-valid-write_on_exit.stderr.log",
+          "bytes": 300,
+          "sha256": "0ac72919504f8f5cdc14104181814c47a86c598772cee2df8aa7eb2f44044a92"
+        },
+        {
+          "entry": "registry-defer-read-cli-20261107-line.receipt.json",
+          "bytes": 1371,
+          "sha256": "03e7cdaa7e5d0d219bd16557eb0c311f25a032bb520924fb7028ef31f56bd066"
+        },
+        {
+          "entry": "registry-defer-read-cli-20261107-line-no_defer/src/main.arcw",
+          "bytes": 314,
+          "sha256": "a43cf7a4e698b6681fe4fc440ef5c2218c58db4d82ba00bf597f0ac370e67f46"
+        },
+        {
+          "entry": "registry-defer-read-cli-20261107-line-no_defer/arcw.toml",
+          "bytes": 212,
+          "sha256": "e171ed71b32873e4f902f26561b27f7e8a4076acef9e22a3edd7a40dc1c822e3"
+        },
+        {
+          "entry": "registry-defer-read-cli-20261107-line-no_defer.json",
+          "bytes": 1073,
+          "sha256": "cc2cb0c5784c7b580a740795ccdcb2dbb0a28fee7509d5a44aef22d3192c56c1"
+        },
+        {
+          "entry": "registry-defer-read-cli-20261107-line-no_defer.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "registry-defer-read-cli-20261107-line-log_on_exit/src/main.arcw",
+          "bytes": 343,
+          "sha256": "c13e2eff76c99478de5392e3937fa77b0150e4356f9e208a848ad187a2cbbb2e"
+        },
+        {
+          "entry": "registry-defer-read-cli-20261107-line-log_on_exit/arcw.toml",
+          "bytes": 212,
+          "sha256": "e171ed71b32873e4f902f26561b27f7e8a4076acef9e22a3edd7a40dc1c822e3"
+        },
+        {
+          "entry": "registry-defer-read-cli-20261107-line-log_on_exit.json",
+          "bytes": 1082,
+          "sha256": "565504b6a75cad78c5348e35dee59c5435b3818b793f8ed9a17344e8748497f7"
+        },
+        {
+          "entry": "registry-defer-read-cli-20261107-line-log_on_exit.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "registry-defer-read-cli-20261107-line-write_on_exit/src/main.arcw",
+          "bytes": 364,
+          "sha256": "a371b1d63cc6b95558e76749144a1bdf43826ed68a144efa109cb0b8631a7278"
+        },
+        {
+          "entry": "registry-defer-read-cli-20261107-line-write_on_exit/arcw.toml",
+          "bytes": 212,
+          "sha256": "e171ed71b32873e4f902f26561b27f7e8a4076acef9e22a3edd7a40dc1c822e3"
+        },
+        {
+          "entry": "registry-defer-read-cli-20261107-line-write_on_exit.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "registry-defer-read-cli-20261107-line-write_on_exit.stderr.log",
+          "bytes": 300,
+          "sha256": "7e2312de3d1f835d8dd2aed9b5b92b2353c1771a1af900df1262fc62b3d7bd2c"
+        }
+      ]
+    }
   }
 }

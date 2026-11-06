@@ -15113,3 +15113,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Registry replacement reverse validation on Windows
 
 - Source f3626f1a2ffc608dced6ac28916ab2b89134b0e5。CLI のライブラリ・バイナリ196件と指定の統合29件が通過した。一括非CLIビルドは Windows のページファイル不足（OS エラー1455）で依存アーカイブのマッピングに失敗し、同じログに rustc の内部エラーも記録された。非CLIテストは実行に達しなかった。Cargo で照合した22パッケージ114ターゲットのうち、実行済み12ターゲットを再利用し、残り102ターゲットを最大3件ずつ45組に分割した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Registry read before a deferred write
+
+- Source f3626f1a2ffc608dced6ac28916ab2b89134b0e5 の実CLIで、登録済みの Line 値を終了前に読み取る入力は通過した。ログだけの defer を挟んでも通過した。同じキーへの書込みを defer に登録すると、その後の読取りが型検査で拒否された。Flow でも書込みを登録した入力は型検査で拒否され、ログだけの defer は型検査を通過して RuntimePlan のスコープ所有登録で停止した。[正負の入力・CLI原本](acceptance-evidence/task-flow-registry-execution.json)。
