@@ -18,6 +18,7 @@ use arcweft_dialogue::{
     CharacterDialoguePolicyTypeGraph, CharacterDialoguePolicyTypeSchema,
     CharacterDialoguePolicyVariantOwner,
 };
+use arcweft_id::{LifetimeRegistryKey, LifetimeScopeKind};
 use arcweft_lang_hir::{
     body_edges::{HirBodyChild, HirBodyProjection},
     expr::{HirBinaryOp, HirExprKind, HirExpressionOwnedBodyRole, HirExpressionOwnedChild},
@@ -29,9 +30,9 @@ use arcweft_lang_hir::{
     },
     project::{
         AcceptedHirProjectGeneration, HirAnalysisProjectView, HirBindingSite,
-        HirDeclarationAttachedContentRootChild, HirDeclarationBodyTopology,
-        HirDeclarationEvaluationPhase, HirDeclarationParameterRootChild, HirExpressionBindingRole,
-        HirSemanticPathOwnerId,
+        HirDeclarationAttachedContentRootChild, HirDeclarationBodyRootRole,
+        HirDeclarationBodyTopology, HirDeclarationEvaluationPhase,
+        HirDeclarationParameterRootChild, HirExpressionBindingRole, HirSemanticPathOwnerId,
     },
     stmt::{
         HirConditionalElseBranch, HirContextualStmtBody, HirStmtEvaluationPlan,
@@ -56,7 +57,7 @@ use crate::types::{SemanticTypeDigest, TypeInstantiationError, TypeKind, Variant
 use super::{
     CheckedExpressionResolution, CheckedImplicitCallableIdentity, CheckedLocalUseSite,
     CheckedPipeBindingIdentity, CheckedPlace, CheckedRecordValueSource, CheckedSelectResolution,
-    CheckedValueResolution, FinalSemanticAnalysis,
+    CheckedTypeSelection, CheckedValueResolution, FinalSemanticAnalysis,
 };
 
 mod access;
@@ -280,7 +281,14 @@ pub enum CheckedLocalUseError {
     )]
     RegistryRegistrationUnavailable {
         expression: ExprId,
-        key: Arc<arcweft_id::LifetimeRegistryKey>,
+        key: Arc<LifetimeRegistryKey>,
+    },
+    #[error(
+        "optional lifetime registry read {expression:?} requires absence or a registration of the inferred type on every reaching path for {key:?}"
+    )]
+    RegistryItemTypeUnavailable {
+        expression: ExprId,
+        key: Arc<LifetimeRegistryKey>,
     },
     #[error("synthetic value {owner:?} is unavailable at expression {expression:?}")]
     SyntheticUnavailable {
@@ -601,7 +609,7 @@ impl CheckedLocalUseCatalog {
             selected_borrowed_receivers(analysis, analysis.calls().map(|(owner, _)| owner))?;
         let registry_proofs = analysis
             .expressions()
-            .any(|(_, expression)| required_registry_read(expression).is_some());
+            .any(|(_, expression)| registry_read_requiring_proof(expression).is_some());
         for topology in analysis.hir_topology().modules() {
             let module = project
                 .modules()
@@ -738,7 +746,7 @@ impl CheckedLocalUseCatalog {
         let registry_proofs = scope.expression_owners().any(|owner| {
             analysis
                 .expression(owner)
-                .and_then(required_registry_read)
+                .and_then(registry_read_requiring_proof)
                 .is_some()
         });
         let mut checker = LocalUseChecker::new(
@@ -783,7 +791,7 @@ impl CheckedLocalUseCatalog {
     }
 }
 
-fn required_registry_read(
+fn registry_read_requiring_proof(
     expression: &super::CheckedExpression,
 ) -> Option<&super::CheckedRegistryRead> {
     let CheckedExpressionResolution::Value(CheckedValueResolution::RegistryRead(read)) =
@@ -791,7 +799,26 @@ fn required_registry_read(
     else {
         return None;
     };
-    (read.kind() == RuntimeRegistryReadKind::Required).then_some(read)
+    (read.kind() == RuntimeRegistryReadKind::Required
+        || expression.type_selection() == Some(CheckedTypeSelection::Inferred))
+    .then_some(read)
+}
+
+impl CheckedLocalUseError {
+    fn registry_read(
+        expression: ExprId,
+        key: Arc<LifetimeRegistryKey>,
+        kind: RuntimeRegistryReadKind,
+    ) -> Self {
+        match kind {
+            RuntimeRegistryReadKind::Required => {
+                Self::RegistryRegistrationUnavailable { expression, key }
+            }
+            RuntimeRegistryReadKind::Optional => {
+                Self::RegistryItemTypeUnavailable { expression, key }
+            }
+        }
+    }
 }
 
 struct LocalUseChecker<'a> {
@@ -893,11 +920,8 @@ impl<'a> LocalUseChecker<'a> {
             let mut rejected = None;
             for violation in solution.violations {
                 match violation {
-                    Violation::RequiredRegistryRead { owner, key } => {
-                        return Err(CheckedLocalUseError::RegistryRegistrationUnavailable {
-                            expression: owner,
-                            key,
-                        });
+                    Violation::RegistryRead { owner, key, kind } => {
+                        return Err(CheckedLocalUseError::registry_read(owner, key, kind));
                     }
                     Violation::Local {
                         local,
@@ -980,15 +1004,16 @@ impl<'a> LocalUseChecker<'a> {
         if !self.registry_proofs {
             return Ok(());
         }
-        let visited = self.flow.required_registry_reads();
+        let visited = self.flow.registry_reads();
         for (owner, expression) in expressions {
-            if let Some(read) = required_registry_read(expression)
+            if let Some(read) = registry_read_requiring_proof(expression)
                 && !visited.contains(&owner)
             {
-                return Err(CheckedLocalUseError::RegistryRegistrationUnavailable {
-                    expression: owner,
-                    key: read.shared_key(),
-                });
+                return Err(CheckedLocalUseError::registry_read(
+                    owner,
+                    read.shared_key(),
+                    read.kind(),
+                ));
             }
         }
         Ok(())
@@ -1750,6 +1775,15 @@ impl<'a> LocalUseChecker<'a> {
         body: &HirDeclarationBodyTopology,
     ) -> Result<(), CheckedLocalUseError> {
         let mut state = self.flow.entry();
+        if self.registry_proofs
+            && body
+                .roots()
+                .iter()
+                .any(|root| root.role() == HirDeclarationBodyRootRole::FlowBody)
+        {
+            self.flow
+                .append(&mut state, Event::EnterRegistry(LifetimeScopeKind::Flow));
+        }
         for phase in body.phases() {
             match phase {
                 HirDeclarationEvaluationPhase::Parameter(root) => {
@@ -2264,7 +2298,7 @@ impl<'a> LocalUseChecker<'a> {
                     .analysis
                     .expression(owner)
                     .ok_or(CheckedLocalUseError::InvalidTopology)?;
-                if let Some(read) = required_registry_read(checked) {
+                if let Some(read) = registry_read_requiring_proof(checked) {
                     // A sibling callback may replace this shared row between
                     // operations. A callback-local write cannot certify its type.
                     if self.registry_may_interleave {
@@ -2273,12 +2307,18 @@ impl<'a> LocalUseChecker<'a> {
                     let ty = checked
                         .source_value_type()
                         .ok_or(CheckedLocalUseError::InvalidTopology)?;
+                    let item = match (read.kind(), ty) {
+                        (RuntimeRegistryReadKind::Required, item) => item,
+                        (RuntimeRegistryReadKind::Optional, TypeKind::Option(item)) => item,
+                        _ => return Err(CheckedLocalUseError::InvalidTopology),
+                    };
                     self.flow.append(
                         state,
-                        Event::RequiredRegistryRead {
+                        Event::RegistryRead {
                             owner,
                             key: read.shared_key(),
-                            ty: Arc::new(self.closed_type(ty)?),
+                            ty: Arc::new(self.closed_type(item)?),
+                            kind: read.kind(),
                         },
                     );
                 }
@@ -2818,7 +2858,8 @@ impl<'a> LocalUseChecker<'a> {
                 Some(CheckedExpressionResolution::DialogueApplication { .. })
             )
         ) {
-            self.flow.append(state, Event::EnterLineRegistry);
+            self.flow
+                .append(state, Event::EnterRegistry(LifetimeScopeKind::Line));
             let exit = self.flow.detached();
             self.outputs.push((owner, exit));
             for edge in expression

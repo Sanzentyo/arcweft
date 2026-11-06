@@ -10,11 +10,15 @@ use super::{
 use crate::final_analysis::completion::NormalContinuation;
 use crate::record_field::CheckedRecordFieldSemanticId;
 use crate::types::TypeKind;
+use arcweft_core::effect::RuntimeRegistryReadKind;
 use arcweft_id::{EffectId, LifetimeRegistryKey, LifetimeScopeKind};
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     sync::Arc,
 };
+
+mod registry;
+use registry::RegistryFacts;
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct MovePath {
@@ -113,14 +117,15 @@ pub(super) enum Event {
         key: Arc<LifetimeRegistryKey>,
         ty: Arc<TypeKind>,
     },
-    RequiredRegistryRead {
+    RegistryRead {
         owner: ExprId,
         key: Arc<LifetimeRegistryKey>,
         ty: Arc<TypeKind>,
+        kind: RuntimeRegistryReadKind,
     },
     ForgetRegistryWrites(Box<[EffectId]>),
     DeferredRegistryWrites(Box<[EffectId]>),
-    EnterLineRegistry,
+    EnterRegistry(LifetimeScopeKind),
     RegistryBoundary,
 }
 
@@ -178,9 +183,7 @@ impl Default for LocalInitialization {
 struct Initialization {
     locals: BTreeMap<MovePath, LocalInitialization>,
     synthetic: BTreeMap<CheckedSyntheticUseOwner, BTreeSet<ExprId>>,
-    // A row is present only if all incoming paths have registered its type.
-    registry: BTreeMap<Arc<LifetimeRegistryKey>, Arc<TypeKind>>,
-    deferred_registry_keys: BTreeSet<Arc<LifetimeRegistryKey>>,
+    registry: RegistryFacts,
 }
 
 impl Initialization {
@@ -236,32 +239,20 @@ impl Initialization {
                 self.synthetic.remove(owner);
             }
             Event::RegistryWrite { key, ty } => {
-                if registry_keys.contains_key(key) && !self.deferred_registry_keys.contains(key) {
-                    self.registry.insert(Arc::clone(key), Arc::clone(ty));
+                if registry_keys.contains_key(key) {
+                    self.registry.register(key, ty);
                 }
             }
             Event::ForgetRegistryWrites(effects) | Event::DeferredRegistryWrites(effects) => {
-                self.registry.retain(|key, _| {
-                    !effects
-                        .iter()
-                        .any(|effect| effect.covers(&registry_keys[key.as_ref()]))
-                });
-                if matches!(event, Event::DeferredRegistryWrites(_)) {
-                    self.deferred_registry_keys.extend(
-                        registry_keys
-                            .iter()
-                            .filter(|(_, required)| {
-                                effects.iter().any(|effect| effect.covers(required))
-                            })
-                            .map(|(key, _)| Arc::clone(key)),
-                    );
-                }
+                self.registry.invalidate_writes(
+                    effects,
+                    matches!(event, Event::DeferredRegistryWrites(_)),
+                    registry_keys,
+                );
             }
-            Event::EnterLineRegistry => self
-                .registry
-                .retain(|key, _| key.scope() != &LifetimeScopeKind::Line),
-            Event::RegistryBoundary => self.registry.clear(),
-            Event::Join | Event::RequiredRegistryRead { .. } => {}
+            Event::EnterRegistry(scope) => self.registry.enter(scope),
+            Event::RegistryBoundary => self.registry.forget(),
+            Event::Join | Event::RegistryRead { .. } => {}
         }
 
         Ok(())
@@ -285,18 +276,16 @@ impl Initialization {
         for (owner, sites) in &other.synthetic {
             self.synthetic.entry(*owner).or_default().extend(sites);
         }
-        self.registry
-            .retain(|key, ty| other.registry.get(key) == Some(ty));
-        self.deferred_registry_keys
-            .extend(other.deferred_registry_keys.iter().cloned());
+        self.registry.join(&other.registry);
         *self != before
     }
 }
 
 pub(super) enum Violation {
-    RequiredRegistryRead {
+    RegistryRead {
         owner: ExprId,
         key: Arc<LifetimeRegistryKey>,
+        kind: RuntimeRegistryReadKind,
     },
     Local {
         local: LocalId,
@@ -322,11 +311,11 @@ impl OwnershipFlow {
         state
     }
 
-    pub(super) fn required_registry_reads(&self) -> BTreeSet<ExprId> {
+    pub(super) fn registry_reads(&self) -> BTreeSet<ExprId> {
         self.nodes
             .iter()
             .filter_map(|node| {
-                if let Event::RequiredRegistryRead { owner, .. } = node.event {
+                if let Event::RegistryRead { owner, .. } = node.event {
                     Some(owner)
                 } else {
                     None
@@ -377,7 +366,7 @@ impl OwnershipFlow {
             .nodes
             .iter()
             .filter_map(|node| {
-                let Event::RequiredRegistryRead { key, .. } = &node.event else {
+                let Event::RegistryRead { key, .. } = &node.event else {
                     return None;
                 };
                 Some((Arc::clone(key), EffectId::state_write(key)))
@@ -424,11 +413,17 @@ impl OwnershipFlow {
                 continue;
             };
             match &node.event {
-                Event::RequiredRegistryRead { owner, key, ty } => {
-                    if state.registry.get(key) != Some(ty) {
-                        violations.push(Violation::RequiredRegistryRead {
+                Event::RegistryRead {
+                    owner,
+                    key,
+                    ty,
+                    kind,
+                } => {
+                    if !state.registry.admits(key, *kind, ty) {
+                        violations.push(Violation::RegistryRead {
                             owner: *owner,
                             key: Arc::clone(key),
+                            kind: *kind,
                         });
                     }
                 }

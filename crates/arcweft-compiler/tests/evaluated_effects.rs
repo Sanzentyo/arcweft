@@ -3018,6 +3018,29 @@ entry cli @entry.main { goto @flow.main }
 }
 
 #[test]
+fn source_inferred_optional_registry_read_admits_absence_and_registration() {
+    for (register, pattern, expected) in [
+        (true, ".Some(true)", "present"),
+        (false, ".None", "branch absent"),
+    ] {
+        let compiled = compile_source(&format!(
+            r#"
+flow main() -> Unit effects {{ state.write('flow), log.write }} {{
+    if {register} {{ 'flow.flags.seen <- true }}
+    let observed = 'flow.flags.seen?
+    if let {pattern} = observed {{
+        log.info("{expected}")
+    }}
+}}
+entry cli @entry.main {{ goto @flow.main }}
+"#,
+        ))
+        .expect("the conditional writer fixes the optional registry item type");
+        assert_simple_flow_logs_native_and_awbc(&compiled, &[expected]);
+    }
+}
+
+#[test]
 fn source_required_registry_reads_use_reaching_branches_in_native_and_decoded_awbc() {
     for (flag, binding, expected) in [
         (true, "present: String", "then"),
@@ -3067,7 +3090,10 @@ flow main() -> Unit effects { state.write('flow), state.write('line), log.write 
             if let .None = absent { log.info("line absent") }
             'line.saved <- "line value"
             let present = 'line.saved
-            log.info(present)
+            let maybe_present = 'line.saved?
+            if let .Some(value) = maybe_present {
+                if value == present { log.info(present) }
+            }
             'flow.saved <- "parent value"
         }
         on mark(@.release) {

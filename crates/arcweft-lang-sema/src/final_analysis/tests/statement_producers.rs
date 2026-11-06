@@ -948,6 +948,32 @@ fn inferred_registry_read_excludes_same_key_from_another_flow() {
 }
 
 #[test]
+fn inferred_optional_registry_read_requires_item_type_after_a_write_effect() {
+    let world = fixture(
+        "fn replace_flag() -> Unit effects { state.write('flow.flag) } {
+             'flow.flag <- 1i64;
+             return ()
+         }
+         flow main() -> Unit effects { state.write('flow) } {
+             'flow.flag <- true;
+             replace_flag();
+             let value = 'flow.flag?
+         }",
+        None,
+    );
+    let result = super::analyze(&world);
+    assert!(
+        matches!(
+            result,
+            Err(FinalSemanticAnalysisError::LocalUse(
+                crate::final_analysis::CheckedLocalUseError::RegistryItemTypeUnavailable { .. }
+            ))
+        ),
+        "{result:?}",
+    );
+}
+
+#[test]
 fn registry_write_retains_a_core_facing_static_key_with_unicode_components() {
     let world = fixture(
         "flow registry effects { state.write('flow) } { 'flow.旗.既読 <- true }",

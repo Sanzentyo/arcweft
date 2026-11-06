@@ -5242,7 +5242,8 @@ impl Analyzer<'_, '_, '_> {
                 else {
                     return Err(AnalyzerExpressionError::rejected(owner).into());
                 };
-                if path.optional() && !matches!(expected, Some(TypeKind::Option(_))) {
+                if path.optional() && expected.is_some_and(|ty| !matches!(ty, TypeKind::Option(_)))
+                {
                     return Err(AnalyzerExpressionError::rejected(owner).into());
                 }
                 let (read, location, activation) =
@@ -5252,9 +5253,14 @@ impl Analyzer<'_, '_, '_> {
                     Some(ty) => (ty.clone(), CheckedTypeSelection::Expected),
                     None => {
                         let ty = self
-                            .infer_required_registry_item(module, location, activation, read.key())?
+                            .infer_registry_item(module, location, activation, read.key())?
                             .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                        (ty.clone(), CheckedTypeSelection::Inferred)
+                        let ty = if path.optional() {
+                            TypeKind::Option(Box::new(ty.clone()))
+                        } else {
+                            ty.clone()
+                        };
+                        (ty, CheckedTypeSelection::Inferred)
                     }
                 };
                 Ok(CheckedExpression::value(
@@ -5274,7 +5280,7 @@ impl Analyzer<'_, '_, '_> {
         .map(Some)
     }
 
-    fn infer_required_registry_item(
+    fn infer_registry_item(
         &self,
         module: &HirModule,
         location: HirSemanticPathLocation<'_>,
@@ -5295,8 +5301,8 @@ impl Analyzer<'_, '_, '_> {
             })?;
         let mut inferred = None;
         // Use original checked write operands in this lexical activation. A
-        // type witness is provisional until the ownership CFG proves presence
-        // and the exact item type on every reaching execution path.
+        // type witness is provisional until the ownership CFG verifies the
+        // read's presence and item-type requirements on every reaching path.
         for target in paths.expression_owners() {
             self.control
                 .check()
