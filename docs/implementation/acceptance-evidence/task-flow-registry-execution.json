@@ -20609,5 +20609,284 @@
         }
       ]
     }
+  },
+  "scopedDeferReverseAfterCleanCheckpoint": {
+    "source": "3b7a98a0f3983c8d45148ac4e401e29a136e082b",
+    "sourceInputs": 3638,
+    "sourceDrift": [],
+    "batches": [
+      {
+        "version": 1,
+        "source": "3b7a98a0f3983c8d45148ac4e401e29a136e082b",
+        "batch": "facade",
+        "package": "arcweft",
+        "targets": [
+          "lib:arcweft"
+        ],
+        "command": [
+          "cargo",
+          "nextest",
+          "run",
+          "--locked",
+          "-p",
+          "arcweft",
+          "--lib",
+          "--no-tests",
+          "pass",
+          "--no-fail-fast",
+          "--status-level",
+          "all",
+          "--final-status-level",
+          "all"
+        ],
+        "exitCode": 0,
+        "summary": [
+          "Summary [   0.000s] 0 tests run: 0 passed, 0 skipped"
+        ],
+        "pagefileFailure": false,
+        "diskFailure": false,
+        "split": false,
+        "startedAt": "2026-11-06T22:52:35.9510563Z",
+        "finishedAt": "2026-11-06T22:54:49.0427607Z",
+        "log": "scoped-defer-frontier-20261107.partition.facade.log",
+        "logSha256": "03f56fbbbcfcf7eebeada3b86c64762bc672ec08597c649c2d5d2c19b8ba9c4a"
+      },
+      {
+        "version": 1,
+        "source": "3b7a98a0f3983c8d45148ac4e401e29a136e082b",
+        "batch": "23",
+        "package": "arcweft-cli",
+        "targets": [
+          "test:environment_callable_tensor",
+          "test:native_host_contracts",
+          "test:native_style_parity_sample"
+        ],
+        "command": [
+          "cargo",
+          "nextest",
+          "run",
+          "--locked",
+          "-p",
+          "arcweft-cli",
+          "--test",
+          "environment_callable_tensor",
+          "--test",
+          "native_host_contracts",
+          "--test",
+          "native_style_parity_sample",
+          "--no-tests",
+          "pass",
+          "--no-fail-fast",
+          "--status-level",
+          "all",
+          "--final-status-level",
+          "all"
+        ],
+        "exitCode": 0,
+        "summary": [
+          "Summary [   3.215s] 10 tests run: 10 passed, 0 skipped"
+        ],
+        "pagefileFailure": false,
+        "diskFailure": false,
+        "split": false,
+        "startedAt": "2026-11-06T22:54:49.0900546Z",
+        "finishedAt": "2026-11-06T23:01:30.0229095Z",
+        "log": "scoped-defer-frontier-20261107.partition.23.log",
+        "logSha256": "2cbdf90e0304fd547933d4e5e9c13b6fba03ab48058c0754fe59d81616fe60ff"
+      },
+      {
+        "version": 1,
+        "source": "3b7a98a0f3983c8d45148ac4e401e29a136e082b",
+        "batch": "24",
+        "package": "arcweft-cli",
+        "targets": [
+          "test:release_trust_json",
+          "test:runtime_native_options",
+          "test:seq04_8_4_persistent_cache_build_cli_goldens"
+        ],
+        "command": [
+          "cargo",
+          "nextest",
+          "run",
+          "--locked",
+          "-p",
+          "arcweft-cli",
+          "--test",
+          "release_trust_json",
+          "--test",
+          "runtime_native_options",
+          "--test",
+          "seq04_8_4_persistent_cache_build_cli_goldens",
+          "--no-tests",
+          "pass",
+          "--no-fail-fast",
+          "--status-level",
+          "all",
+          "--final-status-level",
+          "all"
+        ],
+        "exitCode": 0,
+        "summary": [
+          "Summary [   0.758s] 10 tests run: 10 passed, 0 skipped"
+        ],
+        "pagefileFailure": false,
+        "diskFailure": false,
+        "split": false,
+        "startedAt": "2026-11-06T23:01:30.0351352Z",
+        "finishedAt": "2026-11-06T23:01:43.3284412Z",
+        "log": "scoped-defer-frontier-20261107.partition.24.log",
+        "logSha256": "bd7aba29c1824f0423c72feabcab0a2ef3dce2417f5f211f84344143e6e96f6d"
+      },
+      {
+        "version": 1,
+        "source": "3b7a98a0f3983c8d45148ac4e401e29a136e082b",
+        "batch": "25",
+        "package": "arcweft-compiler",
+        "targets": [
+          "test:action_channel",
+          "test:agent_enum_execution",
+          "test:agent_project_summary"
+        ],
+        "command": [
+          "cargo",
+          "nextest",
+          "run",
+          "--locked",
+          "-p",
+          "arcweft-compiler",
+          "--test",
+          "action_channel",
+          "--test",
+          "agent_enum_execution",
+          "--test",
+          "agent_project_summary",
+          "--no-tests",
+          "pass",
+          "--no-fail-fast",
+          "--status-level",
+          "all",
+          "--final-status-level",
+          "all"
+        ],
+        "exitCode": 0,
+        "summary": [
+          "Summary [   0.941s] 16 tests run: 16 passed, 0 skipped"
+        ],
+        "pagefileFailure": false,
+        "diskFailure": false,
+        "split": false,
+        "startedAt": "2026-11-06T23:01:43.340158Z",
+        "finishedAt": "2026-11-06T23:06:17.4256923Z",
+        "log": "scoped-defer-frontier-20261107.partition.25.log",
+        "logSha256": "d87b7ac502d04ead9dfc8c8c51fbb18b50a62d87d8d690ad000795a5f3f64136"
+      },
+      {
+        "version": 1,
+        "source": "3b7a98a0f3983c8d45148ac4e401e29a136e082b",
+        "batch": "26",
+        "package": "arcweft-compiler",
+        "targets": [
+          "test:api_compile",
+          "test:assertions",
+          "test:callable_execution"
+        ],
+        "command": [
+          "cargo",
+          "nextest",
+          "run",
+          "--locked",
+          "-p",
+          "arcweft-compiler",
+          "--test",
+          "api_compile",
+          "--test",
+          "assertions",
+          "--test",
+          "callable_execution",
+          "--no-tests",
+          "pass",
+          "--no-fail-fast",
+          "--status-level",
+          "all",
+          "--final-status-level",
+          "all"
+        ],
+        "exitCode": 0,
+        "summary": [
+          "Summary [ 219.084s] 332 tests run: 332 passed (1 slow), 0 skipped"
+        ],
+        "pagefileFailure": false,
+        "diskFailure": false,
+        "split": false,
+        "startedAt": "2026-11-06T23:06:17.4360689Z",
+        "finishedAt": "2026-11-06T23:10:20.0036407Z",
+        "log": "scoped-defer-frontier-20261107.partition.26.log",
+        "logSha256": "1dc8220d248f2e82de67db37b55730f4ab12a212b5b0848722e6a8ccf020301d"
+      }
+    ],
+    "testTargets": 13,
+    "run": 368,
+    "passed": 368,
+    "failed": 0,
+    "skipped": 0,
+    "facadeBuilt": true,
+    "facadeTestCases": 0,
+    "partitionTargetsOutstandingAtCheckpoint": 191,
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-defer-reverse-after-clean.raw.zip",
+      "sha256": "091fa269c924268d15f8e023900f559855b655f645c59019c061799ed9f1b75a",
+      "entries": [
+        {
+          "entry": "scoped-defer-frontier-20261107.partition.facade.receipt.json",
+          "bytes": 838,
+          "sha256": "5544eb706290db8dd783772bafeae9f47e29c006147fcb560406886e2d295fb3"
+        },
+        {
+          "entry": "scoped-defer-frontier-20261107.partition.facade.log",
+          "bytes": 76685,
+          "sha256": "03f56fbbbcfcf7eebeada3b86c64762bc672ec08597c649c2d5d2c19b8ba9c4a"
+        },
+        {
+          "entry": "scoped-defer-frontier-20261107.partition.23.receipt.json",
+          "bytes": 1068,
+          "sha256": "1644f602a91e13d1976b6a5cebfd7c2333220c4b21e7c867adb4212172d949cf"
+        },
+        {
+          "entry": "scoped-defer-frontier-20261107.partition.23.log",
+          "bytes": 112935,
+          "sha256": "2cbdf90e0304fd547933d4e5e9c13b6fba03ab48058c0754fe59d81616fe60ff"
+        },
+        {
+          "entry": "scoped-defer-frontier-20261107.partition.24.receipt.json",
+          "bytes": 1088,
+          "sha256": "d5e8e69ab18c870dd094412ec97f16e9b71134d1c49c481b018ab885a26362b7"
+        },
+        {
+          "entry": "scoped-defer-frontier-20261107.partition.24.log",
+          "bytes": 91096,
+          "sha256": "bd7aba29c1824f0423c72feabcab0a2ef3dce2417f5f211f84344143e6e96f6d"
+        },
+        {
+          "entry": "scoped-defer-frontier-20261107.partition.25.receipt.json",
+          "bytes": 1040,
+          "sha256": "48bf4a125f37b7425285c94792f905ed57d798bba40877888e875e217338222f"
+        },
+        {
+          "entry": "scoped-defer-frontier-20261107.partition.25.log",
+          "bytes": 96967,
+          "sha256": "d87b7ac502d04ead9dfc8c8c51fbb18b50a62d87d8d690ad000795a5f3f64136"
+        },
+        {
+          "entry": "scoped-defer-frontier-20261107.partition.26.receipt.json",
+          "bytes": 1019,
+          "sha256": "fcefc523c314671c7ac41aa1ae0c5684c9d0b2ed142a9a6a40cb582c6ce0d678"
+        },
+        {
+          "entry": "scoped-defer-frontier-20261107.partition.26.log",
+          "bytes": 179459,
+          "sha256": "1dc8220d248f2e82de67db37b55730f4ab12a212b5b0848722e6a8ccf020301d"
+        }
+      ]
+    }
   }
 }

@@ -15158,3 +15158,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 - 現状一覧では旧ソースの復元失敗を修正後の実測で更新した。旧集計の52パッケージ・222ターゲットは、`arcweft-` で始まる名前だけを抽出し、Cargo のグラフにあった `arcweft` の `lib:arcweft` を取りこぼしていた。workspace member と Cargo のテスト対象を照合し、53パッケージ・223ターゲットに訂正した。修正ソースで確認した19ターゲットと、これから検証する204ターゲットは別に記録した。旧ソースの実行数と失敗IDはその時点の証拠として保持した。[グラフ・メタデータ・検証計画の原本](acceptance-evidence/task-flow-registry-execution.json)。
 
 - ユーザーの指定でワークスペース全体に `cargo clean` を実行した。終了コード0で168,883ファイル、224.9 GiBを削除し、直後に `target` が存在しないことを確認した。D: の空きは300,977,410,048バイトから532,319,698,944バイトになった。先行検証の結果は [公開した原本](acceptance-evidence/task-registry-defer-frontier-fix.raw.zip) に保存した。
+
+## 2026-11-07 — Scoped defer reverse tests after the clean build
+
+- 公開ソース `3b7a98a0f3983c8d45148ac4e401e29a136e082b`。`cargo clean` 後に追加分の先頭5組13ターゲットを実行し、368件が通過した。失敗とスキップは0件。旧集計で漏れていた `arcweft` のライブラリはビルドでき、テストケースは0件だった。CLI の2組は各10件、Compiler の2組は16件と332件が通過した。固定したソース入力3,638件に差分は0件だった。区切り時点の追加分191ターゲットはこの結果に含めていない。[終了した5組のコマンド・結果・ログ](acceptance-evidence/task-flow-registry-execution.json)。
