@@ -750,6 +750,12 @@ Both evaluators admit the copied value against the original invocation before
 materializing it. The private expression source retains the key and mode in
 the version-one grammar.
 
+A Native registry read admits the retained session and the reached row before
+copying the result. Inline dialogue execution uses the actual withdrawn
+transactions. It counts the suspended parent, each executing or suspended
+dialogue frame, and the other retained dialogue values once in the same
+allowance. A nested read uses its own Line and the nearest enclosing Flow.
+
 Resource access stores resource ID, access mode,
 and typed conflict policy (`Error`, `Append`, priority LWW, merge patch, or a
 fixed reduce operator).

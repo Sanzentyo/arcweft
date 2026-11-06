@@ -7015,5 +7015,215 @@
         }
       ]
     }
+  },
+  "nativeInlineRegistryAdmission": {
+    "source": "396cbb5603b520943243f09529cb1ed0b74f9e6d",
+    "base": "e7b15f176d85de48fab97f3c6c28dc5f71212f1b",
+    "published": "396cbb5603b520943243f09529cb1ed0b74f9e6d",
+    "tree": "d74e2a8f67d7589e147b83efcfc789addd86679f",
+    "patchSha256": "487fb67288dec1efc7b0a84bf662423d96d0eecc42820ae214ef902e24cab9ce",
+    "blobDrift": 0,
+    "tests": [
+      {
+        "version": 1,
+        "base": "e7b15f176d85de48fab97f3c6c28dc5f71212f1b",
+        "run": "native-inline-registry-admission-owner-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [  23.709s] 2287 tests run: 2287 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 2287,
+        "passed": 2287,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4131,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T07:29:07.7245109Z"
+      },
+      {
+        "version": 1,
+        "base": "396cbb5603b520943243f09529cb1ed0b74f9e6d",
+        "run": "native-inline-registry-admission-compiler-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   3.217s] 55 tests run: 55 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 55,
+        "passed": 55,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4131,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T07:32:46.6620399Z"
+      }
+    ],
+    "clippy": {
+      "source": "396cbb5603b520943243f09529cb1ed0b74f9e6d",
+      "command": [
+        "clippy",
+        "-p",
+        "arcweft-core",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4131,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-06T07:32:47.7001576Z",
+      "finishedAt": "2026-11-06T07:33:45.5706438Z"
+    },
+    "structure": {
+      "source": "396cbb5603b520943243f09529cb1ed0b74f9e6d",
+      "command": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4131,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-06T07:33:46.6078416Z",
+      "finishedAt": "2026-11-06T07:33:50.3776354Z"
+    },
+    "coverage": "Native Flow and Line reads include the original parent fiber frame, the execution and non-execution values in each actual in-flight dialogue transaction, and the retained dialogue store. The budget rejects before copying. The nested fixture tests both owner selection and restoration of the outer Line.",
+    "prior": "The first intermediate compile exposed unfinished caller migration. The first focused run rejected the test fixture because it opened registry rows without entering an admitted Flow. The corrected test steps an original Flow to populate those rows.",
+    "unverifiedAtRun": "Source lifetime registry reads, cancellation defer drop operations, affine storage and the full reverse-dependency matrix remain separate.",
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-native-inline-registry-admission.raw.zip",
+      "sha256": "3cd0144a077ac495457e0cc44f98edfeb56eae09ce1bebf11d325296e77b9aa1",
+      "entries": [
+        {
+          "entry": "native-inline-registry-admission-check-20261106.log",
+          "bytes": 17612,
+          "sha256": "82c54e7ff57739aec6694cc14c6c1e8567f9dae6975352206a756323813ff5d5"
+        },
+        {
+          "entry": "native-inline-registry-focused-20261106.log",
+          "bytes": 33306,
+          "sha256": "42a5ae3bcedfae55535491d6530e9004f4d4d3f5eda2ae50f562b478dc07bc21"
+        },
+        {
+          "entry": "checkpoint-native-inline-registry-admission-20261106.verified.json",
+          "bytes": 1880,
+          "sha256": "427d62ce126e52fe60df2d2a68edeeda64a5d89f6387d41faef795d2511ff30e"
+        },
+        {
+          "entry": "native-inline-registry-admission-clippy-20261106.log",
+          "bytes": 4769688,
+          "sha256": "1cd7c984dd171fb8c57a4f13527eb7867ae349aee52feeed4108dcbf2ef1ee52"
+        },
+        {
+          "entry": "native-inline-registry-admission-clippy-20261106.json",
+          "bytes": 353,
+          "sha256": "466aebc2addd17e624d8d441b49a709dfd9d6ab6aeddbe5ce8dbb93a759bde97"
+        },
+        {
+          "entry": "native-inline-registry-admission-structure-20261106.log",
+          "bytes": 65698,
+          "sha256": "fd9ad6f64e495c1ce74ad24e449458efb3f298120ad08c06ab8f2bc17cf49ec8"
+        },
+        {
+          "entry": "native-inline-registry-admission-structure-20261106.json",
+          "bytes": 363,
+          "sha256": "0525ab9790503b5d22f1881b55823eb67d8a81dbdab95c457f3f5ff1cf1600f4"
+        },
+        {
+          "entry": "native-inline-registry-admission-owner-20261106.catalog.json",
+          "bytes": 560,
+          "sha256": "31e72e8e4186c718126f855ec4064cff962bdf1809f5367337cd152bec56c17d"
+        },
+        {
+          "entry": "native-inline-registry-admission-owner-20261106.catalog.inventory.json",
+          "bytes": 582589,
+          "sha256": "e0be020f0fba623c7ed26635f1d68d787bb51de79873bb4785f0a628c10294a4"
+        },
+        {
+          "entry": "native-inline-registry-admission-owner-20261106.catalog.log",
+          "bytes": 428021,
+          "sha256": "267d938dff71aa3b1d30236a28ebb4d248e7a172255f967f0c8db4f772b650f2"
+        },
+        {
+          "entry": "native-inline-registry-admission-owner-20261106.runtime.json",
+          "bytes": 652,
+          "sha256": "19dda3e817aaff1ae02d39716adcc0b594d31a1b625ed81cde36ba44e28ead46"
+        },
+        {
+          "entry": "native-inline-registry-admission-owner-20261106.runtime.log",
+          "bytes": 735256,
+          "sha256": "8e40e7b6b01e88b2a84ae2ba2c0e25048ee9946695e544c7ec79dad212fa725e"
+        },
+        {
+          "entry": "native-inline-registry-admission-owner-20261106.runtime.terminal-audit.json",
+          "bytes": 636,
+          "sha256": "c51029dbd1d4c2f0c85b04e311a0f8f2404dbd876ae994d37facdf2c2236774e"
+        },
+        {
+          "entry": "native-inline-registry-admission-owner-20261106.binaries-before.json",
+          "bytes": 202,
+          "sha256": "f30598356961d9214f3d8421268f6f4176367543307e8f9ecadfbb64943c0cdf"
+        },
+        {
+          "entry": "native-inline-registry-admission-owner-20261106.source-freeze.json",
+          "bytes": 807830,
+          "sha256": "dcb4e11aacb78ae4e17e74eba2a5d37af9480d95b36f01e4474c9a3629653fbc"
+        },
+        {
+          "entry": "native-inline-registry-admission-compiler-20261106.catalog.json",
+          "bytes": 594,
+          "sha256": "92e4b8bea4e98f567fc386320ddb79351a0a8226902ce3a37ef8f5d841568ae7"
+        },
+        {
+          "entry": "native-inline-registry-admission-compiler-20261106.catalog.inventory.json",
+          "bytes": 13985,
+          "sha256": "f51e22456a2ae3a5021e3060a7c26a6d94e2a239c71f38c499ff3f96c5a88b04"
+        },
+        {
+          "entry": "native-inline-registry-admission-compiler-20261106.catalog.log",
+          "bytes": 95293,
+          "sha256": "1a00580bcdac1ee7956e7693dbac7bc22e6a9597f8606340e84f500445d29255"
+        },
+        {
+          "entry": "native-inline-registry-admission-compiler-20261106.runtime.json",
+          "bytes": 686,
+          "sha256": "5e5b02e8437a1a171d2865b59e445c5b1adb64c22669f839654a8373ed5babd2"
+        },
+        {
+          "entry": "native-inline-registry-admission-compiler-20261106.runtime.log",
+          "bytes": 100671,
+          "sha256": "36e2ed9eb2702b0e0484c6bfce30cf31b9b4c22f04a35f3400dda1a90ea47b67"
+        },
+        {
+          "entry": "native-inline-registry-admission-compiler-20261106.runtime.terminal-audit.json",
+          "bytes": 631,
+          "sha256": "0ba5d9047d5f9d7cfe10889e1aec14c6067f0299cf6c82677ddae4881b23c5a1"
+        },
+        {
+          "entry": "native-inline-registry-admission-compiler-20261106.binaries-before.json",
+          "bytes": 230,
+          "sha256": "47dbf76771e511e3c3348abb6bc0dd505e552672b2ea204efc6041a7eb5f2f6f"
+        },
+        {
+          "entry": "native-inline-registry-admission-compiler-20261106.source-freeze.json",
+          "bytes": 807830,
+          "sha256": "d31eecf99b9197813fcad89144cd7c7dc0f200debf5af41e9f214864f59ce622"
+        }
+      ]
+    }
   }
 }

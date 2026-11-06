@@ -14899,3 +14899,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source `243fac8b8071ff3c2e9a294e66e95d7517604308` で、借り出した対話のフレームと元の親を一つの資源予算で検査してから保存・復元する。対話の実行状態、入力、表示値、コールバックとdeferの捕捉値を借用で検査する。旧変換入口は値単位で枠を作り直していた。
 - 上限超過を両方向で拒否し、上限内では親と対話の値を復元した。Core 全2287件、Compiler `evaluated_effects` 55件がPASS。Core Clippyと構造ゲートはexit 0。初回のコンパイル失敗と4,131固定入力に差分0件の最終結果を保持した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-06 — Native registry reads share the dialogue session allowance
+
+- Source `396cbb5603b520943243f09529cb1ed0b74f9e6d` で、Nativeの対話中に到達したFlow／Lineの値を複製する前に、元の親と各対話の実行・保持値を同じ資源枠で検査する。実トランザクションからLineを選び、入れ子の対話を終えると外側のLineに戻る。表だけを共有する旧経路を削除した。
+- 実際のFlowに書き込んでから、単独・入れ子の対話で累積上限の前後を検査した。Core全2,287件、Compilerのevaluated_effects全55件がPASS。Core Clippyと構造ゲートはexit 0。初回のコンパイル失敗と実Flowを起動していなかったテストの拒否も保持した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
