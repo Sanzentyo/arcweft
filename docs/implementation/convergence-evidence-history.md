@@ -14977,3 +14977,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-06 — AWBC dialogue wildcard release and restore
 
 - 公開ソース c81029e9c35dc219fa9d7e03cfa8f402ba2a321f の再現では、束縛する StageActor と破棄する StageActor を同じ out に含めると、破棄の ReleaseActor 応答待ちを復元できなかった。Source 217c8ecc84ac2c13f518e1c93157f69c469fdbde で結果の発行元・位置・解放状態と、元の受け取りパターンを照合した。デコード済みAWBCは応答待ちから復元し、解放対象を束縛先へ変えた保存を拒否した。Core／RuntimePlan／Compiler の対象 2701件通過・1件スキップ、構造監査のブロッキング指摘0件。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-06 — Dialogue results forwarded through another activation
+
+- Source d3332620ac662de3e0da5d893f83f42c70d997b8 で元の発行元にハンドルの台帳と解放コマンドを保持し、受け手の結果内の位置から次の物理スロットへ移す。初回ビルドは E0425 と E0308 で停止。修正後は Native／デコード済みAWBCの三段の再返却、AWBCの結果位置改変拒否、発行元の解放待ちの保存復元と既存の回帰を含む6件が通過した。フィルタで66件を除外し、構造監査のブロッキング指摘は0件だった。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。

@@ -13530,5 +13530,188 @@
         }
       ]
     }
+  },
+  "dialogueResultReexport": {
+    "source": "d3332620ac662de3e0da5d893f83f42c70d997b8",
+    "testInputBase": "38fc403410c941a26b33f85a281a756614eb3a44",
+    "testedRustFiles": [
+      {
+        "path": "crates/arcweft-compiler/tests/evaluated_effects.rs",
+        "bytes": 188292,
+        "sha256": "7c3901a2286c5b7a8e65e7c0e498f72f8d2f4c11afab9eaeae33d8196da681aa"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step.rs",
+        "bytes": 258682,
+        "sha256": "1578014982ba01138224c12f468eded05d4d47936479e8feed3a60e5d5464e96"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+        "bytes": 36968,
+        "sha256": "3e2c5a4060a2a641465242c703b90d8fb25b80bbbe84f6792ea79c94bb243d24"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+        "bytes": 197997,
+        "sha256": "8342d573602c20d9caa17ccdcafd0cf625249b0dc8ce586390fc98344583a411"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+        "bytes": 189018,
+        "sha256": "af7f6932dd0037f76b356344085e2db4cc77db59a2a55fcb54a2c16cf15b5ad9"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/dialogue.rs",
+        "bytes": 195949,
+        "sha256": "721c79c0cb01e6f5e6994266aa8b9ee12cc0aea5c23b6260fd487b5fbad7f12c"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/dialogue/store.rs",
+        "bytes": 98567,
+        "sha256": "6bce64c0e45a9d73c19d33fea4d77cdd4e19a6be504608cbeca0ca27f3f5443a"
+      },
+      {
+        "path": "crates/arcweft-core/src/line_task/activation.rs",
+        "bytes": 71596,
+        "sha256": "c31839ba6f4505596cb750a9230a9a83b86d66e250a1bdc1be655861e58ff34d"
+      },
+      {
+        "path": "crates/arcweft-core/src/line_task/handle.rs",
+        "bytes": 256413,
+        "sha256": "21b08113c73093baddc7a383a372d38a1fac1d82b9d35a1389df768c1bf6ca2b"
+      }
+    ],
+    "priorRuntimeFailureSource": "64829f5d62302e2d658e88494655c7cef2cc96aa",
+    "firstBuild": {
+      "version": 1,
+      "base": "38fc403410c941a26b33f85a281a756614eb3a44",
+      "command": [
+        "nextest",
+        "list",
+        "--locked",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "-E",
+        "test(=native_nested_line_handle_reexports_from_receiving_activation) | test(=decoded_awbc_nested_line_handle_reexports_through_save) | test(=native_nested_line_handle_moves_into_the_receiving_activation) | test(=decoded_awbc_nested_line_handle_moves_through_save) | test(=decoded_awbc_dialogue_result_wildcard_survives_pending_release)",
+        "--message-format",
+        "json"
+      ],
+      "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/awbc-nested-reexport-focused-20261106.catalog.log",
+      "exitCode": 101,
+      "sourceInputs": 4134,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-06T14:44:42.2116108Z",
+      "finishedAt": "2026-11-06T14:45:21.2114016Z"
+    },
+    "correctedBuildErrors": [
+      "E0425 missing type qualification for the prepared receipt",
+      "E0308 mismatched argument order for the result move"
+    ],
+    "focusedRuntime": {
+      "version": 1,
+      "base": "38fc403410c941a26b33f85a281a756614eb3a44",
+      "run": "awbc-nested-reexport-focused-retry-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   1.075s] 6 tests run: 6 passed, 66 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 66,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4134,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-06T14:54:00.6596732Z"
+    },
+    "focusedPassingCases": [
+      "PASS [   0.157s] (1/6) arcweft-compiler::evaluated_effects native_nested_line_handle_moves_into_the_receiving_activation",
+      "PASS [   0.157s] (2/6) arcweft-compiler::evaluated_effects native_nested_line_handle_reexports_from_receiving_activation",
+      "PASS [   0.422s] (3/6) arcweft-compiler::evaluated_effects decoded_awbc_dialogue_result_wildcard_survives_pending_release",
+      "PASS [   0.648s] (4/6) arcweft-compiler::evaluated_effects decoded_awbc_reexported_result_wildcard_waits_for_issuer_release",
+      "PASS [   0.719s] (5/6) arcweft-compiler::evaluated_effects decoded_awbc_nested_line_handle_moves_through_save",
+      "PASS [   1.074s] (6/6) arcweft-compiler::evaluated_effects decoded_awbc_nested_line_handle_reexports_through_save"
+    ],
+    "structure": {
+      "version": 1,
+      "base": "38fc403410c941a26b33f85a281a756614eb3a44",
+      "exitCode": 0,
+      "startedAt": "2026-11-06T14:54:19.5359686Z",
+      "finishedAt": "2026-11-06T14:54:23.0643854Z",
+      "command": "cargo +nightly -Zscript tools/structure-audit.rs --root . --fail-on-blocking"
+    },
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-dialogue-result-reexport.raw.zip",
+      "sha256": "c72569a20f62504dfdfbdd2e2b4dc8e5f284032e5681f4113db5ca59c8c2265a",
+      "entries": [
+        {
+          "entry": "awbc-nested-reexport-focused-20261106.catalog.json",
+          "bytes": 915,
+          "sha256": "a5a6384dd7cc6fac3549e37b778e42f3739080173119f3322c0978e1a75c6b49"
+        },
+        {
+          "entry": "awbc-nested-reexport-focused-20261106.catalog.log",
+          "bytes": 11275,
+          "sha256": "5872a924af32c21acb0f05e86056fd07d1ef00e896d3ac505e59c83c6b9b4c1a"
+        },
+        {
+          "entry": "awbc-nested-reexport-structure-retry-20261106.json",
+          "bytes": 286,
+          "sha256": "6df6d6553518ca3788cbd444cc19ebd08e3a219cae783ee5d22f97b51a7e9c5a"
+        },
+        {
+          "entry": "awbc-nested-reexport-structure-retry-20261106.log",
+          "bytes": 65741,
+          "sha256": "34674a33c3fb183673c285c4f69c173c4997ee1e512613126e8a3b5968c83ef9"
+        },
+        {
+          "entry": "awbc-nested-reexport-focused-retry-20261106.source-freeze.json",
+          "bytes": 808439,
+          "sha256": "53d4c1beacfeb0dc14a1de94a28c5bf09870895c3040801d7c7bf41d921868ec"
+        },
+        {
+          "entry": "awbc-nested-reexport-focused-retry-20261106.catalog.json",
+          "bytes": 993,
+          "sha256": "9e55467a094dd72313271a34a34b81168e13bee63d825059797ea860ef0bb7f5"
+        },
+        {
+          "entry": "awbc-nested-reexport-focused-retry-20261106.catalog.log",
+          "bytes": 99883,
+          "sha256": "8b89628ecb467d3aa185690e4ca3eb0c2728e841d79f853b3afa4f51edc09f72"
+        },
+        {
+          "entry": "awbc-nested-reexport-focused-retry-20261106.catalog.inventory.json",
+          "bytes": 18246,
+          "sha256": "13d325ddf282d7a3483e5135374394b4872cdffbff0fce03efb7663625d25466"
+        },
+        {
+          "entry": "awbc-nested-reexport-focused-retry-20261106.binaries-before.json",
+          "bytes": 230,
+          "sha256": "f63e3b080aa0b855dc82ec12b0f1db37e1c29bf5e6aaf0894ad90e8db5e42952"
+        },
+        {
+          "entry": "awbc-nested-reexport-focused-retry-20261106.runtime.json",
+          "bytes": 1085,
+          "sha256": "e1fc5e4c5b766bf5c263b87db84c0540f5838ec4b9e7dad281fc65b200abb966"
+        },
+        {
+          "entry": "awbc-nested-reexport-focused-retry-20261106.runtime.log",
+          "bytes": 106605,
+          "sha256": "260ae43cdbccc2072f5b6ed2f6ff03f8f138bec16e60324dedb92af0d88be12e"
+        },
+        {
+          "entry": "awbc-nested-reexport-focused-retry-20261106.runtime.terminal-audit.json",
+          "bytes": 622,
+          "sha256": "f0f50896fb0223374a918e7e6ead45c64bef97060459f9c277638714e954b855"
+        }
+      ]
+    }
   }
 }

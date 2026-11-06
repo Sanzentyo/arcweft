@@ -296,7 +296,11 @@ with:
     out (actor, (face0, face1, voice))
 ```
 
-For plain values, `_` just discards. For scoped handles, `_` runs the handle's drop policy immediately after destructuring. This is intentional: if you do not keep the handle, you explicitly give up ownership and Arcweft cancels or releases it according to its type.
+A wildcard discards its projected value. If the value owns a scoped handle,
+Arcweft runs that handle's drop policy. A handle forwarded through another
+dialogue line's `out` retains the identity and drop policy of the line that
+issued it. When cleanup requires a host acknowledgement, the receiving
+continuation resumes after that acknowledgement arrives.
 
 ---
 
