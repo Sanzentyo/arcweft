@@ -2001,7 +2001,7 @@ impl AwbcProductExecutorSnapshot {
             .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                 message: error.to_string(),
             })?;
-        self.admit_presentation_execution(program, admission)?;
+        let dialogue_receivers = self.admit_presentation_execution(program, admission)?;
         if let Some(banks) = &snapshot.presentation {
             let artifact = AwbcProductStepExecutor::artifact_fingerprint(program)?;
             banks
@@ -2214,6 +2214,9 @@ impl AwbcProductExecutorSnapshot {
         snapshot
             .dialogues
             .try_visit_active(|activation, active, shared_line| {
+            shared_line.admit_result_discards(|value, retired| {
+                dialogue_receivers.validate_result_discards(program, activation, value, retired)
+            }).map_err(|error| AwbcProductStepBuildError::RestoreSnapshot { message: error.to_string() })?;
             active.admit_retained(program, shared_line, admission).map_err(|error| {
                 AwbcProductStepBuildError::RestoreSnapshot { message: error.to_string() }
             })?;

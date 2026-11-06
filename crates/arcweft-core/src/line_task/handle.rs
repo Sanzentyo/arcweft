@@ -4877,6 +4877,45 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
         &self.result
     }
 
+    /// A Publishing value still carries its full pattern shape while drops
+    /// settle. The receiver must prove its pattern discards each retired lease.
+    pub(crate) fn admit_result_discards(
+        &self,
+        validate: impl FnOnce(
+            RuntimeValueView<'_>,
+            &std::collections::BTreeSet<RuntimeLineHandleToken>,
+        ) -> Result<(), LineRuntimeError>,
+    ) -> Result<(), LineRuntimeError>
+    where
+        V: crate::value::RuntimeStoredValue,
+    {
+        let RuntimeDialogueResultState::Publishing { value, .. } = &self.result else {
+            return Ok(());
+        };
+        if !self.ledger.leases().values().any(|lease| {
+            matches!(lease.owner(), RuntimeHandleOwnerSlot::DialogueResult(_))
+                && result_lease_was_retired(lease.state())
+        }) {
+            return Ok(());
+        }
+        let view = value.borrowed_view();
+        let retired = view
+            .line_handle_projection()
+            .map_err(|_| LineRuntimeError::InvalidRestoredResultState)?
+            .into_iter()
+            .filter(|handle| {
+                self.ledger
+                    .lease(handle.token())
+                    .is_some_and(|lease| result_lease_was_retired(lease.state()))
+            })
+            .map(|handle| handle.token().clone())
+            .collect::<std::collections::BTreeSet<_>>();
+        if retired.is_empty() {
+            return Ok(());
+        }
+        validate(view, &retired)
+    }
+
     pub(crate) fn issued_command(
         &self,
         command: &crate::presentation::RuntimeLineCommandId,
@@ -5339,6 +5378,11 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
                     if lease.resource().kind() != handle.kind()
                         || lease.owner()
                             != &RuntimeHandleOwnerSlot::DialogueResult(handle.path().clone())
+                        || (result_lease_was_retired(lease.state())
+                            && (!matches!(
+                                self.result,
+                                RuntimeDialogueResultState::Publishing { .. }
+                            ) || !self.publishing_retirement_is_correlated(lease)))
                     {
                         return Err(LineRuntimeError::InvalidRestoredResultState);
                     }
@@ -5369,6 +5413,11 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
                 return Err(LineRuntimeError::InvalidRestoredResultState);
             }
         }
+        result_tokens.retain(|token| {
+            self.ledger
+                .lease(token)
+                .is_some_and(|lease| !result_lease_was_retired(lease.state()))
+        });
         let ledger_result_tokens = self
             .ledger
             .leases()
@@ -5386,6 +5435,35 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
             return Err(LineRuntimeError::InvalidRestoredResultState);
         }
         Ok(())
+    }
+
+    fn publishing_retirement_is_correlated(&self, lease: &RuntimeHandleLease) -> bool {
+        if lease.state() != RuntimeHandleLeaseState::Cancelling {
+            return true;
+        }
+        if let RuntimeHandleResource::Cue(cue) = lease.resource()
+            && matches!(cue.origin(), RuntimeCueOrigin::Scheduled { .. })
+        {
+            return self.scheduled.iter().any(|scheduled| {
+                scheduled.token() == lease.token()
+                    && scheduled.state() == RuntimeScheduledState::Cancelling
+            });
+        }
+        self.issued_commands
+            .values()
+            .filter(|command| {
+                let token = match command {
+                    crate::presentation::RuntimeLineHostCommand::Stage(command) => {
+                        published_command_token(command).ok()
+                    }
+                    crate::presentation::RuntimeLineHostCommand::Voice(command) => {
+                        published_voice_command_token(command).ok()
+                    }
+                };
+                token == Some(lease.token())
+            })
+            .count()
+            == 1
     }
 }
 

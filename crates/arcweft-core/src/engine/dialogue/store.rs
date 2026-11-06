@@ -371,6 +371,20 @@ impl DialogueActivationStoreRollbackImage {
             },
         )?;
         self.registry.try_visit_active(|activation, active, line| {
+            line.admit_result_discards(|value, retired| {
+                for token in retired {
+                    let destinations = crate::pattern::runtime_pattern_handle_destinations_view(
+                        active.frame.result_target.pattern(),
+                        value,
+                        token,
+                    )
+                    .map_err(|_| LineRuntimeError::InvalidRestoredResultState)?;
+                    if !destinations.is_empty() {
+                        return Err(LineRuntimeError::InvalidRestoredResultState);
+                    }
+                }
+                Ok(())
+            })?;
             admission.validate_metadata(&active.inbox)?;
             active.frame.admit_reducer(activation, line, admission)
         })?;

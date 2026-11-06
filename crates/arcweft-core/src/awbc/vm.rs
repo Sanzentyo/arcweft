@@ -1071,7 +1071,7 @@ fn execute_instruction(
                 let mut bindings = Vec::new();
                 visit_pattern_bindings_view(
                     program,
-                    Some(fiber.active_frame()?),
+                    fiber.active_frame()?.type_instantiation.as_deref(),
                     *pattern,
                     value_ref.live_view(),
                     0,
@@ -1112,7 +1112,7 @@ fn execute_instruction(
         } => {
             let matched = test_pattern_view(
                 program,
-                Some(fiber.active_frame()?),
+                fiber.active_frame()?.type_instantiation.as_deref(),
                 *pattern,
                 register(fiber, *value)?.view(),
                 0,
@@ -3345,9 +3345,15 @@ fn execute_terminator(
             let target = program.match_arms[start..end]
                 .iter()
                 .find_map(|arm| {
-                    test_pattern_view(program, Some(frame), arm.pattern, value.view(), 0)
-                        .ok()
-                        .and_then(|matched| matched.then_some(arm.target))
+                    test_pattern_view(
+                        program,
+                        frame.type_instantiation.as_deref(),
+                        arm.pattern,
+                        value.view(),
+                        0,
+                    )
+                    .ok()
+                    .and_then(|matched| matched.then_some(arm.target))
                 })
                 .unwrap_or(*default);
             jump(fiber, target);
@@ -5013,7 +5019,7 @@ pub(crate) fn test_pattern(
 
 fn test_pattern_view(
     program: &AwbcProgram,
-    frame: Option<&FiberFrame>,
+    instantiation: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
     pattern: AwbcPatternId,
     value: RuntimeValueView<'_>,
     depth: usize,
@@ -5029,7 +5035,7 @@ fn test_pattern_view(
         AwbcPattern::Or(alternatives) => {
             let mut matched = false;
             for alternative in alternatives {
-                if test_pattern_view(program, frame, *alternative, value, depth + 1)? {
+                if test_pattern_view(program, instantiation, *alternative, value, depth + 1)? {
                     matched = true;
                     break;
                 }
@@ -5037,9 +5043,9 @@ fn test_pattern_view(
             matched
         }
         AwbcPattern::Bind { expected, .. } => expected.is_none_or(|expected| {
-            frame.map_or_else(
+            instantiation.map_or_else(
                 || runtime_value_view_matches_type(program, value, expected, 0),
-                |frame| frame.value_view_matches_type(program, value, expected),
+                |binding| binding.value_view_matches(program, expected, value),
             )
         }),
         AwbcPattern::Discard => true,
@@ -5057,7 +5063,7 @@ fn test_pattern_view(
                         matched = false;
                         break;
                     };
-                    if !test_pattern_view(program, frame, *pattern, value, depth + 1)? {
+                    if !test_pattern_view(program, instantiation, *pattern, value, depth + 1)? {
                         matched = false;
                         break;
                     }
@@ -5068,9 +5074,9 @@ fn test_pattern_view(
         },
         AwbcPattern::Record { ty, fields, rest } => {
             let owner_matches = ty.is_none_or(|ty| {
-                frame.map_or_else(
+                instantiation.map_or_else(
                     || runtime_value_view_matches_type(program, value, ty, 0),
-                    |frame| frame.value_view_matches_type(program, value, ty),
+                    |binding| binding.value_view_matches(program, ty, value),
                 )
             });
             owner_matches
@@ -5089,7 +5095,7 @@ fn test_pattern_view(
                                 if identity.zero_based() != field.field
                                     || !test_pattern_view(
                                         program,
-                                        frame,
+                                        instantiation,
                                         field.pattern,
                                         value,
                                         depth + 1,
@@ -5114,7 +5120,7 @@ fn test_pattern_view(
                                 };
                                 if !test_pattern_view(
                                     program,
-                                    frame,
+                                    instantiation,
                                     field.pattern,
                                     value,
                                     depth + 1,
@@ -5141,7 +5147,7 @@ fn test_pattern_view(
                         matched = false;
                         break;
                     };
-                    if !test_pattern_view(program, frame, *pattern, value, depth + 1)? {
+                    if !test_pattern_view(program, instantiation, *pattern, value, depth + 1)? {
                         matched = false;
                         break;
                     }
@@ -5157,9 +5163,9 @@ fn test_pattern_view(
             payload,
         } => {
             let case_name = string(program, *case_name)?;
-            if !frame.map_or_else(
+            if !instantiation.map_or_else(
                 || runtime_value_view_matches_type(program, value, *ty, 0),
-                |frame| frame.value_view_matches_type(program, value, *ty),
+                |binding| binding.value_view_matches(program, *ty, value),
             ) {
                 false
             } else if let RuntimeValueView::Variant(variant) = value {
@@ -5169,7 +5175,7 @@ fn test_pattern_view(
                     match (payload, variant.payload()) {
                         (None, None) => true,
                         (Some(pattern), Some(value)) => {
-                            test_pattern_view(program, frame, *pattern, value, depth + 1)?
+                            test_pattern_view(program, instantiation, *pattern, value, depth + 1)?
                         }
                         _ => false,
                     }
@@ -5179,7 +5185,7 @@ fn test_pattern_view(
             }
         }
         AwbcPattern::Whole { inner, .. } => {
-            test_pattern_view(program, frame, *inner, value, depth + 1)?
+            test_pattern_view(program, instantiation, *inner, value, depth + 1)?
         }
     })
 }
@@ -5275,7 +5281,7 @@ pub(crate) fn prepare_pattern_binding_view(
 ) -> Result<PreparedPatternBinding, VmError> {
     if !test_pattern_view(
         program,
-        Some(fiber.active_frame()?),
+        fiber.active_frame()?.type_instantiation.as_deref(),
         pattern,
         value.inspect(),
         0,
@@ -5302,7 +5308,7 @@ pub(crate) fn prepare_pattern_binding_view(
     let mut registers = Vec::new();
     visit_pattern_bindings_view(
         program,
-        Some(fiber.active_frame()?),
+        fiber.active_frame()?.type_instantiation.as_deref(),
         pattern,
         value,
         0,
@@ -5418,7 +5424,7 @@ fn bind_tested_pattern_owned(
             for alternative in alternatives {
                 if test_pattern_view(
                     program,
-                    Some(fiber.active_frame()?),
+                    fiber.active_frame()?.type_instantiation.as_deref(),
                     alternative,
                     value.view(),
                     0,
@@ -5579,13 +5585,83 @@ pub(crate) fn pattern_binding_registers(
         .map(|prepared| prepared.registers.into_vec())
 }
 
-fn visit_pattern_bindings_view(
+trait PatternBindingValue: Copy {
+    fn inspect(&self) -> RuntimeValueView<'_>;
+    fn child_at(self, index: usize) -> Option<Self>;
+    fn permits_copy(self) -> bool;
+}
+
+impl PatternBindingValue for LiveRuntimeValueView<'_> {
+    fn inspect(&self) -> RuntimeValueView<'_> {
+        (*self).inspect()
+    }
+
+    fn child_at(self, index: usize) -> Option<Self> {
+        self.child_at(index)
+    }
+
+    fn permits_copy(self) -> bool {
+        self.ownership().permits_copy()
+    }
+}
+
+impl PatternBindingValue for RuntimeValueView<'_> {
+    fn inspect(&self) -> RuntimeValueView<'_> {
+        *self
+    }
+
+    fn child_at(self, index: usize) -> Option<Self> {
+        self.child_at(index)
+    }
+
+    fn permits_copy(self) -> bool {
+        use crate::entry::schema::value_encoding::{ValueAdmissionOrigin, ValueResourceAdmission};
+
+        let mut resources = ValueResourceAdmission::snapshot(
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+            ValueAdmissionOrigin::InertSnapshot,
+        );
+        RuntimeValueOwnershipRequirement::Unrestricted
+            .admit(self, &mut resources, 0)
+            .is_ok()
+    }
+}
+
+/// Confirms that every retired lease belongs to a discarded part of the
+/// original result pattern, using the same projection as the owning VM bind.
+pub(crate) fn validate_result_pattern_discards(
     program: &AwbcProgram,
-    frame: Option<&FiberFrame>,
+    instantiation: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
     pattern: AwbcPatternId,
-    value: LiveRuntimeValueView<'_>,
+    value: RuntimeValueView<'_>,
+    retired: &std::collections::BTreeSet<crate::runtime_id::RuntimeLineHandleToken>,
+) -> Result<(), VmError> {
+    if !test_pattern_view(program, instantiation, pattern, value, 0)? {
+        return Err(VmError::PatternMismatch);
+    }
+    visit_pattern_bindings_view(program, instantiation, pattern, value, 0, &mut |_, view| {
+        let handles = view
+            .line_handle_projection()
+            .map_err(|error| VmError::Runtime(error.to_string()))?;
+        if handles
+            .iter()
+            .any(|handle| retired.contains(handle.token()))
+        {
+            return Err(VmError::Runtime(
+                "dialogue result binds a retired line handle".to_owned(),
+            ));
+        }
+        Ok(())
+    })
+}
+
+fn visit_pattern_bindings_view<V: PatternBindingValue>(
+    program: &AwbcProgram,
+    instantiation: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
+    pattern: AwbcPatternId,
+    value: V,
     depth: usize,
-    visitor: &mut impl FnMut(AwbcRegisterId, LiveRuntimeValueView<'_>) -> Result<(), VmError>,
+    visitor: &mut impl FnMut(AwbcRegisterId, V) -> Result<(), VmError>,
 ) -> Result<(), VmError> {
     if depth > 1024 {
         return Err(VmError::Runtime("pattern depth exceeded".to_owned()));
@@ -5597,10 +5673,16 @@ fn visit_pattern_bindings_view(
     match row {
         AwbcPattern::Or(alternatives) => {
             for alternative in alternatives {
-                if test_pattern_view(program, frame, *alternative, value.inspect(), depth + 1)? {
+                if test_pattern_view(
+                    program,
+                    instantiation,
+                    *alternative,
+                    value.inspect(),
+                    depth + 1,
+                )? {
                     return visit_pattern_bindings_view(
                         program,
-                        frame,
+                        instantiation,
                         *alternative,
                         value,
                         depth + 1,
@@ -5618,7 +5700,14 @@ fn visit_pattern_bindings_view(
             };
             for (index, pattern) in patterns.iter().enumerate() {
                 let value = value.child_at(index).ok_or(VmError::PatternMismatch)?;
-                visit_pattern_bindings_view(program, frame, *pattern, value, depth + 1, visitor)?;
+                visit_pattern_bindings_view(
+                    program,
+                    instantiation,
+                    *pattern,
+                    value,
+                    depth + 1,
+                    visitor,
+                )?;
             }
             Ok(())
         }
@@ -5627,7 +5716,7 @@ fn visit_pattern_bindings_view(
                 Ok::<_, VmError>(has_bindings || pattern_has_binding(program, field.pattern, 0)?)
             })?;
             if let AwbcPatternRest::Bind(register) = rest {
-                if has_field_bindings && !value.ownership().permits_copy() {
+                if has_field_bindings && !value.permits_copy() {
                     return Err(VmError::Runtime(
                         "record rest pattern would duplicate an affine value".to_owned(),
                     ));
@@ -5648,7 +5737,7 @@ fn visit_pattern_bindings_view(
                             .ok_or(VmError::PatternMismatch)?;
                         visit_pattern_bindings_view(
                             program,
-                            frame,
+                            instantiation,
                             field.pattern,
                             nested,
                             depth + 1,
@@ -5672,7 +5761,7 @@ fn visit_pattern_bindings_view(
                     .ok_or(VmError::PatternMismatch)?;
                 visit_pattern_bindings_view(
                     program,
-                    frame,
+                    instantiation,
                     field.pattern,
                     nested,
                     depth + 1,
@@ -5687,7 +5776,14 @@ fn visit_pattern_bindings_view(
             };
             for (index, pattern) in items.iter().enumerate() {
                 let nested = value.child_at(index).ok_or(VmError::PatternMismatch)?;
-                visit_pattern_bindings_view(program, frame, *pattern, nested, depth + 1, visitor)?;
+                visit_pattern_bindings_view(
+                    program,
+                    instantiation,
+                    *pattern,
+                    nested,
+                    depth + 1,
+                    visitor,
+                )?;
             }
             if let AwbcPatternRest::Bind(register) = rest {
                 let length = values
@@ -5703,18 +5799,32 @@ fn visit_pattern_bindings_view(
         AwbcPattern::Variant { payload, .. } => {
             if let (Some(pattern), RuntimeValueView::Variant(_)) = (payload, value.inspect()) {
                 let nested = value.child_at(0).ok_or(VmError::PatternMismatch)?;
-                visit_pattern_bindings_view(program, frame, *pattern, nested, depth + 1, visitor)?;
+                visit_pattern_bindings_view(
+                    program,
+                    instantiation,
+                    *pattern,
+                    nested,
+                    depth + 1,
+                    visitor,
+                )?;
             }
             Ok(())
         }
         AwbcPattern::Whole { target, inner } => {
             if pattern_has_binding(program, *inner, 0)? {
-                if !value.ownership().permits_copy() {
+                if !value.permits_copy() {
                     return Err(VmError::Runtime(
                         "Whole pattern would duplicate an affine value".to_owned(),
                     ));
                 }
-                visit_pattern_bindings_view(program, frame, *inner, value, depth + 1, visitor)?;
+                visit_pattern_bindings_view(
+                    program,
+                    instantiation,
+                    *inner,
+                    value,
+                    depth + 1,
+                    visitor,
+                )?;
             }
             visitor(*target, value)
         }

@@ -1875,39 +1875,51 @@ pub(crate) fn runtime_pattern_handle_destinations(
     value: &RuntimeValue,
     token: &crate::runtime_id::RuntimeLineHandleToken,
 ) -> Result<Vec<RuntimeLocalDeclarationId>, crate::value::ownership::RuntimeAffineHandleError> {
+    runtime_pattern_handle_destinations_view(pattern, value.view(), token)
+}
+
+pub(crate) fn runtime_pattern_handle_destinations_view(
+    pattern: &RuntimePattern,
+    value: RuntimeValueView<'_>,
+    token: &crate::runtime_id::RuntimeLineHandleToken,
+) -> Result<Vec<RuntimeLocalDeclarationId>, crate::value::ownership::RuntimeAffineHandleError> {
     let mut destinations = Vec::new();
-    collect_pattern_handle_destinations(pattern, value.live_view(), token, &mut destinations)?;
+    collect_pattern_handle_destinations(pattern, value, token, &mut destinations)?;
     Ok(destinations)
 }
 
 fn collect_pattern_handle_destinations(
     pattern: &RuntimePattern,
-    value: LiveRuntimeValueView<'_>,
+    value: RuntimeValueView<'_>,
     token: &crate::runtime_id::RuntimeLineHandleToken,
     destinations: &mut Vec<RuntimeLocalDeclarationId>,
 ) -> Result<(), crate::value::ownership::RuntimeAffineHandleError> {
+    let contains = |view: RuntimeValueView<'_>| {
+        view.line_handle_projection()
+            .map(|handles| handles.iter().any(|handle| handle.token() == token))
+    };
     match pattern.kind() {
         RuntimePatternKind::Or(alternatives) => {
             if let Some(selected) = alternatives
                 .iter()
-                .find(|pattern| pattern_matches_view(pattern, value.inspect()))
+                .find(|pattern| pattern_matches_view(pattern, value))
             {
                 collect_pattern_handle_destinations(selected, value, token, destinations)?;
             }
         }
         RuntimePatternKind::Bind { binding, .. } | RuntimePatternKind::Typed { binding } => {
-            if value.contains_line_handle(token)? {
+            if contains(value)? {
                 destinations.push(binding.local());
             }
         }
         RuntimePatternKind::Whole { binding, pattern } => {
-            if value.contains_line_handle(token)? {
+            if contains(value)? {
                 destinations.push(binding.local());
             }
             collect_pattern_handle_destinations(pattern, value, token, destinations)?;
         }
         RuntimePatternKind::Tuple(items) => {
-            if let RuntimeValueView::Tuple(_) = value.inspect() {
+            if let RuntimeValueView::Tuple(_) = value {
                 for (index, item) in items.iter().enumerate() {
                     if let Some(value) = value.child_at(index) {
                         collect_pattern_handle_destinations(item, value, token, destinations)?;
@@ -1917,13 +1929,13 @@ fn collect_pattern_handle_destinations(
         }
         RuntimePatternKind::Record { fields, rest } => {
             if let Some(binding) = rest.binding()
-                && value.contains_line_handle(token)?
+                && contains(value)?
             {
                 destinations.push(binding.local());
             }
             for field in fields {
                 let index = field.field().zero_based() as usize;
-                let nested = match value.inspect() {
+                let nested = match value {
                     RuntimeValueView::Record(_) => value.child_at(index),
                     RuntimeValueView::NominalRecord(_) => value.child_at(index),
                     _ => None,
@@ -1939,16 +1951,19 @@ fn collect_pattern_handle_destinations(
             }
         }
         RuntimePatternKind::Sequence { items, rest } => {
-            if let Some(values) = value.sequence() {
+            if let RuntimeValueView::Sequence(values) = value {
                 for (index, item) in items.iter().enumerate() {
-                    if let Some(value) = values.live_value_view(index) {
+                    if let Some(value) = values.value_view(index) {
                         collect_pattern_handle_destinations(item, value, token, destinations)?;
                     }
                 }
                 if let Some(binding) = rest.binding() {
-                    for index in items.len()..values.len() {
-                        if let Some(value) = values.live_value_view(index) {
-                            if value.contains_line_handle(token)? {
+                    let len = values.len().map_err(|_| {
+                        crate::value::ownership::RuntimeAffineHandleError::StructuralOrdinalOverflow
+                    })?;
+                    for index in items.len()..len {
+                        if let Some(value) = values.value_view(index) {
+                            if contains(value)? {
                                 destinations.push(binding.local());
                                 break;
                             }
@@ -1961,7 +1976,7 @@ fn collect_pattern_handle_destinations(
             payload: Some(pattern),
             ..
         } => {
-            if let RuntimeValueView::Variant(variant) = value.inspect()
+            if let RuntimeValueView::Variant(variant) = value
                 && variant.payload().is_some()
             {
                 collect_pattern_handle_destinations(

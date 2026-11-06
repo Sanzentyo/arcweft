@@ -3,7 +3,9 @@
 use super::super::{AwbcProductActiveDialogue, AwbcProductDialoguePhase, AwbcProductStepExecutor};
 use crate::awbc::fiber::{FiberState, FiberStateError};
 use crate::awbc::schema::{AwbcContentUnitId, AwbcDialogueResultTarget, AwbcProgram, AwbcTypeId};
+use crate::line_task::LineRuntimeError;
 use crate::runtime_id::{DialogueActivationId, RuntimePersistentFiberId};
+use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
 struct ReceiverEdge<'a> {
@@ -36,6 +38,40 @@ impl<F> Default for ProductDialogueReceivers<'_, F> {
 }
 
 impl<'a, V, O, N, B, R, G> ProductDialogueReceivers<'a, FiberState<V, O, N, B, R, G>> {
+    pub(in crate::awbc::product_step) fn validate_result_discards(
+        &self,
+        program: &AwbcProgram,
+        activation: &DialogueActivationId,
+        value: crate::value::RuntimeValueView<'_>,
+        retired: &std::collections::BTreeSet<crate::runtime_id::RuntimeLineHandleToken>,
+    ) -> Result<(), LineRuntimeError>
+    where
+        B: Borrow<crate::program_types::RuntimeFunctionEffectInstantiation>,
+    {
+        let invalid = || LineRuntimeError::InvalidRestoredResultState;
+        let row = self
+            .rows
+            .get(&activation.owner_fiber())
+            .ok_or_else(invalid)?;
+        let edge = row
+            .child
+            .as_ref()
+            .filter(|edge| &edge.activation == activation)
+            .ok_or_else(invalid)?;
+        let parent = row
+            .fiber
+            .and_then(|fiber| fiber.frames.last())
+            .ok_or_else(invalid)?;
+        crate::awbc::vm::validate_result_pattern_discards(
+            program,
+            parent.type_instantiation.as_ref().map(Borrow::borrow),
+            edge.result.pattern,
+            value,
+            retired,
+        )
+        .map_err(|_| invalid())
+    }
+
     fn row(
         &mut self,
         owner: RuntimePersistentFiberId,

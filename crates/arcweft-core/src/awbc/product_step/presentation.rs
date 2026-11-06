@@ -76,9 +76,13 @@ impl<'a, V, O, N, B, R, G> ProductPresentationContour<'a, FiberState<V, O, N, B,
         self,
         banks: impl Iterator<Item = crate::runtime_id::RuntimePresentationBankId>,
         admission: &mut RuntimeRetainedValueAdmission,
-    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+    ) -> Result<
+        dialogue::ProductDialogueReceivers<'a, FiberState<V, O, N, B, R, G>>,
+        AwbcRuntimeValueSnapshotError,
+    > {
         self.receivers.validate(self.program)?;
-        self.banks.finish(banks, admission)
+        self.banks.finish(banks, admission)?;
+        Ok(self.receivers)
     }
 }
 
@@ -240,19 +244,24 @@ impl AwbcProductStepExecutor {
         dialogues.try_visit_active(|activation, frame, _| {
             context.register_dialogue(*activation, frame, admission)
         })?;
-        context.finish(
-            self.presentation.iter().flat_map(|banks| banks.bank_ids()),
-            admission,
-        )
+        context
+            .finish(
+                self.presentation.iter().flat_map(|banks| banks.bank_ids()),
+                admission,
+            )
+            .map(|_| ())
     }
 }
 
 impl AwbcProductExecutorSnapshot {
-    pub(super) fn admit_presentation_execution(
-        &self,
-        program: &crate::awbc::schema::AwbcProgram,
+    pub(super) fn admit_presentation_execution<'a>(
+        &'a self,
+        program: &'a crate::awbc::schema::AwbcProgram,
         admission: &mut RuntimeRetainedValueAdmission,
-    ) -> Result<(), AwbcProductStepBuildError> {
+    ) -> Result<
+        dialogue::ProductDialogueReceivers<'a, crate::awbc::fiber::AwbcFiberStateSnapshot>,
+        AwbcProductStepBuildError,
+    > {
         let invalid =
             |error: AwbcRuntimeValueSnapshotError| AwbcProductStepBuildError::RestoreSnapshot {
                 message: error.to_string(),
@@ -351,6 +360,7 @@ impl AwbcProductExecutorSaveSnapshot {
                 self.presentation.iter().flat_map(|banks| banks.bank_ids()),
                 admission,
             )
+            .map(|_| ())
             .map_err(invalid)
     }
 }

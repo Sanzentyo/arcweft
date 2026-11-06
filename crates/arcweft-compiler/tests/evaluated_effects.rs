@@ -3726,6 +3726,184 @@ fn decoded_awbc_nested_line_handle_moves_through_save() {
 }
 
 #[test]
+fn decoded_awbc_dialogue_result_wildcard_survives_pending_release() {
+    use arcweft_core::{
+        awbc::product_step::AwbcProductExecutorSaveSnapshot,
+        engine::{FlowExit, FlowFiberStatus},
+        executor::ArcweftRuntimeExecutorSnapshot,
+        plan::FlowEvent,
+        presentation::{
+            RuntimeLineHostCommand, RuntimeLineHostOutcome, RuntimeStageCommand,
+            RuntimeStageCommandOutcome,
+        },
+        pure::VmRuntimePureCallBackend,
+        step::{RuntimeStepInput, RuntimeStepOptions},
+        time::TickId,
+    };
+
+    let (compiled, mut awbc) = compile_nested_awbc(
+        r#"
+pub character alice { display = "Alice" }
+flow main() -> Unit {
+    let (keep, _) = alice()[Discard[p]] with {
+        let first = alice.stage.acquire(scope=line)
+        let second = alice.stage.acquire(scope=line)
+        out (first, second)
+    }
+    log.info("caller resumed after release")
+    let _ = keep
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    );
+    let schema = bind_test_character_dialogue_schema(&compiled, awbc.program_owner());
+    let mut backend = VmRuntimePureCallBackend::default().with_external_calls(
+        arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
+    );
+    let mut input = RuntimeStepInput::default();
+    let mut acquired = Vec::new();
+    let mut released = Vec::new();
+    let mut release = None;
+    let mut pending_saved = 0;
+    let mut tampered = false;
+    let mut effects = Vec::new();
+    for tick in 0..128 {
+        input.tick = TickId(tick);
+        if release.as_ref().is_some_and(|(due, _)| tick == *due) {
+            input.line_outcomes.push(release.take().unwrap().1);
+        }
+        let result = awbc.step_with_pure_backend(
+            std::mem::take(&mut input),
+            RuntimeStepOptions::default(),
+            &mut backend,
+        );
+        assert!(
+            result.output.diagnostics.is_empty(),
+            "{:?}",
+            result.output.diagnostics
+        );
+        effects.extend(result.output.effects.line);
+        for event in result.output.flow_events {
+            if let FlowEvent::DialogueLine { activation, .. } = event {
+                input.dialogue_advances.push(activation);
+            }
+        }
+        for request in result.output.requests.line_commands {
+            match request {
+                RuntimeLineHostCommand::Stage(RuntimeStageCommand::AcquireActor {
+                    command,
+                    actor,
+                    ..
+                }) => {
+                    assert!(acquired.len() < 2 && !acquired.contains(&actor));
+                    acquired.push(actor.clone());
+                    input.line_outcomes.push(RuntimeLineHostOutcome::Stage(
+                        RuntimeStageCommandOutcome::Acquired { command, actor },
+                    ));
+                }
+                RuntimeLineHostCommand::Stage(RuntimeStageCommand::ReleaseActor {
+                    command,
+                    actor,
+                }) => {
+                    assert_eq!(acquired.len(), 2);
+                    let index = match released.len() {
+                        0 => 1,
+                        1 => 0,
+                        _ => panic!("duplicate release"),
+                    };
+                    assert_eq!(actor, acquired[index]);
+                    assert_eq!(command.activation(), actor.activation());
+                    released.push(actor.clone());
+                    let outcome =
+                        RuntimeLineHostOutcome::Stage(RuntimeStageCommandOutcome::ReleasedActor {
+                            command,
+                            actor,
+                        });
+                    assert!(
+                        release
+                            .replace((tick + if index == 1 { 2 } else { 1 }, outcome))
+                            .is_none()
+                    );
+                }
+                other => panic!("unexpected dialogue command: {other:?}"),
+            }
+        }
+        let publication_pending = released.len() == 1 && release.is_some();
+        (awbc, _) = roundtrip_nested_awbc_checking(awbc, |executor, save| {
+            if !publication_pending {
+                return executor;
+            }
+            let mut forged = save.clone();
+            let line = forged["dialogues"]["entries"]
+                .as_array_mut()
+                .unwrap()
+                .iter_mut()
+                .filter_map(|entry| entry.pointer_mut("/Active/line"))
+                .find(|line| line.pointer("/result/Publishing").is_some())
+                .expect("the result remains publishing during release");
+            pending_saved += 1;
+            if tampered {
+                return executor;
+            }
+            let kept = serde_json::to_value(&acquired[0]).unwrap();
+            let discarded = serde_json::to_value(&acquired[1]).unwrap();
+            let leases = line["ledger"]["leases"].as_object_mut().unwrap();
+            for lease in leases.values_mut() {
+                if lease["token"] == kept {
+                    assert_eq!(lease["state"], "active");
+                    lease["state"] = "cancelling".into();
+                } else if lease["token"] == discarded {
+                    assert_eq!(lease["state"], "cancelling");
+                    lease["state"] = "active".into();
+                }
+            }
+            let issued = line["issued_commands"]
+                .as_object_mut()
+                .unwrap()
+                .values_mut()
+                .map(|row| &mut row["command"])
+                .find(|command| command["kind"] == "release_actor")
+                .expect("the original release command is outstanding");
+            assert_eq!(issued["actor"], discarded);
+            issued["actor"] = kept;
+            let forged = serde_json::from_value::<AwbcProductExecutorSaveSnapshot>(forged).unwrap();
+            let forged = executor.bind_product_save_snapshot(forged).unwrap();
+            let Err(rejected) =
+                executor.restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(forged))
+            else {
+                panic!("a release cannot retire a handle bound by the original pattern");
+            };
+            let (executor, error) = rejected.into_parts();
+            assert!(
+                error.to_string().contains("restored dialogue result"),
+                "{error}"
+            );
+            tampered = true;
+            executor
+        });
+        if publication_pending {
+            assert!(
+                log_messages(&effects).is_empty(),
+                "caller resumed before publication's release was acknowledged"
+            );
+        }
+        match result.fiber_status {
+            FlowFiberStatus::Dialogue(_) | FlowFiberStatus::Running => {}
+            FlowFiberStatus::Done(FlowExit::Done) if release.is_none() => {
+                assert_eq!(released, [acquired[1].clone(), acquired[0].clone()]);
+                assert_eq!(pending_saved, 2);
+                assert!(tampered);
+                assert_eq!(log_messages(&effects), ["caller resumed after release"]);
+                return;
+            }
+            FlowFiberStatus::Done(FlowExit::Done) => {}
+            status => panic!("wildcard dialogue stopped at tick {tick}: {status:?}"),
+        }
+    }
+    panic!("dialogue wildcard release did not finish");
+}
+
+#[test]
 fn decoded_awbc_nested_dialogue_failure_closes_both_activations_through_save() {
     use arcweft_core::{
         engine::FlowFiberStatus,

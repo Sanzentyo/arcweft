@@ -94,16 +94,7 @@ impl<'a> LiveRuntimeValueView<'a> {
 
     /// Projects one logical child while retaining the parent's live provenance.
     pub(crate) fn child_at(self, index: usize) -> Option<Self> {
-        let value = match self.0 {
-            RuntimeValueView::Tuple(values) => values.get(index)?,
-            RuntimeValueView::Record(fields) => fields.get(index)?.2,
-            RuntimeValueView::Sequence(values) => values.value_view(index)?,
-            RuntimeValueView::NominalRecord(record) => record.fields().get(index)?,
-            RuntimeValueView::Variant(variant) if index == 0 => variant.payload()?,
-            RuntimeValueView::PresentationResource(value) if index == 0 => value.body(),
-            _ => return None,
-        };
-        Some(self.child(value))
+        self.0.child_at(index).map(|value| self.child(value))
     }
 
     /// Descendants are issued only from this live parent; raw inspected views
@@ -220,131 +211,6 @@ impl<'a> LiveRuntimeValueView<'a> {
         })
     }
 
-    /// Checks a logical borrowed row for one handle without materializing a
-    /// second live value from columnar storage.
-    pub(crate) fn contains_line_handle(
-        self,
-        token: &crate::runtime_id::RuntimeLineHandleToken,
-    ) -> Result<bool, super::ownership::RuntimeAffineHandleError> {
-        match self.0 {
-            RuntimeValueView::Scalar(_) | RuntimeValueView::DenseNumeric(_) => Ok(false),
-            RuntimeValueView::Tuple(values) => {
-                for index in 0..values.len() {
-                    if let Some(value) = values.get(index)
-                        && self.child(value).contains_line_handle(token)?
-                    {
-                        return Ok(true);
-                    }
-                }
-                Ok(false)
-            }
-            RuntimeValueView::Record(values) => {
-                for index in 0..values.len() {
-                    if let Some((_, _, value)) = values.get(index)
-                        && self.child(value).contains_line_handle(token)?
-                    {
-                        return Ok(true);
-                    }
-                }
-                Ok(false)
-            }
-            RuntimeValueView::Sequence(values) => {
-                for index in 0..values.len().expect("live sequence has a platform length") {
-                    if let Some(value) = values.value_view(index)
-                        && self.child(value).contains_line_handle(token)?
-                    {
-                        return Ok(true);
-                    }
-                }
-                Ok(false)
-            }
-            RuntimeValueView::NominalRecord(record) => {
-                record.fields().iter().try_fold(false, |found, value| {
-                    Ok(found || self.child(value).contains_line_handle(token)?)
-                })
-            }
-            RuntimeValueView::Opaque(value) => match value.value_class() {
-                super::RuntimeOpaqueValueClass::AffineHandle(_) => Ok(
-                    &crate::runtime_id::RuntimeLineHandleToken::try_decode_payload(
-                        value
-                            .live_value()
-                            .expect("live opaque capability retains live storage")
-                            .payload(),
-                    )? == token,
-                ),
-                super::RuntimeOpaqueValueClass::PresentationHandle => {
-                    crate::runtime_id::RuntimePresentationHandleToken::try_decode_view(
-                        value.payload(),
-                    )?;
-                    Ok(false)
-                }
-                super::RuntimeOpaqueValueClass::Plain => {
-                    self.child(value.payload()).contains_line_handle(token)
-                }
-            },
-            RuntimeValueView::PresentationResource(value) => {
-                self.child(value.body()).contains_line_handle(token)
-            }
-            RuntimeValueView::Reduction(value) => {
-                if self.child(value.state()).contains_line_handle(token)? {
-                    return Ok(true);
-                }
-                for command in value.commands().iter() {
-                    if self.child(command.payload()).contains_line_handle(token)? {
-                        return Ok(true);
-                    }
-                }
-                Ok(false)
-            }
-            RuntimeValueView::Agent(value) => {
-                for (_, nested) in value
-                    .live_value()
-                    .expect("live Agent capability retains live storage")
-                    .nested_runtime_values_with_depth()
-                {
-                    if nested.live_view().contains_line_handle(token)? {
-                        return Ok(true);
-                    }
-                }
-                Ok(false)
-            }
-            RuntimeValueView::Variant(variant) => variant.payload().map_or(Ok(false), |value| {
-                self.child(value).contains_line_handle(token)
-            }),
-            RuntimeValueView::Range(_) => Ok(false),
-            RuntimeValueView::Need(value) => {
-                for value in value.request_values() {
-                    if self.child(value).contains_line_handle(token)? {
-                        return Ok(true);
-                    }
-                }
-                Ok(false)
-            }
-            RuntimeValueView::Iterator(value) => match value.kind() {
-                RuntimeIteratorKind::Values(items) => {
-                    for value in items.iter() {
-                        if self.child(value).contains_line_handle(token)? {
-                            return Ok(true);
-                        }
-                    }
-                    Ok(false)
-                }
-                RuntimeIteratorKind::Range(_) => Ok(false),
-                RuntimeIteratorKind::Witness(witness) => {
-                    self.child(witness.state()).contains_line_handle(token)
-                }
-            },
-            RuntimeValueView::Callable(value) => {
-                for value in value.retained().iter() {
-                    if self.child(value).contains_line_handle(token)? {
-                        return Ok(true);
-                    }
-                }
-                Ok(false)
-            }
-        }
-    }
-
     /// Ownership of a borrowed logical row, including columnar children.
     pub(crate) fn ownership(self) -> RuntimeValueOwnership {
         let join = |current: RuntimeValueOwnership, value: RuntimeValueView<'_>| {
@@ -409,6 +275,19 @@ impl<'a> LiveRuntimeValueView<'a> {
 }
 
 impl<'a> RuntimeValueView<'a> {
+    /// Borrows one child without materializing a live or inert carrier.
+    pub(crate) fn child_at(self, index: usize) -> Option<Self> {
+        match self {
+            Self::Tuple(values) => values.get(index),
+            Self::Record(fields) => fields.get(index).map(|(_, _, value)| value),
+            Self::Sequence(values) => values.value_view(index),
+            Self::NominalRecord(record) => record.fields().get(index),
+            Self::Variant(variant) if index == 0 => variant.payload(),
+            Self::PresentationResource(value) if index == 0 => Some(value.body()),
+            _ => None,
+        }
+    }
+
     /// Whether this node refers to original executable storage. Resource
     /// admission accumulates this fact over the complete borrowed graph.
     pub(crate) fn requires_program_storage_admission(self) -> bool {
