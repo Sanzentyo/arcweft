@@ -2426,6 +2426,84 @@ mod tests {
     }
 
     #[test]
+    fn received_handle_reexport_and_sibling_drop_publish_together() {
+        use crate::line_task::{RuntimeHandleDropAuthorization, RuntimeHandleOwnerSlot};
+
+        let mut store = DialogueActivationStore::default();
+        let (export, execution) = publish_stage_actor(&mut store, &activation(54));
+        let (discard, _) = publish_stage_actor(&mut store, &activation(55));
+        let handles = export.affine_line_handles().unwrap();
+        let export_token = handles[0].token();
+        let discard_token = crate::line_task::RuntimeLineHandleLedger::token_from_value(&discard)
+            .expect("published token");
+        let receiver = activation(56);
+        let source = RuntimeHandleOwnerSlot::ParentFiber(RuntimeOwnedSlotId::EnvironmentLocal {
+            execution,
+            local: RuntimeLocalSlotId::from_allocated(NonZeroU64::new(23).unwrap()),
+        });
+        let before = BTreeMap::from([
+            (export_token.clone(), source.clone()),
+            (discard_token.clone(), source),
+        ]);
+        let after = BTreeMap::new();
+        let unchanged = published_registry_snapshot(&store);
+        assert!(matches!(
+            store.inspect_received_fiber_reconciliation(
+                execution,
+                &before,
+                &after,
+                &RuntimeHandleDropAuthorization::default(),
+                None,
+                Some((&receiver, &handles)),
+            ),
+            Err(LineRuntimeError::UnjournaledHandleDrop)
+        ));
+        assert_eq!(published_registry_snapshot(&store), unchanged);
+
+        let mut drops = RuntimeHandleDropAuthorization::default();
+        drops.authorize_displaced(&discard).unwrap();
+        let prepared = store
+            .inspect_received_fiber_reconciliation(
+                execution,
+                &before,
+                &after,
+                &drops,
+                None,
+                Some((&receiver, &handles)),
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(published_registry_snapshot(&store), unchanged);
+        let commands = store
+            .registry
+            .commit_parent_fiber_reconciliation(prepared)
+            .into_commands();
+        let [
+            crate::presentation::RuntimeLineHostCommand::Stage(
+                crate::presentation::RuntimeStageCommand::ReleaseActor { actor, .. },
+            ),
+        ] = commands.as_slice()
+        else {
+            panic!("the authorized sibling emits one release");
+        };
+        assert_eq!(actor, &discard_token);
+        let destination = RuntimeOwnedSlotId::EnvironmentLocal {
+            execution,
+            local: RuntimeLocalSlotId::from_allocated(NonZeroU64::new(24).unwrap()),
+        };
+        let (ready, publication) = store
+            .inspect_received_result_publication(
+                &receiver,
+                execution,
+                &handles,
+                &BTreeMap::from([(export_token.clone(), destination)]),
+                true,
+            )
+            .unwrap();
+        assert!(ready && publication.is_some());
+    }
+
+    #[test]
     fn partial_record_replacement_drops_only_remaining_handles() {
         let mut store = DialogueActivationStore::default();
         let (remaining, execution) = publish_stage_actor(&mut store, &activation(51));

@@ -1537,50 +1537,27 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         after: &BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>,
         drops: &super::RuntimeHandleDropAuthorization,
     ) -> Result<PreparedRuntimeParentFiberReconciliation, LineRuntimeError> {
-        self.inspect_parent_fiber_reconciliation_with_results(execution, before, after, drops, None)
+        self.inspect_published_receiver_custody(execution, before, after, drops, |slot| {
+            RuntimeHandleOwnerSlot::ParentFiber(*slot)
+        })
     }
 
-    /// A single issuer candidate covers slot moves, drops and transfers into
-    /// the receiver's result, even when one instruction affects all three.
-    fn inspect_parent_fiber_reconciliation_with_results(
+    /// Every affected issuer receives the complete before and after graph
+    /// for one instruction, including ownership outside the receiving fiber.
+    fn inspect_published_receiver_custody<S>(
         &self,
         execution: ExecutionInstanceId,
-        before: &BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>,
-        after: &BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>,
+        before: &BTreeMap<RuntimeLineHandleToken, S>,
+        after: &BTreeMap<RuntimeLineHandleToken, S>,
         drops: &super::RuntimeHandleDropAuthorization,
-        result: Option<(&DialogueActivationId, &[RuntimeAffineLineHandle])>,
+        owner_slot: impl Fn(&S) -> RuntimeHandleOwnerSlot,
     ) -> Result<PreparedRuntimeParentFiberReconciliation, LineRuntimeError> {
         if after.keys().any(|token| !before.contains_key(token)) {
             return Err(LineRuntimeError::UnexpectedParentHandleOccurrence);
         }
-        let mut result_transfers = BTreeMap::<DialogueActivationId, Vec<_>>::new();
-        let mut result_tokens = std::collections::BTreeSet::new();
-        if let Some((receiver, handles)) = result {
-            for handle in handles
-                .iter()
-                .filter(|handle| handle.token().activation() != receiver)
-            {
-                let token = handle.token();
-                let Some(source) = before.get(token) else {
-                    return Err(LineRuntimeError::WrongOwner);
-                };
-                if source.execution() != execution
-                    || token.activation().artifact() != receiver.artifact()
-                {
-                    return Err(LineRuntimeError::WrongOwner);
-                }
-                if after.contains_key(token) || !result_tokens.insert(token) {
-                    return Err(LineRuntimeError::DuplicateHandleOccurrence);
-                }
-                result_transfers
-                    .entry(*token.activation())
-                    .or_default()
-                    .push((receiver, handle, *source));
-            }
-        }
         drops.validate_removed(
             |token| before.contains_key(token),
-            |token| after.contains_key(token) || result_tokens.contains(token),
+            |token| after.contains_key(token),
         )?;
         let mut grouped_before = BTreeMap::<DialogueActivationId, BTreeMap<_, _>>::new();
         let mut grouped_after = BTreeMap::<DialogueActivationId, BTreeMap<_, _>>::new();
@@ -1588,39 +1565,31 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
             grouped_before
                 .entry(token.activation().clone())
                 .or_default()
-                .insert(token.clone(), *owner);
+                .insert(token.clone(), owner_slot(owner));
         }
         for (token, owner) in after {
             grouped_after
                 .entry(token.activation().clone())
                 .or_default()
-                .insert(token.clone(), *owner);
+                .insert(token.clone(), owner_slot(owner));
         }
 
         let mut updates = Vec::new();
         let mut commands = Vec::new();
         for (activation, source) in grouped_before {
-            let mut destination = grouped_after.remove(&activation).unwrap_or_default();
-            let transfers = result_transfers.remove(&activation).unwrap_or_default();
-            for (_, handle, slot) in &transfers {
-                destination.insert(handle.token().clone(), *slot);
-            }
+            let destination = grouped_after.remove(&activation).unwrap_or_default();
             let Some(RuntimeDialogueRegistryEntry::PublishedHandles { revision, handles }) =
                 self.entries.get(&activation)
             else {
                 return Err(LineRuntimeError::ParentHandleBeforePublication);
             };
-            let mut candidate = handles.clone();
-            let receipt = candidate.reconcile_parent_owned(
+            let (candidate, receipt) = handles.inspect_receiver_custody(
                 &activation,
                 execution,
                 &source,
                 &destination,
                 drops,
             )?;
-            for (receiver, handle, slot) in transfers {
-                candidate.move_received_into_result(receiver, slot, handle)?;
-            }
             if &candidate == handles {
                 continue;
             }
@@ -1630,7 +1599,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
             updates.push((activation, *revision, next_revision, candidate));
             commands.extend(receipt.into_commands());
         }
-        if !grouped_after.is_empty() || !result_transfers.is_empty() {
+        if !grouped_after.is_empty() {
             return Err(LineRuntimeError::UnexpectedParentHandleOccurrence);
         }
         Ok(PreparedRuntimeParentFiberReconciliation {
@@ -1651,41 +1620,73 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         let receiver_slots = |owners: &BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>| {
             owners
                 .iter()
-                .filter_map(|(token, owner)| match owner {
-                    RuntimeHandleOwnerSlot::ParentFiber(slot) => Some((token.clone(), *slot)),
-                    _ => None,
-                })
+                .filter(|(_, owner)| matches!(owner, RuntimeHandleOwnerSlot::ParentFiber(_)))
+                .map(|(token, owner)| (token.clone(), owner.clone()))
                 .collect::<BTreeMap<_, _>>()
         };
         let mut published_before = receiver_slots(before);
-        let published_after = receiver_slots(after);
+        let mut published_after = receiver_slots(after);
         if published_before == published_after && arrivals.is_none() && result.is_none() {
             return Ok(None);
         }
         if arrivals.is_some_and(|arrivals| {
             arrivals.iter().any(|(token, slot)| {
-                published_before.contains_key(token) || published_after.get(token) != Some(slot)
+                published_before.contains_key(token)
+                    || published_after.get(token)
+                        != Some(&RuntimeHandleOwnerSlot::ParentFiber(*slot))
             })
         }) {
             return Err(LineRuntimeError::UnexpectedParentHandleOccurrence);
         }
         for (token, slot) in &published_after {
             if let Entry::Vacant(entry) = published_before.entry(token.clone()) {
+                let RuntimeHandleOwnerSlot::ParentFiber(slot) = slot else {
+                    unreachable!("receiver slot projection selects parent fiber slots")
+                };
                 if arrivals.and_then(|arrivals| arrivals.get(token)) != Some(slot) {
                     return Err(LineRuntimeError::UnexpectedParentHandleOccurrence);
                 }
                 // Publication already bound this exact destination. The
                 // published lease must confirm the arriving slot below.
-                entry.insert(*slot);
+                entry.insert(RuntimeHandleOwnerSlot::ParentFiber(*slot));
+            }
+        }
+        if let Some((receiver, handles)) = result {
+            for handle in handles
+                .iter()
+                .filter(|handle| handle.token().activation() != receiver)
+            {
+                let token = handle.token();
+                if !published_before.contains_key(token) {
+                    return Err(LineRuntimeError::WrongOwner);
+                }
+                let Some(RuntimeDialogueRegistryEntry::PublishedHandles { handles, .. }) =
+                    self.entries.get(token.activation())
+                else {
+                    return Err(LineRuntimeError::ParentHandleBeforePublication);
+                };
+                let lease = handles
+                    .lease(token)
+                    .ok_or(LineRuntimeError::UnknownHandle)?;
+                if lease.resource().kind() != handle.kind() {
+                    return Err(LineRuntimeError::WrongOpaqueProducer);
+                }
+                let Entry::Vacant(entry) = published_after.entry(token.clone()) else {
+                    return Err(LineRuntimeError::DuplicateHandleOccurrence);
+                };
+                entry.insert(RuntimeHandleOwnerSlot::ReceivedDialogueResult {
+                    receiver: *receiver,
+                    path: handle.path().clone(),
+                });
             }
         }
         let drops = drops.for_tokens(|token| published_before.contains_key(token));
-        let prepared = self.inspect_parent_fiber_reconciliation_with_results(
+        let prepared = self.inspect_published_receiver_custody(
             execution,
             &published_before,
             &published_after,
             &drops,
-            result,
+            Clone::clone,
         )?;
         Ok((!prepared.updates.is_empty()).then_some(prepared))
     }

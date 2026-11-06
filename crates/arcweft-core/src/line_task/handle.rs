@@ -277,6 +277,23 @@ pub enum RuntimeHandleOwnerSlot {
 }
 
 impl RuntimeHandleOwnerSlot {
+    fn validate_published_receiver(
+        &self,
+        issuer: &DialogueActivationId,
+        execution: crate::runtime_id::ExecutionInstanceId,
+    ) -> Result<(), LineRuntimeError> {
+        match self {
+            Self::ParentFiber(slot) if slot.execution() == execution => Ok(()),
+            Self::ReceivedDialogueResult { receiver, .. }
+                if receiver != issuer && receiver.artifact() == issuer.artifact() =>
+            {
+                Ok(())
+            }
+            Self::ReceivedDialogueResult { .. } => Err(LineRuntimeError::WrongActivation),
+            _ => Err(LineRuntimeError::WrongOwner),
+        }
+    }
+
     pub(crate) fn in_dialogue_fiber(
         activation: &DialogueActivationId,
         token: &RuntimeLineHandleToken,
@@ -3143,36 +3160,6 @@ impl RuntimePublishedDialogueHandles {
         RuntimeCommandQueue::new(issuer, self.command_sequence)
     }
 
-    pub(crate) fn move_received_into_result(
-        &mut self,
-        receiver: &DialogueActivationId,
-        source: RuntimeOwnedSlotId,
-        handle: &crate::value::ownership::RuntimeAffineLineHandle,
-    ) -> Result<(), LineRuntimeError> {
-        let token = handle.token();
-        if receiver == token.activation() || receiver.artifact() != token.activation().artifact() {
-            return Err(LineRuntimeError::WrongActivation);
-        }
-        let lease = self
-            .ledger
-            .lease(token)
-            .ok_or(LineRuntimeError::UnknownHandle)?;
-        if lease.resource().kind() != handle.kind() {
-            return Err(LineRuntimeError::WrongOpaqueProducer);
-        }
-        if result_lease_was_retired(lease.state()) {
-            return Err(LineRuntimeError::ReleasedHandle);
-        }
-        self.ledger.transfer(
-            token,
-            &RuntimeHandleOwnerSlot::ParentFiber(source),
-            RuntimeHandleOwnerSlot::ReceivedDialogueResult {
-                receiver: *receiver,
-                path: handle.path().clone(),
-            },
-        )
-    }
-
     pub(crate) fn result_lease(
         &self,
         receiver: &DialogueActivationId,
@@ -3440,19 +3427,17 @@ impl RuntimePublishedDialogueHandles {
         Ok(rejected)
     }
 
-    /// Atomically reconciles the exact parent-fiber slot graph produced by one
-    /// AWBC instruction. A token may move between parent registers or leave
-    /// the graph through a typed drop, but execution cannot manufacture a new
-    /// published token or use same-execution ownership as a substitute for the
-    /// exact source slot.
-    pub(crate) fn reconcile_parent_owned(
-        &mut self,
+    /// Prepares the original issuer's complete ownership and command update
+    /// for one receiving instruction. Each token has one exact destination,
+    /// including values transferred out of the receiving fiber.
+    pub(crate) fn inspect_receiver_custody(
+        &self,
         activation: &DialogueActivationId,
         execution: crate::runtime_id::ExecutionInstanceId,
-        before: &BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>,
-        after: &BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>,
+        before: &BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>,
+        after: &BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>,
         drops: &super::RuntimeHandleDropAuthorization,
-    ) -> Result<RuntimeHandleDropReceipt, LineRuntimeError> {
+    ) -> Result<(Self, RuntimeHandleDropReceipt), LineRuntimeError> {
         if after.keys().any(|token| !before.contains_key(token)) {
             return Err(LineRuntimeError::UnexpectedParentHandleOccurrence);
         }
@@ -3462,42 +3447,41 @@ impl RuntimePublishedDialogueHandles {
             if token.activation() != activation {
                 return Err(LineRuntimeError::WrongActivation);
             }
-            if source.execution() != execution
-                || after
-                    .get(token)
-                    .is_some_and(|destination| destination.execution() != execution)
-            {
+            source.validate_published_receiver(activation, execution)?;
+            let lease = candidate
+                .ledger
+                .lease(token)
+                .ok_or(LineRuntimeError::UnknownHandle)?;
+            if lease.owner() != source {
                 return Err(LineRuntimeError::WrongOwner);
             }
-            let expected = RuntimeHandleOwnerSlot::ParentFiber(*source);
             match after.get(token) {
-                Some(destination) if destination == source => {
-                    let lease = candidate
-                        .ledger
-                        .lease(token)
-                        .ok_or(LineRuntimeError::UnknownHandle)?;
-                    if lease.owner() != &expected {
-                        return Err(LineRuntimeError::WrongOwner);
+                Some(destination) if destination == source => {}
+                Some(destination) => {
+                    destination.validate_published_receiver(activation, execution)?;
+                    if matches!(
+                        destination,
+                        RuntimeHandleOwnerSlot::ReceivedDialogueResult { .. }
+                    ) && result_lease_was_retired(lease.state())
+                    {
+                        return Err(LineRuntimeError::ReleasedHandle);
                     }
+                    candidate
+                        .ledger
+                        .transfer(token, source, destination.clone())?;
                 }
-                Some(destination) => candidate.ledger.transfer(
-                    token,
-                    &expected,
-                    RuntimeHandleOwnerSlot::ParentFiber(*destination),
-                )?,
                 None => {
                     let policy = drops
                         .policy_for(token)
                         .ok_or(LineRuntimeError::UnjournaledHandleDrop)?;
                     candidate
                         .ledger
-                        .drop_owned_with_policy(token, &expected, policy, &mut queue)?;
+                        .drop_owned_with_policy(token, source, policy, &mut queue)?;
                 }
             }
         }
         let commands = candidate.record_parent_drop_commands(activation, queue)?;
-        *self = candidate;
-        Ok(RuntimeHandleDropReceipt { commands })
+        Ok((candidate, RuntimeHandleDropReceipt { commands }))
     }
 
     pub(crate) fn record_parent_drop_commands(
