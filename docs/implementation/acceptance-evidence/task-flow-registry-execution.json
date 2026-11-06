@@ -7225,5 +7225,300 @@
         }
       ]
     }
+  },
+  "sourceOptionalRegistryReads": {
+    "source": "f68dd1a0800f35d3fd1db4e39e941a7aa4151a14",
+    "base": "974b5e185ab1283ce5cfe96e957311c67e833cef",
+    "published": "f68dd1a0800f35d3fd1db4e39e941a7aa4151a14",
+    "tree": "30eed23d23f8b24d9f2c7db75e9e33114007ad5f",
+    "patchSha256": "f3ddc0291f90b65f599da0456c137ff857492452c2045c88c2d790450e27866d",
+    "blobDrift": 0,
+    "tests": [
+      {
+        "version": 1,
+        "base": "974b5e185ab1283ce5cfe96e957311c67e833cef",
+        "run": "source-optional-registry-owners-final-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [  64.581s] 1511 tests run: 1511 passed, 1 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 1511,
+        "passed": 1511,
+        "failed": 0,
+        "skipped": 1,
+        "selectedPackages": 2,
+        "matchedPackages": 2,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4131,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T07:54:16.0551716Z"
+      },
+      {
+        "version": 1,
+        "base": "974b5e185ab1283ce5cfe96e957311c67e833cef",
+        "run": "source-optional-registry-compiler-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   3.774s] 57 tests run: 57 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 57,
+        "passed": 57,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4131,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T07:55:53.97525Z"
+      }
+    ],
+    "quality": [
+      {
+        "source": "f68dd1a0800f35d3fd1db4e39e941a7aa4151a14",
+        "command": [
+          "check",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4131,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T07:56:45.6350578Z",
+        "finishedAt": "2026-11-06T07:58:54.3975623Z"
+      },
+      {
+        "source": "f68dd1a0800f35d3fd1db4e39e941a7aa4151a14",
+        "command": [
+          "clippy",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4131,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T07:58:55.4822024Z",
+        "finishedAt": "2026-11-06T08:01:17.6153307Z"
+      },
+      {
+        "source": "f68dd1a0800f35d3fd1db4e39e941a7aa4151a14",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4131,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T08:01:18.7213263Z",
+        "finishedAt": "2026-11-06T08:01:22.6976315Z"
+      }
+    ],
+    "reverseGraph": {
+      "source": "974b5e185ab1283ce5cfe96e957311c67e833cef",
+      "targets": "all",
+      "features": "all",
+      "owners": [
+        "arcweft-lang-sema",
+        "arcweft-runtime-plan",
+        "arcweft-compiler"
+      ],
+      "workspaceReversePackages": [
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lang-sema",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-project-loader",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ]
+    },
+    "coverage": "Source optional paths with a contextual Option type preserve the checked HIR key and presence mode. Both Native and canonical decoded AWBC evaluate the same Flow key before and after registration. Dialogue initialization and a mark handler select the distinct reached Line and parent Flow rows of the same key. Sema rejects source paths without a reached registry and the transcript corpus retains the new value family.",
+    "prior": "The first compiler check found two missing RuntimeResolvedValue arms. The first focused execution failed on the RuntimePlan semantic-fact family whitelist. The first owner run passed 1510 and failed the exact semantic-tag range test. The corrected tag inventory appends the new value tag after the existing range.",
+    "unverifiedAtRun": "Required source reads, optional item-type inference from writes, callable and other scope grants, cancellation drops, affine storage and complete reverse-dependency execution remain separate.",
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-source-optional-registry.raw.zip",
+      "sha256": "a8cc3eea6e67ceb30a644bc8caa6b5803e977062708307666221445615d0afc0",
+      "entries": [
+        {
+          "entry": "source-optional-registry-check-first-20261106.log",
+          "bytes": 92412,
+          "sha256": "d70ff90ebe88d3d3f0c48aa3536b987e70ad74d017a93c53156c54185f041550"
+        },
+        {
+          "entry": "source-optional-registry-compiler-first-20261106.log",
+          "bytes": 88266,
+          "sha256": "1bdaaa52e8b1ae4575a39b1fc48eee856eaa7b291cdfcab9f3ed9c8618dd9925"
+        },
+        {
+          "entry": "source-optional-registry-owners-20261106.runtime.terminal-audit.json",
+          "bytes": 839,
+          "sha256": "fff7512004580c204a76336c39b363b415377cdd6ccbfcd1aa88cb99f2907076"
+        },
+        {
+          "entry": "source-optional-registry-owners-20261106.runtime.log",
+          "bytes": 559673,
+          "sha256": "430f6a63f3d354bc8ac8841d7638c0de7f5c09b1251b2e86123766a5fa94bbad"
+        },
+        {
+          "entry": "source-optional-registry-20261106.reverse.json",
+          "bytes": 833,
+          "sha256": "865aef35ccc17a2d2b2f97e1527b50682d34b59887072a3480431f27ad69d2ac"
+        },
+        {
+          "entry": "source-optional-registry-20261106.cargo-tree.txt",
+          "bytes": 9446,
+          "sha256": "55de5f2fefea64a8b646c7461b4586f354537e05a31122b6380c2f8ffa147139"
+        },
+        {
+          "entry": "source-optional-registry-20261106.reverse-plan.json",
+          "bytes": 41400,
+          "sha256": "9a73ee68abdd605275f699dba58bb36aad3d2b8570ad3f36e9203e2f6c917f4a"
+        },
+        {
+          "entry": "checkpoint-source-optional-registry-20261106.verified.json",
+          "bytes": 3125,
+          "sha256": "48eadea33d0238493d8ad411b09690b9972bced3cd7559f485d549a9f47bd444"
+        },
+        {
+          "entry": "source-optional-registry-workspace-check-20261106.log",
+          "bytes": 110543,
+          "sha256": "740eed078a04ae7563cb35033624dd863c48d32466090af1e219ba28ad810acd"
+        },
+        {
+          "entry": "source-optional-registry-workspace-check-20261106.json",
+          "bytes": 340,
+          "sha256": "17734011f7c809247b85e109cc33e891f238840b00279dcee7b054fa7283c631"
+        },
+        {
+          "entry": "source-optional-registry-workspace-clippy-20261106.log",
+          "bytes": 8940397,
+          "sha256": "89b68e79ad84da8cf499aafe3b63acb72a02340404f4eafea505d74cab81560b"
+        },
+        {
+          "entry": "source-optional-registry-workspace-clippy-20261106.json",
+          "bytes": 341,
+          "sha256": "c580dd75168252fd2bd331b4b0ce94788c51e32d37f07a0b6ffce294545dd5db"
+        },
+        {
+          "entry": "source-optional-registry-structure-20261106.log",
+          "bytes": 65698,
+          "sha256": "0f5d88cf4afcb22268121b8b945b5dd307e931acd5e119bae0f95cf45d34a946"
+        },
+        {
+          "entry": "source-optional-registry-structure-20261106.json",
+          "bytes": 363,
+          "sha256": "12f5b4cda87a3e90059ee4d9bcc499725533b96fed3c642d62a7d89e0066b414"
+        },
+        {
+          "entry": "source-optional-registry-owners-final-20261106.catalog.json",
+          "bytes": 604,
+          "sha256": "6497c0d17af874e61f80100dc6ba1620959a174c9132ddbc53708bc220560526"
+        },
+        {
+          "entry": "source-optional-registry-owners-final-20261106.catalog.inventory.json",
+          "bytes": 397185,
+          "sha256": "ce27389f9046f0d690d57f27632e4d11d2ab4d123427a0be5b9a13783c913636"
+        },
+        {
+          "entry": "source-optional-registry-owners-final-20261106.catalog.log",
+          "bytes": 344422,
+          "sha256": "8c5a159340092edf8e0eff07341ba5a64f81f7bce1f6ac7dbdd773aa038da6a0"
+        },
+        {
+          "entry": "source-optional-registry-owners-final-20261106.runtime.json",
+          "bytes": 696,
+          "sha256": "2c7bb122a7cfaa4dde26a97966d1d91a44f06f54cdacb0d4a39926e603751322"
+        },
+        {
+          "entry": "source-optional-registry-owners-final-20261106.runtime.log",
+          "bytes": 558722,
+          "sha256": "a6c8650417d867c2f40f2f681e3f14bb27183142f027bb2aeb14e16a30465c6f"
+        },
+        {
+          "entry": "source-optional-registry-owners-final-20261106.runtime.terminal-audit.json",
+          "bytes": 635,
+          "sha256": "a3712994732119f757b38bcf15f7d775a23c0cf6c7cd7d07504138e726b6a648"
+        },
+        {
+          "entry": "source-optional-registry-owners-final-20261106.binaries-before.json",
+          "bytes": 457,
+          "sha256": "5ac3f2f55788ca656529dffb97dd6d93b44aacf013169f63e796bdbb3f62f80f"
+        },
+        {
+          "entry": "source-optional-registry-owners-final-20261106.source-freeze.json",
+          "bytes": 807830,
+          "sha256": "3cc8fab056237bb93aeaa8f60b008c3e9fdd9ad3eee11acb976dc4e0eabb7c7f"
+        },
+        {
+          "entry": "source-optional-registry-compiler-20261106.catalog.json",
+          "bytes": 586,
+          "sha256": "51fdbfc1d200d166fce2ce88d80fccb1ce35a32c20b50e98e7f40cd6f6eadb7b"
+        },
+        {
+          "entry": "source-optional-registry-compiler-20261106.catalog.inventory.json",
+          "bytes": 14480,
+          "sha256": "5de203f53965b25087c17d1424d4322d5a1e32f9ad5dcf1ac79ce8daf40b3d07"
+        },
+        {
+          "entry": "source-optional-registry-compiler-20261106.catalog.log",
+          "bytes": 94327,
+          "sha256": "628b930408a36547d32e9a174c442c10b706a32d1683b696816ee681f310ee48"
+        },
+        {
+          "entry": "source-optional-registry-compiler-20261106.runtime.json",
+          "bytes": 678,
+          "sha256": "b3cce2792c1ff5f1147329cf6a9783dd45ebb3f60030a19e39433e436f5c0cff"
+        },
+        {
+          "entry": "source-optional-registry-compiler-20261106.runtime.log",
+          "bytes": 101225,
+          "sha256": "e836607498d3bd838984702084d7066de10fb1b998cde1039ea0bb2035abd0b1"
+        },
+        {
+          "entry": "source-optional-registry-compiler-20261106.runtime.terminal-audit.json",
+          "bytes": 623,
+          "sha256": "35760585034c74ab674d9a18b4e0580b4c60eb78d39f51cb75b54e948d4de7e5"
+        },
+        {
+          "entry": "source-optional-registry-compiler-20261106.binaries-before.json",
+          "bytes": 230,
+          "sha256": "e9692e299735a278d33e45d78e1e2690d4d9ce2317ab7347156e951fcc1e7d15"
+        },
+        {
+          "entry": "source-optional-registry-compiler-20261106.source-freeze.json",
+          "bytes": 807830,
+          "sha256": "aad99ef8b4508fff5fb106d09a7df9f0c5b44cee695498d9dfe86083e3d4f4c6"
+        }
+      ]
+    }
   }
 }

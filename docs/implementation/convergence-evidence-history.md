@@ -14904,3 +14904,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source `396cbb5603b520943243f09529cb1ed0b74f9e6d` で、Nativeの対話中に到達したFlow／Lineの値を複製する前に、元の親と各対話の実行・保持値を同じ資源枠で検査する。実トランザクションからLineを選び、入れ子の対話を終えると外側のLineに戻る。表だけを共有する旧経路を削除した。
 - 実際のFlowに書き込んでから、単独・入れ子の対話で累積上限の前後を検査した。Core全2,287件、Compilerのevaluated_effects全55件がPASS。Core Clippyと構造ゲートはexit 0。初回のコンパイル失敗と実Flowを起動していなかったテストの拒否も保持した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-06 — Optional registry reads authored in Source
+
+- Source `f68dd1a0800f35d3fd1db4e39e941a7aa4151a14` で、文脈型が`Option<T>`のoptional読み取りを型付きの値として検査する。Semaの元キーと読み取り形式をRuntimePlanへ渡し、Nativeと正規デコードしたAWBCでFlowの登録前後と対話中のLine／親Flowを確認した。
+- Sema／RuntimePlanの1,511件とCompilerのevaluated_effects 57件がPASS、ownerで1件skip。workspace check／Clippy／構造ゲートの終了コードは順に 0／0／0。初回コンパイルの移行漏れ、RuntimePlanの分類拒否、追加タグの範囲テスト1失敗も保持した。逆依存22パッケージのテスト対象をCargoから照合した。検証済み3ターゲットを除く111ターゲットを46区分に分けた。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。

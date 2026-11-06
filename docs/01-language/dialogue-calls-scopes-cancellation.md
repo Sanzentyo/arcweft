@@ -387,7 +387,8 @@ with {
 
 Line lifetime registry paths use the same lifetime sigil as scope labels:
 `'line.focus` is a guaranteed value only when the checker can prove the key was
-registered, while `'line.focus?` is optional and returns an `Option`-like value.
+registered, while `'line.focus?` returns an `Option<T>` within the reached scope.
+An expected `Option<T>` can establish the item type when the key is absent.
 `focus=.soft` guarantees the default `'line.focus`; explicit keys such as
 `'line.focus.main` become guaranteed after an assignment with `<-`.
 
