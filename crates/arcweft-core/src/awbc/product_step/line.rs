@@ -1501,7 +1501,7 @@ impl super::AwbcProductStepExecutor {
                     trap,
                 )
             } else {
-                let registry_write = if let Some((scope, admission)) =
+                let registry_access = if let Some((scope, admission)) =
                     registry_scope.as_ref().zip(registry_admission.as_mut())
                 {
                     let (owner, rows) = super::dialogue::reached_registry(
@@ -1512,7 +1512,7 @@ impl super::AwbcProductStepExecutor {
                         std::iter::once(&self.fiber)
                             .chain(self.child_fibers.iter().map(|child| &child.fiber)),
                     )?;
-                    Some(crate::awbc::vm::VmDialogueRegistryWrite {
+                    Some(crate::awbc::vm::VmDialogueRegistryAccess {
                         owner,
                         rows,
                         admission,
@@ -1531,7 +1531,7 @@ impl super::AwbcProductStepExecutor {
                         context: Some(&context),
                         presentation: Some(&mut self.presentation),
                         actions: Some(&mut self.actions),
-                        dialogue_registry: registry_write,
+                        dialogue_registry: registry_access,
                     },
                     &mut host,
                 )

@@ -3170,6 +3170,7 @@ fn opcode_owner_exhaustively_seals_every_v1_byte_and_family() {
         (AwbcOpcode::VecPop, 0x18, Value),
         (AwbcOpcode::ReadPlace, 0x19, Value),
         (AwbcOpcode::ArrayFromVec, 0x1a, Value),
+        (AwbcOpcode::ReadRegistry, 0x1b, Value),
         (AwbcOpcode::CallPureHelper, 0x20, CallTask),
         (AwbcOpcode::CallIntrinsic, 0x21, CallTask),
         (AwbcOpcode::CallTraitMethod, 0x22, CallTask),

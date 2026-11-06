@@ -1,4 +1,5 @@
 use super::*;
+use crate::effect::RuntimeRegistryReadKind;
 use arcweft_id::{DeclarationName, LifetimeRegistryKey, LifetimeScopeKind};
 
 fn registry_program(scope: LifetimeScopeKind, path: &[&str], declared: &str) -> AwbcProgram {
@@ -127,6 +128,230 @@ fn registry_effect_rejects_missing_capability_wrong_signature_and_unknown_value_
             "accepted invalid registry plan {fault}"
         );
     }
+}
+
+fn registry_read_program(kind: RuntimeRegistryReadKind, write: bool) -> AwbcProgram {
+    let mut program = registry_program(LifetimeScopeKind::Flow, &["進行"], "state.write('flow)");
+    program.runtime_types = vec![AwbcRuntimeType::new(
+        RuntimeCheckedType::Bool.semantic_identity_digest(),
+        AwbcRuntimeTypeShape::Bool,
+    )];
+    let slot = |ty| AwbcFrameSlot {
+        name: None,
+        ty,
+        role: AwbcFrameSlotRole::Temporary,
+        scope_depth: 0,
+    };
+    let result = match kind {
+        RuntimeRegistryReadKind::Required => AwbcTypeId(0),
+        RuntimeRegistryReadKind::Optional => {
+            let owner = RuntimeBuiltinVariantIdentity::Option;
+            let cases = owner
+                .cases()
+                .iter()
+                .map(|case| {
+                    let name = AwbcStringId(program.strings.len().try_into().unwrap());
+                    program.strings.push(case.name().to_owned());
+                    AwbcVariantCase {
+                        name,
+                        payload: (case.name() == "Some").then_some(AwbcTypeId(1)),
+                    }
+                })
+                .collect();
+            program.runtime_types.extend([
+                AwbcRuntimeType::new(
+                    RuntimeCheckedType::Tuple(vec![RuntimeCheckedType::Bool])
+                        .semantic_identity_digest(),
+                    AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(0)]),
+                ),
+                AwbcRuntimeType::new(
+                    RuntimeCheckedType::Option(Box::new(RuntimeCheckedType::Bool))
+                        .semantic_identity_digest(),
+                    AwbcRuntimeTypeShape::Variant {
+                        owner: AwbcVariantIdentity::Builtin(owner),
+                        arguments: Vec::new(),
+                        cases,
+                    },
+                ),
+            ]);
+            AwbcTypeId(2)
+        }
+    };
+    program.signatures[0].effects = program.signatures[1].effects;
+    program.signatures[0].result = Some(result);
+    program.frame_layouts[0].slots = vec![slot(AwbcTypeId(0)), slot(result)];
+    if write {
+        program.constants.push(AwbcConstant::Bool(true));
+        program.instructions.extend([
+            AwbcInstruction::LoadConst {
+                dst: AwbcRegisterId(0),
+                constant: AwbcConstantId(0),
+            },
+            AwbcInstruction::EmitEffect {
+                effect: AwbcEffectPlanId(0),
+                args: vec![AwbcRegisterId(0)],
+            },
+        ]);
+    }
+    let AwbcEffectPayload::RegistryWrite { key, .. } = &program.effect_plans[0].payload else {
+        unreachable!()
+    };
+    program.instructions.push(AwbcInstruction::ReadRegistry {
+        dst: AwbcRegisterId(1),
+        key: key.clone(),
+        kind,
+    });
+    program.blocks[0].instructions =
+        AwbcTableRange::new(0, program.instructions.len().try_into().unwrap());
+    program.blocks[0].terminator = AwbcTerminator::Return {
+        value: Some(AwbcRegisterId(1)),
+    };
+    program.canonicalize_string_table();
+    program
+}
+
+#[test]
+fn decoded_registry_read_requires_a_reached_row_and_preserves_optional_absence() {
+    use crate::awbc::fiber::FiberTerminalValue;
+    use crate::awbc::product_step::AwbcProductExecutorSaveSnapshot;
+    use crate::engine::FlowFiberStatus;
+    use crate::executor::{
+        ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot, RuntimeExecutor,
+    };
+    use crate::step::{RuntimeStepInput, RuntimeStepOptions};
+    use crate::value::AwbcRuntimeValueSnapshot;
+
+    for (kind, write, expected) in [
+        (
+            RuntimeRegistryReadKind::Required,
+            true,
+            Some(RuntimeValue::Bool(true)),
+        ),
+        (
+            RuntimeRegistryReadKind::Optional,
+            true,
+            Some(RuntimeValue::option_some(RuntimeValue::Bool(true))),
+        ),
+        (
+            RuntimeRegistryReadKind::Optional,
+            false,
+            Some(RuntimeValue::option_none()),
+        ),
+        (RuntimeRegistryReadKind::Required, false, None),
+    ] {
+        let original = registry_read_program(kind, write);
+        let encoded = original.encode_canonical().unwrap();
+        let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default()).unwrap();
+        assert_eq!(decoded.instructions, original.instructions);
+        assert_eq!(decoded.encode_canonical().unwrap(), encoded);
+        let mut executor =
+            ArcweftRuntimeExecutor::from_awbc_product(decoded, AwbcEntryId(0)).unwrap();
+        for _ in 0..8 {
+            let step = executor.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+            assert!(step.stats.executed_ops <= 1);
+            match &step.fiber_status {
+                FlowFiberStatus::Done(_) => {
+                    let ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) =
+                        executor.snapshot().unwrap();
+                    let expected = AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                        expected
+                            .as_ref()
+                            .expect("a successful read returns a value"),
+                        &executor.program_owner(),
+                    )
+                    .unwrap();
+                    assert_eq!(
+                        snapshot.fiber.terminal,
+                        Some(FiberTerminalValue::Returned(Some(expected)))
+                    );
+                    assert!(step.output.diagnostics.is_empty());
+                    break;
+                }
+                FlowFiberStatus::Failed(reason) => {
+                    assert!(expected.is_none(), "{kind:?}: {reason}");
+                    assert!(
+                        reason.contains("required registry value is absent"),
+                        "{reason}"
+                    );
+                    break;
+                }
+                _ => {
+                    assert!(step.output.diagnostics.is_empty(), "{step:?}");
+                }
+            }
+            let ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) =
+                executor.snapshot().unwrap();
+            let saved = AwbcProductExecutorSaveSnapshot::from_live(
+                &snapshot,
+                executor.admitted_product_awbc_program().unwrap(),
+            )
+            .unwrap();
+            let decoded = serde_json::from_slice(&serde_json::to_vec(&saved).unwrap()).unwrap();
+            let bound = executor.bind_product_save_snapshot(decoded).unwrap();
+            executor = executor
+                .restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(bound))
+                .unwrap();
+        }
+        assert!(matches!(
+            executor.fiber().frame.status,
+            FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
+        ));
+    }
+}
+
+#[test]
+fn registry_read_rejects_a_reached_value_with_the_wrong_result_type() {
+    use crate::executor::{ArcweftRuntimeExecutor, RuntimeExecutor};
+    use crate::step::{RuntimeStepInput, RuntimeStepOptions};
+
+    let mut program = registry_read_program(RuntimeRegistryReadKind::Required, true);
+    let string = AwbcTypeId(1);
+    program.runtime_types.push(AwbcRuntimeType::new(
+        RuntimeCheckedType::String.semantic_identity_digest(),
+        AwbcRuntimeTypeShape::String,
+    ));
+    program.signatures[0].result = Some(string);
+    program.frame_layouts[0].slots[1].ty = string;
+    let mut executor = ArcweftRuntimeExecutor::from_awbc_product(program, AwbcEntryId(0)).unwrap();
+    for _ in 0..2 {
+        let step = executor.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+        assert!(step.output.diagnostics.is_empty());
+    }
+    let step = executor.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+    assert!(
+        matches!(step.fiber_status, crate::engine::FlowFiberStatus::Failed(_)),
+        "{step:?}"
+    );
+    assert!(!step.output.diagnostics.is_empty());
+}
+
+#[test]
+fn registry_read_verifies_scope_and_optional_destination() {
+    let original = registry_read_program(RuntimeRegistryReadKind::Required, true);
+    for (scope, kind) in [
+        (LifetimeScopeKind::Global, RuntimeRegistryReadKind::Required),
+        (LifetimeScopeKind::Flow, RuntimeRegistryReadKind::Optional),
+    ] {
+        let mut program = original.clone();
+        program.instructions[2] = AwbcInstruction::ReadRegistry {
+            dst: AwbcRegisterId(1),
+            key: LifetimeRegistryKey::new(scope, Box::new([])),
+            kind,
+        };
+        assert!(
+            program
+                .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+                .is_err()
+        );
+    }
+    let mut program = original;
+    program.instructions.push(program.instructions[2].clone());
+    program.blocks[0].instructions = AwbcTableRange::new(0, 4);
+    assert!(
+        program
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .is_err()
+    );
 }
 
 fn inactive_registry_write_program() -> AwbcProgram {

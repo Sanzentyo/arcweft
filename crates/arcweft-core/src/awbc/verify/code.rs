@@ -944,6 +944,38 @@ fn apply_instruction(
             }
             write_register(verifier, function, block, *dst, state)?;
         }
+        AwbcInstruction::ReadRegistry { dst, key, kind } => {
+            use crate::effect::RuntimeRegistryReadKind;
+            use arcweft_id::LifetimeScopeKind;
+
+            if program.functions[function].kind == AwbcFunctionKind::PureHelper {
+                return invalid_type(&at, "execution context for a lifetime registry read");
+            }
+            if !matches!(
+                key.scope(),
+                LifetimeScopeKind::Flow | LifetimeScopeKind::Line
+            ) {
+                return invalid_type(&at, "registry read selecting a Flow or Line activation");
+            }
+            let result = register_type(verifier, function, block, *dst)?;
+            if state.initialized[dst.index()] != RuntimePlaceInitialization::Uninitialized {
+                return invalid_type(&at, "vacant destination for a registry read");
+            }
+            if *kind == RuntimeRegistryReadKind::Optional
+                && program
+                    .builtin_variant_payload_item(
+                        result,
+                        RuntimeBuiltinVariantCaseIdentity::OptionSome,
+                    )
+                    .is_none()
+            {
+                return invalid_type(
+                    &at,
+                    "canonical Option destination for an optional registry read",
+                );
+            }
+            write_register(verifier, function, block, *dst, state)?;
+        }
         AwbcInstruction::Move { dst, src } => {
             let src_ty = read_register(verifier, function, block, *src, state)?;
             let copy_proof = state.copy_proofs[src.index()].clone();
@@ -2597,6 +2629,10 @@ fn apply_instruction_copy_and_move_effects(
         | AwbcInstruction::Drop { .. }
         | AwbcInstruction::StreamClose { .. } => return Ok(()),
         AwbcInstruction::LoadConst { .. } | AwbcInstruction::SequenceLen { .. } => {}
+        AwbcInstruction::ReadRegistry { dst, .. } => {
+            outputs.push(*dst);
+            output_proof = Some(CopyProof::Copyable);
+        }
         AwbcInstruction::MakeTuple { dst, items } => {
             consumed.extend(items.iter().copied());
             outputs.push(*dst);

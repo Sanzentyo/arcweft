@@ -1,11 +1,11 @@
 //! Retained, replay-safe values on one reached execution scope.
 
-use super::{RuntimeRegistryStateUpdate, RuntimeRegistryValue};
+use super::{RuntimeRegistryReadKind, RuntimeRegistryStateUpdate, RuntimeRegistryValue};
 use crate::awbc::schema::{AwbcEffectPayload, AwbcEffectPlanId};
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::runtime_id::{DialogueActivationId, RuntimeFiberInstanceId, RuntimeFrameInstanceId};
 use crate::task::RuntimeProgramOwner;
-use crate::value::{AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission};
+use crate::value::{AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission, RuntimeValue};
 use arcweft_id::{LifetimeRegistryKey, LifetimeScopeKind};
 use std::sync::Arc;
 
@@ -138,6 +138,56 @@ impl RuntimeScopeRegistry {
 
     pub(crate) fn clear(&mut self) {
         self.0.clear();
+    }
+
+    /// Copies a reached row after admitting the full future value under the
+    /// reader's result type and original invocation. Optional absence still
+    /// requires the reached scope and admits a canonical Option::None.
+    pub(crate) fn read(
+        &self,
+        owner: RuntimeRegistryOwner,
+        key: &LifetimeRegistryKey,
+        kind: RuntimeRegistryReadKind,
+        expected: RuntimeSemanticTypeId,
+        binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
+        admission.status()?;
+        if key.scope() != &owner.scope() {
+            return Err(invalid_registry(
+                "registry address does not select this activation",
+            ));
+        }
+        let row = match self.0.binary_search_by(|entry| entry.row.key.cmp(key)) {
+            Ok(index) => {
+                let entry = &self.0[index];
+                entry
+                    .source
+                    .admit(owner, key, entry.row.expected, admission)?;
+                Some(entry.row.as_ref())
+            }
+            Err(_) => None,
+        };
+        match (kind, row) {
+            (RuntimeRegistryReadKind::Required, None) => {
+                Err(invalid_registry("required registry value is absent"))
+            }
+            (RuntimeRegistryReadKind::Required, Some(row)) => {
+                admission.validate_typed_snapshot_in_invocation(&row.value, expected, binding)?;
+                row.copy_admitted(admission)
+            }
+            (RuntimeRegistryReadKind::Optional, row) => {
+                admission.validate_owned_option_preview(
+                    row.map(|row| (&row.value).into()),
+                    expected,
+                    binding,
+                )?;
+                match row {
+                    Some(row) => row.copy_admitted(admission).map(RuntimeValue::option_some),
+                    None => Ok(RuntimeValue::option_none()),
+                }
+            }
+        }
     }
 
     pub(crate) fn prepare_write(

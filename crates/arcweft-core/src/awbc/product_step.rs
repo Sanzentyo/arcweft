@@ -3437,7 +3437,7 @@ impl AwbcProductStepExecutor {
         } else {
             terminal_exit.map_or_else(
                 || {
-                    let registry_write = if let (Some(activation), Some(admission), Some(scope)) = (
+                    let registry_access = if let (Some(activation), Some(admission), Some(scope)) = (
                         registry_activation,
                         registry_admission.as_mut(),
                         crate::awbc::vm::dialogue_registry_instruction(&self.program, &child.fiber),
@@ -3453,7 +3453,7 @@ impl AwbcProductStepExecutor {
                             std::iter::once(&self.fiber)
                                 .chain(self.child_fibers.iter().map(|child| &child.fiber)),
                         )?;
-                        Some(crate::awbc::vm::VmDialogueRegistryWrite {
+                        Some(crate::awbc::vm::VmDialogueRegistryAccess {
                             owner,
                             rows,
                             admission,
@@ -3472,7 +3472,7 @@ impl AwbcProductStepExecutor {
                             context: Some(&context),
                             presentation: Some(&mut self.presentation),
                             actions: Some(&mut self.actions),
-                            dialogue_registry: registry_write,
+                            dialogue_registry: registry_access,
                         },
                         &mut host,
                     )?;

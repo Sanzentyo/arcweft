@@ -22,6 +22,13 @@ pub(crate) use scope::{RuntimeRegistryOwner, RuntimeRegistryWriteSource, Runtime
 
 pub(crate) use scope::RuntimePreparedRegistryWrite;
 
+/// The checked presence requirement for a lifetime-registry value read.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+pub enum RuntimeRegistryReadKind {
+    Required,
+    Optional,
+}
+
 /// Replayable update data admitted by the exact executable that produced it.
 ///
 /// Values are deeply unrestricted and replay requires fresh admission. There is
@@ -131,11 +138,7 @@ impl RuntimeRegistryStateUpdate {
         };
         result.inspect_err(|error| admission.retain_failure(error.clone()))?;
         self.row.admit_retained(admission)?;
-        self.row
-            .value
-            .clone()
-            .into_admitted_runtime_value(&self.program)
-            .inspect_err(|error| admission.retain_failure(error.clone()))
+        self.row.copy_admitted(admission)
     }
 
     /// Version-one header: scope name, ordered key names, original semantic
@@ -208,6 +211,21 @@ impl PreparedRegistryValue<'_, '_> {
 }
 
 impl RuntimeRegistryValue {
+    fn copy_admitted(
+        &self,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
+        let program = admission.program_owner().ok_or(
+            AwbcRuntimeValueSnapshotError::ProgramOwnerRequired {
+                expected: self.expected,
+            },
+        )?;
+        self.value
+            .clone()
+            .into_admitted_runtime_value(program)
+            .inspect_err(|error| admission.retain_failure(error.clone()))
+    }
+
     fn admit_retained(
         &self,
         admission: &mut RuntimeRetainedValueAdmission,

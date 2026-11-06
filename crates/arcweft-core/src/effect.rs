@@ -12,8 +12,8 @@ pub use assertion_identity::{
     RuntimeArtifactFingerprint, RuntimeAssertionGuardId, RuntimeIdentityDecodeError,
 };
 pub(crate) use registry::RuntimePreparedRegistryWrite;
-pub use registry::RuntimeRegistryStateUpdate;
 pub(crate) use registry::{RuntimeRegistryOwner, RuntimeRegistryWriteSource, RuntimeScopeRegistry};
+pub use registry::{RuntimeRegistryReadKind, RuntimeRegistryStateUpdate};
 pub(crate) use registry::{RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJournalError};
 
 #[derive(Clone, Debug, PartialEq)]

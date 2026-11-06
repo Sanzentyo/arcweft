@@ -4,8 +4,8 @@ use super::{
     AwbcProgram, AwbcRegisterId, FiberState, FiberStateError, VmError, VmExecutionContext,
 };
 use crate::effect::{
-    RuntimePreparedRegistryWrite, RuntimeRegistryOwner, RuntimeRegistryStateUpdate,
-    RuntimeRegistryWriteSource, RuntimeScopeRegistry,
+    RuntimePreparedRegistryWrite, RuntimeRegistryOwner, RuntimeRegistryReadKind,
+    RuntimeRegistryStateUpdate, RuntimeRegistryWriteSource, RuntimeScopeRegistry,
 };
 use crate::presentation::resources::{PresentationBanks, PresentationBody};
 use crate::value::{RuntimePayload, RuntimeRetainedValueAdmission, RuntimeStoredValue};
@@ -16,20 +16,20 @@ pub(crate) struct VmExecutionResources<'execution> {
     pub(crate) presentation:
         Option<&'execution mut Option<PresentationBanks<PresentationBody<RuntimePayload>>>>,
     pub(crate) actions: Option<&'execution mut crate::action::RuntimeActionMailbox>,
-    pub(crate) dialogue_registry: Option<VmDialogueRegistryWrite<'execution>>,
+    pub(crate) dialogue_registry: Option<VmDialogueRegistryAccess<'execution>>,
 }
 
 /// Borrows the scope reached by a Product dialogue step. The enclosing
-/// transaction publishes the write after the instruction and custody checks.
-pub(crate) struct VmDialogueRegistryWrite<'a> {
+/// transaction publishes any write after the instruction and custody checks.
+pub(crate) struct VmDialogueRegistryAccess<'a> {
     pub(crate) owner: RuntimeRegistryOwner,
     pub(crate) rows: &'a RuntimeScopeRegistry,
     pub(crate) admission: &'a mut RuntimeRetainedValueAdmission,
     pub(crate) pending: &'a mut Option<(RuntimeRegistryOwner, RuntimePreparedRegistryWrite)>,
 }
 
-impl VmDialogueRegistryWrite<'_> {
-    fn prepare(
+impl VmDialogueRegistryAccess<'_> {
+    fn prepare_write(
         &mut self,
         program: &AwbcProgram,
         fiber: &mut FiberState,
@@ -86,6 +86,78 @@ impl VmDialogueRegistryWrite<'_> {
 }
 
 impl VmExecutionResources<'_> {
+    pub(super) fn registry_read(
+        &mut self,
+        program: &AwbcProgram,
+        fiber: &mut FiberState,
+        dst: AwbcRegisterId,
+        key: &arcweft_id::LifetimeRegistryKey,
+        kind: RuntimeRegistryReadKind,
+    ) -> Result<(), VmError> {
+        use arcweft_id::LifetimeScopeKind;
+        let admitted = self
+            .context
+            .ok_or(VmError::MissingExecutionContext)?
+            .admitted_program(program)
+            .map_err(|_| VmError::MissingExecutionContext)?;
+        let frame = fiber.active_frame()?;
+        if !frame
+            .registers
+            .get(dst.index())
+            .is_some_and(crate::value::RuntimePlaceStorage::is_vacant)
+        {
+            return Err(FiberStateError::InvalidFrame.into());
+        }
+        let expected = program
+            .frame_layouts
+            .get(frame.layout.index())
+            .and_then(|layout| layout.slots.get(dst.index()))
+            .and_then(|slot| program.runtime_types.get(slot.ty.index()))
+            .ok_or(FiberStateError::InvalidFrame)?
+            .semantic_identity();
+        let binding = frame.type_instantiation.as_deref();
+        let destination = match key.scope() {
+            LifetimeScopeKind::Flow => fiber.reached_flow_frame_index(program),
+            LifetimeScopeKind::Line => None,
+            _ => return Err(VmError::MissingExecutionContext),
+        };
+        let value = if let Some(index) = destination {
+            let mut admission = admitted
+                .retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default());
+            fiber
+                .admit_retained(&mut admission)
+                .map_err(FiberStateError::Snapshot)?;
+            let reached = &fiber.frames[index];
+            reached.flow_registry.read(
+                RuntimeRegistryOwner::AwbcFlow {
+                    fiber: fiber.instance,
+                    frame: reached.instance,
+                },
+                key,
+                kind,
+                expected,
+                binding,
+                &mut admission,
+            )
+        } else {
+            let reached = self
+                .dialogue_registry
+                .as_mut()
+                .ok_or(VmError::MissingExecutionContext)?;
+            reached.rows.read(
+                reached.owner,
+                key,
+                kind,
+                expected,
+                binding,
+                reached.admission,
+            )
+        }
+        .map_err(FiberStateError::Snapshot)?;
+        fiber.active_frame_mut()?.set_register(dst, value)?;
+        Ok(())
+    }
+
     pub(super) fn registry_write(
         &mut self,
         program: &AwbcProgram,
@@ -107,14 +179,14 @@ impl VmExecutionResources<'_> {
             .map_err(|_| missing.clone())?;
         if key.scope() == &arcweft_id::LifetimeScopeKind::Line {
             let line = self.dialogue_registry.as_mut().ok_or(missing.clone())?;
-            return line.prepare(program, fiber, effect, key, value_type, args);
+            return line.prepare_write(program, fiber, effect, key, value_type, args);
         }
         if key.scope() != &arcweft_id::LifetimeScopeKind::Flow {
             return Err(missing.into());
         }
         let Some(destination) = fiber.reached_flow_frame_index(program) else {
             let parent = self.dialogue_registry.as_mut().ok_or(missing.clone())?;
-            return parent.prepare(program, fiber, effect, key, value_type, args);
+            return parent.prepare_write(program, fiber, effect, key, value_type, args);
         };
         let [source] = args else {
             return Err(FiberStateError::InvalidFrame.into());

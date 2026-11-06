@@ -6,7 +6,7 @@
 
 use crate::value::runtime_value_views_equal;
 mod resources;
-pub(crate) use resources::{VmDialogueRegistryWrite, VmExecutionResources};
+pub(crate) use resources::{VmDialogueRegistryAccess, VmExecutionResources};
 
 #[cfg(test)]
 mod dense_numeric_tests;
@@ -635,15 +635,17 @@ pub(crate) fn dialogue_registry_instruction(
     fiber: &FiberState,
 ) -> Option<arcweft_id::LifetimeScopeKind> {
     use arcweft_id::LifetimeScopeKind;
-    let Ok(AwbcInstruction::EmitEffect { effect, .. }) =
-        super::fiber::instruction_at_site(program, fiber.cursor)
-    else {
-        return None;
-    };
-    let super::schema::AwbcEffectPayload::RegistryWrite { key, .. } =
-        &program.effect_plans.get(effect.index())?.payload
-    else {
-        return None;
+    let key = match super::fiber::instruction_at_site(program, fiber.cursor).ok()? {
+        AwbcInstruction::ReadRegistry { key, .. } => key,
+        AwbcInstruction::EmitEffect { effect, .. } => {
+            let super::schema::AwbcEffectPayload::RegistryWrite { key, .. } =
+                &program.effect_plans.get(effect.index())?.payload
+            else {
+                return None;
+            };
+            key
+        }
+        _ => return None,
     };
     match key.scope() {
         LifetimeScopeKind::Line => Some(LifetimeScopeKind::Line),
@@ -880,6 +882,9 @@ fn execute_instruction(
         AwbcInstruction::LoadConst { dst, constant } => {
             let value = constant_value(program, *constant)?;
             fiber.active_frame_mut()?.set_register(*dst, value)?;
+        }
+        AwbcInstruction::ReadRegistry { dst, key, kind } => {
+            execution.registry_read(program, fiber, *dst, key, *kind)?;
         }
         AwbcInstruction::Move { dst, src } => {
             if dst == src {

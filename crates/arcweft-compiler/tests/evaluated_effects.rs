@@ -2556,6 +2556,116 @@ entry cli @entry.main { goto @flow.main }
 }
 
 #[test]
+fn decoded_registry_reads_reach_the_line_and_parent_flow_from_dialogue_callbacks() {
+    use arcweft_core::awbc::codec::AwbcDecodeBudget;
+    use arcweft_core::awbc::product_step::AwbcProductExecutorSaveSnapshot;
+    use arcweft_core::awbc::schema::{AwbcConstant, AwbcEntryId, AwbcInstruction, AwbcProgram};
+    use arcweft_core::effect::RuntimeRegistryReadKind;
+    use arcweft_core::executor::{ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot};
+    use arcweft_id::{DeclarationName, LifetimeRegistryKey, LifetimeScopeKind};
+
+    let compiled = compile_attached_dialogue_project(
+        r#"
+pub character alice { display = "Alice" }
+flow main() -> Unit effects { state.write('flow), state.write('line), log.write } {
+    let result = alice()[本文。[mark @.release][p]] with {
+        init {
+            'flow.saved <- "parent Flow"
+            'line.saved <- "line activation"
+            log.info("__flow_at_init__")
+        }
+        on mark(@.release) {
+            log.info("mark-handler-enter")
+            log.info("__flow_at_mark__")
+            out "__line_at_mark__"
+        }
+    }
+    log.info(result)
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    )
+    .unwrap();
+    let runtime = compiled.runtime_plan();
+    let mut program = AwbcLowerer::new(
+        &runtime.plan,
+        &runtime.dialogue_content_catalog,
+        "reached_registry_read.arcw",
+    )
+    .lower()
+    .unwrap()
+    .program;
+    let mut reads = std::collections::BTreeSet::new();
+    // The existing source writes establish the real registry owners. Emit the
+    // read instruction here so the runtime test is independent of Source lowering.
+    for instruction in &mut program.instructions {
+        let AwbcInstruction::LoadConst { dst, constant } = *instruction else {
+            continue;
+        };
+        let AwbcConstant::String(name) = program.constants[constant.index()] else {
+            continue;
+        };
+        let name = program.strings[name.index()].as_str();
+        let scope = match name {
+            "__flow_at_init__" | "__flow_at_mark__" => LifetimeScopeKind::Flow,
+            "__line_at_mark__" => LifetimeScopeKind::Line,
+            _ => continue,
+        };
+        assert!(reads.insert(name));
+        *instruction = AwbcInstruction::ReadRegistry {
+            dst,
+            key: LifetimeRegistryKey::new(
+                scope,
+                Box::new([DeclarationName::try_new("saved").unwrap()]),
+            ),
+            kind: RuntimeRegistryReadKind::Required,
+        };
+    }
+    assert_eq!(reads.len(), 3);
+    let bytes = program.encode_canonical().unwrap();
+    let decoded = AwbcProgram::decode_canonical(&bytes, AwbcDecodeBudget::default()).unwrap();
+    let executor = ArcweftRuntimeExecutor::from_awbc_product(decoded, AwbcEntryId(0)).unwrap();
+    let schema = bind_test_character_dialogue_schema(&compiled, executor.program_owner());
+    let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default().with_external_calls(
+        arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
+    );
+    let mut executor = Some(executor);
+    let (logs, succeeded) = execute_dialogue_result_with_mark(
+        |input, options| {
+            let mut current = executor.take().unwrap();
+            let step = current.step_with_pure_backend(input, options, &mut backend);
+            assert!(step.stats.executed_ops <= 1);
+            let ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) = current.snapshot().unwrap();
+            let save = AwbcProductExecutorSaveSnapshot::from_live(
+                &snapshot,
+                current.admitted_product_awbc_program().unwrap(),
+            )
+            .unwrap();
+            let decoded = serde_json::from_slice(&serde_json::to_vec(&save).unwrap()).unwrap();
+            let bound = current.bind_product_save_snapshot(decoded).unwrap();
+            executor = Some(
+                current
+                    .restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(bound))
+                    .unwrap(),
+            );
+            step
+        },
+        true,
+        "decoded AWBC registry read",
+    );
+    assert!(succeeded);
+    assert_eq!(
+        logs,
+        [
+            "parent Flow",
+            "mark-handler-enter",
+            "parent Flow",
+            "line activation"
+        ]
+    );
+}
+
+#[test]
 fn mark_out_selects_an_on_only_non_unit_result_in_native_and_decoded_awbc() {
     let compiled = compile_attached_dialogue_project(
         r#"

@@ -867,6 +867,12 @@ impl Wire for AwbcInstruction {
                 dst.write_wire(writer)?;
                 constant.write_wire(writer)?;
             }
+            Self::ReadRegistry { dst, key, kind } => {
+                dst.write_wire(writer)?;
+                writer.write_registry_key(key)?;
+                matches!(kind, crate::effect::RuntimeRegistryReadKind::Optional)
+                    .write_wire(writer)?;
+            }
             Self::Move { dst, src } | Self::CopyValue { dst, src } => {
                 dst.write_wire(writer)?;
                 src.write_wire(writer)?;
@@ -1220,6 +1226,15 @@ impl Wire for AwbcInstruction {
             AwbcOpcode::LoadConst => Self::LoadConst {
                 dst: AwbcRegisterId::read_wire(reader)?,
                 constant: AwbcConstantId::read_wire(reader)?,
+            },
+            AwbcOpcode::ReadRegistry => Self::ReadRegistry {
+                dst: AwbcRegisterId::read_wire(reader)?,
+                key: reader.read_registry_key()?,
+                kind: if bool::read_wire(reader)? {
+                    crate::effect::RuntimeRegistryReadKind::Optional
+                } else {
+                    crate::effect::RuntimeRegistryReadKind::Required
+                },
             },
             AwbcOpcode::Move => Self::Move {
                 dst: AwbcRegisterId::read_wire(reader)?,
@@ -1972,6 +1987,7 @@ impl Wire for AwbcTerminator {
             | AwbcOpcode::MakeSequence
             | AwbcOpcode::RepeatSequence
             | AwbcOpcode::ArrayFromVec
+            | AwbcOpcode::ReadRegistry
             | AwbcOpcode::SequenceLen
             | AwbcOpcode::SequenceGet
             | AwbcOpcode::SequenceSlice

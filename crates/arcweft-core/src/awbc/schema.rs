@@ -1806,6 +1806,7 @@ pub enum AwbcOpcode {
     VecPop = 0x18,
     ReadPlace = 0x19,
     ArrayFromVec = 0x1a,
+    ReadRegistry = 0x1b,
     CallPureHelper = 0x20,
     CallIntrinsic = 0x21,
     CallTraitMethod = 0x22,
@@ -1887,6 +1888,7 @@ impl AwbcOpcode {
         Self::VecPop,
         Self::ReadPlace,
         Self::ArrayFromVec,
+        Self::ReadRegistry,
         Self::CallPureHelper,
         Self::CallIntrinsic,
         Self::CallTraitMethod,
@@ -1992,6 +1994,7 @@ impl AwbcOpcode {
             | Self::ProjectRecord
             | Self::ProjectField
             | Self::ReadPlace
+            | Self::ReadRegistry
             | Self::Assign
             | Self::TestPattern
             | Self::Unary
@@ -2088,6 +2091,12 @@ pub enum AwbcInstruction {
     LoadConst {
         dst: AwbcRegisterId,
         constant: AwbcConstantId,
+    },
+    /// Copies a value from the registry of the reached lifetime activation.
+    ReadRegistry {
+        dst: AwbcRegisterId,
+        key: arcweft_id::LifetimeRegistryKey,
+        kind: crate::effect::RuntimeRegistryReadKind,
     },
     Move {
         dst: AwbcRegisterId,
@@ -2408,6 +2417,7 @@ impl AwbcInstruction {
         match self {
             Self::Nop => AwbcOpcode::Nop,
             Self::LoadConst { .. } => AwbcOpcode::LoadConst,
+            Self::ReadRegistry { .. } => AwbcOpcode::ReadRegistry,
             Self::Move { .. } => AwbcOpcode::Move,
             Self::CopyValue { .. } => AwbcOpcode::CopyValue,
             Self::RequireUnrestricted { .. } => AwbcOpcode::RequireUnrestricted,
