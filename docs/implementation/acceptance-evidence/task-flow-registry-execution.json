@@ -19169,5 +19169,520 @@
         }
       ]
     }
+  },
+  "scopedRegistryDefer": {
+    "source": "ffc143ca9eb9b07612de2d45f2e8e228e01659be",
+    "published": {
+      "version": 1,
+      "commit": "ffc143ca9eb9b07612de2d45f2e8e228e01659be",
+      "parent": "e18f7c75cd374b9cd4fbd8be5c722a78761b1138",
+      "tree": "1b791d26579c01b805ca2ac7d1df389b2ea0fd24",
+      "remote": "ffc143ca9eb9b07612de2d45f2e8e228e01659be",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects.rs",
+          "blob": "cbfda54a214049db02938ebbeda80edbdfc72d2f"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+          "blob": "67a9eed1610027db280563674b7d75f051885e85"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/local_use.rs",
+          "blob": "6dc0a7c20e111ba3902004a93cc85c8878019f1e"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/local_use/flow.rs",
+          "blob": "747a41173493e7f0028489c5147696ac78088702"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/local_use/flow/registry.rs",
+          "blob": "fbb4cc21d728a9dfe38752c3b6e39e3a8482f770"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/model/statement.rs",
+          "blob": "a71e9e091e3cab1950fe57fa063db8f1ed08b857"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/statement_seal.rs",
+          "blob": "9351e0eadd3aa8b47f4cada62734e1b830804426"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+          "blob": "aed046e52e5bdae407c2a561b2d1116a7c922685"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_flow/line_plan.rs",
+          "blob": "a8f002073147f624aa0d2b61013e18bca85e7832"
+        },
+        {
+          "path": "docs/01-language/dialogue-calls-scopes-cancellation.md",
+          "blob": "59cca63f6c31ed1a314edfb29a62b5d8a3cdb122"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "fc66260b8ec86651cec5bdd6ad8f7d213810dcea717f22c2e3484da68aa1b7f9",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-06T21:38:15.656613Z"
+    },
+    "focused": {
+      "version": 1,
+      "base": "e18f7c75cd374b9cd4fbd8be5c722a78761b1138",
+      "patchSha256": "fc66260b8ec86651cec5bdd6ad8f7d213810dcea717f22c2e3484da68aa1b7f9",
+      "patchDrift": false,
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "-E",
+        "test(=line_root_deferred_children_execute_in_native_and_awbc_lifo) | test(=scoped_deferred_registry_writes_invalidate_later_reads) | test(=reached_line_defers_keep_capture_order_and_verified_awbc_sites) | test(=source_optional_registry_reads_reach_the_line_and_parent_flow)",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 0,
+      "summary": [
+        "Summary [   2.395s] 4 tests run: 4 passed, 79 skipped"
+      ],
+      "startedAt": "2026-11-06T21:34:47.7320048Z",
+      "finishedAt": "2026-11-06T21:36:46.5511141Z"
+    },
+    "structure": {
+      "version": 1,
+      "command": [
+        "just",
+        "structure-audit-gate"
+      ],
+      "exitCode": 0,
+      "startedAt": "2026-11-06T21:37:29.2309954Z",
+      "finishedAt": "2026-11-06T21:37:35.6985946Z"
+    },
+    "owner": {
+      "version": 1,
+      "base": "e18f7c75cd374b9cd4fbd8be5c722a78761b1138",
+      "catalogCommand": [
+        "cargo",
+        "nextest",
+        "list",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "-p",
+        "arcweft-lang-sema",
+        "--lib",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--message-format",
+        "json"
+      ],
+      "catalogExit": 0,
+      "testCommand": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "-p",
+        "arcweft-lang-sema",
+        "--lib",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "testExit": 0,
+      "summary": [
+        "Summary [  87.609s] 4088 tests run: 4088 passed, 1 skipped"
+      ],
+      "sourceInputs": 3638,
+      "sourceDrift": [],
+      "startedAt": "2026-11-06T21:37:01.1248422Z",
+      "finishedAt": "2026-11-06T21:40:17.6243243Z"
+    },
+    "ownerCaseIdentity": {
+      "version": 1,
+      "sourceInputs": 3638,
+      "sourceDrift": [],
+      "catalogCases": 4089,
+      "expectedExecuted": 4088,
+      "actualExecuted": 4088,
+      "executedCaseIdDrift": [],
+      "ignored": [
+        "arcweft-runtime-plan awbc_lower::tests::program_fanout::regenerate_presentation_cancellation_fixtures"
+      ],
+      "skipped": [
+        "arcweft-runtime-plan awbc_lower::tests::program_fanout::regenerate_presentation_cancellation_fixtures"
+      ],
+      "skippedCaseIdDrift": []
+    },
+    "earlierDraft": {
+      "version": 1,
+      "base": "c44b99decec23c5be9a4adeb59aafa3b101e174e",
+      "patchSha256": "7e4207eea708a078e61926a393e07166db42da97a739939fe008e0e1afb5c710",
+      "patchDrift": false,
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "-E",
+        "test(=line_root_deferred_children_execute_in_native_and_awbc_lifo) | test(=scoped_deferred_registry_writes_invalidate_later_reads) | test(=reached_line_defers_keep_capture_order_and_verified_awbc_sites) | test(=source_optional_registry_reads_reach_the_line_and_parent_flow)",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 100,
+      "summary": [
+        "Summary [   0.480s] 4 tests run: 2 passed, 2 failed, 79 skipped"
+      ],
+      "startedAt": "2026-11-06T21:30:18.3298682Z",
+      "finishedAt": "2026-11-06T21:31:45.0979049Z"
+    },
+    "earlierDraftFindings": [
+      "Native mark handler executes in a child flow that rejected RegisterDefer with UnknownDeferredSite.",
+      "AWBC restore rejected a running, paired scoped defer whose child carried no affine tokens."
+    ],
+    "baseline": {
+      "source": "f3626f1a2ffc608dced6ac28916ab2b89134b0e5",
+      "binarySha256": "10b463cd01187d2c96a674ba8d5e291eaf86914b7e0678da352d17409f6d1d12",
+      "markCheck": [
+        {
+          "case": "control",
+          "exit": 0,
+          "sourceSha256": "269a2dac302baea65094e2219869f4792431b1f735b5c3e17bff7d5d912e28ed"
+        },
+        {
+          "case": "writes",
+          "exit": 1,
+          "sourceSha256": "71fc8077e21eb7163eb04cf55a187fd5b22165d26f685427dd9f4044f1fcebc7"
+        }
+      ],
+      "indentCheck": [
+        {
+          "case": "without-separator",
+          "exit": 1,
+          "sourceSha256": "24f334861b79ae9005635fdfc5fb1980e4deb9579e1ae0907bd9c107c8d5d700"
+        },
+        {
+          "case": "with-separator",
+          "exit": 1,
+          "sourceSha256": "226a5d016de877a511d69a8d43a9ae7595178800df5d6d9591c01d68468c2c16"
+        },
+        {
+          "case": "log-only-control",
+          "exit": 0,
+          "sourceSha256": "401f013f21abfd6906948bd57f29f0832160ce1eb256e2e85c316adc9dfc05a0"
+        }
+      ],
+      "previousEvidenceProperties": [
+        "deferBeforeUnwindReadBaseline",
+        "deferLexicalReadBaseline"
+      ]
+    },
+    "coreReverseDependencies": {
+      "command": [
+        "cargo",
+        "tree",
+        "--locked",
+        "--workspace",
+        "--invert",
+        "arcweft-core",
+        "--target",
+        "all",
+        "--prefix",
+        "none",
+        "--format",
+        "{p}"
+      ],
+      "packagesIncludingOwner": [
+        "arcweft-adapter-desktop",
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-policy",
+        "arcweft-agent-protocol",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-browser-bench",
+        "arcweft-bundle",
+        "arcweft-bundle-assets",
+        "arcweft-character-view",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-core",
+        "arcweft-debug-model",
+        "arcweft-debug-sqlite",
+        "arcweft-dialogue",
+        "arcweft-glyphon",
+        "arcweft-host-adapter",
+        "arcweft-lang-jit-cranelift",
+        "arcweft-lang-sema",
+        "arcweft-launch",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-text-input",
+        "arcweft-player-web",
+        "arcweft-project",
+        "arcweft-project-loader",
+        "arcweft-rag",
+        "arcweft-render-text",
+        "arcweft-render-web",
+        "arcweft-render-wgpu",
+        "arcweft-resource-manifest",
+        "arcweft-resource-model",
+        "arcweft-runtime-accelerator",
+        "arcweft-runtime-codegen",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-runtime-scheduler",
+        "arcweft-save",
+        "arcweft-test",
+        "arcweft-text-layout",
+        "arcweft-text-model",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3",
+        "arcweft-view"
+      ],
+      "count": 52
+    },
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-defer-scope.raw.zip",
+      "sha256": "d12853b7c6690a2c6d1237f7027e27dee9f524711b5570a7867164a3495d273c",
+      "entries": [
+        {
+          "entry": "registry-defer-lexical-20261107.focus.01.log",
+          "bytes": 112092,
+          "sha256": "b648ee5ffe35b02828d837ff0dea4763e58bb4411d84f1c252ba1c6f5b285219"
+        },
+        {
+          "entry": "registry-defer-lexical-20261107.focus.01.receipt.json",
+          "bytes": 978,
+          "sha256": "008d089efb91df1e4219b42041028b504b285bafcd183ce8b5c897ff07b81c73"
+        },
+        {
+          "entry": "registry-defer-lexical-20261107.focus.01.patch",
+          "bytes": 53375,
+          "sha256": "7e4207eea708a078e61926a393e07166db42da97a739939fe008e0e1afb5c710"
+        },
+        {
+          "entry": "registry-defer-lexical-20261107.focus.02.log",
+          "bytes": 111601,
+          "sha256": "30e44043236189354dca731f7e985e818796ad24f97dec44e0acf9d4c78fe4aa"
+        },
+        {
+          "entry": "registry-defer-lexical-20261107.focus.02.receipt.json",
+          "bytes": 966,
+          "sha256": "2532fb3e3f01f557183e752e73654a89d9380882c124cc1537caaf46d1100db6"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.structure.log",
+          "bytes": 65741,
+          "sha256": "54734e63cb1af6d9ee82c54db8db4147ce96cf364ad4222f51dcbcc7d407e5c6"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.structure.receipt.json",
+          "bytes": 200,
+          "sha256": "d727d8b9bd5f69c01224f0579c964f02d85c9713b75b44a0f11ddc06976fec4a"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.owner.catalog.json",
+          "bytes": 700414,
+          "sha256": "da71c4162eed63699cdee6d48c17ecc7d0320cbb943436f2f5763df37ca47ade"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.owner.catalog.log",
+          "bytes": 99868,
+          "sha256": "b35739dc587847bc9b687242a548a5c793fe9343c0b8c935e547f734ac474629"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.owner.invalid-argv.log",
+          "bytes": 177,
+          "sha256": "09399237ff1669b16e0a4e91dab3253b8df4850b75fa3feacb7c4e72259b51b0"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.owner.runtime.log",
+          "bytes": 1360998,
+          "sha256": "8b33c5b71a35834df304045affb5aef6886f7bff13911dc1594a31d31dd4adbc"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.owner.receipt.json",
+          "bytes": 1089,
+          "sha256": "44fb3fd2350dd413c0485d61af4b479abb82502de17a83c3ad24b61736cb8dc4"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.owner.source-freeze.json",
+          "bytes": 599451,
+          "sha256": "9edf50be20aaee4b6128df454fade1188f65bbdc54ce93e0bea640d919ea4370"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.owner.case-ids.json",
+          "bytes": 471,
+          "sha256": "407a4962de1a3b478b04bb097c2094c4545f75e7b85a5c3733892d2278b5a6a5"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.reverse-tree.log",
+          "bytes": 19459,
+          "sha256": "b366a96025075e8716157c96ded790ee94ea9c0ae84008320c5b6ab7be47018c"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.reverse-tree.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "registry-defer-mark-20261107.receipt.json",
+          "bytes": 1721,
+          "sha256": "cfbd63afb9facf0cf198525a7405786b14175a66c4761bc0b2b2ff85c73222bf"
+        },
+        {
+          "entry": "registry-defer-original-indent-20261107.receipt.json",
+          "bytes": 1345,
+          "sha256": "5ab2573e4d819e25613f2899dd389e59f32b89c39561d8b4c1f9e9850bdb9b58"
+        },
+        {
+          "entry": "registry-defer-lexical-implementation-20261107.verified.json",
+          "bytes": 2038,
+          "sha256": "10b57ed020c879bb19a3b9dc9a5276af8b2788aac7286018c80c082f8f1e1b8f"
+        },
+        {
+          "entry": "registry-defer-mark-20261107-control/main.arcw",
+          "bytes": 389,
+          "sha256": "269a2dac302baea65094e2219869f4792431b1f735b5c3e17bff7d5d912e28ed"
+        },
+        {
+          "entry": "registry-defer-mark-20261107-control/arcw.toml",
+          "bytes": 215,
+          "sha256": "a96fc123a3cdd164daf27b39e9893be8074a08ffe119a427e82a98750847a3d0"
+        },
+        {
+          "entry": "registry-defer-mark-20261107-control.check.json",
+          "bytes": 686,
+          "sha256": "7ffeecce213bd37b1d8a5512c4b7bfa42c22ed59d3ee27cbfd27ffba2415326b"
+        },
+        {
+          "entry": "registry-defer-mark-20261107-control.check.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "registry-defer-mark-20261107-writes/main.arcw",
+          "bytes": 409,
+          "sha256": "71fc8077e21eb7163eb04cf55a187fd5b22165d26f685427dd9f4044f1fcebc7"
+        },
+        {
+          "entry": "registry-defer-mark-20261107-writes/arcw.toml",
+          "bytes": 215,
+          "sha256": "a96fc123a3cdd164daf27b39e9893be8074a08ffe119a427e82a98750847a3d0"
+        },
+        {
+          "entry": "registry-defer-mark-20261107-writes.check.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "registry-defer-mark-20261107-writes.check.stderr.log",
+          "bytes": 300,
+          "sha256": "2eff6a2713aabc691cd00786d2afdb052c25791055dd04a4eaee04ca50468b24"
+        },
+        {
+          "entry": "registry-defer-original-indent-20261107-without-separator/main.arcw",
+          "bytes": 917,
+          "sha256": "24f334861b79ae9005635fdfc5fb1980e4deb9579e1ae0907bd9c107c8d5d700"
+        },
+        {
+          "entry": "registry-defer-original-indent-20261107-without-separator/arcw.toml",
+          "bytes": 215,
+          "sha256": "a96fc123a3cdd164daf27b39e9893be8074a08ffe119a427e82a98750847a3d0"
+        },
+        {
+          "entry": "registry-defer-original-indent-20261107-without-separator.check.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "registry-defer-original-indent-20261107-without-separator.check.stderr.log",
+          "bytes": 305,
+          "sha256": "8b48f7310d0547f44a5e7e790175badad3c9f64a909b6a0e22b888b41630ee42"
+        },
+        {
+          "entry": "registry-defer-original-indent-20261107-with-separator/main.arcw",
+          "bytes": 920,
+          "sha256": "226a5d016de877a511d69a8d43a9ae7595178800df5d6d9591c01d68468c2c16"
+        },
+        {
+          "entry": "registry-defer-original-indent-20261107-with-separator/arcw.toml",
+          "bytes": 215,
+          "sha256": "a96fc123a3cdd164daf27b39e9893be8074a08ffe119a427e82a98750847a3d0"
+        },
+        {
+          "entry": "registry-defer-original-indent-20261107-with-separator.check.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "registry-defer-original-indent-20261107-with-separator.check.stderr.log",
+          "bytes": 305,
+          "sha256": "8b48f7310d0547f44a5e7e790175badad3c9f64a909b6a0e22b888b41630ee42"
+        },
+        {
+          "entry": "registry-defer-original-indent-20261107-log-only-control/main.arcw",
+          "bytes": 841,
+          "sha256": "401f013f21abfd6906948bd57f29f0832160ce1eb256e2e85c316adc9dfc05a0"
+        },
+        {
+          "entry": "registry-defer-original-indent-20261107-log-only-control/arcw.toml",
+          "bytes": 215,
+          "sha256": "a96fc123a3cdd164daf27b39e9893be8074a08ffe119a427e82a98750847a3d0"
+        },
+        {
+          "entry": "registry-defer-original-indent-20261107-log-only-control.check.json",
+          "bytes": 1084,
+          "sha256": "fb9319e6460feaaeec9684087aed8632806b91eb2022c7d1f0805339a280723c"
+        },
+        {
+          "entry": "registry-defer-original-indent-20261107-log-only-control.check.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    }
   }
 }

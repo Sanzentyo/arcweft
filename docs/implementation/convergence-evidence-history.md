@@ -15129,3 +15129,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Registry replacement reverse-dependency partitions
 
 - Source f3626f1a2ffc608dced6ac28916ab2b89134b0e5 の分割検証で、Cargo の逆依存22パッケージ114ターゲットから既に確認した12ターゲットを除いた102ターゲットを45組で確認した。2,168件を実行して2,161件通過、7件失敗、23件スキップだった。失敗は以前のCLI検証と同じ7件で、分割後はビルド失敗0件。ターゲットとソース入力3638件の差分はいずれも0件だった。初回のページファイル不足と途中で記録したCLIの結果は履歴に保持した。[全組の実測・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Line and init registry reads around defer cleanup
+
+- Source ffc143ca9eb9b07612de2d45f2e8e228e01659be。Sema が元の文から確定した defer の所有先を RuntimePlan と共有する。読取りに使う事実と終了時に実行される書込みを分け、現在のスコープを抜ける時に対応する書込みの効果を反映する。Native／デコード済みAWBCの両方で終了前の必須読取り、正常終了で失敗時限定の cleanup を実行しないこと、Line 全体の逆登録順を確認した。1 op ごとの AWBC の公開保存で、init の Bool と cleanup が書いた I64 を確認した。終了後の古い型は init と Line 全体の両方で拒否された。対象4件、4クレートの対象4,088件が通過し、既存1件をスキップした。実行IDとソース入力の差分は0件、構造ゲートのブロッキング違反は0件だった。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+- 初回の試作は4件中2件通過、2件失敗だった。マークの子処理は Native で実行時に defer site を拒否し、この実行経路は引き続き未達として記録する。AWBC の失敗では、捕捉した affine 値がない実行中の scoped defer が保存されたが、復元側が対応する子処理の行を期待していなかった。すでに照合した登録IDから期待行を構成し、台帳との比較を維持した。修正前の実CLIでは、従来の字下げ構文を使った同一入力は区切りの有無にかかわらず init 終了前の読取りを拒否し、書込みのない対照は通過した。[初回失敗と対照の原本](acceptance-evidence/task-flow-registry-execution.json)。
