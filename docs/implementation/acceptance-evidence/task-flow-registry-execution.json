@@ -7520,5 +7520,337 @@
         }
       ]
     }
+  },
+  "sourceRequiredRegistryReads": {
+    "source": "b87f2ae1eb2bf6c7aafc97609237d10b686eecba",
+    "base": "3d3980d97098998755ad01960f1dcffe1f114b04",
+    "published": "b87f2ae1eb2bf6c7aafc97609237d10b686eecba",
+    "tree": "bc9e20cd9fc4f059244652c1bfacb8d4f17066f4",
+    "patchSha256": "83487af2fa797d12d7a5e7af58a381a7ee4f4dfbce9cf250beba0f5137070ae5",
+    "blobDrift": 0,
+    "tests": [
+      {
+        "version": 1,
+        "base": "3d3980d97098998755ad01960f1dcffe1f114b04",
+        "run": "source-required-registry-owners-final-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [  67.136s] 1513 tests run: 1513 passed, 1 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 1513,
+        "passed": 1513,
+        "failed": 0,
+        "skipped": 1,
+        "selectedPackages": 2,
+        "matchedPackages": 2,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4131,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T08:24:00.5032676Z"
+      },
+      {
+        "version": 1,
+        "base": "3d3980d97098998755ad01960f1dcffe1f114b04",
+        "run": "source-required-registry-compiler-final-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   3.578s] 59 tests run: 59 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 59,
+        "passed": 59,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4131,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T08:21:02.3134496Z"
+      }
+    ],
+    "priorTests": [
+      {
+        "version": 1,
+        "base": "3d3980d97098998755ad01960f1dcffe1f114b04",
+        "run": "source-required-registry-owners-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [  60.505s] 1513 tests run: 1513 passed, 1 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 1513,
+        "passed": 1513,
+        "failed": 0,
+        "skipped": 1,
+        "selectedPackages": 2,
+        "matchedPackages": 2,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4131,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T08:15:53.593875Z"
+      },
+      {
+        "version": 1,
+        "base": "3d3980d97098998755ad01960f1dcffe1f114b04",
+        "run": "source-required-registry-compiler-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   3.938s] 58 tests run: 58 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 58,
+        "passed": 58,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4131,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T08:17:07.1267983Z"
+      }
+    ],
+    "quality": [
+      {
+        "source": "b87f2ae1eb2bf6c7aafc97609237d10b686eecba",
+        "command": [
+          "check",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4131,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T08:24:10.3840012Z",
+        "finishedAt": "2026-11-06T08:25:15.8700523Z"
+      },
+      {
+        "source": "b87f2ae1eb2bf6c7aafc97609237d10b686eecba",
+        "command": [
+          "clippy",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4131,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T08:25:17.1053487Z",
+        "finishedAt": "2026-11-06T08:26:31.6360367Z"
+      },
+      {
+        "source": "b87f2ae1eb2bf6c7aafc97609237d10b686eecba",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4131,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T08:26:32.9777333Z",
+        "finishedAt": "2026-11-06T08:26:36.9597527Z"
+      }
+    ],
+    "reverseGraph": {
+      "source": "3d3980d97098998755ad01960f1dcffe1f114b04",
+      "metadataBase": "974b5e185ab1283ce5cfe96e957311c67e833cef",
+      "owners": [
+        "arcweft-lang-sema",
+        "arcweft-runtime-plan",
+        "arcweft-compiler"
+      ],
+      "workspaceReversePackages": [
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lang-sema",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-project-loader",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ],
+      "features": "all",
+      "targets": "all"
+    },
+    "coverage": "A contextual item type and a same-type registration on every reaching edge of the existing ownership graph authorize a required Source read. The compiler tests both Flow branch results and the reached Line plus its parent Flow during dialogue initialization, on Native and canonical decoded AWBC. Sema rejects an absent branch, a zero-trip loop, incompatible registration types and an interleaved handler write. A branch that leaves the Flow before the read imposes no registration requirement.",
+    "boundary": "Open call effects, unmodeled transitions, pending deferred writes and shared callbacks conservatively invalidate the proof. The graph uses an explicit entry event so an empty branch participates in the meet.",
+    "unverifiedAtRun": "Item-type inference from writes, common schema across independently scheduled writers, cancellation drops, affine storage and complete reverse-dependency execution remain separate.",
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-source-required-registry.raw.zip",
+      "sha256": "1923b7c8b2425178ac6cd474c272e835d1963521e395041d144c8eac26c6b438",
+      "entries": [
+        {
+          "entry": "source-required-registry-compiler-first-20261106.log",
+          "bytes": 85346,
+          "sha256": "a4cfeae3c0393a22a52a56b256056f4474abf4265db460f9f72ad2365f6a8369"
+        },
+        {
+          "entry": "source-required-registry-owners-20261106.runtime.terminal-audit.json",
+          "bytes": 629,
+          "sha256": "a03b0f060f6bfe9a40ae2d50cbe76397d81264247085638a9a7ca230b4c5a561"
+        },
+        {
+          "entry": "source-required-registry-compiler-20261106.runtime.terminal-audit.json",
+          "bytes": 623,
+          "sha256": "1c2a68993e68181c07bf95e8d7dcfa761fb7d4bb9239110e0401ecc77e5fad8e"
+        },
+        {
+          "entry": "source-required-registry-20261106.reverse.json",
+          "bytes": 896,
+          "sha256": "201549c4b62a59278b638e338796fc5ac415e732742aff992a2039a4f8385e5d"
+        },
+        {
+          "entry": "source-required-registry-20261106.cargo-tree.txt",
+          "bytes": 9446,
+          "sha256": "55de5f2fefea64a8b646c7461b4586f354537e05a31122b6380c2f8ffa147139"
+        },
+        {
+          "entry": "checkpoint-source-required-registry-20261106.verified.json",
+          "bytes": 1760,
+          "sha256": "2bd2a3fbf6db259299637a13b99122c8b0809523f423b4bfc529cf5b0a3f2eb0"
+        },
+        {
+          "entry": "source-required-registry-workspace-check-20261106.log",
+          "bytes": 107847,
+          "sha256": "98bc1d5cf6357dbdf8eedf064276de675423706a2f9c69f1fa7818417c689451"
+        },
+        {
+          "entry": "source-required-registry-workspace-check-20261106.json",
+          "bytes": 340,
+          "sha256": "9421cb9d045237f7e073a3fee5d88bbfb37b396bbb96670781d43659a5f45d88"
+        },
+        {
+          "entry": "source-required-registry-workspace-clippy-20261106.log",
+          "bytes": 8939096,
+          "sha256": "622cc30451fcb76eab5ccd895c886c08d7ed8091b8318cc546598f2d6a9ed5aa"
+        },
+        {
+          "entry": "source-required-registry-workspace-clippy-20261106.json",
+          "bytes": 341,
+          "sha256": "2ff30b75d662dbbdd04dc8ddb5be3cd2137f943e44675cfb5cf14198007af71a"
+        },
+        {
+          "entry": "source-required-registry-structure-20261106.log",
+          "bytes": 65698,
+          "sha256": "88c9104a0ff7cd0d46cfc2bf75f093fdf88df5d69ab51766c72d8fdc9d9fd263"
+        },
+        {
+          "entry": "source-required-registry-structure-20261106.json",
+          "bytes": 363,
+          "sha256": "224f8795c6fd0e1dc3f2bfa9083ccbdc57d85627cac2dba4cc9176b72fa9f828"
+        },
+        {
+          "entry": "source-required-registry-owners-final-20261106.catalog.json",
+          "bytes": 604,
+          "sha256": "67ac45f4127fc1b26914c1f8c8b04ec30c58cfeef83f363204876a267d64703a"
+        },
+        {
+          "entry": "source-required-registry-owners-final-20261106.catalog.inventory.json",
+          "bytes": 397736,
+          "sha256": "9923f332d7f9ede5885850e6a67316c42b6a6d17418fe342c7607b2218374e6a"
+        },
+        {
+          "entry": "source-required-registry-owners-final-20261106.catalog.log",
+          "bytes": 344789,
+          "sha256": "a5e8010edb950f0d3ec9a3fea22e854bb319ddddfaa5628205cd9063506036dc"
+        },
+        {
+          "entry": "source-required-registry-owners-final-20261106.runtime.json",
+          "bytes": 696,
+          "sha256": "abb8e6ae7ae800d2dcddaf0c54abcb4b80f83203be35bb2762bbfb0d5a6ab266"
+        },
+        {
+          "entry": "source-required-registry-owners-final-20261106.runtime.log",
+          "bytes": 559400,
+          "sha256": "092b8b7d8477dee2aa09001d97ace438580f0683e4eca0dbf55d64c8b15618ec"
+        },
+        {
+          "entry": "source-required-registry-owners-final-20261106.runtime.terminal-audit.json",
+          "bytes": 635,
+          "sha256": "467e99fe678f10f4c2658dee46b5eecc5ae586ea1df4bcc610dcb3ccef2ea8f5"
+        },
+        {
+          "entry": "source-required-registry-owners-final-20261106.binaries-before.json",
+          "bytes": 457,
+          "sha256": "69baf9ae4e5d321ba8c44b345907a25edd995f371e65f686f1e8c53588038ee7"
+        },
+        {
+          "entry": "source-required-registry-owners-final-20261106.source-freeze.json",
+          "bytes": 807830,
+          "sha256": "7a47dd1bd37e31d9ef7f2ed4f056d6263bfcc45bab7d06206a460fe1e893780b"
+        },
+        {
+          "entry": "source-required-registry-compiler-final-20261106.catalog.json",
+          "bytes": 592,
+          "sha256": "6804906a3364f748486fb51af096ce8de8337fcd7b58274f791434670e2b868f"
+        },
+        {
+          "entry": "source-required-registry-compiler-final-20261106.catalog.inventory.json",
+          "bytes": 14996,
+          "sha256": "bfd0f66da613d0c0c8248db7a22902cb8d94c92acb1fb3df21e920fe87606c53"
+        },
+        {
+          "entry": "source-required-registry-compiler-final-20261106.catalog.log",
+          "bytes": 94625,
+          "sha256": "92d3747f04c232f2a53a8422471b32780ba32ec2700612a2b644bcd9318a923a"
+        },
+        {
+          "entry": "source-required-registry-compiler-final-20261106.runtime.json",
+          "bytes": 684,
+          "sha256": "8a5f0574c842de9d584b96cfe9ae20217bbef6767d8d299f105877c8c5724ffb"
+        },
+        {
+          "entry": "source-required-registry-compiler-final-20261106.runtime.log",
+          "bytes": 101821,
+          "sha256": "817b91414b1abc93eecba82111b38d26320c69a72785681b129aeb76c6af5262"
+        },
+        {
+          "entry": "source-required-registry-compiler-final-20261106.runtime.terminal-audit.json",
+          "bytes": 629,
+          "sha256": "e84ca9ca40cef22e351049ee7af6a90f8a6e26a9ad294f95b41b7d0d8780094c"
+        },
+        {
+          "entry": "source-required-registry-compiler-final-20261106.binaries-before.json",
+          "bytes": 230,
+          "sha256": "dcf5a0ef2e2c29ea5fc461ebfc1e7c3edee2ede65ad9430f5ad5a67b818768d2"
+        },
+        {
+          "entry": "source-required-registry-compiler-final-20261106.source-freeze.json",
+          "bytes": 807830,
+          "sha256": "7bfcac5f494764ed9d74ea8a1b9cf3e83b843c9b8ab47632ade72fa34bc3d271"
+        }
+      ]
+    }
   }
 }

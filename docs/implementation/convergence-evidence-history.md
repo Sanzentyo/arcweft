@@ -14909,3 +14909,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source `f68dd1a0800f35d3fd1db4e39e941a7aa4151a14` で、文脈型が`Option<T>`のoptional読み取りを型付きの値として検査する。Semaの元キーと読み取り形式をRuntimePlanへ渡し、Nativeと正規デコードしたAWBCでFlowの登録前後と対話中のLine／親Flowを確認した。
 - Sema／RuntimePlanの1,511件とCompilerのevaluated_effects 57件がPASS、ownerで1件skip。workspace check／Clippy／構造ゲートの終了コードは順に 0／0／0。初回コンパイルの移行漏れ、RuntimePlanの分類拒否、追加タグの範囲テスト1失敗も保持した。逆依存22パッケージのテスト対象をCargoから照合した。検証済み3ターゲットを除く111ターゲットを46区分に分けた。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-06 — Required registry reads use checked control flow
+
+- Source `b87f2ae1eb2bf6c7aafc97609237d10b686eecba` は、文脈型が定まる必須読取りを、到達する全経路で同じ型の登録が成立する場合に受理する。分岐両側の値、Line初期化でのLineと親Flowの読取りを、Nativeと正規デコードしたAWBCで確認した。未登録分岐・0回のループ・型違い・共有ハンドラーの書込みだけを根拠にした読取りを拒否した。
+- Sema／RuntimePlanの1,513件とCompilerのevaluated_effects 59件がPASS、ownerで1件skip。workspace check／Clippy／構造ゲートの終了コードは順に 0／0／0。先行実行と最終実行を個別に記録した。Cargoで照合した22逆依存の全実行は継続する。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
