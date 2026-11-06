@@ -1693,5 +1693,308 @@
         }
       ]
     }
+  },
+  "activeRegistryWriteProbe": {
+    "version": 1,
+    "source": "6b72d7ca42beb3661a7025598cf74a341d61fc21",
+    "observedHead": "8651b7caec180a310de0aca39952483ffd5dac46",
+    "binarySha256": "2ff22b4131a512cfcfdaa4c9b4e1efa14341da397a9678a5b8dd66083825a1c2",
+    "cases": [
+      {
+        "case": "write",
+        "runner": "verify",
+        "arguments": [
+          "verify",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/active-registry-write-runtime-20261106.write.arcw",
+          "--mode",
+          "test",
+          "--json"
+        ],
+        "exit": 0,
+        "sourceSha256": "1e129c94c20724b5e03afd3ab202fe7bb47f6a0d29fadba386db3e098b6053bc",
+        "finalStatus": null,
+        "steps": []
+      },
+      {
+        "case": "write",
+        "runner": "plan",
+        "arguments": [
+          "plan",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/active-registry-write-runtime-20261106.write.arcw",
+          "--json"
+        ],
+        "exit": 0,
+        "sourceSha256": "1e129c94c20724b5e03afd3ab202fe7bb47f6a0d29fadba386db3e098b6053bc",
+        "finalStatus": null,
+        "steps": []
+      },
+      {
+        "case": "write",
+        "runner": "native",
+        "arguments": [
+          "run",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/active-registry-write-runtime-20261106.write.arcw",
+          "--entry",
+          "entry.main",
+          "--executor",
+          "bytecode-vm",
+          "--mode",
+          "one-op",
+          "--max-ops",
+          "1",
+          "--steps",
+          "16",
+          "--json"
+        ],
+        "exit": 1,
+        "sourceSha256": "1e129c94c20724b5e03afd3ab202fe7bb47f6a0d29fadba386db3e098b6053bc",
+        "finalStatus": "failed registry writes require their original program and owning execution context",
+        "steps": [
+          {
+            "ops": 1,
+            "stop": "Failed",
+            "diagnostics": [
+              "registry writes require their original program and owning execution context"
+            ]
+          }
+        ]
+      },
+      {
+        "case": "write",
+        "runner": "awbc",
+        "arguments": [
+          "run",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/active-registry-write-runtime-20261106.write.arcw",
+          "--entry",
+          "entry.main",
+          "--executor",
+          "awbc-product",
+          "--mode",
+          "one-op",
+          "--max-ops",
+          "1",
+          "--steps",
+          "16",
+          "--json"
+        ],
+        "exit": 1,
+        "sourceSha256": "1e129c94c20724b5e03afd3ab202fe7bb47f6a0d29fadba386db3e098b6053bc",
+        "finalStatus": "failed registry writes require their original program and owning execution context",
+        "steps": [
+          {
+            "ops": 1,
+            "stop": "OneOp",
+            "diagnostics": []
+          },
+          {
+            "ops": 1,
+            "stop": "Failed",
+            "diagnostics": [
+              "registry writes require their original program and owning execution context"
+            ]
+          }
+        ]
+      },
+      {
+        "case": "control",
+        "runner": "verify",
+        "arguments": [
+          "verify",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/active-registry-write-runtime-20261106.control.arcw",
+          "--mode",
+          "test",
+          "--json"
+        ],
+        "exit": 0,
+        "sourceSha256": "b3e868088268ff2309611d8f616f88020c115bfeff68086d1710bc8123ccbf57",
+        "finalStatus": null,
+        "steps": []
+      },
+      {
+        "case": "control",
+        "runner": "plan",
+        "arguments": [
+          "plan",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/active-registry-write-runtime-20261106.control.arcw",
+          "--json"
+        ],
+        "exit": 0,
+        "sourceSha256": "b3e868088268ff2309611d8f616f88020c115bfeff68086d1710bc8123ccbf57",
+        "finalStatus": null,
+        "steps": []
+      },
+      {
+        "case": "control",
+        "runner": "native",
+        "arguments": [
+          "run",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/active-registry-write-runtime-20261106.control.arcw",
+          "--entry",
+          "entry.main",
+          "--executor",
+          "bytecode-vm",
+          "--mode",
+          "one-op",
+          "--max-ops",
+          "1",
+          "--steps",
+          "16",
+          "--json"
+        ],
+        "exit": 0,
+        "sourceSha256": "b3e868088268ff2309611d8f616f88020c115bfeff68086d1710bc8123ccbf57",
+        "finalStatus": "done Return(\"7\")",
+        "steps": [
+          {
+            "ops": 1,
+            "stop": "Done",
+            "diagnostics": []
+          }
+        ]
+      },
+      {
+        "case": "control",
+        "runner": "awbc",
+        "arguments": [
+          "run",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/active-registry-write-runtime-20261106.control.arcw",
+          "--entry",
+          "entry.main",
+          "--executor",
+          "awbc-product",
+          "--mode",
+          "one-op",
+          "--max-ops",
+          "1",
+          "--steps",
+          "16",
+          "--json"
+        ],
+        "exit": 0,
+        "sourceSha256": "b3e868088268ff2309611d8f616f88020c115bfeff68086d1710bc8123ccbf57",
+        "finalStatus": "done Return(\"7\")",
+        "steps": [
+          {
+            "ops": 1,
+            "stop": "OneOp",
+            "diagnostics": []
+          },
+          {
+            "ops": 1,
+            "stop": "OneOp",
+            "diagnostics": []
+          },
+          {
+            "ops": 1,
+            "stop": "Done",
+            "diagnostics": []
+          }
+        ]
+      }
+    ],
+    "diagnosis": "Type checking and plan generation accept the capability-authorized write. Actual Bytecode VM and AWBC Product stop before returning the control value and report missing owning execution context. Both return 7 with only the write removed. The typed key, checked write and runtime-plan projection remain separately verified.",
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-active-registry-write-runtime.raw.zip",
+      "bytes": 11104,
+      "sha256": "700551fdc1315133de38d3f7cb10f220afcc536cd74b258c117ea16f47d0a953",
+      "entryDrift": 0,
+      "entries": [
+        {
+          "entry": "active-registry-write-runtime-20261106.control.arcw",
+          "bytes": 116,
+          "sha256": "b3e868088268ff2309611d8f616f88020c115bfeff68086d1710bc8123ccbf57"
+        },
+        {
+          "entry": "active-registry-write-runtime-20261106.control.awbc.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "active-registry-write-runtime-20261106.control.awbc.stdout.json",
+          "bytes": 8853,
+          "sha256": "5cf70fd3048617af0a5fef135051b54f41c55e47f2f88f2b9eca4e4c2330f472"
+        },
+        {
+          "entry": "active-registry-write-runtime-20261106.control.native.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "active-registry-write-runtime-20261106.control.native.stdout.json",
+          "bytes": 5647,
+          "sha256": "45eb20c073346b3a7269ab4c346d419aa4d09c7a6fa1bed48c6237d177faf65c"
+        },
+        {
+          "entry": "active-registry-write-runtime-20261106.control.plan.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "active-registry-write-runtime-20261106.control.plan.stdout.json",
+          "bytes": 169,
+          "sha256": "399a376e200f08a65219abaef44be801bf20deae91b7870ce73bb8855c7f1ca2"
+        },
+        {
+          "entry": "active-registry-write-runtime-20261106.control.verify.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "active-registry-write-runtime-20261106.control.verify.stdout.json",
+          "bytes": 202,
+          "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+        },
+        {
+          "entry": "active-registry-write-runtime-20261106.receipt.json",
+          "bytes": 8427,
+          "sha256": "171a812cda994e2f341fbd9ec7989c85702c4cb9056b717ca8e728586ea7c232"
+        },
+        {
+          "entry": "active-registry-write-runtime-20261106.write.arcw",
+          "bytes": 145,
+          "sha256": "1e129c94c20724b5e03afd3ab202fe7bb47f6a0d29fadba386db3e098b6053bc"
+        },
+        {
+          "entry": "active-registry-write-runtime-20261106.write.awbc.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "active-registry-write-runtime-20261106.write.awbc.stdout.json",
+          "bytes": 7447,
+          "sha256": "254fb9f26ed1f99c1bedeb595fff838cdc4266cc190adaf8c5477f38612406f9"
+        },
+        {
+          "entry": "active-registry-write-runtime-20261106.write.native.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "active-registry-write-runtime-20261106.write.native.stdout.json",
+          "bytes": 5846,
+          "sha256": "ba05a74c6bc029c3e9e9a6767c77e2bbd9366dc0df417b36e2afc49c7ff3a461"
+        },
+        {
+          "entry": "active-registry-write-runtime-20261106.write.plan.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "active-registry-write-runtime-20261106.write.plan.stdout.json",
+          "bytes": 169,
+          "sha256": "399a376e200f08a65219abaef44be801bf20deae91b7870ce73bb8855c7f1ca2"
+        },
+        {
+          "entry": "active-registry-write-runtime-20261106.write.verify.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "active-registry-write-runtime-20261106.write.verify.stdout.json",
+          "bytes": 202,
+          "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+        }
+      ]
+    }
   }
 }

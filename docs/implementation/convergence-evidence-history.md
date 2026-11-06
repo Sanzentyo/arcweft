@@ -14813,3 +14813,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source 6b72d7ca42beb3661a7025598cf74a341d61fc21. Ten all-feature locked nextest runs executed the 28 Compiler integration targets and the library target. All 827 cases passed. The catalog binary IDs and case identities were disjoint, and every run had zero drift across 4,127 input pins.
 - The earlier whole-package catalog exit 101 remains in its original evidence. The recovery used independent target partitions on the later source. [All 29 binary IDs, terminal results and raw output](acceptance-evidence/task-proof-trust-policy.json).
+
+## 2026-11-06 — Active flow registry write at both CLI executors
+
+- Source 6b72d7ca42beb3661a7025598cf74a341d61fc21. The authored state.write capability and the flow-registry write passed verify and plan. Both Bytecode VM and AWBC Product failed at the write with the owning-execution-context diagnostic. The paired input without the write returned 7 in both executors. Every step respected the original one-operation budget.
+- The result concerns execution ownership. It keeps the static key, checked write and plan projection on their verified scopes. [Authored pair, actual steps and raw commands](acceptance-evidence/task-lifetime-registry-key-identity.json).
