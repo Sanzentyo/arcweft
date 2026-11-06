@@ -345,7 +345,10 @@ impl Engine {
             _ => return Err(missing.into()),
         };
         let (image, mut admission) = self
-            .inert_rollback_image_with_dialogue(None)
+            .inert_rollback_image_with_dialogue(
+                None,
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            )
             .map_err(|message| RuntimeEffectExecutionError::Checkpoint { message })?;
         let (destination, source) = target.origin(activation);
         let position = rows.prepare_write(

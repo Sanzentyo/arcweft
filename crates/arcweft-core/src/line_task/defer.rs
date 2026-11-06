@@ -54,6 +54,26 @@ pub struct RuntimeLineDeferredRegistration<V = RuntimeValue> {
 }
 
 impl<V> RuntimeLineDeferredRegistration<V> {
+    pub(crate) fn admit_retained(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
+    where
+        V: crate::value::RuntimeStoredValue,
+    {
+        admission.validate_metadata(&(self.id, self.site, self.outcome_filter))?;
+        admission.validate_metadata_collection(self.captures.len())?;
+        for capture in &self.captures {
+            admission.validate_borrowed(capture.borrowed_value())?;
+        }
+        admission.admit_composite(V::admission_origin(), |owner, resources| {
+            if let Some(owner) = owner {
+                self.admit_original_capture_types(owner, resources)?;
+            }
+            Ok(())
+        })
+    }
+
     /// Checks the retained packet against the original deferred body's ABI
     /// while all values are still borrowed and share their enclosing bank.
     pub(crate) fn admit_original_capture_types(
@@ -227,47 +247,6 @@ impl Clone for AwbcRuntimeDeferredRegistrationSnapshot {
 }
 
 impl AwbcRuntimeDeferredRegistrationSnapshot {
-    pub(crate) fn from_live_for_program(
-        registration: &RuntimeLineDeferredRegistration,
-        owner: &crate::task::RuntimeProgramOwner,
-    ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {
-        Self::from_live_with_owner(registration, Some(owner))
-    }
-
-    fn from_live_with_owner(
-        registration: &RuntimeLineDeferredRegistration,
-        owner: Option<&crate::task::RuntimeProgramOwner>,
-    ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {
-        let mut admission = match owner {
-            Some(owner) => crate::value::RuntimeRetainedValueAdmission::for_program(
-                owner.clone(),
-                crate::entry::RuntimeSchemaLimits::engine_default(),
-            ),
-            None => crate::value::RuntimeRetainedValueAdmission::standalone(
-                crate::entry::RuntimeSchemaLimits::engine_default(),
-            ),
-        };
-        admission.validate_metadata(&(
-            registration.id,
-            registration.site,
-            registration.outcome_filter,
-        ))?;
-        admission.validate_metadata_collection(registration.captures.len())?;
-        for capture in &registration.captures {
-            admission.validate(capture)?;
-        }
-        admission.admit_composite(
-            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
-            |owner, resources| {
-                if let Some(owner) = owner {
-                    registration.admit_original_capture_types(owner, resources)?;
-                }
-                Ok(())
-            },
-        )?;
-        Self::from_admitted_live(registration, owner)
-    }
-
     pub(crate) fn from_admitted_live(
         registration: &RuntimeLineDeferredRegistration,
         owner: Option<&crate::task::RuntimeProgramOwner>,
@@ -284,27 +263,6 @@ impl AwbcRuntimeDeferredRegistrationSnapshot {
                 })
                 .collect::<Result<_, _>>()?,
         })
-    }
-
-    pub(crate) fn into_live<'a>(
-        self,
-        owner: impl Into<crate::value::RuntimeValueRestoreContext<'a>>,
-    ) -> Result<RuntimeLineDeferredRegistration, crate::value::AwbcRuntimeValueSnapshotError> {
-        let owner = owner.into();
-        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
-            owner.owner().clone(),
-            crate::entry::RuntimeSchemaLimits::engine_default(),
-        );
-        admission.validate_metadata(&(self.id, self.site, self.outcome_filter))?;
-        admission.validate_metadata_collection(self.captures.len())?;
-        for capture in &self.captures {
-            admission.validate_snapshot(capture)?;
-        }
-        admission.admit_composite(
-            crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
-            |_, resources| self.admit_original_capture_types(owner.owner(), resources),
-        )?;
-        self.into_admitted_live(owner)
     }
 
     pub(crate) fn into_admitted_live<'a>(

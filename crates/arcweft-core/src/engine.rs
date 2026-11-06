@@ -551,6 +551,7 @@ impl NativeFlowExecutionFrame {
             })
     }
 
+    #[cfg(test)]
     fn inert_rollback_image(
         &self,
         owner: &crate::task::RuntimeProgramOwner,
@@ -626,6 +627,7 @@ impl NativeFlowExecutionFrame {
         })
     }
 
+    #[cfg(test)]
     fn from_rollback_image(
         image: NativeFlowExecutionFrameRollbackImage,
         owner: &crate::task::RuntimeProgramOwner,
@@ -2069,13 +2071,17 @@ fn pure_helper_i64_call_shapes(plan: &RuntimePlan) -> Vec<bool> {
 
 impl Engine {
     fn inert_rollback_image(&self) -> Result<NativeEngineRollbackImage, String> {
-        self.inert_rollback_image_with_dialogue(None)
-            .map(|(image, _)| image)
+        self.inert_rollback_image_with_dialogue(
+            None,
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        )
+        .map(|(image, _)| image)
     }
 
     fn inert_rollback_image_with_dialogue(
         &self,
         transaction: Option<&dialogue::DialogueActivationTransaction>,
+        limits: crate::entry::RuntimeSchemaLimits,
     ) -> Result<
         (
             NativeEngineRollbackImage,
@@ -2101,10 +2107,8 @@ impl Engine {
             transaction.validate_parent_allocation(self.next_fiber_id)?;
         }
         let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&self.plan));
-        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
-            owner.clone(),
-            crate::entry::RuntimeSchemaLimits::engine_default(),
-        );
+        let mut admission =
+            crate::value::RuntimeRetainedValueAdmission::for_program(owner.clone(), limits);
         self.admit_live_retained_values_with_dialogue(&mut admission, None, transaction)
             .map_err(|error| error.to_string())?;
         let dialogue_activations =
@@ -2112,9 +2116,6 @@ impl Engine {
                 .inert_rollback_image(&owner, &mut admission, transaction)?;
         let publication_image =
             |publication: &RuntimeNeedPublication| publication.snapshot_admitted(&owner);
-        admission
-            .finish_presentation_custody()
-            .map_err(|error| error.to_string())?;
         let image = NativeEngineRollbackImage {
             evaluation_stats: self.evaluation_stats.clone(),
             plan: Arc::clone(&self.plan),
@@ -2205,7 +2206,7 @@ impl Engine {
         image
             .dialogue_activations
             .validate_parent_allocations(image.next_fiber_id)?;
-        let expected_deferred_children = image.admit_rollback_values(owner)?;
+        image.admit_rollback_values(owner, crate::entry::RuntimeSchemaLimits::engine_default())?;
         let restored = Self {
             evaluation_stats: image.evaluation_stats,
             plan: image.plan,
@@ -2265,10 +2266,9 @@ impl Engine {
             next_fiber_id: image.next_fiber_id,
             next_scheduled_scope_sequence: image.next_scheduled_scope_sequence,
             dialogue_occurrences: image.dialogue_occurrences,
-            dialogue_activations: dialogue::DialogueActivationStore::from_rollback_image(
+            dialogue_activations: dialogue::DialogueActivationStore::from_admitted_rollback_image(
                 image.dialogue_activations,
                 owner,
-                &expected_deferred_children,
             )?,
             dialogue_effect_callback_activations: image.dialogue_effect_callback_activations,
             run_child_next: image.run_child_next,

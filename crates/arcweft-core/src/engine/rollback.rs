@@ -1151,26 +1151,16 @@ impl NativeEngineRollbackImage {
     pub(super) fn admit_rollback_values(
         &self,
         owner: &crate::task::RuntimeProgramOwner,
-    ) -> Result<
-        BTreeMap<
-            DialogueActivationId,
-            (
-                crate::runtime_id::RuntimeDeferRegistrationId,
-                crate::runtime_id::RuntimeDeferSiteId,
-            ),
-        >,
-        String,
-    > {
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> Result<(), String> {
         let crate::task::RuntimeProgramOwner::Plan(expected) = owner else {
             return Err("native rollback requires its original Plan executable".into());
         };
         if !Arc::ptr_eq(expected, &self.plan) {
             return Err("native rollback belongs to a different original executable".into());
         }
-        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
-            owner.clone(),
-            crate::entry::RuntimeSchemaLimits::engine_default(),
-        );
+        let mut admission =
+            crate::value::RuntimeRetainedValueAdmission::for_program(owner.clone(), limits);
         self.admit_presentation_state(&mut admission)
             .map_err(|error| error.to_string())?;
         self.admit_metadata(&mut admission)
@@ -1234,9 +1224,11 @@ impl NativeEngineRollbackImage {
                 .active_line(activation)
                 .and_then(crate::line_task::RuntimeDialogueActivationState::deferred_inflight)
         })?;
+        self.dialogue_activations
+            .admit_values(&mut admission, &expected_deferred_children)
+            .map_err(|error| error.to_string())?;
         admission
             .finish_presentation_custody()
-            .map_err(|error| error.to_string())?;
-        Ok(expected_deferred_children)
+            .map_err(|error| error.to_string())
     }
 }

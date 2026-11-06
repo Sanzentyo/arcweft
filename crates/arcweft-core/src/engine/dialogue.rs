@@ -2760,7 +2760,10 @@ impl Engine {
         let binding = transaction.frame().execution.env.source_function_context();
         let before = self.activation_local_handle_owners(transaction.frame())?;
         let (image, mut admission) = self
-            .inert_rollback_image_with_dialogue(Some(transaction))
+            .inert_rollback_image_with_dialogue(
+                Some(transaction),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            )
             .map_err(failure)?;
         let (target, rows) = match key.scope() {
             LifetimeScopeKind::Line => (
@@ -2833,7 +2836,10 @@ impl Engine {
         let owner = crate::task::RuntimeProgramOwner::Plan(self.plan.clone());
         let before = self.activation_local_handle_owners(transaction.frame())?;
         let (image, mut admission) = self
-            .inert_rollback_image_with_dialogue(Some(transaction))
+            .inert_rollback_image_with_dialogue(
+                Some(transaction),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            )
             .map_err(failure)?;
         let result = (|| {
             let (frame, line) = transaction.parts_mut();
@@ -3387,6 +3393,71 @@ mod tests {
             pending_host_call: None,
             failure: None,
         }
+    }
+
+    #[test]
+    fn withdrawn_dialogue_frame_shares_the_parent_rollback_budget() {
+        use crate::entry::RuntimeSchemaLimits;
+        use crate::task::RuntimeProgramOwner;
+
+        let mut engine = Engine::new(RuntimePlanBuilder::new().finish().unwrap());
+        let owner = RuntimeProgramOwner::Plan(engine.program_plan());
+        let activation = DialogueActivationId::new(
+            crate::effect::RuntimeArtifactFingerprint::try_from_bytes([0x5e; 32]).unwrap(),
+            engine.fiber.persistent_id,
+            RuntimeDialogueContentPlanId::from_accepted_ordinal(NonZeroU32::MIN),
+            0,
+        );
+        let local = RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN);
+        let parent_value = RuntimeValue::String("p".repeat(1024));
+        let child_value = RuntimeValue::String("c".repeat(1024));
+        let mut frame = activation_frame(&engine, local);
+        frame.parent = engine.fiber.id;
+        frame.target = None;
+        frame.execution.env = crate::value::RuntimeEnv::default();
+        frame.task_inputs = Box::new([RuntimeLocalBinding {
+            local,
+            value: child_value.clone(),
+        }]);
+        engine.fiber.frame.selected_dialogue_result = Some(parent_value.clone());
+        engine
+            .dialogue_activations
+            .begin(activation, frame)
+            .unwrap();
+        let transaction = engine
+            .dialogue_activations
+            .begin_transaction(&activation)
+            .unwrap();
+
+        let full_limits = RuntimeSchemaLimits::engine_default();
+        let low_limits = RuntimeSchemaLimits {
+            max_encoded_bytes: 1536,
+            ..full_limits
+        };
+        let live_failure = engine
+            .inert_rollback_image_with_dialogue(Some(&transaction), low_limits)
+            .err()
+            .expect("two individually admissible roots exceed their shared session allowance");
+        assert!(live_failure.contains("encoded_bytes"), "{live_failure}");
+        let (image, _) = engine
+            .inert_rollback_image_with_dialogue(Some(&transaction), full_limits)
+            .unwrap();
+        let restore_failure = image.admit_rollback_values(&owner, low_limits).unwrap_err();
+        assert!(
+            restore_failure.contains("encoded_bytes"),
+            "{restore_failure}"
+        );
+        assert_eq!(transaction.frame().task_inputs[0].value, child_value);
+        let mut restored = Engine::from_rollback_image(image, &owner).unwrap();
+        assert_eq!(
+            restored.fiber.frame.selected_dialogue_result,
+            Some(parent_value)
+        );
+        let restored = restored
+            .dialogue_activations
+            .begin_transaction(&activation)
+            .unwrap();
+        assert_eq!(restored.frame().task_inputs[0].value, child_value);
     }
 
     #[test]

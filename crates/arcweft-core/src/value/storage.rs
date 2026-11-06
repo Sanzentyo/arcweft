@@ -73,6 +73,26 @@ impl RuntimeStoredValue for super::RuntimePayload {
     }
 }
 
+impl RuntimeStoredValue for super::RuntimeOpaqueValue {
+    fn borrowed_view(&self) -> RuntimeValueView<'_> {
+        self.view()
+    }
+
+    fn admission_origin() -> ValueAdmissionOrigin {
+        ValueAdmissionOrigin::Live
+    }
+}
+
+impl RuntimeStoredValue for super::RuntimeCallableValue {
+    fn borrowed_view(&self) -> RuntimeValueView<'_> {
+        RuntimeValueView::Callable(super::RuntimeCallableView::Live(self))
+    }
+
+    fn admission_origin() -> ValueAdmissionOrigin {
+        ValueAdmissionOrigin::Live
+    }
+}
+
 impl RuntimeStoredValue for AwbcRuntimeValueSnapshot {
     fn borrowed_view(&self) -> RuntimeValueView<'_> {
         self.view()

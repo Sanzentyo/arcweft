@@ -16,6 +16,8 @@ use crate::value::{RuntimeLocalBinding, RuntimeValue};
 use std::collections::BTreeMap;
 use thiserror::Error;
 
+mod admission;
+
 #[derive(Clone, Debug, Error, PartialEq)]
 #[error("dialogue ingress rejected: {source}")]
 pub(in crate::engine) struct DialogueIngressError {
@@ -274,6 +276,33 @@ pub(crate) struct DialogueActivationStoreRollbackImage {
 }
 
 impl DialogueActivationStoreRollbackImage {
+    pub(in crate::engine) fn admit_values(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        expected_deferred_children: &BTreeMap<
+            DialogueActivationId,
+            (
+                crate::runtime_id::RuntimeDeferRegistrationId,
+                crate::runtime_id::RuntimeDeferSiteId,
+            ),
+        >,
+    ) -> Result<(), crate::line_task::RuntimeDialogueRegistrySnapshotError> {
+        self.registry
+            .admit_retained(admission, expected_deferred_children)?;
+        self.registry.try_visit_active(|activation, active, line| {
+            admission.validate_metadata(&active.inbox)?;
+            active.frame.admit_reducer(activation, line, admission)
+        })?;
+        self.registry.try_visit_active(|_, active, _| {
+            active
+                .frame
+                .admit_frame_roots(admission, |frame, admission| {
+                    frame.admit_owned_values(admission)
+                })
+                .map_err(Into::into)
+        })
+    }
+
     pub(in crate::engine) fn validate_parent_allocations(
         &self,
         next_fiber_id: u64,
@@ -309,7 +338,7 @@ fn inert_dialogue_value(
     value: &RuntimeValue,
     owner: &crate::task::RuntimeProgramOwner,
 ) -> Result<crate::value::AwbcRuntimeValueSnapshot, String> {
-    crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
+    crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(value, owner)
         .map_err(|error| error.to_string())
 }
 
@@ -318,7 +347,7 @@ fn live_dialogue_value(
     owner: &crate::task::RuntimeProgramOwner,
 ) -> Result<RuntimeValue, String> {
     image
-        .into_runtime_value_for_program(owner)
+        .into_admitted_runtime_value(owner)
         .map_err(|error| error.to_string())
 }
 
@@ -434,8 +463,9 @@ impl NativeDialogueScopeRollbackImage {
                 .deferred
                 .iter()
                 .map(|registration| {
-                    crate::line_task::AwbcRuntimeDeferredRegistrationSnapshot::from_live_for_program(
-                        registration, owner,
+                    crate::line_task::AwbcRuntimeDeferredRegistrationSnapshot::from_admitted_live(
+                        registration,
+                        Some(owner),
                     )
                     .map_err(|error| error.to_string())
                 })
@@ -455,7 +485,7 @@ impl NativeDialogueScopeRollbackImage {
                 .into_iter()
                 .map(|registration| {
                     registration
-                        .into_live(owner)
+                        .into_admitted_live(owner)
                         .map_err(|error| error.to_string())
                 })
                 .collect::<Result<_, String>>()?,
@@ -466,7 +496,7 @@ impl NativeDialogueScopeRollbackImage {
 }
 
 impl DialogueActivationFrame {
-    fn inert_rollback_image(
+    fn snapshot_admitted(
         &self,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<NativeDialogueActivationFrameRollbackImage, String> {
@@ -478,7 +508,7 @@ impl DialogueActivationFrame {
                 .target
                 .as_ref()
                 .map(|target| {
-                    crate::value::AwbcRuntimeValueSnapshot::from_opaque_for_program(target, owner)
+                    crate::value::AwbcRuntimeValueSnapshot::from_admitted_opaque(target, owner)
                         .map_err(|error| error.to_string())
                 })
                 .transpose()?,
@@ -489,7 +519,7 @@ impl DialogueActivationFrame {
                 .iter()
                 .map(|binding| NativeDialogueBindingRollbackImage::from_live(binding, owner))
                 .collect::<Result<_, String>>()?,
-            execution: self.execution.inert_rollback_image(owner)?,
+            execution: self.execution.snapshot_with_admitted_values(owner)?,
             line_task: self.line_task.clone(),
             elapsed: self.elapsed,
             phase: self.phase,
@@ -512,7 +542,7 @@ impl DialogueActivationFrame {
                 .map(|binding| {
                     Ok(crate::value::RuntimeDialogueContentEffectBinding::new(
                         binding.site(),
-                        crate::value::AwbcRuntimeValueSnapshot::from_callable_for_program(
+                        crate::value::AwbcRuntimeValueSnapshot::from_admitted_callable(
                             binding.callback(),
                             owner,
                         )
@@ -537,7 +567,7 @@ impl DialogueActivationFrame {
         })
     }
 
-    fn from_rollback_image(
+    fn from_admitted_rollback_image(
         image: NativeDialogueActivationFrameRollbackImage,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<Self, String> {
@@ -563,7 +593,7 @@ impl DialogueActivationFrame {
                 .map(|binding| binding.into_live(owner))
                 .collect::<Result<Vec<_>, String>>()?
                 .into_boxed_slice(),
-            execution: super::super::NativeFlowExecutionFrame::from_rollback_image(
+            execution: super::super::NativeFlowExecutionFrame::from_image_with_admitted_values(
                 image.execution,
                 owner,
             )?,
@@ -944,21 +974,28 @@ impl DialogueActivationStore {
             .map_err(|error| error.to_string())?;
         contour
             .try_visit_active(|activation, active, line| {
-                admission.validate_metadata(&(active.frame.parent, &active.inbox))?;
+                admission.validate_metadata(&active.inbox)?;
                 active.frame.admit_reducer(activation, line, admission)
             })
+            .map_err(|error| error.to_string())?;
+        contour
+            .try_visit_active(|_, active, _| {
+                active
+                    .frame
+                    .admit_frame_roots(admission, |frame, admission| {
+                        frame.admit_owned_values(admission)
+                    })
+            })
+            .map_err(|error| error.to_string())?;
+        admission
+            .finish_presentation_custody()
             .map_err(|error| error.to_string())?;
         let registry = contour
             .snapshot_admitted(Some(owner), |active| {
                 Ok(NativeEngineDialogueFrameRollbackImage {
-                    frame: active
-                        .frame
-                        .inert_rollback_image(owner)
-                        .map_err(|message| {
-                            crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
-                                message,
-                            }
-                        })?,
+                    frame: active.frame.snapshot_admitted(owner).map_err(|message| {
+                        crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame { message }
+                    })?,
                     inbox: active.inbox.clone(),
                 })
             })
@@ -966,43 +1003,22 @@ impl DialogueActivationStore {
         Ok(DialogueActivationStoreRollbackImage { registry })
     }
 
-    pub(crate) fn from_rollback_image(
+    pub(in crate::engine) fn from_admitted_rollback_image(
         image: DialogueActivationStoreRollbackImage,
         owner: &crate::task::RuntimeProgramOwner,
-        expected_deferred_children: &BTreeMap<
-            DialogueActivationId,
-            (
-                crate::runtime_id::RuntimeDeferRegistrationId,
-                crate::runtime_id::RuntimeDeferSiteId,
-            ),
-        >,
     ) -> Result<Self, String> {
-        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
-            owner.clone(),
-            crate::entry::RuntimeSchemaLimits::engine_default(),
-        );
-        image
-            .registry
-            .admit_retained(&mut admission, expected_deferred_children)
-            .map_err(|error| error.to_string())?;
-        image
-            .registry
-            .try_visit_active(|activation, active, line| {
-                admission.validate_metadata(&(active.frame.parent, &active.inbox))?;
-                active.frame.admit_reducer(activation, line, &mut admission)
-            })
-            .map_err(|error| error.to_string())?;
         let registry = RuntimeDialogueActivationRegistry::from_admitted_save_snapshot(
             image.registry,
             owner,
             |_, active, _| {
                 Ok(EngineDialogueActivationFrame {
-                    frame: DialogueActivationFrame::from_rollback_image(active.frame, owner)
-                        .map_err(|message| {
-                            crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
-                                message,
-                            }
-                        })?,
+                    frame: DialogueActivationFrame::from_admitted_rollback_image(
+                        active.frame,
+                        owner,
+                    )
+                    .map_err(|message| {
+                        crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame { message }
+                    })?,
                     inbox: active.inbox,
                 })
             },
@@ -1573,7 +1589,16 @@ mod tests {
             value: deep,
         }]
         .into_boxed_slice();
-        let first_value_error = first.inert_rollback_image(&owner).unwrap_err();
+        let mut first_admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        let first_value_error = first
+            .admit_frame_roots(&mut first_admission, |frame, admission| {
+                frame.admit_owned_values(admission)
+            })
+            .unwrap_err()
+            .to_string();
         let mut second = frame(owner.clone(), DialogueRuntimePhase::Ready);
         let group = crate::line_task::LineTaskGroup::new(
             crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([73; 32]),

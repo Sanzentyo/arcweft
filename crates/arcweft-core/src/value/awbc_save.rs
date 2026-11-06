@@ -460,22 +460,7 @@ impl AwbcRuntimeValueSnapshot {
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         admission::SnapshotStorageAdmission::new(owner, resources).validate(value)
     }
-    /// Captures a borrowed callable through its exact executable lease without
-    /// constructing a second live `RuntimeValue::Callable` carrier.
-    pub(crate) fn from_callable_for_program(
-        value: &RuntimeCallableValue,
-        owner: &RuntimeProgramOwner,
-    ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
-        let view = super::RuntimeValueView::Callable(super::RuntimeCallableView::Live(value));
-        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
-            crate::entry::RuntimeSchemaLimits::engine_default(),
-            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
-        );
-        resources.validate_view(view, 0, None)?;
-        Self::validate_admitted_storage_view(view, Some(owner), &resources)?;
-        Self::from_admitted_callable(value, owner)
-    }
-
+    /// Captures a callable already checked by its enclosing retained owner.
     pub(crate) fn from_admitted_callable(
         value: &RuntimeCallableValue,
         owner: &RuntimeProgramOwner,
@@ -612,20 +597,6 @@ impl AwbcRuntimeValueSnapshot {
         )
         .validate_snapshot(&self)?;
         self.into_live_with_owner(None)
-    }
-
-    pub(crate) fn from_opaque_for_program(
-        value: &RuntimeOpaqueValue,
-        owner: &RuntimeProgramOwner,
-    ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
-        let view = super::RuntimeValueView::Opaque(super::RuntimeOpaqueView::Live(value));
-        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
-            crate::entry::RuntimeSchemaLimits::engine_default(),
-            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
-        );
-        resources.validate_view(view, 0, None)?;
-        Self::validate_admitted_storage_view(view, Some(owner), &resources)?;
-        Self::opaque_from_live(value, Some(owner)).map(Self::Opaque)
     }
 
     pub(crate) fn from_admitted_opaque(
