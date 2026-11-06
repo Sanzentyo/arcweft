@@ -782,6 +782,52 @@ proof ordinary() = ()
 }
 
 #[test]
+fn verify_json_reports_direct_and_transitive_trusted_proof_dependencies() {
+    let source = r#"
+#[verify.trusted(reason = "signed manifest")]
+proof origin() = ()
+proof middle() { origin(); origin(); }
+proof outer() { middle(); }
+fn helper() { origin(); }
+fn unrelated() { origin(); }
+proof via_function() { helper(); }
+proof separate() = ()
+"#;
+    let path = temp_arcw("proof-trust-dependency", source);
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .args(["verify", "--mode", "dev", "--json"])
+        .arg(&path)
+        .output()
+        .expect("arcw verifies typed proof dependencies");
+    fs::remove_file(&path).unwrap();
+
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(output.status.success(), "{report}");
+    let proofs = report["proofs"].as_array().unwrap();
+    for (name, expected) in [
+        ("origin", None),
+        ("middle", Some("origin")),
+        ("outer", Some("origin")),
+        ("via_function", Some("origin")),
+        ("separate", None),
+    ] {
+        let proof = proofs.iter().find(|proof| proof["id"] == name).unwrap();
+        let dependencies = &proof["trusted_dependencies"];
+        match expected {
+            Some(id) => assert_eq!(dependencies, &serde_json::json!([id])),
+            None => assert!(dependencies.is_null(), "{proof}"),
+        }
+    }
+    let body = report["obligations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|obligation| obligation["id"] == "proof.outer.body")
+        .unwrap();
+    assert_eq!(body["discharge"]["kind"], "missing");
+}
+
+#[test]
 fn verify_json_reports_unknown_proof_dependency() {
     let source = r"
 proof missing_dependency() {

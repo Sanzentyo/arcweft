@@ -46,6 +46,7 @@ use crate::smt::{SmtCheck, SmtError, SmtOutcome, SmtProblem};
 mod assertion_smt;
 mod call_witness;
 mod insertion;
+mod proof_dependencies;
 mod propositional_proof;
 pub mod smt;
 
@@ -590,6 +591,14 @@ pub enum VerificationInputError {
     MissingExpressionFact { owner: ExprId },
     #[error("proof item {owner:?} is absent from the registered callable authority")]
     MissingProofSymbol { owner: ItemId },
+    #[error("proof item {owner:?} disagrees with the checked declaration topology")]
+    ProofDependencyOwnerMismatch { owner: ItemId },
+    #[error("checked call dependency topology repeats a declaration at {owner:?}")]
+    DuplicateDependencyOwner { owner: ItemId },
+    #[error("checked call {expression:?} refers to an unregistered proof dependency")]
+    UnregisteredProofDependency { expression: ExprId },
+    #[error("proof dependency inventory exceeds its verification work limit of {limit}")]
+    ProofDependencyWorkLimit { limit: usize },
     #[error("typed HIR source role for {owner:?} has no present source site")]
     MissingSourceSite { owner: VerificationOwner },
 }
@@ -704,7 +713,7 @@ fn verify_checked_project(
         },
     };
     verifier.verify()?;
-    Ok(verifier.finish())
+    verifier.finish()
 }
 
 struct ProjectVerifier<'project, 'catalog> {
@@ -1139,14 +1148,19 @@ impl ProjectVerifier<'_, '_> {
             .ok_or(VerificationInputError::MissingExpressionFact { owner })
     }
 
-    fn finish(mut self) -> VerificationReport {
+    fn finish(mut self) -> Result<VerificationReport, VerificationInputError> {
+        proof_dependencies::project(
+            self.semantics,
+            &self.report.proof_artifacts,
+            &mut self.report.proofs,
+        )?;
         self.report.call_witnesses = self
             .semantics
             .calls()
             .map(|(_, facts)| ProofCallWitnessProjection::from_facts(facts))
             .collect();
         self.report.project_trusted_proof_policy();
-        self.report
+        Ok(self.report)
     }
 }
 

@@ -98,8 +98,10 @@ proof voice_manifest_safe() {
 
 The verifier reports the trust declaration, its decoded reason, and the
 attribute's exact source range. A policy that forbids trusted proofs reports an
-error at that attribute. Trusted declarations pass through typed call checking
-and carry a separate pending proof-body obligation until formal discharge.
+error at that attribute. The report lists the trusted declarations reached
+through statically selected source calls, including indirect calls through
+ordinary functions. Each proof carries its own pending proof-body obligation
+until formal discharge.
 
 ## Unsafe lifetime blocks
 
