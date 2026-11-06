@@ -14783,3 +14783,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-06 — All CLI targets on the checked proof-trust source
 
 - Source db071219f84e57186efa9d40dccc3bb8620f417c ran the CLI partition with all features and all nextest targets. The result was 711 run, 704 passed, 7 failed, 23 skipped in 573.057 seconds. The seven failure IDs match the preceding actual CLI run exactly. Source, case and executable drift were zero. [Commands, IDs and raw output](acceptance-evidence/task-proof-trust-policy.json).
+
+## 2026-11-06 — Exact Generic Match reference on partitioned consumer inputs
+
+- The 151 accepted binary/test identities at Source db071219f84e57186efa9d40dccc3bb8620f417c all passed. The static nextest batch supplied 144. The seven Compiler Native/AWBC and continuation/save cases ran from the actual integration target built independently with the recorded Cargo dependency files. The whole Compiler catalog failed earlier with OS error 1455. [Disjoint case identities and original receipts](acceptance-evidence/task-proof-trust-policy.json).
