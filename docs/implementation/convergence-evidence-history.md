@@ -14893,3 +14893,4 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 - ワークスペース全体の `cargo clean` は exit 0。23万7,922ファイルを削除し、D: の空きが183.82 GiBから506.64 GiBに増えた。クリーン後の再ビルドではインクリメンタルコンパイルを無効にした。
 - Source `4e870814c2e61c87616d821e1128dfcfa7e1ea79` で、型付きRuntimePlanの読取りをNativeと生成AWBCに接続した。対象3クレート2537件がPASS、1件skip。NativeのFlow復元、対話から実lineと親Flowの選択、version 1式sourceの往復と切断拒否、両実行器の戻り値を確認した。固定入力4,130件とテスト一覧に差分0件。ローカル検証には既存ユーザー変更12ファイルが含まれる。
 - 初回のworkspace checkはアクセラレータの式分類漏れ、次は追加テストのコンストラクタ名で停止した。修正後はworkspace check、Clippy、構造gateがexit 0。全ターゲットのCargo metadataとcargo treeは逆依存53パッケージで一致した。Windowsのみのtreeではarcweft-render-webが外れた。全逆依存の実行は別途必要。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+- `bff44ec137f999ab5fa10b162982cdd1f7ba72d9` で Windows の逆依存51パッケージを一括選択した。固定入力4,130件に差分0件。nextest の一覧ビルドは rustc のメモリ不足と Windows のページングファイルエラー（1455）で exit 101となり、テストは開始しなかった。[失敗コマンドと原本](acceptance-evidence/task-flow-registry-execution.json)。
