@@ -15014,3 +15014,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source 901926eca718a2c3f110916234aa9f64b8e1d192 の Native とデコード済み AWBC で、子の対話から受け取った StageActor をローカルで破棄すると、発行元の取得と解放が各1回実行され、後続ログと正常終了に到達した。到達した Line のキーに移して破棄するケースもコンパイル・取得までは進み、登録時に unrestricted snapshot contains an affine value で停止した。対照2件通過、登録2件失敗。[実行入力・実測・原本](acceptance-evidence/task-flow-registry-execution.json)。
 - 現行の義務生成はレジストリの MustDrop を扱っていないため、生成済みと読める検証器の説明を削除した。登録と解放の受入条件は現状一覧に残した。
+
+## 2026-11-07 — Storage and runtime reverse dependency tests for reached registry drop
+
+- Source 901926eca718a2c3f110916234aa9f64b8e1d192 を公開した入力で runtime-driver、runtime-host、save の3パッケージを実行した。260件通過・失敗0・スキップ0。4,033入力、ケース一覧、実行バイナリの照合で差分は0だった。[実測・原本](acceptance-evidence/task-flow-registry-execution.json)。

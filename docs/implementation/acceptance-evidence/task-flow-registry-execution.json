@@ -14883,5 +14883,87 @@
         }
       ]
     }
+  },
+  "registryDropStorageAndRuntimeReverse": {
+    "source": "901926eca718a2c3f110916234aa9f64b8e1d192",
+    "frozenBase": "4de717807ff1e0d37291a86d6f082dcd4b2c83da",
+    "packages": [
+      "arcweft-runtime-driver",
+      "arcweft-runtime-host",
+      "arcweft-save"
+    ],
+    "terminal": {
+      "version": 1,
+      "base": "4de717807ff1e0d37291a86d6f082dcd4b2c83da",
+      "run": "registry-drop-reverse-storage-runtime-20261107.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [ 141.429s] 260 tests run: 260 passed (1 slow), 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 260,
+      "passed": 260,
+      "failed": 0,
+      "skipped": 0,
+      "selectedPackages": 3,
+      "matchedPackages": 3,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4033,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-06T16:39:56.5009008Z"
+    },
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-drop-storage-runtime-reverse.raw.zip",
+      "sha256": "3358e8fb4a27b5a29651eca8425415a41e0ef2860584889260bc4a2ef7131be8",
+      "entries": [
+        {
+          "entry": "registry-drop-reverse-storage-runtime-20261107.active.json",
+          "bytes": 469,
+          "sha256": "7d413c639e2c47d0b666f0a900081decfbb6ca6c6c4d3e34b98a15bf75c1c5d8"
+        },
+        {
+          "entry": "registry-drop-reverse-storage-runtime-20261107.catalog.json",
+          "bytes": 634,
+          "sha256": "e19cd81e3fb6536ee668ed266ccfb6931f063aa9a599ce605ee0a30e90d47288"
+        },
+        {
+          "entry": "registry-drop-reverse-storage-runtime-20261107.catalog.log",
+          "bytes": 139354,
+          "sha256": "4ea7c04559ec1731e5b2b1df43e614bbf6fa359e9e08ea5ed3fd920aa40fcf22"
+        },
+        {
+          "entry": "registry-drop-reverse-storage-runtime-20261107.catalog.inventory.json",
+          "bytes": 66155,
+          "sha256": "2cec672a13311657f518371605800c4ec42e4a86a1657861cd6b9e4de590de59"
+        },
+        {
+          "entry": "registry-drop-reverse-storage-runtime-20261107.binaries-before.json",
+          "bytes": 3369,
+          "sha256": "efd4de6ed5b3982deeb60b913ea0cff3ec3a0214821939631cadaafacd108c58"
+        },
+        {
+          "entry": "registry-drop-reverse-storage-runtime-20261107.runtime.json",
+          "bytes": 726,
+          "sha256": "91769040db29c3a03a20cf2485e33098817099b2f7be9c27e4831ef6b3ff0ab5"
+        },
+        {
+          "entry": "registry-drop-reverse-storage-runtime-20261107.runtime.log",
+          "bytes": 163309,
+          "sha256": "3450f3ee9a9d68abf9aadc72865ace53ae6cd017ff9293951f51f7e918fd83b1"
+        },
+        {
+          "entry": "registry-drop-reverse-storage-runtime-20261107.runtime.terminal-audit.json",
+          "bytes": 640,
+          "sha256": "7d29f75b93c4f31db2ef57aae9c4707f473209fb6da48a1111d594b6223888e1"
+        },
+        {
+          "entry": "registry-drop-reverse-storage-runtime-20261107.source-freeze.json",
+          "bytes": 788305,
+          "sha256": "33d2da381facbee9562ab2830653d70cb734b3f5d76c5068186825e0c0ca4408"
+        }
+      ]
+    }
   }
 }
