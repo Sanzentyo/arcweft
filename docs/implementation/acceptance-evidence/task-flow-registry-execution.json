@@ -15833,5 +15833,105 @@
         }
       ]
     }
+  },
+  "ownedLineRegistryOwnerVerification": {
+    "source": "f0b3274fe9195dac8babc1d559751a5025ee0457",
+    "packages": [
+      "arcweft-compiler",
+      "arcweft-core",
+      "arcweft-lang-sema",
+      "arcweft-runtime-plan"
+    ],
+    "passed": 4079,
+    "failed": 0,
+    "skipped": 1,
+    "catalogCaseDrift": 0,
+    "receipt": {
+      "version": 1,
+      "source": "f0b3274fe9195dac8babc1d559751a5025ee0457",
+      "catalogCommand": [
+        "cargo",
+        "nextest",
+        "list",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "-p",
+        "arcweft-lang-sema",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--message-format",
+        "json"
+      ],
+      "catalogExit": 0,
+      "runtimeCommand": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "-p",
+        "arcweft-lang-sema",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 0,
+      "summary": [
+        "Summary [  87.433s] 4079 tests run: 4079 passed, 1 skipped"
+      ],
+      "sourceInputs": 3638,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-06T17:58:30.920565Z",
+      "finishedAt": "2026-11-06T18:01:24.0533965Z"
+    },
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-owned-line-registry-owner.raw.zip",
+      "sha256": "76df429b11cd1ddca77d1877447be7cf4bfb70b6352ee9b376f61918eec16286",
+      "entries": [
+        {
+          "entry": "owned-line-registry-owner-20261107.catalog.json",
+          "bytes": 699106,
+          "sha256": "cc69057d82b8cf4f36d25722f17490f2dc039e4d715cb8e29e8a8cd16f781e2c"
+        },
+        {
+          "entry": "owned-line-registry-owner-20261107.catalog.log",
+          "bytes": 100141,
+          "sha256": "7904acb5b3ba74fee297d8a3cb798b4a687a0a4dc0a56ffc524fa97d5a8a7e8c"
+        },
+        {
+          "entry": "owned-line-registry-owner-20261107.runtime.log",
+          "bytes": 1358861,
+          "sha256": "e666194f62f092d2b0f19db98457abb364b23dd5cb4a69b7f0d2c87896db08b8"
+        },
+        {
+          "entry": "owned-line-registry-owner-20261107.source-freeze.json",
+          "bytes": 599451,
+          "sha256": "908b9a77e2f22d14b47c6ca9456254106314d1052ac08e4737e56cbb7f39f808"
+        },
+        {
+          "entry": "owned-line-registry-owner-20261107.receipt.json",
+          "bytes": 1093,
+          "sha256": "046b0e184e8dd72c2f7ea1a68c2639f0a3c0c73aa632f23c9a514f35ef493d45"
+        }
+      ]
+    }
   }
 }

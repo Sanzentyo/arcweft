@@ -15050,3 +15050,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Line registry moves issued StageActor handles
 
 - Source f0b3274fe9195dac8babc1d559751a5025ee0457 で Line の登録先を受信 activation・キー・値内パスとして元の台帳に記録する。Native／デコード済みAWBCでローカル取得と子 Line からの受取りを、明示破棄・取消コールバック・通常終了の6入力で検証した。各実行は元の発行元から一度だけ解放を発行した。AWBC は各ステップで保存復元し、所有行を取り除いた6件を拒否した。対象67件通過、構造ゲートのブロッキング違反0件、Core Clippy は警告ありで終了コード0。901926eca718a2c3f110916234aa9f64b8e1d192 での StageActor 登録失敗は旧ソースの実測として保持する。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Owned Line registry owner verification
+
+- Source f0b3274fe9195dac8babc1d559751a5025ee0457 の Core、Sema、Runtime Plan、Compiler の対象4クレートで4,079件通過、1件スキップ。実行IDは列挙結果と一致し、ソース入力3638件のハッシュは実行前後で一致した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
