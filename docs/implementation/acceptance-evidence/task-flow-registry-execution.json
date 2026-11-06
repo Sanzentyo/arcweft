@@ -5525,5 +5525,870 @@
         }
       ]
     }
+  },
+  "awbcRegistryReadOpcode": {
+    "source": "1b5884714a69d8eb4420d4c18280d193f287694c",
+    "owner": {
+      "version": 1,
+      "base": "ce66e99c0bb69b5ca29bfeb1413685377f2c8c75",
+      "run": "lifetime-registry-awbc-read-owner-mark-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [  24.880s] 2549 tests run: 2549 passed, 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2549,
+      "passed": 2549,
+      "failed": 0,
+      "skipped": 0,
+      "selectedPackages": 2,
+      "matchedPackages": 2,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4130,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-06T05:46:43.5277207Z"
+    },
+    "publication": {
+      "version": 1,
+      "commit": "1b5884714a69d8eb4420d4c18280d193f287694c",
+      "parent": "ce66e99c0bb69b5ca29bfeb1413685377f2c8c75",
+      "tree": "c09cf49d88496f24bead745cd90250d6e4caecfa",
+      "remote": "1b5884714a69d8eb4420d4c18280d193f287694c",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects.rs",
+          "blob": "628cb1c24cf42a641d4206f24a596cea2923e67b"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/codec/code.rs",
+          "blob": "65dd43a74f5853a77f22357497cc008ea3835bb1"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step.rs",
+          "blob": "77dc59d8fb98790db697d5a9c9656b6f434562ce"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "blob": "ea1954413d3477f2b97c2b295046541162214b61"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/schema.rs",
+          "blob": "f33306a286c81f44756c7e0e685722e922daca56"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/tests.rs",
+          "blob": "2543fc7fb6bc4f2212d4faaa66983d1f1d94e743"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/tests/registry_effect.rs",
+          "blob": "88b9c15a9a13fe3b517ac3dae04db52a4df931ae"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/verify/code.rs",
+          "blob": "17cd0468436674a36c3db7af44b0db671dcdf134"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/vm.rs",
+          "blob": "a314d5fe33ed968e50cf0f47b8e26260f25dac11"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/vm/resources.rs",
+          "blob": "f211e31bcaa3686bc0826c09728b7bd285e3c173"
+        },
+        {
+          "path": "crates/arcweft-core/src/effect.rs",
+          "blob": "675bf91d0bab012ca7c3b3ce2f961a26aa8078df"
+        },
+        {
+          "path": "crates/arcweft-core/src/effect/registry.rs",
+          "blob": "8725edec28f845619e3d526b7825151cdcafcce5"
+        },
+        {
+          "path": "crates/arcweft-core/src/effect/registry/scope.rs",
+          "blob": "04198a25c7d9a810dca89098069e237586bfaa9f"
+        },
+        {
+          "path": "docs/02-runtime/executable-runtime-core.md",
+          "blob": "3f02fa9bcefb27a6a6f449cb527034eb6ba18247"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "c2dfc670284522d49584ac557ed54ba025d33eb214b2e8d32116cbe6204117df",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-06T05:47:12.9359957Z"
+    },
+    "codegen": {
+      "version": 1,
+      "base": "1b5884714a69d8eb4420d4c18280d193f287694c",
+      "run": "lifetime-registry-awbc-read-codegen-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [  11.447s] 135 tests run: 135 passed, 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 135,
+      "passed": 135,
+      "failed": 0,
+      "skipped": 0,
+      "selectedPackages": 2,
+      "matchedPackages": 2,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4130,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-06T05:53:15.7140946Z"
+    },
+    "codegenPublication": {
+      "version": 1,
+      "commit": "836ebc3c678750ae75197c615a8d0e6f32b6ddd1",
+      "parent": "1b5884714a69d8eb4420d4c18280d193f287694c",
+      "tree": "decc9211c9b1ae78f889311d95d0fe7161ec6a8c",
+      "remote": "836ebc3c678750ae75197c615a8d0e6f32b6ddd1",
+      "paths": [
+        {
+          "path": "crates/arcweft-runtime-codegen/src/awbc_region.rs",
+          "blob": "5563c04fe8a425539e1a8c675206354fe1aba9d6"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "a85f7e84e980b8196f08e3fb0382bf2f6f7e2b503221b5900776f65f76d1b1ab",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-06T05:53:37.7880895Z"
+    },
+    "sourceBaseline": {
+      "source": "ac0557acbf42f2660a755b5418791eedc26e89fa",
+      "head": "ce66e99c0bb69b5ca29bfeb1413685377f2c8c75",
+      "binarySha256": "f3bc05edeed731c22b748e73bd2e396ffb4dfdfe43cbc4240b4f7a4ec45460d5",
+      "cases": [
+        {
+          "case": "direct",
+          "exit": 1,
+          "diagnostics": [
+            "sema.final_analysis"
+          ],
+          "errors": [
+            "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 16, kind: Expr }) has no admissible final type"
+          ],
+          "file": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d/lifetime-registry-read-current-20261106.direct.arcw",
+          "sha256": "48e5bda3bef7c3bbadd04c21805e28afe9a1a053808d8a10eba7a0a0ed60f41f"
+        },
+        {
+          "case": "optional",
+          "exit": 1,
+          "diagnostics": [
+            "sema.final_analysis"
+          ],
+          "errors": [
+            "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 17, kind: Expr }) has no admissible final type"
+          ],
+          "file": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d/lifetime-registry-read-current-20261106.optional.arcw",
+          "sha256": "facb1ebc2592e0d808cb375f9d3ab15c6b020caf0f1a98541cd4a5c3ca48e3b4"
+        },
+        {
+          "case": "branch",
+          "exit": 1,
+          "diagnostics": [
+            "sema.final_analysis"
+          ],
+          "errors": [
+            "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 23, kind: Expr }) has no admissible final type"
+          ],
+          "file": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d/lifetime-registry-read-current-20261106.branch.arcw",
+          "sha256": "33fc6d6304c00835f42e972786221cef1450f8b94cc030677cbba635490770af"
+        },
+        {
+          "case": "control",
+          "exit": 0,
+          "diagnostics": [],
+          "errors": [],
+          "file": "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d/lifetime-registry-read-current-20261106.control.arcw",
+          "sha256": "e04d22d8109e8ef7bb04a3dd762621ad251041518fa2d7b599adcc299ba16463"
+        }
+      ]
+    },
+    "firstAttempt": {
+      "version": 1,
+      "base": "ce66e99c0bb69b5ca29bfeb1413685377f2c8c75",
+      "command": [
+        "nextest",
+        "list",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "--all-features",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/lifetime-registry-awbc-read-owner-20261106.catalog.log",
+      "exitCode": 101,
+      "sourceInputs": 4130,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-06T05:33:43.2365302Z",
+      "finishedAt": "2026-11-06T05:34:46.3866567Z"
+    },
+    "secondAttempt": {
+      "version": 1,
+      "base": "ce66e99c0bb69b5ca29bfeb1413685377f2c8c75",
+      "run": "lifetime-registry-awbc-read-owner-fixed-20261106.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [  21.096s] 2284 tests run: 2282 passed, 2 failed, 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2284,
+      "passed": 2282,
+      "failed": 2,
+      "skipped": 0,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4130,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::tests::registry_effect::decoded_registry_read_requires_a_reached_row_and_preserves_optional_absence"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::tests::registry_effect::registry_read_rejects_a_reached_value_with_the_wrong_result_type"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-11-06T05:39:23.4984092Z"
+    },
+    "thirdAttempt": {
+      "version": 1,
+      "base": "ce66e99c0bb69b5ca29bfeb1413685377f2c8c75",
+      "run": "lifetime-registry-awbc-read-owner-final-20261106.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [  27.835s] 2549 tests run: 2548 passed, 1 failed, 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2549,
+      "passed": 2548,
+      "failed": 1,
+      "skipped": 0,
+      "selectedPackages": 2,
+      "matchedPackages": 2,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4130,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-compiler::evaluated_effects",
+          "test": "decoded_registry_reads_reach_the_line_and_parent_flow_from_dialogue_callbacks"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-11-06T05:45:22.6389961Z"
+    },
+    "reverseSelection": {
+      "source": "ce66e99c0bb69b5ca29bfeb1413685377f2c8c75",
+      "owner": "arcweft-core",
+      "metadataPackages": [
+        "arcweft",
+        "arcweft-adapter-desktop",
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-policy",
+        "arcweft-agent-protocol",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-browser-bench",
+        "arcweft-bundle",
+        "arcweft-bundle-assets",
+        "arcweft-character-view",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-core",
+        "arcweft-debug-model",
+        "arcweft-debug-sqlite",
+        "arcweft-dialogue",
+        "arcweft-glyphon",
+        "arcweft-host-adapter",
+        "arcweft-lang-jit-cranelift",
+        "arcweft-lang-sema",
+        "arcweft-launch",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-text-input",
+        "arcweft-player-web",
+        "arcweft-project",
+        "arcweft-project-loader",
+        "arcweft-rag",
+        "arcweft-render-text",
+        "arcweft-render-web",
+        "arcweft-render-wgpu",
+        "arcweft-resource-manifest",
+        "arcweft-resource-model",
+        "arcweft-runtime-accelerator",
+        "arcweft-runtime-codegen",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-runtime-scheduler",
+        "arcweft-save",
+        "arcweft-test",
+        "arcweft-text-layout",
+        "arcweft-text-model",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3",
+        "arcweft-view"
+      ],
+      "treePackages": [
+        "arcweft",
+        "arcweft-adapter-desktop",
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-policy",
+        "arcweft-agent-protocol",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-browser-bench",
+        "arcweft-bundle",
+        "arcweft-bundle-assets",
+        "arcweft-character-view",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-core",
+        "arcweft-debug-model",
+        "arcweft-debug-sqlite",
+        "arcweft-dialogue",
+        "arcweft-glyphon",
+        "arcweft-host-adapter",
+        "arcweft-lang-jit-cranelift",
+        "arcweft-lang-sema",
+        "arcweft-launch",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-text-input",
+        "arcweft-player-web",
+        "arcweft-project",
+        "arcweft-project-loader",
+        "arcweft-rag",
+        "arcweft-render-text",
+        "arcweft-render-web",
+        "arcweft-render-wgpu",
+        "arcweft-resource-manifest",
+        "arcweft-resource-model",
+        "arcweft-runtime-accelerator",
+        "arcweft-runtime-codegen",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-runtime-scheduler",
+        "arcweft-save",
+        "arcweft-test",
+        "arcweft-text-layout",
+        "arcweft-text-model",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3",
+        "arcweft-view"
+      ],
+      "graphDifference": [],
+      "target": "x86_64-pc-windows-msvc",
+      "allFeatures": true
+    },
+    "firstWorkspaceQuality": [
+      {
+        "version": 1,
+        "base": "1b5884714a69d8eb4420d4c18280d193f287694c",
+        "source": "1b5884714a69d8eb4420d4c18280d193f287694c",
+        "name": "check",
+        "command": [
+          "cargo",
+          "check",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/awbc-registry-read-workspace-quality-20261106-check.log",
+        "exitCode": 101,
+        "sourceInputs": 4130,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T05:47:23.8454812Z",
+        "finishedAt": "2026-11-06T05:48:19.618647Z"
+      },
+      {
+        "version": 1,
+        "base": "1b5884714a69d8eb4420d4c18280d193f287694c",
+        "source": "1b5884714a69d8eb4420d4c18280d193f287694c",
+        "name": "clippy",
+        "command": [
+          "cargo",
+          "clippy",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/awbc-registry-read-workspace-quality-20261106-clippy.log",
+        "exitCode": 101,
+        "sourceInputs": 4130,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T05:48:20.1589245Z",
+        "finishedAt": "2026-11-06T05:49:27.0329342Z"
+      },
+      {
+        "version": 1,
+        "base": "1b5884714a69d8eb4420d4c18280d193f287694c",
+        "source": "1b5884714a69d8eb4420d4c18280d193f287694c",
+        "name": "structure",
+        "command": [
+          "cargo",
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/awbc-registry-read-workspace-quality-20261106.structure-report"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/awbc-registry-read-workspace-quality-20261106-structure.log",
+        "exitCode": 0,
+        "sourceInputs": 4130,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T05:49:27.5996041Z",
+        "finishedAt": "2026-11-06T05:49:31.4396088Z"
+      }
+    ],
+    "workspaceQuality": [
+      {
+        "version": 1,
+        "base": "836ebc3c678750ae75197c615a8d0e6f32b6ddd1",
+        "source": "836ebc3c678750ae75197c615a8d0e6f32b6ddd1",
+        "name": "check",
+        "command": [
+          "cargo",
+          "check",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/awbc-registry-read-workspace-quality-codegen-20261106-check.log",
+        "exitCode": 0,
+        "sourceInputs": 4130,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T05:53:50.3107873Z",
+        "finishedAt": "2026-11-06T05:54:58.2623148Z"
+      },
+      {
+        "version": 1,
+        "base": "836ebc3c678750ae75197c615a8d0e6f32b6ddd1",
+        "source": "836ebc3c678750ae75197c615a8d0e6f32b6ddd1",
+        "name": "clippy",
+        "command": [
+          "cargo",
+          "clippy",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/awbc-registry-read-workspace-quality-codegen-20261106-clippy.log",
+        "exitCode": 0,
+        "sourceInputs": 4130,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T05:54:58.7732546Z",
+        "finishedAt": "2026-11-06T05:56:15.9365174Z"
+      },
+      {
+        "version": 1,
+        "base": "836ebc3c678750ae75197c615a8d0e6f32b6ddd1",
+        "source": "836ebc3c678750ae75197c615a8d0e6f32b6ddd1",
+        "name": "structure",
+        "command": [
+          "cargo",
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/awbc-registry-read-workspace-quality-codegen-20261106.structure-report"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/awbc-registry-read-workspace-quality-codegen-20261106-structure.log",
+        "exitCode": 0,
+        "sourceInputs": 4130,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T05:56:16.4432702Z",
+        "finishedAt": "2026-11-06T05:56:20.1472396Z"
+      }
+    ],
+    "scope": "Verified AWBC v1 instruction and reached Product execution. Source semantic presence and type proof, RuntimePlan lowering, and Native expression execution remain open.",
+    "authority": "The destination register supplies the result type. The instruction retains the static key and presence mode. A complete retained owner admission and original row provenance precede the read. Required absence traps. Optional absence returns canonical None only inside a reached scope. No copy or result construction occurs before admission. Compiled regions leave the instruction to the Product VM even when host boundaries are enabled.",
+    "firstAttemptReason": "The test used the display-only FlowExit::Return string as an executable value. It now compares the typed fiber terminal snapshot.",
+    "secondAttemptReason": "The test treated the existing runtime type table as empty. The Option tuple field and wrong-type fixture used unintended type IDs. The read fixtures now own the complete table.",
+    "thirdAttemptReason": "The dialogue fixture omitted the marker that its existing test driver waits for before advancing. The final fixture restores the separate marker and still checks all three read results.",
+    "rawArchive": {
+      "path": "task-registry-read-opcode.raw.zip",
+      "bytes": 3520981,
+      "sha256": "0d7b16d5517427513ce47899ad13f6d8060ca244b7f435463fbcb4a6a121b84e",
+      "entryDrift": 0,
+      "entries": [
+        {
+          "entry": "checkpoint-awbc-registry-read-20261106.verified.json",
+          "bytes": 2438,
+          "sha256": "fa934c976087ebdd8cbbdf646458a38ff41959f2310832b6fc254d7945a21f87"
+        },
+        {
+          "entry": "checkpoint-awbc-registry-read-codegen-20261106.verified.json",
+          "bytes": 692,
+          "sha256": "d0c19dda4f64303747dfa36cdc46850248026d51410113f9012d772ddcc55f8a"
+        },
+        {
+          "entry": "lifetime-registry-read-current-20261106.receipt.json",
+          "bytes": 2219,
+          "sha256": "397ee69907a25caa5f7fd9683d74bb25b46a4452fd17574bf8b9ce5785c484e1"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-reverse-selection-20261106.json",
+          "bytes": 3137,
+          "sha256": "7c312c8e4c3e54b5d83746d72c36c3e49c37e3c72b342f45dba391e04344e312"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-cargo-tree-all-20261106.log",
+          "bytes": 19459,
+          "sha256": "b366a96025075e8716157c96ded790ee94ea9c0ae84008320c5b6ab7be47018c"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-check-20261106.log",
+          "bytes": 81513,
+          "sha256": "65f2171edc82b25dda8efd3c1fdd6c57a345bd6a7523ce97b87e958f90e6a61a"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-owner-20261106.catalog.json",
+          "bytes": 557,
+          "sha256": "ab29f71f9649993df41282543a894a2426b113b5c8fca7584d153d37bb471712"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-owner-20261106.catalog.log",
+          "bytes": 11224,
+          "sha256": "a1fc63d8607e26fded7ff40cf507324711fdfe3e4c7377859c07f86f5553e1f3"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-owner-20261106.source-freeze.json",
+          "bytes": 807633,
+          "sha256": "e586ed6e7d43480a78bf42c7ba7ea228e7ec37adb07b54b34ecf343b392d30a8"
+        },
+        {
+          "entry": "lifetime-registry-read-current-20261106.direct.arcw",
+          "bytes": 145,
+          "sha256": "48e5bda3bef7c3bbadd04c21805e28afe9a1a053808d8a10eba7a0a0ed60f41f"
+        },
+        {
+          "entry": "lifetime-registry-read-current-20261106.direct.verify.stdout.json",
+          "bytes": 540,
+          "sha256": "8ca9ce8f2280fe1b6fbd2f0123b7271ee39802de07a6c105472d167a8c26e99a"
+        },
+        {
+          "entry": "lifetime-registry-read-current-20261106.direct.verify.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "lifetime-registry-read-current-20261106.optional.arcw",
+          "bytes": 154,
+          "sha256": "facb1ebc2592e0d808cb375f9d3ab15c6b020caf0f1a98541cd4a5c3ca48e3b4"
+        },
+        {
+          "entry": "lifetime-registry-read-current-20261106.optional.verify.stdout.json",
+          "bytes": 540,
+          "sha256": "788a2ffe633e5adcd4a7303edf045f1a4c7f6caa2c4a1613bc7612b89f5cc247"
+        },
+        {
+          "entry": "lifetime-registry-read-current-20261106.optional.verify.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "lifetime-registry-read-current-20261106.branch.arcw",
+          "bytes": 189,
+          "sha256": "33fc6d6304c00835f42e972786221cef1450f8b94cc030677cbba635490770af"
+        },
+        {
+          "entry": "lifetime-registry-read-current-20261106.branch.verify.stdout.json",
+          "bytes": 540,
+          "sha256": "d793389c0c3257fce21af1418a9c9edb471177abd70056bc2ba564c0f25d46f8"
+        },
+        {
+          "entry": "lifetime-registry-read-current-20261106.branch.verify.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "lifetime-registry-read-current-20261106.control.arcw",
+          "bytes": 129,
+          "sha256": "e04d22d8109e8ef7bb04a3dd762621ad251041518fa2d7b599adcc299ba16463"
+        },
+        {
+          "entry": "lifetime-registry-read-current-20261106.control.verify.stdout.json",
+          "bytes": 202,
+          "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+        },
+        {
+          "entry": "lifetime-registry-read-current-20261106.control.verify.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-owner-fixed-20261106.catalog.json",
+          "bytes": 561,
+          "sha256": "25b0412495048956e5a202810c8eb19f479cec1d1e09bd6db9f5fa8f0c26b0e8"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-owner-fixed-20261106.catalog.inventory.json",
+          "bytes": 581855,
+          "sha256": "ff6d80451ecdc70fc553da3880b768ead83279fd2fdce012aad85e1675a42331"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-owner-fixed-20261106.catalog.log",
+          "bytes": 427533,
+          "sha256": "6e0f37810505704f8b914221f6e958bfe2e7c22c264cf4322a8312c25fa378a8"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-owner-fixed-20261106.binaries-before.json",
+          "bytes": 202,
+          "sha256": "f38424e33248eb0915c2a4e0c86c4a31822a28168b27555388f13c054a967e9f"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-owner-fixed-20261106.runtime.terminal-audit.json",
+          "bytes": 1034,
+          "sha256": "0ccda92ffce95c7ecab4daa8b07bbd861f4ea7497cb1a24b57e6ce9b9461bbd5"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-owner-fixed-20261106.runtime.json",
+          "bytes": 655,
+          "sha256": "0f73cda0298c04cbf12f1bc4226ba3490edaa6c0992a2c94abc861b0c486c3bb"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-owner-fixed-20261106.runtime.log",
+          "bytes": 737438,
+          "sha256": "da4440258819ee0c823cea121fb1e4563e713ee7b1c9e20248a9cf7697e534ef"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-owner-fixed-20261106.source-freeze.json",
+          "bytes": 807633,
+          "sha256": "49014ebc162750dc38c6fa17f231eac0b0aac329e795c1c6e215d77e59d6041b"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-owner-final-20261106.catalog.json",
+          "bytes": 674,
+          "sha256": "bf1c7afd1d85113699da73068bb1105eb71df9e05abb40a572b23ece2a615a83"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-owner-final-20261106.catalog.inventory.json",
+          "bytes": 648553,
+          "sha256": "a6fe186007ba5176d11a154793f541fce4251fc333a5f7cb1242f156f9c199bd"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-owner-final-20261106.catalog.log",
+          "bytes": 536548,
+          "sha256": "0ba1b4eaacb7a751ceeb94a260d7f35fe22a8f6f4591eae430b004d4a85babdf"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-owner-final-20261106.binaries-before.json",
+          "bytes": 911,
+          "sha256": "6bc3677104871d88597604e1cf52ec6caf1427209b91b46e2a65de86f56fe623"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-owner-final-20261106.runtime.terminal-audit.json",
+          "bytes": 844,
+          "sha256": "a133127af19a8d917205e4a39ceee5b03381410f27de2047152f792ffbb22c3e"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-owner-final-20261106.runtime.json",
+          "bytes": 768,
+          "sha256": "43b446ecf7c3075adc62491d210bb7ed448c2f75e40c66cdccf0ee729f08ba61"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-owner-final-20261106.runtime.log",
+          "bytes": 877914,
+          "sha256": "8ec7e1a6bfc9d0cee2a201ea27936e40c9e276bc2f75fb093a7a02549dfcfacd"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-owner-final-20261106.source-freeze.json",
+          "bytes": 807633,
+          "sha256": "42ed26e877a49be261b38af539f547eda32ef07838079758469b89c7e54f9c18"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-owner-mark-20261106.catalog.json",
+          "bytes": 673,
+          "sha256": "753859c20e931941c77685072f7111238a712a7b736ea507df9e3e99d8a6d671"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-owner-mark-20261106.catalog.inventory.json",
+          "bytes": 648553,
+          "sha256": "a6fe186007ba5176d11a154793f541fce4251fc333a5f7cb1242f156f9c199bd"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-owner-mark-20261106.catalog.log",
+          "bytes": 534975,
+          "sha256": "ac25fb92ec4c094350f9b48d85223f14c083b35a953d9fe218cd4c19274d36cd"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-owner-mark-20261106.binaries-before.json",
+          "bytes": 911,
+          "sha256": "b6b105c6aad748f162f5b3ff64531fa018822effd47b74524d2c36a2319aeb28"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-owner-mark-20261106.runtime.terminal-audit.json",
+          "bytes": 636,
+          "sha256": "5fb440e9648f5f6ad573c606a89c04bb87dca8ceb51a7bfa2f70d12d968346f8"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-owner-mark-20261106.runtime.json",
+          "bytes": 765,
+          "sha256": "3b81d4a717252a574a9674eb13ade559310d41a93b70446075060983b9ecba98"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-owner-mark-20261106.runtime.log",
+          "bytes": 876712,
+          "sha256": "7f4ea87bc5fdd271f9d3f1b68dd9d3b7cfeae79dddebc2f17788eae224045c90"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-owner-mark-20261106.source-freeze.json",
+          "bytes": 807633,
+          "sha256": "3da8e2008f5a9d53db689b88ebb4ed95f519bd90705111fbc91b197191b98a00"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-codegen-20261106.catalog.json",
+          "bytes": 615,
+          "sha256": "a031e290bf68057e3ebcef2e5fe077a4afb58a11141b8d8cc7c537203fecf8d1"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-codegen-20261106.catalog.inventory.json",
+          "bytes": 34395,
+          "sha256": "8fc003d8eef8a236d738975c929513b12db930576e7d51eb81d1cc101ec3698b"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-codegen-20261106.catalog.log",
+          "bytes": 92501,
+          "sha256": "91f06591677376d1973ea6676f8897e8a8587c9883b821cdde7eb96f06b74db2"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-codegen-20261106.binaries-before.json",
+          "bytes": 483,
+          "sha256": "f1f2dd946c17235af2f8ba7de931cf5ff99cfc4b6c528c998b47ad313f51a692"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-codegen-20261106.runtime.terminal-audit.json",
+          "bytes": 629,
+          "sha256": "57db285a26600bf0ea3e34dc1e65d4a60ca1a3e9bf2223c9c4d4501493c28e9b"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-codegen-20261106.runtime.json",
+          "bytes": 707,
+          "sha256": "5beac4b577bd8a1e16ef18615d668d0b17a1b99e465d6d015960711256e63444"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-codegen-20261106.runtime.log",
+          "bytes": 107268,
+          "sha256": "922d4f3bd8621f423ff3b40d1d436d7e090789ce63373a98b5e360fea5765307"
+        },
+        {
+          "entry": "lifetime-registry-awbc-read-codegen-20261106.source-freeze.json",
+          "bytes": 807633,
+          "sha256": "da5da5c97c9d3234a5c63876735674f398d3bb6ec41f797cc30f05947aef4ac3"
+        },
+        {
+          "entry": "awbc-registry-read-workspace-quality-20261106-check.json",
+          "bytes": 592,
+          "sha256": "32a5f5084b21fe727d4cb5f822081c3d2bb8417e8534527d4526a0dc56fdb66f"
+        },
+        {
+          "entry": "awbc-registry-read-workspace-quality-20261106-check.log",
+          "bytes": 87897,
+          "sha256": "37298ec1cb8770476ec772a2c818482c382d292dad4c114af1c00f896212c98b"
+        },
+        {
+          "entry": "awbc-registry-read-workspace-quality-20261106-clippy.json",
+          "bytes": 595,
+          "sha256": "69fc6e39ad1e0595812e8632bd80aa7af91074af65cd34504407d9574c7524da"
+        },
+        {
+          "entry": "awbc-registry-read-workspace-quality-20261106-clippy.log",
+          "bytes": 5311012,
+          "sha256": "3ddee9ed417c078c9d2d309e81268d641ca3b9ebff4d40b0814b1ff6c8deabd5"
+        },
+        {
+          "entry": "awbc-registry-read-workspace-quality-20261106-structure.json",
+          "bytes": 783,
+          "sha256": "07830df67d97a623b04bfd210a043dbbb1a3b4dc322770be754590a6378f0c12"
+        },
+        {
+          "entry": "awbc-registry-read-workspace-quality-20261106-structure.log",
+          "bytes": 65803,
+          "sha256": "56da9642c324406c4a5edfeef0a12fec3a4c168f46c22307f94a709409f983f8"
+        },
+        {
+          "entry": "awbc-registry-read-workspace-quality-20261106.source-freeze.json",
+          "bytes": 715141,
+          "sha256": "2a1d34f631047b9ad3afbed0b6620911256dc2a908b6adf9ef483ac87d9c09dc"
+        },
+        {
+          "entry": "awbc-registry-read-workspace-quality-codegen-20261106-check.json",
+          "bytes": 598,
+          "sha256": "817cc9b068d59bcf3d8e2ce755639933bc2fff632cfdd478f5a949310484c2d7"
+        },
+        {
+          "entry": "awbc-registry-read-workspace-quality-codegen-20261106-check.log",
+          "bytes": 110118,
+          "sha256": "4080aae25d10093af032e07a9ed6008eaaaffbfba6c55372562785475cbbcb9e"
+        },
+        {
+          "entry": "awbc-registry-read-workspace-quality-codegen-20261106-clippy.json",
+          "bytes": 601,
+          "sha256": "409a3969879a19e159aae4a0ba298b5589003f661af325085f746ac5322cc3ee"
+        },
+        {
+          "entry": "awbc-registry-read-workspace-quality-codegen-20261106-clippy.log",
+          "bytes": 8924591,
+          "sha256": "1de34ee27b605cb9b98439c69ba880c3a917d10aceb78672d4f4c509a116d37f"
+        },
+        {
+          "entry": "awbc-registry-read-workspace-quality-codegen-20261106-structure.json",
+          "bytes": 799,
+          "sha256": "93d6ddf760412b886308ce8543dcfc887c15b798ad482634eb278f750cffdfbb"
+        },
+        {
+          "entry": "awbc-registry-read-workspace-quality-codegen-20261106-structure.log",
+          "bytes": 65811,
+          "sha256": "a6dbb591d1cf888e381553a932bcd6e481d5cfa75e765f694169dbed31f08dc4"
+        },
+        {
+          "entry": "awbc-registry-read-workspace-quality-codegen-20261106.source-freeze.json",
+          "bytes": 715141,
+          "sha256": "901125d0408cc0eceb1da8a13722eb0e5a1c12d738800caac5d3a76801c7ecef"
+        }
+      ]
+    }
   }
 }

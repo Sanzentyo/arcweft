@@ -14881,3 +14881,9 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 - 修正後のCoreとCompilerの対象は全2545件PASS。`include` 先のlineからの直接・関数経由・mark・取消・正常と取消のdeferの書き込みを、両実行器とAWBCの各step公開保存・復元で確認した。旧失敗の同じCLI入力4実行は最大1操作の32ステップで対話待ちとなり、実行診断0件。誤った権限はAWF-EFX-001で拒否した。[公開SHA・各試行の原本](acceptance-evidence/task-flow-registry-execution.json)。
 - 同じ公開ソースでワークスペース検証を実行した。check 終了コード 0、clippy 終了コード 0、structure 終了コード 0。固定入力4130件に差分0件。[コマンドと原本](acceptance-evidence/task-flow-registry-execution.json)。
 - 対話を含まない権限対照では、旧AWBCが `'line` 単独を受理し、`'flow` を併記すると拒否した。修正後は両入力を実行できた。CLIの初回集計はverify診断の入れ子を読み違えたため、出力原本のハッシュを照合して同じ原本から訂正した。[対照入力と集計原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-06 — Typed AWBC lifetime registry reads
+
+- 公開CLIで登録直後の通常読取り・optional読取り・両分岐で登録した後の通常読取りは `sema.final_analysis` で失敗し、書き込みだけの対照は通過した。
+- Source `1b5884714a69d8eb4420d4c18280d193f287694c` はAWBC version 1に `ReadRegistry` を追加した。実lineまたは最寄りのFlowを選び、結果型・資源上限・保存行の元の書き込み計画を検査してから複製する。登録済み・欠落・型違い・誤った出力先を照合し、対話の初期化とmarkで各stepの公開保存復元を確認した。CoreとCompilerの対象は全2549件PASS。初回のテスト型エラー、型テーブルに起因する2件の失敗、対話fixtureの進行用ログ欠落による1件の失敗を保持した。実行試験は対象ownerとCompilerの対話・includeまで。Cargoから抽出した逆依存53パッケージ全体の実行は未完了。[実測・原本・公開SHA](acceptance-evidence/task-flow-registry-execution.json)。
+- 初回のワークスペース check とClippyはCodegenの命令分類に読取りがなかったためE0004で停止した。Source `836ebc3c678750ae75197c615a8d0e6f32b6ddd1` で、コンパイル済み領域では命令をProduct VMに戻すよう分類した。Codegen・Acceleratorの対象135件PASS。修正後のワークスペース検証は check 終了コード 0、clippy 終了コード 0、structure 終了コード 0。固定入力4130件に差分0件。[コマンドと原本](acceptance-evidence/task-flow-registry-execution.json)。
