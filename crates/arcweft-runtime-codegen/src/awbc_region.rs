@@ -172,6 +172,8 @@ fn eligible_function(
 
 fn opcode_eligible(opcode: AwbcOpcode, options: &AwbcRegionLowerOptions) -> bool {
     match opcode {
+        // Registry access requires the live scope owned by Product execution.
+        AwbcOpcode::ReadRegistry => false,
         AwbcOpcode::Nop
         | AwbcOpcode::LoadConst
         | AwbcOpcode::Move
@@ -437,4 +439,20 @@ pub fn compiled_identity(options: &AwbcRegionLowerOptions) -> CompiledExecutionI
 
 fn table_index(value: usize) -> u32 {
     u32::try_from(value).expect("AWBC region table index exceeded u32 address space")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AwbcOpcode, AwbcRegionLowerOptions, opcode_eligible};
+
+    #[test]
+    fn registry_reads_stay_in_the_owning_vm_even_with_host_boundaries_enabled() {
+        for allow_host_boundaries in [false, true] {
+            let options = AwbcRegionLowerOptions {
+                allow_host_boundaries,
+                ..Default::default()
+            };
+            assert!(!opcode_eligible(AwbcOpcode::ReadRegistry, &options));
+        }
+    }
 }
