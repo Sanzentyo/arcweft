@@ -16550,5 +16550,186 @@
         }
       ]
     }
+  },
+  "registryCueSettlement": {
+    "source": "7bb5bd2ccde1e38791c577040bb29badb60494c2",
+    "test": {
+      "version": 1,
+      "base": "6d7b59bd15b19e41d44f1cc4cbd7480e2ef42d53",
+      "catalogCommand": [
+        "cargo",
+        "nextest",
+        "list",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--message-format",
+        "json"
+      ],
+      "catalogExit": 0,
+      "testCommand": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "testExit": 0,
+      "summary": "Summary [  24.017s] 2566 tests run: 2566 passed, 0 skipped",
+      "sourceInputs": 3637,
+      "sourceDrift": [],
+      "startedAt": "2026-11-06T19:14:25.340886Z",
+      "finishedAt": "2026-11-06T19:16:13.692568Z"
+    },
+    "passed": 2566,
+    "failed": 0,
+    "skipped": 0,
+    "catalogCaseDrift": 0,
+    "clippy": {
+      "version": 1,
+      "base": "6d7b59bd15b19e41d44f1cc4cbd7480e2ef42d53",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--all-targets",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects"
+      ],
+      "exitCode": 0,
+      "warningsPresent": true,
+      "startedAt": "2026-11-06T19:17:10.8166568Z",
+      "finishedAt": "2026-11-06T19:18:34.1838627Z"
+    },
+    "affectedWorkspacePackages": 53,
+    "verificationScope": "Core and Compiler libraries and Compiler evaluated_effects integration binary. Reverse-dependency selection records the resolved graph of the unchanged Cargo manifests.",
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-cue-settlement.raw.zip",
+      "sha256": "1b0bf7b99dbf07c717a31627fa56acd8aade42d8bfd2df8cdecd7ab589055abb",
+      "entries": [
+        {
+          "entry": "registry-cue-settlement-20261107.baseline.log",
+          "bytes": 86274,
+          "sha256": "ab5e21d6c75169b5cb33e4e2b0669737b96f5e7d8e0f37a265d2f7acf086466e"
+        },
+        {
+          "entry": "registry-cue-settlement-20261107.baseline-runtime.log",
+          "bytes": 99056,
+          "sha256": "97a273aee8c202b639b5d16a9decd391bff14e9be87c578c4ada3a075c17f503"
+        },
+        {
+          "entry": "registry-cue-settlement-20261107.scheduled-baseline.log",
+          "bytes": 87158,
+          "sha256": "a2cba689a730cde04558734967dfde183d1fbbf0282835122e47b09abc46a1a8"
+        },
+        {
+          "entry": "registry-cue-settlement-20261107.check.log",
+          "bytes": 77616,
+          "sha256": "03364cd847da38c41c97d0295821f7dbfc26a41cf2b594171808e94488371803"
+        },
+        {
+          "entry": "registry-cue-settlement-20261107.first-fixed.log",
+          "bytes": 88602,
+          "sha256": "ff7fe9589a9b673d464001c8af899c27d3d55eedaf26b69cee6111b9db7a31e2"
+        },
+        {
+          "entry": "registry-cue-settlement-20261107.packet-fixed.log",
+          "bytes": 97592,
+          "sha256": "f074d8ab34e98ec4dc00acaff5a8f663be458ae0ef886bb042c80063ee1d876e"
+        },
+        {
+          "entry": "registry-cue-settlement-20261107.owner.catalog.json",
+          "bytes": 440520,
+          "sha256": "0011afaa2a378f3327e3226fcd1ab3f1003be17ad8665f23eddf66f5a9aef195"
+        },
+        {
+          "entry": "registry-cue-settlement-20261107.owner.catalog.log",
+          "bytes": 98722,
+          "sha256": "6ce4e1b607552aff6dc2c44fd6919df86138f30303b3c354c8a0a2f25ad0eb11"
+        },
+        {
+          "entry": "registry-cue-settlement-20261107.owner.runtime.log",
+          "bytes": 883691,
+          "sha256": "6f47649826c5e2cb9a3907ec1b303c98e5a835506b130307a7725c4ae5257765"
+        },
+        {
+          "entry": "registry-cue-settlement-20261107.owner.receipt.json",
+          "bytes": 935,
+          "sha256": "9c9911cf377e598c04a12cc185cdd5f5250896ec03ad6f4ee19a9d44f8ad0577"
+        },
+        {
+          "entry": "registry-cue-settlement-20261107.owner.source-freeze.json",
+          "bytes": 599321,
+          "sha256": "c58404a243539aceaf58ab786fd5fc49d2fb29e14f876629457172b1d5710b35"
+        },
+        {
+          "entry": "registry-cue-settlement-20261107.fixed.catalog.json",
+          "bytes": 440520,
+          "sha256": "0011afaa2a378f3327e3226fcd1ab3f1003be17ad8665f23eddf66f5a9aef195"
+        },
+        {
+          "entry": "registry-cue-settlement-20261107.fixed.catalog.log",
+          "bytes": 98722,
+          "sha256": "7ba8a0669e9076d77388552be2e506db6a8af7c5660fbdb50e16024f7ee03bb1"
+        },
+        {
+          "entry": "registry-cue-settlement-20261107.fixed.runtime.log",
+          "bytes": 882103,
+          "sha256": "4633ca48e88d00e5402142307a6f2659795997eb2a7149cd3ea0590b52d59c13"
+        },
+        {
+          "entry": "registry-cue-settlement-20261107.fixed.receipt.json",
+          "bytes": 923,
+          "sha256": "6abfe505d346a26537ed67b8161254dae23bca384b5d20772979d151d257b0b7"
+        },
+        {
+          "entry": "registry-cue-settlement-20261107.fixed.source-freeze.json",
+          "bytes": 599321,
+          "sha256": "1eabfa4cb98d7976f249671a77b5955acfb44180ca81b8fd699b9d25aa48032a"
+        },
+        {
+          "entry": "registry-cue-settlement-20261107.structure-final.log",
+          "bytes": 65741,
+          "sha256": "4a252126e1ed4f8e85d087ad9511fda24f53352dc9e9fe1a5be03af9350ef8b2"
+        },
+        {
+          "entry": "registry-cue-settlement-20261107.clippy.log",
+          "bytes": 7608448,
+          "sha256": "c1d7765bf7bd4e4bcba941f310cd7e7a4c8f8281b299f86ec7be3f4a781e9b11"
+        },
+        {
+          "entry": "registry-cue-settlement-20261107.clippy.receipt.json",
+          "bytes": 418,
+          "sha256": "dffcd9d13576d385a1c8cb9e7faf30ba6ab59a36e8947f18d3f82b98499b1b72"
+        },
+        {
+          "entry": "scheduled-line-registry-20261107.reverse.json",
+          "bytes": 2397,
+          "sha256": "7567e95074a3058d3108f8dc8dd5e50f54706d192f3012edbdf85569a1a98a80"
+        }
+      ]
+    }
   }
 }

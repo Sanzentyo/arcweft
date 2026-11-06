@@ -15080,3 +15080,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source fb816a17c72dd1c02cb14ddc8ec1d4107d90324f。正常終了と取消しの各 defer 子タスクが捕捉した StageActor を Line に移した。保持と Bool への置換の4入力を Native とデコード済み AWBC で実行し、発行元への解放要求が各1回であることを確認した。AWBC は全ステップで保存・復元し、所有行と置換後の行を確認した。Compiler の evaluated_effects は78件通過、失敗・スキップ0件。列挙した実行IDと一致し、対象の Clippy は警告ありで終了コード0だった。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
 - 初回の時刻指定入力は HIR readiness で止まり、字下げ版の HIR 追跡で defer 末尾の if let が MissingRequiredTail になっていることを確認した。Unit 末尾の追加後は、Cue を返す型を要求する at に Unit を返すコールバックを渡していたため型検査で停止した。検証入力を defer へ切り替えた。4入力に拡張した最初の実行では保存行のラッパーを含まない JSON パスを使い、77件通過・1件失敗だった。実際の v1 保存形に合わせてパスを訂正し、再実行した。[各試行の原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Scheduled Cue settlement in the Line registry
+
+- Source 7bb5bd2ccde1e38791c577040bb29badb60494c2。Line の所有行を外した後は RetiringLineRegistry が発行元の後処理を保持する。Cue の終端は捕捉パケットまたは正規の子タスクから共通処理で確定する。AWBC は発火前パケットと実行中ファイバーの所有を別々に照合する。Native と毎ステップで保存・復元する AWBC で、正常終了、取消し、発火前の明示破棄と置換を確認した。同じ発行サイトの二つの実行中 Cue は単体テストで片方だけを取り消した。Core と Compiler の対象は 2566 件通過。実行IDとソース入力の差分は0件、構造ゲートのブロッキング違反は0件、対象 Clippy は警告ありで終了0だった。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+- 修正前の Native は未発火 Cue の取消しを二重に適用し、Cancelled から Cancelled への遷移で失敗した。途中の AWBC 保存では、発火前パケットの所有を子ファイバーに求める誤判定と、正常終了時に捕捉パケットを終端化せずリースだけを破棄する別経路を確認した。両方を修正した。ホストの Accepted 後に同じ命令へ Rejected を返した探索入力は、正規の Cue 取消しを再現する入力から外した。[各試行の原本](acceptance-evidence/task-flow-registry-execution.json)。
