@@ -5855,6 +5855,205 @@
           }
         ]
       }
+    },
+    "workspaceQuality": {
+      "version": 1,
+      "source": "6b72d7ca42beb3661a7025598cf74a341d61fc21",
+      "sourceInputs": 4127,
+      "sourceDrift": 0,
+      "checks": {
+        "fmt": {
+          "version": 1,
+          "source": "6b72d7ca42beb3661a7025598cf74a341d61fc21",
+          "base": "cbea18b5affdcda24e560724dba444bb4a003a5b",
+          "name": "fmt",
+          "command": [
+            "rustfmt",
+            "--edition",
+            "2024",
+            "--config",
+            "skip_children=true",
+            "--check",
+            "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+            "crates/arcweft-verify/src/lib.rs",
+            "crates/arcweft-verify/src/proof_dependencies.rs"
+          ],
+          "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/typed-proof-dependencies-quality-20261106-fmt.log",
+          "exitCode": 0,
+          "sourceInputs": 4127,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-06T01:23:48.8635457Z",
+          "finishedAt": "2026-11-06T01:23:49.8176705Z"
+        },
+        "check": {
+          "version": 1,
+          "source": "6b72d7ca42beb3661a7025598cf74a341d61fc21",
+          "base": "cbea18b5affdcda24e560724dba444bb4a003a5b",
+          "name": "check",
+          "command": [
+            "cargo",
+            "check",
+            "--workspace",
+            "--all-targets",
+            "--all-features",
+            "--locked"
+          ],
+          "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/typed-proof-dependencies-quality-20261106-check.log",
+          "exitCode": 0,
+          "sourceInputs": 4127,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-06T01:23:50.4330237Z",
+          "finishedAt": "2026-11-06T01:24:18.6081862Z"
+        },
+        "clippy": {
+          "version": 1,
+          "source": "6b72d7ca42beb3661a7025598cf74a341d61fc21",
+          "base": "cbea18b5affdcda24e560724dba444bb4a003a5b",
+          "name": "clippy",
+          "command": [
+            "cargo",
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--all-features",
+            "--locked"
+          ],
+          "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/typed-proof-dependencies-quality-20261106-clippy.log",
+          "exitCode": 0,
+          "sourceInputs": 4127,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-06T01:24:19.1550526Z",
+          "finishedAt": "2026-11-06T01:24:49.8400192Z"
+        },
+        "doctest": {
+          "version": 1,
+          "source": "6b72d7ca42beb3661a7025598cf74a341d61fc21",
+          "base": "cbea18b5affdcda24e560724dba444bb4a003a5b",
+          "name": "doctest",
+          "command": [
+            "cargo",
+            "test",
+            "-p",
+            "arcweft-verify",
+            "--doc",
+            "--all-features",
+            "--locked"
+          ],
+          "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/typed-proof-dependencies-quality-20261106-doctest.log",
+          "exitCode": 0,
+          "sourceInputs": 4127,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-06T01:24:50.4346203Z",
+          "finishedAt": "2026-11-06T01:27:11.4229058Z"
+        },
+        "structure": {
+          "version": 1,
+          "source": "6b72d7ca42beb3661a7025598cf74a341d61fc21",
+          "base": "cbea18b5affdcda24e560724dba444bb4a003a5b",
+          "name": "structure",
+          "command": [
+            "cargo",
+            "+nightly",
+            "-Zscript",
+            "tools/structure-audit.rs",
+            "--root",
+            ".",
+            "--fail-on-blocking",
+            "--write",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/typed-proof-dependencies-quality-20261106.structure-report"
+          ],
+          "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/typed-proof-dependencies-quality-20261106-structure.log",
+          "exitCode": 0,
+          "sourceInputs": 4127,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-06T01:27:11.9369755Z",
+          "finishedAt": "2026-11-06T01:27:17.4358605Z"
+        }
+      },
+      "docTests": 0,
+      "raw": {
+        "path": "docs/implementation/acceptance-evidence/task-typed-proof-dependencies-quality.raw.zip",
+        "bytes": 846935,
+        "sha256": "136a91dc2523e52fcddce518c78f95f09a6885133099a10ca1733518bef6401f",
+        "entryDrift": 0,
+        "entries": [
+          {
+            "entry": "typed-proof-dependencies-quality-20261106-check.json",
+            "bytes": 586,
+            "sha256": "fe4b4edcd3ec866f70c0b557054d09b7542b5cd36b1c166ba0196e608e11d664"
+          },
+          {
+            "entry": "typed-proof-dependencies-quality-20261106-check.log",
+            "bytes": 107094,
+            "sha256": "adc780bcdb56cb073da85b83ea691bea15401875b950e7bace7acfa0f9c0b440"
+          },
+          {
+            "entry": "typed-proof-dependencies-quality-20261106-clippy.json",
+            "bytes": 589,
+            "sha256": "ef14529668f8ae44d719764759cf9e68fecd06836c22bd220163d4ccafc7d89f"
+          },
+          {
+            "entry": "typed-proof-dependencies-quality-20261106-clippy.log",
+            "bytes": 8879793,
+            "sha256": "29c15b33cb2c0f345428a4dab4cc281e13d5100107d89533a59354401521c501"
+          },
+          {
+            "entry": "typed-proof-dependencies-quality-20261106-doctest.json",
+            "bytes": 595,
+            "sha256": "db45ec918cfa8a1bad970b51eda0bf4e48b14cb87146e1da4da937247f3e3391"
+          },
+          {
+            "entry": "typed-proof-dependencies-quality-20261106-doctest.log",
+            "bytes": 84873,
+            "sha256": "c0a8686b25774b362a5224a71400df6891eafe0534988d4489a780459cbe07f6"
+          },
+          {
+            "entry": "typed-proof-dependencies-quality-20261106-fmt.json",
+            "bytes": 736,
+            "sha256": "7e59f21023f3f57c41a7738c3c2865f832de1b02716641fb93edcec5397a108d"
+          },
+          {
+            "entry": "typed-proof-dependencies-quality-20261106-fmt.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "typed-proof-dependencies-quality-20261106-structure.json",
+            "bytes": 775,
+            "sha256": "671586cbf8a1f35fd230596530f874cbdd7cac71c827efe031445ad91ee3ed3c"
+          },
+          {
+            "entry": "typed-proof-dependencies-quality-20261106-structure.log",
+            "bytes": 65799,
+            "sha256": "88d38356b412e11ab2256eaba182994531e2aa0b31d8b79ae3774cf6920385c1"
+          },
+          {
+            "entry": "typed-proof-dependencies-quality-20261106.structure-report/dependency_edges.csv",
+            "bytes": 78209,
+            "sha256": "3093f8a36140f5d2345ba17f2653cd7950d662b1cf512584fbe01b805bea723b"
+          },
+          {
+            "entry": "typed-proof-dependencies-quality-20261106.structure-report/file_metrics.csv",
+            "bytes": 340107,
+            "sha256": "90d498f05b14e7acc577040612033c33333129fbd3398031f5c97bcd0ae691ce"
+          },
+          {
+            "entry": "typed-proof-dependencies-quality-20261106.structure-report/findings.md",
+            "bytes": 123641,
+            "sha256": "25c2256d2ca2c23a33a81bb1e6b52875f669fbd6a138cbd2a0749f0cf821851b"
+          },
+          {
+            "entry": "typed-proof-dependencies-quality-20261106.structure-report/package_metrics.csv",
+            "bytes": 6508,
+            "sha256": "824d564aa9d244ebd4199fb6ee8e80ee7c7096c7d1d7c90a64d682ee6e0e0d54"
+          },
+          {
+            "entry": "typed-proof-dependencies-quality-20261106.structure-report/public_type_duplicates.csv",
+            "bytes": 17441,
+            "sha256": "1f4de95e3e739d2a4d3f10ed07336dd544b97cdb58783460dd760e4749038d82"
+          }
+        ]
+      }
     }
   }
 }

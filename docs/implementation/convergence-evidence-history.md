@@ -14833,3 +14833,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source 6b72d7ca42beb3661a7025598cf74a341d61fc21. The target-level recovery produced 70 actual runtime cases, 70 passes and 0 failures. Incomplete targets 0. The concurrent allocation failure remains in the first run record.
 - The disjoint observed targets now cover 13 packages. Combined 2034 tests ran with 2027 passes and 7 failures. [Target receipts, case identities and complete raw output](acceptance-evidence/task-proof-trust-policy.json).
+
+## 2026-11-06 — Trusted dependency workspace checks
+
+- Source 6b72d7ca42beb3661a7025598cf74a341d61fc21, pinned inputs 4127, zero drift. Exit codes fmt 0, check 0, clippy 0, doctest 0, structure 0. The verifier doctest command reported 0 tests. [Commands, warning output and structural artifacts](acceptance-evidence/task-proof-trust-policy.json).
