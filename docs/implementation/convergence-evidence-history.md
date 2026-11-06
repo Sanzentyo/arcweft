@@ -14986,3 +14986,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source d3332620ac662de3e0da5d893f83f42c70d997b8 の Core／RuntimePlan／Compiler 対象は2,704件通過・失敗0・1件スキップ。4,134入力とケース一覧を照合し、差分は0だった。[実測・原本](acceptance-evidence/task-flow-registry-execution.json)。
 - 同じ公開Rustソースのレジストリ破棄を6入力で照合した。キーを直接渡す必須形と optional 呼出しは型検査で停止し、optional のパイプ形は実行計画への lowering で停止した。レジストリから読み出したローカル値を捨てる対照2件は Native とデコード済みAWBC の両方で登録を保持した。[入力・実測・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Registry reads in generic call arguments
+
+- Source d3332620ac662de3e0da5d893f83f42c70d997b8 の4入力で、汎用型 T の引数に渡した必須読み取りと、型注釈を付けた optional 欠損を Native とデコード済みAWBC の両方で確認した。Option<T> の引数に直接渡す optional 読み取りは、登録済みと、書込みから型が分かる欠損の両方で ExpressionTypeUnavailable により型検査で停止した。[入力・実測・原本](acceptance-evidence/task-flow-registry-execution.json)。

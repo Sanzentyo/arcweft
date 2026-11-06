@@ -13943,5 +13943,108 @@
         }
       ]
     }
+  },
+  "registryReadGenericContextProbes": {
+    "source": "d3332620ac662de3e0da5d893f83f42c70d997b8",
+    "testInputBase": "49ffafc33a02a799bb51de4ac20b460661af2607",
+    "method": "Direct test binary built with the exact Cargo integration-test dependency fingerprints. It uses the production compiler and runs Native and decoded AWBC for the controls that compile.",
+    "probeSourceSha256": "d746714042587ba5a7ee20e93ef0d26964c55dc2b72c016ec2fa734acd48a5d1",
+    "binarySha256": "c809460125ba308f145501bae38053975ec96f9534b63303afca5a33632838f3",
+    "cases": [
+      {
+        "test": "registry_read_generics_required",
+        "exitCode": 0,
+        "result": "Generic required argument executed in Native and decoded AWBC",
+        "stdoutSha256": "08b57b5efa539aa61a673b7711a8712ba26edc99ac96ec840a14c2a223668e58",
+        "stderrSha256": "a6c9e2af2b6497ceeefb3647731d05a9239c272dee8f1821280789126ee60bb0"
+      },
+      {
+        "test": "registry_read_generics_optional",
+        "exitCode": 101,
+        "result": "Generic optional argument with a registered value failed in type checking",
+        "stdoutSha256": "d9bf6f43922d5a3e0069d9405be83e9a1f78db6130502422f92c3c9ac0acfcad",
+        "stderrSha256": "4cbbc39fe0c93e24ced4258ba8e2dc1fdc6093dc21b0b54ad884d7e394c6e857"
+      },
+      {
+        "test": "registry_read_generics_absent_with_type_witness",
+        "exitCode": 101,
+        "result": "Generic optional argument with an absent value and a conditional writer failed in type checking",
+        "stdoutSha256": "b347646b4eb06c3c7dd3b6b74dd211e1d5b98ecff9469118e9466024bcb9bc2f",
+        "stderrSha256": "d4df03039971ec198a246d34919084610a9c2302db2bf1a0e5c7d60a9dd8f27a"
+      },
+      {
+        "test": "registry_read_absent_with_explicit_item_type_control",
+        "exitCode": 0,
+        "result": "Explicitly typed optional absence executed in Native and decoded AWBC",
+        "stdoutSha256": "ce3b50e41508906966d51903f27b2b3f2682088e308858bad1ac3335574be39f",
+        "stderrSha256": "a3cc73cc93ef629807f224818e465de557af10f18ddc6d4723ad3743a71d8052"
+      }
+    ],
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-read-generic-context.raw.zip",
+      "sha256": "0765ff65f4548ad3e735f4602cf052b56192f0f6c676d166453fe42e6c6e35de",
+      "entries": [
+        {
+          "entry": "receipt.json",
+          "bytes": 19196,
+          "sha256": "43d16ba5fae508023c662f1521e132dc87e303a510c9136f30b76c0705942a39"
+        },
+        {
+          "entry": "registry_context.rs",
+          "bytes": 190776,
+          "sha256": "d746714042587ba5a7ee20e93ef0d26964c55dc2b72c016ec2fa734acd48a5d1"
+        },
+        {
+          "entry": "build.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "build.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "registry_read_generics_required.stdout.log",
+          "bytes": 157,
+          "sha256": "08b57b5efa539aa61a673b7711a8712ba26edc99ac96ec840a14c2a223668e58"
+        },
+        {
+          "entry": "registry_read_generics_required.stderr.log",
+          "bytes": 48,
+          "sha256": "a6c9e2af2b6497ceeefb3647731d05a9239c272dee8f1821280789126ee60bb0"
+        },
+        {
+          "entry": "registry_read_generics_optional.stdout.log",
+          "bytes": 223,
+          "sha256": "d9bf6f43922d5a3e0069d9405be83e9a1f78db6130502422f92c3c9ac0acfcad"
+        },
+        {
+          "entry": "registry_read_generics_optional.stderr.log",
+          "bytes": 1525,
+          "sha256": "4cbbc39fe0c93e24ced4258ba8e2dc1fdc6093dc21b0b54ad884d7e394c6e857"
+        },
+        {
+          "entry": "registry_read_generics_absent_with_type_witness.stdout.log",
+          "bytes": 255,
+          "sha256": "b347646b4eb06c3c7dd3b6b74dd211e1d5b98ecff9469118e9466024bcb9bc2f"
+        },
+        {
+          "entry": "registry_read_generics_absent_with_type_witness.stderr.log",
+          "bytes": 1541,
+          "sha256": "d4df03039971ec198a246d34919084610a9c2302db2bf1a0e5c7d60a9dd8f27a"
+        },
+        {
+          "entry": "registry_read_absent_with_explicit_item_type_control.stdout.log",
+          "bytes": 178,
+          "sha256": "ce3b50e41508906966d51903f27b2b3f2682088e308858bad1ac3335574be39f"
+        },
+        {
+          "entry": "registry_read_absent_with_explicit_item_type_control.stderr.log",
+          "bytes": 56,
+          "sha256": "a3cc73cc93ef629807f224818e465de557af10f18ddc6d4723ad3743a71d8052"
+        }
+      ]
+    }
   }
 }
