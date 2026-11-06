@@ -15162,3 +15162,5 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Scoped defer reverse tests after the clean build
 
 - 公開ソース `3b7a98a0f3983c8d45148ac4e401e29a136e082b`。`cargo clean` 後に追加分の先頭5組13ターゲットを実行し、368件が通過した。失敗とスキップは0件。旧集計で漏れていた `arcweft` のライブラリはビルドでき、テストケースは0件だった。CLI の2組は各10件、Compiler の2組は16件と332件が通過した。固定したソース入力3,638件に差分は0件だった。区切り時点の追加分191ターゲットはこの結果に含めていない。[終了した5組のコマンド・結果・ログ](acceptance-evidence/task-flow-registry-execution.json)。
+
+- 同じソースでさらに8組24ターゲットを実行し、245件が通過した。clean 後の合計は13組37ターゲット、613件通過、失敗・スキップ0件だった。固定した3,638入力に差分がないことを終了時に確認した。マークハンドラーの修正を試すため、Core の組が終了した時点で旧ソースの分割実行を区切った。残り167ターゲットはこのソースでは未実行。先頭5組の原本を保持し、後続8組と停止時の集計を追記した。[ソース切替時のコマンド・結果・ログ](acceptance-evidence/task-flow-registry-execution.json)。

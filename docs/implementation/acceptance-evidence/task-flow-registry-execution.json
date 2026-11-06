@@ -20888,5 +20888,122 @@
         }
       ]
     }
+  },
+  "scopedDeferRegistrationFrontierReverseHandoff": {
+    "source": "3b7a98a0f3983c8d45148ac4e401e29a136e082b",
+    "sourceInputs": 3638,
+    "sourceDrift": [],
+    "reason": "Stopped after a terminal partition to change the implementation source for mark-handler scoped defer.",
+    "lastCompleted": "34",
+    "plannedPartitionTargets": 204,
+    "completed": {
+      "batches": 13,
+      "targets": 37,
+      "run": 613,
+      "passed": 613,
+      "failed": 0,
+      "skipped": 0
+    },
+    "additionalSincePublishedCheckpoint": {
+      "batches": 8,
+      "targets": 24,
+      "run": 245,
+      "passed": 245,
+      "failed": 0,
+      "skipped": 0
+    },
+    "pendingPartitionTargets": 167,
+    "precedingEvidenceProperty": "scopedDeferReverseAfterCleanCheckpoint",
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-defer-frontier-handoff.raw.zip",
+      "sha256": "ae058500d5f62eaf49e15692614f31d5bb99b0c7027ec006b48bb656e5845435",
+      "entries": [
+        {
+          "entry": "scoped-defer-frontier-20261107.reverse-partitions.receipt.json",
+          "bytes": 34719,
+          "sha256": "1827eb95bc259c3ce929ca7047598f14cb73f9b474309f8c71f8cc379786e953"
+        },
+        {
+          "entry": "scoped-defer-frontier-20261107.partition.27.receipt.json",
+          "bytes": 1038,
+          "sha256": "a910e36bf2d6418f5f2b1c0a8a2b15d9376d00a87b6bf1ad2d5e6243528fe779"
+        },
+        {
+          "entry": "scoped-defer-frontier-20261107.partition.27.log",
+          "bytes": 88639,
+          "sha256": "cf1b7c670907fad85fa71a97dc84c945d6bfa9a767a6dfc288a4409081f8665b"
+        },
+        {
+          "entry": "scoped-defer-frontier-20261107.partition.28.receipt.json",
+          "bytes": 1046,
+          "sha256": "71a0a627779aacdff8ff657eecc9249f4156bab394c1cf7e17613146b7d57625"
+        },
+        {
+          "entry": "scoped-defer-frontier-20261107.partition.28.log",
+          "bytes": 90887,
+          "sha256": "3750c3488b39e4b52c58f55254fdc03a10871b716848b9605946c269c7aa0cfa"
+        },
+        {
+          "entry": "scoped-defer-frontier-20261107.partition.29.receipt.json",
+          "bytes": 1030,
+          "sha256": "79130dc9543537a21209f02df68393dfd55103bbbf88eceeb37c2dd586343b37"
+        },
+        {
+          "entry": "scoped-defer-frontier-20261107.partition.29.log",
+          "bytes": 99123,
+          "sha256": "62bb2bb45b025757c6d8246c4d7f423bcdb873bfacf8c911de32487fec43a79f"
+        },
+        {
+          "entry": "scoped-defer-frontier-20261107.partition.30.receipt.json",
+          "bytes": 1066,
+          "sha256": "5944248007be346f4dc6b33a86403cb7f23c45ce5b5331199ad1954819d1d0b3"
+        },
+        {
+          "entry": "scoped-defer-frontier-20261107.partition.30.log",
+          "bytes": 89618,
+          "sha256": "9f60a35552b5fc443f9b14008a5079ebd0ce19d13586fd876750d881c3e1aac3"
+        },
+        {
+          "entry": "scoped-defer-frontier-20261107.partition.31.receipt.json",
+          "bytes": 1038,
+          "sha256": "a9cd53362d7873f280eecc9c211ac856b978ca9a07d9a28771c5f0cd54cc65ea"
+        },
+        {
+          "entry": "scoped-defer-frontier-20261107.partition.31.log",
+          "bytes": 101781,
+          "sha256": "0585bd12f632e44a933fb0069dca90ee2610a8179780828d3503173a5cca7387"
+        },
+        {
+          "entry": "scoped-defer-frontier-20261107.partition.32.receipt.json",
+          "bytes": 1042,
+          "sha256": "5abb3753335ec68eb2e6019c4736198b66d3444f6957992304fe571e91d14443"
+        },
+        {
+          "entry": "scoped-defer-frontier-20261107.partition.32.log",
+          "bytes": 93219,
+          "sha256": "0d6d8d049d75052b26336757f6f91254076b78bbd7c4ef2c483aab8e39be8e42"
+        },
+        {
+          "entry": "scoped-defer-frontier-20261107.partition.33.receipt.json",
+          "bytes": 1031,
+          "sha256": "6dd2a3f9910d572d1756ea19094eef88a8834739e0fe0e2017c82850bce470fa"
+        },
+        {
+          "entry": "scoped-defer-frontier-20261107.partition.33.log",
+          "bytes": 109814,
+          "sha256": "8e65b11daac19b2770eb7bbc5d83fa434da0cac95344ccd2063acadfc156def6"
+        },
+        {
+          "entry": "scoped-defer-frontier-20261107.partition.34.receipt.json",
+          "bytes": 1019,
+          "sha256": "cfe04564fd01efe33873d219b964a7419859330729694e80cc55493fcb1227bb"
+        },
+        {
+          "entry": "scoped-defer-frontier-20261107.partition.34.log",
+          "bytes": 75745,
+          "sha256": "118f80adcd2fb0ce9863906b48948015dafebc7aa21f4aaf9b6eeb57a2053441"
+        }
+      ]
+    }
   }
 }
