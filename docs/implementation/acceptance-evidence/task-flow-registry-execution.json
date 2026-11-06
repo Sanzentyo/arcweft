@@ -15627,5 +15627,211 @@
         }
       ]
     }
+  },
+  "ownedLineRegistryIntegration": {
+    "source": "f0b3274fe9195dac8babc1d559751a5025ee0457",
+    "parent": "3029a871fb9b9fd2a77d62f666374dfeb7329a3a",
+    "changedBlobs": [
+      {
+        "path": "crates/arcweft-compiler/tests/evaluated_effects.rs",
+        "blob": "2d56f1beb5c159d796012a303cbfc6bc2e0fad7e"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step.rs",
+        "blob": "8e42b7e39024f6f8866e3ad7352a0589f2478855"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+        "blob": "209c7e84e6eda07dee5d7e2e111977efde5eacd2"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+        "blob": "b4eeac5a444145546d2455487d349bbd42485b14"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/vm/resources.rs",
+        "blob": "93f5e854b7ad9b1ff9df286ff90e7edb5f6f18e9"
+      },
+      {
+        "path": "crates/arcweft-core/src/effect.rs",
+        "blob": "7dd44708a98ea148a25656adcc2992b969824379"
+      },
+      {
+        "path": "crates/arcweft-core/src/effect/registry.rs",
+        "blob": "cb1c0a63fe3947a8675644f3a134d8903c51e55f"
+      },
+      {
+        "path": "crates/arcweft-core/src/effect/registry/scope.rs",
+        "blob": "51e2ba228b2c1561a15db0282570e41439087159"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine.rs",
+        "blob": "a51c28f1e13ce0f5559d538f1243ef96c2cb957f"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/dialogue.rs",
+        "blob": "18abccedc4bc038aa48388f2cb93c29a54309f5b"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/dialogue/store.rs",
+        "blob": "5cbe3d399b67db3e97d6a29044ba94fd343ead3e"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/registry.rs",
+        "blob": "309736da744d5c5835875d7f31ef90c852301d89"
+      },
+      {
+        "path": "crates/arcweft-core/src/line_task/activation.rs",
+        "blob": "8c9fbf51f4d143b3df903bb1d23ecde4a2ff66cc"
+      },
+      {
+        "path": "crates/arcweft-core/src/line_task/drop_authorization.rs",
+        "blob": "ee0822a1128ced2c977f6190a0983282756842dc"
+      },
+      {
+        "path": "crates/arcweft-core/src/line_task/handle.rs",
+        "blob": "eb87d2b11d65dd360bf6db51ddf5cd338b839e99"
+      },
+      {
+        "path": "crates/arcweft-core/src/value/ownership.rs",
+        "blob": "9a7593ff2038e4b7c8257358c1beb0d56a048a0a"
+      },
+      {
+        "path": "crates/arcweft-core/src/value/ownership/resources.rs",
+        "blob": "1815ab67f74a0b6380dcb9b2a8536cceb70a9e56"
+      },
+      {
+        "path": "docs/02-runtime/core.md",
+        "blob": "d6a53df38033d6d76bd1b86d7c0345f932c9dbec"
+      },
+      {
+        "path": "docs/02-runtime/executable-runtime-core.md",
+        "blob": "809debb775114184331ae3ee918bb03150cd215b"
+      }
+    ],
+    "patchSha256": "a019a35b5af884053cb0bf862cf7d14e283b9f183552e6c3186495051810e2e1",
+    "supersedesProbeSource": "901926eca718a2c3f110916234aa9f64b8e1d192",
+    "implementation": "A reached Line takes issued dialogue handles under their original issuer. Each moved lease records the exact receiving activation, key and structural path. Typed drops and closing update the issuer and route release settlement after row removal. Save restores the row and original ledger together and rejects an orphan in either direction.",
+    "boundary": "The replay update carrier and Flow keep unrestricted ownership. Presentation resources and launched Needs require their own execution custody. The owning row has inert data staged after typed admission, and the exact issuer is checked before row publication.",
+    "initialCompilerChecks": "The initial check identified missing type imports and the generic snapshot projection. The retry identified the new owner variant in the exhaustive restored-lease match. Both logs are retained. The final nextest run compiled and exercised the corrected source.",
+    "focused": {
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "-E",
+        "test(/owned_line_registry|registry|nested_line_handle|received_handle_reexport|reexported_result/)"
+      ],
+      "executed": 67,
+      "passed": 67,
+      "failed": 0,
+      "excludedByFilter": 2495,
+      "authoredSourceCases": 6,
+      "runtimeExecutions": 12,
+      "saveTamperRejections": 6,
+      "regression": "Local and foreign StageActor writes succeed in Native and canonical decoded AWBC. Explicit drop, cancellation drop, and automatic normal close each issue one release from the original issuer. AWBC restores every tested step and rejects each save with a deleted owning row."
+    },
+    "rustfmtExitCode": 0,
+    "structureBlocking": 0,
+    "reverseGraph": {
+      "command": [
+        "cargo",
+        "tree",
+        "--locked",
+        "--workspace",
+        "--invert",
+        "arcweft-core",
+        "--prefix",
+        "none",
+        "--format",
+        "{p}"
+      ],
+      "packages": 52
+    },
+    "clippy": {
+      "version": 1,
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--all-targets"
+      ],
+      "exitCode": 0,
+      "warningsPresent": true
+    },
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-owned-line-registry-integration.raw.zip",
+      "sha256": "5f046f73c05cfcacc1179b63e951df5419baf4b7988dddc992a73f4eae983b7f",
+      "entries": [
+        {
+          "entry": "owned-line-registry-integration-20261107.check.log",
+          "bytes": 14965,
+          "sha256": "ebb41195cace8cb0ac158476042dd14fbb8f6cb266e6417c83297d981e7773a4"
+        },
+        {
+          "entry": "owned-line-registry-integration-20261107.check-retry.log",
+          "bytes": 10424,
+          "sha256": "5f0e342eeff933307e906a073e801f278b99d5f14937857cb92b7c7c09ccb7c2"
+        },
+        {
+          "entry": "owned-line-registry-integration-20261107.nextest.log",
+          "bytes": 109517,
+          "sha256": "139ed65f92ab8a90275e1dbde8ed07d47b80e6ae52d81e7443941fdc3d113467"
+        },
+        {
+          "entry": "owned-line-registry-integration-20261107.nextest-final.log",
+          "bytes": 109103,
+          "sha256": "af2cdb56f3ea3d74b543ab33e48df79f8987676d84a74c4439e83b6cda295180"
+        },
+        {
+          "entry": "owned-line-registry-integration-20261107.verified.json",
+          "bytes": 3131,
+          "sha256": "ce36f48584e223c980641f045876c4267d6f9321cb103d6edd0291ddcc8c403b"
+        },
+        {
+          "entry": "owned-line-registry-integration-20261107.reviewed-inputs.json",
+          "bytes": 2927,
+          "sha256": "367137317812f6ab3e35e09bdcd9fe11c1bbb14d557efc380aa08d74b4f5f32c"
+        },
+        {
+          "entry": "owned-line-registry-integration-20261107.structure.log",
+          "bytes": 65741,
+          "sha256": "7bc67c4eeb52eb892721ad1d4078ae440a061b1dcf89f725987761349d5411b6"
+        },
+        {
+          "entry": "owned-line-registry-integration-20261107.structure-final.log",
+          "bytes": 65741,
+          "sha256": "afa7fe358121b9ba0857f31d251347466c1ea73e390529b03f01095a49a31b37"
+        },
+        {
+          "entry": "owned-line-registry-integration-20261107.inverse-cargo.txt",
+          "bytes": 19177,
+          "sha256": "274d879585f2c8cfb5b787233c2821c761fdf5cb2ef73137a854c7c4684e2d16"
+        },
+        {
+          "entry": "owned-line-registry-integration-20261107.clippy.log",
+          "bytes": 4845725,
+          "sha256": "8f2e2e4df27e1035ff7d8556d7d511b1361de8037652e5495e643401c2238bd5"
+        },
+        {
+          "entry": "owned-line-registry-integration-20261107.clippy.receipt.json",
+          "bytes": 189,
+          "sha256": "ac1aea3a96bc0839c069d980e070fdb72769c7e78ea491edae6efacdbb9a574d"
+        }
+      ]
+    }
   }
 }
