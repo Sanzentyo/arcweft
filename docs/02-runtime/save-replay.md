@@ -527,6 +527,8 @@ private codec capability は Core の inert value carrier だけに実装し、l
 reader／writer と別の AWBC scope DTO は持たない。scoped defer は登録した元の
 instruction cursor を保持し、RegisterDefer の site・outcome・CurrentScope・capture
 register inventory と original verifier の lexical scope stack に照合する。
+復元時は、捕捉値の有無にかかわらず、各 scoped defer の登録 ID が元の対話で
+発行済みであり、その対話が保持する他の root／scoped defer と重複しないことを検証する。
 実際の capture graph は一度だけ資源計上し、元の frame slot 型IDと defer signature
 型IDの両方を immutable frame binding で検証する。Copy 値の重複 capture は許可し、
 affine 値の重複は拒否する。cleanup は元の RegisterCleanup instruction cursor と

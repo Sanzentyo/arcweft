@@ -15150,3 +15150,9 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Scoped defer reverse-dependency source handoff
 
 - Source ffc143ca9eb9b07612de2d45f2e8e228e01659be。追加203ターゲットの分割計画で、22組50ターゲットを終えた。1,260件を実行して1,253件通過、7件失敗、23件スキップだった。CLIの失敗名は従来の7件と一致した。ソース入力3638件の差分は0件。登録IDの保存復元を修正するため、22組目の結果を得た時点で実行を区切った。23組目の途中ログを保存し、その組は実行済みの集計から外した。[全組の実測・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Scoped defer registration frontier restore fix
+
+- 公開ソース `3b7a98a0f3983c8d45148ac4e401e29a136e082b`。対話 activation の割当てから発行済みの ID を求め、保持する root と lexical scope の登録をまとめて照合する。捕捉値のない cleanup の実行待ちと実行中の両方で、次の登録IDを巻き戻した AWBC 保存を拒否し、元の owner を返した。正規の保存は毎ステップ復元できた。ソースの区切り有無を両方実行し、Native とデコード済みAWBC の逆登録順も確認した。[修正前後の実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+- Core／Sema／RuntimePlan／Compiler の5バイナリで4,088件通過、既存1件スキップ。実行IDと一覧の差分は0件。Runtime Driver／Runtime Host／Save の14バイナリで260件通過。全ターゲット・全 feature の workspace check と Clippy は終了0で、警告を原本に保持した。ソース入力3,638件の差分と構造ゲートのブロッキング違反はともに0件。公開前から保持した tracked 12パスと untracked 6ファイルは検証範囲から分けて扱った。[コマンド・実測・原本](acceptance-evidence/task-flow-registry-execution.json)。
+- 現状一覧では旧ソースの復元失敗を修正後の実測で更新した。旧集計の52パッケージ・222ターゲットは、`arcweft-` で始まる名前だけを抽出し、Cargo のグラフにあった `arcweft` の `lib:arcweft` を取りこぼしていた。workspace member と Cargo のテスト対象を照合し、53パッケージ・223ターゲットに訂正した。修正ソースで確認した19ターゲットと、これから検証する204ターゲットは別に記録した。旧ソースの実行数と失敗IDはその時点の証拠として保持した。[グラフ・メタデータ・検証計画の原本](acceptance-evidence/task-flow-registry-execution.json)。
