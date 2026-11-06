@@ -757,7 +757,8 @@ An unstarted packet owns its captures until the child takes them. Restore
 matches that packet's custody separately from the live child's slots.
 Line closure consumes the captures still held by the line when it commits
 cleanup. The issuer's ledger and command journal retain pending releases
-until the corresponding host acknowledgements arrive.
+until the corresponding host acknowledgements arrive. A resumed publication
+applies the same cleanup to any capture slots still held by the line.
 
 Context-free effect dispatch checks that requirement before evaluating or moving
 operands. A rejected write terminates execution before subsequent instructions

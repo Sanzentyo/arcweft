@@ -281,8 +281,12 @@ impl super::AwbcProductStepExecutor {
             }
         }
 
-        if begin {
+        // A resumed publication can still hold returned captures whose
+        // releases were already issued. Reapply the same close transaction.
+        if begin || line.has_returned_scheduled_captures() {
             line.prepare_handle_unwind(&activation, true)?;
+        }
+        if begin {
             line.begin_result_publication()?;
             frame.phase = ProductDialoguePhase::Publishing { line_task };
         }

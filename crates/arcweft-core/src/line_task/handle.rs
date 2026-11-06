@@ -2664,6 +2664,12 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         }
     }
 
+    pub(crate) fn has_returned_scheduled_captures(&self) -> bool {
+        self.scheduled.iter().any(|scheduled| {
+            matches!(&scheduled.custody, RuntimeScheduledCaptureCustody::LineScope(slots) if !slots.is_empty())
+        })
+    }
+
     /// Prepares activation-owned leases for deterministic close. Unstarted
     /// scheduled work is cancelled and its captures are staged for release.
     /// The line consumes its capture slots when it commits the cleanup journal

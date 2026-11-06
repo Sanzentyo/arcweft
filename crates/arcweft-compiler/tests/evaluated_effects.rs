@@ -4080,8 +4080,19 @@ entry cli @entry.main {{ goto @flow.main }}
 
 #[test]
 fn decoded_awbc_line_close_saves_between_scheduled_capture_releases() {
+    assert_awbc_line_close_saves_between_scheduled_capture_releases(false);
+}
+
+#[test]
+fn decoded_awbc_line_close_resumes_a_save_with_returned_scheduled_captures() {
+    assert_awbc_line_close_saves_between_scheduled_capture_releases(true);
+}
+
+fn assert_awbc_line_close_saves_between_scheduled_capture_releases(resume_pending_save: bool) {
     use arcweft_core::{
+        awbc::product_step::AwbcProductExecutorSaveSnapshot,
         engine::{FlowExit, FlowFiberStatus},
+        executor::ArcweftRuntimeExecutorSnapshot,
         plan::FlowEvent,
         presentation::{
             RuntimeLineHostCommand, RuntimeLineHostOutcome, RuntimeStageCommand,
@@ -4123,6 +4134,8 @@ entry cli @entry.main { goto @flow.main }
     let mut input = RuntimeStepInput::default();
     let mut acquired = Vec::new();
     let mut releases = Vec::new();
+    let mut capture_slots = BTreeMap::new();
+    let mut restored_pending_save = false;
     let mut restored_partial_release = false;
     for tick in 0..128 {
         input.tick = TickId(tick);
@@ -4176,7 +4189,51 @@ entry cli @entry.main { goto @flow.main }
             }
         }
         let active;
-        (awbc, active) = roundtrip_nested_awbc_checking(awbc, |executor, _| executor);
+        let mut pending_save = None;
+        (awbc, active) = roundtrip_nested_awbc_checking(awbc, |executor, save| {
+            if resume_pending_save && !restored_pending_save {
+                let mut save = save.clone();
+                for line in save["dialogues"]["entries"]
+                    .as_array_mut()
+                    .unwrap()
+                    .iter_mut()
+                    .filter_map(|entry| entry.pointer_mut("/Active/line"))
+                {
+                    for scheduled in line["scheduled"].as_array_mut().unwrap() {
+                        let token = scheduled["token"].to_string();
+                        let custody = &mut scheduled["custody"];
+                        if let Some(packet) = custody["packet"].as_array() {
+                            let slots = packet
+                                .iter()
+                                .map(|binding| {
+                                    serde_json::json!({
+                                        "local": binding["local"],
+                                        "value": {"Initialized": binding["value"]},
+                                    })
+                                })
+                                .collect::<Vec<_>>();
+                            capture_slots.insert(token, slots);
+                        } else if releases.len() == 2 {
+                            assert_eq!(custody["line_scope"], serde_json::json!([]));
+                            custody["line_scope"] = serde_json::json!(capture_slots[&token]);
+                        }
+                    }
+                }
+                if releases.len() == 2 {
+                    assert_eq!(capture_slots.len(), 2);
+                    pending_save = Some(save);
+                }
+            }
+            executor
+        });
+        if let Some(saved) = pending_save {
+            let saved: AwbcProductExecutorSaveSnapshot = serde_json::from_value(saved).unwrap();
+            let saved = awbc.bind_product_save_snapshot(saved).unwrap();
+            awbc = awbc
+                .restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(saved))
+                .expect("the version-one save with pending releases is valid");
+            restored_pending_save = true;
+        }
         if first_ack {
             assert_eq!(active, 1, "the line still owns the pending release");
             restored_partial_release = true;
@@ -4185,6 +4242,7 @@ entry cli @entry.main { goto @flow.main }
             FlowFiberStatus::Dialogue(_) | FlowFiberStatus::Running => {}
             FlowFiberStatus::Done(FlowExit::Done) => {
                 assert!(restored_partial_release && releases.is_empty() && acquired.is_empty());
+                assert_eq!(restored_pending_save, resume_pending_save);
                 return;
             }
             status => panic!("line close stopped at tick {tick}: {status:?}"),
