@@ -100,6 +100,7 @@ impl<'a> RuntimeCallableChildPreflight<'a> {
             RuntimeExprKind::Value(_)
             | RuntimeExprKind::Agent(_)
             | RuntimeExprKind::Local(_)
+            | RuntimeExprKind::RegistryRead { .. }
             | RuntimeExprKind::SequencePopFront { .. }
             | RuntimeExprKind::SequencePush { .. }
             | RuntimeExprKind::SequencePopBack { .. }

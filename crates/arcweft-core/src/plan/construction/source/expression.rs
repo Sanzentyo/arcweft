@@ -222,6 +222,7 @@ enum Array {
     Dialogue,
     Record,
     Arms,
+    RegistryKey,
 }
 impl Array {
     fn width(self) -> usize {
@@ -265,6 +266,7 @@ impl Array {
                     + size_of::<RuntimeNominalRecordFieldExpr>()
             }
             Self::Arms => size_of::<RuntimeExprMatchArmSeed>() + size_of::<RuntimeExprMatchArm>(),
+            Self::RegistryKey => size_of::<arcweft_id::DeclarationName>(),
         }
     }
 }

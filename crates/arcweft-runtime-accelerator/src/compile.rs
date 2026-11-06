@@ -876,6 +876,7 @@ fn runtime_ops_work_units(ops: &[arcweft_core::plan::FlowOp]) -> usize {
 pub(super) fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
     match expr.kind() {
         RuntimeExprKind::Value(_) | RuntimeExprKind::Local(_) | RuntimeExprKind::EntityRef(_) => 1,
+        RuntimeExprKind::RegistryRead { .. } => 8,
         RuntimeExprKind::Agent(agent) => {
             1 + agent
                 .operands()

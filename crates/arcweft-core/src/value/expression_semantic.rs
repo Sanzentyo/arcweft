@@ -156,6 +156,12 @@ impl RuntimeExpr {
                 encoder.tag(read.mode().semantic_tag());
                 RuntimeBodySemanticContext::write_fields(encoder, read.fields());
             }
+            RuntimeExprKind::RegistryRead { key, kind } => {
+                encoder.tag(u8::from(
+                    *kind == crate::effect::RuntimeRegistryReadKind::Optional,
+                ));
+                encoder.lifetime_registry_key(key);
+            }
             RuntimeExprKind::SequencePopFront { place }
             | RuntimeExprKind::SequencePopBack { place }
             | RuntimeExprKind::SequencePush { place, .. } => context.write_place(encoder, place)?,

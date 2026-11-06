@@ -382,6 +382,16 @@ impl RuntimePlanBodyConstruction<'_> {
             RuntimeExprSeedKind::Agent(agent) => {
                 RuntimeExprKind::Agent(self.lower_agent_expression(ty, agent)?)
             }
+            RuntimeExprSeedKind::RegistryRead { key, kind } => {
+                use arcweft_id::LifetimeScopeKind;
+                if !matches!(key.scope(), LifetimeScopeKind::Flow | LifetimeScopeKind::Line)
+                    || (kind == crate::effect::RuntimeRegistryReadKind::Optional
+                        && !matches!(self.projection(ty)?, RuntimePlanTypeProjection::Option { .. }))
+                {
+                    return Err(RuntimePlanBuildError::InvalidRegistryRead);
+                }
+                RuntimeExprKind::RegistryRead { key, kind }
+            }
             RuntimeExprSeedKind::Local(local) => {
                 let (local_seed, mode, fields) = local.into_parts();
                 let (local, local_ty) = self.resolve_local(&local_seed)?;
@@ -3002,7 +3012,9 @@ impl RuntimePlanBodyConstruction<'_> {
         used: &mut BTreeSet<RuntimeLocalDeclarationId>,
     ) -> Result<(), RuntimePlanBuildError> {
         match expr.kind() {
-            RuntimeExprKind::Value(_) | RuntimeExprKind::EntityRef(_) => Ok(()),
+            RuntimeExprKind::Value(_)
+            | RuntimeExprKind::EntityRef(_)
+            | RuntimeExprKind::RegistryRead { .. } => Ok(()),
             RuntimeExprKind::Agent(agent) => {
                 for operand in agent.operands() {
                     self.validate_expression_locals(operand, scope, used)?;

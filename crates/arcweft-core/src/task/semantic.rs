@@ -181,6 +181,15 @@ pub(crate) struct TaskSemanticEncoder<'a> {
 }
 
 impl<'a> TaskSemanticEncoder<'a> {
+    pub(crate) fn lifetime_registry_key(&mut self, key: &arcweft_id::LifetimeRegistryKey) {
+        self.string(key.scope().as_str());
+        self.count(key.segments().len());
+        for segment in key.segments() {
+            self.enter_element();
+            self.string(segment.as_str());
+        }
+    }
+
     pub(crate) fn encoded_bytes(&self) -> u64 {
         self.hasher.count()
     }

@@ -1936,6 +1936,9 @@ impl<'a> PureEvaluator<'a> {
                 .ok_or(RuntimeEvalError::AffineLiteralCopy),
             RuntimeExprKind::Agent(agent) => self.evaluate_agent_expr(agent),
             RuntimeExprKind::Local(read) => self.evaluate_local(read),
+            RuntimeExprKind::RegistryRead { .. } => {
+                Err(RuntimeEvalError::RegistryReadContextRequired)
+            }
             RuntimeExprKind::ArrayFromVec { value } => {
                 let value = self.evaluate_expr(value)?;
                 self.env

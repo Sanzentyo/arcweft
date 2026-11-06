@@ -127,9 +127,20 @@ struct RegistryEntry {
 
 /// The enclosing activation grants access. This inert data can survive a
 /// private checkpoint or public AWBC save without becoming an active lease.
-#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(transparent)]
-pub(crate) struct RuntimeScopeRegistry(Vec<RegistryEntry>);
+pub(crate) struct RuntimeScopeRegistry(Arc<Vec<RegistryEntry>>);
+
+impl Clone for RuntimeScopeRegistry {
+    fn clone(&self) -> Self {
+        // Snapshots remain independent owners. Only a live read view shares
+        // the table allocation, and writes require that view to have ended.
+        Self(Arc::new(self.0.as_ref().clone()))
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub(crate) struct RuntimeScopeRegistryReadView(Arc<Vec<RegistryEntry>>);
 
 impl RuntimeScopeRegistry {
     pub(crate) fn is_empty(&self) -> bool {
@@ -137,14 +148,31 @@ impl RuntimeScopeRegistry {
     }
 
     pub(crate) fn clear(&mut self) {
-        self.0.clear();
+        Arc::get_mut(&mut self.0)
+            .expect("registry reads finish before scope release")
+            .clear();
     }
 
+    pub(crate) fn read_view(&self) -> RuntimeScopeRegistryReadView {
+        RuntimeScopeRegistryReadView(Arc::clone(&self.0))
+    }
     /// Copies a reached row after admitting the full future value under the
     /// reader's result type and original invocation. Optional absence still
     /// requires the reached scope and admits a canonical Option::None.
     pub(crate) fn read(
         &self,
+        owner: RuntimeRegistryOwner,
+        key: &LifetimeRegistryKey,
+        kind: RuntimeRegistryReadKind,
+        expected: RuntimeSemanticTypeId,
+        binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
+        Self::read_rows(&self.0, owner, key, kind, expected, binding, admission)
+    }
+
+    fn read_rows(
+        rows: &[RegistryEntry],
         owner: RuntimeRegistryOwner,
         key: &LifetimeRegistryKey,
         kind: RuntimeRegistryReadKind,
@@ -158,9 +186,9 @@ impl RuntimeScopeRegistry {
                 "registry address does not select this activation",
             ));
         }
-        let row = match self.0.binary_search_by(|entry| entry.row.key.cmp(key)) {
+        let row = match rows.binary_search_by(|entry| entry.row.key.cmp(key)) {
             Ok(index) => {
-                let entry = &self.0[index];
+                let entry = &rows[index];
                 entry
                     .source
                     .admit(owner, key, entry.row.expected, admission)?;
@@ -213,9 +241,10 @@ impl RuntimeScopeRegistry {
         &mut self,
         position: Result<usize, usize>,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        let rows = Arc::get_mut(&mut self.0)
+            .ok_or_else(|| invalid_registry("registry write overlaps a live read view"))?;
         if position.is_err() {
-            self.0
-                .try_reserve(1)
+            rows.try_reserve(1)
                 .map_err(|_| invalid_registry("registry allocation failed"))?;
         }
         Ok(())
@@ -231,9 +260,10 @@ impl RuntimeScopeRegistry {
             source,
             row: Arc::new(update.row),
         };
+        let rows = Arc::get_mut(&mut self.0).expect("the prepared write owns its registry");
         match position {
-            Ok(index) => self.0[index] = entry,
-            Err(index) => self.0.insert(index, entry),
+            Ok(index) => rows[index] = entry,
+            Err(index) => rows.insert(index, entry),
         }
     }
 
@@ -242,10 +272,18 @@ impl RuntimeScopeRegistry {
         owner: RuntimeRegistryOwner,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
-        admission.validate_metadata_collection(self.0.len())?;
+        Self::admit_rows(&self.0, owner, admission)
+    }
+
+    fn admit_rows(
+        rows: &[RegistryEntry],
+        owner: RuntimeRegistryOwner,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        admission.validate_metadata_collection(rows.len())?;
         let scope = owner.scope();
         let mut previous = None;
-        for entry in &self.0 {
+        for entry in rows {
             let key = &entry.row.key;
             if key.scope() != &scope || previous.is_some_and(|prior| prior >= key) {
                 return Err(invalid_registry("invalid registry key order or selector"));
@@ -257,6 +295,28 @@ impl RuntimeScopeRegistry {
             previous = Some(key);
         }
         Ok(())
+    }
+}
+
+impl RuntimeScopeRegistryReadView {
+    pub(crate) fn read(
+        &self,
+        owner: RuntimeRegistryOwner,
+        key: &LifetimeRegistryKey,
+        kind: RuntimeRegistryReadKind,
+        expected: RuntimeSemanticTypeId,
+        binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
+        RuntimeScopeRegistry::read_rows(&self.0, owner, key, kind, expected, binding, admission)
+    }
+
+    pub(crate) fn admit_retained(
+        &self,
+        owner: RuntimeRegistryOwner,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        RuntimeScopeRegistry::admit_rows(&self.0, owner, admission)
     }
 }
 

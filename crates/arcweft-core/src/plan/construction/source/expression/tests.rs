@@ -108,6 +108,96 @@ fn external_source_admission_rejects_layouts_that_do_not_match_original_argument
 }
 
 #[test]
+fn registry_read_sources_preserve_the_key_mode_and_result_type() {
+    use crate::effect::RuntimeRegistryReadKind::{Optional, Required};
+    use arcweft_id::{DeclarationName, LifetimeRegistryKey, LifetimeScopeKind};
+
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(ty(1), RuntimePlanTypeProjection::Bool),
+                RuntimePlanTypeSeed::new(
+                    ty(2),
+                    RuntimePlanTypeProjection::Tuple(Box::new([ty(1)])),
+                ),
+                RuntimePlanTypeSeed::new(
+                    ty(3),
+                    RuntimePlanTypeProjection::Option {
+                        item: ty(1),
+                        some_payload: ty(2),
+                    },
+                ),
+            ],
+            [],
+        )
+        .unwrap();
+    let key = |scope| {
+        LifetimeRegistryKey::new(
+            scope,
+            ["flags", "既読"]
+                .into_iter()
+                .map(|name| DeclarationName::try_new(name).unwrap())
+                .collect(),
+        )
+    };
+    for (scope, kind) in [
+        (LifetimeScopeKind::Flow, Optional),
+        (LifetimeScopeKind::Global, Required),
+    ] {
+        assert!(matches!(
+            builder.lower_expression(seed(
+                1,
+                RuntimeExprSeedKind::RegistryRead {
+                    key: key(scope),
+                    kind
+                }
+            )),
+            Err(RuntimePlanBuildError::InvalidRegistryRead)
+        ));
+    }
+    let cases = [
+        (1, LifetimeScopeKind::Flow, Required),
+        (3, LifetimeScopeKind::Line, Optional),
+    ];
+    let expressions = cases.each_ref().map(|(ty, scope, kind)| {
+        builder
+            .lower_expression(seed(
+                *ty,
+                RuntimeExprSeedKind::RegistryRead {
+                    key: key(scope.clone()),
+                    kind: *kind,
+                },
+            ))
+            .unwrap()
+    });
+    let plan = builder.finish().unwrap();
+    let (mut source, _) = source(&plan);
+    for (expr, (tag, scope, kind)) in expressions.iter().zip(cases) {
+        let restored = decode(expr, &plan, &mut source, &empty_handles());
+        assert_eq!(restored.ty(), ty(tag));
+        assert!(
+            matches!(restored.kind(), RuntimeExprSeedKind::RegistryRead { key: read, kind: mode }
+            if read == &key(scope) && *mode == kind)
+        );
+
+        let encoded = expr
+            .encode_sources(limits(&plan), &resources(), &mut meter())
+            .unwrap();
+        let bytes = encoded.bytes();
+        assert!(
+            RuntimeExpr::preflight_sources(
+                &bytes[..bytes.len() - 1],
+                limits(&plan),
+                &resources(),
+                &mut meter(),
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
 fn array_from_vec_source_round_trip_preserves_exact_type_and_runtime_length_check() {
     for length in [0, 2] {
         let mut builder = RuntimePlanBuilder::new();

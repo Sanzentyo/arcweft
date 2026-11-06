@@ -328,6 +328,23 @@ impl Decoder<'_, '_> {
                 let fields = self.fields(&mut r)?;
                 K::Local(RuntimeLocalReadSeed::new_place(local, mode, fields))
             }
+            38 => {
+                use crate::effect::RuntimeRegistryReadKind;
+                let kind = if r.boolean()? {
+                    RuntimeRegistryReadKind::Optional
+                } else {
+                    RuntimeRegistryReadKind::Required
+                };
+                let scope = arcweft_id::LifetimeScopeKind::parse(r.string()?)?;
+                let count = r.count()?;
+                let segments = (0..count)
+                    .map(|_| Ok(arcweft_id::DeclarationName::try_new(r.string()?)?))
+                    .collect::<Result<Box<[_]>, Error>>()?;
+                K::RegistryRead {
+                    key: arcweft_id::LifetimeRegistryKey::new(scope, segments),
+                    kind,
+                }
+            }
             3 => K::SequencePopFront {
                 place: self.place(&mut r)?,
             },

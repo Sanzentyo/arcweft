@@ -313,6 +313,7 @@ impl<'a> Iterator for RuntimeExpressionChildren<'a> {
             N::Expression(node) => match node.kind() {
                 RuntimeExprKind::Value(_)
                 | RuntimeExprKind::Local(_)
+                | RuntimeExprKind::RegistryRead { .. }
                 | RuntimeExprKind::SequencePopFront { .. }
                 | RuntimeExprKind::SequencePopBack { .. }
                 | RuntimeExprKind::EntityRef(_) => None,

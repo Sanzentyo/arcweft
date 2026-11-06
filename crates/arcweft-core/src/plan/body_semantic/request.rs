@@ -513,9 +513,10 @@ impl OriginalRequestEndpoint<'_> {
                     RuntimeRequestValueSource::Projection
                 }
                 Expr::Local(read) => self.request_local_source(meter, read.local())?,
-                Expr::Field { .. } | Expr::ProjectTuple { .. } | Expr::ProjectRecord { .. } => {
-                    RuntimeRequestValueSource::Projection
-                }
+                Expr::Field { .. }
+                | Expr::ProjectTuple { .. }
+                | Expr::ProjectRecord { .. }
+                | Expr::RegistryRead { .. } => RuntimeRequestValueSource::Projection,
                 Expr::Tuple(_)
                 | Expr::BracketSeq(_)
                 | Expr::RepeatSeq { .. }

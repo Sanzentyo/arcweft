@@ -37,7 +37,9 @@ use crate::presentation::{
     RuntimeStageCommandOutcome, RuntimeVoiceCommandOutcome,
 };
 use crate::pure::RuntimeCallBackend;
-use crate::runtime_id::{RuntimeDeferSiteId, RuntimeLineHandleToken, RuntimePlanTypeId};
+use crate::runtime_id::{
+    DialogueActivationId, RuntimeDeferSiteId, RuntimeLineHandleToken, RuntimePlanTypeId,
+};
 use crate::value::RuntimeExprKind;
 use crate::value::ownership::RuntimeOwnedSlotId;
 use thiserror::Error;
@@ -935,8 +937,15 @@ impl Engine {
                 );
             }
             let before = self.activation_local_handle_owners(frame)?;
-            let staged =
-                self.step_dialogue_execution(frame, None, input, events, pure_backend, None)?;
+            let staged = self.step_dialogue_execution(
+                frame,
+                (&activation_id, activation),
+                None,
+                input,
+                events,
+                pure_backend,
+                None,
+            )?;
             self.commit_activation_assignment_discards(&activation_id, frame, activation, &before)?;
             return Ok(DialogueActivationStep::Execution(staged));
         }
@@ -1075,13 +1084,20 @@ impl Engine {
                 )?;
             }
             FlowOp::HostCall { binding, target } => {
-                let (args, named_args) = {
-                    std::mem::swap(&mut self.fiber.frame.env, &mut frame.execution.env);
-                    let evaluated = self.evaluate_host_call_arguments(&target.args, pure_backend);
-                    std::mem::swap(&mut self.fiber.frame.env, &mut frame.execution.env);
-                    evaluated
-                        .map_err(|message| DialogueExecutionError::HostCallFailed { message })?
-                };
+                let (args, named_args) = self
+                    .with_activation_registry_reads(
+                        activation_id,
+                        frame.parent,
+                        activation.line_registry()?,
+                        |this| {
+                            std::mem::swap(&mut this.fiber.frame.env, &mut frame.execution.env);
+                            let result =
+                                this.evaluate_host_call_arguments(&target.args, pure_backend);
+                            std::mem::swap(&mut this.fiber.frame.env, &mut frame.execution.env);
+                            result
+                        },
+                    )
+                    .map_err(|message| DialogueExecutionError::HostCallFailed { message })?;
                 for value in args
                     .iter()
                     .chain(named_args.iter().map(|argument| &argument.value))
@@ -1148,7 +1164,12 @@ impl Engine {
                 )?;
             }
             FlowOp::CommitDialogueResult { value } => {
-                let value = self.evaluate_dialogue_expr(frame, value, pure_backend)?;
+                let value = self.evaluate_dialogue_expr(
+                    frame,
+                    (&activation_id, activation),
+                    value,
+                    pure_backend,
+                )?;
                 self.stage_dialogue_result(frame, activation, value)?;
                 frame.exiting_for_result = true;
             }
@@ -1204,6 +1225,7 @@ impl Engine {
                     .ok_or(LineRuntimeError::InvalidActivationOperation)?;
                 let staged = self.step_dialogue_execution(
                     frame,
+                    (&activation_id, activation),
                     Some((operation, source)),
                     input,
                     events,
@@ -1238,6 +1260,7 @@ impl Engine {
     fn step_dialogue_execution(
         &mut self,
         frame: &mut DialogueActivationFrame,
+        activation: (&DialogueActivationId, &NativeDialogueActivationState),
         operation: Option<(&FlowOp, super::code_cursor::NativeSourceOperation)>,
         input: &mut super::RuntimeStepInput,
         events: &[super::TaskEvent],
@@ -1246,34 +1269,41 @@ impl Engine {
     ) -> Result<RuntimeStepOutput, DialogueExecutionError> {
         let mut staged = RuntimeStepOutput::default();
         let mut drop_policy = None;
-        std::mem::swap(&mut self.fiber.frame, &mut frame.execution);
-        let line_registry = line_registry.map(|execution| {
-            super::registry::NativeLineRegistryExecution::Activation(
-                super::registry::NativeActivationRegistryExecution {
-                    parent_rows: frame.execution.env.flow_registry(),
-                    ..execution
-                },
-            )
-        });
-        if let Some((operation, source)) = operation {
-            self.execute_flow_operation(
-                std::borrow::Cow::Borrowed(operation),
-                source,
-                None,
-                &mut staged,
-                pure_backend,
-                &mut drop_policy,
-                line_registry,
-            );
-        } else if !self.resume_suspended(input, events, &mut staged, pure_backend) {
-            self.step_flow_with_line_registry(
-                &mut staged,
-                pure_backend,
-                &mut drop_policy,
-                line_registry,
-            );
-        }
-        std::mem::swap(&mut self.fiber.frame, &mut frame.execution);
+        self.with_activation_registry_reads(
+            *activation.0,
+            frame.parent,
+            activation.1.line_registry()?,
+            |this| {
+                std::mem::swap(&mut this.fiber.frame, &mut frame.execution);
+                let line_registry = line_registry.map(|execution| {
+                    super::registry::NativeLineRegistryExecution::Activation(
+                        super::registry::NativeActivationRegistryExecution {
+                            parent_rows: frame.execution.env.flow_registry(),
+                            ..execution
+                        },
+                    )
+                });
+                if let Some((operation, source)) = operation {
+                    this.execute_flow_operation(
+                        std::borrow::Cow::Borrowed(operation),
+                        source,
+                        None,
+                        &mut staged,
+                        pure_backend,
+                        &mut drop_policy,
+                        line_registry,
+                    );
+                } else if !this.resume_suspended(input, events, &mut staged, pure_backend) {
+                    this.step_flow_with_line_registry(
+                        &mut staged,
+                        pure_backend,
+                        &mut drop_policy,
+                        line_registry,
+                    );
+                }
+                std::mem::swap(&mut this.fiber.frame, &mut frame.execution);
+            },
+        );
         frame
             .execution
             .env
@@ -1626,13 +1656,20 @@ impl Engine {
     fn evaluate_dialogue_expr(
         &mut self,
         state: &mut DialogueActivationFrame,
+        activation: (&DialogueActivationId, &NativeDialogueActivationState),
         expression: &crate::value::RuntimeExpr,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        std::mem::swap(&mut self.fiber.frame.env, &mut state.execution.env);
-        let result = self.evaluate_expr_with_backend(expression, pure_backend);
-        std::mem::swap(&mut self.fiber.frame.env, &mut state.execution.env);
-        result
+        let rows = activation
+            .1
+            .line_registry()
+            .map_err(|_| RuntimeEvalError::RegistryReadContextRequired)?;
+        self.with_activation_registry_reads(*activation.0, state.parent, rows, |this| {
+            std::mem::swap(&mut this.fiber.frame.env, &mut state.execution.env);
+            let result = this.evaluate_expr_with_backend(expression, pure_backend);
+            std::mem::swap(&mut this.fiber.frame.env, &mut state.execution.env);
+            result
+        })
     }
 
     fn bind_dialogue_let(
@@ -1644,7 +1681,12 @@ impl Engine {
         expression: &crate::value::RuntimeExpr,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<(), DialogueExecutionError> {
-        let value = self.evaluate_dialogue_expr(frame, expression, pure_backend)?;
+        let value = self.evaluate_dialogue_expr(
+            frame,
+            (activation_id, activation),
+            expression,
+            pure_backend,
+        )?;
         let preconsumed_local = match expression.kind() {
             RuntimeExprKind::Local(read)
                 if read.mode() == crate::value::RuntimeLocalReadMode::Move =>
@@ -1834,8 +1876,12 @@ impl Engine {
                 {
                     return Err(LineRuntimeError::InvalidHandleSite.into());
                 }
-                let RuntimeValue::Duration(delay) =
-                    self.evaluate_dialogue_expr(state, &delay, pure_backend)?
+                let RuntimeValue::Duration(delay) = self.evaluate_dialogue_expr(
+                    state,
+                    (activation_id, activation),
+                    &delay,
+                    pure_backend,
+                )?
                 else {
                     return Err(LineRuntimeError::InvalidCueDelay.into());
                 };
@@ -1846,11 +1892,16 @@ impl Engine {
                 let captures = captures
                     .iter()
                     .map(|capture| {
-                        self.evaluate_dialogue_expr(state, capture.value(), pure_backend)
-                            .map(|value| RuntimeLocalBinding {
-                                local: capture.local(),
-                                value,
-                            })
+                        self.evaluate_dialogue_expr(
+                            state,
+                            (activation_id, activation),
+                            capture.value(),
+                            pure_backend,
+                        )
+                        .map(|value| RuntimeLocalBinding {
+                            local: capture.local(),
+                            value,
+                        })
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 if activation.scheduled().len() >= MAX_LINE_SCHEDULED_CALLBACKS {
@@ -1977,8 +2028,12 @@ impl Engine {
                     return Err(LineRuntimeError::WrongLookOwner.into());
                 }
                 let look = look.clone();
-                let RuntimeValue::Duration(crossfade) =
-                    self.evaluate_dialogue_expr(state, &crossfade, pure_backend)?
+                let RuntimeValue::Duration(crossfade) = self.evaluate_dialogue_expr(
+                    state,
+                    (activation_id, activation),
+                    &crossfade,
+                    pure_backend,
+                )?
                 else {
                     return Err(LineRuntimeError::InvalidCrossfade.into());
                 };
@@ -2730,9 +2785,17 @@ impl Engine {
                 .map_err(|error| failure(error.to_string()))?;
         let result = (|| {
             let (frame, line) = transaction.parts_mut();
-            std::mem::swap(&mut self.fiber.frame, &mut frame.execution);
-            let evaluated = self.evaluate_expr_with_backend(value, pure_backend);
-            std::mem::swap(&mut self.fiber.frame, &mut frame.execution);
+            let evaluated = self.with_activation_registry_reads(
+                id,
+                frame.parent,
+                line.line_registry()?,
+                |this| {
+                    std::mem::swap(&mut this.fiber.frame, &mut frame.execution);
+                    let result = this.evaluate_expr_with_backend(value, pure_backend);
+                    std::mem::swap(&mut this.fiber.frame, &mut frame.execution);
+                    result
+                },
+            );
             let update = prepared
                 .capture(&evaluated?)
                 .map_err(|error| failure(error.to_string()))?;
@@ -2785,6 +2848,7 @@ impl Engine {
             let mut pending = None;
             let staged = self.step_dialogue_execution(
                 frame,
+                (&activation, line),
                 None,
                 input,
                 events,
@@ -2850,7 +2914,14 @@ impl Engine {
             let values = effect
                 .argument_exprs()
                 .into_iter()
-                .map(|expression| self.evaluate_dialogue_expr(state, expression, pure_backend))
+                .map(|expression| {
+                    self.evaluate_dialogue_expr(
+                        state,
+                        (activation_id, activation),
+                        expression,
+                        pure_backend,
+                    )
+                })
                 .collect::<Result<Vec<_>, _>>()?;
             let request = effect.materialize(&values)?;
             if let Some(LineEffectRequest::Wait(crate::effect::RuntimeWaitTarget::Duration(
@@ -2871,8 +2942,12 @@ impl Engine {
             RuntimeDropPolicyExpr::Default => RuntimeDropPolicy::Default,
             RuntimeDropPolicyExpr::Cancel => RuntimeDropPolicy::Cancel,
             RuntimeDropPolicyExpr::Stop { fade } => {
-                let RuntimeValue::Duration(fade) =
-                    self.evaluate_dialogue_expr(state, fade, pure_backend)?
+                let RuntimeValue::Duration(fade) = self.evaluate_dialogue_expr(
+                    state,
+                    (activation_id, activation),
+                    fade,
+                    pure_backend,
+                )?
                 else {
                     return Err(LineRuntimeError::InvalidDropPolicy.into());
                 };
@@ -2897,7 +2972,12 @@ impl Engine {
                 .env
                 .take(local)
                 .ok_or(RuntimeEvalError::UnknownLocal(local))?,
-            None => self.evaluate_dialogue_expr(state, target, pure_backend)?,
+            None => self.evaluate_dialogue_expr(
+                state,
+                (activation_id, activation),
+                target,
+                pure_backend,
+            )?,
         };
         let result = (|| {
             let handles = unique_affine_line_handles(&target)?;
@@ -3307,6 +3387,115 @@ mod tests {
             pending_host_call: None,
             failure: None,
         }
+    }
+
+    #[test]
+    fn inline_dialogue_reads_the_reached_line_and_its_suspended_flow() {
+        use crate::effect::{
+            RuntimeRegistryOwner, RuntimeRegistryReadKind, RuntimeRegistryStateUpdate,
+            RuntimeRegistryWriteSource, RuntimeScopeRegistry,
+        };
+        use crate::entry::RuntimeSchemaLimits;
+        use crate::pattern::RuntimeCheckedType;
+        use crate::task::RuntimeProgramOwner;
+        use crate::value::{RuntimeEnv, RuntimeRetainedValueAdmission};
+        use arcweft_id::{DeclarationName, LifetimeRegistryKey, LifetimeScopeKind};
+
+        let boolean = RuntimeCheckedType::Bool.semantic_identity_digest();
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [RuntimePlanTypeSeed::new(
+                    boolean,
+                    RuntimePlanTypeProjection::Bool,
+                )],
+                [],
+            )
+            .unwrap();
+        let mut engine = Engine::new(builder.finish().unwrap());
+        let ty = engine.plan.type_table().id_for_semantic(boolean).unwrap();
+        let owner = RuntimeProgramOwner::Plan(engine.program_plan());
+        let activation = DialogueActivationId::new(
+            crate::effect::RuntimeArtifactFingerprint::try_from_bytes([0x5e; 32]).unwrap(),
+            engine.fiber.persistent_id,
+            RuntimeDialogueContentPlanId::from_accepted_ordinal(NonZeroU32::MIN),
+            0,
+        );
+        let local = RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN);
+        let mut frame = activation_frame(&engine, local);
+        frame.parent = engine.fiber.id;
+        frame.execution.env = RuntimeEnv::default();
+        engine
+            .dialogue_activations
+            .begin(activation, frame)
+            .unwrap();
+        let mut transaction = engine
+            .dialogue_activations
+            .begin_transaction(&activation)
+            .unwrap();
+        let (frame, line) = transaction.parts_mut();
+        let key = |scope| {
+            LifetimeRegistryKey::new(scope, Box::new([DeclarationName::try_new("flag").unwrap()]))
+        };
+        let flow_key = key(LifetimeScopeKind::Flow);
+        let line_key = key(LifetimeScopeKind::Line);
+        let write =
+            |rows: &mut RuntimeScopeRegistry, key: &LifetimeRegistryKey, scope, source, flag| {
+                let mut admission = RuntimeRetainedValueAdmission::for_program(
+                    owner.clone(),
+                    RuntimeSchemaLimits::engine_default(),
+                );
+                let position = rows
+                    .prepare_write(scope, key, boolean, source, &mut admission)
+                    .unwrap();
+                let update = RuntimeRegistryStateUpdate::try_copy(
+                    key,
+                    boolean,
+                    None,
+                    &RuntimeValue::Bool(flag),
+                    &mut admission,
+                )
+                .unwrap();
+                rows.reserve_write(position).unwrap();
+                rows.commit(position, source, update);
+            };
+        engine.fiber.frame.env.open_flow_registry();
+        write(
+            engine.fiber.frame.env.flow_registry_mut().unwrap(),
+            &flow_key,
+            RuntimeRegistryOwner::NativeFlow,
+            RuntimeRegistryWriteSource::Native,
+            false,
+        );
+        write(
+            line.line_registry_mut().unwrap(),
+            &line_key,
+            RuntimeRegistryOwner::Dialogue(activation),
+            RuntimeRegistryWriteSource::NativeLine { activation },
+            true,
+        );
+
+        let mut backend = VmRuntimePureCallBackend::default();
+        for (key, expected) in [(flow_key, false), (line_key, true)] {
+            let expression = RuntimeExpr::from_admitted_parts(
+                ty,
+                RuntimeExprKind::RegistryRead {
+                    key,
+                    kind: RuntimeRegistryReadKind::Required,
+                },
+            );
+            assert_eq!(
+                engine.evaluate_dialogue_expr(
+                    frame,
+                    (&activation, line),
+                    &expression,
+                    &mut backend
+                ),
+                Ok(RuntimeValue::Bool(expected)),
+            );
+        }
+        assert!(engine.activation_registry_reads.is_none());
+        assert!(frame.execution.env.flow_registry().is_none());
     }
 
     #[test]
@@ -3765,6 +3954,7 @@ mod tests {
         let value = engine
             .evaluate_dialogue_expr(
                 &mut frame,
+                (&id, &line),
                 &incoming_expr,
                 &mut VmRuntimePureCallBackend::default(),
             )

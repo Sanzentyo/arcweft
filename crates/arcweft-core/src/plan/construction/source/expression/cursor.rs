@@ -354,6 +354,32 @@ impl<'a> Cursor<'a> {
                 self.field_array(counts)?;
                 0
             }
+            38 => {
+                use arcweft_id::LifetimeScopeKind;
+
+                self.boolean()?;
+                let scope_start = self.offset;
+                let scope = self.string()?;
+                if scope != LifetimeScopeKind::Flow.as_str()
+                    && scope != LifetimeScopeKind::Line.as_str()
+                {
+                    return Err(Error::Invalid {
+                        kind: "registry read scope",
+                        offset: scope_start,
+                    });
+                }
+                counts.storage(scope.len().checked_mul(2).ok_or(Error::Arithmetic)?)?;
+                let count = self.array(counts, Array::RegistryKey)?;
+                let start = self.offset;
+                for _ in 0..count {
+                    self.text(counts)?;
+                }
+                let mut segments = Self::new(&self.bytes[start..self.offset], self.limits);
+                for _ in 0..count {
+                    arcweft_id::DeclarationName::validate_source(segments.string()?)?;
+                }
+                0
+            }
             3 | 5 => {
                 self.place(counts)?;
                 0

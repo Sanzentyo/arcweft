@@ -832,6 +832,7 @@ fn scalar_completion_expr_is_total(plan: &RuntimePlan, value: &RuntimeExpr, dept
                 })
         }
         RuntimeExprKind::Agent(_)
+        | RuntimeExprKind::RegistryRead { .. }
         | RuntimeExprKind::SequencePopFront { .. }
         | RuntimeExprKind::SequencePush { .. }
         | RuntimeExprKind::SequencePopBack { .. }

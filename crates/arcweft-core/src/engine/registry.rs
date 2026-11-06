@@ -1,17 +1,30 @@
-//! Native registry writes at the original executable operation.
+//! Native reads and writes on the registry of the reached execution scope.
 
 use super::audio::RuntimeEffectExecutionError;
 use super::code_cursor::NativeSourceOperation;
 use super::{Engine, FlowFiberId};
 use crate::effect::{
     RuntimeEffectExpr, RuntimeEffectMaterializeError, RuntimeRegistryOwner,
-    RuntimeRegistryStateUpdate, RuntimeRegistryWriteSource,
+    RuntimeRegistryReadKind, RuntimeRegistryStateUpdate, RuntimeRegistryWriteSource,
+    RuntimeScopeRegistry, RuntimeScopeRegistryReadView,
 };
 use crate::plan::FlowOp;
 use crate::pure::RuntimeCallBackend;
+use crate::runtime_id::{DialogueActivationId, RuntimePlanTypeId};
 use crate::task::RuntimeProgramOwner;
-use crate::value::{RuntimeRetainedValueAdmission, RuntimeScopeFunctionContext};
-use arcweft_id::{EffectId, LifetimeScopeKind};
+use crate::value::{
+    RuntimeEvalError, RuntimeRetainedValueAdmission, RuntimeScopeFunctionContext, RuntimeValue,
+};
+use arcweft_id::{EffectId, LifetimeRegistryKey, LifetimeScopeKind};
+
+/// A read-only view of the original scopes while the activation transaction
+/// owns the line and the execution frame has been temporarily switched.
+#[derive(Debug, PartialEq)]
+pub(super) struct NativeActivationRegistryReads {
+    activation: DialogueActivationId,
+    line: RuntimeScopeRegistryReadView,
+    parent: Option<RuntimeScopeRegistryReadView>,
+}
 
 #[derive(Clone, Copy)]
 pub(super) enum NativeDialogueRegistryTarget {
@@ -66,6 +79,127 @@ struct NativeLineRegistryOperands<'plan> {
 }
 
 impl Engine {
+    pub(super) fn with_activation_registry_reads<T>(
+        &mut self,
+        activation: DialogueActivationId,
+        parent: FlowFiberId,
+        line: &RuntimeScopeRegistry,
+        run: impl FnOnce(&mut Self) -> T,
+    ) -> T {
+        let parent = self
+            .dialogue_parent_flow_registry(parent, activation)
+            .map(RuntimeScopeRegistry::read_view);
+        let previous = self
+            .activation_registry_reads
+            .replace(NativeActivationRegistryReads {
+                activation,
+                line: line.read_view(),
+                parent,
+            });
+        let result = run(self);
+        self.activation_registry_reads = previous;
+        result
+    }
+
+    pub(super) fn read_registry_value(
+        &self,
+        key: &LifetimeRegistryKey,
+        kind: RuntimeRegistryReadKind,
+        ty: RuntimePlanTypeId,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let owner = RuntimeProgramOwner::Plan(self.plan.clone());
+        if !self.fiber.frame.program.same_program(&owner) {
+            return Err(RuntimeEvalError::RegistryReadContextRequired);
+        }
+        let expected = self
+            .plan
+            .type_table()
+            .get(ty)
+            .ok_or(RuntimeEvalError::RegistryReadContextRequired)?
+            .semantic_identity();
+        let binding = self.fiber.frame.env.function_instantiation();
+        let mut admission = RuntimeRetainedValueAdmission::for_program(
+            owner,
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        let invalid = |cause| RuntimeEvalError::RegistryReadAdmission(Box::new(cause));
+        if let Some(activation) = &self.activation_registry_reads {
+            // During inline execution the activation environment is installed
+            // temporarily. Its enclosing suspended frame is not the current
+            // environment's owner, so admit the actual execution values and
+            // the detached registry owners together.
+            self.fiber
+                .frame
+                .env
+                .admit_retained(&mut admission)
+                .map_err(invalid)?;
+            activation
+                .line
+                .admit_retained(
+                    RuntimeRegistryOwner::Dialogue(activation.activation),
+                    &mut admission,
+                )
+                .map_err(invalid)?;
+            if let Some(parent) = &activation.parent {
+                parent
+                    .admit_retained(RuntimeRegistryOwner::NativeFlow, &mut admission)
+                    .map_err(invalid)?;
+            }
+            let reached = match key.scope() {
+                LifetimeScopeKind::Line => Some((
+                    &activation.line,
+                    RuntimeRegistryOwner::Dialogue(activation.activation),
+                )),
+                LifetimeScopeKind::Flow if self.fiber.frame.env.flow_registry().is_none() => {
+                    activation
+                        .parent
+                        .as_ref()
+                        .map(|parent| (parent, RuntimeRegistryOwner::NativeFlow))
+                }
+                _ => None,
+            };
+            if let Some((rows, owner)) = reached {
+                return rows
+                    .read(owner, key, kind, expected, binding, &mut admission)
+                    .map_err(invalid);
+            }
+            if self.fiber.frame.env.flow_registry().is_none() {
+                return Err(RuntimeEvalError::RegistryReadContextRequired);
+            }
+        } else {
+            self.admit_live_retained_values(&mut admission)
+                .map_err(invalid)?;
+        }
+        let activation = self.fiber.owner.dialogue_activation().copied();
+        let (rows, reached_owner) = match key.scope() {
+            LifetimeScopeKind::Flow => {
+                let flow = self.fiber.frame.env.flow_registry().or_else(|| {
+                    let activation = activation?;
+                    let parent = self.dialogue_activations.active_parent(&activation)?;
+                    self.dialogue_parent_flow_registry(parent, activation)
+                });
+                (flow, RuntimeRegistryOwner::NativeFlow)
+            }
+            LifetimeScopeKind::Line => {
+                let activation = activation.ok_or(RuntimeEvalError::RegistryReadContextRequired)?;
+                let line = self
+                    .dialogue_activations
+                    .active_line(&activation)
+                    .ok_or(RuntimeEvalError::RegistryReadContextRequired)?;
+                line.admit_retained_resources(Some(activation), &mut admission)
+                    .map_err(invalid)?;
+                (
+                    line.line_registry().ok(),
+                    RuntimeRegistryOwner::Dialogue(activation),
+                )
+            }
+            _ => return Err(RuntimeEvalError::RegistryReadContextRequired),
+        };
+        rows.ok_or(RuntimeEvalError::RegistryReadContextRequired)?
+            .read(reached_owner, key, kind, expected, binding, &mut admission)
+            .map_err(invalid)
+    }
+
     pub(super) fn dialogue_parent_flow_registry(
         &self,
         parent: FlowFiberId,
@@ -466,11 +600,17 @@ mod tests {
                         ),
                         RuntimeFlowOpSeed::EvaluatedEffect(
                             RuntimeEvaluatedEffectSeed::RegistryWrite {
-                                key,
+                                key: key.clone(),
                                 value: value(false),
                             },
                         ),
-                        RuntimeFlowOpSeed::ReturnExpr(value(false)),
+                        RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                            boolean,
+                            RuntimeExprSeedKind::RegistryRead {
+                                key,
+                                kind: RuntimeRegistryReadKind::Required,
+                            },
+                        )),
                     ]),
                 },
             ))
@@ -496,6 +636,10 @@ mod tests {
         }
         let step = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
         assert_eq!(step.stop_reason, crate::step::RuntimeStepStopReason::Done);
+        assert_eq!(
+            engine.fiber.frame.status,
+            crate::engine::FlowFiberStatus::Done(crate::engine::FlowExit::Return("false".into()))
+        );
         assert!(engine.fiber.frame.env.flow_registry().is_none());
     }
 

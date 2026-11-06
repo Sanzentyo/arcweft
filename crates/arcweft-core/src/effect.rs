@@ -12,7 +12,10 @@ pub use assertion_identity::{
     RuntimeArtifactFingerprint, RuntimeAssertionGuardId, RuntimeIdentityDecodeError,
 };
 pub(crate) use registry::RuntimePreparedRegistryWrite;
-pub(crate) use registry::{RuntimeRegistryOwner, RuntimeRegistryWriteSource, RuntimeScopeRegistry};
+pub(crate) use registry::{
+    RuntimeRegistryOwner, RuntimeRegistryWriteSource, RuntimeScopeRegistry,
+    RuntimeScopeRegistryReadView,
+};
 pub use registry::{RuntimeRegistryReadKind, RuntimeRegistryStateUpdate};
 pub(crate) use registry::{RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJournalError};
 
@@ -827,12 +830,7 @@ impl RuntimeEffectExpr {
                 }
             }
             Self::RegistryWrite { key, .. } => {
-                encoder.string(key.scope().as_str());
-                encoder.count(key.segments().len());
-                for segment in key.segments() {
-                    encoder.enter_element();
-                    encoder.string(segment.as_str());
-                }
+                encoder.lifetime_registry_key(key);
             }
             Self::Drop { policy, .. } => encoder.tag(match policy {
                 RuntimeDropPolicyExpr::Default => 0,

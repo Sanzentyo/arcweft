@@ -295,6 +295,16 @@ impl Sink<'_, '_> {
                 self.byte(read.mode().semantic_tag())?;
                 self.fields(read.fields())?;
             }
+            K::RegistryRead { key, kind } => {
+                self.byte(u8::from(
+                    *kind == crate::effect::RuntimeRegistryReadKind::Optional,
+                ))?;
+                self.text(key.scope().as_str())?;
+                self.array(key.segments().len(), Array::RegistryKey)?;
+                for segment in key.segments() {
+                    self.text(segment.as_str())?;
+                }
+            }
             K::SequencePopFront { place }
             | K::SequencePopBack { place }
             | K::SequencePush { place, .. } => self.place(place)?,

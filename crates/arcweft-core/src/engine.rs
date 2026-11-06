@@ -144,6 +144,7 @@ pub struct Engine<
     /// The actual main owner remains in the session while a selected child
     /// occupies the execution slot. It participates in admission and rollback.
     parked_main: Option<FlowFiber<F>>,
+    activation_registry_reads: Option<registry::NativeActivationRegistryReads>,
     child_fibers: VecDeque<FlowFiber<F>>,
     next_fiber_id: u64,
     next_scheduled_scope_sequence: u64,
@@ -210,6 +211,7 @@ impl Clone for NativeEngineRollbackImage {
             root: self.root.clone(),
             fiber: self.fiber.clone(),
             parked_main: self.parked_main.clone(),
+            activation_registry_reads: None,
             child_fibers: self.child_fibers.clone(),
             next_fiber_id: self.next_fiber_id,
             next_scheduled_scope_sequence: self.next_scheduled_scope_sequence,
@@ -2161,6 +2163,7 @@ impl Engine {
                 .as_ref()
                 .map(|fiber| fiber.snapshot_with_admitted_values(&owner))
                 .transpose()?,
+            activation_registry_reads: None,
             child_fibers: self
                 .child_fibers
                 .iter()
@@ -2253,6 +2256,7 @@ impl Engine {
                 .parked_main
                 .map(|fiber| FlowFiber::from_rollback_image(fiber, owner))
                 .transpose()?,
+            activation_registry_reads: None,
             child_fibers: image
                 .child_fibers
                 .into_iter()
@@ -2423,6 +2427,7 @@ impl Engine {
             child_fibers: VecDeque::new(),
             next_fiber_id: 1,
             parked_main: None,
+            activation_registry_reads: None,
             next_scheduled_scope_sequence: 1,
             dialogue_occurrences: BTreeMap::new(),
             dialogue_activations: dialogue::DialogueActivationStore::default(),

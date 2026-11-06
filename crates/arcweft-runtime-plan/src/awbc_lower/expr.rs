@@ -73,6 +73,17 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                     .push_instruction(AwbcInstruction::LoadConst { dst, constant });
                 dst
             }
+            RuntimeExprKind::RegistryRead { key, kind } => {
+                let ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
+                let dst = self.frame.temp(ty);
+                self.inventory
+                    .push_instruction(AwbcInstruction::ReadRegistry {
+                        dst,
+                        key: key.clone(),
+                        kind: *kind,
+                    });
+                dst
+            }
             RuntimeExprKind::Local(read) => {
                 let source = self.frame.register_for_local(read.local()).unwrap_or_else(|| {
                     panic!(

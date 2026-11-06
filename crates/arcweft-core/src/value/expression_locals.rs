@@ -72,7 +72,9 @@ impl RuntimeExpr {
         locals: &mut Vec<FreeLocalUse>,
     ) -> Result<(), RuntimeExprFreeLocalError> {
         match self.kind() {
-            RuntimeExprKind::Value(_) | RuntimeExprKind::EntityRef(_) => {}
+            RuntimeExprKind::Value(_)
+            | RuntimeExprKind::EntityRef(_)
+            | RuntimeExprKind::RegistryRead { .. } => {}
             RuntimeExprKind::Agent(agent) => {
                 for operand in agent.operands() {
                     operand.collect_evaluation_free_locals(plan, bound, locals)?;

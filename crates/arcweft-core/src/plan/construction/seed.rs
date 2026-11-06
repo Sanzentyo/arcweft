@@ -2331,6 +2331,10 @@ pub enum RuntimeExprSeedKind {
     Value(RuntimeValue),
     Agent(RuntimeAgentExprSeed),
     Local(RuntimeLocalReadSeed),
+    RegistryRead {
+        key: arcweft_id::LifetimeRegistryKey,
+        kind: crate::effect::RuntimeRegistryReadKind,
+    },
     /// Removes the first item from an exact admitted Vec place and returns `Option<T>`.
     SequencePopFront {
         place: RuntimeMutablePlaceSeed,
@@ -2735,7 +2739,9 @@ impl RuntimeExprSeed {
         locals: &mut Vec<RuntimeLocalSeedId>,
     ) {
         match self.kind() {
-            RuntimeExprSeedKind::Value(_) | RuntimeExprSeedKind::EntityRef(_) => {}
+            RuntimeExprSeedKind::Value(_)
+            | RuntimeExprSeedKind::EntityRef(_)
+            | RuntimeExprSeedKind::RegistryRead { .. } => {}
             RuntimeExprSeedKind::Function { captures, .. }
             | RuntimeExprSeedKind::MakeCallable { captures, .. } => {
                 collect_expr_free_locals(captures, bound, locals);

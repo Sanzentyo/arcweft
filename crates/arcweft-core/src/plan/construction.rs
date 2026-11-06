@@ -183,6 +183,10 @@ pub enum RuntimePlanBuildError {
     Poisoned,
     #[error("internal flow construction invariant failed: {context}")]
     FlowLoweringInvariant { context: &'static str },
+    #[error(
+        "registry read requires a reached Flow or Line scope, with an Option result for optional access"
+    )]
+    InvalidRegistryRead,
     #[error("guard Copy obligations are attached to an expression outside a pattern guard")]
     GuardCopyRequirementOutsideGuard,
     #[error("guard Copy local {local} is not bound by the selected pattern")]

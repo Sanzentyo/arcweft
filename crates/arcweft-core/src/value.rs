@@ -2177,6 +2177,12 @@ pub enum RuntimeExprKind {
     Value(RuntimeValue),
     Agent(RuntimeAgentExpr),
     Local(RuntimeLocalRead),
+    /// Reads an unrestricted value from the reached registry. The enclosing
+    /// expression owns the checked result type, including `Option` for an optional read.
+    RegistryRead {
+        key: arcweft_id::LifetimeRegistryKey,
+        kind: crate::effect::RuntimeRegistryReadKind,
+    },
     /// Removes the first item from an admitted Vec place and returns `Option<T>`.
     SequencePopFront {
         place: RuntimeMutablePlace,
@@ -2436,6 +2442,7 @@ impl RuntimeExpr {
             | RuntimeExprKind::BracketSeq(_)
             | RuntimeExprKind::RepeatSeq { .. }
             | RuntimeExprKind::ArrayFromVec { .. }
+            | RuntimeExprKind::RegistryRead { .. }
             | RuntimeExprKind::Range { .. }
             | RuntimeExprKind::NominalRecord(_)
             | RuntimeExprKind::Variant { .. }
@@ -2467,6 +2474,16 @@ impl fmt::Display for RuntimeExpr {
             RuntimeExprKind::Value(value) => f.write_str(&runtime_value_label(value)),
             RuntimeExprKind::Agent(agent) => write!(f, "agent/{:?}", agent.constructor()),
             RuntimeExprKind::Local(read) => write!(f, "local#{}", read.local()),
+            RuntimeExprKind::RegistryRead { key, kind } => {
+                write!(f, "'{}", key.scope().as_str())?;
+                for segment in key.segments() {
+                    write!(f, ".{}", segment.as_str())?;
+                }
+                if *kind == crate::effect::RuntimeRegistryReadKind::Optional {
+                    f.write_str("?")?;
+                }
+                Ok(())
+            }
             RuntimeExprKind::SequencePopFront { place } => match place {
                 RuntimeMutablePlace::Local(local) => {
                     write!(f, "vec_pop_front/local#{local}")
@@ -2807,6 +2824,10 @@ pub enum RuntimeEvalError {
         #[source]
         source: Box<AwbcRuntimeValueSnapshotError>,
     },
+    #[error("registry read has no reached execution scope")]
+    RegistryReadContextRequired,
+    #[error("registry read admission failed: {0}")]
+    RegistryReadAdmission(#[source] Box<AwbcRuntimeValueSnapshotError>),
     #[error(transparent)]
     RootRuntime(Box<crate::root::RootRuntimeError>),
     #[error(transparent)]
@@ -4456,6 +4477,7 @@ impl RuntimeExprKind {
             Self::Match { .. } => 34,
             Self::ReductionUnchanged { .. } => 35,
             Self::ArrayFromVec { .. } => 36,
+            Self::RegistryRead { .. } => 38,
             Self::PresentationHandleMethod { .. } => 37,
         }
     }
