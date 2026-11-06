@@ -3092,5 +3092,42 @@
         ]
       }
     }
+  },
+  "flowRegistryConsumers": {
+    "source": "5deb88741e1f64df26ac08bc5a536f0a6063cd80",
+    "testedHead": "f729c1310b6fd1269a7be15a6280eec7bc5590ce",
+    "terminalAt": "2026-11-06T03:55:51.0797824Z",
+    "graphPackages": 53,
+    "graphPins": 101,
+    "sourceInputs": 4130,
+    "batches": 41,
+    "executed": 7873.0,
+    "passed": 7866.0,
+    "failed": 7.0,
+    "skipped": 41.0,
+    "catalogCaseDrift": 0,
+    "sourceDrift": 0,
+    "reused": [
+      "flow-registry-core-owner-final-20261106",
+      "flow-registry-compiler-owner-final-20261106"
+    ],
+    "noMatchingNativeCases": [],
+    "identicalPreviouslyObservedCliFailures": [
+      "arcweft-cli::check::agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering",
+      "arcweft-cli::check::spec_rejected_edge_fixtures_fail_with_diagnostics",
+      "arcweft-cli::check::spec_valid_run_edge_fixture_now_executes",
+      "arcweft-cli::check::unsafe_json_lists_audit_regions",
+      "arcweft-cli::check::verify_json_records_required_solver_checks",
+      "arcweft-cli::check::verify_json_reports_missing_promotion_proof",
+      "arcweft-cli::check::verify_json_respects_semantic_defer_cancel_discharge"
+    ],
+    "rawArchive": {
+      "path": "task-flow-registry-reverse.raw.zip",
+      "sha256": "ecb507ccbed14797d38d0b4c2ee85f91085f28a89c6f579189f936ef2df0798b",
+      "bytes": 10987770,
+      "entries": 334,
+      "entryDrift": 0,
+      "inventory": "flow-registry-reverse-20261106.archive-entries.json"
+    }
   }
 }
