@@ -14410,7 +14410,7 @@
         "arcweft-verify-oxiz",
         "arcweft-verify-z3"
       ],
-      "terminalRuntime": "pending"
+      "terminalRuntime": "catalog-failed"
     },
     "rawArchive": {
       "path": "docs/implementation/acceptance-evidence/task-registry-generic-read-owner.raw.zip",
@@ -14440,6 +14440,106 @@
           "entry": "generic-registry-read-option-20261107.verified.json",
           "bytes": 852,
           "sha256": "227b193fc5dcd4aaa9fc273132138695a3cad098b82ce9066f2909a4d5ae397f"
+        }
+      ]
+    }
+  },
+  "genericRegistryReadReverseCatalogFailure": {
+    "source": "b43b1b3644b4ae73642b216f27e3d9b4a07707f8",
+    "selectedPackages": 22,
+    "testsExecuted": 0,
+    "catalog": {
+      "version": 1,
+      "base": "3ecd1fce92c666f28a94f0dc51186ccb532a446c",
+      "command": [
+        "nextest",
+        "list",
+        "--locked",
+        "--lib",
+        "--tests",
+        "-p",
+        "arcweft-adapter-sema",
+        "-p",
+        "arcweft-agent-mcp",
+        "-p",
+        "arcweft-agent-mcp-client",
+        "-p",
+        "arcweft-agent-repl",
+        "-p",
+        "arcweft-agent-runner",
+        "-p",
+        "arcweft-cli",
+        "-p",
+        "arcweft-compiler",
+        "-p",
+        "arcweft-lang-sema",
+        "-p",
+        "arcweft-lsp",
+        "-p",
+        "arcweft-player-native",
+        "-p",
+        "arcweft-player-scene",
+        "-p",
+        "arcweft-player-web",
+        "-p",
+        "arcweft-project-loader",
+        "-p",
+        "arcweft-runtime-driver",
+        "-p",
+        "arcweft-runtime-host",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-test",
+        "-p",
+        "arcweft-tooling",
+        "-p",
+        "arcweft-verify",
+        "-p",
+        "arcweft-verify-lsp",
+        "-p",
+        "arcweft-verify-oxiz",
+        "-p",
+        "arcweft-verify-z3",
+        "--message-format",
+        "json"
+      ],
+      "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/registry-generic-read-reverse-20261107.catalog.log",
+      "exitCode": 101,
+      "sourceInputs": 4030,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-06T15:50:57.2616616Z",
+      "finishedAt": "2026-11-06T15:59:38.0884743Z"
+    },
+    "diagnostics": [
+      "only metadata stub found for",
+      "can't find crate for",
+      "required to be available in rlib format",
+      "internal compiler error: no type-dependent def for method call"
+    ],
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-generic-read-reverse-catalog.raw.zip",
+      "sha256": "24ee2cd21f0e3d901416c8e8c552c579a469f9d036541f56392b83cfd1038cdd",
+      "entries": [
+        {
+          "entry": "registry-generic-read-reverse-20261107.active.json",
+          "bytes": 1723,
+          "sha256": "30c747703ea232b3645c7ddf61234752d2f178b41694ee2089ffbc02312ce3b7"
+        },
+        {
+          "entry": "registry-generic-read-reverse-20261107.catalog.json",
+          "bytes": 1346,
+          "sha256": "4b87faf48c5858ddc56899e6d111d2fe35e6fa8128629ae5f2ec58409ab500a4"
+        },
+        {
+          "entry": "registry-generic-read-reverse-20261107.catalog.log",
+          "bytes": 594682,
+          "sha256": "0fc3b227b442f721c0fa21f747f19e3c73ab058fd82564e57923df2aa72a9111"
+        },
+        {
+          "entry": "registry-generic-read-reverse-20261107.source-freeze.json",
+          "bytes": 787722,
+          "sha256": "b946abbaf4a4cf5f85cb850855fe74ae6e20b024c308bbed3867a5a56b83ced6"
         }
       ]
     }

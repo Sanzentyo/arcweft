@@ -14999,3 +14999,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Generic registry read item inference
 
 - Source b43b1b3644b4ae73642b216f27e3d9b4a07707f8 で、呼出し側の Option の形と、登録する側の要素型を使って Option<T> を具体化した。必須・登録済み optional・書込みのある欠損 optional は Native／デコード済みAWBC で通過した。初回は3条件をまとめたフローが32ステップ上限に達した。条件を独立したフローに分け、同じ上限で再検証した。Sema と Compiler のライブラリおよび evaluated_effects は計1,647件通過。推移的逆依存は22パッケージ。[実測・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Generic registry read reverse dependency catalog
+
+- Source b43b1b3644b4ae73642b216f27e3d9b4a07707f8 の推移的逆依存22パッケージは、Rust コンパイラが一覧生成中に rlib のメタデータとクレートを参照できず停止した。コンパイラ内部エラーも出た。4,030入力の差分は0、テスト実行は0件。[実測・原本](acceptance-evidence/task-flow-registry-execution.json)。
