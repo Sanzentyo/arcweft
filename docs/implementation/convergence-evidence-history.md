@@ -15097,3 +15097,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Resume line close with retained scheduled captures
 
 - Source c1c372b5e4474229a6af0b69b0f9b4a1a7156abd。発行済みの解放応答を待ち、返却済みの捕捉スロットを保持する version 1 保存を正規の復元 API が受理する。修正前は最初の解放応答後に再保存できなかった。再開した終了処理でも共通の後始末を適用し、同じ保存入力から最後の応答まで実行した。Core／Compiler 対象2,568件が通過し、構造ゲートのブロッキング違反は0件。最初の探索で使った custody の誤った JSON 名と、訂正後の再現ログを分けて保持した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Resumed scheduled capture runtime reverse dependencies
+
+- Source c1c372b5e4474229a6af0b69b0f9b4a1a7156abd の Line 終了と保存復元の修正を Runtime Driver、Runtime Host、Save で再検証した。260件通過、失敗・スキップともに0件。前回の同3クレートの実行IDとの差分と、実行前後のソース入力3638件の差分は0件。対象 Clippy は警告ありで終了0だった。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。

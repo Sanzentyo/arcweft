@@ -17268,5 +17268,100 @@
         }
       ]
     }
+  },
+  "scheduledCaptureResumeRuntimeReverse": {
+    "source": "c1c372b5e4474229a6af0b69b0f9b4a1a7156abd",
+    "packages": [
+      "arcweft-runtime-driver",
+      "arcweft-runtime-host",
+      "arcweft-save"
+    ],
+    "passed": 260,
+    "failed": 0,
+    "skipped": 0,
+    "comparedTestIdsFrom": "7bb5bd2ccde1e38791c577040bb29badb60494c2",
+    "testIdDrift": 0,
+    "receipt": {
+      "version": 1,
+      "source": "c1c372b5e4474229a6af0b69b0f9b4a1a7156abd",
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-runtime-driver",
+        "-p",
+        "arcweft-runtime-host",
+        "-p",
+        "arcweft-save",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 0,
+      "summary": "Summary [ 165.427s] 260 tests run: 260 passed (1 slow), 0 skipped",
+      "sourceInputs": 3638,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-06T19:44:51.5732452Z",
+      "finishedAt": "2026-11-06T19:53:05.7008716Z"
+    },
+    "clippy": {
+      "version": 1,
+      "source": "c1c372b5e4474229a6af0b69b0f9b4a1a7156abd",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--all-targets",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects"
+      ],
+      "exitCode": 0,
+      "warningLines": 8866,
+      "sourceInputs": 3638,
+      "sourceDrift": [],
+      "startedAt": "2026-11-06T19:46:14.1274567Z",
+      "finishedAt": "2026-11-06T19:53:06.8145891Z"
+    },
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-scheduled-capture-resume-runtime-reverse.raw.zip",
+      "sha256": "e23d476d3659d268b4422bc905aa7611090bbcd417a6cb235feb8c28cd3831f6",
+      "entries": [
+        {
+          "entry": "scheduled-capture-resume-20261107.runtime-reverse.log",
+          "bytes": 172466,
+          "sha256": "e38328d36b3ba66363a29681044f817a27ebade1f544eaa890b59efd3d384197"
+        },
+        {
+          "entry": "scheduled-capture-resume-20261107.runtime-reverse.source-freeze.json",
+          "bytes": 599451,
+          "sha256": "906aa28a50b6854bf7f55b0cb96c89c687b80c8eddc91ef023e5491b1116d601"
+        },
+        {
+          "entry": "scheduled-capture-resume-20261107.runtime-reverse.receipt.json",
+          "bytes": 648,
+          "sha256": "8b366e69e21856816825151aad8dfa21a52be5c1c0996287a355f05401bc0ec0"
+        },
+        {
+          "entry": "scheduled-capture-resume-20261107.clippy.log",
+          "bytes": 7617546,
+          "sha256": "32849c6b5429f01051a0492786b6745d1151ca2c2fc0e25002a3bcf89a2c01a3"
+        },
+        {
+          "entry": "scheduled-capture-resume-20261107.clippy.receipt.json",
+          "bytes": 464,
+          "sha256": "b1b89acffdd15792c0736a48ebfcb99cb36f99272d9ee911bf593d72cdb9c576"
+        }
+      ]
+    }
   }
 }
