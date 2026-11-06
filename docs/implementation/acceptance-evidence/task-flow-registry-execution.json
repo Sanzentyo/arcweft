@@ -13713,5 +13713,235 @@
         }
       ]
     }
+  },
+  "dialogueResultReexportOwnerAndRegistryDropProbes": {
+    "source": "d3332620ac662de3e0da5d893f83f42c70d997b8",
+    "testInputBase": "39f9726b22809d4fd6d0730084519a01ba179aff",
+    "ownerRuntime": {
+      "version": 1,
+      "base": "39f9726b22809d4fd6d0730084519a01ba179aff",
+      "run": "awbc-nested-reexport-owner-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [  74.686s] 2704 tests run: 2704 passed, 1 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2704,
+      "passed": 2704,
+      "failed": 0,
+      "skipped": 1,
+      "selectedPackages": 3,
+      "matchedPackages": 3,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4134,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-06T15:02:22.1015608Z"
+    },
+    "registryDropProbes": [
+      {
+        "directory": "reached-registry-drop-probe-20261106",
+        "probeSourceSha256": "c7b06d76b82fb9d48308bc37e1e63e04c7f571e45af54d6628aa5cf9e44b0a1b",
+        "binarySha256": "8dedefbccfa694727ce28cb5618a37cd32d163d286f3a202838f4ce91f1c7b1d",
+        "cases": [
+          {
+            "form": "'flow.flags.seen |> drop",
+            "result": "type-check: ValueResolutionFailed",
+            "exitCode": 101,
+            "stdoutSha256": "660f5b3930ebf82ea9d02d7871c4081e671f1c754d329aa6039735164bbc5f24",
+            "stderrSha256": "973e0e2bcfb5a8738e78adf4d0c85118f22b5ba95de3f3cb90ae67ecf9a91f71"
+          },
+          {
+            "form": "drop_optional('flow.flags.seen?)",
+            "result": "type-check: no viable signature",
+            "exitCode": 101,
+            "stdoutSha256": "f4452d6b5e5a1c5dda0a3177a3e786fef9641d0ed67fd7921a1f7dea44a31f2b",
+            "stderrSha256": "92d47c062070fd940ea025bd1fe21137fe7e95508755ce798fde4e5b96a81b9a"
+          },
+          {
+            "form": "let local: bool = 'flow.flags.seen; drop(local)",
+            "result": "Native and decoded AWBC: still registered",
+            "exitCode": 0,
+            "stdoutSha256": "0b22e7c85ad0beba3e65f21c376c6b7842d2362658a3c0f42e9409e18c8d4d0e",
+            "stderrSha256": "544e8c855ea305261bf077a3c433204d7d53bf933f85c55830102fcd07f49068"
+          }
+        ]
+      },
+      {
+        "directory": "reached-registry-drop-form-probe-20261107",
+        "probeSourceSha256": "b1e45856a3c06c836cb4e52f56417a51b39cdb7f177b43f7c4d610f2f0e47bb6",
+        "binarySha256": "d0e3b13bb19b8f95b896fe3ca83b34481a99add62a324e1eee638e827bac3576",
+        "cases": [
+          {
+            "form": "drop('flow.flags.seen)",
+            "result": "type-check: RegistryRegistrationUnavailable",
+            "exitCode": 101,
+            "stdoutSha256": "1b3152caefa9dfd66eea86223ec926a07c4e4461340f98120605cdc03a0213bd",
+            "stderrSha256": "3e17f88aed189d235feb6d50b8734558dedb5a09b691d96c557a6cd43197b373"
+          },
+          {
+            "form": "'flow.flags.seen? |> drop_optional",
+            "result": "runtime-plan-lower: generic binder outside lexical scope",
+            "exitCode": 101,
+            "stdoutSha256": "e31979deea678d2a793227ee12ee82b69891ea51bc04e8ba19023644261fc903",
+            "stderrSha256": "d81e30239c514dba9506fcecb0ace564430a200c7f3baa186e2cd152f17db342"
+          },
+          {
+            "form": "let local: Option<bool> = 'flow.flags.seen?; drop_optional(local)",
+            "result": "Native and decoded AWBC: still registered",
+            "exitCode": 0,
+            "stdoutSha256": "5eaf2c5fbfd8b42f933a2e6f70d8356483d349726cf753f6732310eba4840308",
+            "stderrSha256": "544e8c855ea305261bf077a3c433204d7d53bf933f85c55830102fcd07f49068"
+          }
+        ]
+      }
+    ],
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-dialogue-result-reexport-owner.raw.zip",
+      "sha256": "32aa7c2c98fc9aa51c9c0a3deb64aa09e49231557df5afb286f22014bcce950e",
+      "entries": [
+        {
+          "entry": "awbc-nested-reexport-owner-20261106.source-freeze.json",
+          "bytes": 808439,
+          "sha256": "cbaaa2c4039cdf5d418e71ac35b3bff0d9b4fce9d34ed65ce1c217f66905ade1"
+        },
+        {
+          "entry": "awbc-nested-reexport-owner-20261106.catalog.json",
+          "bytes": 678,
+          "sha256": "6b7d447d1a3b77f149e9fc2db77c8ad5703f6425d6c46a77fcf2e88c9c7ee19d"
+        },
+        {
+          "entry": "awbc-nested-reexport-owner-20261106.catalog.log",
+          "bytes": 562374,
+          "sha256": "a2ad566ff0217bfcfc38fcc239e8bef73705d79dd37353f9fdbb8021ed5c4d1e"
+        },
+        {
+          "entry": "awbc-nested-reexport-owner-20261106.catalog.inventory.json",
+          "bytes": 688698,
+          "sha256": "01e48ff75bc1df513eead15159f7e9313010e78bd8e3ceb6c5a74379362ca755"
+        },
+        {
+          "entry": "awbc-nested-reexport-owner-20261106.binaries-before.json",
+          "bytes": 1140,
+          "sha256": "9332645747ecc79e9edd08e24c9140fa2205be307eb2d02451e0dd0fbdbf5c09"
+        },
+        {
+          "entry": "awbc-nested-reexport-owner-20261106.runtime.json",
+          "bytes": 770,
+          "sha256": "cc17448e63b3006664ca167e6a57597236ac14cdea549f365d2dc382178d4d0f"
+        },
+        {
+          "entry": "awbc-nested-reexport-owner-20261106.runtime.log",
+          "bytes": 925300,
+          "sha256": "1c7dc5bc3a6cf906f194d3616ec46f205345aa19c8058f5c8b66e11cf053044c"
+        },
+        {
+          "entry": "awbc-nested-reexport-owner-20261106.runtime.terminal-audit.json",
+          "bytes": 624,
+          "sha256": "1d64e2a4bf02ec86f3eb0c50864bd2eca5c4b4dcf9025d61f7f429592148d4f0"
+        },
+        {
+          "entry": "reached-registry-drop-probe-20261106/receipt.json",
+          "bytes": 18921,
+          "sha256": "244a63e2e85f2829204a62aa0915cbdf225258164629d7db8141850e9f87f673"
+        },
+        {
+          "entry": "reached-registry-drop-probe-20261106/registry_drop.rs",
+          "bytes": 189740,
+          "sha256": "c7b06d76b82fb9d48308bc37e1e63e04c7f571e45af54d6628aa5cf9e44b0a1b"
+        },
+        {
+          "entry": "reached-registry-drop-probe-20261106/build.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "reached-registry-drop-probe-20261106/build.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "reached-registry-drop-probe-20261106/reached_registry_drop_required_removes_exact_key.stdout.log",
+          "bytes": 257,
+          "sha256": "660f5b3930ebf82ea9d02d7871c4081e671f1c754d329aa6039735164bbc5f24"
+        },
+        {
+          "entry": "reached-registry-drop-probe-20261106/reached_registry_drop_required_removes_exact_key.stderr.log",
+          "bytes": 1533,
+          "sha256": "973e0e2bcfb5a8738e78adf4d0c85118f22b5ba95de3f3cb90ae67ecf9a91f71"
+        },
+        {
+          "entry": "reached-registry-drop-probe-20261106/reached_registry_drop_optional_removes_exact_key.stdout.log",
+          "bytes": 257,
+          "sha256": "f4452d6b5e5a1c5dda0a3177a3e786fef9641d0ed67fd7921a1f7dea44a31f2b"
+        },
+        {
+          "entry": "reached-registry-drop-probe-20261106/reached_registry_drop_optional_removes_exact_key.stderr.log",
+          "bytes": 3727,
+          "sha256": "92d47c062070fd940ea025bd1fe21137fe7e95508755ce798fde4e5b96a81b9a"
+        },
+        {
+          "entry": "reached-registry-drop-probe-20261106/reached_registry_drop_local_preserves_original_key.stdout.log",
+          "bytes": 176,
+          "sha256": "0b22e7c85ad0beba3e65f21c376c6b7842d2362658a3c0f42e9409e18c8d4d0e"
+        },
+        {
+          "entry": "reached-registry-drop-probe-20261106/reached_registry_drop_local_preserves_original_key.stderr.log",
+          "bytes": 64,
+          "sha256": "544e8c855ea305261bf077a3c433204d7d53bf933f85c55830102fcd07f49068"
+        },
+        {
+          "entry": "reached-registry-drop-form-probe-20261107/receipt.json",
+          "bytes": 18931,
+          "sha256": "e4fc61a9d7799fb91465c158f9ddc70b5def39faa69eccca3a1d8b97ba723ba8"
+        },
+        {
+          "entry": "reached-registry-drop-form-probe-20261107/registry_drop.rs",
+          "bytes": 189758,
+          "sha256": "b1e45856a3c06c836cb4e52f56417a51b39cdb7f177b43f7c4d610f2f0e47bb6"
+        },
+        {
+          "entry": "reached-registry-drop-form-probe-20261107/build.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "reached-registry-drop-form-probe-20261107/build.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "reached-registry-drop-form-probe-20261107/reached_registry_drop_required_removes_exact_key.stdout.log",
+          "bytes": 257,
+          "sha256": "1b3152caefa9dfd66eea86223ec926a07c4e4461340f98120605cdc03a0213bd"
+        },
+        {
+          "entry": "reached-registry-drop-form-probe-20261107/reached_registry_drop_required_removes_exact_key.stderr.log",
+          "bytes": 1812,
+          "sha256": "3e17f88aed189d235feb6d50b8734558dedb5a09b691d96c557a6cd43197b373"
+        },
+        {
+          "entry": "reached-registry-drop-form-probe-20261107/reached_registry_drop_optional_removes_exact_key.stdout.log",
+          "bytes": 257,
+          "sha256": "e31979deea678d2a793227ee12ee82b69891ea51bc04e8ba19023644261fc903"
+        },
+        {
+          "entry": "reached-registry-drop-form-probe-20261107/reached_registry_drop_optional_removes_exact_key.stderr.log",
+          "bytes": 2421,
+          "sha256": "d81e30239c514dba9506fcecb0ace564430a200c7f3baa186e2cd152f17db342"
+        },
+        {
+          "entry": "reached-registry-drop-form-probe-20261107/reached_registry_drop_local_preserves_original_key.stdout.log",
+          "bytes": 176,
+          "sha256": "5eaf2c5fbfd8b42f933a2e6f70d8356483d349726cf753f6732310eba4840308"
+        },
+        {
+          "entry": "reached-registry-drop-form-probe-20261107/reached_registry_drop_local_preserves_original_key.stderr.log",
+          "bytes": 64,
+          "sha256": "544e8c855ea305261bf077a3c433204d7d53bf933f85c55830102fcd07f49068"
+        }
+      ]
+    }
   }
 }

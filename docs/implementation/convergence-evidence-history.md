@@ -14981,3 +14981,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-06 — Dialogue results forwarded through another activation
 
 - Source d3332620ac662de3e0da5d893f83f42c70d997b8 で元の発行元にハンドルの台帳と解放コマンドを保持し、受け手の結果内の位置から次の物理スロットへ移す。初回ビルドは E0425 と E0308 で停止。修正後は Native／デコード済みAWBCの三段の再返却、AWBCの結果位置改変拒否、発行元の解放待ちの保存復元と既存の回帰を含む6件が通過した。フィルタで66件を除外し、構造監査のブロッキング指摘は0件だった。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Dialogue forwarding owner suites and registry drop probes
+
+- Source d3332620ac662de3e0da5d893f83f42c70d997b8 の Core／RuntimePlan／Compiler 対象は2,704件通過・失敗0・1件スキップ。4,134入力とケース一覧を照合し、差分は0だった。[実測・原本](acceptance-evidence/task-flow-registry-execution.json)。
+- 同じ公開Rustソースのレジストリ破棄を6入力で照合した。キーを直接渡す必須形と optional 呼出しは型検査で停止し、optional のパイプ形は実行計画への lowering で停止した。レジストリから読み出したローカル値を捨てる対照2件は Native とデコード済みAWBC の両方で登録を保持した。[入力・実測・原本](acceptance-evidence/task-flow-registry-execution.json)。
