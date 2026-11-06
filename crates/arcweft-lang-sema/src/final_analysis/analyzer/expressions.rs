@@ -5246,6 +5246,10 @@ impl Analyzer<'_, '_, '_> {
                 {
                     return Err(AnalyzerExpressionError::rejected(owner).into());
                 }
+                // A partial callable expectation can identify Option without
+                // supplying its item type. Use the reached registry's source
+                // witness before publishing an expression type into that call.
+                let expected = expectation.complete_type();
                 let (read, location, activation) =
                     super::super::CheckedRegistryRead::from_path(&self.topology, owner, path)
                         .map_err(AnalyzerExpressionError::fatal)?;

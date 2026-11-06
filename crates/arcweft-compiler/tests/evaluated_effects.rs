@@ -3043,6 +3043,47 @@ entry cli @entry.main { goto @flow.main }
 }
 
 #[test]
+fn source_registry_reads_supply_item_types_to_generic_calls() {
+    for (write, read, condition, expected) in [
+        (
+            "'flow.flags.seen <- true",
+            "direct('flow.flags.seen)",
+            "observed",
+            "required",
+        ),
+        (
+            "'flow.flags.seen <- true",
+            "optional('flow.flags.seen?)",
+            "let .Some(true) = observed",
+            "optional",
+        ),
+        (
+            "if false { 'flow.flags.seen <- true }",
+            "optional('flow.flags.seen?)",
+            "let .None = observed",
+            "absent",
+        ),
+    ] {
+        let compiled = compile_source(&format!(
+            r#"
+fn direct<T>(value: T) -> T {{ value }}
+fn optional<T>(value: Option<T>) -> Option<T> {{ value }}
+flow main() -> Unit effects {{ state.write('flow), log.write }} {{
+    {write}
+    let observed = {read}
+    if {condition} {{
+        log.info("{expected}")
+    }}
+}}
+entry cli @entry.main {{ goto @flow.main }}
+"#,
+        ))
+        .expect("the registry's source write supplies the generic item type");
+        assert_simple_flow_logs_native_and_awbc(&compiled, &[expected]);
+    }
+}
+
+#[test]
 fn source_inferred_optional_registry_read_admits_absence_and_registration() {
     for (register, pattern, expected) in [
         (true, ".Some(true)", "present"),
