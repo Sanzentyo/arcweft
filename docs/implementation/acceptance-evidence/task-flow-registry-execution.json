@@ -8649,5 +8649,416 @@
         }
       ]
     }
+  },
+  "sourceRegistryScheduledWriters": {
+    "source": "a44658ff686c45d2debe55e7c1507a09dc2ffa13",
+    "base": "9d61dcb3fd02c6cb7ba551c4242eecd564153d88",
+    "published": "a44658ff686c45d2debe55e7c1507a09dc2ffa13",
+    "tree": "02a6c3690be11046207273b97aff3978641fbf62",
+    "patchSha256": "dc16d406b12cb0878f9858a811341baec2252f605c87e96d0602d799d06cb613",
+    "blobDrift": 0,
+    "tests": [
+      {
+        "version": 1,
+        "base": "9d61dcb3fd02c6cb7ba551c4242eecd564153d88",
+        "run": "source-registry-schedule-owners-retry-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [  58.247s] 1516 tests run: 1516 passed, 1 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 1516,
+        "passed": 1516,
+        "failed": 0,
+        "skipped": 1,
+        "selectedPackages": 2,
+        "matchedPackages": 2,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4132,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T09:26:47.7139994Z"
+      },
+      {
+        "version": 1,
+        "base": "9d61dcb3fd02c6cb7ba551c4242eecd564153d88",
+        "run": "source-registry-schedule-compiler-retry-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   4.327s] 80 tests run: 80 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 80,
+        "passed": 80,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4132,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T09:24:22.6415543Z"
+      },
+      {
+        "version": 1,
+        "base": "a44658ff686c45d2debe55e7c1507a09dc2ffa13",
+        "run": "source-registry-schedule-consumers-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   1.620s] 210 tests run: 210 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 210,
+        "passed": 210,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 3,
+        "matchedPackages": 3,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4132,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T09:29:44.6918265Z"
+      }
+    ],
+    "firstTestAttempt": {
+      "version": 1,
+      "base": "9d61dcb3fd02c6cb7ba551c4242eecd564153d88",
+      "run": "source-registry-schedule-compiler-20261106.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [   4.419s] 79 tests run: 78 passed, 1 failed, 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 79,
+      "passed": 78,
+      "failed": 1,
+      "skipped": 0,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4132,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-compiler::evaluated_effects",
+          "test": "source_optional_registry_reads_reach_the_line_and_parent_flow"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-11-06T09:21:13.2863307Z"
+    },
+    "repair": "The first extended two-mark fixture stopped during HIR readiness. The retry used the existing line-result statement form and verified the sibling log in both runtimes.",
+    "quality": [
+      {
+        "source": "a44658ff686c45d2debe55e7c1507a09dc2ffa13",
+        "command": [
+          "check",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4132,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T09:29:45.8565048Z",
+        "finishedAt": "2026-11-06T09:30:36.9493292Z"
+      },
+      {
+        "source": "a44658ff686c45d2debe55e7c1507a09dc2ffa13",
+        "command": [
+          "clippy",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4132,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T09:30:37.9445708Z",
+        "finishedAt": "2026-11-06T09:31:37.7277519Z"
+      },
+      {
+        "source": "a44658ff686c45d2debe55e7c1507a09dc2ffa13",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4132,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T09:31:38.8464615Z",
+        "finishedAt": "2026-11-06T09:31:42.5683255Z"
+      }
+    ],
+    "reverseGraph": {
+      "base": "9d61dcb3fd02c6cb7ba551c4242eecd564153d88",
+      "owners": [
+        "arcweft-lang-sema",
+        "arcweft-runtime-plan",
+        "arcweft-compiler"
+      ],
+      "workspaceReversePackages": [
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lang-sema",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-project-loader",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ],
+      "features": "all",
+      "targets": "all",
+      "treeMetadataDifference": 0
+    },
+    "testTargets": {
+      "total": 114,
+      "passing": 7,
+      "notRun": 107
+    },
+    "coverage": "The selected ownership flow applies the typed writes and opaque effects of possible scheduled Line actions to registry reads. A same-type sibling replacement preserves definite presence established by initialization or a reaching local write. It supplies only possible presence for an absent key. Native and decoded AWBC execute both marks and verify the sibling writes, required read and original optional paths. Additional Compiler cases accept an inferred optional read with a possible sibling writer and reject a required read with differing or potentially absent registration.",
+    "boundary": "The group joins potential authored writes conservatively. Opaque effect capabilities do not certify an item type, nested concurrent execution remains conservative, and mixed temporal writes may still require context. Cancellation drop, affine storage and the complete reverse-dependency run remain separate.",
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-source-registry-schedule.raw.zip",
+      "sha256": "57128435f1f5cb33374d46cd30630956a4bae8d24b1fa96fca000cdc83938868",
+      "entries": [
+        {
+          "entry": "source-registry-schedule-20261106.cargo-tree.txt",
+          "bytes": 5055,
+          "sha256": "f5401e254adb70e3dbba9fbed1cbc89b1a5058ebe96643f9a2a5617b42fb00de"
+        },
+        {
+          "entry": "source-registry-schedule-20261106.reverse.json",
+          "bytes": 863,
+          "sha256": "c4c50d026b18b0629f3a9726dbeac64d7c92d68439ab87d8485d453887300b73"
+        },
+        {
+          "entry": "source-registry-schedule-20261106.target-coverage.json",
+          "bytes": 25687,
+          "sha256": "006bfc7fabb1583862820fc06b3b8eea130b90501763854f85b7a6e78470127f"
+        },
+        {
+          "entry": "checkpoint-source-registry-schedule-20261106.verified.json",
+          "bytes": 1302,
+          "sha256": "fcc305102a807d72b361bc55256622dd3f0c4023f9f2c0e8caebc9dcbcd49d62"
+        },
+        {
+          "entry": "source-registry-schedule-workspace-check-20261106.log",
+          "bytes": 107847,
+          "sha256": "0f09d050b0f9ca107e999acacd0d93d52c9d8e3d5a415f70d83ed60c3c5a4551"
+        },
+        {
+          "entry": "source-registry-schedule-workspace-check-20261106.json",
+          "bytes": 340,
+          "sha256": "0205a42f111ef63cd9b1ab5b82caa32704c47c4a00dd090e0de62ea4e0d94c82"
+        },
+        {
+          "entry": "source-registry-schedule-workspace-clippy-20261106.log",
+          "bytes": 8941453,
+          "sha256": "c1cb305b3a61fb37dd148ed554f85463595db50635e3922f9533b3b107fc6b5d"
+        },
+        {
+          "entry": "source-registry-schedule-workspace-clippy-20261106.json",
+          "bytes": 341,
+          "sha256": "2fdef6971a5225dff21552bf654d77c59cdd15d4697d01e5a58a8fe84de0fb85"
+        },
+        {
+          "entry": "source-registry-schedule-structure-20261106.log",
+          "bytes": 65698,
+          "sha256": "17f2ffc061aaf4154810738c47a913f38a1b235cafc1dc4f9dbd9bd1c371fff6"
+        },
+        {
+          "entry": "source-registry-schedule-structure-20261106.json",
+          "bytes": 363,
+          "sha256": "cc02c58666edd1ff9746c2859bb3dc784a3c37d6553014377eb390bdce4130f9"
+        },
+        {
+          "entry": "source-registry-schedule-compiler-20261106.catalog.json",
+          "bytes": 599,
+          "sha256": "c18159bc98c5b5f7b9646fd0e52fd7b283fd96a233af27af16f691777b0a7268"
+        },
+        {
+          "entry": "source-registry-schedule-compiler-20261106.catalog.inventory.json",
+          "bytes": 19916,
+          "sha256": "c7676a00a6518f46ee7d6d0f38be86adf862a413ebacd7bd6468724a6e524908"
+        },
+        {
+          "entry": "source-registry-schedule-compiler-20261106.catalog.log",
+          "bytes": 97888,
+          "sha256": "062d3bc1b9b403d74e8f834016f0877cc391a1d8d615f5c6638cbc002913fcf4"
+        },
+        {
+          "entry": "source-registry-schedule-compiler-20261106.runtime.json",
+          "bytes": 693,
+          "sha256": "17f1a1fe9ac931bb52363a7f298850dda4fbf291b879e693fb187fa9272f99ec"
+        },
+        {
+          "entry": "source-registry-schedule-compiler-20261106.runtime.log",
+          "bytes": 109072,
+          "sha256": "66640c999ce50197024b50a5dfe3d2d682dd59136c25bf44849baa5702f428c5"
+        },
+        {
+          "entry": "source-registry-schedule-compiler-20261106.runtime.terminal-audit.json",
+          "bytes": 814,
+          "sha256": "840f27dcfef633b70c2c701d61b2bf1a7699101b04b0be98a111d2a234d154f7"
+        },
+        {
+          "entry": "source-registry-schedule-compiler-20261106.binaries-before.json",
+          "bytes": 477,
+          "sha256": "84af5b3e2d4fc2711dcbc9a17d639d2117be7ddd1302b454d65233fa0dd23b45"
+        },
+        {
+          "entry": "source-registry-schedule-compiler-20261106.source-freeze.json",
+          "bytes": 808040,
+          "sha256": "9462d61e0a8b0d534628afa8d04b2ec785f38dc898e3c125125816ee4e9b6e3c"
+        },
+        {
+          "entry": "source-registry-schedule-owners-retry-20261106.catalog.json",
+          "bytes": 581,
+          "sha256": "80d923f0799101397aea299a3e40d10cbb889f2e3a791453034ebf8e18828d1e"
+        },
+        {
+          "entry": "source-registry-schedule-owners-retry-20261106.catalog.inventory.json",
+          "bytes": 398545,
+          "sha256": "7c8bfba55f2b778595f312ce3b934e4968e272b0bf0d0bf604e98ac10eabe8ba"
+        },
+        {
+          "entry": "source-registry-schedule-owners-retry-20261106.catalog.log",
+          "bytes": 345322,
+          "sha256": "a90f68cd5b2e3f538a6517c6b1cfc6da46096ea84e84b29c199b67478a44d700"
+        },
+        {
+          "entry": "source-registry-schedule-owners-retry-20261106.runtime.json",
+          "bytes": 673,
+          "sha256": "e7b63157ba08016432dbc44645403f4e7b3819c95eded28ca5023f057fb97282"
+        },
+        {
+          "entry": "source-registry-schedule-owners-retry-20261106.runtime.log",
+          "bytes": 560382,
+          "sha256": "52b73e2789212319581d3f23c63406a8e5c43ddc8f71edb0d16390176166ec1a"
+        },
+        {
+          "entry": "source-registry-schedule-owners-retry-20261106.runtime.terminal-audit.json",
+          "bytes": 635,
+          "sha256": "0581e83f7fd50c9798d2002593fae462453a15c240c7dee6f1c36f0347a5b572"
+        },
+        {
+          "entry": "source-registry-schedule-owners-retry-20261106.binaries-before.json",
+          "bytes": 457,
+          "sha256": "4a6394d525402d5b6f15430c56fadf569ad5e287e8ef6dc8e5106477247374ea"
+        },
+        {
+          "entry": "source-registry-schedule-owners-retry-20261106.source-freeze.json",
+          "bytes": 808040,
+          "sha256": "a5c6ba5bb7fb8d5eb42fa27d3a7023a5f96050f10140f7f12c6eee15bd9804b6"
+        },
+        {
+          "entry": "source-registry-schedule-compiler-retry-20261106.catalog.json",
+          "bytes": 605,
+          "sha256": "4fffaa90ad4fa02d0ad22c6225727ddbc7e72dcfef5ddbe53ede85097dae8559"
+        },
+        {
+          "entry": "source-registry-schedule-compiler-retry-20261106.catalog.inventory.json",
+          "bytes": 20167,
+          "sha256": "a118058d50320e06e12a0691764700a93b28f7279e4e7813ab9b4c66016cc844"
+        },
+        {
+          "entry": "source-registry-schedule-compiler-retry-20261106.catalog.log",
+          "bytes": 98030,
+          "sha256": "026b67ff914d8bce5713e26c369762603e6bef47b9324f838b7c1ff826f23118"
+        },
+        {
+          "entry": "source-registry-schedule-compiler-retry-20261106.runtime.json",
+          "bytes": 697,
+          "sha256": "a1359e14ba099edf944b0fc4283ab5539e15cac081354d66fc9911270885d448"
+        },
+        {
+          "entry": "source-registry-schedule-compiler-retry-20261106.runtime.log",
+          "bytes": 107587,
+          "sha256": "5508231f5979752d2df810e9cb10dbeeb43fb0d0b778cfdc94c534b5b4700fdb"
+        },
+        {
+          "entry": "source-registry-schedule-compiler-retry-20261106.runtime.terminal-audit.json",
+          "bytes": 629,
+          "sha256": "7554eb8eddd8420492a4aaa2dd64d789d3e1322ae3046c5b199cdeb6706ac6fa"
+        },
+        {
+          "entry": "source-registry-schedule-compiler-retry-20261106.binaries-before.json",
+          "bytes": 477,
+          "sha256": "fd4a7183e450cf10c11fbb4c0aaa058955408d907269aed6b8510308ebf820c6"
+        },
+        {
+          "entry": "source-registry-schedule-compiler-retry-20261106.source-freeze.json",
+          "bytes": 808040,
+          "sha256": "0b57432d7a8873e447a98397487da4a797dff972e58b2e4a8e78c31ba1b2381d"
+        },
+        {
+          "entry": "source-registry-schedule-consumers-20261106.catalog.json",
+          "bytes": 646,
+          "sha256": "3d1503b995238019fd5cf5ebe2eaed5b795826327bd84abc806c59140902f4a4"
+        },
+        {
+          "entry": "source-registry-schedule-consumers-20261106.catalog.inventory.json",
+          "bytes": 53809,
+          "sha256": "b9bf3d4f77f7c836d10ed8d052f95f2495e7f2079c0f906777c508acd3895247"
+        },
+        {
+          "entry": "source-registry-schedule-consumers-20261106.catalog.log",
+          "bytes": 125236,
+          "sha256": "094ea6ba2b576cea8df585526b7c0a4a5ee6b822b9bc839e3825a0bf0bc1cc38"
+        },
+        {
+          "entry": "source-registry-schedule-consumers-20261106.runtime.json",
+          "bytes": 738,
+          "sha256": "62dd8ed11ed8358887014f22dbef1ae25a322cafdb2ae7a309b10afd08d581ca"
+        },
+        {
+          "entry": "source-registry-schedule-consumers-20261106.runtime.log",
+          "bytes": 148336,
+          "sha256": "43a3e16d727d30747387d476403c1ea14120beb7788569e105bd83ded434517c"
+        },
+        {
+          "entry": "source-registry-schedule-consumers-20261106.runtime.terminal-audit.json",
+          "bytes": 628,
+          "sha256": "67dae6e39c238066a96d297657445de0a3ca237200e606c7f026eed8ed61b5aa"
+        },
+        {
+          "entry": "source-registry-schedule-consumers-20261106.binaries-before.json",
+          "bytes": 696,
+          "sha256": "aaffb7e5ae77d38025a94c6b71ae407e6880db85f85552a3d69a14c876d75771"
+        },
+        {
+          "entry": "source-registry-schedule-consumers-20261106.source-freeze.json",
+          "bytes": 808040,
+          "sha256": "094d601784599eff43a6d50b31913872a457de5eee865a9f3c9bae5db45a115a"
+        }
+      ]
+    }
   }
 }

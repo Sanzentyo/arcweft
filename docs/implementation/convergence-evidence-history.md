@@ -14924,3 +14924,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source `12e5ec383ecbfaa006d2627eba02fb449d65056f` では、同じFlow／Lineで検査済みの書込み型から `Option<T>` を推論する。到達経路に未登録と同型の登録が混在する場合を受理し、別の呼出しが同じキーを書き換え得る場合は拒否する。Native／正規デコードAWBCでFlowの `Some`／`None` とLine初期化を検証した。
 - 初回Sema／RuntimePlanは1,515 PASS／1 FAIL／1 skip。拒否用入力を修正し、最終は1,516 PASS／1 skip。初回Compilerは77 PASS／1 FAILで、追加のFlow入力が32ステップ上限に達した。元のケースと上限を保持し、別の入力で登録／未登録を確認した。最終Compilerは79 PASS、逆依存5パッケージのライブラリは204 PASS。workspace check／Clippy／構造ゲートはexit 0。22逆依存のCargo test targetは114のうち9対象を実行し、105対象は継続する。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-06 — Registry reads across scheduled line actions
+
+- Source `a44658ff686c45d2debe55e7c1507a09dc2ffa13` で、ライン初期化とスケジュール済みアクションを分け、型付き書込みと不透明な効果を所有権の制御フローから判定する。同型の兄弟書込みは、成立済みの登録を維持する。兄弟が書く可能性だけの場合は推論済みoptionalを受理し、必須読取りを拒否する。Native／正規デコードAWBCで両方のマークを発火し、兄弟の実行と必須読取りを確認した。
+- 初回Compilerは78 PASS／1 FAILで、二つのマークを使う入力がHIRの準備段階で停止した。入力を訂正し、最終はCompiler 80 PASS、Sema／RuntimePlan 1,516 PASS／1 skip、逆依存3パッケージのライブラリ210 PASS。workspace check／Clippy／構造ゲートはexit 0。Cargo test targetは114のうち7対象を実行し、107対象は継続する。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
