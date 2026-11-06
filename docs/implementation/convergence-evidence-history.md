@@ -14861,3 +14861,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source 138c5ad3c377455e4589e322bd60014c9449f27a で、line の本体と遅延して実行する処理を外側の effect 上限に含めた。選択済み関数の効果も追跡し、停止とcaptureは元の実行本体が保持する。従来はline内の直接書込みや関数経由の書込みで、対象外の権限でも受理されていた。
 - 対象2件と、改行を正規化した公開ソースのSemaライブラリ全1,376件が通過。各実行の固定入力4,130件とテスト一覧は差分0件。ローカル検証には既存ユーザー変更12ファイルを含む。Cargo逆依存の22パッケージは別の検証範囲。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-06 — Checked line effects reach the generated AWBC
+
+- Source d5760ac382200ebdce102ee99482a34f8410ca33 で、検査済みの対話の効果を元のlineグループに保持し、Planのversion 1 sourceと生成AWBCの宣言・書込み命令に渡した。以前は生成関数のeffect行が空で、4つの書込みを含む入力が検証で拒否されていた。
+- Coreのline sourceコーデック7件と、Compilerの生成・AWBC検証1件が通過。4,130固定入力とテスト一覧の差分は0件。実行・保存の受入は別途検証する。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。

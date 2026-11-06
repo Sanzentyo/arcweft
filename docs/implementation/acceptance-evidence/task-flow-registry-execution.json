@@ -3317,5 +3317,290 @@
         }
       ]
     }
+  },
+  "linePlanEffectAuthority": {
+    "source": "d5760ac382200ebdce102ee99482a34f8410ca33",
+    "contract": "The checked dialogue application carries its effects to the original line group. Version-one Plan source retains canonical bounded effects, and verified generated AWBC uses that row for its signature and effect plans.",
+    "core": {
+      "version": 1,
+      "base": "9e5098964142aa3d0f63a96de2963162f7400cd1",
+      "run": "line-plan-effect-authority-core-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   0.119s] 7 tests run: 7 passed, 2273 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 7,
+      "passed": 7,
+      "failed": 0,
+      "skipped": 2273,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4130,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-06T04:05:35.9991081Z"
+    },
+    "compiler": {
+      "version": 1,
+      "base": "9e5098964142aa3d0f63a96de2963162f7400cd1",
+      "run": "line-plan-effect-authority-compiler-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   0.135s] 1 test run: 1 passed, 52 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 52,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4130,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-06T04:08:27.0960238Z"
+    },
+    "published": {
+      "version": 1,
+      "commit": "d5760ac382200ebdce102ee99482a34f8410ca33",
+      "parent": "9e5098964142aa3d0f63a96de2963162f7400cd1",
+      "tree": "3ba45be6ece49408f958a51e2f6506500882fe6c",
+      "remote": "d5760ac382200ebdce102ee99482a34f8410ca33",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/src/lower.rs",
+          "blob": "811580293fc90af3bfba9d88c3ae3aedc21fbf73"
+        },
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects.rs",
+          "blob": "36890e0d92c666607fd1a28453f8c4735ff0e0e4"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/dialogue.rs",
+          "blob": "c93f7b469543051c00a32a8a6f81c6fce3dab970"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/dialogue/store.rs",
+          "blob": "33e5d24f0e376d49935d26dfeb4c1a1c5201eda0"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task.rs",
+          "blob": "f458ba0564a188ad1ffc0a9575d046928712d45a"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task/result_selection_tests.rs",
+          "blob": "d6ac7ab4fb9a0bbb474756aed1af4e61d81e08d8"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task/semantic.rs",
+          "blob": "0ec409e973523c620dfa792edfab6e595eaeded1"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/body_semantic/tests.rs",
+          "blob": "5a53679ee7cb644e6c91a9106b2e62a75872b83b"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/body_semantic/tests/content_rows.rs",
+          "blob": "35cb7ecc2dae53edefeb52d3a47807899b8ff5ce"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction.rs",
+          "blob": "5dae5c3c509e0f4c3c8074e99c1635abd7cfbde0"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/seed.rs",
+          "blob": "7e97cdd0d4616a36129504696a1c2607adbfba55"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/source/content_plans/tests.rs",
+          "blob": "855ac994e3b6e6d19ec5a375284c4e88d6d7399e"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/source/line_groups.rs",
+          "blob": "29a6515098f46acd966871058c517508a32c0d7d"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/source/line_groups/decoding.rs",
+          "blob": "d37aa5ba92f2038052091bd66afb19720e707a71"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/source/line_groups/encoding.rs",
+          "blob": "f23bd58da3704eee0d738f42d5b2ccc1726f0115"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/source/line_groups/reading.rs",
+          "blob": "fa82d9c100b5507459e14cb1aac6443d9c10a118"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/source/line_groups/tests.rs",
+          "blob": "3510569e6626144c53a329e242690d084f3a83b0"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/construction/source/line_groups/tests/handles.rs",
+          "blob": "77b1a666cd08d621f1ed1655d25a5153b2b7d97e"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/executable_body.rs",
+          "blob": "643820b16a91c5ee618e2ac14bd51c8e55ef9f11"
+        },
+        {
+          "path": "crates/arcweft-core/src/plan/flow_ops/tests.rs",
+          "blob": "2067fc79640212b0e50b91f1cd5c53ef828d9b28"
+        },
+        {
+          "path": "crates/arcweft-core/src/tests/line_task_reducer.rs",
+          "blob": "6f7f5ca119a076acace8b5a35febbf36678b7ea5"
+        },
+        {
+          "path": "crates/arcweft-player-native/src/dev_capture.rs",
+          "blob": "471e985861f2535d99c45f244ab69da0a76431c6"
+        },
+        {
+          "path": "crates/arcweft-player-native/src/lib.rs",
+          "blob": "82e82e7d29bb4b0844d365ce59d2c7ec8c087bef"
+        },
+        {
+          "path": "crates/arcweft-player-native/src/patch_endpoint.rs",
+          "blob": "60b1af8652a4a963be84dc041a63e7e37c5b5f03"
+        },
+        {
+          "path": "crates/arcweft-player-native/src/windowed_runtime.rs",
+          "blob": "0727b008a782abda1f72985f70ce899cfc1e3ae0"
+        },
+        {
+          "path": "crates/arcweft-player-native/tests/support/windowed_live_patch_fixtures.rs",
+          "blob": "37b809093c3c9f27a4a18b5f9ca7f8ce1064d2a6"
+        },
+        {
+          "path": "crates/arcweft-player-native/tests/windowed_ingress_runtime.rs",
+          "blob": "4f188f4ed3610791756e2981aa3bafa9f2eb7085"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/awbc_lower/flow.rs",
+          "blob": "722d0d10da8f5bda37bed37652079545f09dc4cd"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/awbc_lower/tests.rs",
+          "blob": "0a13bcd83059adda87821668f6f3778c2127b53f"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/final_flow/line_plan.rs",
+          "blob": "4301f3f1a50cbba7895449d6b4c5c453cf796ee4"
+        },
+        {
+          "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+          "blob": "498325b6743b4623129a1e530810b4f7c58c69fc"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "9248cc9aac1cb25fdfd90cbc123c6e389bb31583b0bb48e3fdba20dd48971f59",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-06T04:09:03.8934873Z"
+    },
+    "rawArchive": {
+      "path": "task-line-plan-effect-authority.raw.zip",
+      "bytes": 684828,
+      "sha256": "6002b97a8dfec54b509fc90b09a37edf064bbede30f14474d4d25329ca71269f",
+      "entryDrift": 0,
+      "entries": [
+        {
+          "entry": "checkpoint-line-plan-effect-authority-20261106.verified.json",
+          "bytes": 5094,
+          "sha256": "1db663e976bcc9a96c46db093cacbbd66bce070a8bb2f75429a03c71b8212022"
+        },
+        {
+          "entry": "line-plan-effect-authority-compiler-20261106.binaries-before.json",
+          "bytes": 230,
+          "sha256": "725034e210162d0c7c1e217a6d2a6c0965e14ea0ba2cffa1f0285e1d8f2c0a07"
+        },
+        {
+          "entry": "line-plan-effect-authority-compiler-20261106.catalog.inventory.json",
+          "bytes": 13525,
+          "sha256": "795ff85cee96648fac391b2a53d4c64295c708e250e26c097b5874205955f198"
+        },
+        {
+          "entry": "line-plan-effect-authority-compiler-20261106.catalog.json",
+          "bytes": 686,
+          "sha256": "b313c6438f20c5edc8303d4b8173757f60c2b4e9a0c851ae1b90af7a76ed6804"
+        },
+        {
+          "entry": "line-plan-effect-authority-compiler-20261106.catalog.log",
+          "bytes": 95826,
+          "sha256": "41ee1bcfe46d51e9a4b3f0c0d36f4cdb84745ce8c9b45f875de0fd2bb1b353f3"
+        },
+        {
+          "entry": "line-plan-effect-authority-compiler-20261106.runtime.json",
+          "bytes": 778,
+          "sha256": "9d77e119ef1f8054cb52f608bfd0d61e126dcd09e9bacee262c23edb698abd8c"
+        },
+        {
+          "entry": "line-plan-effect-authority-compiler-20261106.runtime.log",
+          "bytes": 100140,
+          "sha256": "c8acbaac5e308fe323f2a458db7d21a8b4bda3c116116aa7e0339d165058f32a"
+        },
+        {
+          "entry": "line-plan-effect-authority-compiler-20261106.runtime.terminal-audit.json",
+          "bytes": 622,
+          "sha256": "f53be457b3f642c4340a74f209207bc0d9794e3e0db2bb04b6c6be4217921c07"
+        },
+        {
+          "entry": "line-plan-effect-authority-compiler-20261106.source-freeze.json",
+          "bytes": 807631,
+          "sha256": "9ece97bf62965598e52784b01dfdc1453b626f35da03ef254067683877a3da5c"
+        },
+        {
+          "entry": "line-plan-effect-authority-core-20261106.binaries-before.json",
+          "bytes": 202,
+          "sha256": "98d498f1693b551e8a56fac8ff71d5567b4635b3fba453a12ff9f83f77a700a6"
+        },
+        {
+          "entry": "line-plan-effect-authority-core-20261106.catalog.inventory.json",
+          "bytes": 583128,
+          "sha256": "83fab5921ced2593c82b32d17a24440934c96367ae7f486e1e6063e35acb5d91"
+        },
+        {
+          "entry": "line-plan-effect-authority-core-20261106.catalog.json",
+          "bytes": 592,
+          "sha256": "bea3bf961af0b903eb5f28d9a40261c48f71a5afa3c0450f74d9c6a88cc10d62"
+        },
+        {
+          "entry": "line-plan-effect-authority-core-20261106.catalog.log",
+          "bytes": 479137,
+          "sha256": "391d768f0f42243e4899c373ff8a42e2e88c3de3d654ab9705fc51b27cc09a18"
+        },
+        {
+          "entry": "line-plan-effect-authority-core-20261106.runtime.json",
+          "bytes": 684,
+          "sha256": "47ea4321abbc512a7fa034d6c0d5b83244f266eb90d8b3118b21422a01f77ba0"
+        },
+        {
+          "entry": "line-plan-effect-authority-core-20261106.runtime.log",
+          "bytes": 733127,
+          "sha256": "29f15f528b0f041792f88a2b9c5cd313793359cd96a378a2338b5c021f033465"
+        },
+        {
+          "entry": "line-plan-effect-authority-core-20261106.runtime.terminal-audit.json",
+          "bytes": 623,
+          "sha256": "3981e5149d1a3f1da5425e6bd04a24b05038f3c349adf51bea0a1873b1dcb182"
+        },
+        {
+          "entry": "line-plan-effect-authority-core-20261106.source-freeze.json",
+          "bytes": 807631,
+          "sha256": "77aa96e0c936ebb89bf977243d77ed138e61f2ad74ef51c006f95c2910eeec28"
+        },
+        {
+          "entry": "line-plan-effect-authority-validation-20261106.json",
+          "bytes": 2271,
+          "sha256": "983baf6393a32c29cc30f595271a33e5ccfc859d1025b265111c791a50797467"
+        }
+      ]
+    }
   }
 }
