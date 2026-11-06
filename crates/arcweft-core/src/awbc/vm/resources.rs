@@ -9,6 +9,7 @@ use crate::effect::{
     RuntimeScopeRegistry,
 };
 use crate::presentation::resources::{PresentationBanks, PresentationBody};
+use crate::value::ownership::RuntimeValueOwnershipRequirement;
 use crate::value::{RuntimePayload, RuntimeRetainedValueAdmission, RuntimeStoredValue};
 
 #[derive(Default)]
@@ -518,7 +519,12 @@ impl VmExecutionResources<'_> {
                     Some(removal),
                 )?;
             } else {
-                admission.validate_owned_option_preview(None, result, removal.binding)?;
+                admission.validate_option_preview(
+                    None,
+                    result,
+                    removal.binding,
+                    RuntimeValueOwnershipRequirement::Owned,
+                )?;
             }
             fiber.admit_retained(&mut admission)?;
             admission.finish_presentation_custody()?;

@@ -1,16 +1,19 @@
 //! Typed runtime `Option` recognition, construction, and intrinsics.
 
+use super::ownership::RuntimeValueOwnershipRequirement;
 use super::{RuntimeEvalError, RuntimeValue, runtime_value_label};
 use crate::pattern::RuntimeBuiltinVariantCaseIdentity;
 
 impl super::RuntimeRetainedValueAdmission {
     /// Admits the canonical future Option without allocating or copying its
     /// payload. The borrowed payload keeps its original live/inert provenance.
-    pub(crate) fn validate_owned_option_preview(
+    /// The consumer selects the ownership required by its materialization.
+    pub(crate) fn validate_option_preview(
         &mut self,
         payload: Option<super::RuntimeBorrowedValue<'_>>,
         expected: crate::pattern::RuntimeSemanticTypeId,
         binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
+        ownership: RuntimeValueOwnershipRequirement,
     ) -> Result<(), super::AwbcRuntimeValueSnapshotError> {
         use super::view::{RuntimeValueSource, RuntimeVariantView};
         use super::{RuntimeBorrowedValue, RuntimeTupleView, RuntimeValueView};
@@ -40,11 +43,15 @@ impl super::RuntimeRetainedValueAdmission {
                 .as_ref()
                 .map(|value| RuntimeValueSource::Borrowed { value, origin }),
         ));
-        self.validate_owned_typed_borrowed_in_invocation(
-            RuntimeBorrowedValue { value, origin },
-            expected,
-            binding,
-        )
+        let preview = RuntimeBorrowedValue { value, origin };
+        match ownership {
+            RuntimeValueOwnershipRequirement::Owned => {
+                self.validate_owned_typed_borrowed_in_invocation(preview, expected, binding)
+            }
+            RuntimeValueOwnershipRequirement::Unrestricted => {
+                self.validate_typed_borrowed_in_invocation(preview, expected, binding)
+            }
+        }
     }
 }
 

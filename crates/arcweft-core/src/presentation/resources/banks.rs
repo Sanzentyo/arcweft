@@ -1,6 +1,7 @@
 //! One custody owner for all execution banks and their pending retirements.
 
 use super::*;
+use crate::value::ownership::RuntimeValueOwnershipRequirement;
 use crate::value::{
     AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError, RuntimePayload,
     RuntimeRetainedValueAdmission, RuntimeStoredValue,
@@ -521,7 +522,12 @@ impl<V: RuntimeStoredValue> PresentationBanks<PresentationBody<V>> {
                 selected |= ledger.admit_bodies(admission, removal)?;
             }
             if let Some(removal) = removal.filter(|_| !selected) {
-                admission.validate_owned_option_preview(None, removal.result, removal.binding)?;
+                admission.validate_option_preview(
+                    None,
+                    removal.result,
+                    removal.binding,
+                    RuntimeValueOwnershipRequirement::Owned,
+                )?;
             }
             for retired in &self.retirements {
                 retired.body.admit_retained(admission)?;

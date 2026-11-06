@@ -8,6 +8,7 @@ use crate::awbc::schema::{AwbcEffectPayload, AwbcEffectPlanId};
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::runtime_id::{DialogueActivationId, RuntimeFiberInstanceId, RuntimeFrameInstanceId};
 use crate::task::RuntimeProgramOwner;
+use crate::value::ownership::RuntimeValueOwnershipRequirement;
 use crate::value::{AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission, RuntimeValue};
 use arcweft_id::{LifetimeRegistryKey, LifetimeScopeKind};
 use std::sync::{Arc, OnceLock};
@@ -188,10 +189,11 @@ impl RuntimeScopeRegistry {
                 row.copy_admitted(admission)
             }
             (RuntimeRegistryReadKind::Optional, row) => {
-                admission.validate_owned_option_preview(
+                admission.validate_option_preview(
                     row.map(|row| (&row.value).into()),
                     expected,
                     binding,
+                    RuntimeValueOwnershipRequirement::Unrestricted,
                 )?;
                 match row {
                     Some(row) => row.copy_admitted(admission).map(RuntimeValue::option_some),

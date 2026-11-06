@@ -6,6 +6,7 @@ use crate::presentation::resources::{
     PresentationBanks, PresentationBody, PresentationLedgerLimits, PresentationRegistrationSite,
 };
 use crate::value::RuntimeStoredValue;
+use crate::value::ownership::RuntimeValueOwnershipRequirement;
 
 impl<N, P: RuntimeStoredValue, R, F, D> Engine<N, P, R, F, D> {
     pub(super) fn admit_presentation_state(
@@ -28,7 +29,12 @@ impl<N, P: RuntimeStoredValue, R, F, D> Engine<N, P, R, F, D> {
                 .ok_or(RuntimePresentationError::MissingArtifact)?;
             banks.admit_retained_for_slot_removal(&owner, artifact, admission, removal)?;
         } else if let Some(removal) = removal {
-            admission.validate_owned_option_preview(None, removal.result, removal.binding)?;
+            admission.validate_option_preview(
+                None,
+                removal.result,
+                removal.binding,
+                RuntimeValueOwnershipRequirement::Owned,
+            )?;
         }
         Ok(())
     }

@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::pattern::RuntimeSemanticTypeId;
+use crate::value::ownership::RuntimeValueOwnershipRequirement;
 use crate::value::{
     AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError, RuntimePayload,
     RuntimeRetainedValueAdmission, RuntimeStoredValue,
@@ -365,10 +366,11 @@ impl<V: RuntimeStoredValue> PresentationLedger<PresentationBody<V>> {
                         return Err(RuntimePresentationError::InvalidState.into());
                     }
                     selected = true;
-                    admission.validate_owned_option_preview(
+                    admission.validate_option_preview(
                         Some(body.value.borrowed_value()),
                         removal.result,
                         removal.binding,
+                        RuntimeValueOwnershipRequirement::Owned,
                     )?;
                     // The payload has been counted once as the future result.
                     // Its original stored type/binding remains an obligation.

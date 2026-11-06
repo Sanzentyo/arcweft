@@ -354,6 +354,76 @@ fn registry_update_cannot_copy_nested_affine_custody_into_replay_data() {
 }
 
 #[test]
+fn optional_registry_read_cannot_copy_an_affine_payload() {
+    use crate::value::ownership::RuntimeValueOwnershipRequirement;
+
+    let payload = crate::pattern::RuntimeCheckedType::String.semantic_identity_digest();
+    let need = semantic(4);
+    let some_payload = semantic(5);
+    let optional = semantic(6);
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(payload, RuntimePlanTypeProjection::String),
+                RuntimePlanTypeSeed::new(need, RuntimePlanTypeProjection::Need(payload)),
+                RuntimePlanTypeSeed::new(
+                    some_payload,
+                    RuntimePlanTypeProjection::Tuple(Box::new([need])),
+                ),
+                RuntimePlanTypeSeed::new(
+                    optional,
+                    RuntimePlanTypeProjection::Option {
+                        item: need,
+                        some_payload,
+                    },
+                ),
+            ],
+            [],
+        )
+        .unwrap();
+    let program = RuntimeProgramOwner::Plan(Arc::new(builder.finish().unwrap()));
+    let value = RuntimeValue::NeedHandle(crate::tests::reusable_need("registry-option"));
+    let value = AwbcRuntimeValueSnapshot::from_admitted_runtime_value(&value, &program).unwrap();
+    admission(&program)
+        .validate_option_preview(
+            Some((&value).into()),
+            optional,
+            None,
+            RuntimeValueOwnershipRequirement::Owned,
+        )
+        .expect("the affine payload satisfies the original Option type for an owning consumer");
+
+    let key = key("flow", &["target"]);
+    let row = RuntimeRegistryValue {
+        key: key.clone(),
+        expected: need,
+        binding: None,
+        value,
+    };
+    // Exercise the read boundary directly on inert row data. Restoring this
+    // payload into an unrestricted Flow registry is separately forbidden.
+    let rows: RuntimeScopeRegistry = serde_json::from_value(serde_json::json!([{
+        "source": RuntimeRegistryWriteSource::Native,
+        "row": row,
+    }]))
+    .unwrap();
+    let mut bank = admission(&program);
+    let error = rows
+        .read(
+            RuntimeRegistryOwner::NativeFlow,
+            &key,
+            RuntimeRegistryReadKind::Optional,
+            optional,
+            None,
+            &mut bank,
+        )
+        .unwrap_err();
+    assert_eq!(error, AwbcRuntimeValueSnapshotError::AffineValue);
+    assert_eq!(bank.validate(&RuntimeValue::Unit), Err(error));
+}
+
+#[test]
 fn registry_updates_share_one_value_budget_for_capture_and_replay_groups() {
     for owner in owners() {
         let limits = RuntimeSchemaLimits {
