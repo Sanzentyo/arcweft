@@ -14973,3 +14973,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-06 — StageActor reverse tests with a serial build
 
 - Source 64829f5d62302e2d658e88494655c7cef2cc96aa の非CLI再試行も rlib 参照エラーで一覧生成中に停止した。Cargo のビルドを直列化し、同じ52パッケージと選択条件で一覧生成を完了した。49パッケージで非CLI 7,162件実行・7,162件通過・失敗0・18件スキップ。CLI 標準スイートは別実行で225件通過。4,134入力とケース一覧の照合で差分0。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-06 — AWBC dialogue wildcard release and restore
+
+- 公開ソース c81029e9c35dc219fa9d7e03cfa8f402ba2a321f の再現では、束縛する StageActor と破棄する StageActor を同じ out に含めると、破棄の ReleaseActor 応答待ちを復元できなかった。Source 217c8ecc84ac2c13f518e1c93157f69c469fdbde で結果の発行元・位置・解放状態と、元の受け取りパターンを照合した。デコード済みAWBCは応答待ちから復元し、解放対象を束縛先へ変えた保存を拒否した。Core／RuntimePlan／Compiler の対象 2701件通過・1件スキップ、構造監査のブロッキング指摘0件。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。

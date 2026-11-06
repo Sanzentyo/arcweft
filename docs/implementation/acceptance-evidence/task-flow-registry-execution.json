@@ -13375,5 +13375,160 @@
         }
       ]
     }
+  },
+  "awbcDialogueResultWildcardRestore": {
+    "source": "217c8ecc84ac2c13f518e1c93157f69c469fdbde",
+    "testInputBase": "14effb8b386ad19bdfffab51b8b602fcfb38fd62",
+    "testedRustFiles": [
+      {
+        "path": "crates/arcweft-compiler/tests/evaluated_effects.rs",
+        "sha256": "acda368fa0e1725d9e068f323cd16b615e5c72f7fc5632deaa8c3ef4dc9285d9"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/dialogue/receiver.rs",
+        "sha256": "326fb5473437b4b8db890dc97b941f9478a36bfab3d5908b0eafff9cd4bf4f7e"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/presentation.rs",
+        "sha256": "c13e578ff78611fe44332e99dcb9a7605fccd12b9d255eb828ff82b1da4fbfa8"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+        "sha256": "b01a05a1bab0e122080821da7dea354e98e808a95ed6f8edad64329baab86b5e"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/vm.rs",
+        "sha256": "fd8a2bdcf4473961915f19433e8916dcb8f69046d528de412858970323d2d454"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/dialogue/store.rs",
+        "sha256": "243a894f262af6c217548f78bd66f954272877c84be40c89656f22d62a74a9f6"
+      },
+      {
+        "path": "crates/arcweft-core/src/line_task/handle.rs",
+        "sha256": "b5ea2e9b9f61e08eeb77750d1181e0bb711a42bdf5a1c3a8b1e843fd4f6468b5"
+      },
+      {
+        "path": "crates/arcweft-core/src/pattern.rs",
+        "sha256": "4f35c1603779810786bba85874d029d42f74015972438f8c29dcc5875600c578"
+      },
+      {
+        "path": "crates/arcweft-core/src/value/view.rs",
+        "sha256": "c82ca9fbc8bedee28066ef4473bf21a19607d44e91e5666037edccb6f524c009"
+      }
+    ],
+    "priorMixedResultProbe": {
+      "source": "c81029e9c35dc219fa9d7e03cfa8f402ba2a321f",
+      "diagnostic": "restored dialogue result is inconsistent with its ledger/frame phase",
+      "artifact": "mixed dialogue result fails public restore during pending release",
+      "testSourceSha256": "af8e34316c5209fdae1ecb5938e5d74e15c8634c2dbd0d935de0003e7852fe77",
+      "testBinarySha256": "1d1a37da7bc3d75d9c6ce643a20f5a05b157d2d615285d166a75c7b10c09bd35"
+    },
+    "regression": {
+      "test": "decoded_awbc_dialogue_result_wildcard_survives_pending_release",
+      "observed": "PASS [   0.961s] ( 213/2701) arcweft-compiler::evaluated_effects decoded_awbc_dialogue_result_wildcard_survives_pending_release",
+      "case": "Preserves original issuer cleanup and receiver result shape while a wildcard actor release is pending. Rejects a forged save with retirement reassigned to the bound actor. The decoded executor resumes only after the accepted release."
+    },
+    "ownerRuntime": {
+      "version": 1,
+      "base": "14effb8b386ad19bdfffab51b8b602fcfb38fd62",
+      "run": "awbc-result-wildcard-owner-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [  71.970s] 2701 tests run: 2701 passed, 1 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2701,
+      "passed": 2701,
+      "failed": 0,
+      "skipped": 1,
+      "selectedPackages": 3,
+      "matchedPackages": 3,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4134,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-06T14:43:17.1750599Z"
+    },
+    "structure": {
+      "version": 1,
+      "base": "14effb8b386ad19bdfffab51b8b602fcfb38fd62",
+      "exitCode": 0,
+      "startedAt": "2026-11-06T14:31:39.0752577Z",
+      "finishedAt": "2026-11-06T14:31:43.9591463Z",
+      "command": "cargo +nightly -Zscript tools/structure-audit.rs --root . --fail-on-blocking"
+    },
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-dialogue-result-wildcard.raw.zip",
+      "sha256": "f6167e44ca2fbc501120feddd251cb0240e7fefbf3a7c12d440b7488a0529d18",
+      "entries": [
+        {
+          "entry": "awbc-result-wildcard-source-draft-20261106/receipt.json",
+          "bytes": 4418,
+          "sha256": "67ab060b9363aee5ffc61e87949fd995a0c59bab76bda9e165b5ae8a050a6658"
+        },
+        {
+          "entry": "awbc-result-wildcard-source-draft-20261106/mixed_pattern_probe.log",
+          "bytes": 285,
+          "sha256": "3d0446b98e042a6e4fc01c7c985f0e710cd261f9d2319e92cbec894337be11e9"
+        },
+        {
+          "entry": "awbc-result-wildcard-source-draft-20261106/mixed_pattern_probe.err.log",
+          "bytes": 516,
+          "sha256": "76d6d16ee1236d1a61ee243f818acca209a490f76406801d13507bb53ddf68b3"
+        },
+        {
+          "entry": "awbc-result-wildcard-structure-20261106.json",
+          "bytes": 286,
+          "sha256": "8d68c4b15eadf2b5ebde7d671fcc97e36f6f77fe55a41aff7aae1afae51e5cd7"
+        },
+        {
+          "entry": "awbc-result-wildcard-structure-20261106.log",
+          "bytes": 65741,
+          "sha256": "207aa7a68b898e4592ea84cc104245ffe020e35033292a16fa211f639d25ef9b"
+        },
+        {
+          "entry": "awbc-result-wildcard-owner-20261106.source-freeze.json",
+          "bytes": 808439,
+          "sha256": "d848d64873c4be94b01ddd805f8386eed69e6b4fc2454cfe0c3fc4b8c27935a1"
+        },
+        {
+          "entry": "awbc-result-wildcard-owner-20261106.catalog.json",
+          "bytes": 678,
+          "sha256": "8b579c51443576984d37d00611bc75ceec71cc119cec3bf6d6be46b09b0abc69"
+        },
+        {
+          "entry": "awbc-result-wildcard-owner-20261106.catalog.log",
+          "bytes": 563481,
+          "sha256": "84244281ffc50e39ce914ad5b5645c48f50a6fc898aa76be1baad80f3eb18de3"
+        },
+        {
+          "entry": "awbc-result-wildcard-owner-20261106.catalog.inventory.json",
+          "bytes": 687979,
+          "sha256": "eb6b01a7812aaf4079889c1f663f6008862c5a04e209c8712d9c58023abd946e"
+        },
+        {
+          "entry": "awbc-result-wildcard-owner-20261106.binaries-before.json",
+          "bytes": 1140,
+          "sha256": "b3abe6909eb1affdd2b572eed77a47e1cd901f8b9ba2a3ecf0b4982a9571267c"
+        },
+        {
+          "entry": "awbc-result-wildcard-owner-20261106.runtime.json",
+          "bytes": 770,
+          "sha256": "d04c955e163991731c5fef42b5c83cab41861771efaede1efc570a70e2cbf69b"
+        },
+        {
+          "entry": "awbc-result-wildcard-owner-20261106.runtime.log",
+          "bytes": 924492,
+          "sha256": "203ee69a7552d56bb71d73e14a294ecba933a83696071a172cbb54c44f8d3e6a"
+        },
+        {
+          "entry": "awbc-result-wildcard-owner-20261106.runtime.terminal-audit.json",
+          "bytes": 624,
+          "sha256": "2f08fb2086eea38a239ac2d62d097bb33012ec0d6426d52264234e06b49f40c4"
+        }
+      ]
+    }
   }
 }
