@@ -34,6 +34,7 @@ fn forge_select() -> CheckedSelectStatement {
 fn forge_unsafe_audit() -> CheckedUnsafeAudit {
     CheckedUnsafeAudit {
         id: any(),
+        reason: Some(any()),
         has_safety_doc: false,
     }
 }

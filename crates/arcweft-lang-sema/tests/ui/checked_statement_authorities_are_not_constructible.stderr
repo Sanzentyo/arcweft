@@ -30,48 +30,50 @@ error[E0451]: field `kind` of struct `CheckedSelectStatement` is private
 31 |     CheckedSelectStatement { kind: any() }
    |                              ^^^^ private field
 
-error[E0451]: fields `id` and `has_safety_doc` of struct `CheckedUnsafeAudit` are private
+error[E0451]: fields `id`, `reason` and `has_safety_doc` of struct `CheckedUnsafeAudit` are private
   --> tests/ui/checked_statement_authorities_are_not_constructible.rs:36:9
    |
 35 |     CheckedUnsafeAudit {
    |     ------------------ in this type
 36 |         id: any(),
    |         ^^ private field
-37 |         has_safety_doc: false,
+37 |         reason: Some(any()),
+   |         ^^^^^^ private field
+38 |         has_safety_doc: false,
    |         ^^^^^^^^^^^^^^ private field
 
 error[E0451]: fields `declaration` and `origin` of struct `CheckedIncludeFlowTarget` are private
-  --> tests/ui/checked_statement_authorities_are_not_constructible.rs:43:9
+  --> tests/ui/checked_statement_authorities_are_not_constructible.rs:44:9
    |
-42 |     CheckedIncludeFlowTarget {
+43 |     CheckedIncludeFlowTarget {
    |     ------------------------ in this type
-43 |         declaration: any(),
+44 |         declaration: any(),
    |         ^^^^^^^^^^^ private field
-44 |         origin: any(),
+45 |         origin: any(),
    |         ^^^^^^ private field
 
 error[E0451]: fields `effects` and `payload` of struct `CheckedStatement` are private
-  --> tests/ui/checked_statement_authorities_are_not_constructible.rs:50:9
+  --> tests/ui/checked_statement_authorities_are_not_constructible.rs:51:9
    |
-49 |     CheckedStatement {
+50 |     CheckedStatement {
    |     ---------------- in this type
-50 |         effects: any(),
+51 |         effects: any(),
    |         ^^^^^^^ private field
-51 |         payload: any(),
+52 |         payload: any(),
    |         ^^^^^^^ private field
 
 error[E0451]: fields `body`, `mode`, `result` and `body_effects` of struct `CheckedThread` are private
-  --> tests/ui/checked_statement_authorities_are_not_constructible.rs:57:9
+  --> tests/ui/checked_statement_authorities_are_not_constructible.rs:58:9
    |
-56 |     CheckedThread {
+57 |     CheckedThread {
    |     ------------- in this type
-57 |         body: any(),
+58 |         body: any(),
    |         ^^^^ private field
-58 |         mode: any(),
+59 |         mode: any(),
    |         ^^^^ private field
-59 |         result: any(),
+60 |         result: any(),
    |         ^^^^^^ private field
-60 |         body_effects: any(),
+61 |         body_effects: any(),
    |         ^^^^^^^^^^^^ private field
 
 error: type `final_analysis::model::statement::CheckedTriggerKind` is private
