@@ -15054,3 +15054,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Owned Line registry owner verification
 
 - Source f0b3274fe9195dac8babc1d559751a5025ee0457 の Core、Sema、Runtime Plan、Compiler の対象4クレートで4,079件通過、1件スキップ。実行IDは列挙結果と一致し、ソース入力3638件のハッシュは実行前後で一致した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Owned Line registry runtime reverse dependencies
+
+- Source f0b3274fe9195dac8babc1d559751a5025ee0457 の Line 所有行を Runtime Driver、Runtime Host、Save で再検証した。260件通過、失敗・スキップともに0件。実行前後でソース入力3638件のハッシュが一致した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。

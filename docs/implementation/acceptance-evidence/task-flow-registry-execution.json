@@ -15933,5 +15933,68 @@
         }
       ]
     }
+  },
+  "ownedLineRegistryRuntimeReverse": {
+    "source": "f0b3274fe9195dac8babc1d559751a5025ee0457",
+    "packages": [
+      "arcweft-runtime-driver",
+      "arcweft-runtime-host",
+      "arcweft-save"
+    ],
+    "passed": 260,
+    "failed": 0,
+    "skipped": 0,
+    "comparedTestIdsFrom": "901926eca718a2c3f110916234aa9f64b8e1d192",
+    "testIdDrift": 0,
+    "receipt": {
+      "version": 1,
+      "source": "f0b3274fe9195dac8babc1d559751a5025ee0457",
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-runtime-driver",
+        "-p",
+        "arcweft-runtime-host",
+        "-p",
+        "arcweft-save",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 0,
+      "summary": "Summary [  82.111s] 260 tests run: 260 passed (1 slow), 0 skipped",
+      "sourceInputs": 3638,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-06T18:01:39.0646041Z",
+      "finishedAt": "2026-11-06T18:07:04.5977869Z"
+    },
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-owned-line-registry-runtime-reverse.raw.zip",
+      "sha256": "a62e80edf9a705bb58102d2b96875222c8a0a3247d86769155a0828459d6cf88",
+      "entries": [
+        {
+          "entry": "owned-line-registry-runtime-reverse-20261107.log",
+          "bytes": 165536,
+          "sha256": "824e85059d66873c27af27c0452859a86ed23ae68e5cc636c53a44cc78bc0c87"
+        },
+        {
+          "entry": "owned-line-registry-runtime-reverse-20261107.source-freeze.json",
+          "bytes": 599451,
+          "sha256": "908b9a77e2f22d14b47c6ca9456254106314d1052ac08e4737e56cbb7f39f808"
+        },
+        {
+          "entry": "owned-line-registry-runtime-reverse-20261107.receipt.json",
+          "bytes": 648,
+          "sha256": "6d8bd948d777629430b710113101b7795dd46e13393da0002b9e26c7634dbdb2"
+        }
+      ]
+    }
   }
 }
