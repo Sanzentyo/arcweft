@@ -803,9 +803,10 @@ impl ProductDialogueStore {
         activation: &DialogueActivationId,
         ledger: &crate::line_task::RuntimeLineHandleLedger,
         handle: &crate::value::ownership::RuntimeAffineLineHandle,
+        source: &crate::line_task::RuntimeHandleOwnerSlot,
     ) -> Result<(), LineRuntimeError> {
         self.registry
-            .validate_registry_handle(activation, ledger, handle)
+            .validate_registry_handle(activation, ledger, handle, source)
     }
 
     pub(super) fn reconcile_child_registry_step(

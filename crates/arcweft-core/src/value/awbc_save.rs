@@ -42,6 +42,8 @@ pub enum AwbcRuntimeValueSnapshotError {
     AgentPredicate(#[from] RuntimeAgentConstructionError),
     #[error("unrestricted snapshot contains an affine value")]
     AffineValue,
+    #[error("registry input custody was refused: {0}")]
+    RegistrySourceCustody(Box<crate::line_task::LineRuntimeError>),
     #[error("retained type {expected:?} requires its original program owner")]
     ProgramOwnerRequired { expected: RuntimeSemanticTypeId },
     #[error("retained type {expected:?} belongs to another original program owner")]

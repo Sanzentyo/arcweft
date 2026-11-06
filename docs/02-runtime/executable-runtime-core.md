@@ -744,8 +744,10 @@ absence, and an optional drop accepts it. Cancellation code in a Line can
 select that Line or its reached parent Flow.
 
 A Line write that moves an issued handle records the receiving activation,
-key, and structural value path as its destination. The same prepared step
-updates the row and the original issuer's ledger. The version-one save
+key, and structural value path as its destination. After admitting the input
+type and resource limits, the writer checks each handle's original slot and
+issuer before constructing the saved row. The same prepared step updates the
+row and the original issuer's ledger. The version-one save
 retains each owning row and its ledger slot. Restore checks both directions
 of that relationship. Pending release responses remain with the issuer after
 row removal.

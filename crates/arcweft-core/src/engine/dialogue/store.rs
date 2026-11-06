@@ -1710,14 +1710,15 @@ impl DialogueActivationStore {
             .prepare_result_abandonment(&mut transaction.inner)
     }
 
-    pub(super) fn validate_registry_handle(
+    pub(in crate::engine) fn validate_registry_handle(
         &self,
         activation: &DialogueActivationId,
         ledger: &crate::line_task::RuntimeLineHandleLedger,
         handle: &crate::value::ownership::RuntimeAffineLineHandle,
+        source: &crate::line_task::RuntimeHandleOwnerSlot,
     ) -> Result<(), LineRuntimeError> {
         self.registry
-            .validate_registry_handle(activation, ledger, handle)
+            .validate_registry_handle(activation, ledger, handle, source)
     }
 
     pub(in crate::engine) fn reconcile_child_registry_step(
@@ -2545,6 +2546,88 @@ mod tests {
             )
             .unwrap();
         assert!(ready && publication.is_some());
+    }
+
+    #[test]
+    fn registry_capture_requires_the_original_handle_source_slot() {
+        use crate::effect::{
+            RuntimeRegistryOwner, RuntimeRegistryWriteSource, RuntimeScopeRegistry,
+        };
+        use crate::line_task::RuntimeHandleOwnerSlot;
+        use crate::plan::{RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed};
+        use crate::value::AwbcRuntimeValueSnapshotError;
+
+        let owner = stage_actor_owner();
+        let ty = owner.semantic_identity();
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [RuntimePlanTypeSeed::new(
+                    ty,
+                    RuntimePlanTypeProjection::Opaque {
+                        producer: owner.producer().clone(),
+                        admission: owner.admission(),
+                        value_class: owner.value_class(),
+                        persistence: owner.persistence(),
+                        arguments: Box::new([]),
+                    },
+                )],
+                [],
+            )
+            .unwrap();
+        let program =
+            crate::task::RuntimeProgramOwner::Plan(std::sync::Arc::new(builder.finish().unwrap()));
+        let mut store = DialogueActivationStore::default();
+        let (value, execution) = publish_stage_actor(&mut store, &activation(57));
+        let receiver = activation(58);
+        let line = RuntimeDialogueActivationState::<RuntimePlanTypeId>::new();
+        let key = arcweft_id::LifetimeRegistryKey::new(
+            arcweft_id::LifetimeScopeKind::Line,
+            Box::new([arcweft_id::DeclarationName::try_new("actor").unwrap()]),
+        );
+        let rows = RuntimeScopeRegistry::default();
+        for (ordinal, allowed) in [(99, false), (23, true)] {
+            let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+                program.clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            );
+            let before =
+                RuntimeHandleOwnerSlot::ParentFiber(RuntimeOwnedSlotId::EnvironmentLocal {
+                    execution,
+                    local: RuntimeLocalSlotId::from_allocated(NonZeroU64::new(ordinal).unwrap()),
+                });
+            let mut validate = |handle: &crate::value::ownership::RuntimeAffineLineHandle| {
+                store.validate_registry_handle(&receiver, line.ledger(), handle, &before)
+            };
+            let captured = rows
+                .prepare_write(
+                    RuntimeRegistryOwner::Dialogue(receiver),
+                    &key,
+                    ty,
+                    None,
+                    RuntimeRegistryWriteSource::NativeLine {
+                        activation: receiver,
+                    },
+                    &mut admission,
+                )
+                .unwrap()
+                .capture_checked(&value, Some(&mut validate));
+            if allowed {
+                assert!(captured.is_ok());
+            } else {
+                let error = captured
+                    .err()
+                    .expect("a different physical slot is rejected before capture");
+                assert_eq!(
+                    error,
+                    AwbcRuntimeValueSnapshotError::RegistrySourceCustody(Box::new(
+                        LineRuntimeError::WrongOwner
+                    ))
+                );
+                assert_eq!(admission.validate(&RuntimeValue::Unit), Err(error));
+            }
+            assert!(rows.is_empty());
+        }
     }
 
     #[test]

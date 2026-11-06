@@ -10,7 +10,7 @@ use crate::entry::schema::value_encoding::ValueAdmissionOrigin;
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::program_types::RuntimeFunctionEffectInstantiation;
 use crate::task::RuntimeProgramOwner;
-use crate::value::ownership::RuntimeValueOwnershipRequirement;
+use crate::value::ownership::{RuntimeAffineLineHandle, RuntimeValueOwnershipRequirement};
 use crate::value::{
     AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError, RuntimeBorrowedValue,
     RuntimeRetainedValueAdmission, RuntimeValue,
@@ -25,6 +25,11 @@ pub(crate) use scope::{
     RuntimePreparedRegistryDrop, RuntimePreparedRegistryMutation, RuntimeRegistryLineChange,
     RuntimeRegistryWritePreparation,
 };
+
+/// Authenticates a borrowed occurrence against its original execution slot
+/// and issuer. This proof is required before constructing an owning row.
+pub(crate) type RuntimeRegistrySourceValidator<'a> =
+    dyn FnMut(&RuntimeAffineLineHandle) -> Result<(), crate::line_task::LineRuntimeError> + 'a;
 
 /// The checked presence requirement for an operation on a reached registry row.
 #[derive(
@@ -230,7 +235,8 @@ impl PreparedRegistryValue<'_, '_> {
         mut self,
         value: &RuntimeValue,
     ) -> Result<RuntimeRegistryStateUpdate, AwbcRuntimeValueSnapshotError> {
-        let row = self.capture_row(value, RuntimeValueOwnershipRequirement::Unrestricted)?;
+        let (row, _) =
+            self.capture_row(value, RuntimeValueOwnershipRequirement::Unrestricted, None)?;
         Ok(RuntimeRegistryStateUpdate {
             program: self
                 .admission
@@ -245,7 +251,9 @@ impl PreparedRegistryValue<'_, '_> {
         &mut self,
         value: &RuntimeValue,
         ownership: RuntimeValueOwnershipRequirement,
-    ) -> Result<RuntimeRegistryValue, AwbcRuntimeValueSnapshotError> {
+        mut source: Option<&mut RuntimeRegistrySourceValidator<'_>>,
+    ) -> Result<(RuntimeRegistryValue, Vec<RuntimeAffineLineHandle>), AwbcRuntimeValueSnapshotError>
+    {
         let Self {
             key,
             expected,
@@ -253,9 +261,10 @@ impl PreparedRegistryValue<'_, '_> {
             admission,
         } = self;
         let expected = *expected;
-        match ownership {
+        let handles = match ownership {
             RuntimeValueOwnershipRequirement::Unrestricted => {
                 admission.validate_typed_in_invocation(value, expected, *binding)?;
+                Vec::new()
             }
             RuntimeValueOwnershipRequirement::Owned => {
                 admission.validate_owned_typed_borrowed_in_invocation(
@@ -263,20 +272,43 @@ impl PreparedRegistryValue<'_, '_> {
                     expected,
                     *binding,
                 )?;
-                value.view().line_registry_handles()?;
+                let handles = value
+                    .view()
+                    .line_registry_handles()
+                    .inspect_err(|error| admission.retain_failure(error.clone()))?;
+                let mut seen = std::collections::BTreeSet::new();
+                for handle in &handles {
+                    use crate::line_task::LineRuntimeError;
+
+                    let verified = if seen.insert(handle.token()) {
+                        source
+                            .as_deref_mut()
+                            .ok_or(LineRuntimeError::WrongOwner)
+                            .and_then(|source| source(handle))
+                    } else {
+                        Err(LineRuntimeError::DuplicateHandleOccurrence)
+                    };
+                    verified
+                        .map_err(|error| {
+                            AwbcRuntimeValueSnapshotError::RegistrySourceCustody(Box::new(error))
+                        })
+                        .inspect_err(|error| admission.retain_failure(error.clone()))?;
+                }
+                handles
             }
-        }
+        };
         let program = admission
             .program_owner()
             .ok_or(AwbcRuntimeValueSnapshotError::ProgramOwnerRequired { expected })?;
         let value = AwbcRuntimeValueSnapshot::from_admitted_runtime_value(value, program)
             .inspect_err(|error| admission.retain_failure(error.clone()))?;
-        Ok(RuntimeRegistryValue {
+        let row = RuntimeRegistryValue {
             key: (*key).clone(),
             expected,
             binding: binding.cloned(),
             value,
-        })
+        };
+        Ok((row, handles))
     }
 }
 

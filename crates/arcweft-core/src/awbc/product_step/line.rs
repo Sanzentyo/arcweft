@@ -1568,6 +1568,19 @@ impl super::AwbcProductStepExecutor {
                     trap,
                 )
             } else {
+                let dialogues = &self.dialogues;
+                let mut validate_source =
+                    |handle: &crate::value::ownership::RuntimeAffineLineHandle| {
+                        let source = before_owners
+                            .get(handle.token())
+                            .ok_or(LineRuntimeError::WrongOwner)?;
+                        dialogues.validate_registry_handle(
+                            &activation,
+                            line.ledger(),
+                            handle,
+                            source,
+                        )
+                    };
                 let registry_access = if let Some((scope, admission)) =
                     registry_scope.as_ref().zip(registry_admission.as_mut())
                 {
@@ -1584,6 +1597,7 @@ impl super::AwbcProductStepExecutor {
                         owner,
                         rows,
                         admission,
+                        validate_source: &mut validate_source,
                         pending: &mut pending_registry_mutation,
                     })
                 } else {
@@ -3868,9 +3882,13 @@ impl super::AwbcProductStepExecutor {
                 &mut registry_before,
                 &mut after,
                 &mut registry_drops,
-                |handle| {
-                    self.dialogues
-                        .validate_registry_handle(activation, line.ledger(), handle)
+                |handle, source| {
+                    self.dialogues.validate_registry_handle(
+                        activation,
+                        line.ledger(),
+                        handle,
+                        source,
+                    )
                 },
             )?;
             (&registry_before, &registry_drops)

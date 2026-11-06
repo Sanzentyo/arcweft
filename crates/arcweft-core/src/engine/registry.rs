@@ -6,17 +6,19 @@ use super::{Engine, FlowFiberId};
 use crate::effect::{
     RuntimeDropPolicyExpr, RuntimeEffectExpr, RuntimeEffectMaterializeError,
     RuntimePreparedRegistryDrop, RuntimePreparedRegistryMutation, RuntimeRegistryOwner,
-    RuntimeRegistryReadKind, RuntimeRegistryWritePreparation, RuntimeRegistryWriteSource,
-    RuntimeScopeRegistry,
+    RuntimeRegistryReadKind, RuntimeRegistrySourceValidator, RuntimeRegistryWritePreparation,
+    RuntimeRegistryWriteSource, RuntimeScopeRegistry,
 };
+use crate::line_task::{LineRuntimeError, RuntimeHandleOwnerSlot};
 use crate::plan::FlowOp;
 use crate::pure::RuntimeCallBackend;
-use crate::runtime_id::{DialogueActivationId, RuntimePlanTypeId};
+use crate::runtime_id::{DialogueActivationId, RuntimeLineHandleToken, RuntimePlanTypeId};
 use crate::task::RuntimeProgramOwner;
 use crate::value::{
     RuntimeEvalError, RuntimeRetainedValueAdmission, RuntimeScopeFunctionContext, RuntimeValue,
 };
 use arcweft_id::{EffectId, LifetimeRegistryKey, LifetimeScopeKind};
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy)]
 pub(super) enum NativeDialogueRegistryTarget {
@@ -60,12 +62,18 @@ pub(super) struct NativeDialogueRegistryMutation {
 }
 
 pub(super) enum NativeLineRegistryExecution<'a> {
-    Child(&'a mut Option<NativeDialogueRegistryMutation>),
+    Child(NativeChildRegistryExecution<'a>),
     Activation(NativeActivationRegistryExecution<'a>),
+}
+
+pub(super) struct NativeChildRegistryExecution<'a> {
+    pub(super) before: &'a BTreeSet<RuntimeLineHandleToken>,
+    pub(super) pending: &'a mut Option<NativeDialogueRegistryMutation>,
 }
 
 pub(super) struct NativeActivationRegistryExecution<'a> {
     pub(super) admission: &'a mut RuntimeRetainedValueAdmission,
+    pub(super) before: &'a BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>,
     pub(super) pending: &'a mut Option<NativeDialogueRegistryMutation>,
 }
 
@@ -147,10 +155,11 @@ impl<'source, 'budget> NativePreparedRegistryMutation<'source, 'budget> {
     pub(super) fn finish(
         self,
         value: Option<RuntimeValue>,
+        validator: Option<&mut RuntimeRegistrySourceValidator<'_>>,
     ) -> Result<RuntimePreparedRegistryMutation, RuntimeEffectExecutionError> {
         match self {
             Self::Write { prepared, .. } => Ok(RuntimePreparedRegistryMutation::Write(
-                prepared.capture(&value.expect("the write has one input"))?,
+                prepared.capture_checked(&value.expect("the write has one input"), validator)?,
             )),
             Self::Drop {
                 prepared, policy, ..
@@ -389,9 +398,27 @@ impl Engine {
             .input()
             .map(|input| self.evaluate_expr_with_backend(input, backend))
             .transpose()?;
+        let mut validate = |handle: &crate::value::ownership::RuntimeAffineLineHandle| {
+            let transaction = self
+                .dialogue_activations
+                .inline_stack
+                .last()
+                .filter(|transaction| transaction.activation() == &activation)
+                .ok_or(LineRuntimeError::WrongActivation)?;
+            let source = execution
+                .before
+                .get(handle.token())
+                .ok_or(LineRuntimeError::WrongOwner)?;
+            self.dialogue_activations.validate_registry_handle(
+                &activation,
+                transaction.line().ledger(),
+                handle,
+                source,
+            )
+        };
         *execution.pending = Some(NativeDialogueRegistryMutation {
             target,
-            mutation: prepared.finish(value)?,
+            mutation: prepared.finish(value, Some(&mut validate))?,
         });
 
         Ok(())
@@ -400,6 +427,7 @@ impl Engine {
     pub(super) fn stage_child_line_registry_mutation(
         &mut self,
         source: &NativeSourceOperation,
+        before: &BTreeSet<RuntimeLineHandleToken>,
         backend: &mut impl RuntimeCallBackend,
     ) -> Result<NativeDialogueRegistryMutation, RuntimeEffectExecutionError> {
         let missing = RuntimeEffectMaterializeError::RegistryContextRequired;
@@ -407,6 +435,7 @@ impl Engine {
             return Err(missing.into());
         };
         let activation = *child.tag.activation_id();
+        let child_slot = RuntimeHandleOwnerSlot::ChildScope(child.tag.clone());
         let group = self
             .dialogue_activations
             .active_task_group(&activation)
@@ -452,9 +481,24 @@ impl Engine {
             .input()
             .map(|input| self.evaluate_expr_with_backend(input, backend))
             .transpose();
+        let mut validate = |handle: &crate::value::ownership::RuntimeAffineLineHandle| {
+            if !before.contains(handle.token()) || handle.token().activation() != &activation {
+                return Err(LineRuntimeError::WrongOwner);
+            }
+            let line = self
+                .dialogue_activations
+                .active_line(&activation)
+                .ok_or(LineRuntimeError::WrongActivation)?;
+            self.dialogue_activations.validate_registry_handle(
+                &activation,
+                line.ledger(),
+                handle,
+                &child_slot,
+            )
+        };
         match evaluated
             .map_err(RuntimeEffectExecutionError::from)
-            .and_then(|value| prepared.finish(value))
+            .and_then(|value| prepared.finish(value, Some(&mut validate)))
         {
             Ok(mutation) => Ok(NativeDialogueRegistryMutation { target, mutation }),
 
@@ -586,7 +630,7 @@ impl Engine {
                 .input()
                 .map(|input| self.evaluate_expr_with_backend(input, backend))
                 .transpose()?;
-            let mutation = prepared.finish(value)?;
+            let mutation = prepared.finish(value, None)?;
             let registry = self.fiber.frame.env.flow_registry_mut().ok_or(missing)?;
             mutation.reserve(registry)?;
             mutation.commit(registry)?;

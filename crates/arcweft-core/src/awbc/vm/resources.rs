@@ -5,8 +5,8 @@ use super::{
 };
 use crate::effect::{
     RuntimeDropPolicyKind, RuntimePreparedRegistryMutation, RuntimeRegistryDropTarget,
-    RuntimeRegistryOwner, RuntimeRegistryReadKind, RuntimeRegistryWriteSource,
-    RuntimeScopeRegistry,
+    RuntimeRegistryOwner, RuntimeRegistryReadKind, RuntimeRegistrySourceValidator,
+    RuntimeRegistryWriteSource, RuntimeScopeRegistry,
 };
 use crate::presentation::resources::{PresentationBanks, PresentationBody};
 use crate::value::ownership::RuntimeValueOwnershipRequirement;
@@ -27,6 +27,7 @@ pub(crate) struct VmDialogueRegistryAccess<'a> {
     pub(crate) owner: RuntimeRegistryOwner,
     pub(crate) rows: &'a RuntimeScopeRegistry,
     pub(crate) admission: &'a mut RuntimeRetainedValueAdmission,
+    pub(crate) validate_source: &'a mut RuntimeRegistrySourceValidator<'a>,
     pub(crate) pending: &'a mut Option<(RuntimeRegistryOwner, RuntimePreparedRegistryMutation)>,
 }
 
@@ -76,7 +77,10 @@ impl VmDialogueRegistryAccess<'_> {
             .map_err(FiberStateError::Snapshot)?;
         let transfer = frame.prepare_register_values(program, args)?;
         let update = prepared
-            .capture(frame.register(*source_register)?)
+            .capture_checked(
+                frame.register(*source_register)?,
+                Some(self.validate_source),
+            )
             .map_err(FiberStateError::Snapshot)?;
         drop(transfer.commit(fiber.active_frame_mut()?));
         *self.pending = Some((self.owner, RuntimePreparedRegistryMutation::Write(update)));

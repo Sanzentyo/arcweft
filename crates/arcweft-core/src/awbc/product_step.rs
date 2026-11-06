@@ -3434,6 +3434,28 @@ impl AwbcProductStepExecutor {
         } else {
             terminal_exit.map_or_else(
                 || {
+                    let dialogues = &self.dialogues;
+                    let mut validate_source = |handle: &crate::value::ownership::RuntimeAffineLineHandle| {
+                        let activation = registry_activation.ok_or(LineRuntimeError::WrongActivation)?;
+                        if handle.token().activation() != &activation
+                            || before_handles.as_ref().is_none_or(|handles| !handles.contains(handle.token()))
+                        {
+                            return Err(LineRuntimeError::WrongOwner);
+                        }
+                        let tag = match &owner {
+                            ProductChildFiberOwner::LineTask { tag, .. } => tag.clone(),
+                            ProductChildFiberOwner::Deferred { registration, .. }
+                            | ProductChildFiberOwner::ScopedDeferred { registration, .. } => {
+                                LineTaskWorkTag::activation(activation, LineTaskWork::Defer(*registration))
+                            }
+                            _ => return Err(LineRuntimeError::WrongOwner),
+                        };
+                        let line = dialogues.active_line_for(&activation).ok_or(LineRuntimeError::WrongActivation)?;
+                        dialogues.validate_registry_handle(
+                            &activation, line.ledger(), handle,
+                            &crate::line_task::RuntimeHandleOwnerSlot::ChildScope(tag),
+                        )
+                    };
                     let registry_access = if let (Some(activation), Some(admission), Some(scope)) = (
                         registry_activation,
                         registry_admission.as_mut(),
@@ -3455,6 +3477,7 @@ impl AwbcProductStepExecutor {
                             owner,
                             rows,
                             admission,
+                            validate_source: &mut validate_source,
                             pending: &mut pending_registry_mutation,
                         })
                     } else {

@@ -1742,6 +1742,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         activation: &DialogueActivationId,
         ledger: &RuntimeLineHandleLedger,
         handle: &RuntimeAffineLineHandle,
+        source: &RuntimeHandleOwnerSlot,
     ) -> Result<(), LineRuntimeError> {
         let token = handle.token();
         let lease = if token.activation() == activation {
@@ -1757,6 +1758,9 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         .ok_or(LineRuntimeError::UnknownHandle)?;
         if lease.resource().kind() != handle.kind() {
             return Err(LineRuntimeError::WrongOpaqueProducer);
+        }
+        if lease.owner() != source {
+            return Err(LineRuntimeError::WrongOwner);
         }
         if !lease.admits_line_registry() {
             return Err(LineRuntimeError::ReleasedHandle);
@@ -1808,7 +1812,9 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
             &mut before,
             &mut after,
             &mut drops,
-            |handle| self.validate_registry_handle(&activation, line.ledger(), handle),
+            |handle, source| {
+                self.validate_registry_handle(&activation, line.ledger(), handle, source)
+            },
         )?;
         drops.validate_removed(
             |token| before.contains_key(token),
@@ -1834,12 +1840,12 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
             .retained_registry_line_handles()
             .map_err(|_| LineRuntimeError::InvalidHandlePayload)?
         {
-            self.validate_registry_handle(&activation, line.ledger(), &handle)?;
             let owner = RuntimeHandleOwnerSlot::LineRegistry {
                 receiver: activation,
                 key: key.clone(),
                 path: handle.path().clone(),
             };
+            self.validate_registry_handle(&activation, line.ledger(), &handle, &owner)?;
             if before.insert(handle.token().clone(), owner).is_some() {
                 return Err(LineRuntimeError::DuplicateHandleOccurrence);
             }

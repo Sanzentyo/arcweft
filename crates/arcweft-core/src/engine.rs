@@ -4432,7 +4432,12 @@ impl Engine {
             output,
             pure_backend,
             &mut drop_policy,
-            &mut line_registry_mutation,
+            before_tokens
+                .as_ref()
+                .map(|before| registry::NativeChildRegistryExecution {
+                    before,
+                    pending: &mut line_registry_mutation,
+                }),
         );
         self.finish_active_child_if_exhausted(output, pure_backend);
         let main = self
@@ -4894,7 +4899,7 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
         drop_policy: &mut Option<crate::effect::RuntimeDropPolicy>,
-        line_registry_mutation: &mut Option<registry::NativeDialogueRegistryMutation>,
+        line_registry: Option<registry::NativeChildRegistryExecution<'_>>,
     ) {
         if self.fiber.owner.requests_scope_close() {
             self.close_active_child_fiber(output, pure_backend);
@@ -4911,9 +4916,7 @@ impl Engine {
             return;
         }
         if !self.fiber.frame.pending_ops.is_empty() || self.has_active_project_call() {
-            let line_registry = matches!(self.fiber.owner, FlowFiberOwner::LineTask(_)).then_some(
-                registry::NativeLineRegistryExecution::Child(line_registry_mutation),
-            );
+            let line_registry = line_registry.map(registry::NativeLineRegistryExecution::Child);
             self.step_flow_with_line_registry(output, pure_backend, drop_policy, line_registry);
         }
     }

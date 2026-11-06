@@ -1081,13 +1081,17 @@ impl Engine {
                 if let Some(key) = effect.registry_mutation_key() {
                     use super::registry::NativeLineRegistryExecution;
                     let written = match line_registry {
-                        Some(NativeLineRegistryExecution::Child(pending))
+                        Some(NativeLineRegistryExecution::Child(execution))
                             if key.scope() == &arcweft_id::LifetimeScopeKind::Line
                                 || (key.scope() == &arcweft_id::LifetimeScopeKind::Flow
                                     && self.fiber.frame.env.flow_registry().is_none()) =>
                         {
-                            self.stage_child_line_registry_mutation(&source_site, pure_backend)
-                                .map(|write| *pending = Some(write))
+                            self.stage_child_line_registry_mutation(
+                                &source_site,
+                                execution.before,
+                                pure_backend,
+                            )
+                            .map(|write| *execution.pending = Some(write))
                         }
                         Some(NativeLineRegistryExecution::Activation(execution))
                             if matches!(

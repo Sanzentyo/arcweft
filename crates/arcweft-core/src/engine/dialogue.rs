@@ -1612,11 +1612,12 @@ impl Engine {
                     &mut before_registry,
                     &mut after,
                     &mut drops,
-                    |handle| {
+                    |handle, source| {
                         self.dialogue_activations.validate_registry_handle(
                             activation_id,
                             activation.ledger(),
                             handle,
+                            source,
                         )
                     },
                 )?;
@@ -3115,8 +3116,19 @@ impl Engine {
                 .input()
                 .map(|input| self.evaluate_dialogue_expr(slot, input, pure_backend))
                 .transpose()?;
+            let mut validate = |handle: &crate::value::ownership::RuntimeAffineLineHandle| {
+                let source = before
+                    .get(handle.token())
+                    .ok_or(LineRuntimeError::WrongOwner)?;
+                self.dialogue_activations.validate_registry_handle(
+                    &id,
+                    slot.transaction().line().ledger(),
+                    handle,
+                    source,
+                )
+            };
             let mutation = prepared
-                .finish(evaluated)
+                .finish(evaluated, Some(&mut validate))
                 .map_err(|error| failure(error.to_string()))?;
 
             let transaction = slot.transaction_mut();
@@ -3179,6 +3191,7 @@ impl Engine {
                 pure_backend,
                 Some(NativeActivationRegistryExecution {
                     admission: &mut admission,
+                    before: &before,
                     pending: &mut pending,
                 }),
             )?;

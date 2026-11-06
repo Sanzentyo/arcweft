@@ -3772,7 +3772,15 @@ fn execute_nested_line_handle_transfer(
                 );
                 assert_eq!(cancelled_cue, expect_look);
                 assert!(released);
-                assert_eq!(log_messages(&effects), ["parent consumed the child handle"]);
+                let expected: &[&str] = if cancel_last {
+                    &[
+                        "parent consumed the child handle",
+                        "cancel callback observed removal",
+                    ]
+                } else {
+                    &["parent consumed the child handle"]
+                };
+                assert_eq!(log_messages(&effects), expected);
                 return;
             }
             FlowFiberStatus::Done(FlowExit::Done) => {}
@@ -3805,6 +3813,7 @@ fn owned_line_registry_releases_issued_handles_in_native_and_decoded_awbc() {
     }"#;
     let cancellation = r#"cancel on input(.SkipLine) {
         drop_optional('line.saved?)
+        if let .None = 'line.saved? { log.info("cancel callback observed removal") }
         out "cancelled"
     }
     out "completed""#;

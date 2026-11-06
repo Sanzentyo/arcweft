@@ -13,7 +13,7 @@ pub use assertion_identity::{
 };
 pub(crate) use registry::{
     RuntimePreparedRegistryDrop, RuntimePreparedRegistryMutation, RuntimeRegistryLineChange,
-    RuntimeRegistryWritePreparation,
+    RuntimeRegistrySourceValidator, RuntimeRegistryWritePreparation,
 };
 pub use registry::{
     RuntimeRegistryDropTarget, RuntimeRegistryReadKind, RuntimeRegistryStateUpdate,
