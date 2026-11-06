@@ -755,5 +755,535 @@
         "sha256": "a1ee6c5553955034fce634be10c33cad8a532237a137f6e6a117fe0ab60087ee"
       }
     ]
+  },
+  "cliWorkspaceValidation": {
+    "cliTests": {
+      "version": 1,
+      "base": "5deb88741e1f64df26ac08bc5a536f0a6063cd80",
+      "run": "flow-registry-cli-owner-final-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   1.630s] 2 tests run: 2 passed, 492 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 492,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4130,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-06T02:04:48.1956576Z"
+    },
+    "exactProbe": {
+      "version": 1,
+      "base": "0325d9e36b8bd07b9a54d08767b922f1124a80b3",
+      "sourceCommit": "5deb88741e1f64df26ac08bc5a536f0a6063cd80",
+      "source": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/active-flow-registry-fixture-exact_effect-20261106.arcw",
+      "sourceSha256": "867adce853399896d7db6f4921d85861626be351339458da888af8b469e76601",
+      "binarySha256": "54378a602c02190d165ade9f564a38fd398a0fc6e8821256e8cf952b151459d3",
+      "sourceOrExecutableDrift": 0,
+      "cases": [
+        {
+          "case": "verify",
+          "arguments": [
+            "verify",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/active-flow-registry-fixture-exact_effect-20261106.arcw",
+            "--mode",
+            "test",
+            "--json"
+          ],
+          "exit": 0,
+          "status": null,
+          "steps": [],
+          "parseError": null,
+          "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "case": "plan",
+          "arguments": [
+            "plan",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/active-flow-registry-fixture-exact_effect-20261106.arcw",
+            "--json"
+          ],
+          "exit": 0,
+          "status": null,
+          "steps": [],
+          "parseError": null,
+          "stdoutSha256": "399a376e200f08a65219abaef44be801bf20deae91b7870ce73bb8855c7f1ca2",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "case": "native",
+          "arguments": [
+            "run",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/active-flow-registry-fixture-exact_effect-20261106.arcw",
+            "--entry",
+            "entry.main",
+            "--executor",
+            "bytecode-vm",
+            "--mode",
+            "one-op",
+            "--max-ops",
+            "1",
+            "--steps",
+            "64",
+            "--json"
+          ],
+          "exit": 0,
+          "status": "done Return(\"after\")",
+          "steps": [
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "Done",
+              "diagnostics": []
+            }
+          ],
+          "parseError": null,
+          "stdoutSha256": "f0bf2430b669b2c4dbff0690511893931e845e54b3de34e40df707bcf05c3644",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "case": "awbc",
+          "arguments": [
+            "run",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/active-flow-registry-fixture-exact_effect-20261106.arcw",
+            "--entry",
+            "entry.main",
+            "--executor",
+            "awbc-product",
+            "--mode",
+            "one-op",
+            "--max-ops",
+            "1",
+            "--steps",
+            "64",
+            "--json"
+          ],
+          "exit": 0,
+          "status": "done Return(\"after\")",
+          "steps": [
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "OneOp",
+              "diagnostics": []
+            },
+            {
+              "ops": 1,
+              "stop": "Done",
+              "diagnostics": []
+            }
+          ],
+          "parseError": null,
+          "stdoutSha256": "8b3abc2e6b71f19c5af4bebb82904170fe62e28b38c246081fe267ab9039991e",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    "format": {
+      "source": "5deb88741e1f64df26ac08bc5a536f0a6063cd80",
+      "command": [
+        "rustfmt",
+        "--edition",
+        "2024",
+        "--config",
+        "skip_children=true",
+        "--check",
+        "crates/arcweft-compiler/tests/flow_include.rs",
+        "crates/arcweft-core/src/awbc/fiber.rs",
+        "crates/arcweft-core/src/awbc/vm.rs",
+        "crates/arcweft-core/src/awbc/vm/resources.rs",
+        "crates/arcweft-core/src/effect.rs",
+        "crates/arcweft-core/src/effect/registry.rs",
+        "crates/arcweft-core/src/effect/registry/scope.rs",
+        "crates/arcweft-core/src/engine.rs",
+        "crates/arcweft-core/src/engine/audio.rs",
+        "crates/arcweft-core/src/engine/flow.rs",
+        "crates/arcweft-core/src/engine/flow/function_call.rs",
+        "crates/arcweft-core/src/engine/line.rs",
+        "crates/arcweft-core/src/engine/registry.rs",
+        "crates/arcweft-core/src/value.rs",
+        "crates/arcweft-core/src/value/env.rs"
+      ],
+      "exitCode": 0
+    },
+    "workspace": [
+      {
+        "version": 1,
+        "base": "0325d9e36b8bd07b9a54d08767b922f1124a80b3",
+        "source": "5deb88741e1f64df26ac08bc5a536f0a6063cd80",
+        "name": "check",
+        "command": [
+          "cargo",
+          "check",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/flow-registry-quality-20261106-check.log",
+        "exitCode": 0,
+        "sourceInputs": 4130,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T02:04:51.1798044Z",
+        "finishedAt": "2026-11-06T02:06:46.0853255Z"
+      },
+      {
+        "version": 1,
+        "base": "0325d9e36b8bd07b9a54d08767b922f1124a80b3",
+        "source": "5deb88741e1f64df26ac08bc5a536f0a6063cd80",
+        "name": "clippy",
+        "command": [
+          "cargo",
+          "clippy",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/flow-registry-quality-20261106-clippy.log",
+        "exitCode": 0,
+        "sourceInputs": 4130,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T02:06:46.5811633Z",
+        "finishedAt": "2026-11-06T02:08:57.9166169Z"
+      },
+      {
+        "version": 1,
+        "base": "0325d9e36b8bd07b9a54d08767b922f1124a80b3",
+        "source": "5deb88741e1f64df26ac08bc5a536f0a6063cd80",
+        "name": "structure",
+        "command": [
+          "cargo",
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/flow-registry-quality-20261106.structure-report"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/flow-registry-quality-20261106-structure.log",
+        "exitCode": 0,
+        "sourceInputs": 4130,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T02:08:58.397562Z",
+        "finishedAt": "2026-11-06T02:09:02.3083507Z"
+      }
+    ],
+    "rawArchive": {
+      "path": "task-flow-registry-cli-and-quality.raw.zip",
+      "bytes": 1306179,
+      "sha256": "3d7ed57ad2fec4f9b3e2abb9e28d32fec11a45072ef74b653a5664d089f7fc1e",
+      "entryDrift": 0,
+      "entries": [
+        {
+          "entry": "active-flow-registry-exact-green-20261106.awbc.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "active-flow-registry-exact-green-20261106.awbc.stdout.json",
+          "bytes": 39337,
+          "sha256": "8b3abc2e6b71f19c5af4bebb82904170fe62e28b38c246081fe267ab9039991e"
+        },
+        {
+          "entry": "active-flow-registry-exact-green-20261106.native.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "active-flow-registry-exact-green-20261106.native.stdout.json",
+          "bytes": 18488,
+          "sha256": "f0bf2430b669b2c4dbff0690511893931e845e54b3de34e40df707bcf05c3644"
+        },
+        {
+          "entry": "active-flow-registry-exact-green-20261106.plan.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "active-flow-registry-exact-green-20261106.plan.stdout.json",
+          "bytes": 169,
+          "sha256": "399a376e200f08a65219abaef44be801bf20deae91b7870ce73bb8855c7f1ca2"
+        },
+        {
+          "entry": "active-flow-registry-exact-green-20261106.receipt.json",
+          "bytes": 6203,
+          "sha256": "c15446b02576aa3d493227c8fb631792e3e04df70034bf3702f89981c417ceaf"
+        },
+        {
+          "entry": "active-flow-registry-exact-green-20261106.verify.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "active-flow-registry-exact-green-20261106.verify.stdout.json",
+          "bytes": 202,
+          "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+        },
+        {
+          "entry": "flow-registry-cli-owner-final-20261106.binaries-before.json",
+          "bytes": 201,
+          "sha256": "86c0ebf775f02c5ee4d8e0db801d57c1c8b3dffe78da4b203f2c12688ec82581"
+        },
+        {
+          "entry": "flow-registry-cli-owner-final-20261106.catalog.inventory.json",
+          "bytes": 118668,
+          "sha256": "cb6115b8ac0185c8e26a6cc5fd64b1d9a892cd37948ed0f6112f85d6f0a67a2c"
+        },
+        {
+          "entry": "flow-registry-cli-owner-final-20261106.catalog.json",
+          "bytes": 612,
+          "sha256": "0a1233e23c2fa2002e90b45a2ebf8ae55ecf55180e00f8480fcf543e1319fdfa"
+        },
+        {
+          "entry": "flow-registry-cli-owner-final-20261106.catalog.log",
+          "bytes": 178590,
+          "sha256": "250f62444657b8228cc73e83816d57da2e336764adfe38e66f162546f19b7202"
+        },
+        {
+          "entry": "flow-registry-cli-owner-final-20261106.runtime.json",
+          "bytes": 704,
+          "sha256": "158f30e60f4e35e96961e666d48192ae0982d3f901b2300eb4eebf353ffe30be"
+        },
+        {
+          "entry": "flow-registry-cli-owner-final-20261106.runtime.log",
+          "bytes": 224563,
+          "sha256": "c63b085a94df3d7570a6fad10e35e2ad1618fb05a99e3f89b49554031e5a7460"
+        },
+        {
+          "entry": "flow-registry-cli-owner-final-20261106.runtime.terminal-audit.json",
+          "bytes": 619,
+          "sha256": "9d403e5eaf8d2310d9cdf37ecd3f91840ce26edf51b833d2853c496737b2d4c8"
+        },
+        {
+          "entry": "flow-registry-cli-owner-final-20261106.source-freeze.json",
+          "bytes": 807631,
+          "sha256": "1da6242bac4ef37813e098ebbc7d8594f45e9d7cb84550cc8f7cf7e9776236c1"
+        },
+        {
+          "entry": "flow-registry-quality-20261106-check.json",
+          "bytes": 575,
+          "sha256": "5747157e36f7b90dbf97013f9533a59098132bd87ef8d3dfb1bff9baab41b59f"
+        },
+        {
+          "entry": "flow-registry-quality-20261106-check.log",
+          "bytes": 110175,
+          "sha256": "dd861c1b187372e89f046b83fe43455e10e1230053430b053267a2367d75446e"
+        },
+        {
+          "entry": "flow-registry-quality-20261106-clippy.json",
+          "bytes": 578,
+          "sha256": "172061bc26812c98b7d3c93262e1852f9d80f9af4aeb8809c45b1043954bc2f8"
+        },
+        {
+          "entry": "flow-registry-quality-20261106-clippy.log",
+          "bytes": 8892262,
+          "sha256": "7ceb843f9054ab998743404253edbb8398dd2f9001a19e457c1aad421caba66e"
+        },
+        {
+          "entry": "flow-registry-quality-20261106-fmt.json",
+          "bytes": 936,
+          "sha256": "5f47a299709f15042a71ba528fd095663d7126023a6574aa017c1e4d84c3e9e5"
+        },
+        {
+          "entry": "flow-registry-quality-20261106-fmt.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "flow-registry-quality-20261106-structure.json",
+          "bytes": 753,
+          "sha256": "0da9f2ae4e612531842ac2dddfd3c8b5917be4892a77f00a5106911f6f82e8c9"
+        },
+        {
+          "entry": "flow-registry-quality-20261106-structure.log",
+          "bytes": 65788,
+          "sha256": "bd048a5956da35b12b035aa39c9613f6b641b3de7d2691dbe495f754109c6aa1"
+        },
+        {
+          "entry": "flow-registry-quality-20261106.progress.json",
+          "bytes": 2469,
+          "sha256": "88090080e18ba8300974feb21df0b9fd5d791c24415056d831f8ca386b041253"
+        },
+        {
+          "entry": "flow-registry-quality-20261106.source-freeze.json",
+          "bytes": 715141,
+          "sha256": "538b4ba4311e530d0199f9ee110427d67df8fe7c1b8ce60c81c79d07fec6c501"
+        },
+        {
+          "entry": "flow-registry-quality-20261106.structure-report/dependency_edges.csv",
+          "bytes": 78209,
+          "sha256": "3093f8a36140f5d2345ba17f2653cd7950d662b1cf512584fbe01b805bea723b"
+        },
+        {
+          "entry": "flow-registry-quality-20261106.structure-report/file_metrics.csv",
+          "bytes": 340289,
+          "sha256": "98f540ff671990741c53b035e2af77774acede8e423b000bec983102f5d87529"
+        },
+        {
+          "entry": "flow-registry-quality-20261106.structure-report/findings.md",
+          "bytes": 123641,
+          "sha256": "d1ced3f9246dcb09b8184b427b85367b2376ec61f9ae319e7c895020b02c1438"
+        },
+        {
+          "entry": "flow-registry-quality-20261106.structure-report/package_metrics.csv",
+          "bytes": 6508,
+          "sha256": "824d564aa9d244ebd4199fb6ee8e80ee7c7096c7d1d7c90a64d682ee6e0e0d54"
+        },
+        {
+          "entry": "flow-registry-quality-20261106.structure-report/public_type_duplicates.csv",
+          "bytes": 17441,
+          "sha256": "1f4de95e3e739d2a4d3f10ed07336dd544b97cdb58783460dd760e4749038d82"
+        }
+      ]
+    }
   }
 }
