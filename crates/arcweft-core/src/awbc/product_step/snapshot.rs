@@ -142,6 +142,17 @@ impl<V, O, E, F, L, P, H>
             }) => None,
         }
     }
+
+    pub(super) fn activation_fiber_mut(&mut self) -> Option<&mut F> {
+        match &mut self.phase {
+            super::AwbcProductDialoguePhase::Activating { fiber, .. }
+            | super::AwbcProductDialoguePhase::Closing(super::AwbcProductDialogueClosing {
+                state: super::AwbcProductDialogueClosingState::Activation { fiber, .. },
+                ..
+            }) => Some(fiber),
+            _ => None,
+        }
+    }
 }
 
 fn snapshot_work(work: &LineTaskWork) -> AwbcProductLineTaskWorkSnapshot {
@@ -276,15 +287,13 @@ impl ProductChildFiberOwner {
             Self::ScopedDeferred {
                 content,
                 activation,
-                frame,
-                scope,
+                owner,
                 registration,
                 site,
             } => AwbcProductChildFiberOwnerSnapshot::ScopedDeferred {
                 content: *content,
                 activation: activation.clone(),
-                frame: *frame,
-                scope: *scope,
+                owner: *owner,
                 registration: *registration,
                 site: *site,
             },
@@ -339,15 +348,13 @@ impl ProductChildFiberOwner {
             AwbcProductChildFiberOwnerSnapshot::ScopedDeferred {
                 content,
                 activation,
-                frame,
-                scope,
+                owner,
                 registration,
                 site,
             } => Self::ScopedDeferred {
                 content: *content,
                 activation: activation.clone(),
-                frame: *frame,
-                scope: *scope,
+                owner: *owner,
                 registration: *registration,
                 site: *site,
             },
@@ -2465,7 +2472,7 @@ impl AwbcProductExecutorSnapshot {
                 }
                 let tokens = child
                     .fiber
-                    .affine_line_handle_tokens()
+                    .child_scope_affine_line_handle_tokens()
                     .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?
                     .into_iter()
                     .map(|token| {
@@ -2523,7 +2530,7 @@ impl AwbcProductExecutorSnapshot {
                 );
                 let tokens = child
                     .fiber
-                    .affine_line_handle_tokens()
+                    .child_scope_affine_line_handle_tokens()
                     .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?
                     .into_iter()
                     .map(|token| {
@@ -2542,10 +2549,14 @@ impl AwbcProductExecutorSnapshot {
                     });
                 }
             }
-            let activation_fiber = active.activation_fiber();
-            let scoped_registration_ids = activation_fiber
+            let mut expected_scoped_inflight = BTreeMap::new();
+            let mut scope_defer_tokens = BTreeMap::new();
+            let lexical_fibers = active
+                .activation_fiber()
                 .into_iter()
-                .chain(children.iter().map(|child| &child.fiber))
+                .chain(children.iter().map(|child| &child.fiber));
+            let scoped_registration_ids = lexical_fibers
+                .clone()
                 .flat_map(|fiber| fiber.frames.iter().flat_map(|frame| &frame.scopes))
                 .flat_map(|scope| {
                     scope
@@ -2560,13 +2571,75 @@ impl AwbcProductExecutorSnapshot {
                 .map_err(|error| {
                     AwbcProductStepBuildError::RestoreSnapshot { message: error.to_string() }
                 })?;
-            let mut actual_scoped_inflight = None;
+            for fiber in lexical_fibers {
+                for frame in &fiber.frames {
+                    for scope in &frame.scopes {
+                        if let Some(inflight) = scope.defer_inflight {
+                            let owner = crate::awbc::fiber::AwbcFiberLexicalScopeId {
+                                fiber: fiber.instance,
+                                frame: frame.instance,
+                                scope: scope.id,
+                            };
+                            if owner.active_scope(fiber).is_none_or(|active| active.defer_exit.is_none())
+                                || expected_scoped_inflight.insert(owner, inflight).is_some()
+                            {
+                                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                                    message: "in-flight defer is outside its fiber's active lexical scope"
+                                        .to_owned(),
+                                });
+                            }
+                        }
+                        for deferred in &scope.defers {
+                            for capture in &deferred.captures {
+                                for handle in
+                                    capture.view().affine_line_handles().map_err(|error| {
+                                        AwbcProductStepBuildError::RestoreSnapshot {
+                                            message: error.to_string(),
+                                        }
+                                    })?
+                                {
+                                    if handle.token().activation() != &active.activation
+                                        || scope_defer_tokens
+                                            .insert(
+                                                handle.token().clone(),
+                                                crate::line_task::RuntimeHandleOwnerSlot::ScopedDefer(deferred.id),
+                                            )
+                                            .is_some()
+                                    {
+                                        return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                                            message: "scoped defer capture ownership is duplicated or stale"
+                                                .to_owned(),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        for release in &scope.defer_releasing {
+                            for token in &release.tokens {
+                                if token.activation() != &active.activation
+                                    || scope_defer_tokens
+                                        .insert(
+                                            token.clone(),
+                                            crate::line_task::RuntimeHandleOwnerSlot::RetiringScopedDefer(release.registration),
+                                        )
+                                        .is_some()
+                                {
+                                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                                        message:
+                                            "scoped defer release token is duplicated or stale"
+                                                .to_owned(),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             for child in children {
                 let AwbcProductChildFiberOwnerSnapshot::ScopedDeferred {
                     content,
                     activation,
-                    frame,
-                    scope,
+                    owner,
                     registration,
                     site,
                 } = &child.owner
@@ -2580,28 +2653,20 @@ impl AwbcProductExecutorSnapshot {
                     .ok_or_else(|| AwbcProductStepBuildError::RestoreSnapshot {
                         message: "scoped deferred child references a missing defer site".to_owned(),
                     })?;
-                let expected = (*frame, *scope, *registration, *site);
-                let matching_scope = activation_fiber
-                    .and_then(|fiber| fiber.frames.iter().find(|row| row.instance == *frame))
-                    .and_then(|frame| frame.scopes.iter().find(|row| row.id == *scope));
+                let inflight = crate::awbc::fiber::FiberDeferredInFlight {
+                    registration: *registration,
+                    site: *site,
+                };
                 if *content != active.content
                     || activation != &active.activation
+                    || owner.fiber >= child.fiber.instance
                     || child.fiber.frames.first().map(|frame| frame.function) != Some(function)
-                    || child.fiber.status == FiberStatus::Returned
-                    || child.fiber.status == FiberStatus::Cancelled
-                    || child.fiber.status == FiberStatus::Trapped
-                    || matching_scope.is_none_or(|scope| {
-                        scope.defer_exit.is_none()
-                            || scope.defer_inflight
-                                != Some(crate::awbc::fiber::FiberDeferredInFlight {
-                                    registration: *registration,
-                                    site: *site,
-                                })
-                    })
-                    || actual_scoped_inflight.replace(expected).is_some()
+                    || (child.fiber.status.is_terminal()
+                        && !super::line::fiber_has_scoped_defer_work(&child.fiber))
+                    || expected_scoped_inflight.remove(owner) != Some(inflight)
                 {
                     return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "scoped defer child does not match one active activation scope"
+                        message: "scoped defer child does not match its active lexical scope"
                             .to_owned(),
                     });
                 }
@@ -2611,7 +2676,7 @@ impl AwbcProductExecutorSnapshot {
                 );
                 let tokens = child
                     .fiber
-                    .affine_line_handle_tokens()
+                    .child_scope_affine_line_handle_tokens()
                     .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?
                     .into_iter()
                     .map(|token| {
@@ -2636,74 +2701,14 @@ impl AwbcProductExecutorSnapshot {
                         .to_owned(),
                 });
             }
-            let mut expected_scoped_inflight = None;
-            let mut scope_defer_tokens = BTreeMap::new();
-            if let Some(fiber) = activation_fiber {
-                for frame in &fiber.frames {
-                    for scope in &frame.scopes {
-                        if let Some(inflight) = scope.defer_inflight {
-                            if expected_scoped_inflight
-                                .replace((
-                                    frame.instance,
-                                    scope.id,
-                                    inflight.registration,
-                                    inflight.site,
-                                ))
-                                .is_some()
-                            {
-                                return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                                    message: "activation has more than one in-flight scoped defer"
-                                        .to_owned(),
-                                });
-                            }
-                        }
-                        for deferred in &scope.defers {
-                            for capture in &deferred.captures {
-                                for handle in
-                                    capture.view().affine_line_handles().map_err(|error| {
-                                        AwbcProductStepBuildError::RestoreSnapshot {
-                                            message: error.to_string(),
-                                        }
-                                    })?
-                                {
-                                    if handle.token().activation() != &active.activation
-                                        || scope_defer_tokens
-                                            .insert(handle.token().clone(), deferred.id)
-                                            .is_some()
-                                    {
-                                        return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                                            message: "scoped defer capture ownership is duplicated or stale"
-                                                .to_owned(),
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                        for release in &scope.defer_releasing {
-                            for token in &release.tokens {
-                                if token.activation() != &active.activation
-                                    || scope_defer_tokens
-                                        .insert(token.clone(), release.registration)
-                                        .is_some()
-                                {
-                                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                                        message:
-                                            "scoped defer release token is duplicated or stale"
-                                                .to_owned(),
-                                    });
-                                }
-                            }
-                        }
-                    }
-                }
-            }
             let ledger_scoped_tokens = shared_line
                 .ledger()
                 .leases()
                 .iter()
                 .filter_map(|(token, lease)| match lease.owner() {
-                    crate::line_task::RuntimeHandleOwnerSlot::ScopedDefer(registration) => {
-                        Some((token.clone(), *registration))
+                    owner @ (crate::line_task::RuntimeHandleOwnerSlot::ScopedDefer(_)
+                    | crate::line_task::RuntimeHandleOwnerSlot::RetiringScopedDefer(_)) => {
+                        Some((token.clone(), owner.clone()))
                     }
                     _ => None,
                 })
@@ -2715,10 +2720,10 @@ impl AwbcProductExecutorSnapshot {
                             .to_owned(),
                 });
             }
-            if actual_scoped_inflight != expected_scoped_inflight {
+            if !expected_scoped_inflight.is_empty() {
                 return Err(AwbcProductStepBuildError::RestoreSnapshot {
                     message:
-                        "scoped defer child snapshot is not paired with the exact activation scope"
+                        "scoped defer child snapshot is not paired with the exact lexical scope"
                             .to_owned(),
                 });
             }
@@ -2740,17 +2745,10 @@ impl AwbcProductExecutorSnapshot {
             for tag in &expected_joined {
                 ledger_child_tokens.entry(tag.clone()).or_default();
             }
-            let active_defer_registrations = actual_deferred_pair
-                .map(|(registration, _)| registration)
-                .into_iter()
-                .chain(actual_scoped_inflight.map(|(_, _, registration, _)| registration));
-            for registration in active_defer_registrations {
-                ledger_child_tokens
-                    .entry(LineTaskWorkTag::activation(
-                        active.activation.clone(),
-                        LineTaskWork::Defer(registration),
-                    ))
-                    .or_default();
+            for tag in actual_child_tokens.keys() {
+                if matches!(tag.work(), LineTaskWork::Defer(_)) {
+                    ledger_child_tokens.entry(tag.clone()).or_default();
+                }
             }
             if actual_child_tokens != ledger_child_tokens {
                 return Err(AwbcProductStepBuildError::RestoreSnapshot {
@@ -3405,8 +3403,7 @@ pub enum AwbcProductChildFiberOwnerSnapshot {
     ScopedDeferred {
         content: AwbcContentUnitId,
         activation: DialogueActivationId,
-        frame: crate::runtime_id::RuntimeFrameInstanceId,
-        scope: crate::awbc::schema::AwbcScopeId,
+        owner: crate::awbc::fiber::AwbcFiberLexicalScopeId,
         registration: crate::runtime_id::RuntimeDeferRegistrationId,
         site: crate::runtime_id::RuntimeDeferSiteId,
     },
@@ -3562,14 +3559,11 @@ fn expected_deferred_children(
         else {
             continue;
         };
-        if matches!(
-            child.fiber.status,
-            crate::awbc::fiber::FiberStatus::Returned
-                | crate::awbc::fiber::FiberStatus::Cancelled
-                | crate::awbc::fiber::FiberStatus::Trapped
-        ) || expected
-            .insert(activation.clone(), (*registration, *site))
-            .is_some()
+        if (child.fiber.status.is_terminal()
+            && !super::line::fiber_has_scoped_defer_work(&child.fiber))
+            || expected
+                .insert(activation.clone(), (*registration, *site))
+                .is_some()
         {
             return Err(AwbcProductStepBuildError::RestoreSnapshot {
                 message: "deferred child snapshot is terminal or duplicates an activation inflight registration"

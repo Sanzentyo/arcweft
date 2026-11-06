@@ -36,7 +36,8 @@ pub(crate) use defer::AwbcRuntimeDeferredRegistrationSnapshot;
 pub(crate) use handle::{
     AwbcRuntimeDialogueActivationSnapshot, AwbcRuntimePublishedDialogueHandlesSnapshot,
     RuntimeDialogueCommitReceipt, RuntimeDialogueTerminalKind, RuntimeHandleDropReceipt,
-    RuntimePreparedLineCommands, RuntimePreparedScheduledPacketTake,
+    RuntimePreparedDeferredRegistration, RuntimePreparedLineCommands,
+    RuntimePreparedScheduledPacketTake, RuntimePreparedScopedDeferUnwind,
     RuntimePublishedDialogueHandles, RuntimeScheduledChildAdmissionProof,
     RuntimeScheduledCompletionStage,
 };

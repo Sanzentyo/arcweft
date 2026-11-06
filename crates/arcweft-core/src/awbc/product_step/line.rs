@@ -90,12 +90,106 @@ struct PreparedActivationFiberReconciliation {
     received_handles: Option<crate::line_task::PreparedRuntimeParentFiberReconciliation>,
 }
 
+#[derive(Clone, Copy)]
+enum ScopedDeferCaptureOwner<'a> {
+    Activation(&'a DialogueActivationId),
+    Child(&'a LineTaskWorkTag),
+}
+
+impl ScopedDeferCaptureOwner<'_> {
+    fn activation(self) -> DialogueActivationId {
+        match self {
+            Self::Activation(activation) => *activation,
+            Self::Child(tag) => *tag.activation_id(),
+        }
+    }
+}
+
+struct PreparedScopedDeferRegistration {
+    owner: crate::awbc::fiber::AwbcFiberLexicalScopeId,
+    instruction: crate::awbc::fiber::PreparedYieldedInstruction,
+    registration: crate::line_task::RuntimePreparedDeferredRegistration,
+    registers: Vec<crate::awbc::schema::AwbcRegisterId>,
+    tokens: BTreeSet<RuntimeLineHandleToken>,
+}
+
+pub(super) struct PreparedChildScopedDeferRegistration {
+    scoped: PreparedScopedDeferRegistration,
+    ledger: RuntimeLineHandleLedger,
+}
+
+impl PreparedScopedDeferRegistration {
+    fn commit(
+        self,
+        line: &mut RuntimeDialogueActivationState<AwbcTypeId>,
+        fiber: &mut FiberState,
+        cursor: FiberCursor,
+        site: crate::runtime_id::RuntimeDeferSiteId,
+        outcome: crate::line_task::RuntimeDeferOutcomeFilter,
+        captures: Vec<(crate::awbc::schema::AwbcRegisterId, RuntimeValue)>,
+    ) {
+        fiber.commit_yielded_instruction_prepared(self.instruction);
+        let packet = line.commit_deferred_registration(
+            site,
+            outcome,
+            captures.into_iter().map(|(_, value)| value).collect(),
+            self.registration,
+        );
+        let (id, site, outcome, captures) = packet.into_parts();
+        self.owner
+            .active_scope_mut(fiber)
+            .expect("admitted defer registration retains its lexical scope")
+            .defers
+            .push(crate::awbc::fiber::FiberDeferredRegistration {
+                id,
+                site,
+                outcome,
+                source: cursor,
+                capture_registers: self.registers,
+                captures,
+            });
+    }
+}
+
+impl PreparedChildScopedDeferRegistration {
+    pub(super) fn commit(
+        self,
+        line: &mut RuntimeDialogueActivationState<AwbcTypeId>,
+        fiber: &mut FiberState,
+        observation: VmObservation,
+    ) {
+        let VmObservation::ScopedDeferRegistration {
+            cursor,
+            site,
+            outcome,
+            captures,
+            ..
+        } = observation
+        else {
+            unreachable!("admitted child defer retains its exact registration observation");
+        };
+        self.scoped
+            .commit(line, fiber, cursor, site, outcome, captures);
+        line.commit_ledger(self.ledger);
+    }
+}
+
 struct PreparedLineChildSpawn {
     child_generation: u64,
     next_generation: u64,
     next_fiber_instance: crate::runtime_id::RuntimeIdCursor,
     fiber_instance: crate::runtime_id::RuntimeFiberInstanceId,
     inputs: crate::awbc::fiber::PreparedFunctionInputBinding,
+}
+
+pub(super) struct PreparedScopedDeferUnwind {
+    activation: DialogueActivationId,
+    owner: crate::awbc::fiber::AwbcFiberLexicalScopeId,
+    content: AwbcContentUnitId,
+    exit: crate::line_task::ScopeExit,
+    tokens: BTreeSet<RuntimeLineHandleToken>,
+    ledger: crate::line_task::RuntimePreparedScopedDeferUnwind,
+    spawn: Option<PreparedLineChildSpawn>,
 }
 
 #[derive(Clone, Copy)]
@@ -109,6 +203,7 @@ pub(super) struct ReservedLineRunIdentity {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ProductExistingChildAction {
     CancelAndJoin,
+    UnwindAndJoin,
     MarkClosing,
     Detach,
 }
@@ -117,6 +212,11 @@ pub(super) enum ProductExistingChildAction {
 enum ExistingChildLocation {
     Executor,
     Batch,
+}
+
+pub(super) struct ScopedDeferFinish<'a> {
+    pub(super) tag: &'a LineTaskWorkTag,
+    pub(super) live: &'a BTreeSet<RuntimeLineHandleToken>,
 }
 
 enum PreparedLineRunSource {
@@ -438,6 +538,7 @@ impl super::AwbcProductStepExecutor {
             &batch.line_task_reserved_runs,
             true,
             ProductLineTaskCommit::Commands,
+            None,
         )?;
         if preview.runs.len() < batch.line_task_reserved_runs.len() {
             return Err(ProductStepError::Internal(
@@ -544,6 +645,16 @@ impl super::AwbcProductStepExecutor {
         batch: &super::ProductLineTaskExecutionBatch,
         commit: ProductLineTaskCommit,
     ) -> Result<PreparedLineTaskCommands, ProductStepError> {
+        self.preflight_line_task_commands_with_scoped_defer(transaction, batch, commit, None)
+    }
+
+    pub(super) fn preflight_line_task_commands_with_scoped_defer(
+        &self,
+        transaction: &mut ProductDialogueTransaction,
+        batch: &super::ProductLineTaskExecutionBatch,
+        commit: ProductLineTaskCommit,
+        defer: Option<ScopedDeferFinish<'_>>,
+    ) -> Result<PreparedLineTaskCommands, ProductStepError> {
         let mut activation = LineTaskActivation::default();
         for staged in &batch.line_task_activations {
             activation.append(staged.clone());
@@ -556,6 +667,7 @@ impl super::AwbcProductStepExecutor {
             &batch.line_task_reserved_runs,
             false,
             commit,
+            defer,
         )?;
         if prepared.runs.len() != batch.line_task_reserved_runs.len() {
             return Err(ProductStepError::Internal(
@@ -574,6 +686,7 @@ impl super::AwbcProductStepExecutor {
         reserved_runs: &[ReservedLineRunIdentity],
         allow_new_runs: bool,
         commit: ProductLineTaskCommit,
+        defer: Option<ScopedDeferFinish<'_>>,
     ) -> Result<PreparedLineTaskCommands, ProductStepError> {
         let content = transaction.frame().content;
         let mut line_task = baseline
@@ -584,6 +697,16 @@ impl super::AwbcProductStepExecutor {
             transaction.activation().clone(),
             transaction.line().command_sequence(),
         );
+        if let Some(defer) = defer {
+            transaction.line().stage_child_scope_finish(
+                &mut scheduled,
+                &mut host_commands,
+                defer.tag,
+                defer.live,
+                &BTreeSet::new(),
+                RuntimeDropPolicy::Default,
+            )?;
+        }
         let mut pending = VecDeque::from(activation.commands);
         let mut scheduled_completions = VecDeque::from(activation.scheduled_completions);
         let mut completed_tokens = BTreeSet::new();
@@ -740,6 +863,7 @@ impl super::AwbcProductStepExecutor {
                             actions.get(&instance),
                             Some(
                                 ProductExistingChildAction::CancelAndJoin
+                                    | ProductExistingChildAction::UnwindAndJoin
                                     | ProductExistingChildAction::Detach
                             )
                         ) {
@@ -747,6 +871,13 @@ impl super::AwbcProductStepExecutor {
                         }
                         match policy.cancel {
                             ChildCancelPolicy::CancelAndJoin => {
+                                if fiber_has_scoped_defer_work(&child.fiber) {
+                                    actions.insert(
+                                        instance,
+                                        ProductExistingChildAction::UnwindAndJoin,
+                                    );
+                                    continue;
+                                }
                                 let scheduled_child = self.preflight_existing_line_child_cancel(
                                     transaction.line(),
                                     &mut scheduled,
@@ -893,12 +1024,22 @@ impl super::AwbcProductStepExecutor {
             .child_fibers
             .iter()
             .filter(|child| {
-                executor_actions.get(&child.fiber.instance)
-                    == Some(&ProductExistingChildAction::CancelAndJoin)
+                matches!(
+                    executor_actions.get(&child.fiber.instance),
+                    Some(
+                        ProductExistingChildAction::CancelAndJoin
+                            | ProductExistingChildAction::UnwindAndJoin
+                    )
+                )
             })
             .chain(batch.child_fibers.iter().filter(|child| {
-                batch_actions.get(&child.fiber.instance)
-                    == Some(&ProductExistingChildAction::CancelAndJoin)
+                matches!(
+                    batch_actions.get(&child.fiber.instance),
+                    Some(
+                        ProductExistingChildAction::CancelAndJoin
+                            | ProductExistingChildAction::UnwindAndJoin
+                    )
+                )
             }))
             .map(|child| &child.fiber)
             .collect::<Vec<_>>();
@@ -996,12 +1137,22 @@ impl super::AwbcProductStepExecutor {
             .child_fibers
             .iter_mut()
             .filter(|child| {
-                prepared.executor_actions.get(&child.fiber.instance)
-                    == Some(&ProductExistingChildAction::CancelAndJoin)
+                matches!(
+                    prepared.executor_actions.get(&child.fiber.instance),
+                    Some(
+                        ProductExistingChildAction::CancelAndJoin
+                            | ProductExistingChildAction::UnwindAndJoin
+                    )
+                )
             })
             .chain(batch.child_fibers.iter_mut().filter(|child| {
-                prepared.batch_actions.get(&child.fiber.instance)
-                    == Some(&ProductExistingChildAction::CancelAndJoin)
+                matches!(
+                    prepared.batch_actions.get(&child.fiber.instance),
+                    Some(
+                        ProductExistingChildAction::CancelAndJoin
+                            | ProductExistingChildAction::UnwindAndJoin
+                    )
+                )
             }))
             .map(|child| &mut child.fiber)
             .collect::<Vec<_>>();
@@ -1170,6 +1321,13 @@ impl super::AwbcProductStepExecutor {
                 Some(ProductExistingChildAction::Detach) => {
                     child.owner = super::ProductChildFiberOwner::Independent;
                 }
+                Some(ProductExistingChildAction::UnwindAndJoin) => {
+                    batch.observations.extend(
+                        crate::awbc::vm::cancel_fiber(&self.program, &mut child.fiber)
+                            .expect("preflighted cancellation retains its cleanup inventory")
+                            .observations,
+                    );
+                }
                 Some(ProductExistingChildAction::CancelAndJoin) => {
                     unreachable!("preflighted cancellation was consumed above")
                 }
@@ -1314,6 +1472,15 @@ impl super::AwbcProductStepExecutor {
                     *phase = super::ProductLineTaskFiberPhase::Closing;
                     index += 1;
                 }
+                Some(ProductExistingChildAction::UnwindAndJoin) => {
+                    let child = &mut self.child_fibers[index];
+                    batch.observations.extend(
+                        crate::awbc::vm::cancel_fiber(&self.program, &mut child.fiber)
+                            .expect("preflighted cancellation retains its cleanup inventory")
+                            .observations,
+                    );
+                    index += 1;
+                }
                 Some(ProductExistingChildAction::Detach) => {
                     self.child_fibers[index].owner = super::ProductChildFiberOwner::Independent;
                     index += 1;
@@ -1396,7 +1563,7 @@ impl super::AwbcProductStepExecutor {
             if let Some(error) = diagnostics.into_iter().next() {
                 return Err(error.into());
             }
-            settle_scoped_defer_releases(transaction);
+            settle_scoped_defer_releases(transaction, &mut self.child_fibers);
             return Ok(ProductActivationProgress {
                 trap: None,
                 progressed: true,
@@ -1412,7 +1579,7 @@ impl super::AwbcProductStepExecutor {
         if !outcomes.is_empty() {
             return Err(LineRuntimeError::StaleCommandOutcome.into());
         }
-        settle_scoped_defer_releases(transaction);
+        settle_scoped_defer_releases(transaction, &mut self.child_fibers);
         let mut host_result_take = None;
         let host_trap = if let Some(pending) =
             transaction.frame().pending_activation_host_call.clone()
@@ -2872,13 +3039,44 @@ impl super::AwbcProductStepExecutor {
         outcome: crate::line_task::RuntimeDeferOutcomeFilter,
         captures: &mut Vec<(crate::awbc::schema::AwbcRegisterId, RuntimeValue)>,
     ) -> Result<(), ProductStepError> {
-        line.can_register_deferred()?;
-        if fiber.cursor != cursor
-            || fiber.active_frame()?.scopes.last().map(|scope| scope.id) != Some(scope_id)
-        {
-            return Err(LineRuntimeError::InvalidActivationOperation.into());
-        }
+        let prepared = self.inspect_scoped_defer_registration(
+            ScopedDeferCaptureOwner::Activation(activation),
+            line,
+            fiber,
+            cursor,
+            scope_id,
+            site,
+            outcome,
+            captures,
+        )?;
+        prepared.commit(line, fiber, cursor, site, outcome, std::mem::take(captures));
+        Ok(())
+    }
+
+    fn inspect_scoped_defer_registration(
+        &self,
+        owner: ScopedDeferCaptureOwner<'_>,
+        line: &RuntimeDialogueActivationState<AwbcTypeId>,
+        fiber: &FiberState,
+        cursor: FiberCursor,
+        scope_id: crate::awbc::schema::AwbcScopeId,
+        site: crate::runtime_id::RuntimeDeferSiteId,
+        outcome: crate::line_task::RuntimeDeferOutcomeFilter,
+        captures: &[(crate::awbc::schema::AwbcRegisterId, RuntimeValue)],
+    ) -> Result<PreparedScopedDeferRegistration, ProductStepError> {
         let frame = fiber.active_frame()?;
+        let scope_owner = crate::awbc::fiber::AwbcFiberLexicalScopeId {
+            fiber: fiber.instance,
+            frame: frame.instance,
+            scope: scope_id,
+        };
+        let scope = scope_owner
+            .active_scope(fiber)
+            .ok_or(LineRuntimeError::InvalidActivationOperation)?;
+        if scope.defer_exit.is_some() || scope.defer_inflight.is_some() {
+            return Err(LineRuntimeError::InvalidDeferredTransition.into());
+        }
+        let instruction = fiber.validate_yielded_instruction(cursor)?;
         crate::awbc::fiber::FiberDeferredRegistration::validate_registration_inputs(
             &self.program,
             frame,
@@ -2905,63 +3103,99 @@ impl super::AwbcProductStepExecutor {
                 return Err(LineRuntimeError::InvalidActivationOperation.into());
             }
             for handle in handles {
-                if handle.token().activation() != activation
-                    || !capture_tokens.insert(handle.token().clone())
-                {
+                if handle.token().activation() != &owner.activation() {
+                    return Err(LineRuntimeError::WrongActivation.into());
+                }
+                if !capture_tokens.insert(handle.token().clone()) {
                     return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
                 }
-                let owner =
-                    activation_register_owner(self.facade_fiber.execution, fiber, *register)?;
+                let expected = match owner {
+                    ScopedDeferCaptureOwner::Activation(_) => {
+                        RuntimeHandleOwnerSlot::ActivationLocal(activation_register_owner(
+                            self.facade_fiber.execution,
+                            fiber,
+                            *register,
+                        )?)
+                    }
+                    ScopedDeferCaptureOwner::Child(tag) => {
+                        RuntimeHandleOwnerSlot::ChildScope(tag.clone())
+                    }
+                };
                 let lease = line
                     .ledger()
                     .lease(handle.token())
                     .ok_or(LineRuntimeError::UnknownHandle)?;
-                if lease.owner() != &RuntimeHandleOwnerSlot::ActivationLocal(owner) {
+                if lease.owner() != &expected {
                     return Err(LineRuntimeError::WrongOwner.into());
                 }
             }
         }
-        let scope = fiber
-            .active_frame()?
-            .scopes
-            .last()
-            .filter(|scope| scope.id == scope_id)
-            .ok_or(LineRuntimeError::InvalidActivationOperation)?;
-        if scope.defer_exit.is_some() || scope.defer_inflight.is_some() {
-            return Err(LineRuntimeError::InvalidDeferredTransition.into());
-        }
         let capture_values = captures.iter().map(|(_, value)| value).collect::<Vec<_>>();
-        let prepared = line.inspect_deferred_registration_refs(&capture_values)?;
-        let yielded = fiber.validate_yielded_instruction(cursor)?;
-        fiber.commit_yielded_instruction_prepared(yielded);
-        let packet = line.commit_deferred_registration(
+        Ok(PreparedScopedDeferRegistration {
+            owner: scope_owner,
+            instruction,
+            registration: line.inspect_deferred_registration_refs(&capture_values)?,
+            registers: capture_registers,
+            tokens: capture_tokens,
+        })
+    }
+
+    pub(super) fn inspect_child_scoped_defer_registration(
+        &self,
+        line: &RuntimeDialogueActivationState<AwbcTypeId>,
+        tag: &LineTaskWorkTag,
+        fiber: &FiberState,
+        observation: &VmObservation,
+        before: &BTreeSet<RuntimeLineHandleToken>,
+        after: &BTreeSet<RuntimeLineHandleToken>,
+        drops: &crate::line_task::RuntimeHandleDropAuthorization,
+    ) -> Result<PreparedChildScopedDeferRegistration, ProductStepError> {
+        let VmObservation::ScopedDeferRegistration {
+            cursor,
+            scope,
             site,
             outcome,
-            std::mem::take(captures)
-                .into_iter()
-                .map(|(_, value)| value)
-                .collect(),
-            prepared,
-        );
-        let (id, site, outcome, captures) = packet.into_parts();
-        let deferred = crate::awbc::fiber::FiberDeferredRegistration {
-            id,
-            site,
-            outcome,
-            source: cursor,
-            capture_registers,
             captures,
+        } = observation
+        else {
+            return Err(LineRuntimeError::InvalidActivationOperation.into());
         };
-        let frame = fiber
-            .active_frame_mut()
-            .expect("prepared yielded instruction retained its active frame");
-        let scope = frame
-            .scopes
-            .last_mut()
-            .filter(|scope| scope.id == scope_id)
-            .expect("borrowed scoped defer preflight retained its lexical scope");
-        scope.defers.push(deferred);
-        Ok(())
+        let scoped = self.inspect_scoped_defer_registration(
+            ScopedDeferCaptureOwner::Child(tag),
+            line,
+            fiber,
+            *cursor,
+            *scope,
+            *site,
+            *outcome,
+            captures,
+        )?;
+        if !after.is_disjoint(&scoped.tokens)
+            || after.len() + scoped.tokens.len() != before.len()
+            || !after.is_subset(before)
+            || !scoped.tokens.is_subset(before)
+        {
+            return Err(LineRuntimeError::UnexpectedChildHandleOccurrence.into());
+        }
+        if drops.displaced_tokens().next().is_some() {
+            return Err(LineRuntimeError::UnjournaledHandleDrop.into());
+        }
+        let source = RuntimeHandleOwnerSlot::ChildScope(tag.clone());
+        let destination = RuntimeHandleOwnerSlot::ScopedDefer(scoped.registration.id());
+        let mut ledger = line.ledger().clone();
+        for token in before {
+            if token.activation() != tag.activation_id() {
+                return Err(LineRuntimeError::WrongActivation.into());
+            }
+            let lease = ledger.lease(token).ok_or(LineRuntimeError::UnknownHandle)?;
+            if lease.owner() != &source {
+                return Err(LineRuntimeError::WrongOwner.into());
+            }
+            if scoped.tokens.contains(token) {
+                ledger.transfer(token, &source, destination.clone())?;
+            }
+        }
+        Ok(PreparedChildScopedDeferRegistration { scoped, ledger })
     }
 
     fn prepare_scoped_defer_unwind(
@@ -2974,74 +3208,109 @@ impl super::AwbcProductStepExecutor {
         scope_id: crate::awbc::schema::AwbcScopeId,
         requested_exit: crate::line_task::ScopeExit,
         batch: &mut super::ProductLineTaskExecutionBatch,
-    ) -> Result<BTreeSet<crate::runtime_id::RuntimeLineHandleToken>, ProductStepError> {
+    ) -> Result<BTreeSet<RuntimeLineHandleToken>, ProductStepError> {
+        let prepared = self.inspect_scoped_defer_unwind(
+            activation,
+            owner_content,
+            line,
+            fiber,
+            cursor,
+            scope_id,
+            requested_exit,
+            batch,
+        )?;
+        Ok(self.commit_scoped_defer_unwind(line, fiber, batch, prepared))
+    }
+
+    pub(super) fn inspect_scoped_defer_unwind(
+        &self,
+        activation: &DialogueActivationId,
+        owner_content: AwbcContentUnitId,
+        line: &mut RuntimeDialogueActivationState<AwbcTypeId>,
+        fiber: &FiberState,
+        cursor: FiberCursor,
+        scope_id: crate::awbc::schema::AwbcScopeId,
+        requested_exit: crate::line_task::ScopeExit,
+        batch: &super::ProductLineTaskExecutionBatch,
+    ) -> Result<PreparedScopedDeferUnwind, ProductStepError> {
         if fiber.cursor != cursor {
             return Err(LineRuntimeError::InvalidActivationOperation.into());
         }
-        let (handled_tokens, decision, prepared_spawn, content, frame_instance) = {
-            let frame = fiber.active_frame()?;
-            let frame_instance = frame.instance;
-            let scope = frame
-                .scopes
-                .last()
-                .filter(|scope| scope.id == scope_id)
-                .ok_or(LineRuntimeError::InvalidActivationOperation)?;
-            if scope.defer_inflight.is_some()
-                || scope.defers.is_empty()
-                || !scope.defer_releasing.is_empty()
-            {
-                return Err(LineRuntimeError::InvalidDeferredTransition.into());
-            }
-            let exit = scope.defer_exit.unwrap_or(requested_exit);
-            let deferred = scope
-                .defers
-                .last()
-                .expect("nonempty lexical defer stack was checked");
-            let mut handled_tokens = BTreeSet::new();
-            for capture in &deferred.captures {
-                for handle in unique_line_handles(capture)? {
-                    if !handled_tokens.insert(handle.token().clone()) {
-                        return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
-                    }
+        let owner = crate::awbc::fiber::AwbcFiberLexicalScopeId {
+            fiber: fiber.instance,
+            frame: fiber.active_frame()?.instance,
+            scope: scope_id,
+        };
+        let scope = owner
+            .active_scope(fiber)
+            .ok_or(LineRuntimeError::InvalidActivationOperation)?;
+        let deferred = scope
+            .defers
+            .last()
+            .filter(|_| scope.defer_inflight.is_none() && scope.defer_releasing.is_empty())
+            .ok_or(LineRuntimeError::InvalidDeferredTransition)?;
+        let exit = scope.defer_exit.unwrap_or(requested_exit);
+        let mut tokens = BTreeSet::new();
+        for capture in &deferred.captures {
+            for handle in unique_line_handles(capture)? {
+                if !tokens.insert(handle.token().clone()) {
+                    return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
                 }
             }
-            let (prepared_spawn, content) = if deferred.outcome.matches(exit) {
-                let function = self
-                    .program
-                    .defer_sites
-                    .get(deferred.site.index())
-                    .copied()
-                    .ok_or(LineRuntimeError::UnknownDeferredSite {
-                        site: deferred.site,
-                    })?;
-                let prepared = batch.prepare_spawn(self, function, &deferred.captures)?;
-                (Some(prepared), Some(owner_content))
-            } else {
-                (None, None)
-            };
-            let decision = line.prepare_scoped_deferred_parts(
-                activation,
-                deferred.id,
-                deferred.outcome,
-                &deferred.captures,
-                exit,
-            )?;
-            (
-                handled_tokens,
-                decision,
-                prepared_spawn,
-                content,
-                frame_instance,
-            )
+        }
+        let ledger = line.inspect_scoped_defer_unwind(
+            activation,
+            deferred.id,
+            deferred.outcome,
+            &deferred.captures,
+            exit,
+        )?;
+        let spawn = if ledger.decision() == RuntimeScopedDeferDecision::Run {
+            let function = self
+                .program
+                .defer_sites
+                .get(deferred.site.index())
+                .copied()
+                .ok_or(LineRuntimeError::UnknownDeferredSite {
+                    site: deferred.site,
+                })?;
+            Some(batch.prepare_spawn(self, function, &deferred.captures)?)
+        } else {
+            None
         };
-        let scope = fiber
-            .active_frame_mut()
-            .expect("checked scoped defer retained its active frame")
-            .scopes
-            .last_mut()
-            .filter(|scope| scope.id == scope_id)
+        Ok(PreparedScopedDeferUnwind {
+            activation: *activation,
+            owner,
+            content: owner_content,
+            exit,
+            tokens,
+            ledger,
+            spawn,
+        })
+    }
+
+    pub(super) fn commit_scoped_defer_unwind(
+        &self,
+        line: &mut RuntimeDialogueActivationState<AwbcTypeId>,
+        fiber: &mut FiberState,
+        batch: &mut super::ProductLineTaskExecutionBatch,
+        prepared: PreparedScopedDeferUnwind,
+    ) -> BTreeSet<RuntimeLineHandleToken> {
+        let PreparedScopedDeferUnwind {
+            activation,
+            owner,
+            content,
+            exit,
+            tokens,
+            ledger,
+            spawn,
+        } = prepared;
+        let decision = ledger.decision();
+        line.commit_scoped_defer_unwind(ledger);
+        let scope = owner
+            .active_scope_mut(fiber)
             .expect("checked scoped defer retained its lexical scope");
-        scope.defer_exit.get_or_insert(requested_exit);
+        scope.defer_exit = Some(exit);
         let deferred = scope
             .defers
             .pop()
@@ -3050,34 +3319,38 @@ impl super::AwbcProductStepExecutor {
         let site = deferred.site;
         match decision {
             RuntimeScopedDeferDecision::Skipped => {
-                if !handled_tokens.is_empty() {
+                let releasing = tokens
+                    .iter()
+                    .filter(|token| {
+                        line.ledger().lease(token).is_some_and(|lease| {
+                            lease.owner() == &RuntimeHandleOwnerSlot::RetiringScopedDefer(id)
+                        })
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if !releasing.is_empty() {
                     scope
                         .defer_releasing
                         .push(crate::awbc::fiber::FiberDeferredRelease {
                             registration: id,
                             site,
-                            tokens: handled_tokens.iter().cloned().collect(),
+                            tokens: releasing,
                         });
                 }
             }
             RuntimeScopedDeferDecision::Run => {
-                let prepared = prepared_spawn.expect("Run child was preflighted above");
-                let content = content.expect("Run content was preflighted above");
                 batch.spawn_prepared(
                     self,
-                    crate::runtime_id::RuntimePresentationBankId::Dialogue {
-                        activation: *activation,
-                    },
+                    crate::runtime_id::RuntimePresentationBankId::Dialogue { activation },
                     super::ProductChildFiberOwner::ScopedDeferred {
                         content,
-                        activation: activation.clone(),
-                        frame: frame_instance,
-                        scope: scope_id,
+                        activation,
+                        owner,
                         registration: id,
                         site,
                     },
                     deferred.captures,
-                    prepared,
+                    spawn.expect("run child was preflighted"),
                 );
                 scope.defer_inflight = Some(crate::awbc::fiber::FiberDeferredInFlight {
                     registration: id,
@@ -3085,7 +3358,7 @@ impl super::AwbcProductStepExecutor {
                 });
             }
         }
-        Ok(handled_tokens)
+        tokens
     }
 
     pub(super) fn resume_pending_line_operation(
@@ -4117,46 +4390,56 @@ pub(super) fn fiber_has_scoped_defer_inflight(fiber: &FiberState) -> bool {
         .any(|scope| scope.defer_inflight.is_some())
 }
 
-pub(super) fn settle_scoped_defer_releases(transaction: &mut ProductDialogueTransaction) {
-    let lease_states = transaction
-        .line()
-        .ledger()
-        .leases()
+pub(super) fn fiber_has_pending_scoped_defer(fiber: &FiberState) -> bool {
+    fiber
+        .frames
         .iter()
-        .map(|(token, lease)| (token.clone(), lease.state()))
-        .collect::<BTreeMap<_, _>>();
-    let fiber = match &mut transaction.frame_mut().phase {
-        ProductDialoguePhase::Activating { fiber, .. }
-        | ProductDialoguePhase::Closing(ProductDialogueClosing {
-            state: ProductDialogueClosingState::Activation { fiber, .. },
-            ..
-        }) => fiber,
-        ProductDialoguePhase::Reducing { .. }
-        | ProductDialoguePhase::Publishing { .. }
-        | ProductDialoguePhase::Transitioning
-        | ProductDialoguePhase::Closing(ProductDialogueClosing {
-            state: ProductDialogueClosingState::LineTask { .. },
-            ..
-        }) => return,
-    };
+        .flat_map(|frame| &frame.scopes)
+        .any(|scope| scope.defer_inflight.is_some() || !scope.defer_releasing.is_empty())
+}
+
+pub(super) fn fiber_has_scoped_defer_work<V, O, N, B, R, G>(
+    fiber: &crate::awbc::fiber::FiberState<V, O, N, B, R, G>,
+) -> bool {
+    fiber
+        .frames
+        .iter()
+        .flat_map(|frame| &frame.scopes)
+        .any(|scope| !scope.defers.is_empty() || scope.defer_exit.is_some())
+}
+
+pub(super) fn settle_scoped_defer_releases(
+    transaction: &mut ProductDialogueTransaction,
+    children: &mut VecDeque<super::ProductChildFiber>,
+) {
+    let activation = *transaction.activation();
+    let (frame, line) = transaction.parts_mut();
+    let ledger = line.ledger();
+    if let Some(fiber) = frame.activation_fiber_mut() {
+        settle_fiber_scoped_defer_releases(fiber, ledger);
+    }
+    for child in children {
+        if child.owner.line_activation() == Some(activation) {
+            settle_fiber_scoped_defer_releases(&mut child.fiber, ledger);
+        }
+    }
+}
+
+fn settle_fiber_scoped_defer_releases(fiber: &mut FiberState, ledger: &RuntimeLineHandleLedger) {
     for scope in fiber.frames.iter_mut().flat_map(|frame| &mut frame.scopes) {
-        scope.defer_releasing.retain(|release| {
-            release.tokens.iter().any(|token| {
-                lease_states.get(token).is_some_and(|state| {
-                    !matches!(
-                        state,
-                        RuntimeHandleLeaseState::Released
-                            | RuntimeHandleLeaseState::Cancelled
-                            | RuntimeHandleLeaseState::Failed
-                            | RuntimeHandleLeaseState::Completed
-                    )
+        scope.defer_releasing.retain_mut(|release| {
+            release.tokens.retain(|token| {
+                ledger.lease(token).is_some_and(|lease| {
+                    lease.owner()
+                        == &RuntimeHandleOwnerSlot::RetiringScopedDefer(release.registration)
                 })
-            })
+            });
+            !release.tokens.is_empty()
         });
     }
 }
 
-fn empty_activation_batch(
+pub(super) fn empty_activation_batch(
     executor: &super::AwbcProductStepExecutor,
 ) -> super::ProductLineTaskExecutionBatch {
     super::ProductLineTaskExecutionBatch {
@@ -4173,7 +4456,7 @@ fn empty_activation_batch(
     }
 }
 
-fn pop_activation_scope(
+pub(super) fn pop_activation_scope(
     program: &crate::awbc::schema::AwbcProgram,
     fiber: &mut FiberState,
     scope_id: crate::awbc::schema::AwbcScopeId,

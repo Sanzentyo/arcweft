@@ -1947,7 +1947,7 @@ entry cli @entry.main { goto @flow.main }
 #[test]
 fn line_root_deferred_children_execute_in_native_and_awbc_lifo() {
     use arcweft_core::{
-        awbc::product_step::AwbcProductExecutorSaveSnapshot,
+        awbc::product_step::{AwbcProductChildFiberOwnerSnapshot, AwbcProductExecutorSaveSnapshot},
         executor::ArcweftRuntimeExecutorSnapshot,
         value::{AwbcRuntimeValueSnapshot, RuntimeInt},
     };
@@ -2102,11 +2102,42 @@ entry cli @entry.main {{ goto @flow.main }}
                         .restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(tampered))
                         .err()
                         .expect("a lexical defer cannot use an unallocated registration ID");
-                    let (executor, reason) = rejection.into_parts();
+                    let (mut executor, reason) = rejection.into_parts();
                     assert!(
                         reason.to_string().contains("restored scoped defer registration is outside its activation's allocation"),
                         "{reason}"
                     );
+                    if has_inflight_cleanup {
+                        let mut tampered: AwbcProductExecutorSaveSnapshot =
+                            serde_json::from_value(saved.clone()).unwrap();
+                        let foreign_fiber = tampered.fiber.instance;
+                        let owner = tampered
+                            .child_fibers
+                            .iter_mut()
+                            .find_map(|child| match &mut child.owner {
+                                AwbcProductChildFiberOwnerSnapshot::ScopedDeferred {
+                                    owner,
+                                    ..
+                                } => Some(owner),
+                                _ => None,
+                            })
+                            .expect("saved scoped cleanup");
+                        assert_ne!(owner.fiber, foreign_fiber);
+                        owner.fiber = foreign_fiber;
+                        let tampered = executor.bind_product_save_snapshot(tampered).unwrap();
+                        let rejection = executor
+                            .restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(tampered))
+                            .err()
+                            .expect("a different fiber cannot own the retained lexical scope");
+                        let (recovered, reason) = rejection.into_parts();
+                        assert!(
+                            reason.to_string().contains(
+                                "scoped defer child does not match its active lexical scope"
+                            ),
+                            "{reason}"
+                        );
+                        executor = recovered;
+                    }
                     rejected_regressions[phase] = true;
                     executor
                 });
@@ -2954,6 +2985,236 @@ entry cli @entry.main { goto @flow.main }
         assert_eq!(awbc_logs, native_logs);
         assert_eq!(awbc_succeeded, native_succeeded);
     }
+}
+
+#[test]
+fn awbc_mark_scope_defer_resumes_before_publishing_the_selected_result() {
+    let (compiled, awbc) = compile_nested_awbc(
+        r#"
+pub character alice { display = "Alice" }
+flow main() -> Unit {
+    let result = alice()[本文。[mark @.release][p]] with {
+        on mark(@.release) {
+            let message = "captured"
+            defer { log.info(message) }
+            defer on failed { log.info("wrong outcome") }
+            defer on completed { log.info("completed cleanup") }
+            log.info("mark-handler-enter")
+            out "Released"
+        }
+    }
+    log.info(result)
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    );
+    let schema = bind_test_character_dialogue_schema(&compiled, awbc.program_owner());
+    let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default().with_external_calls(
+        arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
+    );
+    let mut awbc = Some(awbc);
+    let mut saved_live_cleanup = false;
+    let (logs, completed) = execute_dialogue_result_with_mark(
+        |input, options| {
+            let mut current = awbc.take().unwrap();
+            let result = current.step_with_pure_backend(input, options, &mut backend);
+            let (restored, _) = roundtrip_nested_awbc_checking(current, |executor, saved| {
+                saved_live_cleanup |= saved["child_fibers"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|child| child["owner"].get("ScopedDeferred").is_some());
+                executor
+            });
+            awbc = Some(restored);
+            result
+        },
+        true,
+        "decoded AWBC mark scope defer",
+    );
+    assert!(completed);
+    assert!(saved_live_cleanup);
+    assert_eq!(
+        logs,
+        [
+            "mark-handler-enter",
+            "completed cleanup",
+            "captured",
+            "Released"
+        ]
+    );
+}
+
+#[test]
+fn awbc_failed_mark_unwinds_its_lexical_defer_before_reporting_failure() {
+    use arcweft_core::{
+        engine::FlowFiberStatus,
+        plan::FlowEvent,
+        step::{
+            RuntimeDialogueContentEvent, RuntimeDialogueContentEventKind, RuntimeStepInput,
+            RuntimeStepOptions,
+        },
+        time::TickId,
+    };
+
+    let (compiled, mut awbc) = compile_nested_awbc(
+        r#"
+pub character alice { display = "Alice" }
+fn divisor() -> i64 { 0i64 }
+flow main() -> Unit {
+    let result = alice()[本文。[mark @.release][p]] with {
+        on mark(@.release) {
+            defer on completed { log.info("wrong outcome") }
+            defer { log.info("unconditional cleanup") }
+            defer on failed { log.info("failed cleanup") }
+            log.info("mark-handler-enter")
+            let quotient = 1i64 / divisor()
+            out "Released"
+        }
+    }
+    log.info(result)
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    );
+    let schema = bind_test_character_dialogue_schema(&compiled, awbc.program_owner());
+    let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default().with_external_calls(
+        arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
+    );
+    let mut input = RuntimeStepInput::default();
+    let mut effects = Vec::new();
+    let mut diagnostics = Vec::new();
+    for tick in 0..512 {
+        input.tick = TickId(tick);
+        let result = awbc.step_with_pure_backend(
+            std::mem::take(&mut input),
+            RuntimeStepOptions::default(),
+            &mut backend,
+        );
+        effects.extend(result.output.effects.line);
+        diagnostics.extend(result.output.diagnostics);
+        for event in result.output.flow_events {
+            if let FlowEvent::DialogueLine { activation, .. } = event {
+                input
+                    .dialogue_content_events
+                    .push(RuntimeDialogueContentEvent::new(
+                        activation,
+                        RuntimeDialogueContentEventKind::Mark(
+                            RuntimeDialogueMarkId::from_zero_based(0).unwrap(),
+                        ),
+                    ));
+            }
+        }
+        let (restored, _) = roundtrip_nested_awbc(awbc);
+        awbc = restored;
+        if let FlowFiberStatus::Failed(message) = result.fiber_status {
+            assert!(message.contains("division by zero"), "{message}");
+            assert!(!diagnostics.is_empty());
+            assert_eq!(
+                log_messages(&effects),
+                [
+                    "mark-handler-enter",
+                    "failed cleanup",
+                    "unconditional cleanup"
+                ]
+            );
+            return;
+        }
+    }
+    panic!("failed mark handler did not unwind: {diagnostics:?}");
+}
+
+#[test]
+fn awbc_cancelled_mark_joins_after_its_lexical_defer() {
+    use arcweft_core::{
+        engine::{FlowExit, FlowFiberStatus},
+        plan::FlowEvent,
+        step::{
+            RuntimeDialogueContentEvent, RuntimeDialogueContentEventKind,
+            RuntimeDialogueInputActionEvent, RuntimeStepInput, RuntimeStepOptions,
+        },
+        time::TickId,
+    };
+    use arcweft_interaction_model::input::{InputActionId, InputEpoch, InputSequence};
+
+    let (compiled, mut awbc) = compile_nested_awbc(
+        r#"
+pub character alice { display = "Alice" }
+flow main() -> Unit {
+    let result = alice()[本文。[mark @.release][p]] with {
+        on mark(@.release) {
+            defer on cancelled { log.info("cancelled cleanup") }
+            defer on completed { log.info("wrong outcome") }
+            log.info("mark-handler-enter")
+            out "Released"
+        }
+        cancel on input(.SkipLine) { out "Cancelled" }
+    }
+    log.info(result)
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    );
+    let schema = bind_test_character_dialogue_schema(&compiled, awbc.program_owner());
+    let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default().with_external_calls(
+        arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
+    );
+    let mut input = RuntimeStepInput::default();
+    let mut revealed = None;
+    let mut effects = Vec::new();
+    let mut sent_cancel = false;
+    for tick in 0..512 {
+        input.tick = TickId(tick);
+        let result = awbc.step_with_pure_backend(
+            std::mem::take(&mut input),
+            RuntimeStepOptions::default(),
+            &mut backend,
+        );
+        assert!(
+            result.output.diagnostics.is_empty(),
+            "{:?}",
+            result.output.diagnostics
+        );
+        effects.extend(result.output.effects.line);
+        for event in result.output.flow_events {
+            if let FlowEvent::DialogueLine { activation, .. } = event {
+                assert!(revealed.replace(activation).is_none());
+                input
+                    .dialogue_content_events
+                    .push(RuntimeDialogueContentEvent::new(
+                        activation,
+                        RuntimeDialogueContentEventKind::Mark(
+                            RuntimeDialogueMarkId::from_zero_based(0).unwrap(),
+                        ),
+                    ));
+            }
+        }
+        if !sent_cancel && log_messages(&effects).contains(&"mark-handler-enter".to_owned()) {
+            input
+                .dialogue_input_actions
+                .push(RuntimeDialogueInputActionEvent::new(
+                    revealed.expect("the mark handler owns one revealed line"),
+                    InputActionId::new("SkipLine").unwrap(),
+                    InputEpoch::new(1),
+                    InputSequence::new(1),
+                ));
+            sent_cancel = true;
+        }
+        let (restored, _) = roundtrip_nested_awbc(awbc);
+        awbc = restored;
+        if result.fiber_status == FlowFiberStatus::Done(FlowExit::Done) {
+            assert!(sent_cancel);
+            assert_eq!(
+                log_messages(&effects),
+                ["mark-handler-enter", "cancelled cleanup", "Cancelled"]
+            );
+            return;
+        }
+    }
+    panic!(
+        "cancelled mark handler did not join: {:?}",
+        log_messages(&effects)
+    );
 }
 
 fn execute_dialogue_result_with_mark(
@@ -4090,6 +4351,59 @@ entry cli @entry.main {{ goto @flow.main }}
             );
         }
     }
+}
+
+#[test]
+fn skipped_init_defer_keeps_its_affine_release_until_the_host_acknowledges() {
+    use arcweft_core::presentation::{RuntimeLineHostCommand, RuntimeStageCommand};
+
+    let source = r#"
+pub character alice { display = "Alice" }
+flow main() -> Unit effects { state.write('line), log.write } {
+    alice()[Outer[p]] with {
+        init {
+            let actor = alice.stage.acquire(scope=line)
+            defer on failed { 'line.saved <- actor; log.info("wrong outcome") }
+            log.info("init completed")
+        }
+    }
+}
+entry cli @entry.main { goto @flow.main }
+"#;
+    let expected = &["init completed"];
+    native_line_handle_execution(source, 1, false, false, expected);
+    let (compiled, awbc) = nested_awbc_from_compiled(
+        with_attached_dialogue_project_and_visual(
+            source,
+            Some(LINE_HANDLE_CHARACTER_MANIFEST),
+            compile_project,
+        )
+        .unwrap(),
+    );
+    let schema = bind_test_character_dialogue_schema(&compiled, awbc.program_owner());
+    let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default().with_external_calls(
+        arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
+    );
+    let mut awbc = Some(awbc);
+    let mut saved_pending_release = false;
+    execute_nested_line_handle_transfer(1, false, false, expected, |input, options| {
+        let mut current = awbc.take().unwrap();
+        let result = current.step_with_pure_backend(input, options, &mut backend);
+        let issuing_release = result.output.requests.line_commands.iter().any(|command| {
+            matches!(
+                command,
+                RuntimeLineHostCommand::Stage(RuntimeStageCommand::ReleaseActor { .. })
+            )
+        });
+        let (restored, active) = roundtrip_nested_awbc(current);
+        if issuing_release {
+            assert_eq!(active, 1, "the release response is owed to the active line");
+            saved_pending_release = true;
+        }
+        awbc = Some(restored);
+        result
+    });
+    assert!(saved_pending_release);
 }
 
 #[test]

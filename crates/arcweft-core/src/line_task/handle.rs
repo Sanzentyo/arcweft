@@ -260,6 +260,8 @@ pub enum RuntimeHandleOwnerSlot {
     ActivationLocal(RuntimeOwnedSlotId),
     /// A reached lexical defer packet before its child body starts.
     ScopedDefer(RuntimeDeferRegistrationId),
+    /// A skipped lexical defer whose capture still has a pending host release.
+    RetiringScopedDefer(RuntimeDeferRegistrationId),
     ChildScope(LineTaskWorkTag),
     DialogueResult(RuntimeValuePath),
     ParentFiber(RuntimeOwnedSlotId),
@@ -653,6 +655,20 @@ pub(crate) struct RuntimePreparedNextDeferred {
 pub(crate) struct RuntimePreparedDeferredRegistration {
     id: RuntimeDeferRegistrationId,
     next: u64,
+}
+
+pub(crate) enum RuntimePreparedScopedDeferUnwind {
+    Run(RuntimeLineHandleLedger),
+    Skip(RuntimePreparedLineCommands),
+}
+
+impl RuntimePreparedScopedDeferUnwind {
+    pub(crate) const fn decision(&self) -> RuntimeScopedDeferDecision {
+        match self {
+            Self::Run(_) => RuntimeScopedDeferDecision::Run,
+            Self::Skip(_) => RuntimeScopedDeferDecision::Skipped,
+        }
+    }
 }
 
 /// Borrowed scheduled-packet preflight with a metadata-only ledger candidate.
@@ -1183,23 +1199,26 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         registration: &RuntimeLineDeferredRegistration,
         exit: ScopeExit,
     ) -> Result<RuntimeScopedDeferDecision, LineRuntimeError> {
-        self.prepare_scoped_deferred_parts(
+        let prepared = self.inspect_scoped_defer_unwind(
             activation,
             registration.id(),
             registration.outcome_filter(),
             registration.captures(),
             exit,
-        )
+        )?;
+        let decision = prepared.decision();
+        self.commit_scoped_defer_unwind(prepared);
+        Ok(decision)
     }
 
-    pub(crate) fn prepare_scoped_deferred_parts(
+    pub(crate) fn inspect_scoped_defer_unwind(
         &mut self,
         activation: &DialogueActivationId,
         id: RuntimeDeferRegistrationId,
         outcome_filter: super::defer::RuntimeDeferOutcomeFilter,
         captures: &[RuntimeValue],
         exit: ScopeExit,
-    ) -> Result<RuntimeScopedDeferDecision, LineRuntimeError> {
+    ) -> Result<RuntimePreparedScopedDeferUnwind, LineRuntimeError> {
         if self.frame_released || self.defer_unwind.is_some() {
             return Err(LineRuntimeError::InvalidDeferredTransition);
         }
@@ -1212,11 +1231,24 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             exit,
             owner,
         )?;
-        if let Some(commands) = stage.commands {
-            self.record_commands(activation, commands)?;
+        match stage.commands {
+            Some(commands) => self
+                .inspect_record_commands_with_ledger(activation, &commands, None, stage.ledger)
+                .map(RuntimePreparedScopedDeferUnwind::Skip),
+            None => Ok(RuntimePreparedScopedDeferUnwind::Run(stage.ledger)),
         }
-        self.ledger = stage.ledger;
-        Ok(stage.decision)
+    }
+
+    pub(crate) fn commit_scoped_defer_unwind(
+        &mut self,
+        prepared: RuntimePreparedScopedDeferUnwind,
+    ) {
+        match prepared {
+            RuntimePreparedScopedDeferUnwind::Run(ledger) => self.commit_ledger(ledger),
+            RuntimePreparedScopedDeferUnwind::Skip(commands) => {
+                self.record_commands_prepared(commands)
+            }
+        }
     }
 
     fn stage_deferred_registration(
@@ -3765,9 +3797,15 @@ fn validate_restored_ledger(
             {
                 return Err(LineRuntimeError::InvalidRestoredLedgerState);
             }
+            RuntimeHandleOwnerSlot::RetiringScopedDefer(_)
+                if lease.state() != RuntimeHandleLeaseState::Cancelling =>
+            {
+                return Err(LineRuntimeError::InvalidRestoredLedgerState);
+            }
             RuntimeHandleOwnerSlot::LineScope
             | RuntimeHandleOwnerSlot::ActivationLocal(_)
             | RuntimeHandleOwnerSlot::ScopedDefer(_)
+            | RuntimeHandleOwnerSlot::RetiringScopedDefer(_)
             | RuntimeHandleOwnerSlot::DialogueResult(_)
             | RuntimeHandleOwnerSlot::ChildScope(_)
             | RuntimeHandleOwnerSlot::ParentFiber(_)
@@ -4197,6 +4235,16 @@ impl RuntimeLineHandleLedger {
         }
         if let Some(retirement) = registry_retirement {
             lease.owner = retirement;
+        } else if let RuntimeHandleOwnerSlot::ScopedDefer(registration) = expected {
+            lease.owner = if lease.state == RuntimeHandleLeaseState::Cancelling {
+                RuntimeHandleOwnerSlot::RetiringScopedDefer(*registration)
+            } else {
+                RuntimeHandleOwnerSlot::LineScope
+            };
+        } else if matches!(expected, RuntimeHandleOwnerSlot::ChildScope(_)) {
+            // The value has left the child. The line journal owns any ensuing
+            // release outcome while the child continues or retires.
+            lease.owner = RuntimeHandleOwnerSlot::LineScope;
         }
         Ok(())
     }
@@ -4244,6 +4292,11 @@ impl RuntimeLineHandleLedger {
             });
         }
         lease.state = state;
+        if matches!(lease.owner, RuntimeHandleOwnerSlot::RetiringScopedDefer(_))
+            && state != RuntimeHandleLeaseState::Cancelling
+        {
+            lease.owner = RuntimeHandleOwnerSlot::LineScope;
+        }
         Ok(())
     }
 
@@ -4309,7 +4362,9 @@ fn owner_transition_is_legal(
             RuntimeHandleOwnerSlot::LineScope
         ) | (
             RuntimeHandleOwnerSlot::ChildScope(_),
-            RuntimeHandleOwnerSlot::LineScope | RuntimeHandleOwnerSlot::DialogueResult(_)
+            RuntimeHandleOwnerSlot::LineScope
+                | RuntimeHandleOwnerSlot::DialogueResult(_)
+                | RuntimeHandleOwnerSlot::ScopedDefer(_)
         ) | (
             RuntimeHandleOwnerSlot::DialogueResult(_)
                 | RuntimeHandleOwnerSlot::ParentFiber(_)
@@ -5675,7 +5730,7 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
             || self.ledger.leases().values().any(|lease| {
                 matches!(
                     lease.owner(),
-                    RuntimeHandleOwnerSlot::ScopedDefer(id)
+                    RuntimeHandleOwnerSlot::ScopedDefer(id) | RuntimeHandleOwnerSlot::RetiringScopedDefer(id)
                         if !self.allocated_defer_registration(*id)
                 )
             })
@@ -5705,6 +5760,22 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
             .leases()
             .values()
             .any(|lease| match lease.owner() {
+                RuntimeHandleOwnerSlot::RetiringScopedDefer(_) => {
+                    if matches!(lease.resource(), RuntimeHandleResource::Cue(cue)
+                        if matches!(cue.origin(), RuntimeCueOrigin::Scheduled { .. }))
+                    {
+                        !self.scheduled.iter().any(|scheduled| {
+                            scheduled.token() == lease.token()
+                                && matches!(
+                                    scheduled.state(),
+                                    RuntimeScheduledState::Running
+                                        | RuntimeScheduledState::Cancelling
+                                )
+                        })
+                    } else {
+                        !published_result_retirement_is_correlated(lease, &self.issued_commands)
+                    }
+                }
                 RuntimeHandleOwnerSlot::ReceivedDialogueResult { .. }
                 | RuntimeHandleOwnerSlot::RetiringDialogueResult { .. } => true,
                 RuntimeHandleOwnerSlot::LineRegistry { receiver, .. } => receiver != activation,

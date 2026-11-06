@@ -368,6 +368,44 @@ impl<V, O, N, B, R, G> FiberState<V, O, N, B, R, G> {
     }
 }
 
+/// The reached lexical owner of deferred execution. Frame instances are
+/// allocated by their fiber and therefore only identify a frame within it.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AwbcFiberLexicalScopeId {
+    pub fiber: RuntimeFiberInstanceId,
+    pub frame: RuntimeFrameInstanceId,
+    pub scope: AwbcScopeId,
+}
+
+impl AwbcFiberLexicalScopeId {
+    pub(super) fn active_scope<V, O, N, B, R, G>(
+        self,
+        fiber: &FiberState<V, O, N, B, R, G>,
+    ) -> Option<&FiberScope<V, G>> {
+        let frame = fiber
+            .frames
+            .last()
+            .filter(|frame| fiber.instance == self.fiber && frame.instance == self.frame)?;
+        frame.scopes.last().filter(|scope| scope.id == self.scope)
+    }
+
+    pub(super) fn active_scope_mut<V, O, N, B, R, G>(
+        self,
+        fiber: &mut FiberState<V, O, N, B, R, G>,
+    ) -> Option<&mut FiberScope<V, G>> {
+        let instance = fiber.instance;
+        let frame = fiber
+            .frames
+            .last_mut()
+            .filter(|frame| instance == self.fiber && frame.instance == self.frame)?;
+        frame
+            .scopes
+            .last_mut()
+            .filter(|scope| scope.id == self.scope)
+    }
+}
+
 /// Complete execution coordinates chosen by the actual spawning owner before
 /// a prepared input packet constructs its frame. This contains no grant.
 pub(crate) struct FiberCreationContext {
@@ -1166,9 +1204,29 @@ impl AwbcFiberStateSnapshot {
         Ok(tokens)
     }
 
+    /// The line's ChildScope lease covers the child's own value roots. Lexical
+    /// defer packets have separate ScopedDefer custody in the same line.
+    pub(super) fn child_scope_affine_line_handle_tokens(
+        &self,
+    ) -> Result<Vec<crate::runtime_id::RuntimeLineHandleToken>, String> {
+        let mut tokens = Vec::new();
+        self.visit_saved_value_roots_including_defers(false, |value| {
+            extend_snapshot_line_handle_tokens(value, &mut tokens)
+        })?;
+        Ok(tokens)
+    }
+
     /// Visits original inert value slots through the fiber's owning grammar.
     pub(crate) fn visit_saved_value_roots<E>(
         &self,
+        visit: impl FnMut(&AwbcRuntimeValueSnapshot) -> Result<(), E>,
+    ) -> Result<(), E> {
+        self.visit_saved_value_roots_including_defers(true, visit)
+    }
+
+    fn visit_saved_value_roots_including_defers<E>(
+        &self,
+        include_defers: bool,
         mut visit: impl FnMut(&AwbcRuntimeValueSnapshot) -> Result<(), E>,
     ) -> Result<(), E> {
         for frame in &self.frames {
@@ -1220,9 +1278,11 @@ impl AwbcFiberStateSnapshot {
                         visit(value)?;
                     }
                 }
-                for registration in &scope.defers {
-                    for value in &registration.captures {
-                        visit(value)?;
+                if include_defers {
+                    for registration in &scope.defers {
+                        for value in &registration.captures {
+                            visit(value)?;
+                        }
                     }
                 }
             }
@@ -4148,6 +4208,36 @@ impl FiberState {
         self.suspension = None;
         self.return_summary = None;
         self.terminal = Some(FiberTerminalValue::Cancelled);
+    }
+
+    /// Retires an empty terminal callee so unwind can reach the caller's
+    /// lexical scopes. This never resumes the caller's code or binds a result.
+    pub(super) fn retire_terminal_callee(&mut self) -> Result<(), FiberStateError> {
+        let callee = self.active_frame()?;
+        if !self.status.is_terminal()
+            || self.frames.len() < 2
+            || !callee.scopes.is_empty()
+            || !callee.root_cleanups.is_empty()
+        {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        let resume = callee
+            .return_to
+            .as_ref()
+            .ok_or(FiberStateError::InvalidFrame)?
+            .cursor;
+        self.frames.pop();
+        self.cursor = resume;
+        Ok(())
+    }
+
+    pub(super) fn record_terminal_defer_failure(&mut self, trap: FiberTrap) {
+        assert!(self.status.is_terminal());
+        if self.status != FiberStatus::Trapped {
+            self.status = FiberStatus::Trapped;
+            self.return_summary = None;
+            self.terminal = Some(FiberTerminalValue::Trapped(trap));
+        }
     }
 
     pub fn mark_trapped(&mut self, trap: FiberTrap) {

@@ -529,6 +529,10 @@ instruction cursor を保持し、RegisterDefer の site・outcome・CurrentScop
 register inventory と original verifier の lexical scope stack に照合する。
 復元時は、捕捉値の有無にかかわらず、各 scoped defer の登録 ID が元の対話で
 発行済みであり、その対話が保持する他の root／scoped defer と重複しないことを検証する。
+実行中の scoped defer は、登録したファイバー、フレーム、lexical scope と登録 ID、
+defer site を保持する。復元では、その対話で保持している元の scope が同じ登録を
+実行中であることを照合する。実行条件に合わず解放応答を待つ捕捉値は、解放が確定するまで
+元の登録 ID に結び付ける。
 実際の capture graph は一度だけ資源計上し、元の frame slot 型IDと defer signature
 型IDの両方を immutable frame binding で検証する。Copy 値の重複 capture は許可し、
 affine 値の重複は拒否する。cleanup は元の RegisterCleanup instruction cursor と
