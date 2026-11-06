@@ -15418,5 +15418,129 @@
         }
       ]
     }
+  },
+  "reachedRegistryOptionalReadOwnerVerification": {
+    "source": "dc0ff3c74395183f25cd21275989c786bd26c590",
+    "packages": [
+      "arcweft-compiler",
+      "arcweft-core",
+      "arcweft-lang-sema",
+      "arcweft-runtime-plan"
+    ],
+    "passed": 4077,
+    "failed": 0,
+    "skipped": 1,
+    "catalogCaseDrift": 0,
+    "receipt": {
+      "version": 1,
+      "source": "dc0ff3c74395183f25cd21275989c786bd26c590",
+      "catalogCommand": [
+        "cargo",
+        "nextest",
+        "list",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "-p",
+        "arcweft-lang-sema",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--message-format",
+        "json"
+      ],
+      "catalogExit": 0,
+      "runtimeCommand": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "-p",
+        "arcweft-lang-sema",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 0,
+      "summary": [
+        "Summary [  94.247s] 4077 tests run: 4077 passed, 1 skipped"
+      ],
+      "sourceInputs": 3638,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-06T17:23:32.3589102Z",
+      "finishedAt": "2026-11-06T17:26:37.562856Z"
+    },
+    "clippy": {
+      "version": 1,
+      "source": "dc0ff3c74395183f25cd21275989c786bd26c590",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--all-targets"
+      ],
+      "exitCode": 0,
+      "warningsPresent": true
+    },
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-option-copy-admission-owner.raw.zip",
+      "sha256": "bde4182fee2442bf6e7440adad4d4e0c38c88ac06afbe2c846e8a7c71aae2847",
+      "entries": [
+        {
+          "entry": "registry-option-copy-admission-owner-20261107.catalog.json",
+          "bytes": 698804,
+          "sha256": "ddc2ae83dda61eb8f9aa3fc05c6f40192519033a437ef5d0e428277464a3f067"
+        },
+        {
+          "entry": "registry-option-copy-admission-owner-20261107.catalog.log",
+          "bytes": 100140,
+          "sha256": "f25d1e349bcadf138d3ad8f8708ed6b301125cf3b5d5be82d3d91b42f2048f4c"
+        },
+        {
+          "entry": "registry-option-copy-admission-owner-20261107.runtime.log",
+          "bytes": 1358286,
+          "sha256": "74ccd0bcb8bb8c747be66a4706100fe82c1b9c20ce43c37ed1cbb49620be89de"
+        },
+        {
+          "entry": "registry-option-copy-admission-owner-20261107.source-freeze.json",
+          "bytes": 599451,
+          "sha256": "38117f7fea0751237010b3fd59e4c77d8fab71cfb351d7e10f9006dc86e8ae62"
+        },
+        {
+          "entry": "registry-option-copy-admission-owner-20261107.receipt.json",
+          "bytes": 1093,
+          "sha256": "cf6aebc31abe27cc6453a341f3a9e74ee3b34be4de274848fded9792f6b781a6"
+        },
+        {
+          "entry": "registry-option-copy-admission-owner-20261107.clippy.log",
+          "bytes": 4834731,
+          "sha256": "8a838018f288485fa6b11ce939bb52b8a195129836a8987f716bf686e654c9c4"
+        },
+        {
+          "entry": "registry-option-copy-admission-owner-20261107.clippy.receipt.json",
+          "bytes": 246,
+          "sha256": "20f21975627b5d1cfd1216855f98f1ec0cff3a17573c3183988f54c7088d09b4"
+        }
+      ]
+    }
   }
 }

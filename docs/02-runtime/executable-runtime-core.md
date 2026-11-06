@@ -754,9 +754,10 @@ A typed RuntimePlan registry read carries the same key and a presence mode.
 Native evaluates it in the reached Flow or Line scope, and AWBC lowering uses
 `ReadRegistry` with a register of the expression result type. Required reads
 fail on absence. Optional reads return a typed `Option` within a reached scope.
-Both evaluators admit the copied value against the original invocation before
-materializing it. The private expression source retains the key and mode in
-the version-one grammar.
+The result, including any optional payload, must permit copying. Both
+evaluators check this requirement and the original invocation before
+materializing the result. The private expression source retains the key and
+mode in the version-one grammar.
 
 A Native registry read admits the retained session and the reached row before
 copying the result. Inline dialogue execution uses the actual withdrawn
