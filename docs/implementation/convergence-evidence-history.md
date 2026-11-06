@@ -15093,3 +15093,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Save between scheduled capture releases
 
 - Source 2231793d9a51c0c71aed2cb7080a59e621ba8587。終了処理の確定と同時に Line が保持する時刻指定タスクの捕捉スロットを消費する。発行元の台帳と命令ジャーナルが解放応答を追跡する。二つの StageActor の解放応答を別々のステップで返し、間で AWBC を保存・復元して最後の応答まで実行した。修正前は同じ fixture を予約作業の所有状態の不整合として拒否した。Core／Compiler の対象2,567件が通過し、カタログと実行IDの差分、ソース入力3638件の差分、構造ゲートのブロッキング違反はいずれも0件。[実測・初回失敗・公開SHA](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Resume line close with retained scheduled captures
+
+- Source c1c372b5e4474229a6af0b69b0f9b4a1a7156abd。発行済みの解放応答を待ち、返却済みの捕捉スロットを保持する version 1 保存を正規の復元 API が受理する。修正前は最初の解放応答後に再保存できなかった。再開した終了処理でも共通の後始末を適用し、同じ保存入力から最後の応答まで実行した。Core／Compiler 対象2,568件が通過し、構造ゲートのブロッキング違反は0件。最初の探索で使った custody の誤った JSON 名と、訂正後の再現ログを分けて保持した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。

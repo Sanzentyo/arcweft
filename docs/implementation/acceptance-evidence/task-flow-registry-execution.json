@@ -16984,5 +16984,289 @@
         }
       ]
     }
+  },
+  "scheduledCaptureResume": {
+    "source": "c1c372b5e4474229a6af0b69b0f9b4a1a7156abd",
+    "sourcePublication": {
+      "version": 1,
+      "commit": "c1c372b5e4474229a6af0b69b0f9b4a1a7156abd",
+      "parent": "7843413ba252e1f5cacba2e5233b7c9432a0ff52",
+      "tree": "0ceafa34eeb7779a21729d075a1a6cfdf1b3d1d5",
+      "remote": "c1c372b5e4474229a6af0b69b0f9b4a1a7156abd",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects.rs",
+          "blob": "379388001110cd7a7b52ef6999397dc90b58d71b"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "blob": "a8cc9f92a7cb5cc05154ac6dd25416644462ffbb"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task/handle.rs",
+          "blob": "2801c80f11b57d0af0571ffb42dae6abc7eedbae"
+        },
+        {
+          "path": "docs/02-runtime/executable-runtime-core.md",
+          "blob": "3945a92dc054f19ad312165c44d177f0ec23d58a"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "122ebbf6e10df86b2b05484335905eab4551653419ccc79fea39215feb4a1d66",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-06T19:44:38.6895345Z"
+    },
+    "decision": "Reapply the same close transaction when publication resumes with retained line-owned scheduled captures. Already-issued host releases remain in the same journal. The version-one grammar and restore validation are unchanged.",
+    "before": {
+      "version": 1,
+      "source": "7843413ba252e1f5cacba2e5233b7c9432a0ff52",
+      "testFixture": "crates/arcweft-compiler/tests/evaluated_effects.rs",
+      "fixtureSha256": "a74e36d7e7e3bea3289a0cadcf8aa33aa86a7caafde05eee785fd09d58911cef",
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "-E",
+        "test(=decoded_awbc_line_close_resumes_a_save_with_returned_scheduled_captures)",
+        "--no-tests",
+        "fail",
+        "--status-level",
+        "pass",
+        "--final-status-level",
+        "fail"
+      ],
+      "exitCode": 100,
+      "startedAt": "2026-11-06T19:41:21.952077Z",
+      "finishedAt": "2026-11-06T19:41:36.1382203Z"
+    },
+    "baselineError": "restored scheduled work is inconsistent with its cue resource or activation",
+    "owner": {
+      "version": 1,
+      "base": "7843413ba252e1f5cacba2e5233b7c9432a0ff52",
+      "catalogCommand": [
+        "cargo",
+        "nextest",
+        "list",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--message-format",
+        "json"
+      ],
+      "catalogExit": 0,
+      "testCommand": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "testExit": 0,
+      "summary": "Summary [  23.978s] 2568 tests run: 2568 passed, 0 skipped",
+      "sourceInputs": 3638,
+      "sourceDrift": [],
+      "startedAt": "2026-11-06T19:42:08.8931591Z",
+      "finishedAt": "2026-11-06T19:44:04.7800053Z"
+    },
+    "testIdentity": {
+      "prior": 2567,
+      "catalog": 2568,
+      "run": 2568,
+      "added": "arcweft-compiler::evaluated_effects decoded_awbc_line_close_resumes_a_save_with_returned_scheduled_captures",
+      "runCatalogDrift": 0
+    },
+    "structure": {
+      "version": 1,
+      "command": [
+        "just",
+        "structure-audit-gate"
+      ],
+      "exitCode": 0,
+      "completedAt": "2026-11-06T19:42:11.8501432Z"
+    },
+    "structureBlockingViolations": 0,
+    "priorSaveFixture": "Captured values come from live unstarted packets and are placed in the version-one LineScope slot representation that existed before the first acknowledgement. The existing public bind and restore APIs admit this save.",
+    "initialExploration": "The first test attempt used incorrect JSON names for scheduled custody. The snake_case fixture admits the version-one save and reproduces the runtime error on the following snapshot.",
+    "affectedGraph": {
+      "version": 1,
+      "command": [
+        "cargo",
+        "tree",
+        "--locked",
+        "--workspace",
+        "--invert",
+        "arcweft-core",
+        "--target",
+        "all",
+        "--prefix",
+        "none",
+        "--format",
+        "{p}"
+      ],
+      "exitCode": 0,
+      "packageCount": 53,
+      "packages": [
+        "arcweft",
+        "arcweft-adapter-desktop",
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-policy",
+        "arcweft-agent-protocol",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-browser-bench",
+        "arcweft-bundle",
+        "arcweft-bundle-assets",
+        "arcweft-character-view",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-core",
+        "arcweft-debug-model",
+        "arcweft-debug-sqlite",
+        "arcweft-dialogue",
+        "arcweft-glyphon",
+        "arcweft-host-adapter",
+        "arcweft-lang-jit-cranelift",
+        "arcweft-lang-sema",
+        "arcweft-launch",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-text-input",
+        "arcweft-player-web",
+        "arcweft-project",
+        "arcweft-project-loader",
+        "arcweft-rag",
+        "arcweft-render-text",
+        "arcweft-render-web",
+        "arcweft-render-wgpu",
+        "arcweft-resource-manifest",
+        "arcweft-resource-model",
+        "arcweft-runtime-accelerator",
+        "arcweft-runtime-codegen",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-runtime-scheduler",
+        "arcweft-save",
+        "arcweft-test",
+        "arcweft-text-layout",
+        "arcweft-text-model",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3",
+        "arcweft-view"
+      ],
+      "differenceFromPrior": []
+    },
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-scheduled-capture-resume.raw.zip",
+      "sha256": "bd5622b1fa29d37fe67161f0fb21b552a77a7d228bfd0151b14b711e7729f389",
+      "entries": [
+        {
+          "entry": "scheduled-capture-resume-20261107.baseline.log",
+          "bytes": 86981,
+          "sha256": "b1e6c9c6c924597eb708bb6aa060b58ff237bea010bbd0556cbed6b03ab03872"
+        },
+        {
+          "entry": "scheduled-capture-resume-20261107.baseline.receipt.json",
+          "bytes": 721,
+          "sha256": "713eda632f5fec1cfefeafa45f295100eb29b6a34eec734bdeea3a9930387336"
+        },
+        {
+          "entry": "scheduled-capture-resume-20261107.reproduced.log",
+          "bytes": 87106,
+          "sha256": "1fd631b083748592395d45a3f8310aebc9e4e7242cf58daa69705a91c1817c86"
+        },
+        {
+          "entry": "scheduled-capture-resume-20261107.reproduced.receipt.json",
+          "bytes": 721,
+          "sha256": "b6676ac56eee8ed0b70abd266b4d113251fc7b09c1c42767c8292ef2c477e7ba"
+        },
+        {
+          "entry": "scheduled-capture-resume-20261107.owner.catalog.json",
+          "bytes": 440797,
+          "sha256": "a8915413900de4dbd0a592147d52f97d4c86c823cf704420ace19f5a679cc559"
+        },
+        {
+          "entry": "scheduled-capture-resume-20261107.owner.catalog.log",
+          "bytes": 98722,
+          "sha256": "aca48d6193f770c63f797f297a050e1fa807cfd84d3d08b6bf66a0950fca48aa"
+        },
+        {
+          "entry": "scheduled-capture-resume-20261107.owner.runtime.log",
+          "bytes": 882673,
+          "sha256": "ac593c3f0aa4f936bdf6efc208036d920c32e971ed13f3e4f4a2392474cf8501"
+        },
+        {
+          "entry": "scheduled-capture-resume-20261107.owner.receipt.json",
+          "bytes": 923,
+          "sha256": "0d2991787e57a540ad8a4cce947d2dbc1d262ec743e2cc86a5418fbf8c03af57"
+        },
+        {
+          "entry": "scheduled-capture-resume-20261107.owner.source-freeze.json",
+          "bytes": 599451,
+          "sha256": "906aa28a50b6854bf7f55b0cb96c89c687b80c8eddc91ef023e5491b1116d601"
+        },
+        {
+          "entry": "scheduled-capture-resume-20261107.owner.test-identity.json",
+          "bytes": 207,
+          "sha256": "01335591d6a02647d54f684d38a221e280902f49e90aa54513018c93c1609f9b"
+        },
+        {
+          "entry": "scheduled-capture-resume-20261107.structure.log",
+          "bytes": 65741,
+          "sha256": "9deed70673e480752f758e713a9e562ce11ab4b13daa348078da870e79f9d09f"
+        },
+        {
+          "entry": "scheduled-capture-resume-20261107.structure.receipt.json",
+          "bytes": 153,
+          "sha256": "885f508933862e23d0f913a669d7c734c29a4e4a1a0afa862447e35c3aefa3a2"
+        },
+        {
+          "entry": "scheduled-capture-resume-20261107.reverse-tree-all.log",
+          "bytes": 19738,
+          "sha256": "6faeeed739d0af632e3113b6277894050cc873c26197f6ed19a43d8f412d22f7"
+        },
+        {
+          "entry": "scheduled-capture-resume-20261107.reverse-tree-all.receipt.json",
+          "bytes": 1777,
+          "sha256": "e0cb538d4ba838a1858465918c82a26b37cd5fe5bd9ee024630c19136f4c16d7"
+        },
+        {
+          "entry": "scheduled-capture-resume-implementation-20261107.verified.json",
+          "bytes": 1103,
+          "sha256": "87e9b52ba9dddee2191626ea5c680d7c8b027f415b5fdbb4736131533f0b6f4f"
+        }
+      ]
+    }
   }
 }
