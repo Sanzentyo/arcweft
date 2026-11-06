@@ -20005,5 +20005,278 @@
         }
       ]
     }
+  },
+  "scopedDeferOlderSourceReverseHandoff": {
+    "source": "ffc143ca9eb9b07612de2d45f2e8e228e01659be",
+    "sourceInputHashes": {
+      "evidenceProperty": "scopedRegistryDefer",
+      "entry": "registry-defer-supported-20261107.owner.source-freeze.json"
+    },
+    "completed": {
+      "plannedBatches": 90,
+      "completedBatches": 22,
+      "coveredTargets": 50,
+      "run": 1260,
+      "pass": 1253,
+      "fail": 7,
+      "skip": 23
+    },
+    "interruptedLogs": [
+      "registry-defer-supported-20261107.partition.23.log"
+    ],
+    "caseIdComparison": {
+      "historicalEvidenceProperty": "orderedReplacementCliExpanded",
+      "failedIds": [
+        "arcweft-cli::check agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering",
+        "arcweft-cli::check spec_rejected_edge_fixtures_fail_with_diagnostics",
+        "arcweft-cli::check spec_valid_run_edge_fixture_now_executes",
+        "arcweft-cli::check unsafe_json_lists_audit_regions",
+        "arcweft-cli::check verify_json_records_required_solver_checks",
+        "arcweft-cli::check verify_json_reports_missing_promotion_proof",
+        "arcweft-cli::check verify_json_respects_semantic_defer_cancel_discharge"
+      ],
+      "differenceCount": 0
+    },
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-defer-reverse-handoff.raw.zip",
+      "sha256": "3495c5655a8ce775fa48c02f80cd16b37f9230ae5c3c99741c464fe4bdcb76b0",
+      "entries": [
+        {
+          "entry": "registry-defer-supported-20261107.handoff.receipt.json",
+          "bytes": 23663,
+          "sha256": "88bfd8124df341a6c95b45db454d9f2ca24cd095fdd8bdb56b37d711bcd143d5"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.reverse-partitions.json",
+          "bytes": 77711,
+          "sha256": "75dc6067d8e7a08908e124b90278e2b3c508ec6767e7528332f55efadb78af97"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.01.log",
+          "bytes": 75682,
+          "sha256": "3e0c27d326a30ac6f3ed3debbff89b2c3a683e1313b698039fb29d1ce1727f83"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.01.receipt.json",
+          "bytes": 846,
+          "sha256": "6e3511c21caa733447b83779829044a5275dd8bc102c56aff03ee5198caf87a7"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.02.log",
+          "bytes": 88506,
+          "sha256": "b5b1b1a423462d07ea21cdc3d6d4045a8e6d06eaea35b75c1524b1349ec080f5"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.02.receipt.json",
+          "bytes": 765,
+          "sha256": "d68038d62d5b13800b3888d9a8b76a977440afad4fa597c094b0e23a145514d0"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.03.log",
+          "bytes": 93403,
+          "sha256": "a638c53717ccba826e7d86a895c9cd18cdd6f4ae5c5fa0dcb23a9fd9bab8b328"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.03.receipt.json",
+          "bytes": 898,
+          "sha256": "34fcdaa73d52f4d368ddcfa75634965ce3e17bf6e681085f0c382de6ddaca696"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.04.log",
+          "bytes": 86412,
+          "sha256": "df52ca87ace48e44757adf367c607655291b4a4261e5dbe0d77bfa2190a28a8a"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.04.receipt.json",
+          "bytes": 775,
+          "sha256": "68d45c0efefffdf0320b7ba64d1718dd8f80150ff055209200f10e1614888d1a"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.05.log",
+          "bytes": 79704,
+          "sha256": "b2db58a03544eb0a14f09afb01e623d62c878dbb405b980ee5b62730a71778f1"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.05.receipt.json",
+          "bytes": 765,
+          "sha256": "0d6f37442e357dd9a295de507b5e06a078aded2a89c03e27bac9289d9f1bc1fc"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.06.log",
+          "bytes": 87423,
+          "sha256": "f7199989a09dff7e5914fe83dc0e1a907cdb75b46c92014ee079351694749009"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.06.receipt.json",
+          "bytes": 771,
+          "sha256": "73fa531d475aa13458535eeb1b6b345b93fcc9fc46b586dc613f47057b2ffc2d"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.07.log",
+          "bytes": 90284,
+          "sha256": "6c19c1ff4f88c935e3b38d8a822ba35ec557ed40c550196a9e0c0bd3ef67a25c"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.07.receipt.json",
+          "bytes": 884,
+          "sha256": "447c570b63d375bc8816ae04317491f21b6aa63d43a0cc80c7791206eb55b216"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.08.log",
+          "bytes": 89307,
+          "sha256": "d283c0ebe9527c2d7cbd7cc23de20c7e8d0bf4b2f9dce96bcea085a6c5f84d44"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.08.receipt.json",
+          "bytes": 910,
+          "sha256": "5b351b379c9d475d300faf39052d3765833c2e00c79b04d14caf9cf2afc93b95"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.09.log",
+          "bytes": 87776,
+          "sha256": "2715c89701b08952194f90f6cf5b897f0018434ad1c3735bc13418f487b75d8a"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.09.receipt.json",
+          "bytes": 934,
+          "sha256": "7183f57759e6c464975114ed2e807266ec6c85dc2f320136e23faa206c9a2a6f"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.10.log",
+          "bytes": 103094,
+          "sha256": "5079be2f4fa3a40f665864e0ff5503e109568d59e1f31ddc3225a9125b965d53"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.10.receipt.json",
+          "bytes": 765,
+          "sha256": "27fd844c6cef2ef999f6dccfc9d9f5475031ee49ffcec95ca8a213551d96aac8"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.11.log",
+          "bytes": 75272,
+          "sha256": "14474412c0410c3db0449d0c8d6775769f73ec08717efa9c1cef4961692fbff9"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.11.receipt.json",
+          "bytes": 838,
+          "sha256": "0ca9b202b748818aab3fc5952e341f660f05489f5dd6fc6f991047d3dc44a1f5"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.12.log",
+          "bytes": 114907,
+          "sha256": "212aaa40373fba8fedd3d2885b9989fcfdc71c396418addc371d15c0a0a127b7"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.12.receipt.json",
+          "bytes": 906,
+          "sha256": "d10178108f4ed61ec4fc39c716434d2f99466d48fcb5bb95be243849d82686a2"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.13.log",
+          "bytes": 77857,
+          "sha256": "5a79025bcca3859823cc826f3b957555de59d73ed7dc535e4da124e20e62ebe5"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.13.receipt.json",
+          "bytes": 936,
+          "sha256": "874316624a9bdfc559fa47f146794797b9bbc65ce2eb9c643cae4863a9560fdb"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.14.log",
+          "bytes": 79967,
+          "sha256": "015c8a258144172e36a3e5f06d58d9197a073ad85a8da5f76cc5cf9faff644b6"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.14.receipt.json",
+          "bytes": 984,
+          "sha256": "97833ce46189324b62e40d6f8d1825a8efdd1068d104d0256e8480796242194e"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.15.log",
+          "bytes": 80864,
+          "sha256": "44acbe4988a54f4b40aa6aba49e3bc00d234bdbe6b54f04fa6029595b64eecad"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.15.receipt.json",
+          "bytes": 950,
+          "sha256": "efaa3d5fda1193691e1aed334bed4affe02e5ca1e6606b77335154729919bbc8"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.16.log",
+          "bytes": 77963,
+          "sha256": "eaa12b9c39d9ba6e09df7d0e39c575a3454d153eed3bf8c6cb122a8b64192b47"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.16.receipt.json",
+          "bytes": 968,
+          "sha256": "a979d61692811355e9132deb8a846032d39c0e95354c1b0be638092bd90c40ff"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.17.log",
+          "bytes": 85473,
+          "sha256": "675a0fae15bedb50177261e96ba474ff0c49589a4735e9db5cdd38d986c73a18"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.17.receipt.json",
+          "bytes": 968,
+          "sha256": "cb7dcaa07ff3761d968de72d9b413b90a54fb6d2c5a754d464b8d325210e6ab8"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.18.log",
+          "bytes": 80926,
+          "sha256": "9f0b25f8bc4cded2d8dcce85e410980b73394086d173f76e8556567c65950ba5"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.18.receipt.json",
+          "bytes": 964,
+          "sha256": "14d10e5c9a825a11e02c674f431de225ab0591d314315058851ed6af7620cda8"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.19.log",
+          "bytes": 76500,
+          "sha256": "65616cd96aa1b1ae26e5e1181e2d23bd253750e45c4119075bc0854487f75d5a"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.19.receipt.json",
+          "bytes": 766,
+          "sha256": "fd1f66346ed90fd0b44d07d73fc031119a19235582d24e87e7be56deef86300a"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.20.log",
+          "bytes": 72563,
+          "sha256": "2aaa8c6d02ca0fca378a7782a8e009a6c6c7e937090337e34e6d4c8681eaf4ee"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.20.receipt.json",
+          "bytes": 769,
+          "sha256": "828ffd6c8e393bed9443da816cfbe6c9f7727cb0feac44486903644223afa42c"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.21.log",
+          "bytes": 149950,
+          "sha256": "99949af676e114c69a229ef4f34815ea71456a66b37d2e4154e3feb9c0dc3676"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.21.receipt.json",
+          "bytes": 868,
+          "sha256": "aeb9d207282a9cdd02d08cf565ff8f660cf7fba332f9b0ba6a0e445b6e3c305f"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.22.log",
+          "bytes": 255315,
+          "sha256": "204ac5ab431ea79959da4aa98e0f35a7b5e0873e2fe4c0514ff7d27fc707c3e8"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.22.receipt.json",
+          "bytes": 919,
+          "sha256": "d20cd0966c9566342e5b8f9e9ba2527f21c165dc9c6dcb21a0d735220988e414"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.partition.23.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    }
   }
 }

@@ -15146,3 +15146,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Scoped defer registration frontier restore baseline
 
 - Source ffc143ca9eb9b07612de2d45f2e8e228e01659be。デコード済みAWBCの init で、捕捉値のない defer の実行待ちと実行中の公開保存を採取した。対話側の次の登録IDだけを2から1へ巻き戻した両入力を復元が受理し、同じ地点の正規の保存も復元できた。実行中の子とスコープの照合に加えて、捕捉ハンドルの有無に関わらず対話側の発行範囲を照合する必要がある。初回の単体実行は Windows のメインスレッドでスタックを使い切った。標準の Rust テストハーネスで同じ入力を再実行して結果を得た。[実測と両試行の原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Scoped defer reverse-dependency source handoff
+
+- Source ffc143ca9eb9b07612de2d45f2e8e228e01659be。追加203ターゲットの分割計画で、22組50ターゲットを終えた。1,260件を実行して1,253件通過、7件失敗、23件スキップだった。CLIの失敗名は従来の7件と一致した。ソース入力3638件の差分は0件。登録IDの保存復元を修正するため、22組目の結果を得た時点で実行を区切った。23組目の途中ログを保存し、その組は実行済みの集計から外した。[全組の実測・原本](acceptance-evidence/task-flow-registry-execution.json)。
