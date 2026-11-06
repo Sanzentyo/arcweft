@@ -2360,6 +2360,518 @@
           "sha256": "eaf37b85c464311ba57d9ddf31bb4bd02e8e95048e2ce36971851f84350c7f8c"
         }
       ]
+    },
+    "phases": {
+      "admitted": [
+        {
+          "phase": "activation",
+          "paired": [
+            {
+              "label": "activation.exact",
+              "permission": "state.write('flow.flags.seen)",
+              "sourceSha256": "0784596ca64d80585339a9c50c9425a3602efe54ac0fa5060d810107f13e908f",
+              "exit": 0,
+              "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "label": "activation.wrong",
+              "permission": "state.write('flow.other)",
+              "sourceSha256": "0c43f87032daf026d43ec3f617157fb3402d002a285b504221ec0a4928b7a545",
+              "exit": 0,
+              "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            }
+          ]
+        },
+        {
+          "phase": "cancel",
+          "paired": [
+            {
+              "label": "cancel.exact",
+              "permission": "state.write('flow.flags.seen)",
+              "sourceSha256": "64601a95ba021ffc1fc835dbc356b5432de4db643fa21a928f8ec7e893a99ae8",
+              "exit": 0,
+              "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "label": "cancel.wrong",
+              "permission": "state.write('flow.other)",
+              "sourceSha256": "a0e9f1953a34508490c7d763b28647f376b3c9c66c67d08c2f06f0dfd060fa2a",
+              "exit": 0,
+              "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            }
+          ]
+        },
+        {
+          "phase": "defer_always",
+          "paired": [
+            {
+              "label": "defer_always.exact",
+              "permission": "state.write('flow.flags.seen)",
+              "sourceSha256": "5291e6a5d9023b052ac7cc74f241db845aaf2d1c0a49a2c63d03c0b791e87e72",
+              "exit": 0,
+              "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "label": "defer_always.wrong",
+              "permission": "state.write('flow.other)",
+              "sourceSha256": "e7399dcf9bac3c09e769d6d1e24654cac0e6b7f00bd9c0dba63e4fc97761ec0e",
+              "exit": 0,
+              "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            }
+          ]
+        },
+        {
+          "phase": "defer_cancelled",
+          "paired": [
+            {
+              "label": "defer_cancelled.exact",
+              "permission": "state.write('flow.flags.seen)",
+              "sourceSha256": "fa00cb816c9db6bdc125b38b5c74366e9188e9dda939db6fb84ab34152b17a37",
+              "exit": 0,
+              "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "label": "defer_cancelled.wrong",
+              "permission": "state.write('flow.other)",
+              "sourceSha256": "5526fddae05308a6a0e2c2f11fe03ba942017ea05837d44294448086bc0fbe7b",
+              "exit": 0,
+              "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            }
+          ]
+        },
+        {
+          "phase": "defer_completed",
+          "paired": [
+            {
+              "label": "defer_completed.exact",
+              "permission": "state.write('flow.flags.seen)",
+              "sourceSha256": "e93d68875677bb7d5742454cdbda530741ac93fc5930927c447a69c1c9311bfb",
+              "exit": 0,
+              "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "label": "defer_completed.wrong",
+              "permission": "state.write('flow.other)",
+              "sourceSha256": "98aecf83d6b9e2c667449912df934c36bef2090717ec7ee200b69e4d41c5c328",
+              "exit": 0,
+              "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            }
+          ]
+        },
+        {
+          "phase": "mark",
+          "paired": [
+            {
+              "label": "mark.exact",
+              "permission": "state.write('flow.flags.seen)",
+              "sourceSha256": "5c683b35cc1524e0ba2ce8a296c06b0a78f32c311016b74f34c179698aefa896",
+              "exit": 0,
+              "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "label": "mark.wrong",
+              "permission": "state.write('flow.other)",
+              "sourceSha256": "da74e7a8da498dea110f3744b54412efdc01631f88f85b250fc8b61433a209e7",
+              "exit": 0,
+              "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            }
+          ]
+        },
+        {
+          "phase": "thread_body",
+          "paired": [
+            {
+              "label": "thread_body.exact",
+              "permission": "state.write('flow.flags.seen)",
+              "sourceSha256": "8b9b70a074a3c4d230cd4a88d1ae62cdb40f49bbba88d4d4b22386b55e4f4441",
+              "exit": 0,
+              "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "label": "thread_body.wrong",
+              "permission": "state.write('flow.other)",
+              "sourceSha256": "add85e396cd666da801e86320dd166c642f45d1eabff96799c8b80b2d2a248b6",
+              "exit": 0,
+              "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            }
+          ]
+        }
+      ],
+      "hirRecovery": {
+        "total": 8,
+        "reason": "The initial defer bodies ended in a registry statement. Those inputs stopped before semantic analysis. A terminated write followed by a valid log expression reaches the checked defer body in the final pair.",
+        "receipts": [
+          "line-registry-phase-bound-20261106",
+          "line-registry-phase-indented-20261106"
+        ]
+      },
+      "rawArchive": {
+        "path": "task-line-registry-phase-bound.raw.zip",
+        "bytes": 26477,
+        "sha256": "d3d9817000ba335dada22ba2202f68b67b0d109ab44fdf06521feddfdfca63ea",
+        "entryDrift": 0,
+        "entries": [
+          {
+            "entry": "line-registry-phase-bound-20261106.activation.exact.arcw",
+            "bytes": 293,
+            "sha256": "0784596ca64d80585339a9c50c9425a3602efe54ac0fa5060d810107f13e908f"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.activation.exact.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.activation.exact.stdout.json",
+            "bytes": 202,
+            "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.activation.wrong.arcw",
+            "bytes": 288,
+            "sha256": "0c43f87032daf026d43ec3f617157fb3402d002a285b504221ec0a4928b7a545"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.activation.wrong.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.activation.wrong.stdout.json",
+            "bytes": 202,
+            "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.cancel.exact.arcw",
+            "bytes": 330,
+            "sha256": "64601a95ba021ffc1fc835dbc356b5432de4db643fa21a928f8ec7e893a99ae8"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.cancel.exact.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.cancel.exact.stdout.json",
+            "bytes": 202,
+            "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.cancel.wrong.arcw",
+            "bytes": 325,
+            "sha256": "a0e9f1953a34508490c7d763b28647f376b3c9c66c67d08c2f06f0dfd060fa2a"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.cancel.wrong.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.cancel.wrong.stdout.json",
+            "bytes": 202,
+            "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.defer_cancelled.exact.arcw",
+            "bytes": 307,
+            "sha256": "d6a1bb1fb287254c169c3f7b728d8c3c3c538b3d3a2c41a33231d9fcf045de51"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.defer_cancelled.exact.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.defer_cancelled.exact.stdout.json",
+            "bytes": 570,
+            "sha256": "eb9870fbc2d91c0f97d6e0254bedc0eb670731d4a6287cd0bb459f896632a593"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.defer_cancelled.wrong.arcw",
+            "bytes": 302,
+            "sha256": "3fa61406853c31e14965680432c5fe2853db5e826a04ca1bcffc1be309bfec5a"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.defer_cancelled.wrong.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.defer_cancelled.wrong.stdout.json",
+            "bytes": 570,
+            "sha256": "eb9870fbc2d91c0f97d6e0254bedc0eb670731d4a6287cd0bb459f896632a593"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.defer_completed.exact.arcw",
+            "bytes": 307,
+            "sha256": "27847106f4ae5b773406ca308e4dd87003a126deb64a3d0557fc70f3af1b7edd"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.defer_completed.exact.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.defer_completed.exact.stdout.json",
+            "bytes": 570,
+            "sha256": "eb9870fbc2d91c0f97d6e0254bedc0eb670731d4a6287cd0bb459f896632a593"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.defer_completed.wrong.arcw",
+            "bytes": 302,
+            "sha256": "ca68370d92a39ff8bab3e25d791a5a953603d0f4539883bb52b62a86d1cfa7b9"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.defer_completed.wrong.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.defer_completed.wrong.stdout.json",
+            "bytes": 570,
+            "sha256": "eb9870fbc2d91c0f97d6e0254bedc0eb670731d4a6287cd0bb459f896632a593"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.mark.exact.arcw",
+            "bytes": 310,
+            "sha256": "5c683b35cc1524e0ba2ce8a296c06b0a78f32c311016b74f34c179698aefa896"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.mark.exact.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.mark.exact.stdout.json",
+            "bytes": 202,
+            "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.mark.wrong.arcw",
+            "bytes": 305,
+            "sha256": "da74e7a8da498dea110f3744b54412efdc01631f88f85b250fc8b61433a209e7"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.mark.wrong.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.mark.wrong.stdout.json",
+            "bytes": 202,
+            "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+          },
+          {
+            "entry": "line-registry-phase-bound-20261106.receipt.json",
+            "bytes": 8461,
+            "sha256": "bd9771701a62313454eedaf822328bbf8a6d711f5ca2f42e7dd5876cfd25c255"
+          },
+          {
+            "entry": "line-registry-phase-defer-exact-20261106.defer_always.exact.arcw",
+            "bytes": 311,
+            "sha256": "5291e6a5d9023b052ac7cc74f241db845aaf2d1c0a49a2c63d03c0b791e87e72"
+          },
+          {
+            "entry": "line-registry-phase-defer-exact-20261106.defer_always.exact.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-phase-defer-exact-20261106.defer_always.exact.stdout.json",
+            "bytes": 202,
+            "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+          },
+          {
+            "entry": "line-registry-phase-defer-exact-20261106.defer_always.wrong.arcw",
+            "bytes": 306,
+            "sha256": "e7399dcf9bac3c09e769d6d1e24654cac0e6b7f00bd9c0dba63e4fc97761ec0e"
+          },
+          {
+            "entry": "line-registry-phase-defer-exact-20261106.defer_always.wrong.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-phase-defer-exact-20261106.defer_always.wrong.stdout.json",
+            "bytes": 202,
+            "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+          },
+          {
+            "entry": "line-registry-phase-defer-exact-20261106.defer_cancelled.exact.arcw",
+            "bytes": 326,
+            "sha256": "fa00cb816c9db6bdc125b38b5c74366e9188e9dda939db6fb84ab34152b17a37"
+          },
+          {
+            "entry": "line-registry-phase-defer-exact-20261106.defer_cancelled.exact.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-phase-defer-exact-20261106.defer_cancelled.exact.stdout.json",
+            "bytes": 202,
+            "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+          },
+          {
+            "entry": "line-registry-phase-defer-exact-20261106.defer_cancelled.wrong.arcw",
+            "bytes": 321,
+            "sha256": "5526fddae05308a6a0e2c2f11fe03ba942017ea05837d44294448086bc0fbe7b"
+          },
+          {
+            "entry": "line-registry-phase-defer-exact-20261106.defer_cancelled.wrong.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-phase-defer-exact-20261106.defer_cancelled.wrong.stdout.json",
+            "bytes": 202,
+            "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+          },
+          {
+            "entry": "line-registry-phase-defer-exact-20261106.defer_completed.exact.arcw",
+            "bytes": 326,
+            "sha256": "e93d68875677bb7d5742454cdbda530741ac93fc5930927c447a69c1c9311bfb"
+          },
+          {
+            "entry": "line-registry-phase-defer-exact-20261106.defer_completed.exact.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-phase-defer-exact-20261106.defer_completed.exact.stdout.json",
+            "bytes": 202,
+            "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+          },
+          {
+            "entry": "line-registry-phase-defer-exact-20261106.defer_completed.wrong.arcw",
+            "bytes": 321,
+            "sha256": "98aecf83d6b9e2c667449912df934c36bef2090717ec7ee200b69e4d41c5c328"
+          },
+          {
+            "entry": "line-registry-phase-defer-exact-20261106.defer_completed.wrong.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-phase-defer-exact-20261106.defer_completed.wrong.stdout.json",
+            "bytes": 202,
+            "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+          },
+          {
+            "entry": "line-registry-phase-defer-exact-20261106.receipt.json",
+            "bytes": 3939,
+            "sha256": "42237796fe7fbec6208b5e2a0a5fa5d4aadafbc58fb91109c2dfa5935424acf4"
+          },
+          {
+            "entry": "line-registry-phase-indented-20261106.defer_cancelled.exact.arcw",
+            "bytes": 331,
+            "sha256": "7d0612ed0c8dc3d8bb8070a0f19032da3905618c455f5ea27fc4b15f86a87523"
+          },
+          {
+            "entry": "line-registry-phase-indented-20261106.defer_cancelled.exact.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-phase-indented-20261106.defer_cancelled.exact.stdout.json",
+            "bytes": 570,
+            "sha256": "eb9870fbc2d91c0f97d6e0254bedc0eb670731d4a6287cd0bb459f896632a593"
+          },
+          {
+            "entry": "line-registry-phase-indented-20261106.defer_cancelled.wrong.arcw",
+            "bytes": 326,
+            "sha256": "ffe95a53d0e32f1adbbbc57de1f886423d5b158145c2eb1b1a3cb2a0f1d42cda"
+          },
+          {
+            "entry": "line-registry-phase-indented-20261106.defer_cancelled.wrong.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-phase-indented-20261106.defer_cancelled.wrong.stdout.json",
+            "bytes": 570,
+            "sha256": "eb9870fbc2d91c0f97d6e0254bedc0eb670731d4a6287cd0bb459f896632a593"
+          },
+          {
+            "entry": "line-registry-phase-indented-20261106.defer_completed.exact.arcw",
+            "bytes": 331,
+            "sha256": "7b1b9b2fe090a1cb5138cbbfe678d659a0fe855d67f999fd82b0abbad27848d7"
+          },
+          {
+            "entry": "line-registry-phase-indented-20261106.defer_completed.exact.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-phase-indented-20261106.defer_completed.exact.stdout.json",
+            "bytes": 570,
+            "sha256": "eb9870fbc2d91c0f97d6e0254bedc0eb670731d4a6287cd0bb459f896632a593"
+          },
+          {
+            "entry": "line-registry-phase-indented-20261106.defer_completed.wrong.arcw",
+            "bytes": 326,
+            "sha256": "9bcb95e2b4242086cb73e050acb689641819afeee60f8a45f13aa3a1dd5304a1"
+          },
+          {
+            "entry": "line-registry-phase-indented-20261106.defer_completed.wrong.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-phase-indented-20261106.defer_completed.wrong.stdout.json",
+            "bytes": 570,
+            "sha256": "eb9870fbc2d91c0f97d6e0254bedc0eb670731d4a6287cd0bb459f896632a593"
+          },
+          {
+            "entry": "line-registry-phase-indented-20261106.receipt.json",
+            "bytes": 6151,
+            "sha256": "11fd9b73fed7ce3cbeb4571f787a0cd0f708a1e02c9af534ae011ace97d66e5e"
+          },
+          {
+            "entry": "line-registry-phase-indented-20261106.thread_body.exact.arcw",
+            "bytes": 310,
+            "sha256": "8b9b70a074a3c4d230cd4a88d1ae62cdb40f49bbba88d4d4b22386b55e4f4441"
+          },
+          {
+            "entry": "line-registry-phase-indented-20261106.thread_body.exact.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-phase-indented-20261106.thread_body.exact.stdout.json",
+            "bytes": 202,
+            "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+          },
+          {
+            "entry": "line-registry-phase-indented-20261106.thread_body.wrong.arcw",
+            "bytes": 305,
+            "sha256": "add85e396cd666da801e86320dd166c642f45d1eabff96799c8b80b2d2a248b6"
+          },
+          {
+            "entry": "line-registry-phase-indented-20261106.thread_body.wrong.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-phase-indented-20261106.thread_body.wrong.stdout.json",
+            "bytes": 202,
+            "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+          }
+        ]
+      }
     }
   }
 }
