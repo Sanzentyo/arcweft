@@ -1285,5 +1285,675 @@
         }
       ]
     }
+  },
+  "activeLineProbe": {
+    "actual": {
+      "version": 1,
+      "source": "5deb88741e1f64df26ac08bc5a536f0a6063cd80",
+      "testedHead": "c0943dcc6224399ad802e965b38faa1b8a2ae785",
+      "binarySha256": "54378a602c02190d165ade9f564a38fd398a0fc6e8821256e8cf952b151459d3",
+      "rows": [
+        {
+          "input": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-defer-registry-control-20261106.maintained.arcw",
+          "sha256": "a25aacc33a8e0d56f9487ee9edf673b2f7f7d56a3d290a8a27168420d886a3e0",
+          "label": "maintained",
+          "cases": [
+            {
+              "case": "verify",
+              "arguments": [
+                "verify",
+                "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-defer-registry-control-20261106.maintained.arcw",
+                "--mode",
+                "test",
+                "--json"
+              ],
+              "exit": 0,
+              "status": null,
+              "steps": [],
+              "stderr": null,
+              "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "case": "plan",
+              "arguments": [
+                "plan",
+                "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-defer-registry-control-20261106.maintained.arcw",
+                "--json"
+              ],
+              "exit": 0,
+              "status": null,
+              "steps": [],
+              "stderr": null,
+              "stdoutSha256": "838517556dc4fe8f8954f3b5d7600471ebc9d9d70c917389714df97901358417",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "case": "native",
+              "arguments": [
+                "run",
+                "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-defer-registry-control-20261106.maintained.arcw",
+                "--flow",
+                "cancel_edge",
+                "--executor",
+                "bytecode-vm",
+                "--mode",
+                "one-op",
+                "--max-ops",
+                "1",
+                "--steps",
+                "32",
+                "--json"
+              ],
+              "exit": 0,
+              "status": "dialogue",
+              "steps": [
+                {
+                  "ops": 1,
+                  "stop": "OneOp",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "OneOp",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "OneOp",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "OneOp",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "OneOp",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Output",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                }
+              ],
+              "stderr": null,
+              "stdoutSha256": "ddf09da0aca6378b7a3067dd141edbd82dacc0be49352c55823909eca12e5327",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "case": "awbc",
+              "arguments": [
+                "run",
+                "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-defer-registry-control-20261106.maintained.arcw",
+                "--flow",
+                "cancel_edge",
+                "--executor",
+                "awbc-product",
+                "--mode",
+                "one-op",
+                "--max-ops",
+                "1",
+                "--steps",
+                "32",
+                "--json"
+              ],
+              "exit": 0,
+              "status": "dialogue",
+              "steps": [
+                {
+                  "ops": 1,
+                  "stop": "OneOp",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "OneOp",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "OneOp",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "OneOp",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "OneOp",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "OneOp",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "OneOp",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "OneOp",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "OneOp",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "OneOp",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "OneOp",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "OneOp",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "OneOp",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "OneOp",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 1,
+                  "stop": "Output",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 0,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 0,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 0,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 0,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 0,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 0,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 0,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 0,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 0,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 0,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 0,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 0,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 0,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 0,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 0,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 0,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                },
+                {
+                  "ops": 0,
+                  "stop": "Blocked",
+                  "diagnostics": [],
+                  "effects": 0
+                }
+              ],
+              "stderr": null,
+              "stdoutSha256": "e547b2aec222f9d60c72ccf0c6ec49d9b8e3e0ff5e531a0296108da13d4a802e",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            }
+          ]
+        },
+        {
+          "input": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-defer-registry-control-20261106.line_write_only.arcw",
+          "sha256": "74305ef1925ee055e1770e4a8f3141a575542fb2c2e23f89124d113bd3ac2cee",
+          "label": "line_write_only",
+          "cases": [
+            {
+              "case": "verify",
+              "arguments": [
+                "verify",
+                "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-defer-registry-control-20261106.line_write_only.arcw",
+                "--mode",
+                "test",
+                "--json"
+              ],
+              "exit": 0,
+              "status": null,
+              "steps": [],
+              "stderr": null,
+              "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "case": "plan",
+              "arguments": [
+                "plan",
+                "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-defer-registry-control-20261106.line_write_only.arcw",
+                "--json"
+              ],
+              "exit": 0,
+              "status": null,
+              "steps": [],
+              "stderr": null,
+              "stdoutSha256": "ac1d1c0ccb60f1caee72d2a731b564880ddb30ac00782658dce558b8025438e2",
+              "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "case": "native",
+              "arguments": [
+                "run",
+                "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-defer-registry-control-20261106.line_write_only.arcw",
+                "--flow",
+                "cancel_edge",
+                "--executor",
+                "bytecode-vm",
+                "--mode",
+                "one-op",
+                "--max-ops",
+                "1",
+                "--steps",
+                "32",
+                "--json"
+              ],
+              "exit": 1,
+              "status": null,
+              "steps": [],
+              "stderr": "error: product AWBC verification failed: AWBC payload for effect plan 0 is malformed: RegistryWrite: registry key is not covered by the original declared effect row\r\n",
+              "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderrSha256": "f1cd6f30532073aa6389e8398e58106d2ccc2af95c389ba5f85663351b86d1fb"
+            },
+            {
+              "case": "awbc",
+              "arguments": [
+                "run",
+                "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-defer-registry-control-20261106.line_write_only.arcw",
+                "--flow",
+                "cancel_edge",
+                "--executor",
+                "awbc-product",
+                "--mode",
+                "one-op",
+                "--max-ops",
+                "1",
+                "--steps",
+                "32",
+                "--json"
+              ],
+              "exit": 1,
+              "status": null,
+              "steps": [],
+              "stderr": "error: product AWBC verification failed: AWBC payload for effect plan 0 is malformed: RegistryWrite: registry key is not covered by the original declared effect row\r\n",
+              "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "stderrSha256": "f1cd6f30532073aa6389e8398e58106d2ccc2af95c389ba5f85663351b86d1fb"
+            }
+          ]
+        }
+      ]
+    },
+    "sourceObservation": "RuntimePlan lowers line groups independently of Flow sites. The accepted group stores original operation bodies but carries no typed effects. The generated AWBC line body is lowered with no active effect set and gets the empty signature effect row. Repair must pass the original checked effects through the line-body owner before both executor paths can reach runtime.",
+    "rawArchive": {
+      "path": "task-active-line-registry-runtime.raw.zip",
+      "bytes": 13004,
+      "sha256": "91a400160d43ac21e334d07327448c0915c2537fdf7f0edbe477c002b087f3b5",
+      "entryDrift": 0,
+      "entries": [
+        {
+          "entry": "active-line-registry-runtime-20261106.line_write_only.awbc.stderr.log",
+          "bytes": 166,
+          "sha256": "f1cd6f30532073aa6389e8398e58106d2ccc2af95c389ba5f85663351b86d1fb"
+        },
+        {
+          "entry": "active-line-registry-runtime-20261106.line_write_only.awbc.stdout.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "active-line-registry-runtime-20261106.line_write_only.native.stderr.log",
+          "bytes": 166,
+          "sha256": "f1cd6f30532073aa6389e8398e58106d2ccc2af95c389ba5f85663351b86d1fb"
+        },
+        {
+          "entry": "active-line-registry-runtime-20261106.line_write_only.native.stdout.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "active-line-registry-runtime-20261106.line_write_only.plan.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "active-line-registry-runtime-20261106.line_write_only.plan.stdout.json",
+          "bytes": 5133,
+          "sha256": "ac1d1c0ccb60f1caee72d2a731b564880ddb30ac00782658dce558b8025438e2"
+        },
+        {
+          "entry": "active-line-registry-runtime-20261106.line_write_only.verify.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "active-line-registry-runtime-20261106.line_write_only.verify.stdout.json",
+          "bytes": 202,
+          "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+        },
+        {
+          "entry": "active-line-registry-runtime-20261106.maintained.awbc.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "active-line-registry-runtime-20261106.maintained.awbc.stdout.json",
+          "bytes": 55430,
+          "sha256": "e547b2aec222f9d60c72ccf0c6ec49d9b8e3e0ff5e531a0296108da13d4a802e"
+        },
+        {
+          "entry": "active-line-registry-runtime-20261106.maintained.native.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "active-line-registry-runtime-20261106.maintained.native.stdout.json",
+          "bytes": 55457,
+          "sha256": "ddf09da0aca6378b7a3067dd141edbd82dacc0be49352c55823909eca12e5327"
+        },
+        {
+          "entry": "active-line-registry-runtime-20261106.maintained.plan.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "active-line-registry-runtime-20261106.maintained.plan.stdout.json",
+          "bytes": 5136,
+          "sha256": "838517556dc4fe8f8954f3b5d7600471ebc9d9d70c917389714df97901358417"
+        },
+        {
+          "entry": "active-line-registry-runtime-20261106.maintained.verify.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "active-line-registry-runtime-20261106.maintained.verify.stdout.json",
+          "bytes": 202,
+          "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+        },
+        {
+          "entry": "active-line-registry-runtime-20261106.receipt.json",
+          "bytes": 16517,
+          "sha256": "773320addfec6f812c89fee2dce00d8893c91353035370b747b9bdae8a525123"
+        },
+        {
+          "entry": "line-defer-registry-control-20261106.line_write_only.arcw",
+          "bytes": 464,
+          "sha256": "74305ef1925ee055e1770e4a8f3141a575542fb2c2e23f89124d113bd3ac2cee"
+        },
+        {
+          "entry": "line-defer-registry-control-20261106.maintained.arcw",
+          "bytes": 385,
+          "sha256": "a25aacc33a8e0d56f9487ee9edf673b2f7f7d56a3d290a8a27168420d886a3e0"
+        }
+      ]
+    }
   }
 }
