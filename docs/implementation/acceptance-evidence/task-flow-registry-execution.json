@@ -19833,5 +19833,86 @@
         }
       ]
     }
+  },
+  "scopedDeferHandlerExecutionBaseline": {
+    "source": "ffc143ca9eb9b07612de2d45f2e8e228e01659be",
+    "probeSourceSha256": "75170bb1a2306e15db1d5d9bb258da71d443dc121eaa2c39447af088e643b66a",
+    "buildMethod": "Standalone Rust probe linked to the exact Cargo-built owner test libraries, resolved through the successful nextest catalog and Cargo fingerprints.",
+    "buildExit": 0,
+    "probeExit": 0,
+    "sourceEvidenceProperty": "scopedRegistryDefer",
+    "controls": [
+      {
+        "executor": "native",
+        "doneAt": 14
+      },
+      {
+        "executor": "awbc",
+        "doneAt": 19
+      }
+    ],
+    "runtimeDiagnostics": [
+      {
+        "case": "defer",
+        "executor": "native",
+        "registrationTick": 10,
+        "diagnostics": "[RuntimeDiagnostic { message: \"runtime defer site 1 has no executable body in this plan\", category: Runtime, source: None }, RuntimeDiagnostic { message: \"line-task child failed: runtime defer site 1 has no executable body in this plan\", category: Runtime, source: None }]"
+      },
+      {
+        "case": "defer",
+        "executor": "awbc",
+        "registrationTick": 12,
+        "diagnostics": "[RuntimeDiagnostic { message: \"line activation contains an operation outside its admitted role\", category: Internal, source: None }]"
+      },
+      {
+        "case": "failed-only",
+        "executor": "native",
+        "registrationTick": 10,
+        "diagnostics": "[RuntimeDiagnostic { message: \"runtime defer site 1 has no executable body in this plan\", category: Runtime, source: None }, RuntimeDiagnostic { message: \"line-task child failed: runtime defer site 1 has no executable body in this plan\", category: Runtime, source: None }]"
+      },
+      {
+        "case": "failed-only",
+        "executor": "awbc",
+        "registrationTick": 12,
+        "diagnostics": "[RuntimeDiagnostic { message: \"line activation contains an operation outside its admitted role\", category: Internal, source: None }]"
+      }
+    ],
+    "scopeOutcomeVerified": false,
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-mark-defer-baseline.raw.zip",
+      "sha256": "93ddeebf9e7a72defb282fd4c3de74d52e182b43ca8b3c14977ab488dc44da7b",
+      "entries": [
+        {
+          "entry": "probe.rs",
+          "bytes": 13361,
+          "sha256": "75170bb1a2306e15db1d5d9bb258da71d443dc121eaa2c39447af088e643b66a"
+        },
+        {
+          "entry": "receipt.json",
+          "bytes": 7284,
+          "sha256": "bf90ef9c2500a78e05bf7af57fec470a072fdacbde4b2ca1a65cbb3baf178c1b"
+        },
+        {
+          "entry": "build.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "build.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "run.stdout.log",
+          "bytes": 1847,
+          "sha256": "567813ae8e813447a6eb80339105d210f87089fe83ee11c5a96c08f556378bfb"
+        },
+        {
+          "entry": "run.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    }
   }
 }
