@@ -19684,5 +19684,154 @@
         }
       ]
     }
+  },
+  "scopedRegistryDeferFollowOn": {
+    "source": "ffc143ca9eb9b07612de2d45f2e8e228e01659be",
+    "sourceInputHashes": {
+      "evidenceProperty": "scopedRegistryDefer",
+      "entry": "registry-defer-supported-20261107.owner.source-freeze.json"
+    },
+    "testedRuntimeReversePackages": [
+      "arcweft-runtime-driver",
+      "arcweft-runtime-host",
+      "arcweft-save"
+    ],
+    "workspaceMetadata": {
+      "command": [
+        "cargo",
+        "metadata",
+        "--locked",
+        "--format-version",
+        "1",
+        "--no-deps"
+      ],
+      "packages": 52,
+      "declaredTestTargets": 222
+    },
+    "results": [
+      {
+        "version": 1,
+        "source": "ffc143ca9eb9b07612de2d45f2e8e228e01659be",
+        "command": [
+          "cargo",
+          "nextest",
+          "run",
+          "--locked",
+          "-p",
+          "arcweft-runtime-driver",
+          "-p",
+          "arcweft-runtime-host",
+          "-p",
+          "arcweft-save",
+          "--no-tests",
+          "fail",
+          "--no-fail-fast",
+          "--status-level",
+          "all",
+          "--final-status-level",
+          "all"
+        ],
+        "exitCode": 0,
+        "summary": [
+          "Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 26s",
+          "Summary [  78.751s] 260 tests run: 260 passed (1 slow), 0 skipped"
+        ],
+        "sourceInputs": 3638,
+        "sourceDrift": [],
+        "startedAt": "2026-11-06T21:41:16.0368888Z",
+        "finishedAt": "2026-11-06T21:45:10.485861Z"
+      },
+      {
+        "version": 1,
+        "source": "ffc143ca9eb9b07612de2d45f2e8e228e01659be",
+        "command": [
+          "cargo",
+          "check",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "exitCode": 0,
+        "summary": [
+          "Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 37s"
+        ],
+        "sourceInputs": 3638,
+        "sourceDrift": [],
+        "startedAt": "2026-11-06T21:45:10.5051606Z",
+        "finishedAt": "2026-11-06T21:46:49.9505289Z"
+      },
+      {
+        "version": 1,
+        "source": "ffc143ca9eb9b07612de2d45f2e8e228e01659be",
+        "command": [
+          "cargo",
+          "clippy",
+          "--locked",
+          "--workspace",
+          "--all-targets",
+          "--all-features"
+        ],
+        "exitCode": 0,
+        "summary": [
+          "Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 47s"
+        ],
+        "sourceInputs": 3638,
+        "sourceDrift": [],
+        "startedAt": "2026-11-06T21:46:49.9524657Z",
+        "finishedAt": "2026-11-06T21:48:39.7066243Z"
+      }
+    ],
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-defer-follow-on.raw.zip",
+      "sha256": "9b7f9cfa3d68c7cff1dac3e1ee0f4bcc682f3bcc4343da7c628e197827d3a240",
+      "entries": [
+        {
+          "entry": "registry-defer-supported-20261107.follow-on.receipt.json",
+          "bytes": 1832,
+          "sha256": "ca9c7663261b94abb37a736fb6bc51fb9d4664b0c65a0cbb198b16cb7581b824"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.runtime-reverse.log",
+          "bytes": 165536,
+          "sha256": "1f7b707324834bb93b24eb58c5aff605db1a43c80a91c34d01e8a379149ad93e"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.runtime-reverse.receipt.json",
+          "bytes": 739,
+          "sha256": "26bef51391c60864d46119ec711b0ea2708af5600bcdcad180cc4f415b21d840"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.workspace-check.log",
+          "bytes": 111174,
+          "sha256": "5c8bbf6f7e9c121afeabe3299fb4ba993e8739b439b154a96f05d330828f5802"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.workspace-check.receipt.json",
+          "bytes": 470,
+          "sha256": "ce442d6076ebffe3e9c548a024c05c05e4b66b0b6b4083296dd0671f9fb3fedc"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.workspace-clippy.log",
+          "bytes": 9035696,
+          "sha256": "59e2bdbe7ad3efb5529ba17650b004b4c1e3d3bd5d0a289f4ae19e41dbbf4feb"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.workspace-clippy.receipt.json",
+          "bytes": 471,
+          "sha256": "e70fd765dd88cde8d13b0fcaa7e6975cbf569a722f5be16fbbb81bee33815eb8"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.workspace-metadata.json",
+          "bytes": 355623,
+          "sha256": "682ccf24f408c3c79c2ca1482e1f4120b3eff2eba29f5fe8c020767897092a7b"
+        },
+        {
+          "entry": "registry-defer-supported-20261107.workspace-metadata.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    }
   }
 }

@@ -15134,3 +15134,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source ffc143ca9eb9b07612de2d45f2e8e228e01659be。Sema が元の文から確定した defer の所有先を RuntimePlan と共有する。読取りに使う事実と終了時に実行される書込みを分け、現在のスコープを抜ける時に対応する書込みの効果を反映する。Native／デコード済みAWBCの両方で終了前の必須読取り、正常終了で失敗時限定の cleanup を実行しないこと、Line 全体の逆登録順を確認した。1 op ごとの AWBC の公開保存で、init の Bool と cleanup が書いた I64 を確認した。終了後の古い型は init と Line 全体の両方で拒否された。対象4件、4クレートの対象4,088件が通過し、既存1件をスキップした。実行IDとソース入力の差分は0件、構造ゲートのブロッキング違反は0件だった。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
 - 初回の試作は4件中2件通過、2件失敗だった。マークの子処理は Native で実行時に defer site を拒否し、この実行経路は引き続き未達として記録する。AWBC の失敗では、捕捉した affine 値がない実行中の scoped defer が保存されたが、復元側が対応する子処理の行を期待していなかった。すでに照合した登録IDから期待行を構成し、台帳との比較を維持した。修正前の実CLIでは、従来の字下げ構文を使った同一入力は区切りの有無にかかわらず init 終了前の読取りを拒否し、書込みのない対照は通過した。[初回失敗と対照の原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Line and init defer runtime reverse checks
+
+- Source ffc143ca9eb9b07612de2d45f2e8e228e01659be。Runtime Driver／Runtime Host／Save の14バイナリで260件すべて通過した。全ターゲット・全 feature の workspace check と Clippy は終了0で、警告を原本に残した。各実行でソース入力3638件の差分は0件。Cargo の逆依存グラフとメタデータは Core を含む52パッケージ、テスト対象222件を列挙した。[実測・メタデータ・原本](acceptance-evidence/task-flow-registry-execution.json)。
