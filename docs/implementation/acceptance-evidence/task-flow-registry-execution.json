@@ -15161,5 +15161,115 @@
         }
       ]
     }
+  },
+  "reachedRegistryLiveTableIdentity": {
+    "source": "e74b4d75bbc730ab29b5b5ead19030cc078c38e3",
+    "parent": "d4ab03e2a29ed91cfca9ec36dd77f3253ab0e88e",
+    "changedBlobs": [
+      {
+        "path": "crates/arcweft-core/src/effect/registry/scope.rs",
+        "blob": "d578a6d7eda067fecf5bf75489827d5c567752ab"
+      },
+      {
+        "path": "crates/arcweft-core/src/effect/registry/tests.rs",
+        "blob": "9230879060ccca5ccd572d1249967e5c82f75037"
+      }
+    ],
+    "patchSha256": "4ad4b07058df42aefdae5a8443920502bbc006a8c3f875fe329489365fd4637e",
+    "implementation": "The mutation observes the live table and its specific row, including absence. Clear, inert clone, and restore create fresh table identities. Identity is allocated lazily and excluded from version-one storage, whose rows remain an array.",
+    "focused": {
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "-E",
+        "test(/registry|inline_dialogue_reads_the_reached_line/)"
+      ],
+      "executed": 60,
+      "passed": 60,
+      "failed": 0,
+      "excludedByFilter": 2499,
+      "regression": "A write prepared on an empty table cannot reserve space in another empty table. An absent drop cannot commit there either. Cloned and restored row arrays do not grant the original write capability, and clearing an empty table invalidates prepared writes."
+    },
+    "reverseGraph": {
+      "command": [
+        "cargo",
+        "tree",
+        "--locked",
+        "--workspace",
+        "--invert",
+        "arcweft-core",
+        "--prefix",
+        "none",
+        "--format",
+        "{p}"
+      ],
+      "packages": 52,
+      "fullExecution": "not run on this cut"
+    },
+    "rustfmtExitCode": 0,
+    "structureBlocking": 0,
+    "clippy": {
+      "version": 1,
+      "source": "e74b4d75bbc730ab29b5b5ead19030cc078c38e3",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--all-targets"
+      ],
+      "exitCode": 0,
+      "profileResult": "Finished `dev` profile [unoptimized + debuginfo] target(s) in 6m 04s",
+      "warningsPresent": true
+    },
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-live-table-identity.raw.zip",
+      "sha256": "b7a665d6f260eaa9bb83c2b0476e92ace0456945b2439b99674a0de180c6dba7",
+      "entries": [
+        {
+          "entry": "registry-live-table-identity-20261107.nextest.log",
+          "bytes": 108187,
+          "sha256": "692464382fb6e463e909886d023717a23a168e622e9ae404abadf4c535f6c27a"
+        },
+        {
+          "entry": "registry-live-table-identity-20261107.verified.json",
+          "bytes": 831,
+          "sha256": "c9f7b2785415bfbe744cb2d96d5cff5e627d8c25658d137e6f44f531cea94248"
+        },
+        {
+          "entry": "registry-live-table-identity-20261107.structure-full.log",
+          "bytes": 65741,
+          "sha256": "2abff98257d117f97406cd4d76d1988a3ce2998350eadfd85458ce6f1585e45b"
+        },
+        {
+          "entry": "registry-live-table-identity-20261107.inverse-cargo.txt",
+          "bytes": 19452,
+          "sha256": "3f1a725a8c4e20d7ff324f499910203eab3b157f862f4030f796f3b84bf6d79a"
+        },
+        {
+          "entry": "registry-live-table-identity-20261107.clippy.log",
+          "bytes": 4837585,
+          "sha256": "31558846047a4f1f9ad0014654666a8b66b0d72302b2c83f4e08f86c67ab1cad"
+        },
+        {
+          "entry": "registry-live-table-identity-20261107.clippy.receipt.json",
+          "bytes": 338,
+          "sha256": "36dabc8f99c94832a0986e774add6a096a0ca82f848073d93e7d934655ba23ae"
+        }
+      ]
+    }
   }
 }

@@ -15026,3 +15026,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Reached registry write verification
 
 - Source 7d31dc1bd81398a904c267336c3d2406668b33c4 の書込み行再照合を Core、Sema、Runtime Plan、Compiler の4クレートで検証した。4,075件通過、1件スキップ。検査対象ソース4,032件と nextest の列挙結果は実行前後で一致した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Prepared registry mutations authenticate their live table
+
+- Source e74b4d75bbc730ab29b5b5ead19030cc078c38e3 で、書込み・破棄の準備結果は対象行に加えて元のライブテーブルを照合する。別の空テーブル、行を共有する複製、保存から復元したテーブルに再利用できない。既存の行配列をそのまま保存する。Core／Compilerの対象60件が通過し、構造ゲートのブロッキング違反は0件だった。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
