@@ -2273,5 +2273,598 @@
         }
       ]
     }
+  },
+  "trustedDependencies": {
+    "version": 1,
+    "source": "6b72d7ca42beb3661a7025598cf74a341d61fc21",
+    "publication": {
+      "version": 1,
+      "commit": "6b72d7ca42beb3661a7025598cf74a341d61fc21",
+      "parent": "9be279a37c74e7a154af551cda7c260fef782b65",
+      "tree": "fee25f8fb888c3ea21a485d4c034abd668f5c006",
+      "remote": "6b72d7ca42beb3661a7025598cf74a341d61fc21",
+      "paths": [
+        {
+          "path": "crates/arcweft-cli/tests/check/cli_runtime_bench.rs",
+          "blob": "5e23e31e15eaf16f3a2145e32c25081aa313f8c3"
+        },
+        {
+          "path": "crates/arcweft-verify/src/lib.rs",
+          "blob": "6a150bfe50904501f340c79fd572dfee448f61ce"
+        },
+        {
+          "path": "crates/arcweft-verify/src/proof_dependencies.rs",
+          "blob": "b88c5f024d46acc6d2e1bc884387dee994d86517"
+        },
+        {
+          "path": "docs/01-language/proofs-and-unsafe-audits.md",
+          "blob": "e391b26159f796e03d1c00d7780de82e062c70ff"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "e3f0910ebb7525486f49d192913e1257dfcde20ef4d52741bb6667a90f8353bd",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-06T00:54:35.9124066Z"
+    },
+    "focused": {
+      "version": 1,
+      "base": "9be279a37c74e7a154af551cda7c260fef782b65",
+      "run": "typed-proof-dependencies-owner1-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   1.880s] 6 tests run: 6 passed, 696 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 696,
+      "selectedPackages": 2,
+      "matchedPackages": 2,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4127,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-06T00:53:40.1774905Z"
+    },
+    "directCli": {
+      "version": 1,
+      "head": "9be279a37c74e7a154af551cda7c260fef782b65",
+      "owner": "typed-proof-dependencies-owner1-20261106",
+      "binary": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+      "binarySha256": "2ff22b4131a512cfcfdaa4c9b4e1efa14341da397a9678a5b8dd66083825a1c2",
+      "cases": [
+        {
+          "case": "direct",
+          "mode": "dev",
+          "arguments": [
+            "verify",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/proof-dependency-baseline-20261106.arcw",
+            "--mode",
+            "dev",
+            "--json"
+          ],
+          "exitCode": 0,
+          "sourceSha256": "5a3fb0abff5ed8f275d3023df74083544f769e241302e73279d1d9192fd9a467",
+          "proofs": [
+            {
+              "id": "origin",
+              "trust": {
+                "kind": "trusted",
+                "reason": "signed manifest",
+                "source": {
+                  "source": {
+                    "id": "arcweft-project://proof-dependency-baseline-20261106/proof-dependency-baseline-20261106.arcw",
+                    "revision": "77c019d23bd10419d44ba2e150d32a8d4f65259527a64211b4b31e4c70585720",
+                    "source_len": 145
+                  },
+                  "start": 0,
+                  "end": 45
+                }
+              },
+              "trusted_dependencies": null
+            },
+            {
+              "id": "middle",
+              "trust": {
+                "kind": "pending"
+              },
+              "trusted_dependencies": [
+                "origin"
+              ]
+            },
+            {
+              "id": "outer",
+              "trust": {
+                "kind": "pending"
+              },
+              "trusted_dependencies": [
+                "origin"
+              ]
+            },
+            {
+              "id": "separate",
+              "trust": {
+                "kind": "pending"
+              },
+              "trusted_dependencies": null
+            }
+          ],
+          "pendingBodies": 4,
+          "trustPolicyDiagnostics": [],
+          "stdoutSha256": "6fe6fd0b656b28d32792579ab81400ef3a1c8b0c62dfb36a863a2c1c868580c7",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "case": "direct",
+          "mode": "release",
+          "arguments": [
+            "verify",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/proof-dependency-baseline-20261106.arcw",
+            "--mode",
+            "release",
+            "--json"
+          ],
+          "exitCode": 1,
+          "sourceSha256": "5a3fb0abff5ed8f275d3023df74083544f769e241302e73279d1d9192fd9a467",
+          "proofs": [
+            {
+              "id": "origin",
+              "trust": {
+                "kind": "trusted",
+                "reason": "signed manifest",
+                "source": {
+                  "source": {
+                    "id": "arcweft-project://proof-dependency-baseline-20261106/proof-dependency-baseline-20261106.arcw",
+                    "revision": "77c019d23bd10419d44ba2e150d32a8d4f65259527a64211b4b31e4c70585720",
+                    "source_len": 145
+                  },
+                  "start": 0,
+                  "end": 45
+                }
+              },
+              "trusted_dependencies": null
+            },
+            {
+              "id": "middle",
+              "trust": {
+                "kind": "pending"
+              },
+              "trusted_dependencies": [
+                "origin"
+              ]
+            },
+            {
+              "id": "outer",
+              "trust": {
+                "kind": "pending"
+              },
+              "trusted_dependencies": [
+                "origin"
+              ]
+            },
+            {
+              "id": "separate",
+              "trust": {
+                "kind": "pending"
+              },
+              "trusted_dependencies": null
+            }
+          ],
+          "pendingBodies": 4,
+          "trustPolicyDiagnostics": [
+            {
+              "id": "verify.proof.trust_disallowed",
+              "severity": "error",
+              "message": "policy disallows the trust declaration on proof `origin`",
+              "source": {
+                "source": {
+                  "id": "arcweft-project://proof-dependency-baseline-20261106/proof-dependency-baseline-20261106.arcw",
+                  "revision": "77c019d23bd10419d44ba2e150d32a8d4f65259527a64211b4b31e4c70585720",
+                  "source_len": 145
+                },
+                "start": 0,
+                "end": 45
+              },
+              "obligation": null,
+              "related_ids": [
+                "origin"
+              ],
+              "actions": []
+            }
+          ],
+          "stdoutSha256": "83fa52ce205a75eee81d9ecf39a5a4aaaa574e977a3a7ee840fb2a96edd5a443",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "case": "ordinary_function",
+          "mode": "dev",
+          "arguments": [
+            "verify",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/proof-trust-intermediaries-baseline-20261106.ordinary_function.arcw",
+            "--mode",
+            "dev",
+            "--json"
+          ],
+          "exitCode": 0,
+          "sourceSha256": "92852fd4748683c7c705e5638001fb4abf5a96715307cabe213737b304bdafd3",
+          "proofs": [
+            {
+              "id": "origin",
+              "trust": {
+                "kind": "trusted",
+                "reason": "signed manifest",
+                "source": {
+                  "source": {
+                    "id": "arcweft-project://proof-trust-intermediaries-baseline-20261106.ordinary_function/proof-trust-intermediaries-baseline-20261106.ordinary_function.arcw",
+                    "revision": "23cc83e232c259ee6319b71ad98210957eef9e83604a7313ea1e804cc640ca29",
+                    "source_len": 120
+                  },
+                  "start": 0,
+                  "end": 45
+                }
+              },
+              "trusted_dependencies": null
+            },
+            {
+              "id": "outer",
+              "trust": {
+                "kind": "pending"
+              },
+              "trusted_dependencies": [
+                "origin"
+              ]
+            }
+          ],
+          "pendingBodies": 2,
+          "trustPolicyDiagnostics": [],
+          "stdoutSha256": "75d6e908ab66778bf845f671eb91692a9e924ff406af884f28bba02063f3ad6a",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "case": "ordinary_function",
+          "mode": "release",
+          "arguments": [
+            "verify",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/proof-trust-intermediaries-baseline-20261106.ordinary_function.arcw",
+            "--mode",
+            "release",
+            "--json"
+          ],
+          "exitCode": 1,
+          "sourceSha256": "92852fd4748683c7c705e5638001fb4abf5a96715307cabe213737b304bdafd3",
+          "proofs": [
+            {
+              "id": "origin",
+              "trust": {
+                "kind": "trusted",
+                "reason": "signed manifest",
+                "source": {
+                  "source": {
+                    "id": "arcweft-project://proof-trust-intermediaries-baseline-20261106.ordinary_function/proof-trust-intermediaries-baseline-20261106.ordinary_function.arcw",
+                    "revision": "23cc83e232c259ee6319b71ad98210957eef9e83604a7313ea1e804cc640ca29",
+                    "source_len": 120
+                  },
+                  "start": 0,
+                  "end": 45
+                }
+              },
+              "trusted_dependencies": null
+            },
+            {
+              "id": "outer",
+              "trust": {
+                "kind": "pending"
+              },
+              "trusted_dependencies": [
+                "origin"
+              ]
+            }
+          ],
+          "pendingBodies": 2,
+          "trustPolicyDiagnostics": [
+            {
+              "id": "verify.proof.trust_disallowed",
+              "severity": "error",
+              "message": "policy disallows the trust declaration on proof `origin`",
+              "source": {
+                "source": {
+                  "id": "arcweft-project://proof-trust-intermediaries-baseline-20261106.ordinary_function/proof-trust-intermediaries-baseline-20261106.ordinary_function.arcw",
+                  "revision": "23cc83e232c259ee6319b71ad98210957eef9e83604a7313ea1e804cc640ca29",
+                  "source_len": 120
+                },
+                "start": 0,
+                "end": 45
+              },
+              "obligation": null,
+              "related_ids": [
+                "origin"
+              ],
+              "actions": []
+            }
+          ],
+          "stdoutSha256": "1ce7868830993b6158702af327d315a78c460ad40971e3ef25361e1ea86c9c11",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "case": "unrelated_function",
+          "mode": "dev",
+          "arguments": [
+            "verify",
+            "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/proof-trust-intermediaries-baseline-20261106.unrelated_function.arcw",
+            "--mode",
+            "dev",
+            "--json"
+          ],
+          "exitCode": 0,
+          "sourceSha256": "8f01f0a5f18bcc8b33a663093b4306b45525302bfddd5db017c64770f6bf99fc",
+          "proofs": [
+            {
+              "id": "origin",
+              "trust": {
+                "kind": "trusted",
+                "reason": "signed manifest",
+                "source": {
+                  "source": {
+                    "id": "arcweft-project://proof-trust-intermediaries-baseline-20261106.unrelated_function/proof-trust-intermediaries-baseline-20261106.unrelated_function.arcw",
+                    "revision": "6e6fbb20ccbaf0e6c5918b5953d0267daabaaee6d8b66ce68f7beb7ce1ddb576",
+                    "source_len": 114
+                  },
+                  "start": 0,
+                  "end": 45
+                }
+              },
+              "trusted_dependencies": null
+            },
+            {
+              "id": "outer",
+              "trust": {
+                "kind": "pending"
+              },
+              "trusted_dependencies": null
+            }
+          ],
+          "pendingBodies": 2,
+          "trustPolicyDiagnostics": [],
+          "stdoutSha256": "c85768831a77dec3b7295c9b19fb0e63399aefcef24eea60aa44bd13ae8e5e3a",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    "scope": "Trust projection uses the selected typed source target. A work-bounded traversal borrows the sealed topology rows once and deduplicates trusted targets for each proof. The proof body remains a separate pending obligation. The published report tracks statically selected calls.",
+    "reverseSelection": {
+      "roots": [
+        "arcweft-verify",
+        "arcweft-cli"
+      ],
+      "packages": [
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-web",
+        "arcweft-runtime-host",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ],
+      "cargoPins": 101,
+      "cargoInputDrift": 0
+    },
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-typed-proof-dependencies.raw.zip",
+      "bytes": 105185,
+      "sha256": "61312d64935cdf3d33e4455dcbd2ded54966735834c05abe8a31b0f83ee373cc",
+      "entryDrift": 0,
+      "entries": [
+        {
+          "entry": "proof-dependencies-verified-cli-20261106.direct.dev.json",
+          "bytes": 13472,
+          "sha256": "6fe6fd0b656b28d32792579ab81400ef3a1c8b0c62dfb36a863a2c1c868580c7"
+        },
+        {
+          "entry": "proof-dependencies-verified-cli-20261106.direct.dev.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "proof-dependencies-verified-cli-20261106.direct.release.json",
+          "bytes": 14052,
+          "sha256": "83fa52ce205a75eee81d9ecf39a5a4aaaa574e977a3a7ee840fb2a96edd5a443"
+        },
+        {
+          "entry": "proof-dependencies-verified-cli-20261106.direct.release.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "proof-dependencies-verified-cli-20261106.ordinary_function.dev.json",
+          "bytes": 7628,
+          "sha256": "75d6e908ab66778bf845f671eb91692a9e924ff406af884f28bba02063f3ad6a"
+        },
+        {
+          "entry": "proof-dependencies-verified-cli-20261106.ordinary_function.dev.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "proof-dependencies-verified-cli-20261106.ordinary_function.release.json",
+          "bytes": 8268,
+          "sha256": "1ce7868830993b6158702af327d315a78c460ad40971e3ef25361e1ea86c9c11"
+        },
+        {
+          "entry": "proof-dependencies-verified-cli-20261106.ordinary_function.release.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "proof-dependencies-verified-cli-20261106.receipt.json",
+          "bytes": 9967,
+          "sha256": "ef66620b6cd474dc74df5d4e894eb1d46c2c5e602e452d5a52bae83bb4b09bdd"
+        },
+        {
+          "entry": "proof-dependencies-verified-cli-20261106.unrelated_function.dev.json",
+          "bytes": 7592,
+          "sha256": "c85768831a77dec3b7295c9b19fb0e63399aefcef24eea60aa44bd13ae8e5e3a"
+        },
+        {
+          "entry": "proof-dependencies-verified-cli-20261106.unrelated_function.dev.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "proof-dependency-baseline-20261106.arcw",
+          "bytes": 145,
+          "sha256": "5a3fb0abff5ed8f275d3023df74083544f769e241302e73279d1d9192fd9a467"
+        },
+        {
+          "entry": "proof-dependency-baseline-20261106.dev.json",
+          "bytes": 13356,
+          "sha256": "3572a123846662fc99e3673887385cf62d0afaf586f0d6e517a349214457114e"
+        },
+        {
+          "entry": "proof-dependency-baseline-20261106.dev.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "proof-dependency-baseline-20261106.receipt.json",
+          "bytes": 6100,
+          "sha256": "7b74edd7a1c1f5636bcf5bb1530d8f24148c132e65f1d7aaa6852b3b68222fdd"
+        },
+        {
+          "entry": "proof-dependency-baseline-20261106.release.json",
+          "bytes": 13936,
+          "sha256": "a8eafdf2e94bb6b1763c950fb79f4d2656f8e9b5f66c65e167717e17eb09be85"
+        },
+        {
+          "entry": "proof-dependency-baseline-20261106.release.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "proof-trust-intermediaries-baseline-20261106.conditional.arcw",
+          "bytes": 120,
+          "sha256": "a5d07ecc79b465e9380b8ccd40c9654eefdd6918c93a038855240a294affdb08"
+        },
+        {
+          "entry": "proof-trust-intermediaries-baseline-20261106.conditional.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "proof-trust-intermediaries-baseline-20261106.conditional.stdout.json",
+          "bytes": 7438,
+          "sha256": "93883f41369ec33d5e515d4d7224a843bee92ec29ffcb8cc3cbf0a4adecd2cd7"
+        },
+        {
+          "entry": "proof-trust-intermediaries-baseline-20261106.ordinary_function.arcw",
+          "bytes": 120,
+          "sha256": "92852fd4748683c7c705e5638001fb4abf5a96715307cabe213737b304bdafd3"
+        },
+        {
+          "entry": "proof-trust-intermediaries-baseline-20261106.ordinary_function.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "proof-trust-intermediaries-baseline-20261106.ordinary_function.stdout.json",
+          "bytes": 7570,
+          "sha256": "587dac7fbc428fe90c670303d686fa7473d45b90b5af9ef73830ebb62ddbb4a6"
+        },
+        {
+          "entry": "proof-trust-intermediaries-baseline-20261106.predicate.arcw",
+          "bytes": 132,
+          "sha256": "b385c9ea340db822b4bdf8023594ec15ce286fd423137342e30f03c5efa3ccd3"
+        },
+        {
+          "entry": "proof-trust-intermediaries-baseline-20261106.predicate.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "proof-trust-intermediaries-baseline-20261106.predicate.stdout.json",
+          "bytes": 570,
+          "sha256": "eb9870fbc2d91c0f97d6e0254bedc0eb670731d4a6287cd0bb459f896632a593"
+        },
+        {
+          "entry": "proof-trust-intermediaries-baseline-20261106.receipt.json",
+          "bytes": 7741,
+          "sha256": "fb29b16b57f3284229fc5f9775f9b8ea9184d6d5800a06de1e17b99a52748d8e"
+        },
+        {
+          "entry": "proof-trust-intermediaries-baseline-20261106.unrelated_function.arcw",
+          "bytes": 114,
+          "sha256": "8f01f0a5f18bcc8b33a663093b4306b45525302bfddd5db017c64770f6bf99fc"
+        },
+        {
+          "entry": "proof-trust-intermediaries-baseline-20261106.unrelated_function.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "proof-trust-intermediaries-baseline-20261106.unrelated_function.stdout.json",
+          "bytes": 7592,
+          "sha256": "c85768831a77dec3b7295c9b19fb0e63399aefcef24eea60aa44bd13ae8e5e3a"
+        },
+        {
+          "entry": "typed-proof-dependencies-compile-probe5-20261106/receipt.json",
+          "bytes": 3339,
+          "sha256": "fb647bd671ba6e53428166c0c38102a655b78f7173119385fef1fcd0d3bcd112"
+        },
+        {
+          "entry": "typed-proof-dependencies-execution-probe4-20261106/receipt.json",
+          "bytes": 695,
+          "sha256": "d0515e7a1afe4794ce8bd7562543c5584a77d00bf8c9cf9b929f646199d7efe6"
+        },
+        {
+          "entry": "typed-proof-dependencies-owner1-20261106.binaries-before.json",
+          "bytes": 645,
+          "sha256": "cdd44d9f6b03fd8791472eeb766161bf0e0677580bc762e9dd2bc7d5fb696931"
+        },
+        {
+          "entry": "typed-proof-dependencies-owner1-20261106.catalog.inventory.json",
+          "bytes": 169476,
+          "sha256": "6d3a0d4b7305f5a2f1af575f2ebd2c08ec75180f405a494d690e183c543bc479"
+        },
+        {
+          "entry": "typed-proof-dependencies-owner1-20261106.catalog.json",
+          "bytes": 966,
+          "sha256": "7dfa57a80e1e09a0ce2cc625846b0986f0f647861db2ce222f626225e6dec7ed"
+        },
+        {
+          "entry": "typed-proof-dependencies-owner1-20261106.catalog.log",
+          "bytes": 215170,
+          "sha256": "3a3d0334b25573952a2a9f8dc5583950c3a356a541aeb74078f0101119f3c821"
+        },
+        {
+          "entry": "typed-proof-dependencies-owner1-20261106.runtime.json",
+          "bytes": 1058,
+          "sha256": "0aa24f020850a014896ebbc4ecc3552922feb4f539cc435d51923debd0c9f651"
+        },
+        {
+          "entry": "typed-proof-dependencies-owner1-20261106.runtime.log",
+          "bytes": 284439,
+          "sha256": "d3ff7368609b95cfdb068453045febb1cdd701ec590ccd05e5d3aa0083b5fc33"
+        },
+        {
+          "entry": "typed-proof-dependencies-owner1-20261106.runtime.terminal-audit.json",
+          "bytes": 621,
+          "sha256": "337495cbe141b34c05f47bd238ceb24628b33fdb950cda92757cd3151468b2a9"
+        },
+        {
+          "entry": "typed-proof-dependencies.reverse-selection.json",
+          "bytes": 18534,
+          "sha256": "84df18a1d69fac7d0ac32bd3125de4a23de4a477b449b3e39d40dcc29edeecd3"
+        }
+      ]
+    }
   }
 }

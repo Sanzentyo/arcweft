@@ -14797,3 +14797,9 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source 554fc474824f0cc70a225903b41f074c240d50eb, parent a852e3f34ef1bd770b8a32e74b066f4476753f14. The external construction fixture supplies the private audit reason and preserves the other rejected constructors. The all-feature locked Sema api_compile run passed the exact test, with 13 skipped in 3.234 seconds and zero drift across 4,126 input pins.
 - The original compile-fail fixture failure remains tied to its earlier input. The focused retry is stored separately. [Publication, runtime result and raw logs](acceptance-evidence/task-unsafe-audit-reason.json).
+
+## 2026-11-06 — Transitive trusted proof dependency reporting
+
+- Source 6b72d7ca42beb3661a7025598cf74a341d61fc21, parent 9be279a37c74e7a154af551cda7c260fef782b65, tree fee25f8fb888c3ea21a485d4c034abd668f5c006. On the original CLI inputs the earlier report omitted every dependency. The new verifier walks the checked static targets through proof and ordinary callable declarations, borrows the sealed topology in one pass, and deduplicates the trust labels per proof.
+- Focused nextest ran 6 of the selected tests, all passed, with 696 skipped in 1.880 seconds. Source, case and executable drift were zero. Five direct CLI runs reused the exact input files. The direct and ordinary-function cases reported origin in both modes. Release denied the original trust attribute once per input. The unrelated function contributed no dependency. The independent proof-body obligations remained missing.
+- Cargo metadata selects 13 affected packages from the unchanged 101 inputs. The published focused and direct results are separate from that consumer matrix. [Publication, exact comparison, graph, and raw results](acceptance-evidence/task-proof-trust-policy.json).
