@@ -3649,6 +3649,7 @@ fn execute_nested_line_handle_transfer(
     expected_lines: usize,
     expect_look: bool,
     cancel_last: bool,
+    expected_logs: &[&str],
     mut step: impl FnMut(
         arcweft_core::step::RuntimeStepInput,
         arcweft_core::step::RuntimeStepOptions,
@@ -3772,15 +3773,7 @@ fn execute_nested_line_handle_transfer(
                 );
                 assert_eq!(cancelled_cue, expect_look);
                 assert!(released);
-                let expected: &[&str] = if cancel_last {
-                    &[
-                        "parent consumed the child handle",
-                        "cancel callback observed removal",
-                    ]
-                } else {
-                    &["parent consumed the child handle"]
-                };
-                assert_eq!(log_messages(&effects), expected);
+                assert_eq!(log_messages(&effects), expected_logs);
                 return;
             }
             FlowFiberStatus::Done(FlowExit::Done) => {}
@@ -3836,7 +3829,15 @@ flow main() -> Unit effects {{ state.write('line), log.write }} {{
 entry cli @entry.main {{ goto @flow.main }}
 "#
             );
-            native_line_handle_execution(&source, lines, false, !cancel.is_empty());
+            let expected_logs: &[&str] = if cancel.is_empty() {
+                &["parent consumed the child handle"]
+            } else {
+                &[
+                    "parent consumed the child handle",
+                    "cancel callback observed removal",
+                ]
+            };
+            native_line_handle_execution(&source, lines, false, !cancel.is_empty(), expected_logs);
             let (compiled, awbc) = nested_awbc_from_compiled(
                 with_attached_dialogue_project_and_visual(
                     &source,
@@ -3855,6 +3856,7 @@ entry cli @entry.main {{ goto @flow.main }}
                 lines,
                 false,
                 !cancel.is_empty(),
+                expected_logs,
                 |input, options| {
                     let mut current = awbc.take().unwrap();
                     let result = current.step_with_pure_backend(input, options, &mut backend);
@@ -3909,8 +3911,107 @@ entry cli @entry.main {{ goto @flow.main }}
     }
 }
 
+#[test]
+fn deferred_child_moves_its_actor_into_the_line_registry_before_retirement() {
+    use arcweft_core::pure::VmRuntimePureCallBackend;
+
+    for (outcome, cancel) in [
+        ("completed", ""),
+        ("cancelled", "cancel on input(.SkipLine) { out () }"),
+    ] {
+        for replace in [false, true] {
+            let replacement = if replace {
+                "'line.saved <- true\n            log.info(\"defer replaced the handle\")"
+            } else {
+                ""
+            };
+            let source = format!(
+                r#"
+pub character alice {{ display = "Alice" }}
+flow main() -> Unit effects {{ state.write('line), log.write }} {{
+    alice()[Outer[p]] with {{
+        let actor = alice.stage.acquire(scope=line)
+        defer on {outcome} {{
+            'line.saved <- actor
+            log.info("defer stored the handle")
+            {replacement}
+        }}
+        {cancel}
+    }}
+}}
+entry cli @entry.main {{ goto @flow.main }}
+"#
+            );
+            let expected: &[&str] = if replace {
+                &["defer stored the handle", "defer replaced the handle"]
+            } else {
+                &["defer stored the handle"]
+            };
+            let cancel_last = !cancel.is_empty();
+            native_line_handle_execution(&source, 1, false, cancel_last, expected);
+
+            let (compiled, awbc) = nested_awbc_from_compiled(
+                with_attached_dialogue_project_and_visual(
+                    &source,
+                    Some(LINE_HANDLE_CHARACTER_MANIFEST),
+                    compile_project,
+                )
+                .unwrap(),
+            );
+            let schema = bind_test_character_dialogue_schema(&compiled, awbc.program_owner());
+            let mut backend = VmRuntimePureCallBackend::default().with_external_calls(
+                arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
+            );
+            let mut awbc = Some(awbc);
+            let mut saved_owned_row = false;
+            let mut saved_replacement = false;
+            execute_nested_line_handle_transfer(
+                1,
+                false,
+                cancel_last,
+                expected,
+                |input, options| {
+                    let mut current = awbc.take().unwrap();
+                    let result = current.step_with_pure_backend(input, options, &mut backend);
+                    let (restored, _) =
+                        roundtrip_nested_awbc_checking(current, |executor, save| {
+                            for row in save["dialogues"]["entries"]
+                                .as_array()
+                                .unwrap()
+                                .iter()
+                                .filter_map(|entry| entry.pointer("/Active/line/line_registry"))
+                                .filter_map(serde_json::Value::as_array)
+                                .flatten()
+                            {
+                                saved_owned_row |= row.pointer("/row/value/Opaque").is_some();
+                                saved_replacement |= row
+                                    .pointer("/row/value/Bool")
+                                    .and_then(serde_json::Value::as_bool)
+                                    == Some(true);
+                            }
+                            executor
+                        });
+                    awbc = Some(restored);
+                    result
+                },
+            );
+            assert!(
+                saved_owned_row,
+                "{outcome}: the child published the owning row"
+            );
+            assert_eq!(saved_replacement, replace, "{outcome}");
+        }
+    }
+}
+
 fn native_nested_line_handle_transfer(source: &str, expected_lines: usize) {
-    native_line_handle_execution(source, expected_lines, true, false);
+    native_line_handle_execution(
+        source,
+        expected_lines,
+        true,
+        false,
+        &["parent consumed the child handle"],
+    );
 }
 
 fn native_line_handle_execution(
@@ -3918,6 +4019,7 @@ fn native_line_handle_execution(
     expected_lines: usize,
     expect_look: bool,
     cancel_last: bool,
+    expected_logs: &[&str],
 ) {
     use arcweft_core::{
         effect::RuntimeArtifactFingerprint, engine::Engine, pure::VmRuntimePureCallBackend,
@@ -3947,6 +4049,7 @@ fn native_line_handle_execution(
         expected_lines,
         expect_look,
         cancel_last,
+        expected_logs,
         |input, options| native.step_with_pure_backend(input, options, &mut backend),
     );
 }
@@ -3983,7 +4086,7 @@ fn decoded_awbc_nested_line_handle_transfer(source: &str, expected_lines: usize)
     let mut checked_published_lease = false;
     let mut checked_pending_look = false;
     let mut checked_reexported_lease = source != NESTED_LINE_HANDLE_REEXPORT_SOURCE;
-    execute_nested_line_handle_transfer(expected_lines, true, false, |input, options| {
+    let step = |input, options| {
         let mut current = awbc.take().unwrap();
         let result = current.step_with_pure_backend(input, options, &mut backend);
         let (restored, _) = roundtrip_nested_awbc_checking(current, |executor, save| {
@@ -4099,7 +4202,14 @@ fn decoded_awbc_nested_line_handle_transfer(source: &str, expected_lines: usize)
         });
         awbc = Some(restored);
         result
-    });
+    };
+    execute_nested_line_handle_transfer(
+        expected_lines,
+        true,
+        false,
+        &["parent consumed the child handle"],
+        step,
+    );
     assert!(
         checked_published_lease,
         "a live published lease crossed the public save boundary"
