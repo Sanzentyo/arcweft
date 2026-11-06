@@ -15125,3 +15125,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Expanded CLI partition for registry type inference
 
 - Source f3626f1a2ffc608dced6ac28916ab2b89134b0e5 の CLI 統合3ターゲットで477件を実行し、470件通過、7件失敗、23件スキップだった。失敗IDは 9a719aacb210b69b981ea2940c8c184766acaa19 の逆依存検証と一致した。ソース入力3638件の差分は0件。[今回の実測・原本](acceptance-evidence/task-flow-registry-execution.json)、[照合元](acceptance-evidence/task-lifetime-registry-key-identity.json)。
+
+## 2026-11-07 — Registry replacement reverse-dependency partitions
+
+- Source f3626f1a2ffc608dced6ac28916ab2b89134b0e5 の分割検証で、Cargo の逆依存22パッケージ114ターゲットから既に確認した12ターゲットを除いた102ターゲットを45組で確認した。2,168件を実行して2,161件通過、7件失敗、23件スキップだった。失敗は以前のCLI検証と同じ7件で、分割後はビルド失敗0件。ターゲットとソース入力3638件の差分はいずれも0件だった。初回のページファイル不足と途中で記録したCLIの結果は履歴に保持した。[全組の実測・原本](acceptance-evidence/task-flow-registry-execution.json)。

@@ -18459,5 +18459,715 @@
         }
       ]
     }
+  },
+  "orderedReplacementReversePartitions": {
+    "source": "f3626f1a2ffc608dced6ac28916ab2b89134b0e5",
+    "plan": {
+      "packages": [
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lang-sema",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-project-loader",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ],
+      "cargoTargets": 114,
+      "previouslyValidatedTargets": 12,
+      "terminalSplitTargets": 102,
+      "targetDrift": []
+    },
+    "sourceInputs": 3638,
+    "sourceDrift": [],
+    "sourceInputHashes": {
+      "evidenceProperty": "orderedReplacementTypeInference",
+      "entry": "registry-reaching-type-20261107.owner.source-freeze.json"
+    },
+    "startedAt": "2026-11-06T20:21:30.6967486Z",
+    "finishedAt": "2026-11-06T21:29:55.8447497Z",
+    "summary": {
+      "batches": 45,
+      "terminalTargets": 102,
+      "run": 2168,
+      "pass": 2161,
+      "fail": 7,
+      "skip": 23,
+      "withoutTestSummary": [],
+      "failedCaseIds": [
+        "arcweft-cli::check agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering",
+        "arcweft-cli::check spec_rejected_edge_fixtures_fail_with_diagnostics",
+        "arcweft-cli::check spec_valid_run_edge_fixture_now_executes",
+        "arcweft-cli::check unsafe_json_lists_audit_regions",
+        "arcweft-cli::check verify_json_records_required_solver_checks",
+        "arcweft-cli::check verify_json_reports_missing_promotion_proof",
+        "arcweft-cli::check verify_json_respects_semantic_defer_cancel_discharge"
+      ],
+      "failedBuilds": []
+    },
+    "byPackage": {
+      "arcweft-player-scene": {
+        "batches": 4,
+        "terminalTargets": 10,
+        "run": 128,
+        "pass": 128,
+        "fail": 0,
+        "skip": 0
+      },
+      "arcweft-project-loader": {
+        "batches": 2,
+        "terminalTargets": 4,
+        "run": 158,
+        "pass": 158,
+        "fail": 0,
+        "skip": 0
+      },
+      "arcweft-adapter-sema": {
+        "batches": 1,
+        "terminalTargets": 1,
+        "run": 13,
+        "pass": 13,
+        "fail": 0,
+        "skip": 0
+      },
+      "arcweft-agent-mcp": {
+        "batches": 1,
+        "terminalTargets": 3,
+        "run": 31,
+        "pass": 31,
+        "fail": 0,
+        "skip": 0
+      },
+      "arcweft-agent-mcp-client": {
+        "batches": 1,
+        "terminalTargets": 1,
+        "run": 2,
+        "pass": 2,
+        "fail": 0,
+        "skip": 0
+      },
+      "arcweft-agent-repl": {
+        "batches": 3,
+        "terminalTargets": 9,
+        "run": 37,
+        "pass": 37,
+        "fail": 0,
+        "skip": 0
+      },
+      "arcweft-agent-runner": {
+        "batches": 1,
+        "terminalTargets": 1,
+        "run": 69,
+        "pass": 69,
+        "fail": 0,
+        "skip": 0
+      },
+      "arcweft-cli": {
+        "batches": 2,
+        "terminalTargets": 4,
+        "run": 485,
+        "pass": 478,
+        "fail": 7,
+        "skip": 23
+      },
+      "arcweft-compiler": {
+        "batches": 9,
+        "terminalTargets": 27,
+        "run": 585,
+        "pass": 585,
+        "fail": 0,
+        "skip": 0
+      },
+      "arcweft-lang-sema": {
+        "batches": 2,
+        "terminalTargets": 4,
+        "run": 24,
+        "pass": 24,
+        "fail": 0,
+        "skip": 0
+      },
+      "arcweft-lsp": {
+        "batches": 2,
+        "terminalTargets": 4,
+        "run": 223,
+        "pass": 223,
+        "fail": 0,
+        "skip": 0
+      },
+      "arcweft-player-native": {
+        "batches": 2,
+        "terminalTargets": 5,
+        "run": 59,
+        "pass": 59,
+        "fail": 0,
+        "skip": 0
+      },
+      "arcweft-player-web": {
+        "batches": 2,
+        "terminalTargets": 6,
+        "run": 36,
+        "pass": 36,
+        "fail": 0,
+        "skip": 0
+      },
+      "arcweft-runtime-driver": {
+        "batches": 2,
+        "terminalTargets": 4,
+        "run": 153,
+        "pass": 153,
+        "fail": 0,
+        "skip": 0
+      },
+      "arcweft-runtime-host": {
+        "batches": 2,
+        "terminalTargets": 5,
+        "run": 72,
+        "pass": 72,
+        "fail": 0,
+        "skip": 0
+      },
+      "arcweft-runtime-plan": {
+        "batches": 2,
+        "terminalTargets": 4,
+        "run": 31,
+        "pass": 31,
+        "fail": 0,
+        "skip": 0
+      },
+      "arcweft-test": {
+        "batches": 1,
+        "terminalTargets": 1,
+        "run": 4,
+        "pass": 4,
+        "fail": 0,
+        "skip": 0
+      },
+      "arcweft-tooling": {
+        "batches": 2,
+        "terminalTargets": 5,
+        "run": 27,
+        "pass": 27,
+        "fail": 0,
+        "skip": 0
+      },
+      "arcweft-verify": {
+        "batches": 1,
+        "terminalTargets": 1,
+        "run": 10,
+        "pass": 10,
+        "fail": 0,
+        "skip": 0
+      },
+      "arcweft-verify-lsp": {
+        "batches": 1,
+        "terminalTargets": 1,
+        "run": 14,
+        "pass": 14,
+        "fail": 0,
+        "skip": 0
+      },
+      "arcweft-verify-oxiz": {
+        "batches": 1,
+        "terminalTargets": 1,
+        "run": 5,
+        "pass": 5,
+        "fail": 0,
+        "skip": 0
+      },
+      "arcweft-verify-z3": {
+        "batches": 1,
+        "terminalTargets": 1,
+        "run": 2,
+        "pass": 2,
+        "fail": 0,
+        "skip": 0
+      }
+    },
+    "previouslyObservedFailureIds": [
+      "arcweft-cli::check agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering",
+      "arcweft-cli::check spec_rejected_edge_fixtures_fail_with_diagnostics",
+      "arcweft-cli::check spec_valid_run_edge_fixture_now_executes",
+      "arcweft-cli::check unsafe_json_lists_audit_regions",
+      "arcweft-cli::check verify_json_records_required_solver_checks",
+      "arcweft-cli::check verify_json_reports_missing_promotion_proof",
+      "arcweft-cli::check verify_json_respects_semantic_defer_cancel_discharge"
+    ],
+    "additionalFailureIds": [],
+    "historicalFailureIdsAbsentFromThisRun": [],
+    "duplicatedRawOmitted": {
+      "batch": "10",
+      "evidenceProperty": "orderedReplacementCliExpanded",
+      "rawArchive": "docs/implementation/acceptance-evidence/task-registry-reaching-type-expanded-cli.raw.zip"
+    },
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-reaching-type-partitions.raw.zip",
+      "sha256": "4c18340846600313384e125039fadf9303e87ace13217ebfed38d69dc2f0f5c4",
+      "entries": [
+        {
+          "entry": "registry-reaching-type-20261107.reverse-partitions.json",
+          "bytes": 46797,
+          "sha256": "7f1a00c26988f2f485f8301a0b2dcbe25811028b10e1980504df7970f8528057"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.reverse-partitions.receipt.json",
+          "bytes": 46324,
+          "sha256": "97b6a445fc520d49acabcbcd6da775f5536a45761558c237a5f925bacf2e5459"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.01.log",
+          "bytes": 82156,
+          "sha256": "f03e9b6958c880eb4c616f49ce75181f2e346099d00e7a592b2443f58e18c757"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.01.receipt.json",
+          "bytes": 796,
+          "sha256": "4d6d58a7a9c90fed3e3d8d631dfe62dd39191c6989a8720fc60d4fda6119be22"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.02.log",
+          "bytes": 86694,
+          "sha256": "4b5b85abb59af2b4ed5ba4770d2b856ddefb31a7439c46a89a562743708027b8"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.02.receipt.json",
+          "bytes": 790,
+          "sha256": "afae3d458d9421c69c623364fc5e56b31be73258359482a97c2f52307bed53f7"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.03.log",
+          "bytes": 90925,
+          "sha256": "59005e4ca29f2cc94f5e9c6838508d1c1dc6f06a87b04a7d24aae3d73435d189"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.03.receipt.json",
+          "bytes": 763,
+          "sha256": "b1885ccb3cfe4bad65362794b7e4a4dc09180d9b44c6860fbbd1608dceb5927d"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.04.log",
+          "bytes": 93494,
+          "sha256": "8dbe44453065dbe1d2ec14aa61c7fe642741938df28cccbe674daf13101903b8"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.04.receipt.json",
+          "bytes": 896,
+          "sha256": "c51493e255f0ee32390c141fcac8282fd352ed22a69ab447fa0d67272debc737"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.05.log",
+          "bytes": 86412,
+          "sha256": "824084b6259d045cfd56d929db36da1609178bd5cc41d06a73a6ddf8b8e937fd"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.05.receipt.json",
+          "bytes": 773,
+          "sha256": "49da78d14fc08f450365b472237d79d9861b3634681d50dac4bd1819a64f29fc"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.06.log",
+          "bytes": 90403,
+          "sha256": "d07688605066c68c4ddd4883c94d11c40118317be8baf457c9d4018a64fa3fd1"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.06.receipt.json",
+          "bytes": 882,
+          "sha256": "07b2dcf26c3ec00b8730fef0da92776d528e13f83f7cc6c2d4cccf1f896a80a8"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.07.log",
+          "bytes": 89307,
+          "sha256": "6f68a7aea397edefee86a1a76d77f93843f82e0a676d71b0ff105c7a88731949"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.07.receipt.json",
+          "bytes": 908,
+          "sha256": "cb295050931c804a19bb5de6772c48679d87e7c6e64232f485299835bfe42237"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.08.log",
+          "bytes": 87776,
+          "sha256": "a8355a351e85dd133d04e8eb9b6e571839b2af90b3258ea94f6d8950eff2da60"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.08.receipt.json",
+          "bytes": 932,
+          "sha256": "18f2891beb8698fe5c28fc25a22bc24d867984411397692ed6b05a44781f2cdd"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.09.log",
+          "bytes": 103617,
+          "sha256": "bacd99988e7bd23f72223d027117cad79e22d61147d1be6cfac95dbeb436c2b4"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.09.receipt.json",
+          "bytes": 763,
+          "sha256": "028be3a825db783e9da25109315e068ee1a776ef1549b9287c311782c18dce49"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.11.log",
+          "bytes": 90564,
+          "sha256": "48b5704155d36a75b133c1eef491566ed38a2d72fa30882c1cd81a5e414e57a2"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.11.receipt.json",
+          "bytes": 776,
+          "sha256": "5d33093513b0b72012530cb39f359da8c6235551dee63deea624b6ee129d1f67"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.12.log",
+          "bytes": 91333,
+          "sha256": "113ff7a490599fbd0ff050ad1b9151e8432851cf9acbcdb49e685f9064cd26be"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.12.receipt.json",
+          "bytes": 932,
+          "sha256": "5a58bd181079319662382e7da4c0e3f7db4293e97e2ddbfe99faaae4de694781"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.13.log",
+          "bytes": 179096,
+          "sha256": "3dac5753c29996c9c83395765756b788beece9c167362c065a9a357e9ccdbcd7"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.13.receipt.json",
+          "bytes": 902,
+          "sha256": "2e0733d2b4b3911e5f12b69383641363228d3d9d39188c4349dc76426d330065"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.14.log",
+          "bytes": 88639,
+          "sha256": "1831f595ba55e9592847373cf0c12cb8824449e1b078172e257be91946a03a78"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.14.receipt.json",
+          "bytes": 930,
+          "sha256": "193d279c59bd6ace92ae60728c61489672e446e15627fd75679df032718330b2"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.15.log",
+          "bytes": 90887,
+          "sha256": "cb7ad127579caa38f3a66ba28aa5fbfd8d1463d5c36948d038a29303cc10357e"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.15.receipt.json",
+          "bytes": 938,
+          "sha256": "d0c9e7b2c76baa3a72ebc269ddfed7709c4b13b8020c2fcdef5821f6097f4c49"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.16.log",
+          "bytes": 99123,
+          "sha256": "1f9ec5f7ec7bb323cb0be2f2d819421dda3459368005377c955bfb3a353037fd"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.16.receipt.json",
+          "bytes": 922,
+          "sha256": "53db0f74d8558b48d37ac459e9e4d7af924a45db2e1a8e38d33327eaaf7441bb"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.17.log",
+          "bytes": 89618,
+          "sha256": "ff121764ec81839e1fe4ac2a09f2899037c6bfa5b4c8e384ca72a3cee556f5b3"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.17.receipt.json",
+          "bytes": 958,
+          "sha256": "cc5b938039a800ee89216e29847729cd53434b859188c386c54fa951d439d1be"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.18.log",
+          "bytes": 101781,
+          "sha256": "41fd476b9721ccb46845b6417dd425cf4dc086b868b533dbf4a447da69d4e626"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.18.receipt.json",
+          "bytes": 930,
+          "sha256": "4deb37f46b085639337b674d0feb5cfa05bfc290b4aa5aa7c1b965fa19e9839b"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.19.log",
+          "bytes": 93219,
+          "sha256": "c7191a7ad06b6e7b13595c19354999dda4c18c37e7a96c18670aa590a8a6abe1"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.19.receipt.json",
+          "bytes": 934,
+          "sha256": "b77096ab6eb8ba0be4d373aa057918d152beda5aba1cb9c1e3efba3677f200b2"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.20.log",
+          "bytes": 109955,
+          "sha256": "99f6b8e7b6bc8b3b57efecbf01bcab2414602c8f8521c0b5b7972d38c102d94a"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.20.receipt.json",
+          "bytes": 923,
+          "sha256": "6210bc469e3ceb9f56185a781debf0ec44d5836e5620359c6516d4824b321cb3"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.21.log",
+          "bytes": 90535,
+          "sha256": "0bbf094951b07bf39bd102cbb97af911577b04572eb5405adc3c6fb8bb93a543"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.21.receipt.json",
+          "bytes": 945,
+          "sha256": "420ecb0c6e7fcd712157af7a848b6ed8324a8e1271eb2ed5787faa2d8ef60eab"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.22.log",
+          "bytes": 84661,
+          "sha256": "6160449acce3fcf526115aaad4f4da1d423437db0c34a7f91320f3da89cc8ec8"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.22.receipt.json",
+          "bytes": 811,
+          "sha256": "d4e6e11039b7fe8382957720fe422f00c8b2195cfb935a738dc44bae708d2631"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.23.log",
+          "bytes": 150895,
+          "sha256": "8e7f79ac672e96b891d8a72f4296ccfb74e4e65ed6e8d010b3fa214edcb3c0d3"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.23.receipt.json",
+          "bytes": 874,
+          "sha256": "47d07d5410dc953b76f296d124ba55b8a7236cf2e7fe81c454ad983765f6d520"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.24.log",
+          "bytes": 88236,
+          "sha256": "ccf3e0ddb40457d67f9f56e552b6b313040e661f5c0414f83246d74e172d0ac1"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.24.receipt.json",
+          "bytes": 762,
+          "sha256": "9fe7afe750cb3485a3704fd68fd20528ccebcf1197a406164105b76bd780ee6d"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.25.log",
+          "bytes": 105916,
+          "sha256": "0dc04154450484f807bc7aa259065ddc1ad4e5d01caef640cfe3d73ae7b0a3b8"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.25.receipt.json",
+          "bytes": 924,
+          "sha256": "ebd86c0ce1e7bd58e0ceb69025269909ea92d823fa5e14b82e7aab7b7fa324f2"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.26.log",
+          "bytes": 90784,
+          "sha256": "b5cfcff1dd17f5187eb4f677cdca4cd4151fa1b4449584b8b5f590b6ac4e4bee"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.26.receipt.json",
+          "bytes": 892,
+          "sha256": "67afd49ba80434f778a3589c1b9d702bd03db838b12c1a8806773a3e7007575e"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.27.log",
+          "bytes": 96730,
+          "sha256": "d3e78bf5329aab0f12c8a552b6e5e32e38d5d6d28ccba585e7dc722c6dca7437"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.27.receipt.json",
+          "bytes": 909,
+          "sha256": "d5f709e52ebfa4294584996bc38942d640a066aab0bf521251ca89b055224dd6"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.28.log",
+          "bytes": 75624,
+          "sha256": "6997ff7cc1d589409ba7bbebdab6cfc29dac7c748c8139079e58289f6554b988"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.28.receipt.json",
+          "bytes": 948,
+          "sha256": "5626068377ce344eaa661313b45ed3e84e5be60f76254c18be82fb5e63185da2"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.29.log",
+          "bytes": 79205,
+          "sha256": "696a61959eeb234c85062c216d36e3c20f6eecb0639cd08a56fbffd295162865"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.29.receipt.json",
+          "bytes": 968,
+          "sha256": "0435e8bf2a713f37baa0e38ba814573394d3de419b0e690bc8872b9f05bedb8b"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.30.log",
+          "bytes": 97246,
+          "sha256": "d86aa33175a1920ce4cba4e80c6ad1410ae35be666e3f5b4abe2ff75cb293896"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.30.receipt.json",
+          "bytes": 891,
+          "sha256": "c115dbfdb95f0196107221f87075b146dbaf416c2f786390adac78daead33338"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.31.log",
+          "bytes": 87152,
+          "sha256": "84ca603a491d4b4200ddfd883f496797634da461ecbb555bf061060ee074d95d"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.31.receipt.json",
+          "bytes": 886,
+          "sha256": "ef13fa0de45286a7c0f7e1e4a46b221c5df36039784f43da4a540544d3094810"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.32.log",
+          "bytes": 127360,
+          "sha256": "84e2b731005392bf433a58e118773350362b697945a67750d7945dc707e3c17b"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.32.receipt.json",
+          "bytes": 907,
+          "sha256": "b1c8759a84e1bcf1e912b0a00b00faaf924013e3e4fd09a7048a0e994f4f2912"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.33.log",
+          "bytes": 124834,
+          "sha256": "6ffe287e578129f510da3e00a78a9292ee3d277657d94771cf8b0c1ad4023993"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.33.receipt.json",
+          "bytes": 925,
+          "sha256": "428e0eb3a9f090174ffdaf9939e61036d00efbebf444c3ebe96e338c2547c2d0"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.34.log",
+          "bytes": 95069,
+          "sha256": "12621513e50e7fe789340cf2daef0eb21e323be64e4a9a682ecee06c3ab44157"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.34.receipt.json",
+          "bytes": 782,
+          "sha256": "12dcb92a502f995113881a7e67c8abe857dda8bb2fe432d543abe1e8bf47732d"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.35.log",
+          "bytes": 107311,
+          "sha256": "89d99d858dbd0b6eb28fc4f75c938cf42a91700ab7b58f99955966111a654c73"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.35.receipt.json",
+          "bytes": 903,
+          "sha256": "e25cd984a9165bac9b5a516216714e13136586acc316c70fb4145237f90827a2"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.36.log",
+          "bytes": 88284,
+          "sha256": "5dd4826a7e4493841c6cc1444da3ab0eca863aa9ffd96eb303e0c79592b7a562"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.36.receipt.json",
+          "bytes": 880,
+          "sha256": "233babe3baa2f924299df33a2c52863ea860a8ff5a7cd852372e7b823000ef15"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.37.log",
+          "bytes": 92422,
+          "sha256": "1bfe2d12acb205110dcb257ef67c68d7c894273933b333d88bf13fc0d0fcef80"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.37.receipt.json",
+          "bytes": 926,
+          "sha256": "3d8bfbae260cc02b38bd110e352493c6e8814abbbd210354796a0c93c0c794b5"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.38.log",
+          "bytes": 85711,
+          "sha256": "53043390fcf2182372d5fc6abdd4215702b593107611714acc69d188309ccb26"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.38.receipt.json",
+          "bytes": 794,
+          "sha256": "a780caf5cc9577d39f3e2c08903aa6a7def419f89e1831339f5df692a744cec4"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.39.log",
+          "bytes": 78605,
+          "sha256": "530a9122c8a46c7d840c67740ebfb7ea4ca1be7a314939ea2337894ea6d61847"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.39.receipt.json",
+          "bytes": 737,
+          "sha256": "14ffd2564d06b78b75699a34bc5774256ecacc5f8a00aff374a686c246e18637"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.40.log",
+          "bytes": 90598,
+          "sha256": "cb2f812342099a2475930e5ba8bf2926430a393d3bcc35ea89ffbda71feda819"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.40.receipt.json",
+          "bytes": 878,
+          "sha256": "d1b84611c1c1a5162901ace7468f98a3e088ee0d3f662b8201b012c7de9ec522"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.41.log",
+          "bytes": 86049,
+          "sha256": "713e6eff1ea37bd69d8d62a8b9bf8d86905308ece2f911049e03b5f2c0c870e4"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.41.receipt.json",
+          "bytes": 868,
+          "sha256": "47d4a37f03bb3659a0bcfa2f525119f1876385c664b629fbddf8a53cb27f97dc"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.42.log",
+          "bytes": 88669,
+          "sha256": "51777b01a19332efa5a8944f3f2f2519d98ff71228b2d19b5657366e280edc00"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.42.receipt.json",
+          "bytes": 745,
+          "sha256": "86f081f4cc459d25e3f1a2cfff23efe0f74899f022b041f944ad7dd98efc7cfd"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.43.log",
+          "bytes": 91378,
+          "sha256": "b1d2885638d09dc7ad2be1f4b3b8246a7331fcdbc80aa481d4d5cf244ab440a2"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.43.receipt.json",
+          "bytes": 757,
+          "sha256": "627ea422ec559472593cb64974f9f9ed4e143b180449f1ee4513ec7e545f8327"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.44.log",
+          "bytes": 88344,
+          "sha256": "c7a319b2126043fe9ee8e7000f746e69e634a60200ffd14f81715921e407e570"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.44.receipt.json",
+          "bytes": 758,
+          "sha256": "6fec1a4cb61a8d26fcdf0f0419ceb037c289098d5bc5dc5275dbd7c76ec159dc"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.45.log",
+          "bytes": 84840,
+          "sha256": "f673c98e391b211c064ae37a50e9f2d1aae71c83b979bcb56e57d4bef33596ea"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.45.receipt.json",
+          "bytes": 752,
+          "sha256": "05d88e51e2177e700a5443eef0c3005e91a8b43a75a530640d657eee7db3997f"
+        }
+      ]
+    }
   }
 }
