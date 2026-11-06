@@ -436,5 +436,103 @@
         }
       ]
     }
+  },
+  "privacyFixtureFailure": {
+    "version": 1,
+    "recordedAt": "2026-11-06T00:12:01.0532837Z",
+    "testedSource": "db071219f84e57186efa9d40dccc3bb8620f417c",
+    "terminal": {
+      "version": 1,
+      "base": "706d67a3626ea79da2c6ac077d0f896dd9577d47",
+      "run": "proof-trust-consumers-20261106-static.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [ 431.946s] 1857 tests run: 1856 passed (3 slow), 1 failed, 1 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 1857,
+      "passed": 1856,
+      "failed": 1,
+      "skipped": 1,
+      "selectedPackages": 9,
+      "matchedPackages": 9,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4126,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-lang-sema::api_compile",
+          "test": "checked_statement_authorities_have_no_external_constructors"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-11-06T00:07:41.6046563Z"
+    },
+    "diagnosis": "The old external construction fixture omitted the new private reason field. This early shape error displaced all expected privacy diagnostics.",
+    "directProbe": {
+      "receipt": {
+        "version": 1,
+        "exitCode": 1,
+        "originSha256": "294a0d07a7dfb87007f1a71c4688c94064029ff2d74e35462a935f25935ada5b",
+        "probeSha256": "c92b11acd7df959dcd2b16f12e9d9c811888e77fb69094ff67599040b3c9dd7c",
+        "rustc": "C:\\Users\\sanze\\.rustup\\toolchains\\stable-x86_64-pc-windows-msvc\\bin\\rustc.exe",
+        "metadataPath": "D:\\git\\arcweft\\target\\debug\\deps\\libarcweft_lang_sema-ddb7a42966bbee4a.rlib",
+        "metadataSha256": "b1065fe25f6cb47e62e52878200fcb5e4a2a63723d875168f4ff7597846b4580",
+        "rustcStderrSha256": "4623a65d3dc8b9ebf63d4436b1f6a8b7e7f387b54c3d19d771d5926df1f4b027",
+        "privateFieldsDiagnostics": 8,
+        "privateTypeDiagnostics": 2
+      },
+      "scope": "Direct external rustc against the existing Cargo-built Sema rlib. An explicit Some reason produced all eight private-field diagnostics and both private-type diagnostics. The trybuild fixture has not yet been changed in the frozen repository.",
+      "firstSetup": "An initial direct attempt with a trybuild metadata file alone returned E0463. The subsequent attempt used the complete dependency directory from the existing Cargo build."
+    },
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-unsafe-audit-privacy-probe.raw.zip",
+      "bytes": 130261,
+      "sha256": "639677450ce10b5a7e81a8a6d4047624acfe781d6ac5b13d343badf0e6c8900f",
+      "entryDrift": 0,
+      "entries": [
+        {
+          "entry": "checked-unsafe-audit-privacy-probe-20261106/rustc.stderr.log",
+          "bytes": 361,
+          "sha256": "bb53c631146c515f70142aa4374782ad8a82ca0d9c8ef1da17bf38a0e346dbb5"
+        },
+        {
+          "entry": "checked-unsafe-audit-privacy-probe2-20261106/expected.stderr",
+          "bytes": 5591,
+          "sha256": "8671c7f57291e7542863d93287afe0c12571bd94f0cdeb624e07eed94e2b9d69"
+        },
+        {
+          "entry": "checked-unsafe-audit-privacy-probe2-20261106/receipt.json",
+          "bytes": 664,
+          "sha256": "44ba65fe9eb8d4e3dea10cc63648e4e00227f5cd17b5b937afb8f3edfa00fe30"
+        },
+        {
+          "entry": "checked-unsafe-audit-privacy-probe2-20261106/rustc.stderr.log",
+          "bytes": 5728,
+          "sha256": "4623a65d3dc8b9ebf63d4436b1f6a8b7e7f387b54c3d19d771d5926df1f4b027"
+        },
+        {
+          "entry": "checked-unsafe-audit-privacy-probe2-20261106/tests/ui/checked_statement_authorities_are_not_constructible.rs",
+          "bytes": 1454,
+          "sha256": "c92b11acd7df959dcd2b16f12e9d9c811888e77fb69094ff67599040b3c9dd7c"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-static.runtime.json",
+          "bytes": 929,
+          "sha256": "22c1b8bf694414ad37f05eaea980bc4cffa2f3d476b36c03f8d5f4bde5b37625"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-static.runtime.log",
+          "bytes": 691936,
+          "sha256": "3a1babf38d6a612dc3f6f24f4a2f32d7453f71b51d11ea17eb30955aab915719"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-static.runtime.terminal-audit.json",
+          "bytes": 819,
+          "sha256": "96921886251648926649d95b9fcd412d760811dffb2693c88ae35e0b562ef422"
+        }
+      ]
+    }
   }
 }

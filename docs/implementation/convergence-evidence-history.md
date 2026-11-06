@@ -14774,3 +14774,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - The CLI built from Source db071219f84e57186efa9d40dccc3bb8620f417c accepted the unchanged owned scalar and collected the declared proof body obligation. Both safe method calls and the audited unchecked call reached `sema.call.unknown_target`. The proof operand was an authored public Proof ID.
 - The old bare call and the proof used as an ordinary value were both denied during type-check. The current-status row isolates the actual method gap from the accepted registry key, audit reason and Boolean proof boundaries. [All six source files and raw outputs](acceptance-evidence/task-lifetime-registry-key-identity.json).
+
+## 2026-11-06 — Unsafe audit external construction fixture
+
+- The first partitioned reverse run on Source db071219f84e57186efa9d40dccc3bb8620f417c executed 1,857 tests. 1,856 passed and one failed. The compile-fail fixture omitted the newly private audit reason, so rustc stopped at the incomplete struct shape and displaced the expected privacy diagnostics.
+- A disposable fixture with `reason: Some(any())` compiled against the existing Sema rlib and was rejected with eight private-field diagnostics and two private-type diagnostics. The original fixture remained frozen during the other batches. [Real nextest and external rustc outputs](acceptance-evidence/task-unsafe-audit-reason.json).
