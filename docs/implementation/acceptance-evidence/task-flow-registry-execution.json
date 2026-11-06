@@ -9567,5 +9567,388 @@
         }
       ]
     }
+  },
+  "nativeInlineDialogueRollback": {
+    "source": "5f9723a18aa888c7fe10ad254c04db8be5fd778a",
+    "base": "451425c7dc70a94760794e0e62c5918eebd2b41b",
+    "published": "5f9723a18aa888c7fe10ad254c04db8be5fd778a",
+    "tree": "f1ac9b38c309a37526ff5a083d56cfd5e0c7c44b",
+    "patchSha256": "0a1d3a7ec62ec8db3faaea8e19fe0038dea302ab47cd5af12728667c3fd5b101",
+    "blobDrift": 0,
+    "tests": [
+      {
+        "version": 1,
+        "base": "451425c7dc70a94760794e0e62c5918eebd2b41b",
+        "run": "native-inline-rollback-compiler-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   4.080s] 83 tests run: 83 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 83,
+        "passed": 83,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4132,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T10:19:06.1145996Z"
+      },
+      {
+        "version": 1,
+        "base": "451425c7dc70a94760794e0e62c5918eebd2b41b",
+        "run": "native-inline-rollback-owners-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [  66.535s] 2421 tests run: 2421 passed, 1 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 2421,
+        "passed": 2421,
+        "failed": 0,
+        "skipped": 1,
+        "selectedPackages": 2,
+        "matchedPackages": 2,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4132,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T10:23:23.4970314Z"
+      }
+    ],
+    "initialCompileFailure": {
+      "version": 1,
+      "base": "451425c7dc70a94760794e0e62c5918eebd2b41b",
+      "command": [
+        "nextest",
+        "list",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "-E",
+        "test(inline_dialogue_reads_the_reached_line_and_its_suspended_flow) | test(withdrawn_dialogue_frame_shares_the_parent_rollback_budget) | test(dialogue_parent_must_match_the_activations_issuing_fiber) | test(rollback_admits_every_native_reducer_before_projecting_any_frame_value) | test(native_flow_registry)",
+        "--message-format",
+        "json"
+      ],
+      "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/native-inline-rollback-focused-20261106.catalog.log",
+      "exitCode": 101,
+      "sourceInputs": 4132,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-06T10:12:25.3057458Z",
+      "finishedAt": "2026-11-06T10:13:33.7911898Z"
+    },
+    "correction": "The first Core catalog stopped during compilation because the native dialogue module lacked the activation ID import and the borrowed snapshot adapter did not bind its callback mutably. Both errors were repaired before the recorded passing runs.",
+    "reverseGraph": {
+      "base": "451425c7dc70a94760794e0e62c5918eebd2b41b",
+      "owners": [
+        "arcweft-core",
+        "arcweft-runtime-plan",
+        "arcweft-compiler"
+      ],
+      "workspaceReversePackages": [
+        "arcweft",
+        "arcweft-adapter-desktop",
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-policy",
+        "arcweft-agent-protocol",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-browser-bench",
+        "arcweft-bundle",
+        "arcweft-bundle-assets",
+        "arcweft-character-view",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-core",
+        "arcweft-debug-model",
+        "arcweft-debug-sqlite",
+        "arcweft-dialogue",
+        "arcweft-glyphon",
+        "arcweft-host-adapter",
+        "arcweft-lang-jit-cranelift",
+        "arcweft-lang-sema",
+        "arcweft-launch",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-text-input",
+        "arcweft-player-web",
+        "arcweft-project",
+        "arcweft-project-loader",
+        "arcweft-rag",
+        "arcweft-render-text",
+        "arcweft-render-web",
+        "arcweft-render-wgpu",
+        "arcweft-resource-manifest",
+        "arcweft-resource-model",
+        "arcweft-runtime-accelerator",
+        "arcweft-runtime-codegen",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-runtime-scheduler",
+        "arcweft-save",
+        "arcweft-test",
+        "arcweft-text-layout",
+        "arcweft-text-model",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3",
+        "arcweft-view"
+      ],
+      "features": "all",
+      "targets": "all",
+      "treeMetadataDifference": 0
+    },
+    "testTargets": {
+      "total": 223,
+      "passing": 4,
+      "notRun": 219,
+      "passingRows": [
+        {
+          "binary": "arcweft-compiler::evaluated_effects",
+          "run": "native-inline-rollback-compiler-20261106",
+          "cases": 64
+        },
+        {
+          "binary": "arcweft-compiler::flow_include",
+          "run": "native-inline-rollback-compiler-20261106",
+          "cases": 19
+        },
+        {
+          "binary": "arcweft-core",
+          "run": "native-inline-rollback-owners-20261106",
+          "cases": 2287
+        },
+        {
+          "binary": "arcweft-runtime-plan",
+          "run": "native-inline-rollback-owners-20261106",
+          "cases": 134
+        }
+      ]
+    },
+    "structure": {
+      "source": "5f9723a18aa888c7fe10ad254c04db8be5fd778a",
+      "command": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4132,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-06T10:24:28.1917829Z",
+      "finishedAt": "2026-11-06T10:24:31.9963953Z"
+    },
+    "ownershipReview": "The retained image and live reservations remain with the dialogue store. The dialogue execution scope owns the frame exchange, and the registry module owns resolved Flow destinations. RuntimePlan changes the order inside its existing content inventory owner. The triggered files already owned these boundaries.",
+    "workspaceCheck": {
+      "source": "5f9723a18aa888c7fe10ad254c04db8be5fd778a",
+      "command": [
+        "check",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4132,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-06T10:24:32.5530719Z",
+      "finishedAt": "2026-11-06T10:28:15.4696615Z"
+    },
+    "workspaceClippy": {
+      "source": "5f9723a18aa888c7fe10ad254c04db8be5fd778a",
+      "command": [
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4132,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-06T10:28:15.9868332Z",
+      "finishedAt": "2026-11-06T10:31:39.6875541Z"
+    },
+    "testedToPublished": {
+      "path": "crates/arcweft-core/src/engine/dialogue/store.rs",
+      "previousPatch": "d0699f552e5b375b9c76798b7dd119165112a44241849859f0e19c53a7e0cf87",
+      "testedWorkingFileSha256": "2d16bb4a5886c604874d2c580549d1e9a7dc386a34b4db8e6b5affee9f815065",
+      "publishedWorkingFileSha256": "9c42f83688d0e8586696ce78a48fc810614e5adc2e1161a3a02cfdbfc13cc18a",
+      "visibilityPatchSha256": "c3caada3738275006fd94c3712ae12b7ed5b518f840dc26fbdd22802cf9c093a"
+    },
+    "coverage": "The source test compiles the nested dialogue through RuntimePlan, reveals and explicitly advances both lines, and observes inner, outer, updated by inner in that order from Native. It binds a deterministic fixture artifact to the native plan. The Core regression restores an outer inline activation and a detached inner write transaction after a simulated operation failure, restores two in-flight frames together with their root, checks the original Line and Flow values, and rejects the three owners under a smaller shared encoded-byte limit.",
+    "ownership": "The Native activation store owns both its checked-out stack and the registry reservations. Private rollback stores real execution frames in their owning registry rows with an inert activation order, and keeps the suspended root frame in its fiber. A prepared Flow write records the actual fiber and borrowed frame owner before commit. RuntimePlan registers content handles before attaching line-task groups that refer to those handles.",
+    "boundary": "The tested Native path uses the private rollback owner. The AWBC lowering and Product dialogue receiver migration, public nested save and restore, and the full reverse runtime run remain separate. The two runtime test runs preceded a visibility-only correction, which the workspace checks and structure gate cover on the published bytes. The original 12 tracked and 6 untracked paths were held outside the checkpoint.",
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-native-inline-rollback.raw.zip",
+      "sha256": "5192d0610180c0b56e6c4e7089aea629a1eef325b2adb5cc26e172a2017052a5",
+      "entries": [
+        {
+          "entry": "native-inline-rollback-20261106.cargo-tree.txt",
+          "bytes": 19607,
+          "sha256": "06c34cda94eb66fa27433e4ed80faa07b4c20c1b067132bd0b91a42bf79668f4"
+        },
+        {
+          "entry": "native-inline-rollback-20261106.reverse.json",
+          "bytes": 34437,
+          "sha256": "33ca979b87bcf984920ef250de6209d3b05bf9335ae5f1d80b6331e216ed5a07"
+        },
+        {
+          "entry": "checkpoint-native-inline-rollback-20261106.verified.json",
+          "bytes": 2058,
+          "sha256": "5a91dffae9f56772883f7d270fd2a87e1e2edc1cd8c3efff8d4bfe01d665b444"
+        },
+        {
+          "entry": "native-inline-rollback-structure-20261106.json",
+          "bytes": 363,
+          "sha256": "d9987693b3a8ec2a099e7f497b2c5f06ea1f5904ade9cbc160b98d69b4863f83"
+        },
+        {
+          "entry": "native-inline-rollback-structure-20261106.log",
+          "bytes": 65698,
+          "sha256": "8c40aa7f10d217ba6a8aafde9949e7cef5e7a19e8661ef8b97b625d072463cdf"
+        },
+        {
+          "entry": "native-inline-rollback-workspace-check-20261106.json",
+          "bytes": 340,
+          "sha256": "f044f2b1b1a02eec142911d96af8040476bc5651d80e62427f5c5207f5eaa570"
+        },
+        {
+          "entry": "native-inline-rollback-workspace-check-20261106.log",
+          "bytes": 131386,
+          "sha256": "744674e5aaf864a8dc2ee6830058359c78b5501d11764ec705b424af8810369a"
+        },
+        {
+          "entry": "native-inline-rollback-workspace-clippy-20261106.json",
+          "bytes": 341,
+          "sha256": "c28e6bd651039ad276fd0ede762baf14fdccebcc47a7804081a4cc1a009f1233"
+        },
+        {
+          "entry": "native-inline-rollback-workspace-clippy-20261106.log",
+          "bytes": 8950923,
+          "sha256": "2686a601b610a11fd135a379dcd61b98acf2fe845aac043203ac17024ec58867"
+        },
+        {
+          "entry": "native-inline-rollback-visibility-20261106.json",
+          "bytes": 451,
+          "sha256": "36cf5f0b4f1b56193ddfe499f7bf8563ef982c487a959fd23b77ad4cca181170"
+        },
+        {
+          "entry": "native-inline-rollback-visibility-20261106.patch",
+          "bytes": 627,
+          "sha256": "c3caada3738275006fd94c3712ae12b7ed5b518f840dc26fbdd22802cf9c093a"
+        },
+        {
+          "entry": "native-inline-rollback-focused-20261106.catalog.json",
+          "bytes": 858,
+          "sha256": "37d3e2759babc4531fe4f1679e15cd1c3b47b17c50fe3ce2d8984decdde110b7"
+        },
+        {
+          "entry": "native-inline-rollback-focused-20261106.catalog.log",
+          "bytes": 16479,
+          "sha256": "1e6fc43bf4c2b181066bce1c4036ad7872290f782f55dfbbe2a423bab232398f"
+        },
+        {
+          "entry": "native-inline-rollback-focused-20261106.source-freeze.json",
+          "bytes": 808040,
+          "sha256": "f733eba74b9ca9386b3403c7c7b175e9c5bbcebbbf96e3934daee07cfcb63695"
+        },
+        {
+          "entry": "native-inline-rollback-compiler-20261106.catalog.json",
+          "bytes": 597,
+          "sha256": "470fc68bb3d02434ac246cd69139b07ca925322e6f0bf9af1dc4fb96896b5288"
+        },
+        {
+          "entry": "native-inline-rollback-compiler-20261106.catalog.inventory.json",
+          "bytes": 20911,
+          "sha256": "636c59c3b9881ec8395aaab8312936220559237eb1290fccb09477b5e3a86277"
+        },
+        {
+          "entry": "native-inline-rollback-compiler-20261106.catalog.log",
+          "bytes": 100767,
+          "sha256": "6fec9c5a59ae5a4392962474ca4aacf66da4a135ae845af9af5c0b3f80fdc330"
+        },
+        {
+          "entry": "native-inline-rollback-compiler-20261106.runtime.json",
+          "bytes": 689,
+          "sha256": "05b2b132835076a3f442edb05a6b772102b81ed780d4d3aa7a3fe9b88ed61e64"
+        },
+        {
+          "entry": "native-inline-rollback-compiler-20261106.runtime.log",
+          "bytes": 109498,
+          "sha256": "cd50648dbac0e610a9778f1bc403cf6abc700935ed1bf10ef500b33ca251594a"
+        },
+        {
+          "entry": "native-inline-rollback-compiler-20261106.runtime.terminal-audit.json",
+          "bytes": 621,
+          "sha256": "6f8e2f140c768b2f258dfd7ec74b6f7f80e2c1422fdf8f0fefbcd2a2625500cd"
+        },
+        {
+          "entry": "native-inline-rollback-compiler-20261106.binaries-before.json",
+          "bytes": 477,
+          "sha256": "498477a4afb48a9843c9f803e6c574c9c7d08cb226844d1a5cc7a5273e12dd80"
+        },
+        {
+          "entry": "native-inline-rollback-compiler-20261106.source-freeze.json",
+          "bytes": 808040,
+          "sha256": "a33cb3393feb4659fec2ec8491c05dd9feea9d7329d14256d69a72b4d4866eb0"
+        },
+        {
+          "entry": "native-inline-rollback-owners-20261106.catalog.json",
+          "bytes": 568,
+          "sha256": "0d59a8457acb55d0ef93fe9ee133c4ed60a9928cda2db8ce2f7ebc567fd95559"
+        },
+        {
+          "entry": "native-inline-rollback-owners-20261106.catalog.inventory.json",
+          "bytes": 617540,
+          "sha256": "e88bd3e36a64c24d62cddb91fd99ad81dbe75623f4166399d93faecf8b42616d"
+        },
+        {
+          "entry": "native-inline-rollback-owners-20261106.catalog.log",
+          "bytes": 519377,
+          "sha256": "afd41f3aae28aef80d34fa4ff51737501d8a8fb200b0baa413ee964681b1a7c1"
+        },
+        {
+          "entry": "native-inline-rollback-owners-20261106.runtime.json",
+          "bytes": 660,
+          "sha256": "488ce0f2fad00bc1f18620f6867cdf18cae05a0535a2f4e21ec1864615092686"
+        },
+        {
+          "entry": "native-inline-rollback-owners-20261106.runtime.log",
+          "bytes": 841823,
+          "sha256": "9df75e7c280d68c3082372ca098aa1ad42259d87309db25beb98870707e289b7"
+        },
+        {
+          "entry": "native-inline-rollback-owners-20261106.runtime.terminal-audit.json",
+          "bytes": 627,
+          "sha256": "2df49f97794c4007dc9951f1f162ae74f29a4569d3d129f2586e88ab2925ecfb"
+        },
+        {
+          "entry": "native-inline-rollback-owners-20261106.binaries-before.json",
+          "bytes": 447,
+          "sha256": "0d0bb96c1d43460f54ec347b5142d53905125021e79dec3119fab5a76db783e8"
+        },
+        {
+          "entry": "native-inline-rollback-owners-20261106.source-freeze.json",
+          "bytes": 808040,
+          "sha256": "c816445bd6f118c43c30b1172b2f3f12ce711f8b84b1c1b117c27851392f6398"
+        }
+      ]
+    }
   }
 }

@@ -14934,3 +14934,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source 7440c6b5d3131267166c58805099bb7f3c195e54 の意味解析では、同名の Line キーを対話ごとに区別し、入れ子の Line の Bool と親 Line の String、共有する Flow の String を確認した。子だけの登録で親が必須読取りする入力は拒否した。単一の対話が完了した後の Flow 必須読取りは Native と正規デコード済み AWBC で実行した。Compiler 82 PASS、Sema／RuntimePlan 1,516 PASS・1 skip。構造監査のブロッキング違反は0。
 - 同じ入れ子入力の試作は RuntimePlan の内容ハンドル、AWBC のタスクグループ参照の順に停止した。前方参照を解消した試作では正規 AWBC を生成・デコードできたが、Native はインライン対話中のロールバック画像生成、AWBC は Line 実行中の対話停止処理で失敗した。試作の差分と失敗原本を保持した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-06 — Native rollback across nested dialogue frames
+
+- Source 5f9723a18aa888c7fe10ad254c04db8be5fd778a で、RuntimePlan が先にすべての対話内容ハンドルを登録する。Native で入れ子の二つの対話を明示進行し、子 Line の Bool、親 Line の String、共有 Flow の更新値をログ順で確認した。
+- Native の私有ロールバックは停止中の fiber と実行中の各対話を一度ずつ保存する。入れ子の書込み失敗を模擬し、保持中の親と子の復元、Line／Flow の参照先、累積資源枠の拒否を確認した。Compiler 83 PASS、Core／RuntimePlan 2,421 PASS・1 skip。構造監査のブロッキング違反は0。公開範囲を絞った後の workspace check は exit 0、Clippy は exit 0。初回のコンパイル失敗と訂正を保持した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
