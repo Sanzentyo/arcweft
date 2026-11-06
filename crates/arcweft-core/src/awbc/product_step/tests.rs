@@ -266,7 +266,9 @@ fn issue_test_dialogue(
     executor: &mut AwbcProductStepExecutor,
     content: AwbcContentUnitId,
 ) -> crate::runtime_id::DialogueActivationId {
-    let (activation, key, next) = executor.prepare_dialogue_activation(content).unwrap();
+    let (activation, key, next) = executor
+        .prepare_dialogue_activation(executor.facade_fiber.persistent_id, content)
+        .unwrap();
     executor.dialogue_occurrences.insert(key, next);
     activation
 }

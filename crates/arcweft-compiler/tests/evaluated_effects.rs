@@ -3305,6 +3305,163 @@ fn native_nested_line_registries_resume_their_parent_line_and_share_the_flow() {
     );
 }
 
+fn compile_nested_awbc(
+    source: &str,
+) -> (
+    CompiledProject,
+    arcweft_core::executor::ArcweftRuntimeExecutor,
+) {
+    use arcweft_core::{
+        awbc::{
+            codec::AwbcDecodeBudget,
+            schema::{AwbcEntryId, AwbcProgram},
+        },
+        executor::ArcweftRuntimeExecutor,
+    };
+
+    let compiled = compile_attached_dialogue_project(source).unwrap();
+    let runtime = compiled.runtime_plan();
+    let bytes = AwbcLowerer::new(
+        &runtime.plan,
+        &runtime.dialogue_content_catalog,
+        "nested_registry.arcw",
+    )
+    .lower()
+    .expect("AWBC resolves both dialogue groups and their captures")
+    .program
+    .encode_canonical()
+    .unwrap();
+    let decoded = AwbcProgram::decode_canonical(&bytes, AwbcDecodeBudget::default()).unwrap();
+    assert_eq!(decoded.encode_canonical().unwrap(), bytes);
+    let awbc = ArcweftRuntimeExecutor::from_awbc_product(decoded, AwbcEntryId(0)).unwrap();
+    (compiled, awbc)
+}
+
+fn roundtrip_nested_awbc(
+    executor: arcweft_core::executor::ArcweftRuntimeExecutor,
+) -> (arcweft_core::executor::ArcweftRuntimeExecutor, usize) {
+    use arcweft_core::{
+        awbc::product_step::AwbcProductExecutorSaveSnapshot,
+        executor::ArcweftRuntimeExecutorSnapshot,
+    };
+
+    let ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) = executor.snapshot().unwrap();
+    let saved = AwbcProductExecutorSaveSnapshot::from_live(
+        &snapshot,
+        executor.admitted_product_awbc_program().unwrap(),
+    )
+    .unwrap();
+    let bytes = serde_json::to_vec(&saved).unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let active = value["dialogues"]["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| entry.get("Active").is_some())
+        .count();
+    let decoded = serde_json::from_slice(&bytes).unwrap();
+    let decoded = executor.bind_product_save_snapshot(decoded).unwrap();
+    let restored = executor
+        .restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(decoded))
+        .unwrap();
+    (restored, active)
+}
+
+#[test]
+fn decoded_awbc_nested_line_registries_resume_their_parent_through_each_save() {
+    use arcweft_core::pure::VmRuntimePureCallBackend;
+
+    let (compiled, awbc) = compile_nested_awbc(NESTED_LINE_REGISTRY_SOURCE);
+    let schema = bind_test_character_dialogue_schema(&compiled, awbc.program_owner());
+    let mut backend = VmRuntimePureCallBackend::default().with_external_calls(
+        arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
+    );
+    let mut awbc = Some(awbc);
+    let mut saved_nested_session = false;
+    let logs = execute_dialogue_result_with_action(
+        |input, options| {
+            let mut current = awbc.take().unwrap();
+            let result = current.step_with_pure_backend(input, options, &mut backend);
+            let (restored, active) = roundtrip_nested_awbc(current);
+            saved_nested_session |= active == 2;
+            awbc = Some(restored);
+            result
+        },
+        false,
+        "decoded AWBC nested registry",
+        2,
+    );
+    assert!(
+        saved_nested_session,
+        "a published save contained both active dialogues"
+    );
+    assert_eq!(logs, ["inner", "outer", "updated by inner"]);
+}
+
+#[test]
+fn decoded_awbc_nested_dialogue_failure_closes_both_activations_through_save() {
+    use arcweft_core::{
+        engine::FlowFiberStatus,
+        pure::VmRuntimePureCallBackend,
+        step::{RuntimeStepInput, RuntimeStepOptions},
+        time::TickId,
+    };
+
+    let (compiled, mut awbc) = compile_nested_awbc(
+        r#"
+pub character alice { display = "Alice" }
+fn quotient(divisor: i64) -> i64 { 1i64 / divisor }
+flow main() -> Unit {
+    alice()[Outer[p]] with {
+        init {
+            alice()[Inner[p]] with {
+                init {
+                    let failed = quotient(0i64)
+                    log.info("continued inner")
+                }
+            }
+            log.info("continued outer")
+        }
+    }
+    log.info("continued flow")
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    );
+    let schema = bind_test_character_dialogue_schema(&compiled, awbc.program_owner());
+    let mut backend = VmRuntimePureCallBackend::default().with_external_calls(
+        arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
+    );
+    let mut saved_nested_session = false;
+    let mut last_status = None;
+    for tick in 0..512 {
+        let result = awbc.step_with_pure_backend(
+            RuntimeStepInput {
+                tick: TickId(tick),
+                ..RuntimeStepInput::default()
+            },
+            RuntimeStepOptions::default(),
+            &mut backend,
+        );
+        assert!(log_messages(&result.output.effects.line).is_empty());
+        let (restored, active) = roundtrip_nested_awbc(awbc);
+        awbc = restored;
+        saved_nested_session |= active == 2;
+        last_status = Some((format!("{:?}", result.fiber_status), active));
+        match result.fiber_status {
+            FlowFiberStatus::Failed(message) => {
+                assert!(message.to_lowercase().contains("zero"), "{message}");
+                assert!(saved_nested_session);
+                assert_eq!(active, 0);
+                return;
+            }
+            FlowFiberStatus::Dialogue(_) | FlowFiberStatus::Running => {}
+            status => panic!("nested failure stopped in {status:?}"),
+        }
+    }
+    panic!("nested failure did not unwind to the entry fiber: {last_status:?}");
+}
+
 #[test]
 fn source_nested_line_registration_cannot_prove_a_parent_read() {
     use arcweft_lang_sema::final_analysis::{CheckedLocalUseError, FinalSemanticAnalysisError};

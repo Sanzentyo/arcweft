@@ -58,6 +58,7 @@ pub(super) enum ProductPublicationProgress {
 }
 
 pub(super) struct PreparedDialoguePublication {
+    receiver: super::dialogue::ProductDialogueReceiver,
     resume: crate::awbc::fiber::PreparedFiberResume,
     pattern: crate::awbc::vm::PreparedPatternBinding,
     presentation: ProductPresentationReceipt,
@@ -185,6 +186,11 @@ impl super::AwbcProductStepExecutor {
         resume: crate::awbc::schema::AwbcResumePointId,
     ) -> Result<ProductPublicationProgress, ProductStepError> {
         let activation = transaction.activation().clone();
+        let receiver = self.dialogue_receiver(activation)?;
+        self.dialogues.preflight_receiver_edit(receiver)?;
+        let parent = self
+            .dialogue_receiver_fiber(receiver)
+            .ok_or(crate::awbc::fiber::FiberStateError::InvalidDialogueReceiver { activation })?;
         let (frame, line) = transaction.parts_mut();
         let line_task = match &frame.phase {
             ProductDialoguePhase::Reducing { line_task }
@@ -199,7 +205,7 @@ impl super::AwbcProductStepExecutor {
         if !line_task.is_closed() {
             return Err(LineRuntimeError::ResultNotCommitted.into());
         }
-        let prepared_resume = self.fiber.validate_resume_at(&self.program, resume)?;
+        let prepared_resume = parent.validate_resume_at(&self.program, resume)?;
         let (ty, value, begin) = match line.result() {
             RuntimeDialogueResultState::Committed { ty, value }
             | RuntimeDialogueResultState::Selected { ty, value, .. } => (*ty, value, true),
@@ -217,7 +223,7 @@ impl super::AwbcProductStepExecutor {
         }
         let prepared_pattern = crate::awbc::vm::prepare_pattern_binding(
             &self.program,
-            &self.fiber,
+            parent,
             frame.result.pattern,
             value,
         )
@@ -227,12 +233,12 @@ impl super::AwbcProductStepExecutor {
             .iter()
             .copied()
             .collect::<BTreeSet<_>>();
-        let frame_instance = self.fiber.active_frame()?.instance;
+        let frame_instance = parent.active_frame()?.instance;
         let mut parent_owners =
-            parent_fiber_handle_owners(self.facade_fiber.execution, &activation, &self.fiber)?;
+            parent_fiber_handle_owners(self.facade_fiber.execution, &activation, parent)?;
         parent_owners.retain(|_, owner| {
             !matches!(owner, RuntimeOwnedSlotId::AwbcRegister { fiber, frame, register, .. }
-                if *fiber == self.fiber.instance
+                if *fiber == parent.instance
                     && *frame == frame_instance
                     && written_registers.contains(register))
         });
@@ -246,7 +252,7 @@ impl super::AwbcProductStepExecutor {
             if let Some(register) = destination {
                 let owner = RuntimeOwnedSlotId::AwbcRegister {
                     execution: self.facade_fiber.execution,
-                    fiber: self.fiber.instance,
+                    fiber: parent.instance,
                     frame: frame_instance,
                     register,
                 };
@@ -362,7 +368,7 @@ impl super::AwbcProductStepExecutor {
             }
         }
         for register in prepared_pattern.registers() {
-            for value in self.fiber.active_frame()?.registers[register.index()].values() {
+            for value in parent.active_frame()?.registers[register.index()].values() {
                 for handle in value
                     .affine_handles()
                     .map_err(|error| ProductStepError::Internal(error.to_string()))?
@@ -379,6 +385,7 @@ impl super::AwbcProductStepExecutor {
         }
         Ok(ProductPublicationProgress::Ready(
             PreparedDialoguePublication {
+                receiver,
                 resume: prepared_resume,
                 pattern: prepared_pattern,
                 presentation,
@@ -896,6 +903,11 @@ impl super::AwbcProductStepExecutor {
             .collect::<Vec<_>>();
         cancelled.sort_by_key(|fiber| order.get(&fiber.instance).copied().unwrap_or(order.len()));
         if let ProductLineTaskCommit::Publication(publication) = &commit {
+            let parent = self.dialogue_receiver_fiber(publication.receiver).ok_or(
+                crate::awbc::fiber::FiberStateError::InvalidDialogueReceiver {
+                    activation: *transaction.activation(),
+                },
+            )?;
             let mut targets = Vec::new();
             for fiber in cancelled {
                 if matches!(
@@ -910,7 +922,7 @@ impl super::AwbcProductStepExecutor {
                 }
             }
             let receipt = &publication.presentation;
-            let instance = self.fiber.instance;
+            let instance = parent.instance;
             if let Some(banks) = &self.presentation {
                 banks
                     .preflight_scope_transition(
@@ -923,7 +935,7 @@ impl super::AwbcProductStepExecutor {
                             fiber: crate::runtime_id::RuntimePersistentFiberId::from_allocated(
                                 instance.get().get(),
                             ),
-                            scope: self.fiber.active_frame()?.presentation_scope_ref(),
+                            scope: parent.active_frame()?.presentation_scope_ref(),
                         }),
                         &receipt.kept,
                         &receipt.discarded,
@@ -962,6 +974,17 @@ impl super::AwbcProductStepExecutor {
     ) {
         // The same real contour is checked again under exclusive borrows, before
         // a command is recorded, a child is removed, or any grant is cleared.
+        let mut parent_dialogue = match &prepared.commit {
+            ProductLineTaskCommit::Publication(PreparedDialoguePublication {
+                receiver: super::dialogue::ProductDialogueReceiver::Activation(id),
+                ..
+            }) => Some(
+                self.dialogues
+                    .begin_transaction(id)
+                    .expect("preflighted publication receiver"),
+            ),
+            _ => None,
+        };
         let order = prepared
             .cancellations
             .iter()
@@ -999,7 +1022,14 @@ impl super::AwbcProductStepExecutor {
                     );
                 }
             }
-            let instance = self.fiber.instance;
+            let parent = match &mut parent_dialogue {
+                Some(parent) => parent
+                    .frame_mut()
+                    .receiving_fiber_mut()
+                    .expect("preflighted publication receiver"),
+                None => &mut self.fiber,
+            };
+            let instance = parent.instance;
             let receipt = &publication.presentation;
             if let Some(banks) = self.presentation.as_mut() {
                 banks
@@ -1013,8 +1043,7 @@ impl super::AwbcProductStepExecutor {
                             fiber: crate::runtime_id::RuntimePersistentFiberId::from_allocated(
                                 instance.get().get(),
                             ),
-                            scope: self
-                                .fiber
+                            scope: parent
                                 .active_frame_mut()
                                 .expect("preflighted publication receiver")
                                 .presentation_scope_target(),
@@ -1152,6 +1181,13 @@ impl super::AwbcProductStepExecutor {
         );
         batch.existing_child_actions = prepared.executor_actions;
         if let ProductLineTaskCommit::Publication(publication) = prepared.commit {
+            let parent = match &mut parent_dialogue {
+                Some(parent) => parent
+                    .frame_mut()
+                    .receiving_fiber_mut()
+                    .expect("preflighted publication receiver"),
+                None => &mut self.fiber,
+            };
             transaction
                 .line_mut()
                 .release_frame()
@@ -1162,11 +1198,14 @@ impl super::AwbcProductStepExecutor {
                 .expect("published result owner was preflighted");
             crate::awbc::vm::bind_pattern_owned_prepared(
                 &self.program,
-                &mut self.fiber,
+                parent,
                 publication.pattern,
                 value,
             );
-            self.fiber.resume_at_prepared(publication.resume);
+            parent.resume_at_prepared(publication.resume);
+            if let Some(parent) = parent_dialogue {
+                self.dialogues.commit_receiver(parent);
+            }
         }
     }
 
@@ -1509,6 +1548,7 @@ impl super::AwbcProductStepExecutor {
                         activation,
                         scope,
                         line,
+                        &self.dialogues,
                         std::iter::once(&self.fiber)
                             .chain(self.child_fibers.iter().map(|child| &child.fiber)),
                     )?;
@@ -1557,9 +1597,7 @@ impl super::AwbcProductStepExecutor {
                 if !step.completed_single_effect_instruction() {
                     return Err(LineRuntimeError::InvalidActivationOperation.into());
                 }
-                write
-                    .reserve(self.reached_registry_mut(activation, *owner, line)?)
-                    .map_err(crate::awbc::fiber::FiberStateError::Snapshot)?;
+                self.reserve_reached_registry_write(activation, *owner, line, write)?;
             }
 
             let mut owned_observation = None;
@@ -1984,7 +2022,11 @@ impl super::AwbcProductStepExecutor {
                         })
                     }
                     VmExit::Suspended(notice)
-                        if notice.kind == crate::awbc::fiber::FiberSuspensionKind::DurationWait =>
+                        if matches!(
+                            notice.kind,
+                            crate::awbc::fiber::FiberSuspensionKind::DurationWait
+                                | crate::awbc::fiber::FiberSuspensionKind::Dialogue
+                        ) =>
                     {
                         frame.phase = ProductDialoguePhase::Activating {
                             fiber: candidate.take().expect("activation fiber remains owned"),
@@ -1992,7 +2034,8 @@ impl super::AwbcProductStepExecutor {
                         };
                         Ok(ProductActivationProgress {
                             trap: None,
-                            progressed: false,
+                            progressed: notice.kind
+                                == crate::awbc::fiber::FiberSuspensionKind::Dialogue,
                             executed_ops: usize::from(step.executed > 0),
                             presented: None,
                             reducer: LineTaskActivation::default(),
@@ -2048,10 +2091,7 @@ impl super::AwbcProductStepExecutor {
         })();
         if let Some((owner, write)) = pending_registry_write {
             if result.is_ok() {
-                write.commit(
-                    self.reached_registry_mut(activation, owner, line)
-                        .expect("prepared write keeps its reached registry"),
-                );
+                self.commit_reached_registry_write(activation, owner, line, write);
             } else if let Some(checkpoint) = effect_checkpoint {
                 checkpoint
                     .restore(

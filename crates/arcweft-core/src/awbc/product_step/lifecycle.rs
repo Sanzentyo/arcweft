@@ -438,37 +438,40 @@ impl AwbcProductStepExecutor {
             }
             FiberSuspensionReason::DurationWait(wait) => FlowFiberStatus::DurationWaiting(*wait),
             FiberSuspensionReason::Dialogue { .. }
-            | FiberSuspensionReason::DialogueActive { .. } => self.dialogues.active_frame().map_or(
-                FlowFiberStatus::Failed(
-                    "AWBC dialogue suspension is missing its active typed owner".to_owned(),
+            | FiberSuspensionReason::DialogueActive { .. } => self
+                .foreground_dialogue()
+                .and_then(|activation| self.dialogues.active_frame_for(&activation))
+                .map_or(
+                    FlowFiberStatus::Failed(
+                        "AWBC dialogue suspension is missing its active typed owner".to_owned(),
+                    ),
+                    |active| {
+                        let phase = match &active.phase {
+                            super::ProductDialoguePhase::Activating { .. } => {
+                                crate::engine::DialogueRuntimePhase::Activating
+                            }
+                            super::ProductDialoguePhase::Reducing { .. } => {
+                                crate::engine::DialogueRuntimePhase::Ready
+                            }
+                            super::ProductDialoguePhase::Publishing { .. } => {
+                                crate::engine::DialogueRuntimePhase::Publishing
+                            }
+                            super::ProductDialoguePhase::Closing(_) => {
+                                crate::engine::DialogueRuntimePhase::Closing
+                            }
+                            super::ProductDialoguePhase::Transitioning => {
+                                return FlowFiberStatus::Failed(
+                                    "AWBC dialogue transition escaped its execution transaction"
+                                        .to_owned(),
+                                );
+                            }
+                        };
+                        FlowFiberStatus::Dialogue(crate::engine::DialogueExecutionStatus::new(
+                            active.activation.clone(),
+                            phase,
+                        ))
+                    },
                 ),
-                |active| {
-                    let phase = match &active.phase {
-                        super::ProductDialoguePhase::Activating { .. } => {
-                            crate::engine::DialogueRuntimePhase::Activating
-                        }
-                        super::ProductDialoguePhase::Reducing { .. } => {
-                            crate::engine::DialogueRuntimePhase::Ready
-                        }
-                        super::ProductDialoguePhase::Publishing { .. } => {
-                            crate::engine::DialogueRuntimePhase::Publishing
-                        }
-                        super::ProductDialoguePhase::Closing(_) => {
-                            crate::engine::DialogueRuntimePhase::Closing
-                        }
-                        super::ProductDialoguePhase::Transitioning => {
-                            return FlowFiberStatus::Failed(
-                                "AWBC dialogue transition escaped its execution transaction"
-                                    .to_owned(),
-                            );
-                        }
-                    };
-                    FlowFiberStatus::Dialogue(crate::engine::DialogueExecutionStatus::new(
-                        active.activation.clone(),
-                        phase,
-                    ))
-                },
-            ),
             FiberSuspensionReason::Choice { .. } => {
                 let active = self.active_choice.as_ref();
                 FlowFiberStatus::Choice(ChoiceState {

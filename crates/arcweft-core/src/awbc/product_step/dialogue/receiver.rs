@@ -16,6 +16,7 @@ struct ReceiverEdge<'a> {
 
 struct ReceiverRow<'a, F> {
     fiber: Option<&'a F>,
+    activation_fiber: bool,
     child: Option<ReceiverEdge<'a>>,
 }
 
@@ -41,6 +42,7 @@ impl<'a, V, O, N, B, R, G> ProductDialogueReceivers<'a, FiberState<V, O, N, B, R
     ) -> &mut ReceiverRow<'a, FiberState<V, O, N, B, R, G>> {
         self.rows.entry(owner).or_insert(ReceiverRow {
             fiber: None,
+            activation_fiber: false,
             child: None,
         })
     }
@@ -48,6 +50,7 @@ impl<'a, V, O, N, B, R, G> ProductDialogueReceivers<'a, FiberState<V, O, N, B, R
     pub(in crate::awbc::product_step) fn register_fiber(
         &mut self,
         fiber: &'a FiberState<V, O, N, B, R, G>,
+        activation_fiber: bool,
     ) -> Result<(), FiberStateError> {
         let owner = RuntimePersistentFiberId::from_allocated(fiber.instance.get().get());
         let row = self.row(owner);
@@ -55,6 +58,7 @@ impl<'a, V, O, N, B, R, G> ProductDialogueReceivers<'a, FiberState<V, O, N, B, R
             return Err(FiberStateError::InvalidFrame);
         }
         row.fiber = Some(fiber);
+        row.activation_fiber = activation_fiber;
         Ok(())
     }
 
@@ -104,8 +108,19 @@ impl<'a, V, O, N, B, R, G> ProductDialogueReceivers<'a, FiberState<V, O, N, B, R
         &self,
         program: &AwbcProgram,
     ) -> Result<(), FiberStateError> {
+        let mut root = None;
+        let mut depth = 0;
         for row in self.rows.values() {
             if let Some(edge) = &row.child {
+                let invalid = FiberStateError::InvalidDialogueReceiver {
+                    activation: edge.activation,
+                };
+                depth += 1;
+                if !crate::entry::RuntimeSchemaLimits::engine_default().permits_depth(depth)
+                    || (!row.activation_fiber && root.replace(edge.activation).is_some())
+                {
+                    return Err(invalid);
+                }
                 let parent = row.fiber.ok_or(FiberStateError::InvalidDialogueReceiver {
                     activation: edge.activation,
                 })?;

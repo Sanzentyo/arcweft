@@ -133,6 +133,13 @@ result binding. An activation fiber must be allocated after its receiver.
 Each waiting receiver must have its matching activation before restore can
 reconstruct owned values.
 
+An activation can suspend at another Dialogue instruction. Product follows
+the receiver chain to drive the innermost activation, retaining the suspended
+parent's original result binding and resume point. The version-one save
+retains both the pending dialogue packet and the active receiver relation at
+their respective step boundaries. A Line registry belongs to its activation,
+and Flow registry access follows that activation's receiver ancestry.
+
 Published dialogue registry metadata has one movable owner independent of the
 executor's released frame type. A registry may enter that published transfer
 phase only when every activation is published. Active or in-flight state rejects

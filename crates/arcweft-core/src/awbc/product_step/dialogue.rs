@@ -1,6 +1,6 @@
 use super::{ActiveDialogue, AwbcProductStepExecutor, ProductStepError};
-use crate::awbc::fiber::{FiberState, FiberStateError};
-use crate::awbc::schema::AwbcTypeId;
+use crate::awbc::fiber::{FiberState, FiberStateError, FiberSuspensionReason};
+use crate::awbc::schema::{AwbcResumePointId, AwbcTypeId};
 use crate::effect::{RuntimeRegistryOwner, RuntimeScopeRegistry};
 use crate::line_task::{
     LineRuntimeError, PreparedRuntimeParentFiberReconciliation,
@@ -31,12 +31,169 @@ pub(super) struct ProductDialogueStore {
 pub(super) type ProductDialogueTransaction =
     RuntimeDialogueActivationTransaction<ActiveDialogue, AwbcTypeId>;
 
+#[derive(Clone, Copy)]
+pub(super) enum ProductDialogueReceiver {
+    Main,
+    Activation(DialogueActivationId),
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum ProductDialogueDispatch {
+    Start(ProductDialogueReceiver),
+    Resume {
+        activation: DialogueActivationId,
+        resume: AwbcResumePointId,
+    },
+}
+
+impl ProductDialogueDispatch {
+    pub(super) fn foreground(self) -> Option<DialogueActivationId> {
+        match self {
+            Self::Start(ProductDialogueReceiver::Main) => None,
+            Self::Start(ProductDialogueReceiver::Activation(activation))
+            | Self::Resume { activation, .. } => Some(activation),
+        }
+    }
+}
+
+impl AwbcProductStepExecutor {
+    pub(super) fn dialogue_dispatch(
+        &self,
+    ) -> Result<Option<ProductDialogueDispatch>, FiberStateError> {
+        let mut owner = ProductDialogueReceiver::Main;
+        let mut receiver = &self.fiber;
+        loop {
+            let Some(suspension) = receiver.suspension.as_ref() else {
+                return Ok(None);
+            };
+            match suspension.reason {
+                FiberSuspensionReason::Dialogue { .. } => {
+                    return Ok(Some(ProductDialogueDispatch::Start(owner)));
+                }
+                FiberSuspensionReason::DialogueActive { activation } => {
+                    let invalid = || FiberStateError::InvalidDialogueReceiver { activation };
+                    let active = self
+                        .dialogues
+                        .active_frame_for(&activation)
+                        .ok_or_else(invalid)?;
+                    let resume = suspension.declared_resume().ok_or_else(invalid)?;
+                    if let Some(fiber) = active.receiving_fiber()
+                        && fiber.suspension.as_ref().is_some_and(|suspension| {
+                            matches!(
+                                suspension.reason,
+                                FiberSuspensionReason::Dialogue { .. }
+                                    | FiberSuspensionReason::DialogueActive { .. }
+                            )
+                        })
+                    {
+                        if fiber.instance.get() <= receiver.instance.get() {
+                            return Err(invalid());
+                        }
+                        owner = ProductDialogueReceiver::Activation(activation);
+                        receiver = fiber;
+                    } else {
+                        return Ok(Some(ProductDialogueDispatch::Resume { activation, resume }));
+                    }
+                }
+                _ => return Ok(None),
+            }
+        }
+    }
+
+    pub(super) fn foreground_dialogue(&self) -> Option<DialogueActivationId> {
+        self.dialogue_dispatch()
+            .ok()
+            .flatten()
+            .and_then(ProductDialogueDispatch::foreground)
+    }
+
+    pub(super) fn dialogue_receiver(
+        &self,
+        child: DialogueActivationId,
+    ) -> Result<ProductDialogueReceiver, FiberStateError> {
+        if self.fiber.dialogue_receiver() == Some(child) {
+            return Ok(ProductDialogueReceiver::Main);
+        }
+        self.dialogues
+            .active_frames()
+            .find_map(|frame| {
+                let fiber = frame.receiving_fiber()?;
+                (fiber.dialogue_receiver() == Some(child)
+                    && fiber.instance.get().get() == child.owner_fiber().get())
+                .then_some(ProductDialogueReceiver::Activation(frame.activation))
+            })
+            .ok_or(FiberStateError::InvalidDialogueReceiver { activation: child })
+    }
+
+    pub(super) fn dialogue_receiver_fiber(
+        &self,
+        receiver: ProductDialogueReceiver,
+    ) -> Option<&FiberState> {
+        match receiver {
+            ProductDialogueReceiver::Main => Some(&self.fiber),
+            ProductDialogueReceiver::Activation(id) => {
+                self.dialogues.active_frame_for(&id)?.receiving_fiber()
+            }
+        }
+    }
+}
+
+struct ReachedProductFlow<'a> {
+    owner: RuntimeRegistryOwner,
+    rows: &'a RuntimeScopeRegistry,
+    activation_frame: Option<DialogueActivationId>,
+}
+
+fn reached_flow<'a>(
+    program: &crate::awbc::schema::AwbcProgram,
+    activation: DialogueActivationId,
+    dialogues: &'a ProductDialogueStore,
+    session: impl Iterator<Item = &'a FiberState> + Clone,
+) -> Result<ReachedProductFlow<'a>, FiberStateError> {
+    let invalid = || FiberStateError::InvalidDialogueReceiver { activation };
+    let mut owner = activation.owner_fiber();
+    loop {
+        let active = dialogues.active_frames().find(|frame| {
+            frame
+                .activation_fiber()
+                .is_some_and(|fiber| fiber.instance.get().get() == owner.get())
+        });
+        let fiber = match active {
+            Some(frame) => frame.activation_fiber(),
+            None => session
+                .clone()
+                .find(|fiber| fiber.instance.get().get() == owner.get()),
+        }
+        .ok_or_else(invalid)?;
+        if let Some(index) = fiber.reached_flow_frame_index(program) {
+            let frame = &fiber.frames[index];
+            return Ok(ReachedProductFlow {
+                owner: RuntimeRegistryOwner::AwbcFlow {
+                    fiber: fiber.instance,
+                    frame: frame.instance,
+                },
+                rows: &frame.flow_registry,
+                activation_frame: active.map(|frame| frame.activation),
+            });
+        }
+        let ancestor = active
+            .ok_or(FiberStateError::InvalidFrame)?
+            .activation
+            .owner_fiber();
+        if ancestor.get() >= owner.get() {
+            return Err(invalid());
+        }
+        owner = ancestor;
+    }
+}
+
 pub(super) fn reached_registry<'a>(
     program: &crate::awbc::schema::AwbcProgram,
     activation: DialogueActivationId,
     scope: &arcweft_id::LifetimeScopeKind,
     line: &'a RuntimeDialogueActivationState<AwbcTypeId>,
-    mut parents: impl Iterator<Item = &'a FiberState>,
+    dialogues: &'a ProductDialogueStore,
+    parents: impl Iterator<Item = &'a FiberState> + Clone,
 ) -> Result<(RuntimeRegistryOwner, &'a RuntimeScopeRegistry), FiberStateError> {
     use arcweft_id::LifetimeScopeKind;
     match scope {
@@ -46,57 +203,97 @@ pub(super) fn reached_registry<'a>(
                 .map_err(|_| FiberStateError::InvalidFrame)?,
         )),
         LifetimeScopeKind::Flow => {
-            let parent = parents
-                .find(|fiber| fiber.instance.get().get() == activation.owner_fiber().get())
-                .ok_or(FiberStateError::InvalidDialogueReceiver { activation })?;
-            let index = parent
-                .reached_flow_frame_index(program)
-                .ok_or(FiberStateError::InvalidFrame)?;
-            let frame = &parent.frames[index];
-            Ok((
-                RuntimeRegistryOwner::AwbcFlow {
-                    fiber: parent.instance,
-                    frame: frame.instance,
-                },
-                &frame.flow_registry,
-            ))
+            let reached = reached_flow(program, activation, dialogues, parents)?;
+            Ok((reached.owner, reached.rows))
         }
         _ => Err(FiberStateError::InvalidFrame),
     }
 }
 
 impl AwbcProductStepExecutor {
-    pub(super) fn reached_registry_mut<'a>(
-        &'a mut self,
+    pub(super) fn reserve_reached_registry_write(
+        &mut self,
         activation: DialogueActivationId,
         owner: RuntimeRegistryOwner,
-        line: &'a mut RuntimeDialogueActivationState<AwbcTypeId>,
-    ) -> Result<&'a mut RuntimeScopeRegistry, FiberStateError> {
-        match owner {
-            RuntimeRegistryOwner::Dialogue(id) if id == activation => line
-                .line_registry_mut()
-                .map_err(|_| FiberStateError::InvalidFrame),
-            RuntimeRegistryOwner::AwbcFlow { fiber, frame }
-                if fiber.get().get() == activation.owner_fiber().get() =>
-            {
-                let parent = std::iter::once(&mut self.fiber)
-                    .chain(self.child_fibers.iter_mut().map(|child| &mut child.fiber))
-                    .find(|parent| parent.instance == fiber)
-                    .ok_or(FiberStateError::InvalidDialogueReceiver { activation })?;
-                let index = parent
-                    .reached_flow_frame_index(&self.program)
-                    .ok_or(FiberStateError::InvalidFrame)?;
-                let reached = &mut parent.frames[index];
-                if reached.instance != frame {
-                    return Err(FiberStateError::InvalidFrame);
-                }
-                Ok(&mut reached.flow_registry)
-            }
-            _ => Err(FiberStateError::InvalidFrame),
+        line: &mut RuntimeDialogueActivationState<AwbcTypeId>,
+        write: &crate::effect::RuntimePreparedRegistryWrite,
+    ) -> Result<(), ProductStepError> {
+        self.edit_reached_registry(activation, owner, line, false, |rows| {
+            write.reserve(rows).map_err(FiberStateError::Snapshot)
+        })
+    }
+
+    pub(super) fn commit_reached_registry_write(
+        &mut self,
+        activation: DialogueActivationId,
+        owner: RuntimeRegistryOwner,
+        line: &mut RuntimeDialogueActivationState<AwbcTypeId>,
+        write: crate::effect::RuntimePreparedRegistryWrite,
+    ) {
+        self.edit_reached_registry(activation, owner, line, true, |rows| {
+            write.commit(rows);
+            Ok(())
+        })
+        .expect("prepared write retains its reached registry");
+    }
+
+    fn edit_reached_registry(
+        &mut self,
+        activation: DialogueActivationId,
+        owner: RuntimeRegistryOwner,
+        line: &mut RuntimeDialogueActivationState<AwbcTypeId>,
+        publish: bool,
+        edit: impl FnOnce(&mut RuntimeScopeRegistry) -> Result<(), FiberStateError>,
+    ) -> Result<(), ProductStepError> {
+        if owner == RuntimeRegistryOwner::Dialogue(activation) {
+            return Ok(edit(line.line_registry_mut()?)?);
         }
+        let RuntimeRegistryOwner::AwbcFlow { fiber, frame } = owner else {
+            return Err(FiberStateError::InvalidFrame.into());
+        };
+        let reached = reached_flow(
+            &self.program,
+            activation,
+            &self.dialogues,
+            std::iter::once(&self.fiber).chain(self.child_fibers.iter().map(|child| &child.fiber)),
+        )?;
+        if reached.owner != owner {
+            return Err(FiberStateError::InvalidFrame.into());
+        }
+        let invalid = || FiberStateError::InvalidDialogueReceiver { activation };
+        let edit_fiber = |parent: &mut FiberState| {
+            let index = parent
+                .reached_flow_frame_index(&self.program)
+                .ok_or_else(invalid)?;
+            let reached = &mut parent.frames[index];
+            if reached.instance != frame {
+                return Err(FiberStateError::InvalidFrame);
+            }
+            edit(&mut reached.flow_registry)
+        };
+        if let Some(id) = reached.activation_frame {
+            self.dialogues
+                .preflight_receiver_edit(ProductDialogueReceiver::Activation(id))?;
+            let mut parent = self.dialogues.begin_transaction(&id)?;
+            let result = parent
+                .frame_mut()
+                .receiving_fiber_mut()
+                .ok_or_else(invalid)
+                .and_then(edit_fiber);
+            if publish && result.is_ok() {
+                self.dialogues.commit_receiver(parent);
+            } else {
+                self.dialogues.restore_transaction(parent)?;
+            }
+            return Ok(result?);
+        }
+        let parent = std::iter::once(&mut self.fiber)
+            .chain(self.child_fibers.iter_mut().map(|child| &mut child.fiber))
+            .find(|parent| parent.instance == fiber)
+            .ok_or_else(invalid)?;
+        Ok(edit_fiber(parent)?)
     }
 }
-
 impl ProductDialogueStore {
     pub(super) fn into_published(
         self,
@@ -117,19 +314,71 @@ impl ProductDialogueStore {
         if self.registry.has_active_or_inflight() {
             return Err(LineRuntimeError::DuplicateActivationLedger);
         }
-        self.registry.begin(frame.activation.clone(), frame)
+        self.registry.begin(frame.activation, frame)
     }
 
+    pub(super) fn begin_nested(
+        &mut self,
+        parent: &ProductDialogueTransaction,
+        frame: ActiveDialogue,
+    ) -> Result<(), LineRuntimeError> {
+        self.registry.inspect_commit(parent)?;
+        let fiber = parent
+            .frame()
+            .activation_fiber()
+            .ok_or(LineRuntimeError::InvalidActivationOperation)?;
+        if frame.activation.owner_fiber().get() != fiber.instance.get().get() {
+            return Err(LineRuntimeError::InvalidActivationOperation);
+        }
+        self.registry.begin(frame.activation, frame)
+    }
+
+    pub(super) fn preflight_nested_start(&self) -> Result<(), LineRuntimeError> {
+        let depth = self.active_frames().count().saturating_add(1);
+        if !crate::entry::RuntimeSchemaLimits::engine_default().permits_depth(depth) {
+            return Err(LineRuntimeError::InvalidActivationOperation);
+        }
+        Ok(())
+    }
+
+    pub(super) fn active_frames(&self) -> impl Iterator<Item = &ActiveDialogue> {
+        self.registry.active_frames()
+    }
+
+    pub(super) fn active_frame_for(
+        &self,
+        activation: &DialogueActivationId,
+    ) -> Option<&ActiveDialogue> {
+        self.registry.active_frame(activation)
+    }
+
+    pub(super) fn preflight_receiver_edit(
+        &self,
+        receiver: ProductDialogueReceiver,
+    ) -> Result<(), LineRuntimeError> {
+        if let ProductDialogueReceiver::Activation(id) = receiver {
+            self.registry
+                .active_revision(&id)
+                .ok_or(LineRuntimeError::UnknownActivationLedger)?
+                .checked_add(1)
+                .ok_or(LineRuntimeError::ActivationTransactionRevisionOverflow)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
     pub(super) fn active_activation(&self) -> Option<DialogueActivationId> {
         self.registry.active_ids().into_iter().next()
     }
 
+    #[cfg(test)]
     pub(super) fn active_frame(&self) -> Option<&ActiveDialogue> {
         self.active_activation()
             .as_ref()
             .and_then(|activation| self.registry.active_frame(activation))
     }
 
+    #[cfg(test)]
     pub(super) fn active_line(
         &self,
     ) -> Option<&crate::line_task::RuntimeDialogueActivationState<AwbcTypeId>> {
@@ -147,11 +396,15 @@ impl ProductDialogueStore {
 
     /// Borrows the executor's actual phase and the same command/defer ledger
     /// consumed by activation. No transported or cached readiness is admitted.
-    pub(super) fn has_internal_work(&self, joined_work: bool) -> bool {
-        let Some(frame) = self.active_frame() else {
+    pub(super) fn has_internal_work_for(
+        &self,
+        activation: &DialogueActivationId,
+        joined_work: bool,
+    ) -> bool {
+        let Some(frame) = self.active_frame_for(activation) else {
             return false;
         };
-        let Some(line) = self.active_line() else {
+        let Some(line) = self.active_line_for(activation) else {
             return false;
         };
         if line.has_pending_commands() || line.deferred_inflight().is_some() {
@@ -161,7 +414,7 @@ impl ProductDialogueStore {
             super::ProductDialoguePhase::Activating { fiber, pending } => {
                 pending.is_none()
                     && frame.pending_activation_host_call.is_none()
-                    && !self.activation_budget_exhausted()
+                    && !self.activation_budget_exhausted(activation)
                     && !matches!(
                         fiber
                             .suspension
@@ -190,8 +443,14 @@ impl ProductDialogueStore {
         }
     }
 
-    pub(super) fn activation_budget_exhausted(&self) -> bool {
-        self.active_frame().is_some_and(|frame| {
+    #[cfg(test)]
+    pub(super) fn has_internal_work(&self, joined_work: bool) -> bool {
+        self.active_activation()
+            .is_some_and(|activation| self.has_internal_work_for(&activation, joined_work))
+    }
+
+    pub(super) fn activation_budget_exhausted(&self, activation: &DialogueActivationId) -> bool {
+        self.active_frame_for(activation).is_some_and(|frame| {
             matches!(
                 &frame.phase,
                 super::ProductDialoguePhase::Activating { fiber, .. }
@@ -208,7 +467,7 @@ impl ProductDialogueStore {
         &self,
         mut visitor: impl FnMut(&RuntimeValue) -> Result<(), E>,
     ) -> Result<(), E> {
-        if let Some(frame) = self.active_frame() {
+        self.registry.try_visit_active(|_, frame, line| {
             visit_value_graph(frame.target.payload(), &mut visitor)?;
             visit_value_slice(&frame.captures, &mut visitor)?;
             visit_value_slice(&frame.task_inputs, &mut visitor)?;
@@ -236,13 +495,12 @@ impl ProductDialogueStore {
                     super::ProductDialogueClosingState::LineTask { .. } => {}
                 },
             }
-        }
-        if let Some(line) = self.active_line() {
             line.visit_runtime_values(&mut visitor)?;
-        }
-        Ok(())
+            Ok(())
+        })
     }
 
+    #[cfg(test)]
     pub(super) fn begin_active_transaction(
         &mut self,
     ) -> Result<ProductDialogueTransaction, LineRuntimeError> {
@@ -281,6 +539,14 @@ impl ProductDialogueStore {
         self.registry.commit_prepared(transaction, proof)
     }
 
+    pub(super) fn commit_receiver(&mut self, transaction: ProductDialogueTransaction) {
+        let proof = self
+            .registry
+            .inspect_commit(&transaction)
+            .expect("the receiving activation retains its preflighted revision");
+        self.registry.commit_prepared(transaction, proof);
+    }
+
     pub(super) fn inspect_published(
         &self,
         transaction: &ProductDialogueTransaction,
@@ -314,16 +580,17 @@ impl ProductDialogueStore {
     pub(super) fn latch_step_input(
         &mut self,
         program: &crate::awbc::schema::AwbcProgram,
+        foreground: Option<DialogueActivationId>,
         dt: LogicalDuration,
         content_events: &[RuntimeDialogueContentEvent],
         advances: &[DialogueActivationId],
         line_outcomes: &[crate::presentation::RuntimeLineHostOutcome],
     ) -> Result<Vec<LineRuntimeError>, ProductStepError> {
-        // Validate the complete ingress before taking the sole active frame.
+        // Validate the complete ingress before updating the foreground clock
+        // or advancing any activation revision.
         // Published ledgers are copyable metadata and are staged separately.
         let published = self.registry.stage_published_outcomes(line_outcomes)?;
-        let active = self.active_activation();
-        if let Some(frame) = self.active_frame()
+        if let Some(frame) = foreground.as_ref().and_then(|id| self.active_frame_for(id))
             && frame.is_ingress_ready()
         {
             frame
@@ -397,19 +664,26 @@ impl ProductDialogueStore {
                 return Err(LineRuntimeError::DuplicateCommandOutcome.into());
             }
         }
-        if let Some(activation) = active.as_ref() {
-            let commits = usize::from(dt.as_nanos() != 0)
-                .checked_add(content_events.len())
-                .and_then(|count| count.checked_add(advances.len()))
-                .and_then(|count| count.checked_add(seen_outcomes.len()))
+        let mut revisions = BTreeMap::<DialogueActivationId, u64>::new();
+        for activation in foreground
+            .iter()
+            .filter(|_| dt.as_nanos() != 0)
+            .chain(content_events.iter().map(|event| event.activation()))
+            .chain(advances)
+            .chain(seen_outcomes.iter().map(|command| command.activation()))
+        {
+            let count = revisions.entry(*activation).or_default();
+            *count = count
+                .checked_add(1)
                 .ok_or(LineRuntimeError::ActivationTransactionRevisionOverflow)?;
-            let commits = u64::try_from(commits)
-                .map_err(|_| LineRuntimeError::ActivationTransactionRevisionOverflow)?;
+        }
+        for (activation, commits) in revisions {
             self.registry
-                .active_revision(activation)
+                .active_revision(&activation)
                 .and_then(|revision| revision.checked_add(commits))
                 .ok_or(LineRuntimeError::ActivationTransactionRevisionOverflow)?;
-
+        }
+        if let Some(activation) = foreground.as_ref() {
             let mut transaction = self.registry.begin_transaction(activation)?;
             if let super::ProductDialoguePhase::Activating { fiber, .. }
             | super::ProductDialoguePhase::Closing(super::ProductDialogueClosing {
@@ -555,6 +829,22 @@ impl ProductDialogueStore {
             restore_frame,
         )?;
         Ok(Self { registry })
+    }
+}
+
+impl ActiveDialogue {
+    fn receiving_fiber(&self) -> Option<&FiberState> {
+        match &self.phase {
+            super::ProductDialoguePhase::Activating { fiber, .. } => Some(fiber),
+            _ => None,
+        }
+    }
+
+    pub(super) fn receiving_fiber_mut(&mut self) -> Option<&mut FiberState> {
+        match &mut self.phase {
+            super::ProductDialoguePhase::Activating { fiber, .. } => Some(fiber),
+            _ => None,
+        }
     }
 }
 

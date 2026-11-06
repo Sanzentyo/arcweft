@@ -1,6 +1,8 @@
-use crate::awbc_lower::inventory::AwbcInventory;
+use crate::awbc_lower::inventory::{AwbcInventory, AwbcLowerDiagnostic};
+use crate::awbc_lower::table_index;
 use arcweft_core::awbc::schema::{AwbcContentUnitId, AwbcDialogueMark, AwbcLineTaskGroupId};
-use arcweft_core::plan::RuntimeDialogueContentPlan;
+use arcweft_core::plan::{RuntimeDialogueContentPlan, RuntimePlan};
+use arcweft_core::runtime_id::RuntimeLocalDeclarationId;
 
 /// Dialogue/content side of AWBC lowering.
 pub struct AwbcLineLowerer<'a> {
@@ -12,11 +14,11 @@ impl<'a> AwbcLineLowerer<'a> {
         Self { inventory }
     }
 
-    pub fn content_for_line(
+    pub fn content_for_line<'plan>(
         &mut self,
         content: &RuntimeDialogueContentPlan,
-        line_task_group: Option<AwbcLineTaskGroupId>,
-    ) -> Result<AwbcContentUnitId, crate::awbc_lower::inventory::AwbcLowerDiagnostic> {
+        plan: &'plan RuntimePlan,
+    ) -> Result<(AwbcContentUnitId, &'plan [RuntimeLocalDeclarationId]), AwbcLowerDiagnostic> {
         let line = content.line().public_label().into_string();
         let Some(_template) = self
             .inventory
@@ -31,19 +33,23 @@ impl<'a> AwbcLineLowerer<'a> {
                 ),
             ));
         };
-        if let Some(group) = line_task_group
-            && self
-                .inventory
-                .program
-                .line_task_groups
-                .get(group.index())
-                .is_none()
-        {
-            return Err(crate::awbc_lower::inventory::AwbcLowerDiagnostic::error(
-                format!("dialogue.line.{line}"),
-                "dialogue content references a missing line-task group",
-            ));
-        }
+        // The admitted plan owns both the group ordinal and its captures.
+        // A reference can be emitted before that group's AWBC body is lowered.
+        let (line_task_group, captures) = match content.line_task_group() {
+            Some(group) => {
+                let row = plan.line_task_groups().get(group.index()).ok_or_else(|| {
+                    AwbcLowerDiagnostic::error(
+                        format!("dialogue.line.{line}"),
+                        "dialogue content references a missing RuntimePlan line-task group",
+                    )
+                })?;
+                (
+                    Some(AwbcLineTaskGroupId(table_index(group.index()))),
+                    row.captures(),
+                )
+            }
+            None => (None, &[][..]),
+        };
         let id = self
             .inventory
             .intern_content_unit(&content.key(), line_task_group)?;
@@ -60,6 +66,6 @@ impl<'a> AwbcLineLowerer<'a> {
             unit.marks = marks;
             unit.effect_site_count = content.effect_site_count().get();
         }
-        Ok(id)
+        Ok((id, captures))
     }
 }

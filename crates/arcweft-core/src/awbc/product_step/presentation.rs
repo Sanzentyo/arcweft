@@ -5,7 +5,6 @@ use super::snapshot::{
     AwbcProductExecutorSnapshot, AwbcProductLineTaskWorkInstanceSnapshot,
 };
 use super::*;
-use crate::awbc::fiber::FiberStateError;
 use crate::presentation::resources::{
     PresentationBanks, PresentationBody, PresentationExecutionAdmission, PresentationExecutionRole,
 };
@@ -15,7 +14,6 @@ struct ProductPresentationContour<'a, F> {
     program: &'a crate::awbc::schema::AwbcProgram,
     banks: PresentationExecutionAdmission<'a>,
     receivers: dialogue::ProductDialogueReceivers<'a, F>,
-    has_active_dialogue: bool,
 }
 
 impl<'a, V, O, N, B, R, G> ProductPresentationContour<'a, FiberState<V, O, N, B, R, G>> {
@@ -27,7 +25,6 @@ impl<'a, V, O, N, B, R, G> ProductPresentationContour<'a, FiberState<V, O, N, B,
             program,
             banks,
             receivers: dialogue::ProductDialogueReceivers::default(),
-            has_active_dialogue: false,
         }
     }
 
@@ -39,7 +36,7 @@ impl<'a, V, O, N, B, R, G> ProductPresentationContour<'a, FiberState<V, O, N, B,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         self.banks
             .register_fiber(fiber.instance, fiber.presentation_bank(), role, admission)?;
-        Ok(self.receivers.register_fiber(fiber)?)
+        Ok(self.receivers.register_fiber(fiber, false)?)
     }
 
     fn register_dialogue<E, L, P, H>(
@@ -54,18 +51,15 @@ impl<'a, V, O, N, B, R, G> ProductPresentationContour<'a, FiberState<V, O, N, B,
         >,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
-        // The current step scheduler can drive only one active reducer. Keep
-        // this execution restriction separate from the receiver graph.
-        if std::mem::replace(&mut self.has_active_dialogue, true) {
-            return Err(FiberStateError::InvalidDialogueReceiver { activation }.into());
-        }
         self.banks.admit_dialogue(activation, admission)?;
         if let Some(fiber) = frame.activation_fiber() {
-            self.register_fiber(
-                fiber,
+            self.banks.register_fiber(
+                fiber.instance,
+                fiber.presentation_bank(),
                 PresentationExecutionRole::Dialogue(activation),
                 admission,
             )?;
+            self.receivers.register_fiber(fiber, true)?;
         }
         // The bank/allocator and the original activation root authenticate
         // the frame before any suspension on that frame can supply an edge.

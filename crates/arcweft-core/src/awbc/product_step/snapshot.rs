@@ -2023,20 +2023,50 @@ impl AwbcProductExecutorSnapshot {
             .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                 message: error.to_string(),
             })?;
-        let mut active_dialogue = None;
+        let mut dialogue_children = BTreeMap::<_, Vec<_>>::new();
+        for child in &snapshot.child_fibers {
+            let activation = match &child.owner {
+                AwbcProductChildFiberOwnerSnapshot::LineTask { tag, policy, .. } => match &tag
+                    .instance
+                {
+                    AwbcProductLineTaskWorkInstanceSnapshot::Activation(id)
+                        if policy.join != AwbcProductLineTaskJoinSnapshot::Detached =>
+                    {
+                        id
+                    }
+                    AwbcProductLineTaskWorkInstanceSnapshot::Scheduled(token) => token.activation(),
+                    AwbcProductLineTaskWorkInstanceSnapshot::Activation(_) => continue,
+                },
+                AwbcProductChildFiberOwnerSnapshot::Deferred { activation, .. }
+                | AwbcProductChildFiberOwnerSnapshot::ScopedDeferred { activation, .. } => {
+                    activation
+                }
+                _ => continue,
+            };
+            if snapshot.dialogues.active_line(activation).is_none() {
+                let message = match child.owner {
+                    AwbcProductChildFiberOwnerSnapshot::LineTask { .. } => {
+                        "joined line-owned child fiber has no active dialogue owner"
+                    }
+                    _ => "deferred child snapshot has no active dialogue registration owner",
+                };
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message: message.into(),
+                });
+            }
+            dialogue_children
+                .entry(*activation)
+                .or_default()
+                .push(child);
+        }
+        let mut all_child_tokens = BTreeSet::new();
         snapshot
             .dialogues
-            .try_visit_active(|activation, frame, line| {
-                frame
-                    .admit_retained(program, admission)
-                    .map_err(|error| error.to_string())?;
-                if active_dialogue.replace((activation, frame, line)).is_some() {
-                    return Err("Product snapshot repeats an active dialogue".to_owned());
-                }
-                Ok(())
-            })
-            .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
-        if let Some((activation, active, shared_line)) = active_dialogue {
+            .try_visit_active(|activation, active, shared_line| {
+            active.admit_retained(program, admission).map_err(|error| {
+                AwbcProductStepBuildError::RestoreSnapshot { message: error.to_string() }
+            })?;
+            let children = dialogue_children.get(activation).map(Vec::as_slice).unwrap_or_default();
             let reducer = active.line_task();
             let content = program
                 .content_units
@@ -2226,6 +2256,8 @@ impl AwbcProductExecutorSnapshot {
                         &suspension.reason,
                         crate::awbc::fiber::FiberSuspensionReason::DurationWait(_)
                             | crate::awbc::fiber::FiberSuspensionReason::BudgetYield
+                            | crate::awbc::fiber::FiberSuspensionReason::Dialogue { .. }
+                            | crate::awbc::fiber::FiberSuspensionReason::DialogueActive { .. }
                     ) => {}
                 (None, Some(suspension))
                     if matches!(
@@ -2248,7 +2280,7 @@ impl AwbcProductExecutorSnapshot {
                 (None, None) => {}
             }
             let mut actual_child_custody = BTreeSet::new();
-            for child in &snapshot.child_fibers {
+            for child in children {
                 let AwbcProductChildFiberOwnerSnapshot::LineTask { content, tag, .. } =
                     &child.owner
                 else {
@@ -2283,8 +2315,7 @@ impl AwbcProductExecutorSnapshot {
                 .unwrap_or_default();
             let mut actual_joined = BTreeSet::new();
             let mut actual_child_tokens = BTreeMap::new();
-            let mut all_child_tokens = BTreeSet::new();
-            for child in &snapshot.child_fibers {
+            for child in children {
                 let AwbcProductChildFiberOwnerSnapshot::LineTask {
                     content,
                     tag,
@@ -2338,7 +2369,7 @@ impl AwbcProductExecutorSnapshot {
                 });
             }
             let mut actual_deferred_pair = None;
-            for child in &snapshot.child_fibers {
+            for child in children {
                 let AwbcProductChildFiberOwnerSnapshot::Deferred {
                     content,
                     activation,
@@ -2395,7 +2426,7 @@ impl AwbcProductExecutorSnapshot {
             }
             let activation_fiber = active.activation_fiber();
             let mut actual_scoped_inflight = None;
-            for child in &snapshot.child_fibers {
+            for child in children {
                 let AwbcProductChildFiberOwnerSnapshot::ScopedDeferred {
                     content,
                     activation,
@@ -2583,12 +2614,8 @@ impl AwbcProductExecutorSnapshot {
                             .to_owned(),
                 });
             }
-        } else if !deferred_children.is_empty() {
-            return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                message: "deferred child snapshot has no active dialogue registration owner"
-                    .to_owned(),
-            });
-        }
+            Ok::<_, AwbcProductStepBuildError>(())
+        })?;
         if let Some(active) = &snapshot.active_choice {
             Self::validate_active_choice(program, active)?;
         }

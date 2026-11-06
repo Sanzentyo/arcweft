@@ -618,6 +618,13 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
             .collect()
     }
 
+    pub(crate) fn active_frames(&self) -> impl Iterator<Item = &F> {
+        self.entries.values().filter_map(|entry| match entry {
+            RuntimeDialogueRegistryEntry::Active { frame, .. } => Some(frame),
+            _ => None,
+        })
+    }
+
     #[must_use]
     pub(crate) fn has_active_or_inflight(&self) -> bool {
         self.entries.values().any(|entry| {

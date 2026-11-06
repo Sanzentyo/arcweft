@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 /// The actual reached owner against which an inert registry row is admitted.
 /// Execution obtains this from a live frame or an activation transaction.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub(crate) enum RuntimeRegistryOwner {
     NativeFlow,
     AwbcFlow {

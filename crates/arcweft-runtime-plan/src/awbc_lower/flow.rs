@@ -313,7 +313,9 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         }
         AwbcTraitMethodLowerer::new(self.inventory, self.plan).lower_plan();
         for group in self.plan.line_task_groups() {
-            let _ = self.lower_line_task_group(group);
+            if self.lower_line_task_group(group).is_none() {
+                return;
+            }
         }
         self.lower_defer_sites();
         for flow in self
@@ -1308,9 +1310,6 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     ));
                     return;
                 };
-                let group = content_plan
-                    .line_task_group()
-                    .map(|group| AwbcLineTaskGroupId(table_index(group.index())));
                 if let Some(missing) = content_plan
                     .values()
                     .iter()
@@ -1339,8 +1338,8 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     ));
                     return;
                 }
-                let content = match AwbcLineLowerer::new(self.inventory)
-                    .content_for_line(content_plan, group)
+                let (content, group_captures) = match AwbcLineLowerer::new(self.inventory)
+                    .content_for_line(content_plan, self.plan)
                 {
                     Ok(content) => content,
                     Err(error) => {
@@ -1348,10 +1347,6 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                         return;
                     }
                 };
-                let group_captures = group
-                    .and_then(|group| self.inventory.program.line_task_groups.get(group.index()))
-                    .map(|group| group.captures.clone())
-                    .unwrap_or_default();
                 let line_task_captures = group_captures
                     .iter()
                     .map(|capture| {
