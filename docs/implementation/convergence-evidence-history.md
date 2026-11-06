@@ -15062,3 +15062,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Registry source custody before snapshot projection
 
 - Source fc7aaa4ffe8773c9df17a3d570c21bbf909da42b で、型と資源上限の検査後、保存用の行を作る前に元のスロットと発行元を照合する。誤ったスロットは型付きの所有権エラーで拒否され、行は追加されない。Native とデコード済みAWBCの取消コールバックが破棄直後の行の不在を確認した。対象68件が通過し、構造ゲートのブロッキング違反は0件、Core の全ターゲット Clippy は警告ありで終了コード0だった。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Registry source custody owner verification
+
+- Source fc7aaa4ffe8773c9df17a3d570c21bbf909da42b の Core、Sema、Runtime Plan、Compiler の対象4クレートで4,080件通過、1件スキップ。実行IDは列挙結果と一致し、ソース入力3638件のハッシュは実行前後で一致した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。

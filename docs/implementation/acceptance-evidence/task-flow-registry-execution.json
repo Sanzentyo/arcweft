@@ -16143,5 +16143,105 @@
         }
       ]
     }
+  },
+  "registryInputCustodyOwnerVerification": {
+    "source": "fc7aaa4ffe8773c9df17a3d570c21bbf909da42b",
+    "packages": [
+      "arcweft-compiler",
+      "arcweft-core",
+      "arcweft-lang-sema",
+      "arcweft-runtime-plan"
+    ],
+    "passed": 4080,
+    "failed": 0,
+    "skipped": 1,
+    "catalogCaseDrift": 0,
+    "receipt": {
+      "version": 1,
+      "source": "fc7aaa4ffe8773c9df17a3d570c21bbf909da42b",
+      "catalogCommand": [
+        "cargo",
+        "nextest",
+        "list",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "-p",
+        "arcweft-lang-sema",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--message-format",
+        "json"
+      ],
+      "catalogExit": 0,
+      "runtimeCommand": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "-p",
+        "arcweft-lang-sema",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 0,
+      "summary": [
+        "Summary [  96.847s] 4080 tests run: 4080 passed, 1 skipped"
+      ],
+      "sourceInputs": 3638,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-06T18:15:37.1680644Z",
+      "finishedAt": "2026-11-06T18:18:19.2316095Z"
+    },
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-input-before-snapshot-owner.raw.zip",
+      "sha256": "7c78b6f0720872961a878a829bef694f57e1394dcc2f5efb78840c97586b390d",
+      "entries": [
+        {
+          "entry": "registry-input-before-snapshot-owner-20261107.catalog.json",
+          "bytes": 699266,
+          "sha256": "8067750f5259179ed8d9e0583135811cca67dded0ce1210f9b952f9faa0aec4f"
+        },
+        {
+          "entry": "registry-input-before-snapshot-owner-20261107.catalog.log",
+          "bytes": 100141,
+          "sha256": "3add172f86fbea4b29054ff0cbb4a5f9b2b2364afa4edd4ee916296d7f51fc58"
+        },
+        {
+          "entry": "registry-input-before-snapshot-owner-20261107.runtime.log",
+          "bytes": 1359143,
+          "sha256": "54a6f956dbc8fbd09978e9f43914da7b213b4dd3e7f74104a7b3e0defa0e9b12"
+        },
+        {
+          "entry": "registry-input-before-snapshot-owner-20261107.source-freeze.json",
+          "bytes": 599451,
+          "sha256": "7a2ff6a226e3132e026dd75d5f57ab8cce51d2f84810a14d529bd9e7d44fc88a"
+        },
+        {
+          "entry": "registry-input-before-snapshot-owner-20261107.receipt.json",
+          "bytes": 1093,
+          "sha256": "1037e29bb319f5f02aec853341d106128ffd3b880c8dff7b9ae36881c73bf326"
+        }
+      ]
+    }
   }
 }
