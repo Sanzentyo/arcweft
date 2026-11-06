@@ -2664,12 +2664,10 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         }
     }
 
-    /// Prepares every activation-owned lease for deterministic close without
-    /// touching executor-owned child fibers. Unstarted scheduled packets are
-    /// first moved back to line scope so their value graph has one owner;
-    /// running child custody remains `ChildScope` until that exact child
-    /// reports completion. The complete ledger and command journal advance as
-    /// one candidate transaction.
+    /// Prepares activation-owned leases for deterministic close. Unstarted
+    /// scheduled work is cancelled and its captures are staged for release.
+    /// The line consumes its capture slots when it commits the cleanup journal
+    /// and ledger. A running child retains its custody until it reports completion.
     pub(crate) fn prepare_handle_unwind(
         &mut self,
         activation: &DialogueActivationId,
@@ -2678,23 +2676,13 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         if self.has_pending_deferred_work() {
             return Err(LineRuntimeError::DeferredRegistrationsRemain);
         }
-        let unstarted = self
-            .scheduled
-            .iter()
-            .enumerate()
-            .filter(|scheduled| {
-                matches!(
-                    &scheduled.1.custody,
-                    RuntimeScheduledCaptureCustody::Packet(_)
-                )
-            })
-            .map(|(index, _)| index)
-            .collect::<Vec<_>>();
         let mut ledger = self.ledger.clone();
-        for &index in &unstarted {
+        for scheduled in self.scheduled.iter().filter(|scheduled| {
+            matches!(scheduled.custody, RuntimeScheduledCaptureCustody::Packet(_))
+        }) {
             stage_unstarted_scheduled_completion(
                 &mut ledger,
-                &self.scheduled[index],
+                scheduled,
                 RuntimeScheduledState::Cancelled,
             )?;
         }
@@ -2730,10 +2718,15 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             ledger.drop_owned(lease.token(), lease.owner(), &mut commands)?;
         }
         self.record_commands(activation, commands)?;
-        for index in unstarted {
-            self.scheduled[index]
-                .move_packet_to_line_scope(RuntimeScheduledState::Cancelled)
-                .expect("checked scheduled packet transition remains valid");
+        for scheduled in &mut self.scheduled {
+            match &mut scheduled.custody {
+                RuntimeScheduledCaptureCustody::Packet(_) => {
+                    scheduled.custody = RuntimeScheduledCaptureCustody::LineScope(Box::new([]));
+                    scheduled.state = RuntimeScheduledState::Cancelled;
+                }
+                RuntimeScheduledCaptureCustody::LineScope(slots) => *slots = Box::new([]),
+                RuntimeScheduledCaptureCustody::ChildFiber(_) => {}
+            }
         }
         self.ledger = ledger;
         Ok(())

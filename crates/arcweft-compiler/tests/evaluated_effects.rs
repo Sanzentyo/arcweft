@@ -4078,6 +4078,121 @@ entry cli @entry.main {{ goto @flow.main }}
     }
 }
 
+#[test]
+fn decoded_awbc_line_close_saves_between_scheduled_capture_releases() {
+    use arcweft_core::{
+        engine::{FlowExit, FlowFiberStatus},
+        plan::FlowEvent,
+        presentation::{
+            RuntimeLineHostCommand, RuntimeLineHostOutcome, RuntimeStageCommand,
+            RuntimeStageCommandOutcome,
+        },
+        pure::VmRuntimePureCallBackend,
+        step::{RuntimeStepInput, RuntimeStepOptions},
+        time::TickId,
+    };
+
+    let source = r#"
+pub character alice { display = "Alice" }
+flow main() -> Unit {
+    alice()[Outer[p]]
+    with:
+        let first_actor = alice.stage.acquire(scope=line)
+        let first = at(5s):
+            first_actor.look(.normal)
+        'line.first <- first
+        let second_actor = alice.stage.acquire(scope=line)
+        let second = at(5s):
+            second_actor.look(.normal)
+        'line.second <- second
+}
+entry cli @entry.main { goto @flow.main }
+"#;
+    let (compiled, mut awbc) = nested_awbc_from_compiled(
+        with_attached_dialogue_project_and_visual(
+            source,
+            Some(LINE_HANDLE_CHARACTER_MANIFEST),
+            compile_project,
+        )
+        .unwrap(),
+    );
+    let schema = bind_test_character_dialogue_schema(&compiled, awbc.program_owner());
+    let mut backend = VmRuntimePureCallBackend::default().with_external_calls(
+        arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
+    );
+    let mut input = RuntimeStepInput::default();
+    let mut acquired = Vec::new();
+    let mut releases = Vec::new();
+    let mut restored_partial_release = false;
+    for tick in 0..128 {
+        input.tick = TickId(tick);
+        let first_ack = releases.len() == 2;
+        if first_ack || restored_partial_release {
+            input.line_outcomes.extend(releases.pop());
+        }
+        let result = awbc.step_with_pure_backend(
+            std::mem::take(&mut input),
+            RuntimeStepOptions::default(),
+            &mut backend,
+        );
+        assert!(
+            result.output.diagnostics.is_empty(),
+            "tick {tick}: {:?}",
+            result.output.diagnostics
+        );
+        for event in result.output.flow_events {
+            if let FlowEvent::DialogueLine { activation, .. } = event {
+                input.dialogue_advances.push(activation);
+            }
+        }
+        for request in result.output.requests.line_commands {
+            match request {
+                RuntimeLineHostCommand::Stage(RuntimeStageCommand::AcquireActor {
+                    command,
+                    actor,
+                    ..
+                }) => {
+                    assert!(acquired.len() < 2 && !acquired.contains(&actor));
+                    acquired.push(actor.clone());
+                    input.line_outcomes.push(RuntimeLineHostOutcome::Stage(
+                        RuntimeStageCommandOutcome::Acquired { command, actor },
+                    ));
+                }
+                RuntimeLineHostCommand::Stage(RuntimeStageCommand::ReleaseActor {
+                    command,
+                    actor,
+                }) => {
+                    let index = acquired
+                        .iter()
+                        .position(|token| token == &actor)
+                        .expect("one release per acquired actor");
+                    acquired.swap_remove(index);
+                    assert_eq!(command.activation(), actor.activation());
+                    releases.push(RuntimeLineHostOutcome::Stage(
+                        RuntimeStageCommandOutcome::ReleasedActor { command, actor },
+                    ));
+                }
+                other => panic!("unexpected dialogue command: {other:?}"),
+            }
+        }
+        let active;
+        (awbc, active) = roundtrip_nested_awbc_checking(awbc, |executor, _| executor);
+        if first_ack {
+            assert_eq!(active, 1, "the line still owns the pending release");
+            restored_partial_release = true;
+        }
+        match result.fiber_status {
+            FlowFiberStatus::Dialogue(_) | FlowFiberStatus::Running => {}
+            FlowFiberStatus::Done(FlowExit::Done) => {
+                assert!(restored_partial_release && releases.is_empty() && acquired.is_empty());
+                return;
+            }
+            status => panic!("line close stopped at tick {tick}: {status:?}"),
+        }
+    }
+    panic!("line close did not finish after both release acknowledgements");
+}
+
 fn native_nested_line_handle_transfer(source: &str, expected_lines: usize) {
     native_line_handle_execution(
         source,

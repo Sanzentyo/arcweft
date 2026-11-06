@@ -755,6 +755,9 @@ with that issuer. For a scheduled cue, the scheduler cancels an unstarted
 packet or joins the exact running child before the issuer releases the cue.
 An unstarted packet owns its captures until the child takes them. Restore
 matches that packet's custody separately from the live child's slots.
+Line closure consumes the captures still held by the line when it commits
+cleanup. The issuer's ledger and command journal retain pending releases
+until the corresponding host acknowledgements arrive.
 
 Context-free effect dispatch checks that requirement before evaluating or moving
 operands. A rejected write terminates execution before subsequent instructions
