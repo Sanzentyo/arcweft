@@ -18,10 +18,13 @@ use arcweft_dialogue::{
     CharacterDialoguePolicyTypeGraph, CharacterDialoguePolicyTypeSchema,
     CharacterDialoguePolicyVariantOwner,
 };
-use arcweft_id::{LifetimeRegistryKey, LifetimeScopeKind};
+use arcweft_id::{EffectId, LifetimeRegistryKey, LifetimeScopeKind};
 use arcweft_lang_hir::{
     body_edges::{HirBodyChild, HirBodyProjection},
-    expr::{HirBinaryOp, HirExprKind, HirExpressionOwnedBodyRole, HirExpressionOwnedChild},
+    expr::{
+        HirBinaryOp, HirExprKind, HirExpressionOwnedBodyRole, HirExpressionOwnedChild,
+        HirLinePlanStatementRole, HirNestedExpressionPathSegment,
+    },
     identity::{ExprId, LocalId, PatternId, StmtId},
     module::HirModule,
     pattern::{
@@ -35,7 +38,7 @@ use arcweft_lang_hir::{
         HirDeclarationParameterRootChild, HirExpressionBindingRole, HirSemanticPathOwnerId,
     },
     stmt::{
-        HirConditionalElseBranch, HirContextualStmtBody, HirStmtEvaluationPlan,
+        HirConditionalElseBranch, HirContextualStmtBody, HirStmtEvaluationPlan, HirStmtKind,
         HirStmtMatchArmBody, HirStmtOrderedPairPlanKind, HirStmtSelectEvaluationPlan,
         HirStmtSelectHeadEvaluation, HirStmtValuePlanKind,
     },
@@ -44,9 +47,10 @@ use arcweft_lang_hir::{
 use thiserror::Error;
 
 use crate::callable::{
-    CallableCandidateId, CallableInstantiationDigest, CheckedCallArgumentSlotSource,
-    CheckedCallOperandDestination, CheckedCallReceiverProjection, CheckedCapacityOperation,
-    CheckedProjectFunctionInstanceSolution, LineScheduleCallableId, StageMethodId,
+    CallableCandidateId, CallableInstantiationDigest, CheckedCallApplicationCore,
+    CheckedCallArgumentSlotSource, CheckedCallOperandDestination, CheckedCallReceiverProjection,
+    CheckedCapacityOperation, CheckedProjectFunctionInstanceSolution, LineScheduleCallableId,
+    StageMethodId,
 };
 use crate::checked_rich_text::{
     CheckedDialogueToken, CheckedDisplayConformance, CheckedDisplayInstantiationError,
@@ -66,7 +70,7 @@ pub use access::{
     CheckedDisplacedField, CheckedLocalAccess, CheckedLocalPlaceAccess, CheckedLocalPlaceMode,
     CheckedPlaceDisplacement, CheckedPlaceInitialization,
 };
-use flow::{Availability, Event, NodeId, OwnershipFlow, Violation};
+use flow::{Availability, Event, NodeId, OwnershipFlow, RegistryScheduleId, Violation};
 
 /// A builder-issued runtime local with no HIR LocalId. The checked semantic
 /// identity prevents two placeholders with the same spelling from aliasing.
@@ -804,6 +808,14 @@ fn registry_read_requiring_proof(
     .then_some(read)
 }
 
+fn registry_write_effects(effects: &crate::effects::EffectSet) -> Box<[EffectId]> {
+    effects
+        .iter()
+        .filter(|effect| effect.path() == EffectId::STATE_WRITE_LABEL)
+        .cloned()
+        .collect()
+}
+
 impl CheckedLocalUseError {
     fn registry_read(
         expression: ExprId,
@@ -819,6 +831,13 @@ impl CheckedLocalUseError {
             }
         }
     }
+}
+
+#[derive(Clone, Copy)]
+enum RegistryConcurrency {
+    Sequential,
+    Unknown,
+    Scheduled(RegistryScheduleId),
 }
 
 struct LocalUseChecker<'a> {
@@ -839,7 +858,7 @@ struct LocalUseChecker<'a> {
     instance: Option<CheckedLocalUseInstantiation<'a>>,
     flow: OwnershipFlow,
     registry_proofs: bool,
-    registry_may_interleave: bool,
+    registry_concurrency: RegistryConcurrency,
     loops: Vec<OwnershipLoop>,
     carriers: Vec<(ExprId, NodeId)>,
     outputs: Vec<(ExprId, NodeId)>,
@@ -888,7 +907,7 @@ impl<'a> LocalUseChecker<'a> {
             instance,
             flow: OwnershipFlow::default(),
             registry_proofs,
-            registry_may_interleave: false,
+            registry_concurrency: RegistryConcurrency::Sequential,
             loops: Vec::new(),
             carriers: Vec::new(),
             outputs: Vec::new(),
@@ -1028,12 +1047,7 @@ impl<'a> LocalUseChecker<'a> {
         if !self.registry_proofs {
             return;
         }
-        use arcweft_id::EffectId;
-        let writes = effects
-            .iter()
-            .filter(|effect| effect.path() == EffectId::STATE_WRITE_LABEL)
-            .cloned()
-            .collect::<Box<[_]>>();
+        let writes = registry_write_effects(effects);
         if !writes.is_empty() {
             let event = if deferred {
                 Event::DeferredRegistryWrites(writes)
@@ -1133,7 +1147,8 @@ impl<'a> LocalUseChecker<'a> {
         let carriers = std::mem::take(&mut self.carriers);
         let outputs = std::mem::take(&mut self.outputs);
         let guards = std::mem::take(&mut self.guard_bindings);
-        let registry_may_interleave = std::mem::replace(&mut self.registry_may_interleave, true);
+        let registry_concurrency =
+            std::mem::replace(&mut self.registry_concurrency, RegistryConcurrency::Unknown);
         let mut state = self.flow.entry();
         let result = body(self, &mut state);
         self.active_receiver_loans = loans;
@@ -1141,7 +1156,7 @@ impl<'a> LocalUseChecker<'a> {
         self.carriers = carriers;
         self.outputs = outputs;
         self.guard_bindings = guards;
-        self.registry_may_interleave = registry_may_interleave;
+        self.registry_concurrency = registry_concurrency;
         result
     }
 
@@ -2299,10 +2314,14 @@ impl<'a> LocalUseChecker<'a> {
                     .expression(owner)
                     .ok_or(CheckedLocalUseError::InvalidTopology)?;
                 if let Some(read) = registry_read_requiring_proof(checked) {
-                    // A sibling callback may replace this shared row between
-                    // operations. A callback-local write cannot certify its type.
-                    if self.registry_may_interleave {
-                        self.flow.append(state, Event::RegistryBoundary);
+                    match self.registry_concurrency {
+                        RegistryConcurrency::Sequential => {}
+                        RegistryConcurrency::Unknown => {
+                            self.flow.append(state, Event::RegistryBoundary);
+                        }
+                        RegistryConcurrency::Scheduled(schedule) => {
+                            self.flow.append(state, Event::InterleaveRegistry(schedule));
+                        }
                     }
                     let ty = checked
                         .source_value_type()
@@ -2858,55 +2877,98 @@ impl<'a> LocalUseChecker<'a> {
                 Some(CheckedExpressionResolution::DialogueApplication { .. })
             )
         ) {
-            self.flow
-                .append(state, Event::EnterRegistry(LifetimeScopeKind::Line));
-            let exit = self.flow.detached();
-            self.outputs.push((owner, exit));
-            for edge in expression
-                .kind()
-                .expression_owned_child_edges()
-                .map_err(|_| CheckedLocalUseError::InvalidTopology)?
-            {
-                let HirExpressionOwnedBodyRole::DialogueLinePlanStatement { path, .. } =
-                    edge.role()
-                else {
-                    continue;
-                };
-                let grouped = path.segments().len() > 1;
-                let registry_may_interleave = self.registry_may_interleave;
-                let bypass = grouped.then(|| state.clone());
-                if grouped {
-                    self.registry_may_interleave = true;
-                    self.flow.append(state, Event::RegistryBoundary);
-                }
-                match edge.child() {
-                    HirExpressionOwnedChild::Statement(statement) => {
-                        self.statement(statement, state)?;
-                    }
-                    HirExpressionOwnedChild::Body(child) => match child.child() {
-                        HirBodyChild::Statement(statement) => {
-                            self.statement(statement, state)?;
-                        }
-                        HirBodyChild::Expression(expression) => {
-                            self.expression(expression, state)?;
-                        }
-                    },
-                    HirExpressionOwnedChild::Pattern(_) => {}
-                }
-                if let Some(bypass) = bypass {
-                    self.registry_may_interleave = registry_may_interleave;
-                    *state = bypass.join(state.clone());
-                    self.flow.append(state, Event::RegistryBoundary);
-                }
-            }
-            self.outputs
-                .pop()
-                .ok_or(CheckedLocalUseError::InvalidTopology)?;
-            self.flow.connect(state, exit);
-            *state = Availability::at(exit);
-            self.flow.append(state, Event::RegistryBoundary);
+            self.emit_dialogue_line_actions(owner, expression.kind(), state)?;
         }
         Ok(std::ops::ControlFlow::Continue(()))
+    }
+
+    fn emit_dialogue_line_actions(
+        &mut self,
+        owner: ExprId,
+        expression: &HirExprKind,
+        state: &mut Availability,
+    ) -> Result<(), CheckedLocalUseError> {
+        let mut eager = Vec::new();
+        let mut scheduled = Vec::new();
+        for edge in expression
+            .expression_owned_child_edges()
+            .map_err(|_| CheckedLocalUseError::InvalidTopology)?
+        {
+            let HirExpressionOwnedBodyRole::DialogueLinePlanStatement { path, role } = edge.role()
+            else {
+                continue;
+            };
+            let HirExpressionOwnedChild::Statement(statement) = edge.child() else {
+                return Err(CheckedLocalUseError::InvalidTopology);
+            };
+            if self.analysis.statement(statement).is_none() {
+                continue;
+            }
+            let kind = self
+                .module
+                .resolve_stmt(statement)
+                .map_err(|_| CheckedLocalUseError::InvalidTopology)?
+                .kind();
+            let grouped = path.segments().iter().any(|segment| {
+                matches!(
+                    segment,
+                    HirNestedExpressionPathSegment::LinePlanStartGroupItem { .. }
+                        | HirNestedExpressionPathSegment::LinePlanTogetherGroupItem { .. }
+                )
+            });
+            let scheduled_thread = matches!(kind, HirStmtKind::Expression { expression }
+                if matches!(self.analysis.expression(*expression).map(super::CheckedExpression::resolution), Some(CheckedExpressionResolution::Thread(_))));
+            if grouped
+                || scheduled_thread
+                || matches!(
+                    role,
+                    HirLinePlanStatementRole::On
+                        | HirLinePlanStatementRole::CancelRule
+                        | HirLinePlanStatementRole::Thread
+                )
+                || matches!(
+                    kind,
+                    HirStmtKind::On { .. } | HirStmtKind::CancelRule { .. }
+                )
+            {
+                scheduled.push(statement);
+            } else {
+                eager.push(statement);
+            }
+        }
+
+        self.flow
+            .append(state, Event::EnterRegistry(LifetimeScopeKind::Line));
+        let exit = self.flow.detached();
+        self.outputs.push((owner, exit));
+        let eager_mark = self.flow.mark_registry_events();
+        for statement in eager {
+            self.statement(statement, state)?;
+        }
+        let scheduled_mark = self.flow.mark_registry_events();
+        let concurrency = self.registry_concurrency;
+        let schedule = (self.registry_proofs
+            && matches!(concurrency, RegistryConcurrency::Sequential))
+        .then(|| self.flow.reserve_registry_schedule());
+        self.registry_concurrency =
+            schedule.map_or(RegistryConcurrency::Unknown, RegistryConcurrency::Scheduled);
+        for statement in scheduled {
+            let bypass = state.clone();
+            self.statement(statement, state)?;
+            *state = bypass.join(state.clone());
+        }
+        self.registry_concurrency = concurrency;
+        if let Some(schedule) = schedule {
+            self.flow
+                .seal_registry_schedule(schedule, eager_mark, scheduled_mark)?;
+        }
+        self.outputs
+            .pop()
+            .ok_or(CheckedLocalUseError::InvalidTopology)?;
+        self.flow.connect(state, exit);
+        *state = Availability::at(exit);
+        self.flow.append(state, Event::RegistryBoundary);
+        Ok(())
     }
 
     fn finish_expression_use(
@@ -2920,7 +2982,22 @@ impl<'a> LocalUseChecker<'a> {
                 .call(owner)
                 .and_then(crate::callable::CallTargetFacts::selected_application)
         {
-            if let Some(effects) = application.core().effects().closed_value() {
+            let core = application.core();
+            if let Some(callback) = selected_line_schedule_callback(core)? {
+                let checked = self
+                    .analysis
+                    .expression(callback)
+                    .ok_or(CheckedLocalUseError::InvalidTopology)?;
+                let effects = match checked.source_value_type() {
+                    Some(TypeKind::Function { effects, .. }) => effects.closed_value(),
+                    _ => None,
+                };
+                self.flow.append(
+                    state,
+                    Event::ScheduledRegistryWrites(effects.as_ref().map(registry_write_effects)),
+                );
+            }
+            if let Some(effects) = core.effects().closed_value() {
                 self.forget_registry_writes(&effects, state, false);
             } else {
                 self.flow.append(state, Event::RegistryBoundary);
@@ -2986,9 +3063,11 @@ impl<'a> LocalUseChecker<'a> {
             HirStmtEvaluationPlan::EventBody { .. } | HirStmtEvaluationPlan::CancelRule { .. }
         );
         let bypass = event_body.then(|| state.clone());
-        let registry_may_interleave = self.registry_may_interleave;
-        if event_body {
-            self.registry_may_interleave = true;
+        let registry_concurrency = self.registry_concurrency;
+        let unknown_event_body =
+            event_body && !matches!(registry_concurrency, RegistryConcurrency::Scheduled(_));
+        if unknown_event_body {
+            self.registry_concurrency = RegistryConcurrency::Unknown;
             self.flow.append(state, Event::RegistryBoundary);
         }
         match plan {
@@ -3351,8 +3430,10 @@ impl<'a> LocalUseChecker<'a> {
             }
         }
         if let Some(bypass) = bypass {
-            self.registry_may_interleave = registry_may_interleave;
             *state = bypass.join(state.clone());
+        }
+        if unknown_event_body {
+            self.registry_concurrency = registry_concurrency;
             self.flow.append(state, Event::RegistryBoundary);
         }
         // Dead statements remain checked, but cannot revive either a Never
@@ -3442,34 +3523,8 @@ fn selected_scheduled_callback_roots(
         let Some(application) = call.selected_application() else {
             continue;
         };
-        let core = application.core();
-        if !matches!(
-            core.candidates().selected().id(),
-            CallableCandidateId::LineSchedule(LineScheduleCallableId::At)
-        ) || core.current_group().get() != 1
-        {
+        let Some(callback) = selected_line_schedule_callback(application.core())? else {
             continue;
-        }
-        let mut callbacks = core
-            .execution()
-            .arguments()
-            .iter()
-            .flat_map(|argument| argument.slots())
-            .filter(|slot| {
-                matches!(
-                    slot.destination(),
-                    CheckedCallOperandDestination::Parameter(coordinate)
-                        if coordinate.group().get() == 1 && coordinate.parameter().get() == 0
-                )
-            });
-        let Some(slot) = callbacks.next() else {
-            return Err(CheckedLocalUseError::InvalidTopology);
-        };
-        if callbacks.next().is_some() {
-            return Err(CheckedLocalUseError::InvalidTopology);
-        }
-        let CheckedCallArgumentSlotSource::Expression(callback) = slot.source().raw() else {
-            return Err(CheckedLocalUseError::InvalidTopology);
         };
         // Explicit and implicit callable captures are already sealed by their
         // own selected fact. Only the accepted non-closure callback forms need
@@ -3488,6 +3543,34 @@ fn selected_scheduled_callback_roots(
         }
     }
     Ok(sites)
+}
+
+fn selected_line_schedule_callback(
+    core: &CheckedCallApplicationCore,
+) -> Result<Option<ExprId>, CheckedLocalUseError> {
+    if !matches!(
+        core.candidates().selected().id(),
+        CallableCandidateId::LineSchedule(LineScheduleCallableId::At)
+    ) || core.current_group().get() != 1
+    {
+        return Ok(None);
+    }
+    let mut callbacks = core
+        .execution()
+        .arguments()
+        .iter()
+        .flat_map(|argument| argument.slots())
+        .filter(|slot| {
+            matches!(slot.destination(), CheckedCallOperandDestination::Parameter(coordinate)
+            if coordinate.group().get() == 1 && coordinate.parameter().get() == 0)
+        });
+    let (Some(slot), None) = (callbacks.next(), callbacks.next()) else {
+        return Err(CheckedLocalUseError::InvalidTopology);
+    };
+    match slot.source().raw() {
+        CheckedCallArgumentSlotSource::Expression(callback) => Ok(Some(callback)),
+        _ => Err(CheckedLocalUseError::InvalidTopology),
+    }
 }
 
 /// Selected capacity operations lower their receiver as a mutable

@@ -106,14 +106,12 @@ impl RegistryFacts {
 
     pub(super) fn invalidate_writes(
         &mut self,
-        effects: &[EffectId],
+        covers: impl Fn(&EffectId) -> bool,
         deferred: bool,
         keys: &BTreeMap<Arc<LifetimeRegistryKey>, EffectId>,
     ) {
         for (key, required) in keys {
-            if *self.fact(key) == RegistryFact::DeferredWrite
-                || !effects.iter().any(|effect| effect.covers(required))
-            {
+            if *self.fact(key) == RegistryFact::DeferredWrite || !covers(required) {
                 continue;
             }
             let fact = if deferred {
@@ -143,5 +141,64 @@ impl RegistryFacts {
             joined.set(key, self.fact(key).join(other.fact(key)));
         }
         *self = joined;
+    }
+}
+
+/// Possible mutations by the children of one selected line activation.
+/// A typed replacement can change absence to possible presence. It cannot
+/// establish definite presence or remove an already registered value.
+#[derive(Default)]
+pub(super) struct RegistryInterference {
+    typed: BTreeMap<Arc<LifetimeRegistryKey>, Option<Arc<TypeKind>>>,
+    opaque: BTreeSet<EffectId>,
+    open: bool,
+}
+
+impl RegistryInterference {
+    pub(super) fn write(&mut self, key: &Arc<LifetimeRegistryKey>, ty: &Arc<TypeKind>) {
+        self.typed
+            .entry(Arc::clone(key))
+            .and_modify(|previous| {
+                if previous.as_ref() != Some(ty) {
+                    *previous = None;
+                }
+            })
+            .or_insert_with(|| Some(Arc::clone(ty)));
+    }
+
+    pub(super) fn opaque_writes(&mut self, effects: Option<&[EffectId]>) {
+        if let Some(effects) = effects {
+            self.opaque.extend(effects.iter().cloned());
+        } else {
+            self.open = true;
+        }
+    }
+
+    pub(super) fn apply(
+        &self,
+        facts: &mut RegistryFacts,
+        keys: &BTreeMap<Arc<LifetimeRegistryKey>, EffectId>,
+    ) {
+        if self.open {
+            facts.forget();
+            return;
+        }
+        for (key, ty) in &self.typed {
+            if keys.contains_key(key) && *facts.fact(key) != RegistryFact::DeferredWrite {
+                let possible = match ty {
+                    Some(ty) => RegistryFact::Present(Arc::clone(ty)),
+                    None => RegistryFact::Unknown,
+                };
+                let joined = facts.fact(key).join(&possible);
+                facts.set(key, joined);
+            }
+        }
+        if !self.opaque.is_empty() {
+            facts.invalidate_writes(
+                |required| self.opaque.iter().any(|effect| effect.covers(required)),
+                false,
+                keys,
+            );
+        }
     }
 }

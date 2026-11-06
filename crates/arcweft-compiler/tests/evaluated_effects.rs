@@ -2800,11 +2800,28 @@ entry cli @entry.main { goto @flow.main }
 }
 
 fn execute_dialogue_result_with_mark(
-    mut step: impl FnMut(
+    step: impl FnMut(
         arcweft_core::step::RuntimeStepInput,
         arcweft_core::step::RuntimeStepOptions,
     ) -> arcweft_core::step::RuntimeStepResult,
     deliver_mark: bool,
+    backend: &str,
+) -> (Vec<String>, bool) {
+    let first_mark = RuntimeDialogueMarkId::from_zero_based(0).unwrap();
+    let marks = if deliver_mark {
+        std::slice::from_ref(&first_mark)
+    } else {
+        &[]
+    };
+    execute_dialogue_result_with_marks(step, marks, backend)
+}
+
+fn execute_dialogue_result_with_marks(
+    mut step: impl FnMut(
+        arcweft_core::step::RuntimeStepInput,
+        arcweft_core::step::RuntimeStepOptions,
+    ) -> arcweft_core::step::RuntimeStepResult,
+    marks: &[RuntimeDialogueMarkId],
     backend: &str,
 ) -> (Vec<String>, bool) {
     use arcweft_core::{
@@ -2817,7 +2834,7 @@ fn execute_dialogue_result_with_mark(
         time::TickId,
     };
 
-    let mark = RuntimeDialogueMarkId::from_zero_based(0).unwrap();
+    let deliver_mark = !marks.is_empty();
     let mut activation: Option<arcweft_core::runtime_id::DialogueActivationId> = None;
     let mut mark_delivered = false;
     let mut mark_handler_child_seen = false;
@@ -2834,10 +2851,12 @@ fn execute_dialogue_result_with_mark(
             if deliver_mark && !mark_delivered {
                 input
                     .dialogue_content_events
-                    .push(RuntimeDialogueContentEvent::new(
-                        current.clone(),
-                        RuntimeDialogueContentEventKind::Mark(mark),
-                    ));
+                    .extend(marks.iter().map(|mark| {
+                        RuntimeDialogueContentEvent::new(
+                            current.clone(),
+                            RuntimeDialogueContentEventKind::Mark(*mark),
+                        )
+                    }));
                 mark_delivered = true;
             } else if deliver_mark && !mark_handler_completed {
                 // Wait until the selected handler child finishes before advancing.
@@ -3082,7 +3101,7 @@ fn source_optional_registry_reads_reach_the_line_and_parent_flow() {
 pub character alice { display = "Alice" }
 flow main() -> Unit effects { state.write('flow), state.write('line), log.write } {
     'flow.prior <- "parent at entry"
-    let result = alice()[本文。[mark @.release][p]] with {
+    let result = alice()[本文。[mark @.release][mark @.replacement_written][p]] with {
         init {
             let inherited: String = 'flow.prior
             log.info(inherited)
@@ -3100,12 +3119,17 @@ flow main() -> Unit effects { state.write('flow), state.write('line), log.write 
             log.info("mark-handler-enter")
             let parent: Option<String> = 'flow.saved?
             if let .Some(message) = parent { log.info(message) }
+            let guaranteed: String = 'line.saved
             let local: Option<String> = 'line.saved?
-            if let .Some(message) = local {
-                out message
+            if let .Some(_) = local {
+                out guaranteed
             } else {
                 out "unexpected absence"
             }
+        }
+        on mark(@.replacement_written) {
+            'line.saved <- "line value"
+            log.info("sibling-writer")
         }
     }
     log.info(result)
@@ -3154,19 +3178,26 @@ entry cli @entry.main { goto @flow.main }
         "parent value",
         "line value",
     ];
-    let (logs, completed) = execute_dialogue_result_with_mark(
+    let marks = [0, 1].map(|ordinal| RuntimeDialogueMarkId::from_zero_based(ordinal).unwrap());
+    let (mut logs, completed) = execute_dialogue_result_with_marks(
         |input, options| native.step_with_pure_backend(input, options, &mut native_backend),
-        true,
+        &marks,
         "native optional registry",
     );
     assert!(completed);
+    let before = logs.len();
+    logs.retain(|message| message != "sibling-writer");
+    assert_eq!(before, logs.len() + 1);
     assert_eq!(logs, expected);
-    let (logs, completed) = execute_dialogue_result_with_mark(
+    let (mut logs, completed) = execute_dialogue_result_with_marks(
         |input, options| awbc.step_with_pure_backend(input, options, &mut awbc_backend),
-        true,
+        &marks,
         "decoded AWBC optional registry",
     );
     assert!(completed);
+    let before = logs.len();
+    logs.retain(|message| message != "sibling-writer");
+    assert_eq!(before, logs.len() + 1);
     assert_eq!(logs, expected);
 }
 
@@ -3174,35 +3205,59 @@ entry cli @entry.main { goto @flow.main }
 fn source_required_registry_reads_reject_a_shared_handler_write_as_type_evidence() {
     use arcweft_lang_sema::final_analysis::{CheckedLocalUseError, FinalSemanticAnalysisError};
 
-    let error = compile_attached_dialogue_project(
+    for (first, second) in [("'line.saved <- \"first\"", "true"), ("", "\"second\"")] {
+        let error = compile_attached_dialogue_project(&format!(
+            r#"
+pub character alice {{ display = "Alice" }}
+flow main() -> Unit effects {{ state.write('line), log.write }} {{
+    alice()[本文。[mark @.first][mark @.second][p]] with {{
+        on mark(@.first) {{
+            {first}
+            let present: String = 'line.saved
+            log.info(present)
+        }}
+        on mark(@.second) {{
+            'line.saved <- {second}
+        }}
+    }}
+}}
+entry cli @entry.main {{ goto @flow.main }}
+"#,
+        ))
+        .err()
+        .expect("the sibling may replace the item with a different type or never register it");
+        assert!(
+            matches!(
+                error.semantic_error(),
+                Some(FinalSemanticAnalysisError::LocalUse(
+                    CheckedLocalUseError::RegistryRegistrationUnavailable { .. }
+                ))
+            ),
+            "{error:?}",
+        );
+    }
+}
+
+#[test]
+fn source_inferred_optional_registry_read_accepts_a_possible_sibling_write() {
+    compile_attached_dialogue_project(
         r#"
 pub character alice { display = "Alice" }
 flow main() -> Unit effects { state.write('line), log.write } {
     alice()[本文。[mark @.first][mark @.second][p]] with {
         on mark(@.first) {
-            'line.saved <- "first"
-            let present: String = 'line.saved
-            log.info(present)
+            'line.saved <- true
         }
         on mark(@.second) {
-            'line.saved <- true
+            let observed = 'line.saved?
+            if let .Some(true) = observed { log.info("present") }
         }
     }
 }
 entry cli @entry.main { goto @flow.main }
 "#,
     )
-    .err()
-    .expect("a sibling handler can replace the line registry row between operations");
-    assert!(
-        matches!(
-            error.semantic_error(),
-            Some(FinalSemanticAnalysisError::LocalUse(
-                CheckedLocalUseError::RegistryRegistrationUnavailable { .. }
-            ))
-        ),
-        "{error:?}",
-    );
+    .expect("a compatible sibling can contribute possible presence");
 }
 
 #[test]

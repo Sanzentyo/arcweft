@@ -18,7 +18,7 @@ use std::{
 };
 
 mod registry;
-use registry::RegistryFacts;
+use registry::{RegistryFacts, RegistryInterference};
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct MovePath {
@@ -56,6 +56,12 @@ impl MovePath {
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) struct NodeId(usize);
+
+#[derive(Clone, Copy)]
+pub(super) struct RegistryScheduleId(usize);
+
+#[derive(Clone, Copy)]
+pub(super) struct RegistryEventMark(usize);
 
 #[derive(Clone)]
 pub(super) struct Availability {
@@ -125,6 +131,8 @@ pub(super) enum Event {
     },
     ForgetRegistryWrites(Box<[EffectId]>),
     DeferredRegistryWrites(Box<[EffectId]>),
+    ScheduledRegistryWrites(Option<Box<[EffectId]>>),
+    InterleaveRegistry(RegistryScheduleId),
     EnterRegistry(LifetimeScopeKind),
     RegistryBoundary,
 }
@@ -138,6 +146,7 @@ struct Node {
 #[derive(Default)]
 pub(super) struct OwnershipFlow {
     nodes: Vec<Node>,
+    registry_schedules: Vec<Option<RegistryInterference>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -193,6 +202,7 @@ impl Initialization {
         rows: &BTreeMap<CheckedLocalUseSite, CheckedLocalAccess>,
         synthetic: &BTreeMap<ExprId, CheckedSyntheticUse>,
         registry_keys: &BTreeMap<Arc<LifetimeRegistryKey>, EffectId>,
+        registry_schedules: &[Option<RegistryInterference>],
     ) -> Result<(), CheckedLocalUseError> {
         match event {
             Event::Access(site) => {
@@ -245,14 +255,21 @@ impl Initialization {
             }
             Event::ForgetRegistryWrites(effects) | Event::DeferredRegistryWrites(effects) => {
                 self.registry.invalidate_writes(
-                    effects,
+                    |required| effects.iter().any(|effect| effect.covers(required)),
                     matches!(event, Event::DeferredRegistryWrites(_)),
                     registry_keys,
                 );
             }
+            Event::InterleaveRegistry(schedule) => {
+                let interference = registry_schedules
+                    .get(schedule.0)
+                    .and_then(Option::as_ref)
+                    .ok_or(CheckedLocalUseError::InvalidTopology)?;
+                interference.apply(&mut self.registry, registry_keys);
+            }
             Event::EnterRegistry(scope) => self.registry.enter(scope),
             Event::RegistryBoundary => self.registry.forget(),
-            Event::Join | Event::RegistryRead { .. } => {}
+            Event::Join | Event::RegistryRead { .. } | Event::ScheduledRegistryWrites(_) => {}
         }
 
         Ok(())
@@ -304,6 +321,58 @@ pub(super) struct OwnershipFlowSolution {
 }
 
 impl OwnershipFlow {
+    pub(super) fn reserve_registry_schedule(&mut self) -> RegistryScheduleId {
+        let id = RegistryScheduleId(self.registry_schedules.len());
+        self.registry_schedules.push(None);
+        id
+    }
+
+    pub(super) fn mark_registry_events(&self) -> RegistryEventMark {
+        RegistryEventMark(self.nodes.len())
+    }
+
+    pub(super) fn seal_registry_schedule(
+        &mut self,
+        id: RegistryScheduleId,
+        eager: RegistryEventMark,
+        scheduled: RegistryEventMark,
+    ) -> Result<(), CheckedLocalUseError> {
+        let mut interference = RegistryInterference::default();
+        let eager_events = self
+            .nodes
+            .get(eager.0..scheduled.0)
+            .ok_or(CheckedLocalUseError::InvalidTopology)?;
+        let scheduled_events = self
+            .nodes
+            .get(scheduled.0..)
+            .ok_or(CheckedLocalUseError::InvalidTopology)?;
+        for node in eager_events {
+            if let Event::ScheduledRegistryWrites(effects) = &node.event {
+                interference.opaque_writes(effects.as_deref());
+            }
+        }
+        for node in scheduled_events {
+            match &node.event {
+                Event::RegistryWrite { key, ty } => interference.write(key, ty),
+                Event::ForgetRegistryWrites(effects) | Event::DeferredRegistryWrites(effects) => {
+                    interference.opaque_writes(Some(effects));
+                }
+                Event::ScheduledRegistryWrites(effects) => {
+                    interference.opaque_writes(effects.as_deref());
+                }
+                Event::RegistryBoundary => interference.opaque_writes(None),
+                _ => {}
+            }
+        }
+        let slot = self
+            .registry_schedules
+            .get_mut(id.0)
+            .filter(|slot| slot.is_none())
+            .ok_or(CheckedLocalUseError::InvalidTopology)?;
+        *slot = Some(interference);
+        Ok(())
+    }
+
     /// Anchor the empty execution path before it can fork.
     pub(super) fn entry(&mut self) -> Availability {
         let mut state = Availability::root();
@@ -384,7 +453,13 @@ impl OwnershipFlow {
             let mut state = incoming[id.0]
                 .clone()
                 .ok_or(CheckedLocalUseError::InvalidTopology)?;
-            state.transfer(&self.nodes[id.0].event, rows, synthetic, &registry_keys)?;
+            state.transfer(
+                &self.nodes[id.0].event,
+                rows,
+                synthetic,
+                &registry_keys,
+                &self.registry_schedules,
+            )?;
             for successor in &self.nodes[id.0].successors {
                 let changed = match &mut incoming[successor.0] {
                     Some(previous) => previous.join(&state),

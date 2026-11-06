@@ -395,8 +395,12 @@ inferred optional read, each reaching path must either leave the key absent or
 register a value of the inferred item type.
 A guaranteed read needs a registration of its item type on every path reaching
 the read. A branch that leaves the body first imposes no registration requirement.
-Scheduled line actions share the registry with sibling actions. A guaranteed
-read across those actions needs a common item type for all relevant writers.
+Scheduled line actions share the registry with sibling actions. Initialization
+can establish a registration before those actions run. A scheduled action can
+also establish a registration on its own reaching paths. A possible replacement
+by a sibling preserves that registration when it has the same item type. A
+sibling that might run provides only possible presence, which is enough for an
+inferred optional read if all possible registrations have the inferred type.
 `focus=.soft` guarantees the default `'line.focus`; explicit keys such as
 `'line.focus.main` become guaranteed after an assignment with `<-`.
 
