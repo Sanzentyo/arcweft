@@ -15042,3 +15042,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Optional registry copy owner verification
 
 - Source dc0ff3c74395183f25cd21275989c786bd26c590 の Core、Sema、Runtime Plan、Compiler の対象4クレートで4,077件通過、1件スキップ。実行IDは列挙結果と一致し、ソース入力3638件のハッシュは実行前後で一致した。Core の全ターゲット Clippy は警告ありで終了コード0。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — One receiver custody update per line handle issuer
+
+- Source 94fc9ff0dbf3dfc83e7f36f0289a0e833c7dda84 で、受信側の変更前後の所有先を発行元ごとに一つの台帳候補へまとめた。無許可の破棄を含む更新は全体を拒否し、許可時は結果への移動と解放要求を同時に確定する。Native とデコード済み AWBC の入れ子対話と保存復元を含む対象11件が通過した。構造ゲートのブロッキング違反は0件、Core の全ターゲット Clippy は警告ありで終了コード0だった。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。

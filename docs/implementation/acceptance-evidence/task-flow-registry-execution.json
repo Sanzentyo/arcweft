@@ -15542,5 +15542,90 @@
         }
       ]
     }
+  },
+  "lineReceiverCustodyReconciliation": {
+    "source": "94fc9ff0dbf3dfc83e7f36f0289a0e833c7dda84",
+    "parent": "ed59359306172cdaf8a19bfbf312a42ddfd8808e",
+    "changedBlobs": [
+      {
+        "path": "crates/arcweft-core/src/engine/dialogue/store.rs",
+        "blob": "77df0b02601298117412e656f803539aeb01c53f"
+      },
+      {
+        "path": "crates/arcweft-core/src/line_task/activation.rs",
+        "blob": "e4e414fe14f7718c48938af4acd4e6ba93a372a4"
+      },
+      {
+        "path": "crates/arcweft-core/src/line_task/handle.rs",
+        "blob": "a244f778624386259b7f8f20a24b93b16fb85a04"
+      }
+    ],
+    "patchSha256": "baa4cc8593cff18d3469eb9ab94b1d099c9a4aa4f1415099457d3c99e04677a0",
+    "implementation": "A single candidate per original issuer receives the complete before and after owner graph. Re-export is part of the destination graph, and exact release requests and custody are admitted before publication.",
+    "focused": {
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "-E",
+        "test(/parent_fiber_reconciliation|receiver.*custody|received_handle_reexport|nested_line_handle|reexported_result|dialogue_drop_source_take|line_registry|registry_drop_during_line_cancellation/)"
+      ],
+      "executed": 11,
+      "passed": 11,
+      "failed": 0,
+      "excludedByFilter": 2550,
+      "regression": "An unauthorized sibling drop rejects the complete received handle update. With exact authorization the returned handle and the sibling release are committed together."
+    },
+    "rustfmtExitCode": 0,
+    "clippy": {
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--all-targets"
+      ],
+      "exitCode": 0,
+      "warningsPresent": true
+    },
+    "structureBlocking": 0,
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-line-receiver-custody-reconciliation.raw.zip",
+      "sha256": "7a8b8c9461aadff162b5ea972070ee775104a716e2fed470e601c2a4a4b6a876",
+      "entries": [
+        {
+          "entry": "line-receiver-custody-reconciliation-20261107.nextest.log",
+          "bytes": 100937,
+          "sha256": "ce93ff16881be650b66bd900558d3104b3e4ea529c40213cc29fc2e94358c4bf"
+        },
+        {
+          "entry": "line-receiver-custody-reconciliation-20261107.verified.json",
+          "bytes": 965,
+          "sha256": "79b05783cca9927d99c0d6306e9aaf44f935cd4f1dfe2262472dc52bd1868fb7"
+        },
+        {
+          "entry": "line-receiver-custody-reconciliation-20261107.structure.log",
+          "bytes": 65741,
+          "sha256": "998f6ee46c6b05776584cb9736091f055e34980ec633445686a9159c5c1f7597"
+        },
+        {
+          "entry": "line-receiver-custody-reconciliation-20261107.clippy.log",
+          "bytes": 4834787,
+          "sha256": "4a34b79fe87ae48446179a1bc3f09cc6ca5f5c4d55bccecdb49280aec7f7a498"
+        }
+      ]
+    }
   }
 }
