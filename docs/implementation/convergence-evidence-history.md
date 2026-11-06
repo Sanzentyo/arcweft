@@ -14949,3 +14949,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source debbbf437d4f0e33a0282d7a7f7f35212ff6f0fd で、入れ子の対話を正規 AWBC に生成し、親子を明示進行した。全ステップの公開 JSON 保存・復元を挟んでも子と親の Line 値が分かれ、子の書込みが共有 Flow に残った。公開保存には実行中の対話が二件入った。別入力のゼロ除算は親の継続を実行せずに元の失敗をルートへ伝え、最終保存に実行中の対話を残さなかった。
 - Compiler 85 PASS、Core／RuntimePlan 2,422 PASS・1 skip。構造監査のブロッキング違反は0。保存検証の単一対話制限と Dialogue 停止をホスト呼出しとして扱う判定を修正し、試行中の失敗ログを保持した。子の String 戻り値を束縛する試行は意味解析の共有呼出し解決で停止した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-06 — Typed nested dialogue result
+
+- Source 8f41ccde1091d4b4d79aa5062792a038ea38ed3d は、`let` の注釈を `out` の期待型として使い、対話操作の型と親に渡す結果の型を区別する。修正前は同じ `String` 入力が意味解析で3件失敗し、registry の負例は通過した。修正後は Native と正規 AWBC の親が子の結果をログに出し、AWBC は全ステップの公開保存・復元を通過した。注釈が `.Some("yes")` を型付けし、異なる型の `out` を拒否することも確認した。
+- Compiler は85件、Sema は1,383件が通過した。構造監査、ワークスペース全体の check と Clippy は終了コード0。逆依存22パッケージの標準スイートでは、非CLI 3,457件、CLI 本体196件、CLI 統合29件が通過した。fixture を再生成する非CLI の1件はスキップした。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。

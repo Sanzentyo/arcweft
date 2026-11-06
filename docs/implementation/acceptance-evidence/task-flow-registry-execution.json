@@ -10627,5 +10627,1432 @@
         }
       ]
     }
+  },
+  "awbcNestedTypedDialogueResult": {
+    "source": "8f41ccde1091d4b4d79aa5062792a038ea38ed3d",
+    "base": "e6a900062b78e14ff29d3ef3b65378cc58a1b548",
+    "published": "8f41ccde1091d4b4d79aa5062792a038ea38ed3d",
+    "tree": "58e55823c5332c39c50bd3546f9ca795aa72079b",
+    "patchSha256": "70ef05d868060452e9b442a2ce96345a508cd472107a60fbab031ec54d893933",
+    "blobDrift": 0,
+    "baseline": {
+      "command": [
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "-E",
+        "test(nested_line_registr)"
+      ],
+      "exitCode": 100,
+      "summary": "Summary [   0.096s] 4 tests run: 1 passed, 3 failed, 62 skipped",
+      "failure": "The typed nested result failed shared callable resolution in all three analysis and execution regressions. The negative registry control passed.",
+      "fixture": "awbc-nested-typed-result-probe-20261106.arcw"
+    },
+    "checkedBehavior": "The direct DialogueLine initializer receives a contextual DialogueLine<T> expectation from the binding annotation T. The checked wrapper remains the application fact, and the local pattern receives T. The Sema test accepts an annotation that contextualizes out .Some(\"yes\") and rejects out false. Native and decoded AWBC both log the String result after the child closes. The AWBC run restores the public JSON save after each step and still observes the exact parent and child line registrations and the shared Flow write.",
+    "testRuns": [
+      {
+        "version": 1,
+        "base": "e6a900062b78e14ff29d3ef3b65378cc58a1b548",
+        "run": "awbc-nested-typed-compiler-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   5.163s] 85 tests run: 85 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 85,
+        "passed": 85,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4030,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T11:29:37.8774698Z"
+      },
+      {
+        "version": 1,
+        "base": "e6a900062b78e14ff29d3ef3b65378cc58a1b548",
+        "run": "awbc-nested-typed-sema-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [  16.961s] 1383 tests run: 1383 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 1383,
+        "passed": 1383,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4030,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T11:32:57.4998121Z"
+      },
+      {
+        "version": 1,
+        "base": "8f41ccde1091d4b4d79aa5062792a038ea38ed3d",
+        "run": "awbc-nested-typed-reverse-noncli-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [ 659.431s] 3457 tests run: 3457 passed (6 slow), 1 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 3457,
+        "passed": 3457,
+        "failed": 0,
+        "skipped": 1,
+        "selectedPackages": 21,
+        "matchedPackages": 21,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4133,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T12:03:08.4786683Z"
+      },
+      {
+        "version": 1,
+        "base": "8f41ccde1091d4b4d79aa5062792a038ea38ed3d",
+        "run": "awbc-nested-typed-reverse-cli-lib-bin-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [  34.382s] 196 tests run: 196 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 196,
+        "passed": 196,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4133,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T12:04:39.1802169Z"
+      },
+      {
+        "version": 1,
+        "base": "8f41ccde1091d4b4d79aa5062792a038ea38ed3d",
+        "run": "awbc-nested-typed-reverse-cli-integration-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   7.489s] 29 tests run: 29 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 29,
+        "passed": 29,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4133,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T12:05:22.396088Z"
+      }
+    ],
+    "workspaceChecks": [
+      {
+        "version": 1,
+        "source": "8f41ccde1091d4b4d79aa5062792a038ea38ed3d",
+        "kind": "structure",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4133,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T11:33:34.2843732Z",
+        "finishedAt": "2026-11-06T11:33:38.3870817Z"
+      },
+      {
+        "version": 1,
+        "source": "8f41ccde1091d4b4d79aa5062792a038ea38ed3d",
+        "kind": "workspace-check",
+        "command": [
+          "check",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4133,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T11:33:39.4477723Z",
+        "finishedAt": "2026-11-06T11:37:29.169183Z"
+      },
+      {
+        "version": 1,
+        "source": "8f41ccde1091d4b4d79aa5062792a038ea38ed3d",
+        "kind": "workspace-clippy",
+        "command": [
+          "clippy",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4133,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T11:37:30.2234241Z",
+        "finishedAt": "2026-11-06T11:40:15.5508818Z"
+      }
+    ],
+    "reverseGraph": {
+      "version": 1,
+      "base": "e6a900062b78e14ff29d3ef3b65378cc58a1b548",
+      "owners": [
+        "arcweft-lang-sema",
+        "arcweft-compiler"
+      ],
+      "treeCommand": [
+        "tree",
+        "--locked",
+        "--workspace",
+        "--all-features",
+        "--target",
+        "all",
+        "--invert",
+        "arcweft-lang-sema",
+        "--prefix",
+        "none",
+        "--format",
+        "{p}"
+      ],
+      "workspaceReversePackages": [
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lang-sema",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-project-loader",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ],
+      "features": "all",
+      "targets": "all",
+      "treeMetadataDifference": 0,
+      "cargoTestTargets": 114,
+      "testTargets": [
+        {
+          "package": "arcweft-adapter-sema",
+          "kind": [
+            "lib"
+          ],
+          "target": "arcweft_adapter_sema",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-agent-mcp",
+          "kind": [
+            "lib"
+          ],
+          "target": "arcweft_agent_mcp",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-agent-mcp",
+          "kind": [
+            "test"
+          ],
+          "target": "descriptor_invariants",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-agent-mcp",
+          "kind": [
+            "test"
+          ],
+          "target": "repl_command",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-agent-mcp-client",
+          "kind": [
+            "lib"
+          ],
+          "target": "arcweft_agent_mcp_client",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-agent-repl",
+          "kind": [
+            "lib"
+          ],
+          "target": "arcweft_agent_repl",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-agent-repl",
+          "kind": [
+            "test"
+          ],
+          "target": "api_compile",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-agent-repl",
+          "kind": [
+            "test"
+          ],
+          "target": "repl_cell",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-agent-repl",
+          "kind": [
+            "test"
+          ],
+          "target": "repl_command",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-agent-repl",
+          "kind": [
+            "test"
+          ],
+          "target": "repl_task_adapter",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-agent-repl",
+          "kind": [
+            "test"
+          ],
+          "target": "repl_tiering",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-agent-repl",
+          "kind": [
+            "test"
+          ],
+          "target": "repl_trace",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-agent-repl",
+          "kind": [
+            "test"
+          ],
+          "target": "repl_transaction",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-agent-repl",
+          "kind": [
+            "test"
+          ],
+          "target": "runtime_assertion_diagnostic",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-agent-runner",
+          "kind": [
+            "lib"
+          ],
+          "target": "arcweft_agent_runner",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-cli",
+          "kind": [
+            "lib"
+          ],
+          "target": "arcweft_cli",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-cli",
+          "kind": [
+            "bin"
+          ],
+          "target": "arcw",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-cli",
+          "kind": [
+            "test"
+          ],
+          "target": "arcw_fixtures_check_run",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-cli",
+          "kind": [
+            "test"
+          ],
+          "target": "bracket_numeric_batch",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-cli",
+          "kind": [
+            "test"
+          ],
+          "target": "check",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-cli",
+          "kind": [
+            "test"
+          ],
+          "target": "check_core_cli",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-cli",
+          "kind": [
+            "test"
+          ],
+          "target": "environment_callable_tensor",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-cli",
+          "kind": [
+            "test"
+          ],
+          "target": "native_host_contracts",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-cli",
+          "kind": [
+            "test"
+          ],
+          "target": "native_style_parity_sample",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-cli",
+          "kind": [
+            "test"
+          ],
+          "target": "release_trust_json",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-cli",
+          "kind": [
+            "test"
+          ],
+          "target": "runtime_native_options",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-cli",
+          "kind": [
+            "test"
+          ],
+          "target": "seq04_8_4_persistent_cache_build_cli_goldens",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "lib"
+          ],
+          "target": "arcweft_compiler",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "action_channel",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "agent_enum_execution",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "agent_project_summary",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "api_compile",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "assertions",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "callable_execution",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "catalog_asset_execution",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "choice_static",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "data_format_nominal",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "diagnostic_ownership",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "dialogue_profile_admission",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "evaluated_effects",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "flow_effects",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "flow_include",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "flow_wait",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "generic_continuation_snapshot",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "inline_failure_policy",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "iterator_witness_source",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "local_declaration_source",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "named_scopes",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "parser_diagnostic",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "project_cache_transaction",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "project_function_instances",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "runtime_color",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "scope_propagation",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "source_presentation_driver",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "try_pipe",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-compiler",
+          "kind": [
+            "test"
+          ],
+          "target": "view_product",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-lang-sema",
+          "kind": [
+            "lib"
+          ],
+          "target": "arcweft_lang_sema",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-lang-sema",
+          "kind": [
+            "test"
+          ],
+          "target": "api_compile",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-lang-sema",
+          "kind": [
+            "test"
+          ],
+          "target": "character_nominal_mismatch",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-lang-sema",
+          "kind": [
+            "test"
+          ],
+          "target": "checked_match_query",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-lang-sema",
+          "kind": [
+            "test"
+          ],
+          "target": "checked_statement_read_only_views",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-lsp",
+          "kind": [
+            "lib"
+          ],
+          "target": "arcweft_lsp",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-lsp",
+          "kind": [
+            "bin"
+          ],
+          "target": "arcweft-lsp",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-lsp",
+          "kind": [
+            "test"
+          ],
+          "target": "dependency_direction",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-lsp",
+          "kind": [
+            "test"
+          ],
+          "target": "public_api",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-player-native",
+          "kind": [
+            "lib"
+          ],
+          "target": "arcweft_player_native",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-player-native",
+          "kind": [
+            "bin"
+          ],
+          "target": "arcweft-player-native",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-player-native",
+          "kind": [
+            "bin"
+          ],
+          "target": "windows-tsf-ime-sample",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-player-native",
+          "kind": [
+            "test"
+          ],
+          "target": "windowed_ingress_runtime",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-player-native",
+          "kind": [
+            "test"
+          ],
+          "target": "windowed_live_patch_smoke",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-player-scene",
+          "kind": [
+            "lib"
+          ],
+          "target": "arcweft_player_scene",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-player-scene",
+          "kind": [
+            "test"
+          ],
+          "target": "action_button_submit",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-player-scene",
+          "kind": [
+            "test"
+          ],
+          "target": "character_stage",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-player-scene",
+          "kind": [
+            "test"
+          ],
+          "target": "controller_navigation",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-player-scene",
+          "kind": [
+            "test"
+          ],
+          "target": "dialogue_view",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-player-scene",
+          "kind": [
+            "test"
+          ],
+          "target": "responsive_stage_placement",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-player-scene",
+          "kind": [
+            "test"
+          ],
+          "target": "runtime_control_style_lowering",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-player-scene",
+          "kind": [
+            "test"
+          ],
+          "target": "runtime_text_controls",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-player-scene",
+          "kind": [
+            "test"
+          ],
+          "target": "scroll_regions",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-player-scene",
+          "kind": [
+            "test"
+          ],
+          "target": "view_geometry_transaction",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-player-web",
+          "kind": [
+            "cdylib",
+            "rlib"
+          ],
+          "target": "arcweft_player_web",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-player-web",
+          "kind": [
+            "test"
+          ],
+          "target": "input",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-player-web",
+          "kind": [
+            "test"
+          ],
+          "target": "interaction_visual_state",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-player-web",
+          "kind": [
+            "test"
+          ],
+          "target": "parity",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-player-web",
+          "kind": [
+            "test"
+          ],
+          "target": "report",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-player-web",
+          "kind": [
+            "test"
+          ],
+          "target": "web_text_input_glue",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-project-loader",
+          "kind": [
+            "lib"
+          ],
+          "target": "arcweft_project_loader",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-project-loader",
+          "kind": [
+            "test"
+          ],
+          "target": "dependency_direction",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-project-loader",
+          "kind": [
+            "test"
+          ],
+          "target": "public_api",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-project-loader",
+          "kind": [
+            "test"
+          ],
+          "target": "release_trust_e2e",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-runtime-driver",
+          "kind": [
+            "lib"
+          ],
+          "target": "arcweft_runtime_driver",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-runtime-driver",
+          "kind": [
+            "test"
+          ],
+          "target": "awbc_product_session",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-runtime-driver",
+          "kind": [
+            "test"
+          ],
+          "target": "dialogue_view_store",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-runtime-driver",
+          "kind": [
+            "test"
+          ],
+          "target": "view_runtime",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-runtime-host",
+          "kind": [
+            "lib"
+          ],
+          "target": "arcweft_runtime_host",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-runtime-host",
+          "kind": [
+            "test"
+          ],
+          "target": "awbc_product_runner",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-runtime-host",
+          "kind": [
+            "test"
+          ],
+          "target": "bundle_runner",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-runtime-host",
+          "kind": [
+            "test"
+          ],
+          "target": "dependency_direction",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-runtime-host",
+          "kind": [
+            "test"
+          ],
+          "target": "view_interaction_dispatch",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-runtime-plan",
+          "kind": [
+            "lib"
+          ],
+          "target": "arcweft_runtime_plan",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-runtime-plan",
+          "kind": [
+            "test"
+          ],
+          "target": "api_compile",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-runtime-plan",
+          "kind": [
+            "test"
+          ],
+          "target": "assertion_identity",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-runtime-plan",
+          "kind": [
+            "test"
+          ],
+          "target": "awbc_product_parity",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-runtime-plan",
+          "kind": [
+            "test"
+          ],
+          "target": "iterator_witness_awbc",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-test",
+          "kind": [
+            "lib"
+          ],
+          "target": "arcweft_test",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-tooling",
+          "kind": [
+            "lib"
+          ],
+          "target": "arcweft_tooling",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-tooling",
+          "kind": [
+            "test"
+          ],
+          "target": "capability_policy",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-tooling",
+          "kind": [
+            "test"
+          ],
+          "target": "public_api",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-tooling",
+          "kind": [
+            "test"
+          ],
+          "target": "runtime_assertion_diagnostic",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-tooling",
+          "kind": [
+            "test"
+          ],
+          "target": "view_export_part",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-verify",
+          "kind": [
+            "lib"
+          ],
+          "target": "arcweft_verify",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-verify-lsp",
+          "kind": [
+            "lib"
+          ],
+          "target": "arcweft_verify_lsp",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-verify-oxiz",
+          "kind": [
+            "lib"
+          ],
+          "target": "arcweft_verify_oxiz",
+          "requiredFeatures": null
+        },
+        {
+          "package": "arcweft-verify-z3",
+          "kind": [
+            "lib"
+          ],
+          "target": "arcweft_verify_z3",
+          "requiredFeatures": null
+        }
+      ]
+    },
+    "boundary": "The runtime regression covers String by-value publication into an active parent and preserves the existing Unit failure regression. Transferring an affine line handle between activation owners and proving its drop obligations remain separate.",
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-nested-typed-result.raw.zip",
+      "sha256": "4ea98cc6aedd69bbc67505287e7282c577b1abdc54ee0b5425502c541bad3e51",
+      "entries": [
+        {
+          "entry": "checkpoint-awbc-nested-typed-20261106.verified.json",
+          "bytes": 1169,
+          "sha256": "e6abc09df44bbc1eb1ec56f40830c80796356e32c8ff1b24c609e14cf369006c"
+        },
+        {
+          "entry": "awbc-nested-typed-20261106.reverse.json",
+          "bytes": 20280,
+          "sha256": "0959cb8b0897b093e58add766430e252a77f17a091dfb3e47a02e65d41713e93"
+        },
+        {
+          "entry": "awbc-nested-typed-20261106.cargo-tree.txt",
+          "bytes": 4907,
+          "sha256": "9e66421a6192ba79d1da6558868a660499db017e71ad234f55c7f4eab4383172"
+        },
+        {
+          "entry": "awbc-nested-typed-baseline-20261106.log",
+          "bytes": 102066,
+          "sha256": "c14b36d37f3750aca6b7ad4fc557f3278cfefb52ee71eb2b9858f4888f3bd8da"
+        },
+        {
+          "entry": "awbc-nested-typed-result-probe-20261106.arcw",
+          "bytes": 779,
+          "sha256": "0154ba1210791c2e40f28b284a39cb8c0009c838468bc497183810cc59be88d9"
+        },
+        {
+          "entry": "awbc-nested-typed-quality-20261106.source-freeze.json",
+          "bytes": 808243,
+          "sha256": "f7c1ae93d69717e4c2490508472b5b1eb8ad41f24878c259a026eefd6cfd5494"
+        },
+        {
+          "entry": "awbc-nested-typed-structure-20261106.json",
+          "bytes": 404,
+          "sha256": "da2728de4131e96eded812c0f45dbde7ca23001e7824694e903809415efa2fdb"
+        },
+        {
+          "entry": "awbc-nested-typed-structure-20261106.log",
+          "bytes": 65698,
+          "sha256": "b517ae9ac8a12063bdd46c183debf46655a02343fb24ab900caf366c13161072"
+        },
+        {
+          "entry": "awbc-nested-typed-workspace-check-20261106.json",
+          "bytes": 387,
+          "sha256": "a72092e96421ade5bf46a48ba97c83fe7ed6eb0f20c6b45891241f5ab47628ed"
+        },
+        {
+          "entry": "awbc-nested-typed-workspace-check-20261106.log",
+          "bytes": 131386,
+          "sha256": "41b57b90037c2e4152ebe6c9de703a539f8c63b902b96062fa343a367ed01d1e"
+        },
+        {
+          "entry": "awbc-nested-typed-workspace-clippy-20261106.json",
+          "bytes": 389,
+          "sha256": "19b4625f6d2d5969acae8deb629d147c618bd299bea9a29c711f4e0ffadfc61c"
+        },
+        {
+          "entry": "awbc-nested-typed-workspace-clippy-20261106.log",
+          "bytes": 8972799,
+          "sha256": "8b0f10caacc142e907138e59a1cd14aa62bb4128956a3294932ebeee5aeb9437"
+        },
+        {
+          "entry": "awbc-nested-typed-compiler-20261106.source-freeze.json",
+          "bytes": 787722,
+          "sha256": "1a767c9bb80b721afa3f8b8bf6e9db18b7b66b5590f3213df3f6f9338f30e86b"
+        },
+        {
+          "entry": "awbc-nested-typed-compiler-20261106.catalog.json",
+          "bytes": 592,
+          "sha256": "d0cb74f1569f0565e21b4cd36c71347b83806329665371f1e97a20658c663f3f"
+        },
+        {
+          "entry": "awbc-nested-typed-compiler-20261106.catalog.log",
+          "bytes": 98735,
+          "sha256": "ea2f4321512701c212b7ba277ea6025811e5b8d7febeea8799a11050d5696d5b"
+        },
+        {
+          "entry": "awbc-nested-typed-compiler-20261106.catalog.inventory.json",
+          "bytes": 21417,
+          "sha256": "d8c559a04e523cb6408dc92307ebc814bbdb65457c6cdfdadddb2f6948066dae"
+        },
+        {
+          "entry": "awbc-nested-typed-compiler-20261106.binaries-before.json",
+          "bytes": 477,
+          "sha256": "3270d81eb84b1815b63eb88813a3dd319368afca0bc67b893cb23ea7a0e4a3c6"
+        },
+        {
+          "entry": "awbc-nested-typed-compiler-20261106.runtime.json",
+          "bytes": 684,
+          "sha256": "f08baecfbc97f4f128addb2aaaacd2323a35042a6f6f48b1543d8677dbd1f400"
+        },
+        {
+          "entry": "awbc-nested-typed-compiler-20261106.runtime.log",
+          "bytes": 108997,
+          "sha256": "6df0ec79cfd80da1dec3bce2106f0e8fbefa2d27a53fb1c87a22cb3f41352965"
+        },
+        {
+          "entry": "awbc-nested-typed-compiler-20261106.runtime.terminal-audit.json",
+          "bytes": 616,
+          "sha256": "54f21fe66b99cb66cb833f9f2a3a28c4c2a632b4835d0bf852dc85f2cd051734"
+        },
+        {
+          "entry": "awbc-nested-typed-sema-20261106.source-freeze.json",
+          "bytes": 787722,
+          "sha256": "84a75d04976e08fd46492a8318bbdc5b2e1f81b3fec53e1ee05737dbfebbbc42"
+        },
+        {
+          "entry": "awbc-nested-typed-sema-20261106.catalog.json",
+          "bytes": 526,
+          "sha256": "d7289b9d0350bf9d94d91e62978873cb9cb07a222ee4d619bbbbb598fcecd756"
+        },
+        {
+          "entry": "awbc-nested-typed-sema-20261106.catalog.log",
+          "bytes": 318556,
+          "sha256": "1595930bfa746a9be3ade856f48e393bad802eab8d24db04080424214e6457c1"
+        },
+        {
+          "entry": "awbc-nested-typed-sema-20261106.catalog.inventory.json",
+          "bytes": 363865,
+          "sha256": "968facfcce46fafce64dcc916c4ba2ebb7c976357ec6054145134ae65a66c0a2"
+        },
+        {
+          "entry": "awbc-nested-typed-sema-20261106.binaries-before.json",
+          "bytes": 212,
+          "sha256": "05a4741ededc70ef7e8f35b69a386f83614d8deafc58fd83c500354eb70adacb"
+        },
+        {
+          "entry": "awbc-nested-typed-sema-20261106.runtime.json",
+          "bytes": 618,
+          "sha256": "3c68ab5058638202df126c3a6236d88b37617b477499bb18d4147f1747a87a19"
+        },
+        {
+          "entry": "awbc-nested-typed-sema-20261106.runtime.log",
+          "bytes": 512735,
+          "sha256": "cf45f4be66a774f6f79a4e1c0e6d849291628dfdb21722f79c4e1db43d6861d3"
+        },
+        {
+          "entry": "awbc-nested-typed-sema-20261106.runtime.terminal-audit.json",
+          "bytes": 620,
+          "sha256": "b3b04ff679031a37f46904b97fa98721d0300ab8d665d213f293b40c29aba518"
+        },
+        {
+          "entry": "awbc-nested-typed-reverse-noncli-20261106.source-freeze.json",
+          "bytes": 808243,
+          "sha256": "30bae53bbbbc036adaac49878830d7019b7356440a9daffc87844d59f286e75d"
+        },
+        {
+          "entry": "awbc-nested-typed-reverse-noncli-20261106.catalog.json",
+          "bytes": 1316,
+          "sha256": "8f2589b02ed1d4a4d44c1a695819be0f3f725041df631de72737018757453f1d"
+        },
+        {
+          "entry": "awbc-nested-typed-reverse-noncli-20261106.catalog.log",
+          "bytes": 698677,
+          "sha256": "84e711cbd0b358c3bb61293f7c01453ab9094d85efc9bb101f3d5bec1f04827c"
+        },
+        {
+          "entry": "awbc-nested-typed-reverse-noncli-20261106.catalog.inventory.json",
+          "bytes": 878004,
+          "sha256": "78f5819351bf2fae6c635e88d62e8e906821ba78f78329c39cca930f0039a2c8"
+        },
+        {
+          "entry": "awbc-nested-typed-reverse-noncli-20261106.binaries-before.json",
+          "bytes": 24508,
+          "sha256": "6c47d14934de5e2ed0ab6ff2920ae29e37a63a079ca3bc986ca3598ee6d67c65"
+        },
+        {
+          "entry": "awbc-nested-typed-reverse-noncli-20261106.runtime.json",
+          "bytes": 1408,
+          "sha256": "b82d9dd22425ba469d1cc8b958948cb9c5e168bfcbaaab7878888d60bac73a2d"
+        },
+        {
+          "entry": "awbc-nested-typed-reverse-noncli-20261106.runtime.log",
+          "bytes": 1115914,
+          "sha256": "c630b01298ed72be8f5441738a13cc2f35d8a27d820bfaec9f4a4436caf8b751"
+        },
+        {
+          "entry": "awbc-nested-typed-reverse-noncli-20261106.runtime.terminal-audit.json",
+          "bytes": 641,
+          "sha256": "476f108627cbc789e094f4b0cddb2e0ec466d240965d4fe0fafcc09b70e92a4d"
+        },
+        {
+          "entry": "awbc-nested-typed-reverse-cli-lib-bin-20261106.source-freeze.json",
+          "bytes": 808243,
+          "sha256": "422726f18dd83ff1df8fe146511c2cdf6049fcbbe344cd551c117755fbe893de"
+        },
+        {
+          "entry": "awbc-nested-typed-reverse-cli-lib-bin-20261106.catalog.json",
+          "bytes": 550,
+          "sha256": "29c86c91a45b81f9502fc6623b52835fe0ce823fb4fd2eb9e1d201ee3668b7ea"
+        },
+        {
+          "entry": "awbc-nested-typed-reverse-cli-lib-bin-20261106.catalog.log",
+          "bytes": 122524,
+          "sha256": "da4ebad0fdbd8dae96585e27c47f019eb972dfd635983a7cf160455322495f7b"
+        },
+        {
+          "entry": "awbc-nested-typed-reverse-cli-lib-bin-20261106.catalog.inventory.json",
+          "bytes": 47829,
+          "sha256": "44f4b16a3e7162048fc957ba081377b6a4f1a3ebd25f6d8b0c660c852c15fdbd"
+        },
+        {
+          "entry": "awbc-nested-typed-reverse-cli-lib-bin-20261106.binaries-before.json",
+          "bytes": 430,
+          "sha256": "159578ace2baf32cd38ac5e847b9bb030d8da5c4aed119895e372a5df12b8315"
+        },
+        {
+          "entry": "awbc-nested-typed-reverse-cli-lib-bin-20261106.runtime.json",
+          "bytes": 642,
+          "sha256": "8548c88c957d01a405d9000be5685ce5123c32f9a3374978a56b3b24f3255f8e"
+        },
+        {
+          "entry": "awbc-nested-typed-reverse-cli-lib-bin-20261106.runtime.log",
+          "bytes": 143090,
+          "sha256": "a9faf23ccdf8af4be3e3b78e27abf0dee3c72a7b3c44893cd02c7ce1f503f928"
+        },
+        {
+          "entry": "awbc-nested-typed-reverse-cli-lib-bin-20261106.runtime.terminal-audit.json",
+          "bytes": 631,
+          "sha256": "17578c10dc841bd7c3e6a3a3cbb385379c6294b49bdece5174dad520b85d49d5"
+        },
+        {
+          "entry": "awbc-nested-typed-reverse-cli-integration-20261106.source-freeze.json",
+          "bytes": 808243,
+          "sha256": "b1617d02b7a074d0abfe06ae0e13eb1ab9812281874de565895071fa32ebf34a"
+        },
+        {
+          "entry": "awbc-nested-typed-reverse-cli-integration-20261106.catalog.json",
+          "bytes": 816,
+          "sha256": "6475049420e3f121b599a4f30d83c7a70d7fb5da0285feca80e18b9ca450919f"
+        },
+        {
+          "entry": "awbc-nested-typed-reverse-cli-integration-20261106.catalog.log",
+          "bytes": 94649,
+          "sha256": "80170484ed3a392d766f72074c1cee49da6ef38b1dd0fa89d6914c42d8566228"
+        },
+        {
+          "entry": "awbc-nested-typed-reverse-cli-integration-20261106.catalog.inventory.json",
+          "bytes": 6650,
+          "sha256": "094e5f331bb1c47601d27ced7b6c2ca2128319ff10d972aa6178be6a137814b3"
+        },
+        {
+          "entry": "awbc-nested-typed-reverse-cli-integration-20261106.binaries-before.json",
+          "bytes": 1511,
+          "sha256": "92fc0e5b0696f934517265dcfd5439234b3527b0d0aec24187d12f4cf8ae5e60"
+        },
+        {
+          "entry": "awbc-nested-typed-reverse-cli-integration-20261106.runtime.json",
+          "bytes": 908,
+          "sha256": "f6aeeb50db6ef1ac14626e245feb503f855ac4262382fcbfabf71913a5385e11"
+        },
+        {
+          "entry": "awbc-nested-typed-reverse-cli-integration-20261106.runtime.log",
+          "bytes": 94612,
+          "sha256": "989ed6e2ee03a854414ddc41f7c078e41a4f9e54cc2471b61c2d9ed5650b90ec"
+        },
+        {
+          "entry": "awbc-nested-typed-reverse-cli-integration-20261106.runtime.terminal-audit.json",
+          "bytes": 631,
+          "sha256": "f3308d791c3686100b5904683f885e17f4293ea0cf13788e0e416685c9c98780"
+        }
+      ]
+    }
   }
 }
