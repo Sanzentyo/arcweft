@@ -4,9 +4,9 @@ use super::{
     AwbcProgram, AwbcRegisterId, FiberState, FiberStateError, VmError, VmExecutionContext,
 };
 use crate::effect::{
-    RuntimeDropPolicyKind, RuntimePreparedRegistryMutation, RuntimePreparedRegistryWrite,
-    RuntimeRegistryDropTarget, RuntimeRegistryOwner, RuntimeRegistryReadKind,
-    RuntimeRegistryStateUpdate, RuntimeRegistryWriteSource, RuntimeScopeRegistry,
+    RuntimeDropPolicyKind, RuntimePreparedRegistryMutation, RuntimeRegistryDropTarget,
+    RuntimeRegistryOwner, RuntimeRegistryReadKind, RuntimeRegistryWriteSource,
+    RuntimeScopeRegistry,
 };
 use crate::presentation::resources::{PresentationBanks, PresentationBody};
 use crate::value::{RuntimePayload, RuntimeRetainedValueAdmission, RuntimeStoredValue};
@@ -61,29 +61,24 @@ impl VmDialogueRegistryAccess<'_> {
             },
             RuntimeRegistryOwner::NativeFlow => return Err(FiberStateError::InvalidFrame.into()),
         };
-        let position = self
-            .rows
-            .prepare_write(self.owner, key, ty, source, self.admission)
-            .map_err(FiberStateError::Snapshot)?;
         let frame = fiber.active_frame()?;
-        let prepared = RuntimeRegistryStateUpdate::prepare(
-            key,
-            ty,
-            frame.type_instantiation.as_deref(),
-            self.admission,
-        )
-        .map_err(FiberStateError::Snapshot)?;
+        let prepared = self
+            .rows
+            .prepare_write(
+                self.owner,
+                key,
+                ty,
+                frame.type_instantiation.as_deref(),
+                source,
+                self.admission,
+            )
+            .map_err(FiberStateError::Snapshot)?;
         let transfer = frame.prepare_register_values(program, args)?;
         let update = prepared
             .capture(frame.register(*source_register)?)
             .map_err(FiberStateError::Snapshot)?;
         drop(transfer.commit(fiber.active_frame_mut()?));
-        *self.pending = Some((
-            self.owner,
-            RuntimePreparedRegistryMutation::Write(RuntimePreparedRegistryWrite::new(
-                position, source, update,
-            )),
-        ));
+        *self.pending = Some((self.owner, RuntimePreparedRegistryMutation::Write(update)));
         Ok(())
     }
 }
@@ -210,7 +205,8 @@ impl VmExecutionResources<'_> {
             fiber: fiber.instance,
             frame: fiber.frames[destination].instance,
         };
-        let position = fiber.frames[destination]
+        let frame = fiber.active_frame()?;
+        let prepared = fiber.frames[destination]
             .flow_registry
             .prepare_write(
                 RuntimeRegistryOwner::AwbcFlow {
@@ -219,28 +215,23 @@ impl VmExecutionResources<'_> {
                 },
                 key,
                 ty,
+                frame.type_instantiation.as_deref(),
                 write_source,
                 &mut admission,
             )
             .map_err(result)?;
-        let frame = fiber.active_frame()?;
-        let prepared = RuntimeRegistryStateUpdate::prepare(
-            key,
-            ty,
-            frame.type_instantiation.as_deref(),
-            &mut admission,
-        )
-        .map_err(result)?;
         let transfer = frame.prepare_register_values(program, args)?;
         let update = prepared.capture(frame.register(*source)?).map_err(result)?;
-        fiber.frames[destination]
-            .flow_registry
-            .reserve_write(position)
+        update
+            .commit(&mut fiber.frames[destination].flow_registry)
             .map_err(result)?;
-        drop(transfer.commit(fiber.active_frame_mut()?));
-        fiber.frames[destination]
-            .flow_registry
-            .commit(position, write_source, update);
+        drop(
+            transfer.commit(
+                fiber
+                    .active_frame_mut()
+                    .expect("the validated frame is still active"),
+            ),
+        );
         Ok(())
     }
 

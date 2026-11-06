@@ -1,6 +1,9 @@
 //! Retained, replay-safe values on one reached execution scope.
 
-use super::{RuntimeRegistryReadKind, RuntimeRegistryStateUpdate, RuntimeRegistryValue};
+use super::{
+    PreparedRegistryValue, RuntimeRegistryReadKind, RuntimeRegistryStateUpdate,
+    RuntimeRegistryValue,
+};
 use crate::awbc::schema::{AwbcEffectPayload, AwbcEffectPlanId};
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::runtime_id::{DialogueActivationId, RuntimeFiberInstanceId, RuntimeFrameInstanceId};
@@ -228,14 +231,15 @@ impl RuntimeScopeRegistry {
         })
     }
 
-    pub(crate) fn prepare_write(
+    pub(crate) fn prepare_write<'key, 'budget>(
         &self,
         owner: RuntimeRegistryOwner,
-        key: &LifetimeRegistryKey,
+        key: &'key LifetimeRegistryKey,
         value_type: RuntimeSemanticTypeId,
+        binding: Option<&'key crate::program_types::RuntimeFunctionEffectInstantiation>,
         source: RuntimeRegistryWriteSource,
-        admission: &mut RuntimeRetainedValueAdmission,
-    ) -> Result<Result<usize, usize>, AwbcRuntimeValueSnapshotError> {
+        admission: &'budget mut RuntimeRetainedValueAdmission,
+    ) -> Result<RuntimeRegistryWritePreparation<'key, 'budget>, AwbcRuntimeValueSnapshotError> {
         if key.scope() != &owner.scope() {
             return Err(invalid_registry(
                 "registry address does not select this activation",
@@ -244,10 +248,29 @@ impl RuntimeScopeRegistry {
         let position = self.0.binary_search_by(|entry| entry.row.key.cmp(key));
         admission.validate_metadata_collection(self.0.len() + usize::from(position.is_err()))?;
         source.admit(owner, key, value_type, admission)?;
-        Ok(position)
+        let value = RuntimeRegistryStateUpdate::prepare(key, value_type, binding, admission)?;
+        Ok(RuntimeRegistryWritePreparation {
+            len: self.0.len(),
+            previous: position.ok().map(|index| Arc::clone(&self.0[index].row)),
+            source,
+            value,
+        })
     }
 
-    pub(crate) fn reserve_write(
+    fn revalidate_row(
+        &self,
+        key: &LifetimeRegistryKey,
+        previous: Option<&Arc<RuntimeRegistryValue>>,
+    ) -> Result<Result<usize, usize>, AwbcRuntimeValueSnapshotError> {
+        let position = self.0.binary_search_by(|entry| entry.row.key.cmp(key));
+        match (position, previous) {
+            (Ok(index), Some(row)) if Arc::ptr_eq(&self.0[index].row, row) => Ok(position),
+            (Err(_), None) => Ok(position),
+            _ => Err(invalid_registry("registry row changed before commit")),
+        }
+    }
+
+    fn reserve_write(
         &mut self,
         position: Result<usize, usize>,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
@@ -259,7 +282,7 @@ impl RuntimeScopeRegistry {
         Ok(())
     }
 
-    pub(crate) fn commit(
+    fn commit_write(
         &mut self,
         position: Result<usize, usize>,
         source: RuntimeRegistryWriteSource,
@@ -298,35 +321,62 @@ impl RuntimeScopeRegistry {
     }
 }
 
-/// A checked write held outside the line until its owning step commits.
+/// The reached registry and value admission stay paired while the input is evaluated.
+pub(crate) struct RuntimeRegistryWritePreparation<'key, 'budget> {
+    len: usize,
+    previous: Option<Arc<RuntimeRegistryValue>>,
+    source: RuntimeRegistryWriteSource,
+    value: PreparedRegistryValue<'key, 'budget>,
+}
+
+impl RuntimeRegistryWritePreparation<'_, '_> {
+    pub(crate) fn capture(
+        self,
+        value: &RuntimeValue,
+    ) -> Result<RuntimePreparedRegistryWrite, AwbcRuntimeValueSnapshotError> {
+        Ok(RuntimePreparedRegistryWrite {
+            len: self.len,
+            previous: self.previous,
+            source: self.source,
+            update: self.value.capture(value)?,
+        })
+    }
+}
+
+/// A checked write held outside its scope until its owning step commits.
 pub(crate) struct RuntimePreparedRegistryWrite {
-    position: Result<usize, usize>,
+    len: usize,
+    previous: Option<Arc<RuntimeRegistryValue>>,
     source: RuntimeRegistryWriteSource,
     update: RuntimeRegistryStateUpdate,
 }
 
 impl RuntimePreparedRegistryWrite {
-    pub(crate) fn new(
-        position: Result<usize, usize>,
-        source: RuntimeRegistryWriteSource,
-        update: RuntimeRegistryStateUpdate,
-    ) -> Self {
-        Self {
-            position,
-            source,
-            update,
+    fn position(
+        &self,
+        rows: &RuntimeScopeRegistry,
+    ) -> Result<Result<usize, usize>, AwbcRuntimeValueSnapshotError> {
+        if rows.0.len() != self.len {
+            return Err(invalid_registry("registry size changed before write"));
         }
+        rows.revalidate_row(self.update.key(), self.previous.as_ref())
     }
 
     pub(crate) fn reserve(
         &self,
         rows: &mut RuntimeScopeRegistry,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
-        rows.reserve_write(self.position)
+        rows.reserve_write(self.position(rows)?)
     }
 
-    pub(crate) fn commit(self, rows: &mut RuntimeScopeRegistry) {
-        rows.commit(self.position, self.source, self.update);
+    pub(crate) fn commit(
+        self,
+        rows: &mut RuntimeScopeRegistry,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        let position = self.position(rows)?;
+        rows.reserve_write(position)?;
+        rows.commit_write(position, self.source, self.update);
+        Ok(())
     }
 }
 
@@ -341,14 +391,7 @@ impl RuntimePreparedRegistryDrop {
         &self,
         rows: &RuntimeScopeRegistry,
     ) -> Result<Option<usize>, AwbcRuntimeValueSnapshotError> {
-        let position = rows
-            .0
-            .binary_search_by(|entry| entry.row.key.cmp(&self.key));
-        match (position, &self.row) {
-            (Ok(index), Some(row)) if Arc::ptr_eq(&rows.0[index].row, row) => Ok(Some(index)),
-            (Err(_), None) => Ok(None),
-            _ => Err(invalid_registry("registry row changed before removal")),
-        }
+        Ok(rows.revalidate_row(&self.key, self.row.as_ref())?.ok())
     }
 
     pub(crate) fn commit(
@@ -385,10 +428,7 @@ impl RuntimePreparedRegistryMutation {
         rows: &mut RuntimeScopeRegistry,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         match self {
-            Self::Write(write) => {
-                write.commit(rows);
-                Ok(())
-            }
+            Self::Write(write) => write.commit(rows),
             Self::Drop(drop) => drop.commit(rows),
         }
     }

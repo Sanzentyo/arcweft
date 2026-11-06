@@ -21,7 +21,7 @@ pub(crate) use journal::{RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJour
 pub(crate) use scope::{RuntimeRegistryOwner, RuntimeRegistryWriteSource, RuntimeScopeRegistry};
 
 pub(crate) use scope::{
-    RuntimePreparedRegistryDrop, RuntimePreparedRegistryMutation, RuntimePreparedRegistryWrite,
+    RuntimePreparedRegistryDrop, RuntimePreparedRegistryMutation, RuntimeRegistryWritePreparation,
 };
 
 /// The checked presence requirement for an operation on a reached registry row.

@@ -4,10 +4,10 @@ use super::audio::RuntimeEffectExecutionError;
 use super::code_cursor::NativeSourceOperation;
 use super::{Engine, FlowFiberId};
 use crate::effect::{
-    PreparedRegistryValue, RuntimeDropPolicyExpr, RuntimeEffectExpr, RuntimeEffectMaterializeError,
-    RuntimePreparedRegistryDrop, RuntimePreparedRegistryMutation, RuntimePreparedRegistryWrite,
-    RuntimeRegistryOwner, RuntimeRegistryReadKind, RuntimeRegistryStateUpdate,
-    RuntimeRegistryWriteSource, RuntimeScopeRegistry,
+    RuntimeDropPolicyExpr, RuntimeEffectExpr, RuntimeEffectMaterializeError,
+    RuntimePreparedRegistryDrop, RuntimePreparedRegistryMutation, RuntimeRegistryOwner,
+    RuntimeRegistryReadKind, RuntimeRegistryWritePreparation, RuntimeRegistryWriteSource,
+    RuntimeScopeRegistry,
 };
 use crate::plan::FlowOp;
 use crate::pure::RuntimeCallBackend;
@@ -79,9 +79,7 @@ struct NativeLineRegistryOperands<'plan> {
 /// before the owning Engine evaluates a mutation input.
 pub(super) enum NativePreparedRegistryMutation<'source, 'budget> {
     Write {
-        position: Result<usize, usize>,
-        origin: RuntimeRegistryWriteSource,
-        prepared: PreparedRegistryValue<'source, 'budget>,
+        prepared: RuntimeRegistryWritePreparation<'source, 'budget>,
         input: &'source crate::value::RuntimeExpr,
     },
     Drop {
@@ -108,16 +106,9 @@ impl<'source, 'budget> NativePreparedRegistryMutation<'source, 'budget> {
                     .get(value.ty())
                     .ok_or(missing)?
                     .semantic_identity();
-                let position = rows.prepare_write(owner, key, ty, origin, admission)?;
-                let prepared = RuntimeRegistryStateUpdate::prepare(
-                    key,
-                    ty,
-                    binding.instantiation(),
-                    admission,
-                )?;
+                let prepared =
+                    rows.prepare_write(owner, key, ty, binding.instantiation(), origin, admission)?;
                 Ok(Self::Write {
-                    position,
-                    origin,
                     prepared,
                     input: value,
                 })
@@ -153,17 +144,9 @@ impl<'source, 'budget> NativePreparedRegistryMutation<'source, 'budget> {
         value: Option<RuntimeValue>,
     ) -> Result<RuntimePreparedRegistryMutation, RuntimeEffectExecutionError> {
         match self {
-            Self::Write {
-                position,
-                origin,
-                prepared,
-                ..
-            } => {
-                let update = prepared.capture(&value.expect("the write has one input"))?;
-                Ok(RuntimePreparedRegistryMutation::Write(
-                    RuntimePreparedRegistryWrite::new(position, origin, update),
-                ))
-            }
+            Self::Write { prepared, .. } => Ok(RuntimePreparedRegistryMutation::Write(
+                prepared.capture(&value.expect("the write has one input"))?,
+            )),
             Self::Drop { prepared, fade } => {
                 if fade.is_some() && !matches!(value, Some(RuntimeValue::Duration(_))) {
                     return Err(crate::line_task::LineRuntimeError::InvalidDropPolicy.into());

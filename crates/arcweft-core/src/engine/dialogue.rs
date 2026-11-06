@@ -3731,8 +3731,8 @@ mod tests {
     #[test]
     fn inline_dialogue_reads_the_reached_line_and_its_suspended_flow() {
         use crate::effect::{
-            RuntimeRegistryOwner, RuntimeRegistryReadKind, RuntimeRegistryStateUpdate,
-            RuntimeRegistryWriteSource, RuntimeScopeRegistry,
+            RuntimeRegistryOwner, RuntimeRegistryReadKind, RuntimeRegistryWriteSource,
+            RuntimeScopeRegistry,
         };
         use crate::entry::RuntimeSchemaLimits;
         use crate::task::RuntimeProgramOwner;
@@ -3785,19 +3785,12 @@ mod tests {
                     owner.clone(),
                     RuntimeSchemaLimits::engine_default(),
                 );
-                let position = rows
-                    .prepare_write(scope, key, boolean, source, &mut admission)
+                rows.prepare_write(scope, key, boolean, None, source, &mut admission)
+                    .unwrap()
+                    .capture(&RuntimeValue::Bool(flag))
+                    .unwrap()
+                    .commit(rows)
                     .unwrap();
-                let update = RuntimeRegistryStateUpdate::try_copy(
-                    key,
-                    boolean,
-                    None,
-                    &RuntimeValue::Bool(flag),
-                    &mut admission,
-                )
-                .unwrap();
-                rows.reserve_write(position).unwrap();
-                rows.commit(position, source, update);
             };
         write(
             transaction.line_mut().line_registry_mut().unwrap(),

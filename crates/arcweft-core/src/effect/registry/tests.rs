@@ -109,18 +109,12 @@ fn registry_drop_checks_item_type_and_rejects_a_replaced_row() {
     let mut rows = RuntimeScopeRegistry::default();
 
     let put = |rows: &mut RuntimeScopeRegistry, key: &LifetimeRegistryKey, value: bool| {
-        let position = rows
-            .prepare_write(owner, key, semantic(1), source, &mut admission(&plan))
+        rows.prepare_write(owner, key, semantic(1), None, source, &mut admission(&plan))
+            .unwrap()
+            .capture(&RuntimeValue::Bool(value))
+            .unwrap()
+            .commit(rows)
             .unwrap();
-        let value = RuntimeRegistryStateUpdate::try_copy(
-            key,
-            semantic(1),
-            None,
-            &RuntimeValue::Bool(value),
-            &mut admission(&plan),
-        )
-        .unwrap();
-        rows.commit(position, source, value);
     };
     put(&mut rows, &target, true);
     put(&mut rows, &sibling, true);
@@ -156,6 +150,59 @@ fn registry_drop_checks_item_type_and_rejects_a_replaced_row() {
         .unwrap();
     assert!(read(&rows, &target).is_err());
     assert_eq!(read(&rows, &sibling).unwrap(), RuntimeValue::Bool(true));
+}
+
+#[test]
+fn prepared_registry_write_tracks_its_row_across_sibling_changes() {
+    let [plan, _] = owners();
+    let owner = RuntimeRegistryOwner::NativeFlow;
+    let origin = RuntimeRegistryWriteSource::Native;
+    let first = key("flow", &["a"]);
+    let target = key("flow", &["target"]);
+    let last = key("flow", &["z"]);
+    let stage = |rows: &RuntimeScopeRegistry, key: &LifetimeRegistryKey, value| {
+        rows.prepare_write(owner, key, semantic(1), None, origin, &mut admission(&plan))
+            .unwrap()
+            .capture(&RuntimeValue::Bool(value))
+            .unwrap()
+    };
+    let read = |rows: &RuntimeScopeRegistry, key| {
+        rows.read(
+            owner,
+            key,
+            RuntimeRegistryReadKind::Required,
+            semantic(1),
+            None,
+            &mut admission(&plan),
+        )
+    };
+    let mut rows = RuntimeScopeRegistry::default();
+    stage(&rows, &first, true).commit(&mut rows).unwrap();
+    stage(&rows, &target, true).commit(&mut rows).unwrap();
+
+    let update = stage(&rows, &target, false);
+    rows.prepare_drop(
+        owner,
+        &first,
+        RuntimeRegistryReadKind::Required,
+        semantic(1),
+        None,
+        &mut admission(&plan),
+    )
+    .unwrap()
+    .commit(&mut rows)
+    .unwrap();
+    stage(&rows, &last, true).commit(&mut rows).unwrap();
+    update.commit(&mut rows).unwrap();
+    assert_eq!(read(&rows, &target).unwrap(), RuntimeValue::Bool(false));
+    assert_eq!(read(&rows, &last).unwrap(), RuntimeValue::Bool(true));
+
+    let stale = stage(&rows, &target, true);
+    stale.reserve(&mut rows).unwrap();
+    stage(&rows, &target, false).commit(&mut rows).unwrap();
+    assert!(stale.commit(&mut rows).is_err());
+    assert_eq!(read(&rows, &target).unwrap(), RuntimeValue::Bool(false));
+    assert_eq!(read(&rows, &last).unwrap(), RuntimeValue::Bool(true));
 }
 
 #[test]

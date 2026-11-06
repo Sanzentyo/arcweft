@@ -12,15 +12,13 @@ pub use assertion_identity::{
     RuntimeArtifactFingerprint, RuntimeAssertionGuardId, RuntimeIdentityDecodeError,
 };
 pub(crate) use registry::{
-    PreparedRegistryValue, RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJournalError,
-};
-pub(crate) use registry::{
-    RuntimePreparedRegistryDrop, RuntimePreparedRegistryMutation, RuntimePreparedRegistryWrite,
+    RuntimePreparedRegistryDrop, RuntimePreparedRegistryMutation, RuntimeRegistryWritePreparation,
 };
 pub use registry::{
     RuntimeRegistryDropTarget, RuntimeRegistryReadKind, RuntimeRegistryStateUpdate,
 };
 pub(crate) use registry::{RuntimeRegistryOwner, RuntimeRegistryWriteSource, RuntimeScopeRegistry};
+pub(crate) use registry::{RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJournalError};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum LineEffectRequest {

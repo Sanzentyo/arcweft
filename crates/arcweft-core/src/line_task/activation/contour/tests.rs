@@ -155,9 +155,7 @@ fn line_registry_save_roundtrips_under_its_original_activation_and_effect() {
     use crate::awbc::schema::{
         AwbcEffectPayload, AwbcEffectPlan, AwbcEffectPlanId, AwbcSignatureId,
     };
-    use crate::effect::{
-        RuntimeRegistryOwner, RuntimeRegistryStateUpdate, RuntimeRegistryWriteSource,
-    };
+    use crate::effect::{RuntimeRegistryOwner, RuntimeRegistryWriteSource};
     use arcweft_id::{DeclarationName, LifetimeRegistryKey, LifetimeScopeKind};
 
     let id = activation(0);
@@ -190,25 +188,19 @@ fn line_registry_save_roundtrips_under_its_original_activation_and_effect() {
         RuntimeSchemaLimits::engine_default(),
     );
     let rows = transaction.line_mut().line_registry_mut().unwrap();
-    let position = rows
-        .prepare_write(
-            RuntimeRegistryOwner::Dialogue(id),
-            &key,
-            ty,
-            source,
-            &mut admission,
-        )
-        .unwrap();
-    let value = RuntimeRegistryStateUpdate::try_copy(
+    rows.prepare_write(
+        RuntimeRegistryOwner::Dialogue(id),
         &key,
         ty,
         None,
-        &RuntimeValue::Bool(true),
+        source,
         &mut admission,
     )
+    .unwrap()
+    .capture(&RuntimeValue::Bool(true))
+    .unwrap()
+    .commit(rows)
     .unwrap();
-    rows.reserve_write(position).unwrap();
-    rows.commit(position, source, value);
     registry.commit(transaction).unwrap();
 
     let snapshot = registry
