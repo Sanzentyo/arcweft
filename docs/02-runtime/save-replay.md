@@ -441,6 +441,9 @@ deferred child の対応は、子 fiber と対話 ledger から借用で検査�
 main／child frame の環境・観測値・stream・選択済み結果は、同じ親の資源枠で検査して
 から、それらの値を変換する。function frame の callee context は環境の順序と照合し、
 formatter の保持値はその位置の caller context と元 operand ABI で検査する。
+借り出した対話 activation も、元の transaction から親と同じ累積資源枠に入れる。
+実行状態、入力、表示値、callback、待機中の操作、defer の捕捉値を live／inert
+共通の借用検査に通し、セッション全体の検査後に保存または復元する。
 default の戻り先と保持 packet も、元 program と共有資源枠で照合する。
 parked Await と待機 status の Need／通知値も同じ枠を使い、通知は元 Need の
 outcome・相関・cursor 順序と照合する。AwaitMany の保持 item／capture は元 Plan の

@@ -6806,5 +6806,214 @@
         }
       ]
     }
+  },
+  "nativeDialogueSessionAdmission": {
+    "source": "243fac8b8071ff3c2e9a294e66e95d7517604308",
+    "base": "f3170127100048415f6b4d23b4a1a6394f5928a7",
+    "published": "243fac8b8071ff3c2e9a294e66e95d7517604308",
+    "tree": "42d517914446d4d2ceddf66f7ace5dd731428323",
+    "patchSha256": "8a9149ce2d8f52d464a3dbc80de7af0a6798cffd794508abd566d7fea4e3bf96",
+    "blobDrift": 0,
+    "tests": [
+      {
+        "version": 1,
+        "base": "f3170127100048415f6b4d23b4a1a6394f5928a7",
+        "run": "native-dialogue-session-admission-owner-final-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [  18.591s] 2287 tests run: 2287 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 2287,
+        "passed": 2287,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4131,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T06:59:07.7636476Z"
+      },
+      {
+        "version": 1,
+        "base": "f3170127100048415f6b4d23b4a1a6394f5928a7",
+        "run": "native-dialogue-session-admission-compiler-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   3.756s] 55 tests run: 55 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 55,
+        "passed": 55,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4131,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T07:03:24.8717587Z"
+      }
+    ],
+    "clippy": {
+      "source": "243fac8b8071ff3c2e9a294e66e95d7517604308",
+      "command": [
+        "clippy",
+        "-p",
+        "arcweft-core",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4131,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-06T07:03:45.9058014Z",
+      "finishedAt": "2026-11-06T07:05:28.1587963Z"
+    },
+    "structure": {
+      "source": "243fac8b8071ff3c2e9a294e66e95d7517604308",
+      "command": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4131,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-06T07:05:28.7424973Z",
+      "finishedAt": "2026-11-06T07:05:33.0278754Z"
+    },
+    "prior": "The first compile rejected using non-serializable Plan type IDs directly in metadata and found an obsolete test helper. The fixed owner and consumer runs use checked ordinal metadata and the common borrowed visitor.",
+    "unverifiedAtRun": "Native inline registry reads still need the withdrawn contour when copying a value. The Source checker and the complete reverse matrix are separate.",
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-native-dialogue-session-admission.raw.zip",
+      "sha256": "2ae74b996577d8c770c3f4a6ab98fe57d00c99a7355a67ac59d32bddf3cda450",
+      "entries": [
+        {
+          "entry": "native-dialogue-session-admission-check-20261106.log",
+          "bytes": 33515,
+          "sha256": "a835abce96bdb6e42c9a7e6070b55376eb74515420fb1a11872f794a69b42cdd"
+        },
+        {
+          "entry": "native-dialogue-session-admission-owner-20261106.runtime.terminal-audit.json",
+          "bytes": 637,
+          "sha256": "d5768914da1011df29121cb2495726e323d75f8482c37dcd2ccc7a093d286379"
+        },
+        {
+          "entry": "native-dialogue-session-admission-clippy-20261106.log",
+          "bytes": 4772135,
+          "sha256": "d6c51885a99b23abaf3a2ec8c1d8fb431c91e231ed2dcf1558c1f435fa748df2"
+        },
+        {
+          "entry": "native-dialogue-session-admission-clippy-20261106.json",
+          "bytes": 353,
+          "sha256": "8156853d71dd1a209bceeea1d7fc4faffc7fcc3fd6ee89f244e14ec0525e023e"
+        },
+        {
+          "entry": "native-dialogue-session-admission-structure-20261106.log",
+          "bytes": 65697,
+          "sha256": "e4aac5bc1a048ec1b88cdc50f72619e4f3819522d35c1540322071976d56cc74"
+        },
+        {
+          "entry": "native-dialogue-session-admission-structure-20261106.json",
+          "bytes": 363,
+          "sha256": "e574ec55fdb95ccb96a6cdcb6ad2586b0d8774766d6c6c3f00fa996ba4fac4fd"
+        },
+        {
+          "entry": "checkpoint-native-dialogue-session-admission-20261106.verified.json",
+          "bytes": 1768,
+          "sha256": "cffed04ab441dc4a356d0c5827bfa7517e3dd61071907df60e56a75ed078a5ea"
+        },
+        {
+          "entry": "native-dialogue-session-admission-owner-final-20261106.catalog.json",
+          "bytes": 567,
+          "sha256": "e1a6980cd8a5bec40df2384ff892831ecf88b2f09f7f572dda9491274f22bc73"
+        },
+        {
+          "entry": "native-dialogue-session-admission-owner-final-20261106.catalog.inventory.json",
+          "bytes": 582589,
+          "sha256": "e0be020f0fba623c7ed26635f1d68d787bb51de79873bb4785f0a628c10294a4"
+        },
+        {
+          "entry": "native-dialogue-session-admission-owner-final-20261106.catalog.log",
+          "bytes": 428021,
+          "sha256": "20276260476f296924f6c281bff3443595591149209ef4154ef85a75c9b3cd74"
+        },
+        {
+          "entry": "native-dialogue-session-admission-owner-final-20261106.runtime.json",
+          "bytes": 659,
+          "sha256": "96080724ebfcf5ba0366ce8808a4f966fc98ee3a2f3d6ce82ba75dc62e9e32d1"
+        },
+        {
+          "entry": "native-dialogue-session-admission-owner-final-20261106.runtime.log",
+          "bytes": 735256,
+          "sha256": "74b4e4916460565b6b0c51066627dde1e8ac20a4e3a14cefe0f7c04f2b6b86d9"
+        },
+        {
+          "entry": "native-dialogue-session-admission-owner-final-20261106.runtime.terminal-audit.json",
+          "bytes": 643,
+          "sha256": "0375c53f7b971871917ce6bc5d7470eea30a4104be7623e473ce51119fafd106"
+        },
+        {
+          "entry": "native-dialogue-session-admission-owner-final-20261106.binaries-before.json",
+          "bytes": 202,
+          "sha256": "d5e9b71766b4d320c76399514316340c5614e5b2e2214a4b543cf485ca965556"
+        },
+        {
+          "entry": "native-dialogue-session-admission-owner-final-20261106.source-freeze.json",
+          "bytes": 807830,
+          "sha256": "25bb792d9dbd77193c59baa45569675b16a313b86b50e4d4d688af15c8fc43ce"
+        },
+        {
+          "entry": "native-dialogue-session-admission-compiler-20261106.catalog.json",
+          "bytes": 595,
+          "sha256": "c99b3c9b29eaed6dd1c08858b860ce40f3f62872099fc1dfa055d6884a1de53d"
+        },
+        {
+          "entry": "native-dialogue-session-admission-compiler-20261106.catalog.inventory.json",
+          "bytes": 13985,
+          "sha256": "f51e22456a2ae3a5021e3060a7c26a6d94e2a239c71f38c499ff3f96c5a88b04"
+        },
+        {
+          "entry": "native-dialogue-session-admission-compiler-20261106.catalog.log",
+          "bytes": 98287,
+          "sha256": "b13c1ff53ca5cfbe686c78250db0af685b640ac1ae67f4ad808a95b0aa82139d"
+        },
+        {
+          "entry": "native-dialogue-session-admission-compiler-20261106.runtime.json",
+          "bytes": 687,
+          "sha256": "637ff39b51308b68a1f0a7c36ba31ccec030bdcf6cb38a013aa7ad093eb4bb8a"
+        },
+        {
+          "entry": "native-dialogue-session-admission-compiler-20261106.runtime.log",
+          "bytes": 100671,
+          "sha256": "2aca26c5d32a85e3cbefa53d38bb510729e0202cedb9e7f338dbbbd18923cec5"
+        },
+        {
+          "entry": "native-dialogue-session-admission-compiler-20261106.runtime.terminal-audit.json",
+          "bytes": 632,
+          "sha256": "cc957a85b7410b25fc55ab55ffa5ff7dcd5d6b01777ac9b55bcda052d42714d7"
+        },
+        {
+          "entry": "native-dialogue-session-admission-compiler-20261106.binaries-before.json",
+          "bytes": 230,
+          "sha256": "2ce779d8bd320512682db5929a70325207e2220a734e7be7615928d85603d6d4"
+        },
+        {
+          "entry": "native-dialogue-session-admission-compiler-20261106.source-freeze.json",
+          "bytes": 807830,
+          "sha256": "b3d3554d2ec050e70bdca8705bf93e1e4db4522ff8df27e44a6d066ca97217d8"
+        }
+      ]
+    }
   }
 }

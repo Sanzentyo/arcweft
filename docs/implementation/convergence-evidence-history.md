@@ -14894,3 +14894,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 - Source `4e870814c2e61c87616d821e1128dfcfa7e1ea79` で、型付きRuntimePlanの読取りをNativeと生成AWBCに接続した。対象3クレート2537件がPASS、1件skip。NativeのFlow復元、対話から実lineと親Flowの選択、version 1式sourceの往復と切断拒否、両実行器の戻り値を確認した。固定入力4,130件とテスト一覧に差分0件。ローカル検証には既存ユーザー変更12ファイルが含まれる。
 - 初回のworkspace checkはアクセラレータの式分類漏れ、次は追加テストのコンストラクタ名で停止した。修正後はworkspace check、Clippy、構造gateがexit 0。全ターゲットのCargo metadataとcargo treeは逆依存53パッケージで一致した。Windowsのみのtreeではarcweft-render-webが外れた。全逆依存の実行は別途必要。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
 - `bff44ec137f999ab5fa10b162982cdd1f7ba72d9` で Windows の逆依存51パッケージを一括選択した。固定入力4,130件に差分0件。nextest の一覧ビルドは rustc のメモリ不足と Windows のページングファイルエラー（1455）で exit 101となり、テストは開始しなかった。[失敗コマンドと原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-06 — Native dialogue frames share the rollback session allowance
+
+- Source `243fac8b8071ff3c2e9a294e66e95d7517604308` で、借り出した対話のフレームと元の親を一つの資源予算で検査してから保存・復元する。対話の実行状態、入力、表示値、コールバックとdeferの捕捉値を借用で検査する。旧変換入口は値単位で枠を作り直していた。
+- 上限超過を両方向で拒否し、上限内では親と対話の値を復元した。Core 全2287件、Compiler `evaluated_effects` 55件がPASS。Core Clippyと構造ゲートはexit 0。初回のコンパイル失敗と4,131固定入力に差分0件の最終結果を保持した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
