@@ -14324,5 +14324,124 @@
         }
       ]
     }
+  },
+  "genericRegistryReadItemInference": {
+    "source": "b43b1b3644b4ae73642b216f27e3d9b4a07707f8",
+    "fix": "A partial contextual Option supplies the shape. The registry write supplies the item type until the callable substitution is complete.",
+    "firstFixture": {
+      "executed": 1,
+      "failed": 1,
+      "excludedByFilter": 72,
+      "result": "One flow combining the three cases exceeded the existing deterministic step limit."
+    },
+    "focused": {
+      "executed": 1,
+      "passed": 1,
+      "excludedByFilter": 72,
+      "cases": [
+        "Required read in T",
+        "Registered optional read in Option<T>",
+        "Optional absence in Option<T> with a conditional source write"
+      ],
+      "backends": [
+        "Native",
+        "decoded AWBC"
+      ],
+      "fixtureChange": "Each condition uses an independent flow with the original per-flow bound."
+    },
+    "owner": {
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-lang-sema",
+        "--lib",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--no-tests",
+        "fail"
+      ],
+      "passed": 1647,
+      "skipped": 0,
+      "compilerEvaluatedEffects": 73,
+      "compilerLibrary": 191,
+      "semaLibrary": 1383
+    },
+    "reverseDependencies": {
+      "graphCommand": [
+        "cargo",
+        "tree",
+        "--workspace",
+        "--locked",
+        "--invert",
+        "arcweft-lang-sema",
+        "--edges",
+        "normal,build,dev",
+        "--prefix",
+        "none",
+        "--format",
+        "{p}"
+      ],
+      "packages": [
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lang-sema",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-project-loader",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ],
+      "terminalRuntime": "pending"
+    },
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-generic-read-owner.raw.zip",
+      "sha256": "7c10703517d6d76e0da8cd1dfa8573c1c352c3b504f12a62cd90861afa8b9ae6",
+      "entries": [
+        {
+          "entry": "registry-generic-read-post-clean-20261107.nextest.log",
+          "bytes": 97085,
+          "sha256": "7ff4e936c51606bb0ce7e788ba675b7a2f4d09f8958364d883ec50b8ad6a05f6"
+        },
+        {
+          "entry": "registry-generic-read-post-clean-split-20261107.nextest.log",
+          "bytes": 85724,
+          "sha256": "df738298b79f11a13fe83397e88ef0d728b0cdbaf0b42f23d4dd46a40e698683"
+        },
+        {
+          "entry": "registry-generic-read-owner-20261107.nextest.log",
+          "bytes": 343289,
+          "sha256": "846259fd0da45f5032e882fd2331f0222d4020a68ad8f9ef1102d37088e2c0c6"
+        },
+        {
+          "entry": "registry-generic-read-20261107.inverse-cargo.txt",
+          "bytes": 4982,
+          "sha256": "1b6e596577e5467179d6fb0c9f9b2c1be3f9a40dc284530ed1593f2e15498fba"
+        },
+        {
+          "entry": "generic-registry-read-option-20261107.verified.json",
+          "bytes": 852,
+          "sha256": "227b193fc5dcd4aaa9fc273132138695a3cad098b82ce9066f2909a4d5ae397f"
+        }
+      ]
+    }
   }
 }
