@@ -14872,7 +14872,12 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 - Source e4387fee79d0c83873e5728c6eb71ea1c24a785e で、NativeとAWBCが実際のline activationに書き込む。初期化、その分岐、mark、取消、正常終了と取消の各deferを実行し、AWBCでは最大1操作ごとに公開Saveを符号化・復元した。保存行は元のactivationとAWBC書込み命令に結び付き、改変を拒否し、フレーム解放で退役する。
 - Core全2,281件とCompilerの対話テスト全54件が通過。最初のコンパイル移行漏れ、AWBCの命令追跡の誤拒否、Nativeが取消後にcompleted deferを選んだ失敗の原本も保持した。取消時は元のreducer終了理由を引き継ぐよう修正した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
 - 同じ公開Source e4387fee79d0c83873e5728c6eb71ea1c24a785e のCLIを再ビルドし、以前失敗した同一入力と引数を再実行した。verify、plan、Bytecode VM、AWBC Productはすべてexit 0。両実行モードは32ステップ後に対話待ちとなり、各ステップ最大1操作、診断0件。最初の集計は終了状態を別フィールドから読んでいたため、同じ出力原本から訂正した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
 ## 2026-11-06 — Writes from a line to its reached Flow
 
 - 公開Source e4387fee79d0c83873e5728c6eb71ea1c24a785e のワークスペース全target・全featureでcargo checkが通過した。固定入力4,130件に差分0件。警告を含むビルド原本を保存した。
 - 同じSourceで、lineのinitから外側のFlowに書く直接形と関数経由形は、正しい権限でverifyとplanを通過した。両実行器は実行中に書込み先の実行文脈を解決できず停止した。誤った権限はAWF-EFX-001で拒否した。既受入の同一スタックFlow書込みとline自身への書込みとは別の境界。[再現入力・実測・原本](acceptance-evidence/task-flow-registry-execution.json)。
+- Source `ac0557acbf42f2660a755b5418791eedc26e89fa` で、NativeとAWBCのline実行が実際の親の最寄りのFlowへ書き込めるようになった。AWBCの権限照合も修正した。同じ操作名の権限が複数あると先頭だけを調べていたため、`'flow` と `'line` を両方許可した入力で後者の配下を拒否していた。初回は終了観測用のログ、次はレジストリ書き込みで同じ誤拒否を確認した。各試行は73件中72件PASS、追加ケース1件が実行前に失敗した。
+- 修正後のCoreとCompilerの対象は全2545件PASS。`include` 先のlineからの直接・関数経由・mark・取消・正常と取消のdeferの書き込みを、両実行器とAWBCの各step公開保存・復元で確認した。旧失敗の同じCLI入力4実行は最大1操作の32ステップで対話待ちとなり、実行診断0件。誤った権限はAWF-EFX-001で拒否した。[公開SHA・各試行の原本](acceptance-evidence/task-flow-registry-execution.json)。
+- 同じ公開ソースでワークスペース検証を実行した。check 終了コード 0、clippy 終了コード 0、structure 終了コード 0。固定入力4130件に差分0件。[コマンドと原本](acceptance-evidence/task-flow-registry-execution.json)。
+- 対話を含まない権限対照では、旧AWBCが `'line` 単独を受理し、`'flow` を併記すると拒否した。修正後は両入力を実行できた。CLIの初回集計はverify診断の入れ子を読み違えたため、出力原本のハッシュを照合して同じ原本から訂正した。[対照入力と集計原本](acceptance-evidence/task-flow-registry-execution.json)。
