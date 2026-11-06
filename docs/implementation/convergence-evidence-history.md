@@ -15009,3 +15009,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 - Source ed20481369773dfba4d231547fae124953b62984 で、キー・要素型・必須性・破棄ポリシーを保持し、到達した Flow または Line で同じ行を照合して削除した。必須・任意の直接呼出しと明示パイプ、Stop の Duration、任意の欠損、取消本体での Line と親 Flow の削除が通過した。Native とデコード済みAWBCで隣のキーを保持し、取消ケースでは AWBC の公開 JSON を毎ステップ復元した。修正後の4クレートの対象スイートは4,074件通過・1件スキップ。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
 - 作業差分の初回は59件通過・4件失敗、次は62件通過・2件失敗だった。登録側の型を呼出し候補と照合し、パイプで渡したキーを破棄対象として扱い、取消本体に元の Line を保持した。AWBC の型 ID と RuntimePlan の比較用 fixture も訂正した。[失敗ログと訂正理由](acceptance-evidence/task-flow-registry-execution.json)。
 - 初回公開ソースの4クレートは4,073件通過・1件失敗・1件スキップ。必須読取りの型注釈が、従来の到達経路に基づく診断より前に拒否されていた。Source 901926eca718a2c3f110916234aa9f64b8e1d192 で登録型の早期照合を呼出し候補の選択に限定した。診断の回帰と破棄の計4件を再検証し、構造監査のブロッキング指摘は0件だった。[初回・修正後・公開SHA](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Owned StageActor registration reaches the runtime admission boundary
+
+- Source 901926eca718a2c3f110916234aa9f64b8e1d192 の Native とデコード済み AWBC で、子の対話から受け取った StageActor をローカルで破棄すると、発行元の取得と解放が各1回実行され、後続ログと正常終了に到達した。到達した Line のキーに移して破棄するケースもコンパイル・取得までは進み、登録時に unrestricted snapshot contains an affine value で停止した。対照2件通過、登録2件失敗。[実行入力・実測・原本](acceptance-evidence/task-flow-registry-execution.json)。
+- 現行の義務生成はレジストリの MustDrop を扱っていないため、生成済みと読める検証器の説明を削除した。登録と解放の受入条件は現状一覧に残した。

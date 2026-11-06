@@ -184,8 +184,7 @@ arcweft-verify-oxiz
 The semantic verifier generates obligations for lifetime promotion, unsafe
 lifetime audits, upper-lifetime registry writes, effect capability writes,
 thread capture, thread join typing, trusted assumptions, raw syntax that reaches
-semantic analysis, sibling thread or line child task write conflicts, and
-MustDrop registry values such as `'line.focus`.
+semantic analysis, and sibling thread or line child task write conflicts.
 
 Effect capability obligations are backed by semantic facts rather than ordinary
 symbol lookup. A flow or function contract such as

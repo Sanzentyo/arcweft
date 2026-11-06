@@ -715,13 +715,16 @@ relationship. This shape evolves in place in AWBC version 1.
 Task classes preserve the current LocalView/Io/Cpu/GPU/shader/Wasm/asset/audio/TTS/
 BGM/LSP/background set. Effect kinds preserve wait, audio,
 call, log, signal/metric/event/out, return/goto, panic/fail/bail, ensure/assert,
-close/select, loop control, and typed registry writes. The closed effect payload
-owns the kind and its static data. Audio carries an `AwbcAudioCommandId`;
+close/select, loop control, and typed registry writes and drops. The closed
+effect payload owns the kind and its static data. Audio carries an
+`AwbcAudioCommandId`.
 `RegistryWrite` carries an Id-owned `LifetimeRegistryKey` and the original RHS
-`AwbcTypeId`; other variants carry their constant operands. Kind is derived from
-the payload rather than independently stored. Registry signatures accept exactly
-that RHS type and return no value. The verifier requires the `state.write` host
-capability and declared effect coverage for the exact scoped key. A static key
+`AwbcTypeId`. `RegistryDrop` carries the key, presence mode, original item
+`AwbcTypeId`, and drop policy. A write accepts the RHS value. A Stop drop accepts
+one `Duration` operand, and other drop policies have no operands. Both registry
+signatures have no result. The payload determines its effect kind. The verifier
+requires the `state.write` host capability and declared effect coverage for the
+exact scoped key. A static key
 grants no active-scope lease. The canonical version-one codec decodes this same
 payload grammar and admits every key name against the enclosing cumulative
 resource budget before retaining it.
@@ -729,11 +732,16 @@ resource budget before retaining it.
 An executable `'flow` write selects the nearest reached Flow invocation in
 the current execution stack. An `include` opens a separate Flow invocation,
 and ordinary same-stack calls use the enclosing Flow's storage. The original
-RHS type and invocation binding admit the value into replay-safe data before
-commit. Returning from or replacing the Flow retires its entries. Native
-rollback and the AWBC version-one save retain the entries on the original
+RHS type and invocation binding admit an unrestricted value into replay-safe
+data before commit. Returning from or replacing the Flow retires its entries.
+Native rollback and the AWBC version-one save retain the entries on the original
 frame. AWBC restore verifies the saved invocation coordinates and checks the
 key and type against the original effect declaration before restoring it.
+
+A drop selects the reached Flow or Line with its typed key. It validates the
+registered item's type and removes the admitted row. A required drop rejects
+absence, and an optional drop accepts it. Cancellation code in a Line can
+select that Line or its reached parent Flow.
 
 Context-free effect dispatch checks that requirement before evaluating or moving
 operands. A rejected write terminates execution before subsequent instructions

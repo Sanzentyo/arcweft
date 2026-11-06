@@ -14764,5 +14764,124 @@
         }
       ]
     }
+  },
+  "ownedLineRegistryNativeAndDecodedAwbcControls": {
+    "source": "901926eca718a2c3f110916234aa9f64b8e1d192",
+    "documentationHead": "4de717807ff1e0d37291a86d6f082dcd4b2c83da",
+    "sourceSha256": "7586997b443fac44689aeecd61a802e08e0e0c0fbf6605f4606c4c261c3095fc",
+    "testBinarySha256": "41545500F2EBAB7559778A73EED061602D08516F9D3374EEAA86D8B3C8E6F022",
+    "cases": [
+      {
+        "case": "native_owned_registry_control",
+        "backend": "Native",
+        "operation": "discard the received local",
+        "compiled": true,
+        "acquireTick": 5,
+        "releaseTick": 11,
+        "failureTick": null,
+        "failure": null,
+        "exitCode": 0
+      },
+      {
+        "case": "decoded_awbc_owned_registry_control",
+        "backend": "canonical decoded AWBC",
+        "operation": "discard the received local",
+        "compiled": true,
+        "acquireTick": 15,
+        "releaseTick": 23,
+        "failureTick": null,
+        "failure": null,
+        "exitCode": 0
+      },
+      {
+        "case": "native_owned_line_registry",
+        "backend": "Native",
+        "operation": "move the received actor into its reached Line key, then drop the key",
+        "compiled": true,
+        "acquireTick": 5,
+        "releaseTick": null,
+        "failureTick": 11,
+        "failure": "unrestricted snapshot contains an affine value",
+        "exitCode": 101
+      },
+      {
+        "case": "decoded_awbc_owned_line_registry",
+        "backend": "canonical decoded AWBC",
+        "operation": "move the received actor into its reached Line key, then drop the key",
+        "compiled": true,
+        "acquireTick": 15,
+        "releaseTick": null,
+        "failureTick": 23,
+        "failure": "unrestricted snapshot contains an affine value",
+        "exitCode": 101
+      }
+    ],
+    "admissionBoundary": "The original reached Line owns the key. The writer uses the unrestricted replay packet before the runtime can transfer StageActor custody to that key.",
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-owned-line-registry-probe.raw.zip",
+      "sha256": "2572f0450450cdf22e49453df8b7f96976cedf38273bccf4a9dabb0891b59ce8",
+      "entries": [
+        {
+          "entry": "receipt.json",
+          "bytes": 19272,
+          "sha256": "ff6f09a23964c685de4083e0adcf008b8a9a2c4c468adfc8a2641f570858978b"
+        },
+        {
+          "entry": "owned_line_registry_probe.rs",
+          "bytes": 199742,
+          "sha256": "7586997b443fac44689aeecd61a802e08e0e0c0fbf6605f4606c4c261c3095fc"
+        },
+        {
+          "entry": "build.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "build.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "native_owned_registry_control.stdout.log",
+          "bytes": 155,
+          "sha256": "450030b4970328ce320f0be757670ad3e27c0480dee83347cef7d89478128be4"
+        },
+        {
+          "entry": "native_owned_registry_control.stderr.log",
+          "bytes": 75,
+          "sha256": "534358b6a7cc36e4929e068dbea230e82c491b4b998cd7f2fbcda5f2fe78da9f"
+        },
+        {
+          "entry": "decoded_awbc_owned_registry_control.stdout.log",
+          "bytes": 161,
+          "sha256": "7a5176a0334427e9409ed10f53e277c348a4c33f54d1bedccada6ba66334a361"
+        },
+        {
+          "entry": "decoded_awbc_owned_registry_control.stderr.log",
+          "bytes": 75,
+          "sha256": "ff077b9767baec2fec970720db4dc877789e0b827faca1ba106a76b7daf3f8e3"
+        },
+        {
+          "entry": "native_owned_line_registry.stdout.log",
+          "bytes": 213,
+          "sha256": "e0f5b4e14e345e47630f07dfc85ce9fe49c257b7d2341fbdb2457bebd223bd33"
+        },
+        {
+          "entry": "native_owned_line_registry.stderr.log",
+          "bytes": 882,
+          "sha256": "434304ca7881e7140aa557103cf8ff033d1b4f74a3c1d16beec93b38276f2724"
+        },
+        {
+          "entry": "decoded_awbc_owned_line_registry.stdout.log",
+          "bytes": 225,
+          "sha256": "015be277ab1243daa3bc949cdd7c92f5941e186c284fdb2fd2f00fc8066b58fb"
+        },
+        {
+          "entry": "decoded_awbc_owned_line_registry.stderr.log",
+          "bytes": 918,
+          "sha256": "2ceb53974afc80531abcfbe4a546003525d71e68dd39cc0bdfd16645d88708dd"
+        }
+      ]
+    }
   }
 }
