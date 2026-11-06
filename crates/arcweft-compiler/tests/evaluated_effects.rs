@@ -1946,7 +1946,11 @@ entry cli @entry.main { goto @flow.main }
 
 #[test]
 fn line_root_deferred_children_execute_in_native_and_awbc_lifo() {
-    use arcweft_core::value::{AwbcRuntimeValueSnapshot, RuntimeInt};
+    use arcweft_core::{
+        awbc::product_step::AwbcProductExecutorSaveSnapshot,
+        executor::ArcweftRuntimeExecutorSnapshot,
+        value::{AwbcRuntimeValueSnapshot, RuntimeInt},
+    };
 
     for terminal_separator in [";", ""] {
         let compiled = compile_attached_dialogue_project(&format!(
@@ -2044,6 +2048,7 @@ entry cli @entry.main {{ goto @flow.main }}
         let mut awbc = Some(awbc);
         let mut observed_initial = false;
         let mut observed_replacement = false;
+        let mut rejected_regressions = [false; 2];
         let initial = serde_json::to_value(AwbcRuntimeValueSnapshot::Bool(true)).unwrap();
         let replacement =
             serde_json::to_value(AwbcRuntimeValueSnapshot::Int(RuntimeInt::I64(1))).unwrap();
@@ -2066,6 +2071,43 @@ entry cli @entry.main {{ goto @flow.main }}
                             }
                         }
                     }
+                    let active_line = entries
+                        .iter()
+                        .find_map(|entry| entry.pointer("/Active/line"));
+                    let has_inflight_cleanup = saved["child_fibers"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|child| child["owner"].get("ScopedDeferred").is_some());
+                    let phase = usize::from(has_inflight_cleanup);
+                    if rejected_regressions[phase]
+                        || !active_line
+                            .and_then(|line| line["next_defer_registration"].as_u64())
+                            .is_some_and(|next| next > 1)
+                    {
+                        return executor;
+                    }
+                    let mut tampered = saved.clone();
+                    let line = tampered["dialogues"]["entries"]
+                        .as_array_mut()
+                        .unwrap()
+                        .iter_mut()
+                        .find_map(|entry| entry.pointer_mut("/Active/line"))
+                        .unwrap();
+                    line["next_defer_registration"] = serde_json::json!(1);
+                    let tampered: AwbcProductExecutorSaveSnapshot =
+                        serde_json::from_value(tampered).unwrap();
+                    let tampered = executor.bind_product_save_snapshot(tampered).unwrap();
+                    let rejection = executor
+                        .restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(tampered))
+                        .err()
+                        .expect("a lexical defer cannot use an unallocated registration ID");
+                    let (executor, reason) = rejection.into_parts();
+                    assert!(
+                        reason.to_string().contains("restored scoped defer registration is outside its activation's allocation"),
+                        "{reason}"
+                    );
+                    rejected_regressions[phase] = true;
                     executor
                 });
                 awbc = Some(restored);
@@ -2080,6 +2122,11 @@ entry cli @entry.main {{ goto @flow.main }}
         assert!(
             observed_replacement,
             "the cleanup replacement crossed the save boundary"
+        );
+        assert_eq!(
+            rejected_regressions,
+            [true, true],
+            "pending and in-flight saves were rejected"
         );
         assert_eq!(log_messages(&awbc_effects), log_messages(&native_effects));
     }

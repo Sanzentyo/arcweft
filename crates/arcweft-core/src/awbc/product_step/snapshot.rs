@@ -2543,6 +2543,23 @@ impl AwbcProductExecutorSnapshot {
                 }
             }
             let activation_fiber = active.activation_fiber();
+            let scoped_registration_ids = activation_fiber
+                .into_iter()
+                .chain(children.iter().map(|child| &child.fiber))
+                .flat_map(|fiber| fiber.frames.iter().flat_map(|frame| &frame.scopes))
+                .flat_map(|scope| {
+                    scope
+                        .defers
+                        .iter()
+                        .map(|registration| registration.id)
+                        .chain(scope.defer_inflight.iter().map(|inflight| inflight.registration))
+                        .chain(scope.defer_releasing.iter().map(|release| release.registration))
+                });
+            shared_line
+                .admit_restored_scoped_defer_registrations(scoped_registration_ids)
+                .map_err(|error| {
+                    AwbcProductStepBuildError::RestoreSnapshot { message: error.to_string() }
+                })?;
             let mut actual_scoped_inflight = None;
             for child in children {
                 let AwbcProductChildFiberOwnerSnapshot::ScopedDeferred {

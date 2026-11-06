@@ -24,7 +24,7 @@ use crate::value::{
 };
 use arcweft_character::id::CharacterId;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU64;
 use thiserror::Error;
 
@@ -5133,6 +5133,10 @@ pub enum LineRuntimeError {
     InvalidRestoredResultState,
     #[error("restored line-root deferred registrations violate stack or capture ownership")]
     InvalidRestoredDeferredState,
+    #[error(
+        "restored scoped defer registration is outside its activation's allocation or duplicates a retained registration"
+    )]
+    InvalidRestoredScopedDeferIdentity,
     #[error("dialogue activation transaction was superseded by a newer commit")]
     StaleActivationTransaction,
     #[error("dialogue activation transaction revision overflowed")]
@@ -5593,6 +5597,33 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
             .map(|inflight| (inflight.id, inflight.site))
     }
 
+    fn allocated_defer_registration(&self, id: RuntimeDeferRegistrationId) -> bool {
+        id.get().get() < self.next_defer_registration
+    }
+
+    /// Lexical scopes own their packets, but registration numbers come from
+    /// this activation, including packets without any affine handle leases.
+    pub(crate) fn admit_restored_scoped_defer_registrations(
+        &self,
+        registrations: impl IntoIterator<Item = RuntimeDeferRegistrationId>,
+    ) -> Result<(), LineRuntimeError> {
+        let mut scoped = BTreeSet::new();
+        for id in registrations {
+            if !self.allocated_defer_registration(id) || !scoped.insert(id) {
+                return Err(LineRuntimeError::InvalidRestoredScopedDeferIdentity);
+            }
+        }
+        if !scoped.is_empty()
+            && (self.deferred.iter().any(|row| scoped.contains(&row.id()))
+                || self
+                    .deferred_inflight()
+                    .is_some_and(|(id, _)| scoped.contains(&id)))
+        {
+            return Err(LineRuntimeError::InvalidRestoredScopedDeferIdentity);
+        }
+        Ok(())
+    }
+
     fn has_pending_deferred_work(&self) -> bool {
         !self.deferred.is_empty()
             || self
@@ -5637,14 +5668,15 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
                 .deferred
                 .windows(2)
                 .any(|rows| rows[0].id() >= rows[1].id())
-            || self.deferred.last().is_some_and(|registration| {
-                registration.id().get().get() >= self.next_defer_registration
-            })
+            || self
+                .deferred
+                .last()
+                .is_some_and(|registration| !self.allocated_defer_registration(registration.id()))
             || self.ledger.leases().values().any(|lease| {
                 matches!(
                     lease.owner(),
                     RuntimeHandleOwnerSlot::ScopedDefer(id)
-                        if id.get().get() >= self.next_defer_registration
+                        if !self.allocated_defer_registration(*id)
                 )
             })
         {
@@ -5654,7 +5686,7 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
             .defer_unwind
             .as_ref()
             .and_then(|unwind| unwind.inflight)
-            && (inflight.id.get().get() >= self.next_defer_registration
+            && (!self.allocated_defer_registration(inflight.id)
                 || self
                     .deferred
                     .last()

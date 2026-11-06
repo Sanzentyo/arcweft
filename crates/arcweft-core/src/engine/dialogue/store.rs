@@ -121,6 +121,20 @@ type NativeEngineDialogueFrameRollbackImage =
     EngineDialogueActivationFrame<NativeDialogueActivationFrameRollbackImage>;
 
 impl<V, O, C, E> DialogueActivationFrame<V, O, C, E> {
+    fn admit_scoped_defer_registrations<L>(
+        &self,
+        line: &RuntimeDialogueActivationState<RuntimePlanTypeId, L>,
+    ) -> Result<(), LineRuntimeError> {
+        let ids = self.scopes.iter().flat_map(|scope| {
+            scope
+                .deferred
+                .iter()
+                .map(|registration| registration.id())
+                .chain(scope.inflight.iter().map(|&(id, _)| id))
+        });
+        line.admit_restored_scoped_defer_registrations(ids)
+    }
+
     fn validate_parent(
         &self,
         activation: &DialogueActivationId,
@@ -386,6 +400,7 @@ impl DialogueActivationStoreRollbackImage {
         )?;
         self.registry.try_visit_active(|activation, active, line| {
             admission.validate_metadata(&active.inbox)?;
+            active.frame.admit_scoped_defer_registrations(line)?;
             active.frame.admit_reducer(activation, line, admission)
         })?;
         self.registry.try_visit_active(|_, active, _| {
@@ -1089,6 +1104,7 @@ impl DialogueActivationStore {
         contour.admit_retained(admission)?;
         contour.try_visit_active(|activation, active, line| {
             admission.validate_metadata(&active.inbox)?;
+            active.frame.admit_scoped_defer_registrations(line)?;
             active.frame.admit_reducer(activation, line, admission)
         })?;
         contour.try_visit_active(|activation, active, _| {
