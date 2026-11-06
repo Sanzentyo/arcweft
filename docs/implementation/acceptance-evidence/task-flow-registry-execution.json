@@ -4213,5 +4213,233 @@
         }
       ]
     }
+  },
+  "lineToReachedFlowReproduction": {
+    "source": "e4387fee79d0c83873e5728c6eb71ea1c24a785e",
+    "testedHead": "fddbeb13bc9938e486e005367c0e5c64fffb3243",
+    "workspaceCheck": {
+      "version": 1,
+      "head": "fddbeb13bc9938e486e005367c0e5c64fffb3243",
+      "source": "e4387fee79d0c83873e5728c6eb71ea1c24a785e",
+      "command": [
+        "cargo",
+        "check",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked"
+      ],
+      "phase": "terminal",
+      "sourceInputs": 4130,
+      "started": "2026-11-06T04:44:54.9650088Z",
+      "exit": 0,
+      "sourceDrift": [],
+      "finished": "2026-11-06T04:47:10.5608008Z",
+      "logSha256": "ac988d8249c3c3bb5af56c7b83cef195129c4f46e339b99370295ea487922676"
+    },
+    "cases": [
+      {
+        "fixture": "direct",
+        "mode": "verify",
+        "exit": 0,
+        "status": null,
+        "diagnostics": [],
+        "steps": 0
+      },
+      {
+        "fixture": "direct",
+        "mode": "plan",
+        "exit": 0,
+        "status": null,
+        "diagnostics": [],
+        "steps": 0
+      },
+      {
+        "fixture": "direct",
+        "mode": "bytecode-vm",
+        "exit": 1,
+        "status": "failed registry writes require their original program and owning execution context",
+        "diagnostics": [],
+        "steps": 4
+      },
+      {
+        "fixture": "direct",
+        "mode": "awbc-product",
+        "exit": 1,
+        "status": "failed AWBC activation trapped: FiberTrap { code: InternalInvariant, message: Some(\"registry writes require their original program and owning execution context\"), source_map: None }",
+        "diagnostics": [],
+        "steps": 10
+      },
+      {
+        "fixture": "helper",
+        "mode": "verify",
+        "exit": 0,
+        "status": null,
+        "diagnostics": [],
+        "steps": 0
+      },
+      {
+        "fixture": "helper",
+        "mode": "plan",
+        "exit": 0,
+        "status": null,
+        "diagnostics": [],
+        "steps": 0
+      },
+      {
+        "fixture": "helper",
+        "mode": "bytecode-vm",
+        "exit": 1,
+        "status": "failed dialogue activation execution failed: registry writes require their original program and owning execution context",
+        "diagnostics": [],
+        "steps": 5
+      },
+      {
+        "fixture": "helper",
+        "mode": "awbc-product",
+        "exit": 1,
+        "status": "failed AWBC activation trapped: FiberTrap { code: InternalInvariant, message: Some(\"registry writes require their original program and owning execution context\"), source_map: None }",
+        "diagnostics": [],
+        "steps": 12
+      },
+      {
+        "fixture": "wrong",
+        "mode": "verify",
+        "exit": 1,
+        "status": null,
+        "diagnostics": [
+          "AWF-EFX-001"
+        ],
+        "steps": 0
+      }
+    ],
+    "rawArchive": {
+      "path": "task-line-upper-flow-reproduction.raw.zip",
+      "bytes": 33130,
+      "sha256": "a41661397bb872eeeaf4b309db2e664c087d63dc06d90a6c74b7433898b27512",
+      "entryDrift": 0,
+      "entries": [
+        {
+          "entry": "line-registry-call-bound-20261106.init.exact.arcw",
+          "bytes": 395,
+          "sha256": "43e0a1372ff08db8b7987b7c232617c5c972ce6ffaaf0e233c5751c18af2db4d"
+        },
+        {
+          "entry": "line-registry-phase-bound-20261106.activation.exact.arcw",
+          "bytes": 293,
+          "sha256": "0784596ca64d80585339a9c50c9425a3602efe54ac0fa5060d810107f13e908f"
+        },
+        {
+          "entry": "line-registry-phase-bound-20261106.activation.wrong.arcw",
+          "bytes": 288,
+          "sha256": "0c43f87032daf026d43ec3f617157fb3402d002a285b504221ec0a4928b7a545"
+        },
+        {
+          "entry": "line-registry-published-workspace-check-20261106.log",
+          "bytes": 110543,
+          "sha256": "ac988d8249c3c3bb5af56c7b83cef195129c4f46e339b99370295ea487922676"
+        },
+        {
+          "entry": "line-registry-published-workspace-check-20261106.receipt.json",
+          "bytes": 527,
+          "sha256": "582f8b933750bcb92cae7d28130371c196f4140da8a165dd0ba083b1e2682593"
+        },
+        {
+          "entry": "line-upper-flow-published-20261106.direct.awbc-product.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-upper-flow-published-20261106.direct.awbc-product.stdout.json",
+          "bytes": 20666,
+          "sha256": "079cf316cc8f186f25c6a6a30150e4ba9b6fa2e32b2862af439e42a23f412465"
+        },
+        {
+          "entry": "line-upper-flow-published-20261106.direct.bytecode-vm.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-upper-flow-published-20261106.direct.bytecode-vm.stdout.json",
+          "bytes": 10657,
+          "sha256": "e9bf0be8b4203243701b2336ab5348ddb1e4795c9bc1df95225e59babd1681c1"
+        },
+        {
+          "entry": "line-upper-flow-published-20261106.direct.plan.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-upper-flow-published-20261106.direct.plan.stdout.json",
+          "bytes": 5118,
+          "sha256": "ebb26f581355bc38089644f27def93efd2826456c590d30e4185b6ed514781aa"
+        },
+        {
+          "entry": "line-upper-flow-published-20261106.direct.verify.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-upper-flow-published-20261106.direct.verify.stdout.json",
+          "bytes": 202,
+          "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+        },
+        {
+          "entry": "line-upper-flow-published-20261106.helper.awbc-product.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-upper-flow-published-20261106.helper.awbc-product.stdout.json",
+          "bytes": 23876,
+          "sha256": "970a4041cbc4d37f08618208362c3654c5c316ba0b6796479940547009386cbe"
+        },
+        {
+          "entry": "line-upper-flow-published-20261106.helper.bytecode-vm.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-upper-flow-published-20261106.helper.bytecode-vm.stdout.json",
+          "bytes": 12375,
+          "sha256": "5cd6cc4725a1f051200496c515773cda0e4e349db898bc3db5671086cc0c41ca"
+        },
+        {
+          "entry": "line-upper-flow-published-20261106.helper.plan.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-upper-flow-published-20261106.helper.plan.stdout.json",
+          "bytes": 5112,
+          "sha256": "10a4bbcc1eab325fd1d3cda021a87db76f3e18e5ed383d2665124aa0f29b1aa1"
+        },
+        {
+          "entry": "line-upper-flow-published-20261106.helper.verify.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-upper-flow-published-20261106.helper.verify.stdout.json",
+          "bytes": 202,
+          "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+        },
+        {
+          "entry": "line-upper-flow-published-20261106.receipt.json",
+          "bytes": 10088,
+          "sha256": "776131ea66853fb7200487bd133c10a66f119633c9aaaa4a3797d1a21917e69b"
+        },
+        {
+          "entry": "line-upper-flow-published-20261106.wrong.verify.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-upper-flow-published-20261106.wrong.verify.stdout.json",
+          "bytes": 1561,
+          "sha256": "22479b822f37545f0954ec7f5ca33ec5cd33ac21a373c41f5887e4b8e6eaf54c"
+        }
+      ]
+    }
   }
 }
