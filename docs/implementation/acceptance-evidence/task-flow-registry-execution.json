@@ -1955,5 +1955,411 @@
         }
       ]
     }
+  },
+  "lineCapabilityProbe": {
+    "local": {
+      "version": 1,
+      "source": "5deb88741e1f64df26ac08bc5a536f0a6063cd80",
+      "observedHead": "960224dbf78476be2307efd4febc64a601dc2eba",
+      "binarySha256": "54378a602c02190d165ade9f564a38fd398a0fc6e8821256e8cf952b151459d3",
+      "rows": [
+        {
+          "case": "scope",
+          "effect": "state.write('line)",
+          "input": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-registry-original-effect-20261106.scope.arcw",
+          "sourceSha256": "74305ef1925ee055e1770e4a8f3141a575542fb2c2e23f89124d113bd3ac2cee",
+          "exit": 0,
+          "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr": null
+        },
+        {
+          "case": "exact",
+          "effect": "state.write('line.focus)",
+          "input": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-registry-original-effect-20261106.exact.arcw",
+          "sourceSha256": "5c4e08995abff3ca02bc5a83f8e15ba4c5467dba39ec1cb7975013450aad3dfd",
+          "exit": 0,
+          "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr": null
+        },
+        {
+          "case": "different_key",
+          "effect": "state.write('line.other)",
+          "input": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-registry-original-effect-20261106.different_key.arcw",
+          "sourceSha256": "b3981d13dbea2817600a2f455e3bcac32b63993f3a842e27f0e10cbe1dbe902f",
+          "exit": 0,
+          "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr": null
+        },
+        {
+          "case": "different_scope",
+          "effect": "state.write('flow)",
+          "input": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-registry-original-effect-20261106.different_scope.arcw",
+          "sourceSha256": "8d733f37728380258817d3e76af621cd0601cef9aa2a3c9d84a7384c3896b15f",
+          "exit": 0,
+          "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr": null
+        }
+      ]
+    },
+    "upper": {
+      "version": 1,
+      "source": "5deb88741e1f64df26ac08bc5a536f0a6063cd80",
+      "observedHead": "960224dbf78476be2307efd4febc64a601dc2eba",
+      "binarySha256": "54378a602c02190d165ade9f564a38fd398a0fc6e8821256e8cf952b151459d3",
+      "rows": [
+        {
+          "case": "direct-local-wrong",
+          "key": "'line.focus",
+          "effect": "state.write('line.other)",
+          "input": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-registry-upper-effect-20261106.direct-local-wrong.arcw",
+          "sourceSha256": "431c609ce7a1aa9e16be0e5b2a309f015529de648696386eea0b1435a6f78845",
+          "exit": 1,
+          "diagnostics": [
+            {
+              "module": null,
+              "stage": "type-check",
+              "diagnostic": {
+                "severity": "error",
+                "code": "AWF-EFX-001",
+                "message": "callable `cancel_edge` performs effects {state.write('line.focus)} outside its declared upper bound",
+                "span": {
+                  "source": {
+                    "id": "arcweft-project://line-registry-upper-effect-20261106.direct-local-wrong/line-registry-upper-effect-20261106.direct-local-wrong.arcw",
+                    "revision": "3a9d64938aaba6e18473faf302f328c6d7cad60c05b22d69f3994442246c050b",
+                    "source_len": 104
+                  },
+                  "start": 29,
+                  "end": 65
+                },
+                "labels": [
+                  {
+                    "style": "primary",
+                    "span": {
+                      "source": {
+                        "id": "arcweft-project://line-registry-upper-effect-20261106.direct-local-wrong/line-registry-upper-effect-20261106.direct-local-wrong.arcw",
+                        "revision": "3a9d64938aaba6e18473faf302f328c6d7cad60c05b22d69f3994442246c050b",
+                        "source_len": 104
+                      },
+                      "start": 29,
+                      "end": 65
+                    },
+                    "message": "declared effect upper bound is exceeded"
+                  }
+                ],
+                "notes": [
+                  "effect trace for `state.write('line.focus)`:",
+                  "`cancel_edge` performs `state.write('line.focus)`"
+                ],
+                "suggestions": [],
+                "commands": []
+              }
+            }
+          ],
+          "stdoutSha256": "dc43f79a156cac7669a746e95694c8de8800e4047ed94cb88125f75d3579a751",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr": null
+        },
+        {
+          "case": "direct-flow-exact",
+          "key": "'flow.flags.seen",
+          "effect": "state.write('flow.flags.seen)",
+          "input": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-registry-upper-effect-20261106.direct-flow-exact.arcw",
+          "sourceSha256": "ddc3e565af3547ce63b34cb6ae1af91a5491f6852db8e177799d9b53a5899157",
+          "exit": 0,
+          "diagnostics": [],
+          "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr": null
+        },
+        {
+          "case": "direct-flow-wrong",
+          "key": "'flow.flags.seen",
+          "effect": "state.write('flow.other)",
+          "input": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-registry-upper-effect-20261106.direct-flow-wrong.arcw",
+          "sourceSha256": "c49a265ec500b6590414514a8c3ed199d971d7b612c3cca8a4c129a09041c742",
+          "exit": 1,
+          "diagnostics": [
+            {
+              "module": null,
+              "stage": "type-check",
+              "diagnostic": {
+                "severity": "error",
+                "code": "AWF-EFX-001",
+                "message": "callable `cancel_edge` performs effects {state.write('flow.flags.seen)} outside its declared upper bound",
+                "span": {
+                  "source": {
+                    "id": "arcweft-project://line-registry-upper-effect-20261106.direct-flow-wrong/line-registry-upper-effect-20261106.direct-flow-wrong.arcw",
+                    "revision": "2c7c80f9109c98372bf60a983a812994c18ed3d8afde5c015ac1d04aaf245474",
+                    "source_len": 109
+                  },
+                  "start": 29,
+                  "end": 65
+                },
+                "labels": [
+                  {
+                    "style": "primary",
+                    "span": {
+                      "source": {
+                        "id": "arcweft-project://line-registry-upper-effect-20261106.direct-flow-wrong/line-registry-upper-effect-20261106.direct-flow-wrong.arcw",
+                        "revision": "2c7c80f9109c98372bf60a983a812994c18ed3d8afde5c015ac1d04aaf245474",
+                        "source_len": 109
+                      },
+                      "start": 29,
+                      "end": 65
+                    },
+                    "message": "declared effect upper bound is exceeded"
+                  }
+                ],
+                "notes": [
+                  "effect trace for `state.write('flow.flags.seen)`:",
+                  "`cancel_edge` performs `state.write('flow.flags.seen)`"
+                ],
+                "suggestions": [],
+                "commands": []
+              }
+            }
+          ],
+          "stdoutSha256": "840f4d68133ad5c8510255a8eae5b65e4345bf6d8bf9a87a78213974ac27952f",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr": null
+        },
+        {
+          "case": "line-flow-exact",
+          "key": "'flow.flags.seen",
+          "effect": "state.write('flow.flags.seen)",
+          "input": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-registry-upper-effect-20261106.line-flow-exact.arcw",
+          "sourceSha256": "7f11360dce809722d7a0de4b1ed82ada1bb92cd8157d51214fb606cc4b989f87",
+          "exit": 0,
+          "diagnostics": [],
+          "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr": null
+        },
+        {
+          "case": "line-flow-wrong",
+          "key": "'flow.flags.seen",
+          "effect": "state.write('flow.other)",
+          "input": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-registry-upper-effect-20261106.line-flow-wrong.arcw",
+          "sourceSha256": "571c98fae21a5291f250fbe4acfcea5c54358fc0c033234c48e632b99889fd76",
+          "exit": 0,
+          "diagnostics": [],
+          "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr": null
+        },
+        {
+          "case": "line-global-wrong",
+          "key": "'global.flags.seen",
+          "effect": "state.write('flow)",
+          "input": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-registry-upper-effect-20261106.line-global-wrong.arcw",
+          "sourceSha256": "118b658dc1e0b0b87d507014717c0f0fec06df9584915325f0d1e34cc8b5f0c6",
+          "exit": 0,
+          "diagnostics": [],
+          "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr": null
+        },
+        {
+          "case": "line-global-exact",
+          "key": "'global.flags.seen",
+          "effect": "state.write('global)",
+          "input": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-registry-upper-effect-20261106.line-global-exact.arcw",
+          "sourceSha256": "fb91cee72567cfb869d39b8ba9b669d02462aee937b3c1f18e46a01fd038194b",
+          "exit": 0,
+          "diagnostics": [],
+          "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr": null
+        }
+      ]
+    },
+    "sourceObservation": "Both prepared and completed statement-effect folds check the typed dialogue line-plan children but merge expression-owned effects only for Await. Registry requirements survive on the checked statements without reaching the enclosing callable bound. The executable line owner also needs the checked requirement for its actual body. A correction must preserve lazy execution and the distinction between line-local and upper-scope authorization.",
+    "rawArchive": {
+      "path": "task-line-registry-capability-bound.raw.zip",
+      "bytes": 13843,
+      "sha256": "f4fbe5503b74f771352f5f654b5308818f29dab8d48b88292bf684b0b6237235",
+      "entryDrift": 0,
+      "entries": [
+        {
+          "entry": "line-registry-original-effect-20261106.different_key.arcw",
+          "bytes": 470,
+          "sha256": "b3981d13dbea2817600a2f455e3bcac32b63993f3a842e27f0e10cbe1dbe902f"
+        },
+        {
+          "entry": "line-registry-original-effect-20261106.different_key.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-registry-original-effect-20261106.different_key.stdout.json",
+          "bytes": 202,
+          "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+        },
+        {
+          "entry": "line-registry-original-effect-20261106.different_scope.arcw",
+          "bytes": 464,
+          "sha256": "8d733f37728380258817d3e76af621cd0601cef9aa2a3c9d84a7384c3896b15f"
+        },
+        {
+          "entry": "line-registry-original-effect-20261106.different_scope.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-registry-original-effect-20261106.different_scope.stdout.json",
+          "bytes": 202,
+          "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+        },
+        {
+          "entry": "line-registry-original-effect-20261106.exact.arcw",
+          "bytes": 470,
+          "sha256": "5c4e08995abff3ca02bc5a83f8e15ba4c5467dba39ec1cb7975013450aad3dfd"
+        },
+        {
+          "entry": "line-registry-original-effect-20261106.exact.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-registry-original-effect-20261106.exact.stdout.json",
+          "bytes": 202,
+          "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+        },
+        {
+          "entry": "line-registry-original-effect-20261106.receipt.json",
+          "bytes": 3463,
+          "sha256": "1d9b8982509a2accbeb6fd566deb7fe1152f71658f6e9970dd99b0967e41ff1d"
+        },
+        {
+          "entry": "line-registry-original-effect-20261106.scope.arcw",
+          "bytes": 464,
+          "sha256": "74305ef1925ee055e1770e4a8f3141a575542fb2c2e23f89124d113bd3ac2cee"
+        },
+        {
+          "entry": "line-registry-original-effect-20261106.scope.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-registry-original-effect-20261106.scope.stdout.json",
+          "bytes": 202,
+          "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+        },
+        {
+          "entry": "line-registry-upper-effect-20261106.direct-flow-exact.arcw",
+          "bytes": 114,
+          "sha256": "ddc3e565af3547ce63b34cb6ae1af91a5491f6852db8e177799d9b53a5899157"
+        },
+        {
+          "entry": "line-registry-upper-effect-20261106.direct-flow-exact.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-registry-upper-effect-20261106.direct-flow-exact.stdout.json",
+          "bytes": 202,
+          "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+        },
+        {
+          "entry": "line-registry-upper-effect-20261106.direct-flow-wrong.arcw",
+          "bytes": 109,
+          "sha256": "c49a265ec500b6590414514a8c3ed199d971d7b612c3cca8a4c129a09041c742"
+        },
+        {
+          "entry": "line-registry-upper-effect-20261106.direct-flow-wrong.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-registry-upper-effect-20261106.direct-flow-wrong.stdout.json",
+          "bytes": 1581,
+          "sha256": "840f4d68133ad5c8510255a8eae5b65e4345bf6d8bf9a87a78213974ac27952f"
+        },
+        {
+          "entry": "line-registry-upper-effect-20261106.direct-local-wrong.arcw",
+          "bytes": 104,
+          "sha256": "431c609ce7a1aa9e16be0e5b2a309f015529de648696386eea0b1435a6f78845"
+        },
+        {
+          "entry": "line-registry-upper-effect-20261106.direct-local-wrong.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-registry-upper-effect-20261106.direct-local-wrong.stdout.json",
+          "bytes": 1570,
+          "sha256": "dc43f79a156cac7669a746e95694c8de8800e4047ed94cb88125f75d3579a751"
+        },
+        {
+          "entry": "line-registry-upper-effect-20261106.line-flow-exact.arcw",
+          "bytes": 480,
+          "sha256": "7f11360dce809722d7a0de4b1ed82ada1bb92cd8157d51214fb606cc4b989f87"
+        },
+        {
+          "entry": "line-registry-upper-effect-20261106.line-flow-exact.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-registry-upper-effect-20261106.line-flow-exact.stdout.json",
+          "bytes": 202,
+          "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+        },
+        {
+          "entry": "line-registry-upper-effect-20261106.line-flow-wrong.arcw",
+          "bytes": 475,
+          "sha256": "571c98fae21a5291f250fbe4acfcea5c54358fc0c033234c48e632b99889fd76"
+        },
+        {
+          "entry": "line-registry-upper-effect-20261106.line-flow-wrong.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-registry-upper-effect-20261106.line-flow-wrong.stdout.json",
+          "bytes": 202,
+          "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+        },
+        {
+          "entry": "line-registry-upper-effect-20261106.line-global-exact.arcw",
+          "bytes": 473,
+          "sha256": "fb91cee72567cfb869d39b8ba9b669d02462aee937b3c1f18e46a01fd038194b"
+        },
+        {
+          "entry": "line-registry-upper-effect-20261106.line-global-exact.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-registry-upper-effect-20261106.line-global-exact.stdout.json",
+          "bytes": 202,
+          "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+        },
+        {
+          "entry": "line-registry-upper-effect-20261106.line-global-wrong.arcw",
+          "bytes": 471,
+          "sha256": "118b658dc1e0b0b87d507014717c0f0fec06df9584915325f0d1e34cc8b5f0c6"
+        },
+        {
+          "entry": "line-registry-upper-effect-20261106.line-global-wrong.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-registry-upper-effect-20261106.line-global-wrong.stdout.json",
+          "bytes": 202,
+          "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+        },
+        {
+          "entry": "line-registry-upper-effect-20261106.receipt.json",
+          "bytes": 7869,
+          "sha256": "eaf37b85c464311ba57d9ddf31bb4bd02e8e95048e2ce36971851f84350c7f8c"
+        }
+      ]
+    }
   }
 }
