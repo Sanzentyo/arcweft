@@ -14969,3 +14969,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source 64829f5d62302e2d658e88494655c7cef2cc96aa の逆依存検証は CLI のライブラリ・バイナリ196件と統合29件が通過した。非CLIの初回は registry_contract のビルド時に Core の rlib を参照できず、実行件数0で終了した。
 - 同じ公開ソースから生成した依存物を使い、三段の対話で中間の out が Native と AWBC の両方で失敗することを再現した。別の単一対話では、ワイルドカードに返した StageActor の解放待ち中に公開保存を復元できなかった。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-06 — StageActor reverse tests with a serial build
+
+- Source 64829f5d62302e2d658e88494655c7cef2cc96aa の非CLI再試行も rlib 参照エラーで一覧生成中に停止した。Cargo のビルドを直列化し、同じ52パッケージと選択条件で一覧生成を完了した。49パッケージで非CLI 7,162件実行・7,162件通過・失敗0・18件スキップ。CLI 標準スイートは別実行で225件通過。4,134入力とケース一覧の照合で差分0。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
