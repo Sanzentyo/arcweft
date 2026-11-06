@@ -2872,6 +2872,225 @@
           }
         ]
       }
+    },
+    "calledEffects": {
+      "actual": {
+        "version": 1,
+        "source": "5deb88741e1f64df26ac08bc5a536f0a6063cd80",
+        "head": "7d42a5465e14ce09a679daf241d5fd57cbe6bfe1",
+        "binarySha256": "54378a602c02190d165ade9f564a38fd398a0fc6e8821256e8cf952b151459d3",
+        "cases": [
+          {
+            "label": "direct.exact",
+            "phase": "direct",
+            "permission": "state.write('flow.flags.seen)",
+            "path": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-registry-call-bound-20261106.direct.exact.arcw",
+            "sourceSha256": "d284fdc045293f12b7c2762b7f2f8a61f67d0efdc47c58027acbf56cdd0c7633",
+            "exit": 0,
+            "diagnostics": [],
+            "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "label": "direct.wrong",
+            "phase": "direct",
+            "permission": "state.write('flow.other)",
+            "path": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-registry-call-bound-20261106.direct.wrong.arcw",
+            "sourceSha256": "d4c1f4439049a981a003eee6aa3e809328c470d03d45cae34666e58b4ee36f54",
+            "exit": 1,
+            "diagnostics": [
+              {
+                "module": null,
+                "stage": "type-check",
+                "diagnostic": {
+                  "severity": "error",
+                  "code": "AWF-EFX-001",
+                  "message": "callable `main` performs effects {state.write('flow.flags.seen)} outside its declared upper bound",
+                  "span": {
+                    "source": {
+                      "id": "arcweft-project://line-registry-call-bound-20261106.direct.wrong/line-registry-call-bound-20261106.direct.wrong.arcw",
+                      "revision": "d737c8db2e041a2c257db3bba6f1e9b5ca4b57a636ce3266fd663239a9a720ad",
+                      "source_len": 295
+                    },
+                    "start": 178,
+                    "end": 214
+                  },
+                  "labels": [
+                    {
+                      "style": "primary",
+                      "span": {
+                        "source": {
+                          "id": "arcweft-project://line-registry-call-bound-20261106.direct.wrong/line-registry-call-bound-20261106.direct.wrong.arcw",
+                          "revision": "d737c8db2e041a2c257db3bba6f1e9b5ca4b57a636ce3266fd663239a9a720ad",
+                          "source_len": 295
+                        },
+                        "start": 178,
+                        "end": 214
+                      },
+                      "message": "declared effect upper bound is exceeded"
+                    }
+                  ],
+                  "notes": [
+                    "effect trace for `state.write('flow.flags.seen)`:",
+                    "call `write_flag`"
+                  ],
+                  "suggestions": [],
+                  "commands": []
+                }
+              }
+            ],
+            "stdoutSha256": "e75dd070a4d7a5a444bc81f8a0996541efc427a9349e0eb31e7e13aaeba87d77",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "label": "init.exact",
+            "phase": "init",
+            "permission": "state.write('flow.flags.seen)",
+            "path": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-registry-call-bound-20261106.init.exact.arcw",
+            "sourceSha256": "43e0a1372ff08db8b7987b7c232617c5c972ce6ffaaf0e233c5751c18af2db4d",
+            "exit": 0,
+            "diagnostics": [],
+            "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "label": "init.wrong",
+            "phase": "init",
+            "permission": "state.write('flow.other)",
+            "path": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-registry-call-bound-20261106.init.wrong.arcw",
+            "sourceSha256": "33a8661c155a3536f280b2a14a91508cca1b7f224ebc090cde57757f9aff7f26",
+            "exit": 0,
+            "diagnostics": [],
+            "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "label": "mark.exact",
+            "phase": "mark",
+            "permission": "state.write('flow.flags.seen)",
+            "path": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-registry-call-bound-20261106.mark.exact.arcw",
+            "sourceSha256": "43cde62889dd99c8ac3c3c45df5e75b7ef052d5ec334450c00914cf96e0161bb",
+            "exit": 0,
+            "diagnostics": [],
+            "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "label": "mark.wrong",
+            "phase": "mark",
+            "permission": "state.write('flow.other)",
+            "path": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-registry-call-bound-20261106.mark.wrong.arcw",
+            "sourceSha256": "61ebb6aacd30d825f9ea4b0aa5d2f12170711f8aa5c926a4e8388ea978769eee",
+            "exit": 0,
+            "diagnostics": [],
+            "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "rawArchive": {
+        "path": "task-line-registry-call-bound.raw.zip",
+        "bytes": 7230,
+        "sha256": "4ca9d866000594f84491d6d639f659c4a06aecddf340c2b7612161f173295b51",
+        "entryDrift": 0,
+        "entries": [
+          {
+            "entry": "line-registry-call-bound-20261106.direct.exact.arcw",
+            "bytes": 300,
+            "sha256": "d284fdc045293f12b7c2762b7f2f8a61f67d0efdc47c58027acbf56cdd0c7633"
+          },
+          {
+            "entry": "line-registry-call-bound-20261106.direct.exact.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-call-bound-20261106.direct.exact.stdout.json",
+            "bytes": 202,
+            "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+          },
+          {
+            "entry": "line-registry-call-bound-20261106.direct.wrong.arcw",
+            "bytes": 295,
+            "sha256": "d4c1f4439049a981a003eee6aa3e809328c470d03d45cae34666e58b4ee36f54"
+          },
+          {
+            "entry": "line-registry-call-bound-20261106.direct.wrong.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-call-bound-20261106.direct.wrong.stdout.json",
+            "bytes": 1513,
+            "sha256": "e75dd070a4d7a5a444bc81f8a0996541efc427a9349e0eb31e7e13aaeba87d77"
+          },
+          {
+            "entry": "line-registry-call-bound-20261106.init.exact.arcw",
+            "bytes": 395,
+            "sha256": "43e0a1372ff08db8b7987b7c232617c5c972ce6ffaaf0e233c5751c18af2db4d"
+          },
+          {
+            "entry": "line-registry-call-bound-20261106.init.exact.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-call-bound-20261106.init.exact.stdout.json",
+            "bytes": 202,
+            "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+          },
+          {
+            "entry": "line-registry-call-bound-20261106.init.wrong.arcw",
+            "bytes": 390,
+            "sha256": "33a8661c155a3536f280b2a14a91508cca1b7f224ebc090cde57757f9aff7f26"
+          },
+          {
+            "entry": "line-registry-call-bound-20261106.init.wrong.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-call-bound-20261106.init.wrong.stdout.json",
+            "bytes": 202,
+            "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+          },
+          {
+            "entry": "line-registry-call-bound-20261106.mark.exact.arcw",
+            "bytes": 412,
+            "sha256": "43cde62889dd99c8ac3c3c45df5e75b7ef052d5ec334450c00914cf96e0161bb"
+          },
+          {
+            "entry": "line-registry-call-bound-20261106.mark.exact.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-call-bound-20261106.mark.exact.stdout.json",
+            "bytes": 202,
+            "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+          },
+          {
+            "entry": "line-registry-call-bound-20261106.mark.wrong.arcw",
+            "bytes": 407,
+            "sha256": "61ebb6aacd30d825f9ea4b0aa5d2f12170711f8aa5c926a4e8388ea978769eee"
+          },
+          {
+            "entry": "line-registry-call-bound-20261106.mark.wrong.stderr.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "entry": "line-registry-call-bound-20261106.mark.wrong.stdout.json",
+            "bytes": 202,
+            "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+          },
+          {
+            "entry": "line-registry-call-bound-20261106.receipt.json",
+            "bytes": 5304,
+            "sha256": "76bb67661187516711a787d41c076a915c78ef541acc0204e245a7f1e2903159"
+          }
+        ]
+      }
     }
   }
 }
