@@ -15034,3 +15034,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Registry live table runtime reverse dependencies
 
 - Source e74b4d75bbc730ab29b5b5ead19030cc078c38e3 のライブテーブル照合を Runtime Driver、Runtime Host、Save で再検証した。260件通過、失敗・スキップともに0件。実行前後でソース入力3638件のハッシュが一致した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Optional registry read checks copy custody
+
+- Source dc0ff3c74395183f25cd21275989c786bd26c590 は、任意キー読取りの Option 全体に複製可能性を求める。元の Option 型を満たすアフィン Need の保存行で、所有権移動用の検査は通過し、レジストリの複製は値を作る前に拒否される。表示スロットの取出しは同じ Option 形状の検査を所有権移動として使う。Core／Compilerの対象65件が通過し、構造ゲートのブロッキング違反は0件だった。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。

@@ -15334,5 +15334,89 @@
         }
       ]
     }
+  },
+  "reachedRegistryOptionalReadCopyAdmission": {
+    "source": "dc0ff3c74395183f25cd21275989c786bd26c590",
+    "parent": "c87c55708317134e81a06de83307b041b031cce4",
+    "changedBlobs": [
+      {
+        "path": "crates/arcweft-core/src/awbc/vm/resources.rs",
+        "blob": "14b979c7c92ab9ad49a418de2f2754fbf1466aed"
+      },
+      {
+        "path": "crates/arcweft-core/src/effect/registry/scope.rs",
+        "blob": "c8a374f2820270871eab09cae736bf100a141be8"
+      },
+      {
+        "path": "crates/arcweft-core/src/effect/registry/tests.rs",
+        "blob": "1153df2bdbe482222dc716cf3c0d78cdeee9f8e0"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/presentation.rs",
+        "blob": "13be97e8c4c86b0612f88871642e9ca1c2b20d9b"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/banks.rs",
+        "blob": "303e39c9275efbdfaf9a4e365a65fb347b811659"
+      },
+      {
+        "path": "crates/arcweft-core/src/presentation/resources/storage.rs",
+        "blob": "620902174ec3a4d29c283a2e67a4da0fbd12eb09"
+      },
+      {
+        "path": "crates/arcweft-core/src/value/option_value.rs",
+        "blob": "d1bb14be927ca0d3cdb6c37296c34bb5230df19e"
+      }
+    ],
+    "patchSha256": "4488cb7a9be54bfb33f47b63bf6bade4b653535092b06e18fdae0a6481d92050",
+    "implementation": "A canonical Option preview charges the enclosing future value and uses the ownership requirement of its consumer. Registry copies require an unrestricted payload. Presentation slot removal checks the same Option shape as an ownership transfer.",
+    "focused": {
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "-E",
+        "test(/registry|inline_dialogue_reads_the_reached_line|presentation.*remov|slot.*remov/)"
+      ],
+      "executed": 65,
+      "passed": 65,
+      "failed": 0,
+      "excludedByFilter": 2495,
+      "regression": "The original Option type accepts the inert affine Need payload in the owning admission. Reading the same row through the optional registry copy is rejected as AffineValue before materialization."
+    },
+    "rustfmtExitCode": 0,
+    "structureBlocking": 0,
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-option-copy-admission.raw.zip",
+      "sha256": "0c855dfaf3dd9a1bbf7e79123c0f6de4bfb478619636370a12ec2f612f8c857b",
+      "entries": [
+        {
+          "entry": "registry-option-copy-admission-20261107.nextest.log",
+          "bytes": 109009,
+          "sha256": "6b48393f02c5670fde49a7d5b55b124fe9f8d7ab49c0c4e7618e379875758fcf"
+        },
+        {
+          "entry": "registry-option-copy-admission-20261107.verified.json",
+          "bytes": 1538,
+          "sha256": "39d58d63c9995533f55dc845d5f0efe3a07c80878ed898a76cb2adc271ef9108"
+        },
+        {
+          "entry": "registry-option-copy-admission-20261107.structure.log",
+          "bytes": 65741,
+          "sha256": "a7cda48d70f05bfb5f84733e5b3128119e6c3bbcf598d8c6d9738318bd7fa9ea"
+        }
+      ]
+    }
   }
 }
