@@ -15058,3 +15058,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Owned Line registry runtime reverse dependencies
 
 - Source f0b3274fe9195dac8babc1d559751a5025ee0457 の Line 所有行を Runtime Driver、Runtime Host、Save で再検証した。260件通過、失敗・スキップともに0件。実行前後でソース入力3638件のハッシュが一致した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Registry source custody before snapshot projection
+
+- Source fc7aaa4ffe8773c9df17a3d570c21bbf909da42b で、型と資源上限の検査後、保存用の行を作る前に元のスロットと発行元を照合する。誤ったスロットは型付きの所有権エラーで拒否され、行は追加されない。Native とデコード済みAWBCの取消コールバックが破棄直後の行の不在を確認した。対象68件が通過し、構造ゲートのブロッキング違反は0件、Core の全ターゲット Clippy は警告ありで終了コード0だった。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。

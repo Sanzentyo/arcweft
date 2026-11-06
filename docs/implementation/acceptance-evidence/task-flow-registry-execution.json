@@ -15996,5 +15996,152 @@
         }
       ]
     }
+  },
+  "registryInputCustodyBeforeSnapshot": {
+    "source": "fc7aaa4ffe8773c9df17a3d570c21bbf909da42b",
+    "parent": "87cdcaec8d40af4ddb1cec17c6f82c5022ae0a09",
+    "changedBlobs": [
+      {
+        "path": "crates/arcweft-compiler/tests/evaluated_effects.rs",
+        "blob": "93a58cfdf3e600c4d980c99ff61c38b171e8e4a7"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step.rs",
+        "blob": "9f991ec89752ed80b5deeedc70cb651d8d9d8ca6"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+        "blob": "8c1647b23d6db7298d04b344b61ec500e3cdbd6d"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+        "blob": "b67ad6f9661c12342b9b8329debda5795ebc2caa"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/vm/resources.rs",
+        "blob": "b8a570c033c0e26e589d42460611e907434740f7"
+      },
+      {
+        "path": "crates/arcweft-core/src/effect.rs",
+        "blob": "657b1a166f7c3786525b25bc0157ce81ac6dad23"
+      },
+      {
+        "path": "crates/arcweft-core/src/effect/registry.rs",
+        "blob": "0d731388e8a9dc16d5aca4ac2a0644c5705956d9"
+      },
+      {
+        "path": "crates/arcweft-core/src/effect/registry/scope.rs",
+        "blob": "68f9999ebeb45e0435605526af4d7465b990dade"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine.rs",
+        "blob": "15d2f2b798065dbf404e06f1f17b08ae2cf04db7"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/dialogue.rs",
+        "blob": "492f6d83ecb95676d722c15ed1b2e4a293bd2af6"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/dialogue/store.rs",
+        "blob": "51bd88dd9586ed8ca18d1b5ce32db02a94e20479"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/flow.rs",
+        "blob": "c0d018b9a356fecd0b2515b1be0325746a4ba405"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/registry.rs",
+        "blob": "891ee0df54b6e7838e8e2be905b0012e558b37e4"
+      },
+      {
+        "path": "crates/arcweft-core/src/line_task/activation.rs",
+        "blob": "8080a2f60c1144f5c5959d8d50e109a2ed3b3c34"
+      },
+      {
+        "path": "crates/arcweft-core/src/value/awbc_save.rs",
+        "blob": "4a1c769f1285430520bfa2589498f89708f4fd51"
+      },
+      {
+        "path": "docs/02-runtime/executable-runtime-core.md",
+        "blob": "54fa6fae97105ecdd318a285c2a3969ef8760136"
+      }
+    ],
+    "patchSha256": "3547efe8c74acf9c02a951650326c1277e72e825c3a80edeb4dc9c8a95c5150c",
+    "implementation": "After type and resource admission the live input graph is authenticated against the exact source slot and original issuer before it is projected into an inert row. The prepared mutation reuses the authenticated occurrence paths. The initial check found private native visibility on the shared validator. The subsequent verified source includes the correction.",
+    "focused": {
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "-E",
+        "test(/owned_line_registry|registry|nested_line_handle|received_handle_reexport|reexported_result/)"
+      ],
+      "executed": 68,
+      "passed": 68,
+      "failed": 0,
+      "excludedByFilter": 2495,
+      "regression": "A wrong original slot is rejected by capture with the typed custody error, leaving the row table unchanged. Native and AWBC cancellation handlers observe an absent registry row after drop and before normal closing."
+    },
+    "rustfmtExitCode": 0,
+    "clippy": {
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--all-targets"
+      ],
+      "exitCode": 0,
+      "warningsPresent": true
+    },
+    "structureBlocking": 0,
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-input-before-snapshot.raw.zip",
+      "sha256": "096ab4da2ea6e86683a678391a606d6da003d6257ea24642a181ee2d00b66ef8",
+      "entries": [
+        {
+          "entry": "registry-input-before-snapshot-20261107.check.log",
+          "bytes": 11156,
+          "sha256": "8397b11040af3daf815d436497552c9c0594f5489c6b61fc5e1c1270a73f1314"
+        },
+        {
+          "entry": "registry-input-before-snapshot-20261107.nextest.log",
+          "bytes": 109240,
+          "sha256": "bc74ce2caf840594760a75be8d876e81dd5910f4def917cb62777731f9e227a2"
+        },
+        {
+          "entry": "registry-input-before-snapshot-20261107.verified.json",
+          "bytes": 2720,
+          "sha256": "1961f7670a2823b37f48fde958dfa077cad9b92dd85fd06f3760cbffd212a4a3"
+        },
+        {
+          "entry": "registry-input-before-snapshot-20261107.structure.log",
+          "bytes": 65741,
+          "sha256": "8ea80933bcab434f9bc4a4e7cee967410d7d170916612ded0731b760968c6ac0"
+        },
+        {
+          "entry": "registry-input-before-snapshot-20261107.clippy.log",
+          "bytes": 4846776,
+          "sha256": "c053a874e92024976fb771fbf33106549f7102d4a53dc599e08f40f9730ecc8d"
+        },
+        {
+          "entry": "registry-input-before-snapshot-20261107.clippy.receipt.json",
+          "bytes": 189,
+          "sha256": "ac1aea3a96bc0839c069d980e070fdb72769c7e78ea491edae6efacdbb9a574d"
+        }
+      ]
+    }
   }
 }
