@@ -14866,3 +14866,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source d5760ac382200ebdce102ee99482a34f8410ca33 で、検査済みの対話の効果を元のlineグループに保持し、Planのversion 1 sourceと生成AWBCの宣言・書込み命令に渡した。以前は生成関数のeffect行が空で、4つの書込みを含む入力が検証で拒否されていた。
 - Coreのline sourceコーデック7件と、Compilerの生成・AWBC検証1件が通過。4,130固定入力とテスト一覧の差分は0件。実行・保存の受入は別途検証する。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-06 — Registry writes in reached line activations
+
+- Source e4387fee79d0c83873e5728c6eb71ea1c24a785e で、NativeとAWBCが実際のline activationに書き込む。初期化、その分岐、mark、取消、正常終了と取消の各deferを実行し、AWBCでは最大1操作ごとに公開Saveを符号化・復元した。保存行は元のactivationとAWBC書込み命令に結び付き、改変を拒否し、フレーム解放で退役する。
+- Core全2,281件とCompilerの対話テスト全54件が通過。最初のコンパイル移行漏れ、AWBCの命令追跡の誤拒否、Nativeが取消後にcompleted deferを選んだ失敗の原本も保持した。取消時は元のreducer終了理由を引き継ぐよう修正した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。

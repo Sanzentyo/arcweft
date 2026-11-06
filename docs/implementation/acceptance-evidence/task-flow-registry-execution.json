@@ -3602,5 +3602,490 @@
         }
       ]
     }
+  },
+  "lineRegistryRuntime": {
+    "source": "e4387fee79d0c83873e5728c6eb71ea1c24a785e",
+    "contract": "Native and AWBC retain checked writes in the reached line activation. Child actions and defers use that activation. The saved row is bound to the original AWBC effect and activation. Release retires the rows. Native retains the reducer exit through cancellation so the correct defers execute.",
+    "core": {
+      "version": 1,
+      "base": "05960143b27cdd9d08b2566b6392d2b7ade279bf",
+      "run": "line-registry-runtime-core-close-fix-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [  20.164s] 2281 tests run: 2281 passed, 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2281,
+      "passed": 2281,
+      "failed": 0,
+      "skipped": 0,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4130,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-06T04:30:38.2924834Z"
+    },
+    "compiler": {
+      "version": 1,
+      "base": "05960143b27cdd9d08b2566b6392d2b7ade279bf",
+      "run": "line-registry-runtime-compiler-close-fix-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   2.165s] 54 tests run: 54 passed, 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 54,
+      "passed": 54,
+      "failed": 0,
+      "skipped": 0,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4130,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-06T04:28:09.3722247Z"
+    },
+    "published": {
+      "version": 1,
+      "commit": "e4387fee79d0c83873e5728c6eb71ea1c24a785e",
+      "parent": "05960143b27cdd9d08b2566b6392d2b7ade279bf",
+      "tree": "53c4d18e7f75d1a3ca717808d523f299f916b965",
+      "remote": "e4387fee79d0c83873e5728c6eb71ea1c24a785e",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects.rs",
+          "blob": "d88af7b97a97bff6f34e1781c0ace8579fd22683"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber.rs",
+          "blob": "074bbb67d9756ac49b2b6a8e020493b9786b2fce"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step.rs",
+          "blob": "26bd56060f33338099967718f200f6f61bcc81f1"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/dialogue.rs",
+          "blob": "fba9d3e767d292cf8d1f68c74c478b098f86dc48"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "blob": "36417062e8304bf1fd8d71965b31cfd0033c422f"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests.rs",
+          "blob": "90d6a5fb4649f3b7c5ff041f098b8d4b7e1011e6"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/receipt.rs",
+          "blob": "bdc7d4f7157404e2363bfb6da2ba2a3d7edb68c0"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/tests/presentation/transfers.rs",
+          "blob": "f1c04b70cd23ed1b700d04bd15b546337d8ad077"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/vm.rs",
+          "blob": "25d94a931647c26008f58b02ff84480525c16be5"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/vm/resources.rs",
+          "blob": "936f97e332fd7159783f693e5c521e349c5e96a8"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/vm/resources/tests.rs",
+          "blob": "3677b7771d55757e54ea20d8803831570c3d02a4"
+        },
+        {
+          "path": "crates/arcweft-core/src/effect.rs",
+          "blob": "f15450b67da2ad295820102e14d587dd4af182a4"
+        },
+        {
+          "path": "crates/arcweft-core/src/effect/registry.rs",
+          "blob": "603b28efd65ca27bf1c5c22ad8fe1598174ebb3c"
+        },
+        {
+          "path": "crates/arcweft-core/src/effect/registry/scope.rs",
+          "blob": "be8c8a33635166926847d8af02b79e2fd98bbae0"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine.rs",
+          "blob": "ffae62dd0196acc89a4916a537204a83ba8ae5ef"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/dialogue.rs",
+          "blob": "ea4c768bee4fceb5919bda94bd3a366d1f42c670"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/dialogue/store.rs",
+          "blob": "3a561a762189f18dbe99808587b8267e47d99599"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/flow.rs",
+          "blob": "a86b8c379165334892a534251f6a9a03c8761032"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/registry.rs",
+          "blob": "c68cb8a67dde56d00149d9d438272600437499a9"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/rollback.rs",
+          "blob": "bacd5a3824cf06347fb62264264547f4e242ab47"
+        },
+        {
+          "path": "crates/arcweft-core/src/engine/suspend.rs",
+          "blob": "78a3b89d41365f5ad04aa9616b90ecaa9358f0d6"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task.rs",
+          "blob": "b4b13709ea650f818de731ba751eb7589a06a618"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task/activation.rs",
+          "blob": "c701f932f09cb162ab5bad6e5e69a69216884609"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task/activation/contour.rs",
+          "blob": "caa8fa4b8fc4234a6134c63bdc1fec444f885b09"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task/activation/contour/tests.rs",
+          "blob": "7e45c37e1b92a98f5ce393dd55329f4c15e96245"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task/handle.rs",
+          "blob": "957c5f462eb60b3b185d444d1854fc5c44b22582"
+        },
+        {
+          "path": "crates/arcweft-core/src/value.rs",
+          "blob": "795db1aa0fc0cc34a9102f8cd936c0eae10827cd"
+        },
+        {
+          "path": "crates/arcweft-core/src/value/env.rs",
+          "blob": "2663583a664d277e2bec30e606dd8dd2323532e6"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "a5aedc2273506feebdf48d6ee0d863b2f3f5e7b55eff0cbb77ef68be25bcc5ba",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-06T04:31:05.2844763Z"
+    },
+    "attempts": [
+      {
+        "stem": "line-registry-runtime-core-20261106",
+        "outcome": "Core catalog compilation failed",
+        "reason": "Missing VM cursor predicate, activation snapshot Clone field, and one rollback fixture argument migration"
+      },
+      {
+        "stem": "line-registry-runtime-compiler-recovery-20261106",
+        "outcome": "53 passed, 1 failed",
+        "reason": "AWBC guard rejected the ordinary EmitEffect instruction trace"
+      },
+      {
+        "stem": "line-registry-runtime-compiler-trace-20261106",
+        "outcome": "Focused failure reproduced",
+        "reason": "AWBC initialization step 7 before reveal"
+      },
+      {
+        "stem": "line-registry-runtime-compiler-trace-fix-20261106",
+        "outcome": "53 passed, 1 failed",
+        "reason": "Native ran completed defer after the cancellation handler because it had discarded the reducer exit"
+      }
+    ],
+    "rawArchive": {
+      "path": "task-line-registry-runtime.raw.zip",
+      "bytes": 2115633,
+      "sha256": "5a70346de17030422af02c75dd23a93ab67e000e6a2a723a331cfe3f3edff361",
+      "entryDrift": 0,
+      "entries": [
+        {
+          "entry": "checkpoint-line-registry-runtime-20261106.verified.json",
+          "bytes": 4401,
+          "sha256": "687322630bec1ac6193c72c2fe4950851d17aedb349854d76b8450062fd59a71"
+        },
+        {
+          "entry": "line-registry-runtime-close-fix-20261106.json",
+          "bytes": 1909,
+          "sha256": "a1b2058e7fe55df6336214e8f018136ab61bb54155a02be4af57283481090f5f"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-close-fix-20261106.binaries-before.json",
+          "bytes": 230,
+          "sha256": "786370c4622c4c8bef2cb17a51ff38ca7bf343e3af605d672fa1c147782aafe7"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-close-fix-20261106.catalog.inventory.json",
+          "bytes": 13720,
+          "sha256": "1abe76cea6a3916dfbcc4ea9f8a0b569b90aaf95e9683c6f68be4bf6a0a110af"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-close-fix-20261106.catalog.json",
+          "bytes": 593,
+          "sha256": "11ffa9ae3d21aafd74e61386de555718c96fa2b85939c3583537875c854340e1"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-close-fix-20261106.catalog.log",
+          "bytes": 95137,
+          "sha256": "0bf47b08c3e0c4f728488fc2964bada08eb87b4df7b9c88ae92bf9883b7d9d6e"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-close-fix-20261106.runtime.json",
+          "bytes": 685,
+          "sha256": "ba5b03d02d67b910d969506bf5ec2bb5d41761934ba444b6fa5cc4f7bdfdfea9"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-close-fix-20261106.runtime.log",
+          "bytes": 100359,
+          "sha256": "cca6fce0b67e7064f8a597273f7d60d613a0143e78432d53f2275096171509dd"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-close-fix-20261106.runtime.terminal-audit.json",
+          "bytes": 630,
+          "sha256": "d12a4db87605ca2b4416a8d377204a0f3770c86abddb57fded407d729f3c7686"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-close-fix-20261106.source-freeze.json",
+          "bytes": 807632,
+          "sha256": "4878ffcdc47b44474a80eef5d92e8dc2acd4f009484d8eab8af9e20060ca6aac"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-recovery-20261106.binaries-before.json",
+          "bytes": 230,
+          "sha256": "2b331368ae69b153e1f483951c3d787ad7800310ed898a17a9f5d6a177d87090"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-recovery-20261106.catalog.inventory.json",
+          "bytes": 13720,
+          "sha256": "1abe76cea6a3916dfbcc4ea9f8a0b569b90aaf95e9683c6f68be4bf6a0a110af"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-recovery-20261106.catalog.json",
+          "bytes": 592,
+          "sha256": "f5cefabde7312d5959e2047fb279686b29c28b9bf074509ab0063a2c9e4fde79"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-recovery-20261106.catalog.log",
+          "bytes": 95137,
+          "sha256": "351ff1131a2c05d889263e20f0aea6bf319704d120700066c17cae8f2bad7a21"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-recovery-20261106.runtime.json",
+          "bytes": 686,
+          "sha256": "a740eb7f98ce623bc5fab82a5c083abc69cad55ca0d05f4eb84d13df1fa03f29"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-recovery-20261106.runtime.log",
+          "bytes": 102586,
+          "sha256": "8ca2c8838d1cc72739b201d585eeeed2f545448dcd7b8eea66db11926f34a69f"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-recovery-20261106.runtime.terminal-audit.json",
+          "bytes": 827,
+          "sha256": "8ccfc1b9c75fd941f2c7ca720315e652f29aef651258bb8985dd8f75f247768a"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-recovery-20261106.source-freeze.json",
+          "bytes": 807632,
+          "sha256": "2eb7264781a10814b09dc81dd687697ffadec12195d408e238fc0b01e28a5564"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-trace-20261106.binaries-before.json",
+          "bytes": 230,
+          "sha256": "5d36070864d689deb34eafe14502215ea7247e1926ed299bd2bb51d366de34d1"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-trace-20261106.catalog.inventory.json",
+          "bytes": 13774,
+          "sha256": "c4cd07c7b7779a8bad9f512659a509a6f1730a6543f0cc298528acb6463903ff"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-trace-20261106.catalog.json",
+          "bytes": 683,
+          "sha256": "eb87e5ee1e4e2b24817087a35d60f30d3a2f4355a613e34c379e955642a79f0a"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-trace-20261106.catalog.log",
+          "bytes": 94783,
+          "sha256": "54d4e7e47455d92b87c16296424005db766aadace0ad03766cf6c3d186d95af2"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-trace-20261106.runtime.json",
+          "bytes": 777,
+          "sha256": "0cf6e84eb1993518152066fe614303f48f257dfa0c72b0cb588e1c226b3bead3"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-trace-20261106.runtime.log",
+          "bytes": 103105,
+          "sha256": "cd39db9e8e965b51cbd32fe1129a8f1cc40c5a6754b0071a038e28f954f5cd4b"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-trace-20261106.runtime.terminal-audit.json",
+          "bytes": 821,
+          "sha256": "4d64190a6ffda68552914dcf1b25e7ad7e45325649c2c0288f79c74556d6b00d"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-trace-20261106.source-freeze.json",
+          "bytes": 807632,
+          "sha256": "6c46d843ee6ec553776c460738959c5592dd7d23cd316f83289ba0745504c255"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-trace-fix-20261106.binaries-before.json",
+          "bytes": 230,
+          "sha256": "23c5f22e7dc1a778d547ad486410770a4c71ef6fcd4e2b14d7d037bd8f6fc54e"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-trace-fix-20261106.catalog.inventory.json",
+          "bytes": 13720,
+          "sha256": "1abe76cea6a3916dfbcc4ea9f8a0b569b90aaf95e9683c6f68be4bf6a0a110af"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-trace-fix-20261106.catalog.json",
+          "bytes": 593,
+          "sha256": "650ce1ed610fad33debcab15479403280ef844fbf575ab78e387e89250c2e8f9"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-trace-fix-20261106.catalog.log",
+          "bytes": 95137,
+          "sha256": "c688236fc8bdb0c831c5e81a7695058ad6ccdf6992434f8a9935113378da057a"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-trace-fix-20261106.runtime.json",
+          "bytes": 687,
+          "sha256": "08c8d68352c376b9e987634c63be3196d32c81a32189a81e042ad3151c74b7a1"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-trace-fix-20261106.runtime.log",
+          "bytes": 101142,
+          "sha256": "6257a6a919ae35030380c3692aeb189152e9d8b46c8c250d987715c6452c204d"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-trace-fix-20261106.runtime.terminal-audit.json",
+          "bytes": 828,
+          "sha256": "7d293ae7123c2bfe35e5f19d06190cf957844df05d43d0e0f546e3ecb8ba97eb"
+        },
+        {
+          "entry": "line-registry-runtime-compiler-trace-fix-20261106.source-freeze.json",
+          "bytes": 807632,
+          "sha256": "c771d9d06c5f94c2b39d3713ed8ecac34a81d7b906883319d39104fd9b7accb7"
+        },
+        {
+          "entry": "line-registry-runtime-core-20261106.catalog.json",
+          "bytes": 550,
+          "sha256": "9a0b1de5b1d200fd6910d5ba7739bf3602a988ada5703aa0fd8975b97074f39b"
+        },
+        {
+          "entry": "line-registry-runtime-core-20261106.catalog.log",
+          "bytes": 13531,
+          "sha256": "99130fe5e4edcfebd7c9d70b78b1ae093fd9c014ceda4c9811e78fd0ff1be60f"
+        },
+        {
+          "entry": "line-registry-runtime-core-20261106.source-freeze.json",
+          "bytes": 807632,
+          "sha256": "5f7f5b60416e17c4204857352bd1c80abe980434555845773d0d27120b38694e"
+        },
+        {
+          "entry": "line-registry-runtime-core-close-fix-20261106.binaries-before.json",
+          "bytes": 202,
+          "sha256": "0c043ef8e4ebffc4f63e99be67c7154fda7dc9356ae755782f6e5d659bcbe24f"
+        },
+        {
+          "entry": "line-registry-runtime-core-close-fix-20261106.catalog.inventory.json",
+          "bytes": 581114,
+          "sha256": "46154b895e9bcb37bc12d7f709a5462279e93c7da3997319f01ed182e5c04a3a"
+        },
+        {
+          "entry": "line-registry-runtime-core-close-fix-20261106.catalog.json",
+          "bytes": 558,
+          "sha256": "8ea8fd4c74b96b2762ab0c67fbcb3a68c4d07e6d968c8910cb472145b78019c3"
+        },
+        {
+          "entry": "line-registry-runtime-core-close-fix-20261106.catalog.log",
+          "bytes": 427038,
+          "sha256": "14d5ffc34c6658a4245e1a1050b1a0cc458e128f1a0f1fe2884fc149cd044590"
+        },
+        {
+          "entry": "line-registry-runtime-core-close-fix-20261106.runtime.json",
+          "bytes": 650,
+          "sha256": "215bfdf974b1ea8b4f37662015cfacdd58584f7fc9581a80343f91ac158fe037"
+        },
+        {
+          "entry": "line-registry-runtime-core-close-fix-20261106.runtime.log",
+          "bytes": 733518,
+          "sha256": "a6e7664f70ee542be9bfd489eb64c3095f520cf65d550b66854cc345ef3ef729"
+        },
+        {
+          "entry": "line-registry-runtime-core-close-fix-20261106.runtime.terminal-audit.json",
+          "bytes": 634,
+          "sha256": "305eb243a0bc134720c8a97cb32114f73cfd9a176f48784bcadbea8226e1a3e3"
+        },
+        {
+          "entry": "line-registry-runtime-core-close-fix-20261106.source-freeze.json",
+          "bytes": 807632,
+          "sha256": "94cac3d48e7a98d55d79d302c6e66a900c28ca99725a37fb5478926155925dd0"
+        },
+        {
+          "entry": "line-registry-runtime-core-recovery-20261106.binaries-before.json",
+          "bytes": 202,
+          "sha256": "8ad4a33c58a566c89363a77afc0c06c98898aff7fe297968a97884efa8cb8ee4"
+        },
+        {
+          "entry": "line-registry-runtime-core-recovery-20261106.catalog.inventory.json",
+          "bytes": 581114,
+          "sha256": "46154b895e9bcb37bc12d7f709a5462279e93c7da3997319f01ed182e5c04a3a"
+        },
+        {
+          "entry": "line-registry-runtime-core-recovery-20261106.catalog.json",
+          "bytes": 557,
+          "sha256": "0027d6f78ecffd3c7734507007abad8ee466540943f50089ecdb98c4a61a5a3c"
+        },
+        {
+          "entry": "line-registry-runtime-core-recovery-20261106.catalog.log",
+          "bytes": 427038,
+          "sha256": "a357e71d5bf65626c9395a613117d516ddfa1273d14a316b9e0454ad5c42f60e"
+        },
+        {
+          "entry": "line-registry-runtime-core-recovery-20261106.runtime.json",
+          "bytes": 649,
+          "sha256": "48a1d259d26dcddf702d1d0899a54a70f3f1cba8091cabe194f38b50f13b193c"
+        },
+        {
+          "entry": "line-registry-runtime-core-recovery-20261106.runtime.log",
+          "bytes": 733518,
+          "sha256": "c870f83e7df93a858d6187fddc6d7b6c8b97d8e7d23138cbb82052454793b97a"
+        },
+        {
+          "entry": "line-registry-runtime-core-recovery-20261106.runtime.terminal-audit.json",
+          "bytes": 633,
+          "sha256": "c3271773d2b833f5bff98098f16b82a9d84a774feaaf55392811fb9e0993e75e"
+        },
+        {
+          "entry": "line-registry-runtime-core-recovery-20261106.source-freeze.json",
+          "bytes": 807632,
+          "sha256": "131637c3149eb2d1dd4df41575d1e6568f2e9af7ad1ba48393fc54844c7bef18"
+        },
+        {
+          "entry": "line-registry-runtime-nested-20261106.arcw",
+          "bytes": 747,
+          "sha256": "9919284f9fa2524afe52f9b7888fef868ec98bf48e755cf7a38cdfbc9bec8043"
+        },
+        {
+          "entry": "line-registry-runtime-nested-20261106.verify.json",
+          "bytes": 202,
+          "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+        },
+        {
+          "entry": "line-registry-runtime-nested-helper-20261106.verify.receipt.json",
+          "bytes": 971,
+          "sha256": "cf3049f9e31ec1629639ba0ae1159f8651ce0cd5f4a240dbe2baaf7958b0400d"
+        }
+      ]
+    }
   }
 }
