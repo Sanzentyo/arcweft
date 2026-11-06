@@ -12054,5 +12054,390 @@
         }
       ]
     }
+  },
+  "awbcNestedAffineDialogueResult": {
+    "source": "141951ede3bd866be36cbdeb75582dc80010e1bc",
+    "base": "5df06e2493dc21d9f5857a25a23e517c2be8327f",
+    "published": "141951ede3bd866be36cbdeb75582dc80010e1bc",
+    "tree": "ba61c264bb0fec9ecfbf92b5e0a26b4d17747ac9",
+    "patchSha256": "66417758bb86d2063bd738022f4060dc2a59371cac69274177f10a550697fb67",
+    "blobDrift": 0,
+    "baseline": {
+      "exitCode": 100,
+      "passed": 0,
+      "failed": 2,
+      "fixture": "awbc-nested-affine-20261106.arcw",
+      "failure": "Native and Product both refused the receiving activation moving the child-issued StageActor handle. The original issuer was correct and differed from the current activation."
+    },
+    "checkedBehavior": "Native and canonical decoded AWBC moved the StageActor result from the child into the active parent, moved it to another local, discarded it through a wildcard, and emitted exactly one release with the acquired token and child activation. AWBC restored its public JSON save after every step, including the pending acquisition and the published lease. The same fixture rejected a mismatched journal key at decode and a forged receiving register at restore, then resumed with the admitted owner to release the original token.",
+    "ownership": "An activation operation reconciles received values through the issuer published journal and advances it with the receiving activation frame. Product preflights pending stage rows against their original instruction, command and owned value. Register, formatter and cleanup slots share the physical projection used by live reconciliation and save admission. The version-one JSON journal retains object shape and verifies each row coordinate against its full typed identity.",
+    "attempts": [
+      "Baseline WrongActivation in both backends. A first AWBC save rejected a pending affine value as unrestricted. Subsequent live AWBC revealed missing drop evidence for consuming pattern binds. After those changes both live runs passed and JSON serialization rejected structured map keys. The string journal coordinate fixed serialization. The first forged-owner test asserted an inaccurate English substring even though restore rejected the incorrect slot. The final source checks the actual diagnostic and completes the correct save round-trip."
+    ],
+    "testRuns": [
+      {
+        "version": 1,
+        "base": "5df06e2493dc21d9f5857a25a23e517c2be8327f",
+        "run": "awbc-nested-affine-compiler-public-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   4.057s] 87 tests run: 87 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 87,
+        "passed": 87,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4134,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T12:46:15.3211821Z"
+      },
+      {
+        "version": 1,
+        "base": "5df06e2493dc21d9f5857a25a23e517c2be8327f",
+        "run": "awbc-nested-affine-owners-final-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [  60.027s] 2422 tests run: 2422 passed, 1 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 2422,
+        "passed": 2422,
+        "failed": 0,
+        "skipped": 1,
+        "selectedPackages": 2,
+        "matchedPackages": 2,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4134,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T12:46:01.0183639Z"
+      }
+    ],
+    "workspaceChecks": [
+      {
+        "version": 1,
+        "source": "141951ede3bd866be36cbdeb75582dc80010e1bc",
+        "kind": "structure",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4134,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T12:46:40.2981487Z",
+        "finishedAt": "2026-11-06T12:46:45.1702366Z"
+      },
+      {
+        "version": 1,
+        "source": "141951ede3bd866be36cbdeb75582dc80010e1bc",
+        "kind": "workspace-check",
+        "command": [
+          "check",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4134,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T12:46:46.14205Z",
+        "finishedAt": "2026-11-06T12:48:50.3813705Z"
+      },
+      {
+        "version": 1,
+        "source": "141951ede3bd866be36cbdeb75582dc80010e1bc",
+        "kind": "workspace-clippy",
+        "command": [
+          "clippy",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4134,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T12:48:51.3769537Z",
+        "finishedAt": "2026-11-06T12:51:02.0560664Z"
+      }
+    ],
+    "reverseGraph": {
+      "version": 1,
+      "base": "5df06e2493dc21d9f5857a25a23e517c2be8327f",
+      "owner": "arcweft-core",
+      "command": [
+        "tree",
+        "--locked",
+        "--workspace",
+        "--all-features",
+        "--target",
+        "all",
+        "--invert",
+        "arcweft-core",
+        "--prefix",
+        "none",
+        "--format",
+        "{p}"
+      ],
+      "workspaceReversePackages": [
+        "arcweft",
+        "arcweft-adapter-desktop",
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-policy",
+        "arcweft-agent-protocol",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-browser-bench",
+        "arcweft-bundle",
+        "arcweft-bundle-assets",
+        "arcweft-character-view",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-core",
+        "arcweft-debug-model",
+        "arcweft-debug-sqlite",
+        "arcweft-dialogue",
+        "arcweft-glyphon",
+        "arcweft-host-adapter",
+        "arcweft-lang-jit-cranelift",
+        "arcweft-lang-sema",
+        "arcweft-launch",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-text-input",
+        "arcweft-player-web",
+        "arcweft-project",
+        "arcweft-project-loader",
+        "arcweft-rag",
+        "arcweft-render-text",
+        "arcweft-render-web",
+        "arcweft-render-wgpu",
+        "arcweft-resource-manifest",
+        "arcweft-resource-model",
+        "arcweft-runtime-accelerator",
+        "arcweft-runtime-codegen",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-runtime-scheduler",
+        "arcweft-save",
+        "arcweft-test",
+        "arcweft-text-layout",
+        "arcweft-text-model",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3",
+        "arcweft-view"
+      ],
+      "cargoTestTargets": 223,
+      "priorGraphBase": "4c0378c2bfdb2fa0331d9ef34d6d75b703116220",
+      "graphDifference": 0,
+      "manifestDifference": 0
+    },
+    "boundary": "Cross-activation borrowed operations such as actor.look and re-export of a received handle were not exercised or implemented by this change. Other registries, MustDrop obligations and the full reverse execution matrix are tracked separately.",
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-nested-affine-result.raw.zip",
+      "sha256": "4a2c3502d54b0f395737ed4c65c5c247738176c4dbf90c794fc8285cae5ea7cb",
+      "entries": [
+        {
+          "entry": "checkpoint-awbc-nested-affine-20261106.verified.json",
+          "bytes": 3187,
+          "sha256": "d947a393706f6422465f5e0a79ae32bdbbec76d4a3eff41a4fcbbbfe1764c3ea"
+        },
+        {
+          "entry": "awbc-nested-affine-20261106.reverse.json",
+          "bytes": 1960,
+          "sha256": "94908ed35421327b91185fc07383a82be51c4aeb861d6d6ea3bd945ec85e1b4c"
+        },
+        {
+          "entry": "awbc-nested-affine-20261106.cargo-tree.txt",
+          "bytes": 19459,
+          "sha256": "b366a96025075e8716157c96ded790ee94ea9c0ae84008320c5b6ab7be47018c"
+        },
+        {
+          "entry": "awbc-nested-affine-baseline-20261106.log",
+          "bytes": 86911,
+          "sha256": "b71814b80ebf381a2da1a205d5929975c25cfdd24cd5aa041fd544749efc788b"
+        },
+        {
+          "entry": "awbc-nested-affine-product-first-20261106.log",
+          "bytes": 87491,
+          "sha256": "77ea2889cd5be4ce47259deb77d7a5093c47b096413468d68e3e6813c5d17c1f"
+        },
+        {
+          "entry": "awbc-nested-affine-both-first-20261106.log",
+          "bytes": 15297,
+          "sha256": "05730105f001f47acebb28cfd7f4f81836a5712bf779867d91154771a3122326"
+        },
+        {
+          "entry": "awbc-nested-affine-both-second-20261106.log",
+          "bytes": 88960,
+          "sha256": "5fecdc4eb437460dbd731343ecc5bca4d516581800471f5f5b3edfb7f117d03b"
+        },
+        {
+          "entry": "awbc-nested-affine-both-third-20261106.log",
+          "bytes": 88380,
+          "sha256": "80cb5215a82a8d68c3aa9cb8669c056876737b3fe2d207a4baa6e64d5ffd5057"
+        },
+        {
+          "entry": "awbc-nested-affine-both-fourth-20261106.log",
+          "bytes": 87706,
+          "sha256": "ca039c39cfe2367282756f3dc6bb9b1c07f67c44edb67439df425d82a27890c2"
+        },
+        {
+          "entry": "awbc-nested-affine-compiler-20261106.runtime.log",
+          "bytes": 110965,
+          "sha256": "e719a270521524d1974dff1c82011b2800a287c11e88456504332cf5ef912385"
+        },
+        {
+          "entry": "awbc-nested-affine-compiler-20261106.runtime.terminal-audit.json",
+          "bytes": 797,
+          "sha256": "854d7459ce2e87826a38db0a0ae35b571be6952775a938498dd3d441fd2b2160"
+        },
+        {
+          "entry": "awbc-nested-affine-owners-20261106.catalog.log",
+          "bytes": 83390,
+          "sha256": "82bc24ee4e77e5676310aecad1f8125732ae575f1338fc63489ee61a5bcca7dc"
+        },
+        {
+          "entry": "awbc-nested-affine-owners-20261106.catalog.json",
+          "bytes": 566,
+          "sha256": "7d9e713d6cd404794d212c0272d2abc9d5307faa4208c3810a77e220fd450ccf"
+        },
+        {
+          "entry": "awbc-nested-affine-structure-20261106.json",
+          "bytes": 404,
+          "sha256": "730c026235519c34dde1dc25cfcacd91a5d961dd24a65c9a50dfb2c7669e40ee"
+        },
+        {
+          "entry": "awbc-nested-affine-structure-20261106.log",
+          "bytes": 65698,
+          "sha256": "939bde6eb4cf9c2307c5fb3c82eaf671a94a68e76f7621065e6efb88bf3f3fcb"
+        },
+        {
+          "entry": "awbc-nested-affine-workspace-check-20261106.json",
+          "bytes": 387,
+          "sha256": "8b7cea7c78a1b799edb11aa88c77a15ccedee2948700571f31be708e9f072458"
+        },
+        {
+          "entry": "awbc-nested-affine-workspace-check-20261106.log",
+          "bytes": 111274,
+          "sha256": "8ebeb5de8ee4cd831cc3d5424b2b1f68887e9e8a1cb1d7b12ded55a64c0f0da3"
+        },
+        {
+          "entry": "awbc-nested-affine-workspace-clippy-20261106.json",
+          "bytes": 389,
+          "sha256": "bb23f4c2e415d943ed3dd1992d3e4bf9aa483ed0f52cdd8fd66a990a0a3692f2"
+        },
+        {
+          "entry": "awbc-nested-affine-workspace-clippy-20261106.log",
+          "bytes": 8981628,
+          "sha256": "fa5eb7e1badeac4e1240cd191beb6a4906d9fbb5b6e8823ead1d1b333bf764de"
+        },
+        {
+          "entry": "awbc-nested-affine-compiler-public-20261106.source-freeze.json",
+          "bytes": 808439,
+          "sha256": "80651cf50099d2395a0edfd35c0d83dad0ceed4644be0ed3d5fd4d71cfaf68ad"
+        },
+        {
+          "entry": "awbc-nested-affine-compiler-public-20261106.catalog.json",
+          "bytes": 600,
+          "sha256": "484124439f6c9c6af91aa7578575e6b1a81a06e8c39230892aa437fab4d77e67"
+        },
+        {
+          "entry": "awbc-nested-affine-compiler-public-20261106.catalog.log",
+          "bytes": 99309,
+          "sha256": "34380226eb930d3125b072c4b656b31fe6e8454eaf49f476fed6b46c64840c5e"
+        },
+        {
+          "entry": "awbc-nested-affine-compiler-public-20261106.catalog.inventory.json",
+          "bytes": 21888,
+          "sha256": "91cf56009e4617e717fc12c20e3fd5815923480a492d1a03f8a5a2b66475b5e2"
+        },
+        {
+          "entry": "awbc-nested-affine-compiler-public-20261106.binaries-before.json",
+          "bytes": 477,
+          "sha256": "a77d9002dd49acf78b4c9deb2a7e1b8ee29815dd62a934d5d57417d5545dedd7"
+        },
+        {
+          "entry": "awbc-nested-affine-compiler-public-20261106.runtime.json",
+          "bytes": 692,
+          "sha256": "15c39c3492257c24ba8f291c7aa09d1b7a4cba40ade67d991acf425152bb9ce6"
+        },
+        {
+          "entry": "awbc-nested-affine-compiler-public-20261106.runtime.log",
+          "bytes": 110234,
+          "sha256": "284207b65825e0ca3c850943fc2408759fc294733210d93e07d0c590b35a4d43"
+        },
+        {
+          "entry": "awbc-nested-affine-compiler-public-20261106.runtime.terminal-audit.json",
+          "bytes": 624,
+          "sha256": "32e9310f3b1c5c6413bb2ed4ef99a3b05e58aa4c3ffeed272475d6bc7ee95996"
+        },
+        {
+          "entry": "awbc-nested-affine-owners-final-20261106.source-freeze.json",
+          "bytes": 808439,
+          "sha256": "25428d42f76df2c32716f037b8e563953b5b82bcd13365bdac527f990a6aa90f"
+        },
+        {
+          "entry": "awbc-nested-affine-owners-final-20261106.catalog.json",
+          "bytes": 570,
+          "sha256": "1ac40abf5b05ec3b2e8ec14692b1782c087217bc0373ac5cae177bcaefbed972"
+        },
+        {
+          "entry": "awbc-nested-affine-owners-final-20261106.catalog.log",
+          "bytes": 515234,
+          "sha256": "d90c0ff0f7a59c9367135119be6a362035d11140a982c12d63b3b34793a8327b"
+        },
+        {
+          "entry": "awbc-nested-affine-owners-final-20261106.catalog.inventory.json",
+          "bytes": 617806,
+          "sha256": "1deb169e61c1648c5184bd2c3bfeabafdbc1e402bf81c56eae44ce006ace2bc7"
+        },
+        {
+          "entry": "awbc-nested-affine-owners-final-20261106.binaries-before.json",
+          "bytes": 447,
+          "sha256": "bb1a253fcb5df27704abf329acbb458cc65dbddad1c697fd8058e8fc7548e5b6"
+        },
+        {
+          "entry": "awbc-nested-affine-owners-final-20261106.runtime.json",
+          "bytes": 662,
+          "sha256": "ffec0f6db15d6c46a34df4de735f4d7b1262cd882920391f216151dad165aa61"
+        },
+        {
+          "entry": "awbc-nested-affine-owners-final-20261106.runtime.log",
+          "bytes": 840716,
+          "sha256": "f2807c766f42b079c60a8bc14d9fb3d950ccbaea22ff9dd9d105f6975544f7fa"
+        },
+        {
+          "entry": "awbc-nested-affine-owners-final-20261106.runtime.terminal-audit.json",
+          "bytes": 629,
+          "sha256": "f87a366b1ba2f976051bdedbcf22075cfc707b1f4f900f795a3e71d7c43cdb22"
+        },
+        {
+          "entry": "awbc-nested-affine-20261106.arcw",
+          "bytes": 431,
+          "sha256": "b8dafab79c67941cbd17950c47d24453d272a157730db0b468a784c620f0a266"
+        }
+      ]
+    }
   }
 }

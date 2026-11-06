@@ -14954,3 +14954,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source 8f41ccde1091d4b4d79aa5062792a038ea38ed3d は、`let` の注釈を `out` の期待型として使い、対話操作の型と親に渡す結果の型を区別する。修正前は同じ `String` 入力が意味解析で3件失敗し、registry の負例は通過した。修正後は Native と正規 AWBC の親が子の結果をログに出し、AWBC は全ステップの公開保存・復元を通過した。注釈が `.Some("yes")` を型付けし、異なる型の `out` を拒否することも確認した。
 - Compiler は85件、Sema は1,383件が通過した。構造監査、ワークスペース全体の check と Clippy は終了コード0。逆依存22パッケージの標準スイートでは、非CLI 3,457件、CLI 本体196件、CLI 統合29件が通過した。fixture を再生成する非CLI の1件はスキップした。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-06 — Nested dialogue handle custody and save
+
+- Source 141951ede3bd866be36cbdeb75582dc80010e1bc で、Native と正規 AWBC の親が子の StageActor を受け取り、別のローカルに移し、ワイルドカードで破棄した。元の発行 ID と同じハンドルを子の台帳から一度だけ解放した。AWBC は取得応答待ちから解放まで毎ステップ公開 JSON を保存・復元した。不正な台帳キーと受け取り先レジスタを拒否し、元の実行を続けた。
+- 修正前は両実行系が別の対話のハンドルとして拒否した。途中の保存における affine 値と JSON のキー、AWBC の破棄証拠の失敗を保持した。Compiler 87件、Core／RuntimePlan 2,422件が通過し、fixture 再生成1件をスキップした。構造監査、ワークスペース全体の check と Clippy は終了コード0。全逆依存53パッケージの実行は別途追跡する。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
