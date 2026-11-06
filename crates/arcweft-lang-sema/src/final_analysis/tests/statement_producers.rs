@@ -931,6 +931,31 @@ fn inferred_registry_read_still_requires_reaching_registration() {
 }
 
 #[test]
+fn inferred_registry_reads_keep_a_differently_typed_reaching_branch() {
+    for read in ["'flow.flag", "'flow.flag?"] {
+        let world = fixture(
+            &format!(
+                "flow main(flag: bool) effects {{ state.write('flow) }} {{
+                    'flow.flag <- 1i64
+                    'flow.flag <- true
+                    if flag {{ 'flow.flag <- 2i64 }}
+                    let observed = {read}
+                }}"
+            ),
+            None,
+        );
+        let result = super::analyze(&world);
+        assert!(
+            matches!(
+                result,
+                Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { .. })
+            ),
+            "{read}: {result:?}"
+        );
+    }
+}
+
+#[test]
 fn inferred_registry_read_excludes_same_key_from_another_flow() {
     let world = fixture(
         "flow first effects { state.write('flow) } { 'flow.flag <- 1i64 }

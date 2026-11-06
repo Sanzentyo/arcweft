@@ -3062,10 +3062,10 @@ pub use place::CheckedPlace;
 
 #[path = "model/registry.rs"]
 mod registry;
-pub(in crate::final_analysis) use registry::RegistryLexicalActivation;
 pub use registry::{
     CheckedRegistryAddress, CheckedRegistryDrop, CheckedRegistryRead, CheckedRegistryWrite,
 };
+pub(in crate::final_analysis) use registry::{RegistryLexicalActivation, RegistryWritePosition};
 #[path = "model/statement.rs"]
 mod statement;
 pub use statement::{

@@ -6,7 +6,10 @@ use std::sync::Arc;
 
 use arcweft_lang_hir::{
     body_edges::HirBodyChildRole,
-    expr::{HirExprKind, HirExpressionChildRole, HirExpressionOwnedBodyRole},
+    expr::{
+        HirExprKind, HirExpressionChildRole, HirExpressionOwnedBodyRole, HirLinePlanStatementRole,
+        HirNestedExpressionPathSegment,
+    },
     identity::{ExprId, StmtId},
     leaf::HirLifetimeRegistryPath,
     module::HirModule,
@@ -70,6 +73,66 @@ impl<'a> RegistryLexicalActivation<'a> {
             _ => None,
         }
     }
+}
+
+/// Structural position of a checked registry write. Ordered bodies supply
+/// precedence within their own sequence. Scheduled line items are separate
+/// from the line's eager initialization sequence.
+#[derive(Clone, Copy)]
+pub(in crate::final_analysis) struct RegistryWritePosition<'a>(&'a [HirSemanticPathStep]);
+
+impl<'a> RegistryWritePosition<'a> {
+    pub(in crate::final_analysis) const fn new(path: &'a [HirSemanticPathStep]) -> Self {
+        Self(path)
+    }
+
+    pub(in crate::final_analysis) const fn steps(self) -> &'a [HirSemanticPathStep] {
+        self.0
+    }
+
+    pub(in crate::final_analysis) fn precedes(self, other: &[HirSemanticPathStep]) -> bool {
+        let Some((write, parent)) = self.0.split_last() else {
+            return false;
+        };
+        let Some(other) = other.strip_prefix(parent).and_then(|rest| rest.first()) else {
+            return false;
+        };
+        match (write, other) {
+            (
+                HirSemanticPathStep::Body(HirBodyChildRole::Statement { ordinal: left }),
+                HirSemanticPathStep::Body(HirBodyChildRole::Statement { ordinal: right }),
+            )
+            | (
+                HirSemanticPathStep::Body(HirBodyChildRole::ThreadItem { ordinal: left }),
+                HirSemanticPathStep::Body(HirBodyChildRole::ThreadItem { ordinal: right }),
+            ) => left < right,
+            (
+                HirSemanticPathStep::Body(HirBodyChildRole::Statement { .. }),
+                HirSemanticPathStep::Body(HirBodyChildRole::Tail),
+            ) => true,
+            (left, right) => eager_line_statement_position(left)
+                .zip(eager_line_statement_position(right))
+                .is_some_and(|(left, right)| left < right),
+        }
+    }
+}
+
+fn eager_line_statement_position(step: &HirSemanticPathStep) -> Option<(u32, u32)> {
+    let HirSemanticPathStep::ExpressionOwned(
+        HirExpressionOwnedBodyRole::DialogueLinePlanStatement { path, role },
+    ) = step
+    else {
+        return None;
+    };
+    let [HirNestedExpressionPathSegment::LinePlanItem { ordinal }] = path.segments() else {
+        return None;
+    };
+    let statement = match role {
+        HirLinePlanStatementRole::Init { statement } => *statement,
+        HirLinePlanStatementRole::Statement => 0,
+        _ => return None,
+    };
+    Some((*ordinal, statement))
 }
 
 /// The checked key and presence mode of one registry value expression.

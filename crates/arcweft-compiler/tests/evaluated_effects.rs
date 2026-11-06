@@ -3084,6 +3084,31 @@ entry cli @entry.main {{ goto @flow.main }}
 }
 
 #[test]
+fn source_registry_reads_infer_the_type_after_a_definite_replacement() {
+    for (path, condition) in [
+        ("'flow.flag", "observed"),
+        ("'flow.flag?", "let .Some(true) = observed"),
+    ] {
+        let compiled = compile_source(&format!(
+            r#"
+fn identity<T>(value: T) -> T {{ value }}
+flow main() -> Unit effects {{ state.write('flow), log.write }} {{
+    'flow.flag <- 1i64
+    'flow.flag <- true
+    let observed = identity({path})
+    if {condition} {{
+        log.info("replacement")
+    }}
+}}
+entry cli @entry.main {{ goto @flow.main }}
+"#,
+        ))
+        .expect("the reaching replacement supplies the item type");
+        assert_simple_flow_logs_native_and_awbc(&compiled, &["replacement"]);
+    }
+}
+
+#[test]
 fn source_registry_drop_removes_only_the_reached_key() {
     for drop in [
         "drop('flow.flags.seen)",
@@ -3197,6 +3222,7 @@ flow main() -> Unit effects { state.write('flow), state.write('line), log.write 
             log.info(inherited)
             let absent: Option<String> = 'line.saved?
             if let .None = absent { log.info("line absent") }
+            'line.saved <- 1i64
             'line.saved <- "line value"
             let present = 'line.saved
             let maybe_present = 'line.saved?

@@ -58,7 +58,7 @@ use arcweft_lang_hir::leaf::{HirPath, HirPathValue, HirStringLiteral};
 use arcweft_lang_hir::project::HirSemanticPathLocation;
 use arcweft_lang_hir::stmt::{HirStmtEvaluationPlan, HirStmtValuePlanKind, HirTrigger};
 
-use crate::final_analysis::model::RegistryLexicalActivation;
+use crate::final_analysis::model::{RegistryLexicalActivation, RegistryWritePosition};
 
 use super::expression_error::{
     AnalyzerExpressionContext, AnalyzerExpressionError, AnalyzerExpressionFactAuthority,
@@ -5315,10 +5315,9 @@ impl Analyzer<'_, '_, '_> {
             .ok_or_else(|| {
                 AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
             })?;
-        let mut inferred = None;
-        // Use original checked write operands in this lexical activation. A
-        // type witness is provisional until the ownership CFG verifies the
-        // read's presence and item-type requirements on every reaching path.
+        let mut witnesses = Vec::new();
+        let mut latest: Option<RegistryWritePosition<'_>> = None;
+        let read = location.path().steps();
         for target in paths.expression_owners() {
             self.control
                 .check()
@@ -5331,12 +5330,13 @@ impl Analyzer<'_, '_, '_> {
             else {
                 continue;
             };
-            if address.key() != key
-                || paths
-                    .statement(address.statement())
-                    .and_then(|path| RegistryLexicalActivation::at(path.steps(), key.scope()))
-                    != Some(activation)
-            {
+            if address.key() != key {
+                continue;
+            }
+            let path = paths.statement(address.statement()).ok_or_else(|| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+            })?;
+            if RegistryLexicalActivation::at(path.steps(), key.scope()) != Some(activation) {
                 continue;
             }
             let statement = module.resolve_stmt(address.statement()).map_err(|_| {
@@ -5356,6 +5356,23 @@ impl Analyzer<'_, '_, '_> {
                 continue;
             };
             if matches!(ty, TypeKind::Never | TypeKind::Error(_)) {
+                continue;
+            }
+            let position = RegistryWritePosition::new(path.steps());
+            if position.precedes(read)
+                && latest.is_none_or(|previous| previous.precedes(position.steps()))
+            {
+                latest = Some(position);
+            }
+            witnesses.push((position, ty));
+        }
+
+        // Drop superseded type witnesses along the ordered path to the read.
+        // Other paths remain candidates. The ownership CFG still proves both
+        // registration and type on every reaching execution path.
+        let mut inferred = None;
+        for (position, ty) in witnesses {
+            if latest.is_some_and(|latest| position.precedes(latest.steps())) {
                 continue;
             }
             if inferred.is_some_and(|prior| prior != ty) {
