@@ -19914,5 +19914,96 @@
         }
       ]
     }
+  },
+  "scopedDeferRegistrationFrontierBaseline": {
+    "source": "ffc143ca9eb9b07612de2d45f2e8e228e01659be",
+    "executor": "canonical-decoded AWBC Product",
+    "firstHarnessExit": -1073741571,
+    "firstHarnessFailure": "Windows main-thread stack overflow before observing a restore verdict",
+    "testHarnessExit": 0,
+    "cases": [
+      {
+        "phase": "pending",
+        "tick": 8,
+        "originalNext": 2,
+        "tamperedNext": 1,
+        "pristineAccepted": true,
+        "forgedAccepted": true
+      },
+      {
+        "phase": "inflight",
+        "tick": 11,
+        "originalNext": 2,
+        "tamperedNext": 1,
+        "pristineAccepted": true,
+        "forgedAccepted": true
+      }
+    ],
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-defer-frontier-baseline.raw.zip",
+      "sha256": "b8a21ae388f7700ebe8b65057124546afa01a03b778b4d0a96fb2f74e6ca641f",
+      "entries": [
+        {
+          "entry": "scoped-defer-frontier-current-source-20261107/probe.rs",
+          "bytes": 13028,
+          "sha256": "5eced0e60b42363be701cb687e4ec5071884241c2e352ea9d57cf950d8bcb9d6"
+        },
+        {
+          "entry": "scoped-defer-frontier-current-source-20261107/receipt.json",
+          "bytes": 7679,
+          "sha256": "612a8ade66459698a6f91985f111bbabcfbc1007f00508a9a350b36b2d7f4708"
+        },
+        {
+          "entry": "scoped-defer-frontier-current-source-20261107/build.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "scoped-defer-frontier-current-source-20261107/build.stderr.log",
+          "bytes": 1243,
+          "sha256": "0e12f8133f2d80f915d072e45186233ba1d02a540d9ee0fce6cc5665cdbdfbec"
+        },
+        {
+          "entry": "scoped-defer-frontier-current-source-20261107/run.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "scoped-defer-frontier-current-source-20261107/run.stderr.log",
+          "bytes": 50,
+          "sha256": "dbb1aa0f1b89c01c82720c1e5cdac17a76e6a414fcc5377a4c798a83546c577a"
+        },
+        {
+          "entry": "scoped-defer-frontier-test-current-source-20261107/probe.rs",
+          "bytes": 13063,
+          "sha256": "2035207400c2c69b2cccc7ae9dd32abaabc203d9fc4cda9c8d21219bd609b3b2"
+        },
+        {
+          "entry": "scoped-defer-frontier-test-current-source-20261107/receipt.json",
+          "bytes": 7694,
+          "sha256": "60448c4011e97351cd66e3db09710cfe25697397cf7549aac8288a7e5f9dce30"
+        },
+        {
+          "entry": "scoped-defer-frontier-test-current-source-20261107/build.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "scoped-defer-frontier-test-current-source-20261107/build.stderr.log",
+          "bytes": 1248,
+          "sha256": "9c46aa79dfbf08ebf81b8f900012acfb1241bc31d4eb592bca7b429787519079"
+        },
+        {
+          "entry": "scoped-defer-frontier-test-current-source-20261107/run.stdout.log",
+          "bytes": 297,
+          "sha256": "e4472c9c82446510492f090ea8b355eb057202060a30423bcc5eed2067488645"
+        },
+        {
+          "entry": "scoped-defer-frontier-test-current-source-20261107/run.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    }
   }
 }

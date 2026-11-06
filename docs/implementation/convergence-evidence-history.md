@@ -15142,3 +15142,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Scoped defer in a mark handler on both executors
 
 - Source ffc143ca9eb9b07612de2d45f2e8e228e01659be。Cargo のテスト一覧と fingerprint で照合した同ソースの依存ライブラリを使い、既存の対話フィクスチャと同じ構築経路から Native の計画と AWBC を生成した。マークを1回配信し、1 op ずつ実行した。対照入力は両実行器でハンドラーを開始し、選んだ結果を返して終了した。通常の defer と失敗時限定の defer は、どちらもハンドラー開始後の登録で Native とデコード済みAWBCが拒否した。Native の診断は defer site が実行できないことを示し、AWBC の診断は子の実行役割で登録命令を扱えないことを示した。終了時のフィルターや保存復元には到達していない。[入力・診断・依存物の照合](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Scoped defer registration frontier restore baseline
+
+- Source ffc143ca9eb9b07612de2d45f2e8e228e01659be。デコード済みAWBCの init で、捕捉値のない defer の実行待ちと実行中の公開保存を採取した。対話側の次の登録IDだけを2から1へ巻き戻した両入力を復元が受理し、同じ地点の正規の保存も復元できた。実行中の子とスコープの照合に加えて、捕捉ハンドルの有無に関わらず対話側の発行範囲を照合する必要がある。初回の単体実行は Windows のメインスレッドでスタックを使い切った。標準の Rust テストハーネスで同じ入力を再実行して結果を得た。[実測と両試行の原本](acceptance-evidence/task-flow-registry-execution.json)。
