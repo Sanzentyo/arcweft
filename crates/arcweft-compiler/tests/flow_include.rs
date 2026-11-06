@@ -174,6 +174,107 @@ fn repeated_and_nested_includes_share_original_functions_and_resume_their_caller
 }
 
 #[test]
+fn flow_registry_keeps_caller_and_include_writes_separate_across_save() {
+    let source = "\
+fn write_flag(value: bool) -> Unit effects { state.write('flow.flags.seen) } {
+    'flow.flags.seen <- value;
+    return ()
+}
+flow main() -> String effects { state.write('flow) } {
+    'flow.flags.seen <- true;
+    include @flow.snippet;
+    write_flag(false);
+    return \"after\"
+}
+flow snippet() effects { state.write('flow) } {
+    'flow.flags.seen <- false
+}
+entry cli @entry.main { goto @flow.main }
+";
+    for backend in BACKENDS {
+        let mut executor = executor(source, backend);
+        let mut saw_separate_writes = false;
+        let mut rejected_forged_key = false;
+        let mut saw_caller_overwrite = false;
+        for _ in 0..64 {
+            let step = executor.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+            assert!(step.stats.executed_ops <= 1);
+            assert!(step.output.diagnostics.is_empty(), "{backend:?}: {step:?}");
+            let terminal = matches!(executor.fiber().frame.status, FlowFiberStatus::Done(_));
+            if !matches!(backend, Backend::Native) {
+                let ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) =
+                    executor.snapshot().unwrap();
+                let saved = AwbcProductExecutorSaveSnapshot::from_live(
+                    &snapshot,
+                    executor.admitted_product_awbc_program().unwrap(),
+                )
+                .unwrap();
+                let wire = serde_json::to_value(&saved).unwrap();
+                let frames = wire["fiber"]["frames"].as_array().unwrap();
+                let caller = &frames[0]["flow_registry"][0]["row"]["value"]["Bool"];
+                let callee = &frames.last().unwrap()["flow_registry"][0]["row"]["value"]["Bool"];
+                if frames.len() == 2 && *callee == false {
+                    assert_eq!(*caller, true);
+                    saw_separate_writes = true;
+                    if !rejected_forged_key {
+                        let mut wrong_key = wire.clone();
+                        wrong_key["fiber"]["frames"][1]["flow_registry"][0]["row"]["key"]["segments"]
+                            [0] = serde_json::json!("forged");
+                        let mut exchanged = wire.clone();
+                        exchanged["fiber"]["frames"][0]["flow_registry"] =
+                            frames[1]["flow_registry"].clone();
+                        exchanged["fiber"]["frames"][1]["flow_registry"] =
+                            frames[0]["flow_registry"].clone();
+                        for forged in [wrong_key, exchanged] {
+                            let forged = serde_json::from_value(forged).unwrap();
+                            let bound = executor.bind_product_save_snapshot(forged).unwrap();
+                            let rejected = executor
+                                .restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(
+                                    bound,
+                                ))
+                                .expect_err(
+                                    "registry data must belong to its original write and frame",
+                                );
+                            (executor, _) = rejected.into_parts();
+                            assert_eq!(
+                                executor.snapshot().unwrap(),
+                                ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot.clone())
+                            );
+                        }
+                        rejected_forged_key = true;
+                    }
+                }
+                if saw_separate_writes && *caller == false {
+                    saw_caller_overwrite = true;
+                }
+                if terminal {
+                    assert!(
+                        frames
+                            .iter()
+                            .all(|frame| frame.get("flow_registry").is_none())
+                    );
+                }
+                let decoded = serde_json::from_value(wire).unwrap();
+                let bound = executor.bind_product_save_snapshot(decoded).unwrap();
+                executor = executor
+                    .restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(bound))
+                    .unwrap();
+            }
+            if terminal {
+                break;
+            }
+        }
+        assert_eq!(
+            executor.fiber().frame.status,
+            FlowFiberStatus::Done(FlowExit::Return("after".into()))
+        );
+        if !matches!(backend, Backend::Native) {
+            assert!(saw_separate_writes && rejected_forged_key && saw_caller_overwrite);
+        }
+    }
+}
+
+#[test]
 fn mutually_recursive_includes_execute_under_the_original_one_operation_budget() {
     let source = concat!(
         "flow main() { include @flow.first }\n",

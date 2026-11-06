@@ -12,6 +12,7 @@ pub use assertion_identity::{
     RuntimeArtifactFingerprint, RuntimeAssertionGuardId, RuntimeIdentityDecodeError,
 };
 pub use registry::RuntimeRegistryStateUpdate;
+pub(crate) use registry::{RuntimeFlowRegistry, RuntimeRegistryWriteSource};
 pub(crate) use registry::{RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJournalError};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -125,6 +126,8 @@ pub enum RuntimeEffectMaterializeError {
     WaitTargetNotDuration,
     #[error("registry writes require their original program and owning execution context")]
     RegistryContextRequired,
+    #[error("the original function does not authorize registry effect `{effect}`")]
+    RegistryWriteNotAuthorized { effect: arcweft_id::EffectId },
     #[error("Action delivery requires its original program and owning execution context")]
     ActionContextRequired,
     #[error(transparent)]

@@ -2579,6 +2579,15 @@ fn execute_instruction(
             }
         }
         AwbcInstruction::EmitEffect { effect, args } => {
+            if let Some(super::schema::AwbcEffectPayload::RegistryWrite { key, value_type }) =
+                program
+                    .effect_plans
+                    .get(effect.index())
+                    .map(|plan| &plan.payload)
+            {
+                execution.registry_write(program, fiber, *effect, key, *value_type, args)?;
+                return Ok(InstructionControl::Continue);
+            }
             if let Some(super::schema::AwbcEffectPayload::EmitAction { payload_type }) = program
                 .effect_plans
                 .get(effect.index())

@@ -586,6 +586,11 @@ pub struct FiberFrame<
     pub root_cleanups: Vec<FiberScopeCleanup<V>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub root_presentation_scope: Option<G>,
+    #[serde(
+        default,
+        skip_serializing_if = "crate::effect::RuntimeFlowRegistry::is_empty"
+    )]
+    pub(in crate::awbc) flow_registry: crate::effect::RuntimeFlowRegistry,
     pub scopes: Vec<FiberScope<V, G>>,
 }
 
@@ -605,8 +610,31 @@ impl<V: InertRuntimeValueStorage + Clone, B: Clone, R: Clone, G: Clone> Clone
             format_attempts: self.format_attempts.clone(),
             root_cleanups: self.root_cleanups.clone(),
             root_presentation_scope: self.root_presentation_scope.clone(),
+            flow_registry: self.flow_registry.clone(),
             scopes: self.scopes.clone(),
         }
+    }
+}
+
+impl<V, B, R, G> FiberFrame<V, B, R, G> {
+    fn admit_flow_registry(
+        &self,
+        fiber: RuntimeFiberInstanceId,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> AwbcSaveResult<()> {
+        if self.flow_registry.is_empty() {
+            return Ok(());
+        }
+        if !matches!(admission.program_owner(), Some(RuntimeProgramOwner::Awbc(program))
+            if program.functions.get(self.function.index()).is_some_and(|function|
+                function.kind == super::schema::AwbcFunctionKind::Flow))
+        {
+            return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                message: "Flow registry requires a reached AWBC Flow frame".to_owned(),
+            });
+        }
+        self.flow_registry
+            .admit_retained(Some((fiber, self.instance)), admission)
     }
 }
 
@@ -1334,6 +1362,7 @@ impl AwbcFiberStateSnapshot {
     ) -> AwbcSaveResult<()> {
         for frame in &self.frames {
             admission.validate_metadata(&frame.input_order)?;
+            frame.admit_flow_registry(self.instance, admission)?;
         }
         admission.admit_composite(
             crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
@@ -1476,6 +1505,7 @@ impl AwbcFiberFrameSnapshot {
                 .as_ref()
                 .map(|binding| binding.snapshot_admitted(owner))
                 .transpose()?,
+            flow_registry: frame.flow_registry.clone(),
             scopes: frame
                 .scopes
                 .iter()
@@ -1521,6 +1551,7 @@ impl AwbcFiberFrameSnapshot {
             root_presentation_scope: self
                 .root_presentation_scope
                 .map(|snapshot| snapshot.into_admitted_live(owner.owner())),
+            flow_registry: self.flow_registry,
             scopes: self
                 .scopes
                 .into_iter()
@@ -1971,6 +2002,7 @@ impl FiberState {
     ) -> AwbcSaveResult<()> {
         for frame in &self.frames {
             admission.validate_metadata(&frame.input_order)?;
+            frame.admit_flow_registry(self.instance, admission)?;
         }
         admission.admit_composite(
             crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
@@ -4073,6 +4105,7 @@ impl FiberState {
         }
         frame.format = None;
         frame.format_attempts.clear();
+        frame.flow_registry.clear();
         Ok(())
     }
 
@@ -5523,6 +5556,7 @@ impl FiberFrame {
             format_attempts: Vec::new(),
             root_cleanups: Vec::new(),
             root_presentation_scope: None,
+            flow_registry: crate::effect::RuntimeFlowRegistry::default(),
             scopes: Vec::with_capacity(layout.max_scope_depth as usize),
         })
     }

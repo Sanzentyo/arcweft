@@ -116,6 +116,14 @@ impl Engine {
             frame.type_instantiation.clone(),
             input_order,
         );
+        let site = self
+            .plan
+            .function_sites()
+            .get(frame.site)
+            .expect("admitted call retains its original function site");
+        if site.role() == crate::plan::RuntimeFunctionSemanticRole::Flow {
+            self.fiber.frame.env.open_flow_registry();
+        }
         self.fiber.frame.env.bind_all(staged);
         frame.function_scope = true;
         frame.caller_pending_ops = std::mem::take(&mut self.fiber.frame.pending_ops);

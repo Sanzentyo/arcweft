@@ -137,7 +137,9 @@ impl Engine {
                 self.emit_scope_cleanups(cleanups, output, pure_backend);
             }
         }
-        self.drain_root_cleanups(output, pure_backend)
+        self.drain_root_cleanups(output, pure_backend)?;
+        self.fiber.frame.env.close_root_flow_registry();
+        Ok(())
     }
     pub(super) fn finish(
         &mut self,

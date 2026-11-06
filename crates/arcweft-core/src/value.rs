@@ -2704,6 +2704,7 @@ pub struct RuntimeEnv<V = RuntimeValue> {
 struct RuntimeScope<T = RuntimeValue> {
     identity: RuntimeScopeIdentity,
     presentation_scope: Option<crate::presentation::resources::RuntimePresentationScopeBinding>,
+    flow_registry: Option<crate::effect::RuntimeFlowRegistry>,
     function_context: RuntimeScopeFunctionContext,
     slots: Vec<RuntimeLocalSlot<T>>,
 }
@@ -2713,6 +2714,7 @@ impl<T> Default for RuntimeScope<T> {
         Self {
             identity: RuntimeScopeIdentity::default(),
             presentation_scope: None,
+            flow_registry: None,
             function_context: RuntimeScopeFunctionContext::default(),
             slots: Vec::new(),
         }

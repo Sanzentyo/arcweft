@@ -16,7 +16,9 @@ use crate::value::{
 };
 
 mod journal;
+mod scope;
 pub(crate) use journal::{RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJournalError};
+pub(crate) use scope::{RuntimeFlowRegistry, RuntimeRegistryWriteSource};
 
 /// Replayable update data admitted by the exact executable that produced it.
 ///
@@ -32,10 +34,18 @@ pub(crate) use journal::{RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJour
 /// ```
 #[derive(Debug)]
 pub struct RuntimeRegistryStateUpdate {
+    program: RuntimeProgramOwner,
+    row: RuntimeRegistryValue,
+}
+
+/// Inert, version-one data inside the owning frame or an emitted update.
+/// Restoring it requires validation under that frame's original executable.
+#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct RuntimeRegistryValue {
     key: LifetimeRegistryKey,
     expected: RuntimeSemanticTypeId,
     binding: Option<RuntimeFunctionEffectInstantiation>,
-    program: RuntimeProgramOwner,
     value: AwbcRuntimeValueSnapshot,
 }
 
@@ -51,6 +61,15 @@ impl RuntimeRegistryStateUpdate {
         value: &RuntimeValue,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
+        Self::prepare(key, expected, binding, admission)?.capture(value)
+    }
+
+    pub(crate) fn prepare<'source, 'budget>(
+        key: &'source LifetimeRegistryKey,
+        expected: RuntimeSemanticTypeId,
+        binding: Option<&'source RuntimeFunctionEffectInstantiation>,
+        admission: &'budget mut RuntimeRetainedValueAdmission,
+    ) -> Result<PreparedRegistryValue<'source, 'budget>, AwbcRuntimeValueSnapshotError> {
         Self::admit_header(
             key,
             expected,
@@ -58,43 +77,33 @@ impl RuntimeRegistryStateUpdate {
             ValueAdmissionOrigin::Live,
             admission,
         )?;
-        admission.validate_typed_in_invocation(value, expected, binding)?;
-        let program = admission
-            .program_owner()
-            .ok_or(AwbcRuntimeValueSnapshotError::ProgramOwnerRequired { expected })?;
-        let value = AwbcRuntimeValueSnapshot::from_admitted_runtime_value(value, program)
-            .inspect_err(|error| admission.retain_failure(error.clone()))?;
-        Ok(Self {
-            key: key.clone(),
+        Ok(PreparedRegistryValue {
+            key,
             expected,
-            binding: binding.cloned(),
-            program: admission
-                .program_owner()
-                .expect("typed admission authenticated the original executable")
-                .clone(),
-            value,
+            binding,
+            admission,
         })
     }
 
     #[must_use]
     pub fn key(&self) -> &LifetimeRegistryKey {
-        &self.key
+        &self.row.key
     }
 
     #[must_use]
     pub const fn value_type(&self) -> RuntimeSemanticTypeId {
-        self.expected
+        self.row.expected
     }
 
     /// Read-only inert data, without a live-value or affine-copy entitlement.
     #[must_use]
     pub fn value(&self) -> RuntimeBorrowedValue<'_> {
-        (&self.value).into()
+        (&self.row.value).into()
     }
 
     #[must_use]
     pub fn required_effect(&self) -> EffectId {
-        EffectId::state_write(&self.key)
+        EffectId::state_write(self.key())
     }
 
     /// Materializes replay data only under its original executable and retained
@@ -109,29 +118,19 @@ impl RuntimeRegistryStateUpdate {
             admission
                 .program_owner()
                 .ok_or(AwbcRuntimeValueSnapshotError::ProgramOwnerRequired {
-                    expected: self.expected,
+                    expected: self.row.expected,
                 });
         let result = match program {
             Ok(program) if program.same_program(&self.program) => Ok(()),
             Ok(_) => Err(AwbcRuntimeValueSnapshotError::ProgramOwnerMismatch {
-                expected: self.expected,
+                expected: self.row.expected,
             }),
             Err(error) => Err(error),
         };
         result.inspect_err(|error| admission.retain_failure(error.clone()))?;
-        Self::admit_header(
-            &self.key,
-            self.expected,
-            self.binding.as_ref(),
-            ValueAdmissionOrigin::InertSnapshot,
-            admission,
-        )?;
-        admission.validate_typed_snapshot_in_invocation(
-            &self.value,
-            self.expected,
-            self.binding.as_ref(),
-        )?;
-        self.value
+        self.row.admit_retained(admission)?;
+        self.row
+            .value
             .clone()
             .into_admitted_runtime_value(&self.program)
             .inspect_err(|error| admission.retain_failure(error.clone()))
@@ -164,6 +163,65 @@ impl RuntimeRegistryStateUpdate {
             }
             Ok(())
         })
+    }
+}
+
+pub(crate) struct PreparedRegistryValue<'source, 'budget> {
+    key: &'source LifetimeRegistryKey,
+    expected: RuntimeSemanticTypeId,
+    binding: Option<&'source RuntimeFunctionEffectInstantiation>,
+    admission: &'budget mut RuntimeRetainedValueAdmission,
+}
+
+impl PreparedRegistryValue<'_, '_> {
+    pub(crate) fn capture(
+        self,
+        value: &RuntimeValue,
+    ) -> Result<RuntimeRegistryStateUpdate, AwbcRuntimeValueSnapshotError> {
+        let Self {
+            key,
+            expected,
+            binding,
+            admission,
+        } = self;
+        admission.validate_typed_in_invocation(value, expected, binding)?;
+        let program = admission
+            .program_owner()
+            .ok_or(AwbcRuntimeValueSnapshotError::ProgramOwnerRequired { expected })?;
+        let value = AwbcRuntimeValueSnapshot::from_admitted_runtime_value(value, program)
+            .inspect_err(|error| admission.retain_failure(error.clone()))?;
+        Ok(RuntimeRegistryStateUpdate {
+            program: admission
+                .program_owner()
+                .expect("typed admission authenticated the original executable")
+                .clone(),
+            row: RuntimeRegistryValue {
+                key: key.clone(),
+                expected,
+                binding: binding.cloned(),
+                value,
+            },
+        })
+    }
+}
+
+impl RuntimeRegistryValue {
+    fn admit_retained(
+        &self,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        RuntimeRegistryStateUpdate::admit_header(
+            &self.key,
+            self.expected,
+            self.binding.as_ref(),
+            ValueAdmissionOrigin::InertSnapshot,
+            admission,
+        )?;
+        admission.validate_typed_snapshot_in_invocation(
+            &self.value,
+            self.expected,
+            self.binding.as_ref(),
+        )
     }
 }
 

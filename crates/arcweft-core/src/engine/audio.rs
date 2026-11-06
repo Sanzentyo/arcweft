@@ -23,9 +23,9 @@ mod tests;
 pub(super) enum RuntimeEffectExecutionError {
     #[error(transparent)]
     Admission(#[from] crate::value::AwbcRuntimeValueSnapshotError),
-    #[error("Action execution checkpoint failed: {message}")]
+    #[error("effect execution checkpoint failed: {message}")]
     Checkpoint { message: String },
-    #[error("{cause}; Action rollback failed: {message}")]
+    #[error("{cause}; effect rollback failed: {message}")]
     Rollback { cause: Box<Self>, message: String },
     #[error(transparent)]
     Evaluation(#[from] RuntimeEvalError),

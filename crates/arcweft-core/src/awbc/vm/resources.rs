@@ -14,6 +14,82 @@ pub(super) struct VmExecutionResources<'execution> {
 }
 
 impl VmExecutionResources<'_> {
+    pub(super) fn registry_write(
+        &self,
+        program: &AwbcProgram,
+        fiber: &mut FiberState,
+        effect: crate::awbc::schema::AwbcEffectPlanId,
+        key: &arcweft_id::LifetimeRegistryKey,
+        value_type: crate::awbc::schema::AwbcTypeId,
+        args: &[AwbcRegisterId],
+    ) -> Result<(), VmError> {
+        use crate::awbc::schema::AwbcFunctionKind;
+        use crate::effect::{
+            RuntimeEffectMaterializeError, RuntimeRegistryStateUpdate, RuntimeRegistryWriteSource,
+        };
+
+        let missing = RuntimeEffectMaterializeError::RegistryContextRequired;
+        let context = self.context.ok_or(missing.clone())?;
+        let admitted = context
+            .admitted_program(program)
+            .map_err(|_| missing.clone())?;
+        if key.scope() != &arcweft_id::LifetimeScopeKind::Flow {
+            return Err(missing.into());
+        }
+        let destination = fiber
+            .frames
+            .iter()
+            .rposition(|frame| {
+                program
+                    .functions
+                    .get(frame.function.index())
+                    .is_some_and(|function| function.kind == AwbcFunctionKind::Flow)
+            })
+            .ok_or(missing.clone())?;
+        let [source] = args else {
+            return Err(FiberStateError::InvalidFrame.into());
+        };
+        let ty = program
+            .runtime_types
+            .get(value_type.index())
+            .ok_or(missing)?
+            .semantic_identity();
+        let mut admission =
+            admitted.retained_value_admission(crate::entry::RuntimeSchemaLimits::engine_default());
+        fiber
+            .admit_retained(&mut admission)
+            .map_err(FiberStateError::Snapshot)?;
+        let result = FiberStateError::Snapshot;
+        let write_source = RuntimeRegistryWriteSource::Awbc {
+            effect,
+            fiber: fiber.instance,
+            frame: fiber.frames[destination].instance,
+        };
+        let position = fiber.frames[destination]
+            .flow_registry
+            .prepare_write(key, write_source, &mut admission)
+            .map_err(result)?;
+        let frame = fiber.active_frame()?;
+        let prepared = RuntimeRegistryStateUpdate::prepare(
+            key,
+            ty,
+            frame.type_instantiation.as_deref(),
+            &mut admission,
+        )
+        .map_err(result)?;
+        let transfer = frame.prepare_register_values(program, args)?;
+        let update = prepared.capture(frame.register(*source)?).map_err(result)?;
+        fiber.frames[destination]
+            .flow_registry
+            .reserve_write(position)
+            .map_err(result)?;
+        drop(transfer.commit(fiber.active_frame_mut()?));
+        fiber.frames[destination]
+            .flow_registry
+            .commit(position, write_source, update);
+        Ok(())
+    }
+
     pub(super) fn receive_action(
         &mut self,
         program: &AwbcProgram,

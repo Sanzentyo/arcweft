@@ -181,6 +181,7 @@ impl RuntimeEnv {
                     Ok(RuntimeScope {
                         identity: scope.identity.clone(),
                         presentation_scope: scope.presentation_scope.clone(),
+                        flow_registry: scope.flow_registry.clone(),
                         function_context: scope.function_context.clone(),
                         slots: scope
                             .slots
@@ -228,6 +229,7 @@ impl RuntimeEnvRollbackImage {
                     Ok(RuntimeScope {
                         identity: scope.identity,
                         presentation_scope: scope.presentation_scope,
+                        flow_registry: scope.flow_registry,
                         function_context: scope.function_context,
                         slots: scope
                             .slots
@@ -421,6 +423,9 @@ impl<V> RuntimeEnv<V> {
         self.assignment_discards.admit_retained(admission)?;
         for scope in &self.scopes {
             admission.validate_metadata(&scope.identity)?;
+            if let Some(registry) = &scope.flow_registry {
+                registry.admit_retained(None, admission)?;
+            }
             if let Some(binding) = &scope.presentation_scope {
                 binding.admit_retained(admission)?;
             }
@@ -452,6 +457,15 @@ impl<V> RuntimeEnv<V> {
             scope
                 .function_context
                 .validate_original(plan, &resources.work())?;
+            if scope.flow_registry.is_some()
+                && !matches!(&scope.function_context, super::RuntimeScopeFunctionContext::Function { site, .. }
+                    if plan.function_sites().get(*site).is_some_and(|site|
+                        site.role() == crate::plan::RuntimeFunctionSemanticRole::Flow))
+            {
+                return Err(invalid(
+                    "registry requires a reached native Flow frame".to_owned(),
+                ));
+            }
         }
         let mut instantiation = None;
         for scope in scopes {
@@ -572,6 +586,7 @@ impl RuntimeEnv {
                 scopes: vec![RuntimeScope {
                     identity: RuntimeScopeIdentity::Anonymous,
                     presentation_scope: None,
+                    flow_registry: None,
                     function_context,
                     slots,
                 }],
@@ -610,6 +625,33 @@ impl RuntimeEnv {
         };
     }
 
+    pub(crate) fn open_flow_registry(&mut self) {
+        self.scopes
+            .last_mut()
+            .expect("Flow has a physical execution scope")
+            .flow_registry = Some(crate::effect::RuntimeFlowRegistry::default());
+    }
+
+    pub(crate) fn flow_registry(&self) -> Option<&crate::effect::RuntimeFlowRegistry> {
+        self.scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.flow_registry.as_ref())
+    }
+
+    pub(crate) fn flow_registry_mut(&mut self) -> Option<&mut crate::effect::RuntimeFlowRegistry> {
+        self.scopes
+            .iter_mut()
+            .rev()
+            .find_map(|scope| scope.flow_registry.as_mut())
+    }
+
+    pub(crate) fn close_root_flow_registry(&mut self) {
+        if let Some(scope) = self.scopes.first_mut() {
+            scope.flow_registry = None;
+        }
+    }
+
     /// Installs an admitted Flow function after its previous root has unwound.
     /// Old locals must not inherit the next declaration's type context.
     pub(crate) fn bind_root_function(
@@ -627,6 +669,7 @@ impl RuntimeEnv {
         self.ensure_root_scope();
         let root = self.scopes.first_mut().expect("root scope was ensured");
         root.clear();
+        root.flow_registry = Some(crate::effect::RuntimeFlowRegistry::default());
         root.function_context = super::RuntimeScopeFunctionContext::Function {
             site,
             instantiation,
@@ -1079,6 +1122,7 @@ impl RuntimeScope {
         Self {
             identity: RuntimeScopeIdentity::Anonymous,
             presentation_scope: None,
+            flow_registry: None,
             function_context: super::RuntimeScopeFunctionContext::Lexical,
             slots: Vec::with_capacity(binding_capacity),
         }
@@ -1134,6 +1178,7 @@ impl RuntimeScope {
 
     fn clear(&mut self) {
         self.presentation_scope = None;
+        self.flow_registry = None;
         self.identity = RuntimeScopeIdentity::Anonymous;
         self.function_context = super::RuntimeScopeFunctionContext::Lexical;
         self.slots.clear();

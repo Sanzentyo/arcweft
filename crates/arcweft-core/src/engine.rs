@@ -61,6 +61,7 @@ mod numeric_map;
 mod presentation;
 #[cfg(test)]
 mod presentation_tests;
+mod registry;
 mod rollback;
 mod root;
 #[cfg(test)]
