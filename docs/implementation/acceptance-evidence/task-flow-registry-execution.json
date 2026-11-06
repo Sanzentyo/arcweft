@@ -8150,5 +8150,504 @@
         }
       ]
     }
+  },
+  "sourceOptionalRegistryInference": {
+    "source": "12e5ec383ecbfaa006d2627eba02fb449d65056f",
+    "base": "3537e049d30e12cfeee5726c85c3c0dd76248dd6",
+    "published": "12e5ec383ecbfaa006d2627eba02fb449d65056f",
+    "tree": "3868917fa441a512f8838dcc631d16cc9e078c42",
+    "patchSha256": "fd0e9457c6f14496f0d24736c79e2e048880f448dd49065b7356c5cc334dd8df",
+    "blobDrift": 0,
+    "tests": [
+      {
+        "version": 1,
+        "base": "3537e049d30e12cfeee5726c85c3c0dd76248dd6",
+        "run": "source-inferred-optional-owners-final-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [  59.191s] 1516 tests run: 1516 passed, 1 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 1516,
+        "passed": 1516,
+        "failed": 0,
+        "skipped": 1,
+        "selectedPackages": 2,
+        "matchedPackages": 2,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4132,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T09:01:53.8902013Z"
+      },
+      {
+        "version": 1,
+        "base": "3537e049d30e12cfeee5726c85c3c0dd76248dd6",
+        "run": "source-inferred-optional-compiler-split-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   4.048s] 79 tests run: 79 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 79,
+        "passed": 79,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4132,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T09:02:39.1188204Z"
+      },
+      {
+        "version": 1,
+        "base": "12e5ec383ecbfaa006d2627eba02fb449d65056f",
+        "run": "source-inferred-optional-consumers-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   3.167s] 204 tests run: 204 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 204,
+        "passed": 204,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 5,
+        "matchedPackages": 5,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4132,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T09:06:38.568177Z"
+      }
+    ],
+    "ownerReuse": {
+      "base": "3537e049d30e12cfeee5726c85c3c0dd76248dd6",
+      "originalRun": "source-inferred-optional-owners-final-20261106.runtime",
+      "comparedSourceInputs": 4132,
+      "changedPaths": [
+        "crates/arcweft-compiler/tests/evaluated_effects.rs"
+      ],
+      "selectedPackages": [
+        "arcweft-lang-sema",
+        "arcweft-runtime-plan"
+      ],
+      "reason": "Only the independent Compiler integration test input changed after the owner library run."
+    },
+    "firstTestAttempts": [
+      {
+        "version": 1,
+        "base": "3537e049d30e12cfeee5726c85c3c0dd76248dd6",
+        "run": "source-inferred-optional-owners-20261106.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [  58.298s] 1516 tests run: 1515 passed, 1 failed, 1 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 1516,
+        "passed": 1515,
+        "failed": 1,
+        "skipped": 1,
+        "selectedPackages": 2,
+        "matchedPackages": 2,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4131,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-lang-sema",
+            "test": "final_analysis::tests::statement_producers::inferred_optional_registry_read_requires_item_type_after_a_write_effect"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-06T08:55:42.5829092Z"
+      },
+      {
+        "version": 1,
+        "base": "3537e049d30e12cfeee5726c85c3c0dd76248dd6",
+        "run": "source-inferred-optional-compiler-final-20261106.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   4.294s] 78 tests run: 77 passed, 1 failed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 78,
+        "passed": 77,
+        "failed": 1,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4132,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::evaluated_effects",
+            "test": "source_optional_registry_reads_the_reached_flow_in_native_and_decoded_awbc"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-06T08:59:28.2991691Z"
+      }
+    ],
+    "repair": "The first Sema fixture needed an explicit return from the project writer. The first expanded Compiler fixture reached the existing 32-step cap. Retain the original explicit optional-read test and add independent present/absent fixtures under the same cap.",
+    "quality": [
+      {
+        "source": "12e5ec383ecbfaa006d2627eba02fb449d65056f",
+        "command": [
+          "check",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4132,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T09:06:39.6872255Z",
+        "finishedAt": "2026-11-06T09:07:31.0560138Z"
+      },
+      {
+        "source": "12e5ec383ecbfaa006d2627eba02fb449d65056f",
+        "command": [
+          "clippy",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4132,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T09:07:32.0903717Z",
+        "finishedAt": "2026-11-06T09:08:31.897583Z"
+      },
+      {
+        "source": "12e5ec383ecbfaa006d2627eba02fb449d65056f",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4132,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T09:08:32.9354879Z",
+        "finishedAt": "2026-11-06T09:08:36.6797396Z"
+      }
+    ],
+    "reverseGraph": {
+      "base": "3537e049d30e12cfeee5726c85c3c0dd76248dd6",
+      "owners": [
+        "arcweft-lang-sema",
+        "arcweft-runtime-plan",
+        "arcweft-compiler"
+      ],
+      "workspaceReversePackages": [
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lang-sema",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-project-loader",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ],
+      "features": "all",
+      "targets": "all",
+      "treeMetadataDifference": 0
+    },
+    "testTargets": {
+      "total": 114,
+      "passing": 9,
+      "notRun": 105
+    },
+    "coverage": "Unannotated optional reads use an unambiguous checked writer in the same lexical activation. The existing ownership graph proves each reaching path absent or registered with the same item type. Compiler checks exact Some and None patterns, a Line initializer read, and Flow include/save/restore. Sema rejects a same-key call effect which invalidates the evidence.",
+    "boundary": "This proof does not infer a type without a checked writer, join different writer types, or certify independently scheduled writer types. Complete reverse-dependency execution, cancellation drop, and affine storage remain separate.",
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-source-inferred-optional-registry.raw.zip",
+      "sha256": "ae976cb7f3777894e005fc7bf8bff484c6c47dd11fa6663792f344198cb4876e",
+      "entries": [
+        {
+          "entry": "source-inferred-optional-20261106.cargo-tree.txt",
+          "bytes": 5055,
+          "sha256": "f5401e254adb70e3dbba9fbed1cbc89b1a5058ebe96643f9a2a5617b42fb00de"
+        },
+        {
+          "entry": "source-inferred-optional-20261106.reverse.json",
+          "bytes": 863,
+          "sha256": "4bcd71c145b8d00baa45b81a7b6f0f1086f384f13f3fb0b05b6044acca1edcd7"
+        },
+        {
+          "entry": "source-inferred-optional-20261106.owner-reuse.json",
+          "bytes": 445,
+          "sha256": "793257431a22471b40d409e74bb5e433a1ff1641456cc052c32e9841451cc5b2"
+        },
+        {
+          "entry": "source-inferred-optional-20261106.target-coverage.json",
+          "bytes": 25868,
+          "sha256": "4557a73e00dd15188277ee1c70396327e60429b0c6d40fb8633084ea8c557232"
+        },
+        {
+          "entry": "checkpoint-source-inferred-optional-20261106.verified.json",
+          "bytes": 1625,
+          "sha256": "677054fd7e499b9f2a5664f0722d156406aa95747e45611427b2f01f74594727"
+        },
+        {
+          "entry": "source-inferred-optional-workspace-check-20261106.log",
+          "bytes": 107847,
+          "sha256": "e75af89a9db02345dcee73018bde4722427bab8eed0b6bee97c8355a32afad4b"
+        },
+        {
+          "entry": "source-inferred-optional-workspace-check-20261106.json",
+          "bytes": 340,
+          "sha256": "3ba392699698a268c83853540fc6276d76e04286522a930ce35b4f4ebab4a936"
+        },
+        {
+          "entry": "source-inferred-optional-workspace-clippy-20261106.log",
+          "bytes": 8941614,
+          "sha256": "6fd7eb64f0f386dc6c058ddc04df9062ad10c05b588795e7bbfa57eacc7612a4"
+        },
+        {
+          "entry": "source-inferred-optional-workspace-clippy-20261106.json",
+          "bytes": 341,
+          "sha256": "1eeb32277ca754990bef9e8bb0d96cb6eedb4618f79774dd46d008b2832e4547"
+        },
+        {
+          "entry": "source-inferred-optional-structure-20261106.log",
+          "bytes": 65698,
+          "sha256": "a2e10b6da3d4d1b8df569077f7ec7e2858658776d8fa1d5f9dd4ca5eb3e99082"
+        },
+        {
+          "entry": "source-inferred-optional-structure-20261106.json",
+          "bytes": 363,
+          "sha256": "89489e224aa77bb4cba7cf6bd3ab9a6e34f4c702e8e9dd0b361de65be0bbfb4f"
+        },
+        {
+          "entry": "source-inferred-optional-owners-20261106.catalog.json",
+          "bytes": 575,
+          "sha256": "d2038a53cd139e0c2a20a56c00496812f0ca90f4bdccaf3339148baa16ac5724"
+        },
+        {
+          "entry": "source-inferred-optional-owners-20261106.catalog.inventory.json",
+          "bytes": 398545,
+          "sha256": "7c8bfba55f2b778595f312ce3b934e4968e272b0bf0d0bf604e98ac10eabe8ba"
+        },
+        {
+          "entry": "source-inferred-optional-owners-20261106.catalog.log",
+          "bytes": 345322,
+          "sha256": "1ef8f79031aa7aa3688a75dc986bdc13fecbf3eb3f31d22d552bccf5ca53faea"
+        },
+        {
+          "entry": "source-inferred-optional-owners-20261106.runtime.json",
+          "bytes": 669,
+          "sha256": "f24b284438bd20eb65f548d31e3bb996c299097008268c9e5f4e9471eecc0150"
+        },
+        {
+          "entry": "source-inferred-optional-owners-20261106.runtime.log",
+          "bytes": 561384,
+          "sha256": "58c288478850fc07fcadd053f84531995e60d202230fcb51e162d6c3439e8a26"
+        },
+        {
+          "entry": "source-inferred-optional-owners-20261106.runtime.terminal-audit.json",
+          "bytes": 856,
+          "sha256": "0035c009475b13a92f11cedfa6355d6c9297d47bee7a1873101fd04ed1ea6195"
+        },
+        {
+          "entry": "source-inferred-optional-owners-20261106.binaries-before.json",
+          "bytes": 457,
+          "sha256": "a12ccbe9bd53874782ce815084e3f295e73ded1eea8a5042c8199240f5cce939"
+        },
+        {
+          "entry": "source-inferred-optional-owners-20261106.source-freeze.json",
+          "bytes": 807830,
+          "sha256": "b1481ee9de7922fab48ec05823b41e438f38e9be65e5ba2906bca1e2f824ec50"
+        },
+        {
+          "entry": "source-inferred-optional-compiler-final-20261106.catalog.json",
+          "bytes": 605,
+          "sha256": "b5374a21e20a3409bb3f0feb72b21083108281b28850ddd7cc8b0733595e9263"
+        },
+        {
+          "entry": "source-inferred-optional-compiler-final-20261106.catalog.inventory.json",
+          "bytes": 19666,
+          "sha256": "d1ac771cd054db0b7501ad4f81cab08482b001c5e72bdb00b3eb14c1a7c4d0ff"
+        },
+        {
+          "entry": "source-inferred-optional-compiler-final-20261106.catalog.log",
+          "bytes": 97747,
+          "sha256": "a734f8a03c4fad8d95e8f3e45d91e27652f8e0450b1b703343a70a91425b4973"
+        },
+        {
+          "entry": "source-inferred-optional-compiler-final-20261106.runtime.json",
+          "bytes": 699,
+          "sha256": "9ff48cc87ccbde81c292410fa69200a406c7ad9305af612c5c4e7c1337f6bc06"
+        },
+        {
+          "entry": "source-inferred-optional-compiler-final-20261106.runtime.log",
+          "bytes": 107748,
+          "sha256": "e99be5fe19904eb6d3927c1e843a1331eb79a2e97200a5a4600c0026a3c17548"
+        },
+        {
+          "entry": "source-inferred-optional-compiler-final-20261106.runtime.terminal-audit.json",
+          "bytes": 833,
+          "sha256": "198158e90bdc0318a6d66e7b5a07b7f9376664805d2da4471897bcaaeac5610a"
+        },
+        {
+          "entry": "source-inferred-optional-compiler-final-20261106.binaries-before.json",
+          "bytes": 477,
+          "sha256": "4743d37afec7f27c46fccae242ca40b10bb970df2207454aacf38de29416511a"
+        },
+        {
+          "entry": "source-inferred-optional-compiler-final-20261106.source-freeze.json",
+          "bytes": 808040,
+          "sha256": "506a77d05384932d113023dba3d7a9a8577e74f8a1ea0128b2c42245e2469439"
+        },
+        {
+          "entry": "source-inferred-optional-owners-final-20261106.catalog.json",
+          "bytes": 581,
+          "sha256": "98ce1b000803a0a64eb904cd2b35d041a44f17be31474eadd028e7bcf12132af"
+        },
+        {
+          "entry": "source-inferred-optional-owners-final-20261106.catalog.inventory.json",
+          "bytes": 398545,
+          "sha256": "7c8bfba55f2b778595f312ce3b934e4968e272b0bf0d0bf604e98ac10eabe8ba"
+        },
+        {
+          "entry": "source-inferred-optional-owners-final-20261106.catalog.log",
+          "bytes": 345322,
+          "sha256": "a90f68cd5b2e3f538a6517c6b1cfc6da46096ea84e84b29c199b67478a44d700"
+        },
+        {
+          "entry": "source-inferred-optional-owners-final-20261106.runtime.json",
+          "bytes": 673,
+          "sha256": "20870fd31d21a859c933f853662e69f4980d6590abdbd87e58c9ec9dbe3280e6"
+        },
+        {
+          "entry": "source-inferred-optional-owners-final-20261106.runtime.log",
+          "bytes": 560382,
+          "sha256": "8b815dd6a1896eedcbb6617f6ff6023678f3ca2c6b551418746759c90e332f72"
+        },
+        {
+          "entry": "source-inferred-optional-owners-final-20261106.runtime.terminal-audit.json",
+          "bytes": 635,
+          "sha256": "f4ae6afe8970ac759b46daabafd8ae7fabb05bdf3a631b6ca33c822043911220"
+        },
+        {
+          "entry": "source-inferred-optional-owners-final-20261106.binaries-before.json",
+          "bytes": 457,
+          "sha256": "a9c2b1042c9cc6235cc5bcdace7990e2911fa1b3e94224cd1519fb5cb3ee5287"
+        },
+        {
+          "entry": "source-inferred-optional-owners-final-20261106.source-freeze.json",
+          "bytes": 808040,
+          "sha256": "f8804dc9fb963ea909e94fa661b259910a9eca943f3f391bb33e3246669ae57d"
+        },
+        {
+          "entry": "source-inferred-optional-compiler-split-20261106.catalog.json",
+          "bytes": 605,
+          "sha256": "5fa3a36b0242208c9792b157c02e933ea41c5d7c3876388ab4140ce8ea6f96e9"
+        },
+        {
+          "entry": "source-inferred-optional-compiler-split-20261106.catalog.inventory.json",
+          "bytes": 19916,
+          "sha256": "c7676a00a6518f46ee7d6d0f38be86adf862a413ebacd7bd6468724a6e524908"
+        },
+        {
+          "entry": "source-inferred-optional-compiler-split-20261106.catalog.log",
+          "bytes": 97558,
+          "sha256": "e8b942668bdf676242ec5d196a979e9335672cd9b31800e3b3ada4b0dc8f2232"
+        },
+        {
+          "entry": "source-inferred-optional-compiler-split-20261106.runtime.json",
+          "bytes": 697,
+          "sha256": "0feea7bfca5b73477322d3fc1250741ab00e88fbc587a25aa44ec857cd6d66d2"
+        },
+        {
+          "entry": "source-inferred-optional-compiler-split-20261106.runtime.log",
+          "bytes": 107303,
+          "sha256": "e98dc7149253eb851eb796aaf67081cdfacab483e7cf4c01e2788488496422cb"
+        },
+        {
+          "entry": "source-inferred-optional-compiler-split-20261106.runtime.terminal-audit.json",
+          "bytes": 629,
+          "sha256": "8e8022471809e8f2837249cb582ad79bad92d2bb3c5e13801291fc7e15c11e96"
+        },
+        {
+          "entry": "source-inferred-optional-compiler-split-20261106.binaries-before.json",
+          "bytes": 477,
+          "sha256": "eea53b3226dba95c9be9508cf6b37632ad9f923e8b375c5e07b9016f266bd734"
+        },
+        {
+          "entry": "source-inferred-optional-compiler-split-20261106.source-freeze.json",
+          "bytes": 808040,
+          "sha256": "cc559f48a01d1c918036821fb3279c2f6e063469d6fa8337bde7bf373277a95e"
+        },
+        {
+          "entry": "source-inferred-optional-consumers-20261106.catalog.json",
+          "bytes": 713,
+          "sha256": "39ec89197850b6e7c7b42925b493bd8b5d8bde85fd6f54f96eeb001433fe91e9"
+        },
+        {
+          "entry": "source-inferred-optional-consumers-20261106.catalog.inventory.json",
+          "bytes": 50662,
+          "sha256": "d5567c403c4fc0b8ccf19ad7277421337cf3d6059a484e19e9af6c541cbe3b90"
+        },
+        {
+          "entry": "source-inferred-optional-consumers-20261106.catalog.log",
+          "bytes": 123164,
+          "sha256": "045436857be7a9b3a3aef6d538a27c4df8814b2caf3a4aa95c9518f0746342fb"
+        },
+        {
+          "entry": "source-inferred-optional-consumers-20261106.runtime.json",
+          "bytes": 805,
+          "sha256": "35062529d93f9eaea658e432e59054a68ed07e87cdfcde1131ad712fae6979b8"
+        },
+        {
+          "entry": "source-inferred-optional-consumers-20261106.runtime.log",
+          "bytes": 141825,
+          "sha256": "640f8bd46896e50221b386c0ba5850b1807d07256fa5db7aae857878d8e0a79f"
+        },
+        {
+          "entry": "source-inferred-optional-consumers-20261106.runtime.terminal-audit.json",
+          "bytes": 628,
+          "sha256": "ed1bfd6c71e6dd36ce9345264da94bcfac9f4aea1466ba077fd9c5e5ebfb7b29"
+        },
+        {
+          "entry": "source-inferred-optional-consumers-20261106.binaries-before.json",
+          "bytes": 1128,
+          "sha256": "55db9b4ce7e58d828016bcba43e3aa09d6acff5ad62817627251ef25ce5ec81d"
+        },
+        {
+          "entry": "source-inferred-optional-consumers-20261106.source-freeze.json",
+          "bytes": 808040,
+          "sha256": "cbac3edbb49c2d619f3203fd5fc2e1c597bf14b0438ae5ea6d1b51c7ce022e40"
+        }
+      ]
+    }
   }
 }

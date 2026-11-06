@@ -14919,3 +14919,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source `f4c696d295c064d5739f27d04591ee52b8ad2055` で、同じ Flow／Line 内の検査済み書込みから必須読取りの型を推論し、到達経路ごとの登録は既存の制御フロー検査で証明する。Compilerで型注釈あり／なしの分岐両側とLine初期化をNative／正規デコードAWBCで実行した。
 - 初回はSema／RuntimePlanが1,513 PASS／2 FAIL／1 skip、Compiler対象が58 PASS／1 FAIL。Flowの分岐bodyと独立ThreadをHIR上の所有関係で区別し、optional読取りの型不一致診断を戻した。最終は順に1,515 PASS／1 skipと59 PASS。workspace check／Clippy／構造ゲートはすべてexit 0。全22逆依存の実行検証は別に追跡する。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-06 — Optional registry read type inference
+
+- Source `12e5ec383ecbfaa006d2627eba02fb449d65056f` では、同じFlow／Lineで検査済みの書込み型から `Option<T>` を推論する。到達経路に未登録と同型の登録が混在する場合を受理し、別の呼出しが同じキーを書き換え得る場合は拒否する。Native／正規デコードAWBCでFlowの `Some`／`None` とLine初期化を検証した。
+- 初回Sema／RuntimePlanは1,515 PASS／1 FAIL／1 skip。拒否用入力を修正し、最終は1,516 PASS／1 skip。初回Compilerは77 PASS／1 FAILで、追加のFlow入力が32ステップ上限に達した。元のケースと上限を保持し、別の入力で登録／未登録を確認した。最終Compilerは79 PASS、逆依存5パッケージのライブラリは204 PASS。workspace check／Clippy／構造ゲートはexit 0。22逆依存のCargo test targetは114のうち9対象を実行し、105対象は継続する。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
