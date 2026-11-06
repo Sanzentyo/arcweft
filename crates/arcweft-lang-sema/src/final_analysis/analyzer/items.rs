@@ -838,7 +838,7 @@ impl Analyzer<'_, '_, '_> {
 
         for item in prepared_effects.item_owners().collect::<Vec<_>>() {
             let expressions = prepared_effects
-                .item_expressions(item)
+                .item_effect_expressions(item)
                 .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?
                 .collect::<Vec<_>>();
             let base = prepared_effects
@@ -934,7 +934,7 @@ impl Analyzer<'_, '_, '_> {
                 )
                 .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
                 let row = graph.close_selected_expression_effects(
-                    closure.expressions(),
+                    closure.effect_expressions(),
                     closure.effects(),
                     &call_effect_rows,
                     self.control,
@@ -989,7 +989,7 @@ impl Analyzer<'_, '_, '_> {
                         return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
                     };
                     let root_expressions = prepared_effects
-                        .declaration_expressions(declaration)
+                        .declaration_effect_expressions(declaration)
                         .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?
                         .collect::<std::collections::BTreeSet<_>>();
                     return Err(FinalSemanticAnalysisError::EffectUpperBoundExceeded {
@@ -1122,7 +1122,7 @@ impl Analyzer<'_, '_, '_> {
                     continue;
                 }
                 let root_expressions = prepared_effects
-                    .item_expressions(owner)
+                    .item_effect_expressions(owner)
                     .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?
                     .collect::<std::collections::BTreeSet<_>>();
                 return Err(FinalSemanticAnalysisError::EffectUpperBoundExceeded {

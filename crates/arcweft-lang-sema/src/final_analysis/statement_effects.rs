@@ -14,9 +14,9 @@ use arcweft_lang_hir::{
     body_edges::{HirBodyChild, HirBodyProjection},
     expr::{
         HirComputationBlockKind, HirExprKind, HirExpressionChildOwnership, HirExpressionChildRole,
-        HirExpressionOwnedChild,
+        HirExpressionOwnedBodyRole, HirExpressionOwnedChild,
     },
-    identity::{ExprId, HirModuleId, StmtId},
+    identity::{ExprId, HirModuleId, StmtId, SyntheticOwner},
     module::HirModule,
     project::{
         HirDeclarationBodyTopology, HirDeclarationEvaluationPhase,
@@ -60,6 +60,8 @@ pub(crate) enum PreparedCallReceiverEvaluation {
 #[derive(Clone, Debug)]
 struct PreparedExecutionEffectRow {
     effects: EffectRow,
+    line_effect_expressions: BTreeSet<ExprId>,
+    deferred_line_effects: Option<Box<PreparedLineEffects>>,
     source: Option<CheckedExecutionOperation>,
     children: BTreeSet<CheckedExecutionOperation>,
     expressions: BTreeSet<ExprId>,
@@ -72,6 +74,8 @@ impl Default for PreparedExecutionEffectRow {
     fn default() -> Self {
         Self {
             effects: EffectRow::closed(EffectSet::new()),
+            line_effect_expressions: BTreeSet::new(),
+            deferred_line_effects: None,
             source: None,
             children: BTreeSet::new(),
             expressions: BTreeSet::new(),
@@ -79,6 +83,26 @@ impl Default for PreparedExecutionEffectRow {
             direct_suspension: false,
             requires_flow: false,
         }
+    }
+}
+
+/// Effects of a scheduled body are retained for a dialogue's permission
+/// check without making its expressions eager inputs of the scheduling frame.
+#[derive(Clone, Debug)]
+struct PreparedLineEffects {
+    effects: EffectRow,
+    expressions: BTreeSet<ExprId>,
+}
+
+impl PreparedLineEffects {
+    fn union_with(
+        &mut self,
+        other: &Self,
+        control: FinalSemanticAnalysisControl<'_>,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        self.effects = union_effect_rows(&self.effects, &other.effects, control)?;
+        self.expressions.extend(other.expressions.iter().copied());
+        Ok(())
     }
 }
 
@@ -128,6 +152,49 @@ impl PreparedExecutableSuspensionRow {
 }
 
 impl PreparedExecutionEffectRow {
+    fn effect_expressions(&self) -> impl Iterator<Item = ExprId> + '_ {
+        self.expressions
+            .union(&self.line_effect_expressions)
+            .copied()
+    }
+
+    fn defer_line_effects(
+        &mut self,
+        child: &Self,
+        control: FinalSemanticAnalysisControl<'_>,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        let mut deferred = PreparedLineEffects {
+            effects: child.effects.clone(),
+            expressions: child.effect_expressions().collect(),
+        };
+        if let Some(nested) = &child.deferred_line_effects {
+            deferred.union_with(nested, control)?;
+        }
+        match &mut self.deferred_line_effects {
+            Some(owned) => owned.union_with(&deferred, control),
+            empty @ None => {
+                *empty = Some(Box::new(deferred));
+                Ok(())
+            }
+        }
+    }
+
+    fn require_line_effects(
+        &mut self,
+        child: &Self,
+        control: FinalSemanticAnalysisControl<'_>,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        self.effects = union_effect_rows(&self.effects, &child.effects, control)?;
+        self.line_effect_expressions
+            .extend(child.effect_expressions());
+        if let Some(deferred) = &child.deferred_line_effects {
+            self.effects = union_effect_rows(&self.effects, &deferred.effects, control)?;
+            self.line_effect_expressions
+                .extend(deferred.expressions.iter().copied());
+        }
+        Ok(())
+    }
+
     fn place(owner: ExprId) -> Self {
         Self {
             source: Some(CheckedExecutionOperation::Place(owner)),
@@ -158,6 +225,14 @@ impl PreparedExecutionEffectRow {
         control: FinalSemanticAnalysisControl<'_>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         self.effects = union_effect_rows(&self.effects, &other.effects, control)?;
+        self.line_effect_expressions
+            .extend(other.line_effect_expressions.iter().copied());
+        if let Some(deferred) = &other.deferred_line_effects {
+            match &mut self.deferred_line_effects {
+                Some(owned) => owned.union_with(deferred, control)?,
+                empty @ None => *empty = Some(deferred.clone()),
+            }
+        }
         self.expressions.extend(other.expressions.iter().copied());
         self.statements.extend(other.statements.iter().copied());
         self.direct_suspension |= other.direct_suspension;
@@ -194,6 +269,10 @@ pub(crate) struct PreparedClosureExecutionEffectRow {
 impl PreparedClosureExecutionEffectRow {
     pub(crate) const fn requires_flow(&self) -> bool {
         self.row.requires_flow
+    }
+
+    pub(crate) fn effect_expressions(&self) -> impl Iterator<Item = ExprId> + '_ {
+        self.row.effect_expressions()
     }
     pub(crate) const fn owner(&self) -> ExprId {
         self.owner
@@ -334,6 +413,15 @@ impl PreparedExecutionEffectCatalog {
             .map(|row| row.expressions.iter().copied())
     }
 
+    pub(crate) fn declaration_effect_expressions(
+        &self,
+        declaration: &CallableDeclarationKey,
+    ) -> Option<impl Iterator<Item = ExprId> + '_> {
+        self.declarations
+            .get(declaration)
+            .map(PreparedExecutionEffectRow::effect_expressions)
+    }
+
     pub(crate) fn declaration_direct_suspension(
         &self,
         declaration: &CallableDeclarationKey,
@@ -356,13 +444,13 @@ impl PreparedExecutionEffectCatalog {
         self.items.keys().copied()
     }
 
-    pub(crate) fn item_expressions(
+    pub(crate) fn item_effect_expressions(
         &self,
         item: arcweft_lang_hir::identity::ItemId,
     ) -> Option<impl Iterator<Item = ExprId> + '_> {
         self.items
             .get(&item)
-            .map(|row| row.expressions.iter().copied())
+            .map(PreparedExecutionEffectRow::effect_expressions)
     }
 
     pub(crate) fn replace_item_effects(
@@ -864,6 +952,8 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             .kind();
         let mut row = PreparedExecutionEffectRow {
             effects: EffectRow::closed(fact.effects().clone()),
+            line_effect_expressions: BTreeSet::new(),
+            deferred_line_effects: None,
             source: Some(CheckedExecutionOperation::Value(owner)),
             children: BTreeSet::new(),
             expressions: BTreeSet::from([owner]),
@@ -1069,10 +1159,9 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             if let Some(body) = implicit_body.as_mut() {
                 body.union_with(&body_row, self.control)?;
             }
-            if !matches!(kind, HirExprKind::Thread(_))
-                && !latent_callable
-                && !independent_computation
-            {
+            if matches!(kind, HirExprKind::Thread(_)) {
+                row.defer_line_effects(&body_row, self.control)?;
+            } else if !latent_callable && !independent_computation {
                 row.union_with(&body_row, self.control)?;
             }
         }
@@ -1106,6 +1195,14 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                 } else {
                     row.union_with(&child, self.control)?;
                 }
+            } else if matches!(
+                edge.role(),
+                HirExpressionOwnedBodyRole::DialogueLinePlanStatement { .. }
+            ) {
+                // The line executes these effects under the enclosing contract.
+                // Its suspension and capture edges belong to its own frames.
+                let target = implicit_body.as_mut().unwrap_or(&mut *row);
+                target.require_line_effects(&child, self.control)?;
             }
         }
         Ok(())
@@ -1233,7 +1330,9 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             .map_err(|_| FinalSemanticAnalysisError::RecoveredOwner)?
         {
             let body_row = self.fold_body(body.projection())?;
-            if body.role() != &HirStatementBodyRole::On {
+            if body.role() == &HirStatementBodyRole::On {
+                row.defer_line_effects(&body_row, self.control)?;
+            } else {
                 row.union_with(&body_row, self.control)?;
             }
         }
@@ -1438,6 +1537,8 @@ struct StatementEffectSealer<'a, P> {
     statements: BTreeMap<StmtId, CheckedStatement>,
     active_expressions: BTreeSet<ExprId>,
     active_statements: BTreeSet<StmtId>,
+    // Transient fold data. Final effect facts retain only their checked row.
+    deferred_line_effects: BTreeMap<SyntheticOwner, EffectSet>,
     declaration_effects: BTreeMap<arcweft_lang_hir::symbol::CallableDeclarationKey, EffectSet>,
     closure_effects: BTreeMap<ExprId, EffectSet>,
     payloads: P,
@@ -1475,6 +1576,7 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
             statements: BTreeMap::new(),
             active_expressions: BTreeSet::new(),
             active_statements: BTreeSet::new(),
+            deferred_line_effects: BTreeMap::new(),
             declaration_effects: BTreeMap::new(),
             closure_effects: BTreeMap::new(),
             payloads: input.payloads,
@@ -1518,7 +1620,7 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
                                 }
                             }
                             HirDeclarationEvaluationPhase::Body(root) => {
-                                effects.union_with(&self.fold_body(root.projection())?);
+                                effects.union_with(&self.fold_body(root.projection())?.0);
                             }
                             HirDeclarationEvaluationPhase::Contract(_) => {}
                         }
@@ -1563,20 +1665,30 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
     fn fold_body(
         &mut self,
         body: &HirBodyProjection,
-    ) -> Result<EffectSet, FinalSemanticAnalysisError> {
+    ) -> Result<(EffectSet, EffectSet), FinalSemanticAnalysisError> {
         let mut effects = EffectSet::new();
+        let mut deferred_line_effects = EffectSet::new();
         for edge in body.children() {
             self.control.check()?;
-            match edge.child() {
+            let child = match edge.child() {
                 HirBodyChild::Expression(owner) => {
                     effects.union_with(&self.seal_expression(owner)?);
+                    SyntheticOwner::Expr(owner)
                 }
                 HirBodyChild::Statement(owner) => {
                     effects.union_with(&self.seal_statement(owner)?);
+                    SyntheticOwner::Stmt(owner)
                 }
-            }
+            };
+            self.inherit_deferred_line_effects(child, &mut deferred_line_effects);
         }
-        Ok(effects)
+        Ok((effects, deferred_line_effects))
+    }
+
+    fn inherit_deferred_line_effects(&self, child: SyntheticOwner, into: &mut EffectSet) {
+        if let Some(effects) = self.deferred_line_effects.get(&child) {
+            into.union_with(effects);
+        }
     }
 
     fn seal_expression(&mut self, owner: ExprId) -> Result<EffectSet, FinalSemanticAnalysisError> {
@@ -1596,6 +1708,7 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
             .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
         let kind = expression.kind();
         let mut effects = checked.effects().clone();
+        let mut deferred_line_effects = EffectSet::new();
         self.include_final_call_effect(owner, &mut effects)?;
 
         let latent_callable = matches!(
@@ -1652,6 +1765,10 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
                 && !matches!(role, HirExpressionChildRole::ClosureBody)
             {
                 effects.union_with(&child_effects);
+                self.inherit_deferred_line_effects(
+                    SyntheticOwner::Expr(child),
+                    &mut deferred_line_effects,
+                );
             }
         }
 
@@ -1659,15 +1776,14 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
             .try_body_projection()
             .map_err(|_| FinalSemanticAnalysisError::RecoveredOwner)?
         {
-            let body_effects = self.fold_body(&body)?;
+            let (body_effects, deferred_body_effects) = self.fold_body(&body)?;
             if matches!(kind, HirExprKind::Thread(_)) {
-                checked = checked.with_completed_thread_body_effects(body_effects.clone())?;
-            }
-            if !matches!(kind, HirExprKind::Thread(_))
-                && !latent_callable
-                && !independent_computation
-            {
+                deferred_line_effects.union_with(&body_effects);
+                deferred_line_effects.union_with(&deferred_body_effects);
+                checked = checked.with_completed_thread_body_effects(body_effects)?;
+            } else if !latent_callable && !independent_computation {
                 effects.union_with(&body_effects);
+                deferred_line_effects.union_with(&deferred_body_effects);
             }
         }
 
@@ -1676,21 +1792,40 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
             .map_err(|_| FinalSemanticAnalysisError::RecoveredOwner)?;
         let owned_children_are_eager = matches!(kind, HirExprKind::Await(_));
         for edge in owned_children {
-            let child_effects = match edge.child() {
+            let (child, child_effects) = match edge.child() {
                 HirExpressionOwnedChild::Pattern(_) => continue,
-                HirExpressionOwnedChild::Statement(owner) => self.seal_statement(owner)?,
+                HirExpressionOwnedChild::Statement(owner) => {
+                    (SyntheticOwner::Stmt(owner), self.seal_statement(owner)?)
+                }
                 HirExpressionOwnedChild::Body(edge) => match edge.child() {
-                    HirBodyChild::Expression(owner) => self.seal_expression(owner)?,
-                    HirBodyChild::Statement(owner) => self.seal_statement(owner)?,
+                    HirBodyChild::Expression(owner) => {
+                        (SyntheticOwner::Expr(owner), self.seal_expression(owner)?)
+                    }
+                    HirBodyChild::Statement(owner) => {
+                        (SyntheticOwner::Stmt(owner), self.seal_statement(owner)?)
+                    }
                 },
             };
             if owned_children_are_eager {
                 effects.union_with(&child_effects);
+                self.inherit_deferred_line_effects(child, &mut deferred_line_effects);
+            } else if !latent_callable
+                && matches!(
+                    edge.role(),
+                    HirExpressionOwnedBodyRole::DialogueLinePlanStatement { .. }
+                )
+            {
+                effects.union_with(&child_effects);
+                self.inherit_deferred_line_effects(child, &mut effects);
             }
         }
 
         if !self.active_expressions.remove(&owner) {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        if !deferred_line_effects.is_empty() {
+            self.deferred_line_effects
+                .insert(SyntheticOwner::Expr(owner), deferred_line_effects);
         }
         self.expressions
             .insert(owner, checked.with_completed_effects(effects.clone()));
@@ -1713,6 +1848,7 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
         }
         let kind = statement.kind();
         let mut child_effects = EffectSet::new();
+        let mut deferred_line_effects = EffectSet::new();
         for edge in kind
             .try_child_edges()
             .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?
@@ -1720,11 +1856,19 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
             match edge.child() {
                 HirStatementChild::Expression(expression) => {
                     child_effects.union_with(&self.seal_expression(expression)?);
+                    self.inherit_deferred_line_effects(
+                        SyntheticOwner::Expr(expression),
+                        &mut deferred_line_effects,
+                    );
                 }
                 HirStatementChild::Statement(statement)
                     if !matches!(edge.role(), HirStatementChildRole::BodyItem { .. }) =>
                 {
                     child_effects.union_with(&self.seal_statement(statement)?);
+                    self.inherit_deferred_line_effects(
+                        SyntheticOwner::Stmt(statement),
+                        &mut deferred_line_effects,
+                    );
                 }
                 HirStatementChild::Statement(_)
                 | HirStatementChild::Pattern(_)
@@ -1736,8 +1880,11 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
             .body_projections()
             .map_err(|_| FinalSemanticAnalysisError::RecoveredOwner)?
         {
-            let body_effects = self.fold_body(body.projection())?;
-            if body.role() != &HirStatementBodyRole::On {
+            let (body_effects, deferred_body_effects) = self.fold_body(body.projection())?;
+            deferred_line_effects.union_with(&deferred_body_effects);
+            if body.role() == &HirStatementBodyRole::On {
+                deferred_line_effects.union_with(&body_effects);
+            } else {
                 child_effects.union_with(&body_effects);
             }
         }
@@ -1745,6 +1892,10 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
         let payload =
             self.payloads
                 .seal_payload(module, owner, kind, &self.expressions, &self.statements)?;
+        if !deferred_line_effects.is_empty() {
+            self.deferred_line_effects
+                .insert(SyntheticOwner::Stmt(owner), deferred_line_effects);
+        }
         let fold = self.complete_statement_fold(child_effects, &payload)?;
         let checked = CheckedStatement::new(payload, fold)
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;

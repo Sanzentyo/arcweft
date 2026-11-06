@@ -97,3 +97,113 @@ fn effect_scope_rejects_optional_registry_reads() {
     ));
     analyze(&fixture).expect_err("optional registry reads cannot become permissions");
 }
+
+#[test]
+fn dialogue_line_owned_phases_check_the_flow_registry_effect_bound() {
+    let (document, catalog, _) = super::akane_character_registration();
+    let write = "'flow.flags.seen <- true";
+    let phases = [
+        ("init", format!("init {{ {write} }}")),
+        ("mark", format!("on mark(@.write_here) {{ {write} }}")),
+        (
+            "cancellation",
+            format!("cancel on input(.SkipLine) {{ {write}; out \"Skipped\" }}"),
+        ),
+        ("thread", format!("thread {{ {write} }}")),
+        (
+            "defer completed",
+            format!("defer on completed {{ {write}; log.info(\"completed\") }}"),
+        ),
+        (
+            "defer cancelled",
+            format!("defer on cancelled {{ {write}; log.info(\"cancelled\") }}"),
+        ),
+        (
+            "defer always",
+            format!("defer {{ {write}; log.info(\"cleanup\") }}"),
+        ),
+    ];
+    for (phase, action) in phases {
+        for (permission, authorized) in [("flags.seen", true), ("other", false)] {
+            let source = format!(
+                r#"
+pub character akane {{}}
+flow main() -> String effects {{ state.write('flow.{permission}), control.spawn, log.write }} {{
+    akane(voice=auto):
+        本文。[mark @.write_here][p]
+    with:
+        {action}
+        out "Completed"
+    return "done"
+}}
+"#,
+            );
+            let fixture = super::fixture_with_all_registration_inputs_and_base(
+                &source,
+                None,
+                Vec::new(),
+                vec![(document.clone(), catalog.clone())],
+                Vec::new(),
+                super::TypeCheckEnv::standard(),
+            );
+            let result = analyze(&fixture);
+            if authorized {
+                result.unwrap_or_else(|error| panic!("{phase}: {error:?}"));
+            } else {
+                let error = result.expect_err("line cannot exceed the source Flow effect bound");
+                let FinalSemanticAnalysisError::EffectUpperBoundExceeded { missing, .. } = error
+                else {
+                    panic!("{phase}: {error:?}");
+                };
+                assert_eq!(missing.to_labels(), ["state.write('flow.flags.seen)"]);
+            }
+        }
+    }
+}
+
+#[test]
+fn dialogue_line_checks_selected_call_effects_under_the_enclosing_bound() {
+    let (document, catalog, _) = super::akane_character_registration();
+    for (phase, action) in [
+        ("init", "init { write_flag() }"),
+        ("mark", "on mark(@.write_here) { write_flag() }"),
+    ] {
+        for (permission, authorized) in [("flags.seen", true), ("other", false)] {
+            let source = format!(
+                r#"
+pub character akane {{}}
+fn write_flag() -> Unit {{
+    'flow.flags.seen <- true;
+    return ()
+}}
+flow main() -> String effects {{ state.write('flow.{permission}) }} {{
+    akane()[本文。[mark @.write_here][p]] with {{
+        {action}
+        out "Completed"
+    }}
+    return "done"
+}}
+"#,
+            );
+            let fixture = super::fixture_with_all_registration_inputs_and_base(
+                &source,
+                None,
+                Vec::new(),
+                vec![(document.clone(), catalog.clone())],
+                Vec::new(),
+                super::TypeCheckEnv::standard(),
+            );
+            let result = analyze(&fixture);
+            if authorized {
+                result.unwrap_or_else(|error| panic!("{phase}: {error:?}"));
+            } else {
+                let error = result.expect_err("selected helper exceeds the source Flow bound");
+                let FinalSemanticAnalysisError::EffectUpperBoundExceeded { missing, .. } = error
+                else {
+                    panic!("{phase}: {error:?}");
+                };
+                assert_eq!(missing.to_labels(), ["state.write('flow.flags.seen)"]);
+            }
+        }
+    }
+}

@@ -290,7 +290,7 @@ impl<'a> CallableEffectGraph<'a> {
                 .get_mut(&body.id)
                 .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
             let expressions = execution
-                .declaration_expressions(declaration)
+                .declaration_effect_expressions(declaration)
                 .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
             for expression in expressions {
                 if let Some(call) = calls_by_expression.get(&expression) {

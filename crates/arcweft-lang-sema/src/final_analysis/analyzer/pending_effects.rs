@@ -208,7 +208,7 @@ impl Analyzer<'_, '_, '_> {
             .cloned()
             .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
         let evaluated = prepared
-            .declaration_expressions(declaration)
+            .declaration_effect_expressions(declaration)
             .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?
             .collect::<BTreeSet<_>>();
         let calls = self
