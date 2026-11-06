@@ -1603,5 +1603,675 @@
         }
       ]
     }
+  },
+  "reversePartitions": {
+    "version": 1,
+    "source": "db071219f84e57186efa9d40dccc3bb8620f417c",
+    "recordedAt": "2026-11-06T00:43:46.4884531Z",
+    "selectedPackages": [
+      "arcweft-adapter-sema",
+      "arcweft-agent-mcp",
+      "arcweft-agent-mcp-client",
+      "arcweft-agent-repl",
+      "arcweft-agent-runner",
+      "arcweft-cli",
+      "arcweft-compiler",
+      "arcweft-lang-sema",
+      "arcweft-lsp",
+      "arcweft-player-native",
+      "arcweft-player-scene",
+      "arcweft-player-web",
+      "arcweft-project-loader",
+      "arcweft-runtime-driver",
+      "arcweft-runtime-host",
+      "arcweft-runtime-plan",
+      "arcweft-test",
+      "arcweft-tooling",
+      "arcweft-verify",
+      "arcweft-verify-lsp",
+      "arcweft-verify-oxiz",
+      "arcweft-verify-z3"
+    ],
+    "runtimePackages": [
+      ""
+    ],
+    "executed": 3321,
+    "passed": 3313,
+    "failed": 8,
+    "actualFailures": [
+      {
+        "package": "arcweft-lang-sema",
+        "binary": "arcweft-lang-sema::api_compile",
+        "test": "checked_statement_authorities_have_no_external_constructors",
+        "status": "FAIL"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering",
+        "status": "FAIL"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "spec_valid_run_edge_fixture_now_executes",
+        "status": "FAIL"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "unsafe_json_lists_audit_regions",
+        "status": "FAIL"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_records_required_solver_checks",
+        "status": "FAIL"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "spec_rejected_edge_fixtures_fail_with_diagnostics",
+        "status": "FAIL"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_reports_missing_promotion_proof",
+        "status": "FAIL"
+      },
+      {
+        "package": "arcweft-cli",
+        "binary": "arcweft-cli::check",
+        "test": "verify_json_respects_semantic_defer_cancel_discharge",
+        "status": "FAIL"
+      }
+    ],
+    "comparison": {
+      "baselineSource": "3a1e48c2a2a0070b2f2fa390c45c48d18b004b17",
+      "newFailures": [
+        "arcweft-lang-sema::api_compile\tchecked_statement_authorities_have_no_external_constructors"
+      ],
+      "previousFailuresAbsentFromObservedResults": []
+    },
+    "complete": false,
+    "completedBatches": [
+      {
+        "stem": "proof-trust-consumers-20261106-static",
+        "packages": [
+          "arcweft-adapter-sema",
+          "arcweft-lang-sema",
+          "arcweft-lsp",
+          "arcweft-runtime-plan",
+          "arcweft-tooling",
+          "arcweft-verify",
+          "arcweft-verify-lsp",
+          "arcweft-verify-oxiz",
+          "arcweft-verify-z3"
+        ],
+        "sourceInputDrift": 0,
+        "terminal": {
+          "version": 1,
+          "base": "706d67a3626ea79da2c6ac077d0f896dd9577d47",
+          "run": "proof-trust-consumers-20261106-static.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [ 431.946s] 1857 tests run: 1856 passed (3 slow), 1 failed, 1 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 1857,
+          "passed": 1856,
+          "failed": 1,
+          "skipped": 1,
+          "selectedPackages": 9,
+          "matchedPackages": 9,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4126,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-lang-sema::api_compile",
+              "test": "checked_statement_authorities_have_no_external_constructors"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-06T00:07:41.6046563Z"
+        }
+      },
+      {
+        "stem": "proof-trust-consumers-20261106-cli",
+        "packages": [
+          "arcweft-cli"
+        ],
+        "sourceInputDrift": 0,
+        "terminal": {
+          "version": 1,
+          "base": "972c43c37d0a0d048798535c447bac250c489474",
+          "run": "proof-trust-consumers-20261106-cli.runtime",
+          "actualExitCode": 100,
+          "summary": "Summary [ 573.057s] 711 tests run: 704 passed (31 slow), 7 failed, 23 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 711,
+          "passed": 704,
+          "failed": 7,
+          "skipped": 23,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4126,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [
+            {
+              "status": "FAIL",
+              "binary": "arcweft-cli::check",
+              "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+            },
+            {
+              "status": "FAIL",
+              "binary": "arcweft-cli::check",
+              "test": "spec_valid_run_edge_fixture_now_executes"
+            },
+            {
+              "status": "FAIL",
+              "binary": "arcweft-cli::check",
+              "test": "unsafe_json_lists_audit_regions"
+            },
+            {
+              "status": "FAIL",
+              "binary": "arcweft-cli::check",
+              "test": "verify_json_records_required_solver_checks"
+            },
+            {
+              "status": "FAIL",
+              "binary": "arcweft-cli::check",
+              "test": "spec_rejected_edge_fixtures_fail_with_diagnostics"
+            },
+            {
+              "status": "FAIL",
+              "binary": "arcweft-cli::check",
+              "test": "verify_json_reports_missing_promotion_proof"
+            },
+            {
+              "status": "FAIL",
+              "binary": "arcweft-cli::check",
+              "test": "verify_json_respects_semantic_defer_cancel_discharge"
+            }
+          ],
+          "isPassingRun": false,
+          "recordedAt": "2026-11-06T00:19:23.6134568Z"
+        }
+      },
+      {
+        "stem": "proof-trust-consumers-20261106-driver",
+        "packages": [
+          "arcweft-runtime-driver",
+          "arcweft-runtime-host"
+        ],
+        "sourceInputDrift": 0,
+        "terminal": {
+          "version": 1,
+          "base": "9b2707d3fa80987053061dff053a389b574cf9be",
+          "run": "proof-trust-consumers-20261106-driver.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [   5.429s] 225 tests run: 225 passed, 0 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 225,
+          "passed": 225,
+          "failed": 0,
+          "skipped": 0,
+          "selectedPackages": 2,
+          "matchedPackages": 2,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4126,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-06T00:24:34.866664Z"
+        }
+      },
+      {
+        "stem": "proof-trust-consumers-20261106-player_web_scene",
+        "packages": [
+          "arcweft-player-scene",
+          "arcweft-player-web"
+        ],
+        "sourceInputDrift": 0,
+        "terminal": {
+          "version": 1,
+          "base": "6dbadb7becae7c4bc65621af78a31e8c2008af42",
+          "run": "proof-trust-consumers-20261106-player_web_scene.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [   1.849s] 164 tests run: 164 passed, 0 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 164,
+          "passed": 164,
+          "failed": 0,
+          "skipped": 0,
+          "selectedPackages": 2,
+          "matchedPackages": 2,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4126,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-06T00:29:34.9096916Z"
+        }
+      },
+      {
+        "stem": "proof-trust-consumers-20261106-player_native",
+        "packages": [
+          "arcweft-player-native"
+        ],
+        "sourceInputDrift": 0,
+        "terminal": {
+          "version": 1,
+          "base": "6dbadb7becae7c4bc65621af78a31e8c2008af42",
+          "run": "proof-trust-consumers-20261106-player_native.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [   2.909s] 63 tests run: 63 passed, 0 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 63,
+          "passed": 63,
+          "failed": 0,
+          "skipped": 0,
+          "selectedPackages": 1,
+          "matchedPackages": 1,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4126,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-06T00:35:34.4267385Z"
+        }
+      },
+      {
+        "stem": "proof-trust-consumers-20261106-agent_mcp",
+        "packages": [
+          "arcweft-agent-mcp",
+          "arcweft-agent-mcp-client"
+        ],
+        "sourceInputDrift": 0,
+        "terminal": {
+          "version": 1,
+          "base": "381b60b7d52b0dc53fbe73e50ca7aa7d7b07ed2c",
+          "run": "proof-trust-consumers-20261106-agent_mcp.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [   0.235s] 33 tests run: 33 passed, 0 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 33,
+          "passed": 33,
+          "failed": 0,
+          "skipped": 0,
+          "selectedPackages": 2,
+          "matchedPackages": 2,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4126,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-06T00:36:27.1003076Z"
+        }
+      },
+      {
+        "stem": "proof-trust-consumers-20261106-agent_execution",
+        "packages": [
+          "arcweft-agent-repl",
+          "arcweft-agent-runner"
+        ],
+        "sourceInputDrift": 0,
+        "terminal": {
+          "version": 1,
+          "base": "381b60b7d52b0dc53fbe73e50ca7aa7d7b07ed2c",
+          "run": "proof-trust-consumers-20261106-agent_execution.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [ 225.789s] 106 tests run: 106 passed (1 slow), 0 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 106,
+          "passed": 106,
+          "failed": 0,
+          "skipped": 0,
+          "selectedPackages": 2,
+          "matchedPackages": 2,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4126,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-06T00:41:12.903953Z"
+        }
+      },
+      {
+        "stem": "proof-trust-consumers-20261106-project_and_test",
+        "packages": [
+          "arcweft-project-loader",
+          "arcweft-test"
+        ],
+        "sourceInputDrift": 0,
+        "terminal": {
+          "version": 1,
+          "base": "381b60b7d52b0dc53fbe73e50ca7aa7d7b07ed2c",
+          "run": "proof-trust-consumers-20261106-project_and_test.runtime",
+          "actualExitCode": 0,
+          "summary": "Summary [  26.045s] 162 tests run: 162 passed, 0 skipped",
+          "caseRowSource": "final-status-after-summary",
+          "executed": 162,
+          "passed": 162,
+          "failed": 0,
+          "skipped": 0,
+          "selectedPackages": 2,
+          "matchedPackages": 2,
+          "noMatchingSelectedTests": [],
+          "catalogCaseDrift": 0,
+          "sourceInputs": 4126,
+          "sourceDrift": 0,
+          "held": 12,
+          "failureSet": [],
+          "isPassingRun": true,
+          "recordedAt": "2026-11-06T00:43:26.8279091Z"
+        }
+      }
+    ],
+    "incompleteBatches": [
+      {
+        "stem": "proof-trust-consumers-20261106-compiler",
+        "packages": [
+          "arcweft-compiler"
+        ],
+        "status": "validation-incomplete",
+        "catalog": {
+          "version": 1,
+          "base": "972c43c37d0a0d048798535c447bac250c489474",
+          "command": [
+            "nextest",
+            "list",
+            "-p",
+            "arcweft-compiler",
+            "--all-features",
+            "--locked",
+            "--message-format",
+            "json"
+          ],
+          "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/proof-trust-consumers-20261106-compiler.catalog.log",
+          "exitCode": 101,
+          "sourceInputs": 4126,
+          "sourceDrift": 0,
+          "startedAt": "2026-11-06T00:07:46.5302866Z",
+          "finishedAt": "2026-11-06T00:08:54.0249238Z"
+        },
+        "exception": "Focused catalog failed"
+      }
+    ],
+    "standaloneCompiler": {
+      "target": "generic_continuation_snapshot",
+      "passed": 11,
+      "firstSevenEvidenceField": "genericMatchReferenceCheck",
+      "other": {
+        "version": 1,
+        "source": "db071219f84e57186efa9d40dccc3bb8620f417c",
+        "binarySha256": "865e2335c18997c1d706eaa2b06ed0580df9d5621605c9ec50aad06b35c0f3d6",
+        "run": [
+          {
+            "name": "authored_formatter_transaction_restores_its_original_staging_and_completes",
+            "stem": "authored_formatter_transaction_restores_its_original_staging_and_completes",
+            "exitCode": 0,
+            "reusedLog": true,
+            "stdoutSha256": "6d0cc26d45298fda0c93eb62c553d721e966b8a8669bfa784025362867d7c11c",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "authored_lazy_context_executes_in_native_and_restores_the_awbc_callback_cause",
+            "stem": "authored_lazy_context_executes_in_native_and_restores_the_awbc_callback_cause",
+            "exitCode": 0,
+            "reusedLog": true,
+            "stdoutSha256": "bca8f9e78190d2bbd43f65794294d48f8575492eb85bfb12ca8031112fe89b45",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "standard_map::captured_map_restores_its_original_callback_and_continues_remaining_rows",
+            "stem": "standard_map-captured_map_restores_its_original_callback_and_continues_remaining_rows",
+            "exitCode": 0,
+            "reusedLog": false,
+            "stdoutSha256": "2c61f33749a4e7d3d779cd53b7be4490d777e76ac411395e2d480395c5d947ee",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "name": "standard_map::retained_map_prefix_restores_its_mapping_and_original_captured_callback",
+            "stem": "standard_map-retained_map_prefix_restores_its_mapping_and_original_captured_callback",
+            "exitCode": 0,
+            "reusedLog": false,
+            "stdoutSha256": "5c1a8689f9caeea78a5ff9d98f90f44b27c85548fc02c2bde68f0b8ed126a472",
+            "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        ]
+      },
+      "scope": "Standalone target evidence is separate from the nextest totals."
+    },
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-proof-trust-policy-reverse-partitions.raw.zip",
+      "bytes": 147062,
+      "sha256": "4ed11d8ebcbeea3461038b4a8b3f27143d48520fc8169fa7382d967f842512a5",
+      "entryDrift": 0,
+      "entries": [
+        {
+          "entry": "compiler-generic-seven-direct-20261106/authored_formatter_transaction_restores_its_original_staging_and_completes.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "compiler-generic-seven-direct-20261106/authored_formatter_transaction_restores_its_original_staging_and_completes.stdout.log",
+          "bytes": 200,
+          "sha256": "6d0cc26d45298fda0c93eb62c553d721e966b8a8669bfa784025362867d7c11c"
+        },
+        {
+          "entry": "compiler-generic-seven-direct-20261106/authored_lazy_context_executes_in_native_and_restores_the_awbc_callback_cause.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "compiler-generic-seven-direct-20261106/authored_lazy_context_executes_in_native_and_restores_the_awbc_callback_cause.stdout.log",
+          "bytes": 203,
+          "sha256": "bca8f9e78190d2bbd43f65794294d48f8575492eb85bfb12ca8031112fe89b45"
+        },
+        {
+          "entry": "compiler-generic-seven-direct-20261106/other-cases.receipt.json",
+          "bytes": 1955,
+          "sha256": "3836273275ce1ed3e8bd1bc7561ceef3e866093aaa0c4592b8edb7fea9c769b5"
+        },
+        {
+          "entry": "compiler-generic-seven-direct-20261106/standard_map-captured_map_restores_its_original_callback_and_continues_remaining_rows.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "compiler-generic-seven-direct-20261106/standard_map-captured_map_restores_its_original_callback_and_continues_remaining_rows.stdout.log",
+          "bytes": 212,
+          "sha256": "2c61f33749a4e7d3d779cd53b7be4490d777e76ac411395e2d480395c5d947ee"
+        },
+        {
+          "entry": "compiler-generic-seven-direct-20261106/standard_map-retained_map_prefix_restores_its_mapping_and_original_captured_callback.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "compiler-generic-seven-direct-20261106/standard_map-retained_map_prefix_restores_its_mapping_and_original_captured_callback.stdout.log",
+          "bytes": 211,
+          "sha256": "5c1a8689f9caeea78a5ff9d98f90f44b27c85548fc02c2bde68f0b8ed126a472"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-agent_execution.catalog.inventory.json",
+          "bytes": 24951,
+          "sha256": "70b83ec4c0516c1045d1b901257490fae2e526a4b17182c470e326166686fb04"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-agent_execution.catalog.json",
+          "bytes": 591,
+          "sha256": "8a222df15505b1feb3120e8d3536a5ab05c00bb6151a04f55fde1173f03ecc52"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-agent_execution.runtime.json",
+          "bytes": 683,
+          "sha256": "d46543f25453fe5774a39ab1a6213fbed5cf33e25d6acd58641e9495fc09fa3b"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-agent_execution.runtime.log",
+          "bytes": 111536,
+          "sha256": "721c5bcca00851e6350cc7de53fec1e1ac82808e714a8da1e55054d381121cd3"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-agent_execution.runtime.terminal-audit.json",
+          "bytes": 640,
+          "sha256": "a44bf36fc2d43cc6636312285eb64e056a15003bc1b2df0f055ced671eb0e4ad"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-agent_mcp.catalog.inventory.json",
+          "bytes": 7511,
+          "sha256": "21d0a0ed13261faf329b2d776e91e1aaa0945ed74acb32847b616f44fc7e2321"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-agent_mcp.catalog.json",
+          "bytes": 588,
+          "sha256": "a9a1a50e89712d8926cf44868a5c30b56e85e8f2b1eb188c4848dea47049e293"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-agent_mcp.runtime.json",
+          "bytes": 680,
+          "sha256": "2bba41c12b30161ea970a93f9c53bc116e5ab6bebca5a778b9ab53b369ad4c2f"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-agent_mcp.runtime.log",
+          "bytes": 92364,
+          "sha256": "69c53ba5a8881b5c36a4a4fb309198adc24c46c1c5fd56bea3779eab4be35cd8"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-agent_mcp.runtime.terminal-audit.json",
+          "bytes": 621,
+          "sha256": "97fa1f4c08c9d294deeb3907964c4b48f94373df1f7767015be1aaf163f30539"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-driver.catalog.inventory.json",
+          "bytes": 58196,
+          "sha256": "f67259f54d4d005779355b36bbfe6b915c2d15e2e872b25e9e7d443919ed3e37"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-driver.catalog.json",
+          "bytes": 586,
+          "sha256": "dc6a291bb3dea2d210f726f5415ebde6729f1c0ac191aba0c452151b60f56fe3"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-driver.runtime.json",
+          "bytes": 678,
+          "sha256": "608e06695ad8d3e57749930a7568a991e60a6d9eaabe3cde0cf3e254510f711c"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-driver.runtime.log",
+          "bytes": 153556,
+          "sha256": "58d268a046a09316c93a9dcb3812cbe03e3163faf11b51ba0fd1b6c148de6ea5"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-driver.runtime.terminal-audit.json",
+          "bytes": 622,
+          "sha256": "4c2683e0719751f8abbebdefcaa1e1d5f013282eced7d72e76a09a4261093a4e"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-player_native.catalog.inventory.json",
+          "bytes": 15855,
+          "sha256": "fad0e9f7f56f17a2bad4004305c0fde45f2d909dc14aac00667c50efcfe9422b"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-player_native.catalog.json",
+          "bytes": 552,
+          "sha256": "ca975bc1ab20d8df5b780ed0311d9df7646604ce660880b7d06aaea57a70e556"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-player_native.runtime.json",
+          "bytes": 644,
+          "sha256": "0f04b618c13d0d227415cdb9d2fedc4e94c1a92c812bf17569e695411d2a3348"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-player_native.runtime.log",
+          "bytes": 103779,
+          "sha256": "7cc23977c27c87cef05b569e197fd0f7a99a8c621889b1b4c08630e14ed577aa"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-player_native.runtime.terminal-audit.json",
+          "bytes": 625,
+          "sha256": "c283a89ba650abec2747059f458afd72c974f45942778857242ff72683d78935"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-player_web_scene.catalog.inventory.json",
+          "bytes": 40304,
+          "sha256": "d335fca7194f63d4646fa4fd5301dff4845b37a5a586e0e38830c48757cf330f"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-player_web_scene.catalog.json",
+          "bytes": 592,
+          "sha256": "aac3a6faab44c53ce8b58d8a2841ad0bcb812816624c7846df4c94decf507dfc"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-player_web_scene.runtime.json",
+          "bytes": 684,
+          "sha256": "9487a02ae07fd6eb479f45df96e8cafcf884f32f136a9a85400f42b9c3645923"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-player_web_scene.runtime.log",
+          "bytes": 128978,
+          "sha256": "595a4adc124c1f9d78274b8103d321b7ff0e5033ac745aeffaaaaa5a4edd4e84"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-player_web_scene.runtime.terminal-audit.json",
+          "bytes": 632,
+          "sha256": "403cbc84b0d0e3f77bdee2ff85abca4bcba5c31a5b98a42fb3f909a30b8133b1"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-project_and_test.catalog.inventory.json",
+          "bytes": 40833,
+          "sha256": "37ac4efee215b3560bcb0ef309ac6ba7d06a478807fc3f0c8ac3c1f55b6b29df"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-project_and_test.catalog.json",
+          "bytes": 588,
+          "sha256": "2ddb1a24484e7c778ae3eb93cf7825cda54a35030233b0fc37157a396a842e14"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-project_and_test.runtime.json",
+          "bytes": 680,
+          "sha256": "091dd3a6c8de61ab1ab830e5a3a59ce9c4f854341860847f2531750f56552f82"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-project_and_test.runtime.log",
+          "bytes": 128717,
+          "sha256": "fb9ca9d449971a833f83558259273a072df20975f9f84cbf955db55d18944eb1"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106-project_and_test.runtime.terminal-audit.json",
+          "bytes": 632,
+          "sha256": "4186902ba01b47fdf96b18900bc9a6dbe9e4d951f98b9fd9974c8c0a6e46dd49"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106.audit.json",
+          "bytes": 52805,
+          "sha256": "a0fa7806547b50edf87c1d6ea8179c12e59cf25e96f476dadc0f1254681e657c"
+        },
+        {
+          "entry": "proof-trust-consumers-20261106.batch-progress.json",
+          "bytes": 2410,
+          "sha256": "a90147b1d865226ac68be675dd7c04af9de0ecae17049dc52883eda1a0801d25"
+        }
+      ]
+    }
   }
 }

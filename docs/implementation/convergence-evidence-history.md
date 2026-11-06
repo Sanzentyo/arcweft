@@ -14787,3 +14787,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-06 — Exact Generic Match reference on partitioned consumer inputs
 
 - The 151 accepted binary/test identities at Source db071219f84e57186efa9d40dccc3bb8620f417c all passed. The static nextest batch supplied 144. The seven Compiler Native/AWBC and continuation/save cases ran from the actual integration target built independently with the recorded Cargo dependency files. The whole Compiler catalog failed earlier with OS error 1455. [Disjoint case identities and original receipts](acceptance-evidence/task-proof-trust-policy.json).
+
+## 2026-11-06 — Reverse dependency partitions on the checked proof-trust source
+
+- The nine all-feature locked reverse partitions selected 22 packages on Source db071219f84e57186efa9d40dccc3bb8620f417c. The actual nextest terminals ran 3321 cases, with 3313 passed and 8 failed. Runtime results are absent for arcweft-compiler. The separate Compiler integration executable passed all 11 continuation/save cases, including the seven Generic Match acceptance identities.
+- The original unified build failures, each partition result and the standalone Compiler results are recorded independently. [Package results, actual failure IDs and raw receipts](acceptance-evidence/task-proof-trust-policy.json).
