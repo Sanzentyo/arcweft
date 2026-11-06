@@ -56,13 +56,13 @@ use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::plan::{
     FlowRuntimeId, RuntimeAwaitPendingObserverSeed, RuntimeBuiltinIteratorEvidenceSeed,
     RuntimeCallableParameterSeed, RuntimeCallableStateSeedId, RuntimeChoiceOptionSeed,
-    RuntimeDeferOwner, RuntimeDialogueContentPlanSeedId, RuntimeDropPolicySeed,
-    RuntimeEffectFieldSeed, RuntimeEffectSet, RuntimeEntryKind, RuntimeEntrySpec,
-    RuntimeEvaluatedEffectSeed, RuntimeExecutableBodySeed, RuntimeExprSeed, RuntimeExprSeedKind,
-    RuntimeFlowMatchArmSeed, RuntimeFlowMatchGuardSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
-    RuntimeFormatAttemptSeedId, RuntimeFunctionInputBindingSeed, RuntimeFunctionInputSource,
-    RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteBodySeed, RuntimeFunctionSiteDeclarationSeed,
-    RuntimeFunctionSiteSeedId, RuntimeIteratorEvidenceSeed, RuntimeIteratorWitnessEvidenceSeed,
+    RuntimeDialogueContentPlanSeedId, RuntimeDropPolicySeed, RuntimeEffectFieldSeed,
+    RuntimeEffectSet, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEvaluatedEffectSeed,
+    RuntimeExecutableBodySeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowMatchArmSeed,
+    RuntimeFlowMatchGuardSeed, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeFormatAttemptSeedId,
+    RuntimeFunctionInputBindingSeed, RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind,
+    RuntimeFunctionSiteBodySeed, RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId,
+    RuntimeIteratorEvidenceSeed, RuntimeIteratorWitnessEvidenceSeed,
     RuntimeIteratorWitnessExecutableSeed, RuntimeLineId, RuntimeLocalDeclarationSeed,
     RuntimeLocalReadSeed, RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind,
     RuntimePlan, RuntimePlanBuilder, RuntimeProjectCallAttachedMaterializationSeed,
@@ -7130,7 +7130,6 @@ impl<'a> FinalFlowLowerer<'a> {
     fn lower_defer_registration(
         &self,
         statement: StmtId,
-        owner: RuntimeDeferOwner,
     ) -> Result<RuntimeFlowOpSeed, RuntimePlanLowerError> {
         let fact = self.semantic_facts.defer(statement).ok_or_else(|| {
             RuntimePlanLowerError::new(format!(
@@ -7175,7 +7174,7 @@ impl<'a> FinalFlowLowerer<'a> {
             site,
             outcome: fact.outcome(),
             captures,
-            owner,
+            owner: fact.definition().runtime_owner(),
         })
     }
 

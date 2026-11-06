@@ -12,14 +12,15 @@ use crate::record_field::CheckedRecordFieldSemanticId;
 use crate::types::TypeKind;
 use arcweft_core::effect::RuntimeRegistryReadKind;
 use arcweft_id::{EffectId, LifetimeRegistryKey};
+use arcweft_lang_syntax::ast::line_plan::DeferOutcome;
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     sync::Arc,
 };
 
 mod registry;
-pub(super) use registry::{RegistryAddress, RegistryOwner, RegistrySite};
-use registry::{RegistryFact, RegistryFacts, RegistryInterference};
+pub(super) use registry::{RegistryAddress, RegistryDeferOwner, RegistryOwner, RegistrySite};
+use registry::{RegistryFact, RegistryFacts, RegistryInterference, RegistryUnwind};
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct MovePath {
@@ -60,6 +61,14 @@ pub(super) struct NodeId(usize);
 
 #[derive(Clone, Copy)]
 pub(super) struct RegistryScheduleId(usize);
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(super) struct RegistryScopeId(usize);
+
+struct RegistryScope {
+    parent: Option<RegistryScopeId>,
+    depth: usize,
+}
 
 #[derive(Clone, Copy)]
 pub(super) enum RegistryConcurrency {
@@ -151,7 +160,12 @@ pub(super) enum Event {
         concurrency: RegistryConcurrency,
     },
     ForgetRegistryWrites(RegistrySite, Box<[EffectId]>),
-    DeferredRegistryWrites(RegistrySite, Box<[EffectId]>),
+    DeferRegistryWrites {
+        owner: RegistryDeferOwner,
+        site: RegistrySite,
+        outcome: DeferOutcome,
+        effects: Box<[EffectId]>,
+    },
     ScheduledRegistryWrites(RegistrySite, Option<Box<[EffectId]>>),
     EnterRegistry(RegistryOwner),
     ExitLineRegistry {
@@ -165,12 +179,17 @@ struct Node {
     event: Event,
     successors: BTreeSet<NodeId>,
     entry: bool,
+    registry_scope: Option<RegistryScopeId>,
+    registry_latent: bool,
 }
 
 #[derive(Default)]
 pub(super) struct OwnershipFlow {
     nodes: Vec<Node>,
     registry_schedules: Vec<RegistrySchedule>,
+    registry_scopes: Vec<RegistryScope>,
+    registry_scope: Option<RegistryScopeId>,
+    registry_latent: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -282,14 +301,18 @@ impl Initialization {
                     self.registry.remove(address);
                 }
             }
-            Event::ForgetRegistryWrites(site, effects)
-            | Event::DeferredRegistryWrites(site, effects) => {
-                self.registry.invalidate_writes(
-                    *site,
-                    effects,
-                    matches!(event, Event::DeferredRegistryWrites(..)),
-                    registry_keys,
-                );
+            Event::ForgetRegistryWrites(site, effects) => {
+                self.registry
+                    .invalidate_writes(*site, effects, registry_keys);
+            }
+            Event::DeferRegistryWrites {
+                owner,
+                site,
+                outcome,
+                effects,
+            } => {
+                self.registry
+                    .defer_writes(*owner, *site, *outcome, effects, registry_keys);
             }
             Event::ExitLineRegistry { line, schedule } => {
                 if let Some(schedule) = schedule {
@@ -299,6 +322,8 @@ impl Initialization {
                         .ok_or(CheckedLocalUseError::InvalidTopology)?
                         .apply_to_flow(&mut self.registry, registry_keys);
                 }
+                self.registry
+                    .unwind(RegistryDeferOwner::Line(*line), RegistryUnwind::Any);
                 self.registry.leave(RegistryOwner::Line(*line));
             }
             Event::EnterRegistry(owner) => self.registry.enter(*owner),
@@ -355,6 +380,53 @@ pub(super) struct OwnershipFlowSolution {
 }
 
 impl OwnershipFlow {
+    pub(super) fn push_registry_scope(&mut self) -> Option<RegistryScopeId> {
+        let scope = RegistryScopeId(self.registry_scopes.len());
+        self.registry_scopes.push(RegistryScope {
+            parent: self.registry_scope,
+            depth: self.registry_scope_depth(self.registry_scope) + 1,
+        });
+        self.replace_registry_scope(Some(scope))
+    }
+
+    pub(super) fn replace_registry_scope(
+        &mut self,
+        scope: Option<RegistryScopeId>,
+    ) -> Option<RegistryScopeId> {
+        std::mem::replace(&mut self.registry_scope, scope)
+    }
+
+    pub(super) const fn lexical_defer_owner(&self) -> RegistryDeferOwner {
+        RegistryDeferOwner::Lexical(self.registry_scope)
+    }
+
+    pub(super) fn replace_registry_latency(&mut self, latent: bool) -> bool {
+        std::mem::replace(&mut self.registry_latent, latent)
+    }
+
+    fn registry_scope_depth(&self, scope: Option<RegistryScopeId>) -> usize {
+        scope.map_or(0, |scope| self.registry_scopes[scope.0].depth)
+    }
+
+    fn unwind_registry_scopes(
+        &self,
+        registry: &mut RegistryFacts,
+        mut source: Option<RegistryScopeId>,
+        mut target: Option<RegistryScopeId>,
+    ) {
+        while source != target {
+            if self.registry_scope_depth(source) < self.registry_scope_depth(target) {
+                target = target.and_then(|scope| self.registry_scopes[scope.0].parent);
+            } else if let Some(scope) = source {
+                registry.unwind(
+                    RegistryDeferOwner::Lexical(Some(scope)),
+                    RegistryUnwind::Completed,
+                );
+                source = self.registry_scopes[scope.0].parent;
+            }
+        }
+    }
+
     pub(super) fn reserve_registry_schedule(
         &mut self,
         parent: RegistryConcurrency,
@@ -386,17 +458,22 @@ impl OwnershipFlow {
             .nodes
             .get(scheduled.0..)
             .ok_or(CheckedLocalUseError::InvalidTopology)?;
-        for node in eager_events {
+        for node in eager_events.iter().filter(|node| !node.registry_latent) {
             if let Event::ScheduledRegistryWrites(site, effects) = &node.event {
                 interference.opaque_writes(*site, effects.as_deref());
             }
         }
-        for node in scheduled_events {
+        for node in scheduled_events.iter().filter(|node| !node.registry_latent) {
             match &node.event {
                 Event::RegistryWrite { address, ty } => interference.write(address, ty),
                 Event::RegistryDrop { address, .. } => interference.remove(address),
                 Event::ForgetRegistryWrites(site, effects)
-                | Event::DeferredRegistryWrites(site, effects) => {
+                | Event::DeferRegistryWrites {
+                    owner: RegistryDeferOwner::Lexical(_),
+                    site,
+                    effects,
+                    ..
+                } => {
                     interference.opaque_writes(*site, Some(effects));
                 }
                 Event::ScheduledRegistryWrites(site, effects) => {
@@ -474,6 +551,8 @@ impl OwnershipFlow {
             event,
             successors: BTreeSet::new(),
             entry,
+            registry_scope: self.registry_scope,
+            registry_latent: self.registry_latent,
         });
         self.connect(state, id);
         if state.reachable {
@@ -488,6 +567,8 @@ impl OwnershipFlow {
             event: Event::Join,
             successors: BTreeSet::new(),
             entry: false,
+            registry_scope: self.registry_scope,
+            registry_latent: self.registry_latent,
         });
         id
     }
@@ -537,8 +618,18 @@ impl OwnershipFlow {
                 &self.registry_schedules,
             )?;
             for successor in &self.nodes[id.0].successors {
+                let source_scope = self.nodes[id.0].registry_scope;
+                let target_scope = self.nodes[successor.0].registry_scope;
+                let mut unwound;
+                let state = if source_scope != target_scope && state.registry.has_lexical_defers() {
+                    unwound = state.clone();
+                    self.unwind_registry_scopes(&mut unwound.registry, source_scope, target_scope);
+                    &unwound
+                } else {
+                    &state
+                };
                 let changed = match &mut incoming[successor.0] {
-                    Some(previous) => previous.join(&state),
+                    Some(previous) => previous.join(state),
                     target @ None => {
                         *target = Some(state.clone());
                         true

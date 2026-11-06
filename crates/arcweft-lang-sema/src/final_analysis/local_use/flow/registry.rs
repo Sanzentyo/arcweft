@@ -8,7 +8,9 @@ use std::{
 use arcweft_core::effect::RuntimeRegistryReadKind;
 use arcweft_id::{EffectId, LifetimeRegistryKey, LifetimeScopeKind};
 use arcweft_lang_hir::identity::ExprId;
+use arcweft_lang_syntax::ast::line_plan::DeferOutcome;
 
+use super::RegistryScopeId;
 use crate::types::TypeKind;
 
 /// A source activation in the ownership graph. Entering a Line site again
@@ -27,6 +29,10 @@ pub(in crate::final_analysis::local_use) struct RegistrySite {
 impl RegistrySite {
     pub(in crate::final_analysis::local_use) const fn line(line: ExprId) -> Self {
         Self { line: Some(line) }
+    }
+
+    pub(in crate::final_analysis::local_use) const fn line_owner(self) -> Option<ExprId> {
+        self.line
     }
 
     fn owners(self) -> impl Iterator<Item = RegistryOwner> {
@@ -68,13 +74,11 @@ pub(super) enum RegistryFact {
     Absent,
     Present(Arc<TypeKind>),
     MaybePresent(Arc<TypeKind>),
-    DeferredWrite,
 }
 
 impl RegistryFact {
     fn join(&self, other: &Self) -> Self {
         match (self, other) {
-            (Self::DeferredWrite, _) | (_, Self::DeferredWrite) => Self::DeferredWrite,
             (left, right) if left == right => left.clone(),
             (Self::Absent, Self::Present(ty) | Self::MaybePresent(ty))
             | (Self::Present(ty) | Self::MaybePresent(ty), Self::Absent) => {
@@ -106,12 +110,27 @@ impl RegistryFact {
         // A possible absence requires no proof of a prior registration.
         matches!(
             (self, kind),
-            (
-                Self::Unknown | Self::DeferredWrite,
-                RuntimeRegistryReadKind::Optional
-            )
+            (Self::Unknown, RuntimeRegistryReadKind::Optional)
         ) || self.admits(kind, expected)
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(in crate::final_analysis::local_use) enum RegistryDeferOwner {
+    Line(ExprId),
+    Lexical(Option<RegistryScopeId>),
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum RegistryUnwind {
+    Completed,
+    Any,
+}
+
+#[derive(Clone, Default, Eq, PartialEq)]
+struct RegistryDeferredWrites {
+    completed: BTreeSet<RegistryAddress>,
+    interrupted: BTreeSet<RegistryAddress>,
 }
 
 /// A fresh scope provides a shared absence default. Only deviations from the
@@ -120,6 +139,7 @@ impl RegistryFact {
 pub(super) struct RegistryFacts {
     empty_scopes: BTreeSet<RegistryOwner>,
     entries: BTreeMap<RegistryAddress, RegistryFact>,
+    deferred: BTreeMap<RegistryDeferOwner, RegistryDeferredWrites>,
 }
 
 impl RegistryFacts {
@@ -153,49 +173,74 @@ impl RegistryFacts {
     pub(super) fn leave(&mut self, owner: RegistryOwner) {
         self.empty_scopes.remove(&owner);
         self.entries.retain(|address, _| address.owner != owner);
+        if let RegistryOwner::Line(line) = owner {
+            self.deferred.remove(&RegistryDeferOwner::Line(line));
+        }
     }
 
     pub(super) fn forget(&mut self, site: RegistrySite) {
         for owner in site.owners() {
             self.empty_scopes.remove(&owner);
-            self.entries.retain(|address, fact| {
-                address.owner != owner || *fact == RegistryFact::DeferredWrite
-            });
+            self.entries.retain(|address, _| address.owner != owner);
         }
     }
 
     pub(super) fn register(&mut self, address: &RegistryAddress, ty: &Arc<TypeKind>) {
-        if *self.fact(address) != RegistryFact::DeferredWrite {
-            self.set(address, RegistryFact::Present(Arc::clone(ty)));
-        }
+        self.set(address, RegistryFact::Present(Arc::clone(ty)));
     }
 
     pub(super) fn remove(&mut self, address: &RegistryAddress) {
-        if *self.fact(address) != RegistryFact::DeferredWrite {
-            self.set(address, RegistryFact::Absent);
-        }
+        self.set(address, RegistryFact::Absent);
     }
 
     pub(super) fn invalidate_writes(
         &mut self,
         site: RegistrySite,
         effects: &[EffectId],
-        deferred: bool,
         keys: &BTreeMap<RegistryAddress, EffectId>,
     ) {
         for (address, required) in keys {
-            if !site.owners().any(|owner| owner == address.owner)
-                || *self.fact(address) == RegistryFact::DeferredWrite
-                || !effects.iter().any(|effect| effect.covers(required))
-            {
-                continue;
+            if site.reaches(address) && effects.iter().any(|effect| effect.covers(required)) {
+                self.set(address, RegistryFact::Unknown);
             }
-            let fact = if deferred {
-                RegistryFact::DeferredWrite
-            } else {
-                RegistryFact::Unknown
-            };
-            self.set(address, fact);
+        }
+    }
+
+    pub(super) fn defer_writes(
+        &mut self,
+        owner: RegistryDeferOwner,
+        site: RegistrySite,
+        outcome: DeferOutcome,
+        effects: &[EffectId],
+        keys: &BTreeMap<RegistryAddress, EffectId>,
+    ) {
+        for (address, required) in keys {
+            if site.reaches(address) && effects.iter().any(|effect| effect.covers(required)) {
+                let pending = self.deferred.entry(owner).or_default();
+                let targets = match outcome {
+                    DeferOutcome::Always | DeferOutcome::Completed => &mut pending.completed,
+                    DeferOutcome::Cancelled | DeferOutcome::Failed => &mut pending.interrupted,
+                };
+                targets.insert(address.clone());
+            }
+        }
+    }
+
+    pub(super) fn has_lexical_defers(&self) -> bool {
+        self.deferred
+            .keys()
+            .any(|owner| matches!(owner, RegistryDeferOwner::Lexical(Some(_))))
+    }
+
+    pub(super) fn unwind(&mut self, owner: RegistryDeferOwner, exit: RegistryUnwind) {
+        let Some(mut writes) = self.deferred.remove(&owner) else {
+            return;
+        };
+        if matches!(exit, RegistryUnwind::Any) {
+            writes.completed.append(&mut writes.interrupted);
+        }
+        for address in &writes.completed {
+            self.set(address, RegistryFact::Unknown);
         }
     }
 
@@ -207,6 +252,7 @@ impl RegistryFacts {
                 .copied()
                 .collect(),
             entries: BTreeMap::new(),
+            deferred: self.deferred.clone(),
         };
         let keys = self
             .entries
@@ -215,6 +261,13 @@ impl RegistryFacts {
             .collect::<BTreeSet<_>>();
         for key in keys {
             joined.set(key, self.fact(key).join(other.fact(key)));
+        }
+        for (owner, writes) in &other.deferred {
+            let pending = joined.deferred.entry(*owner).or_default();
+            pending.completed.extend(writes.completed.iter().cloned());
+            pending
+                .interrupted
+                .extend(writes.interrupted.iter().cloned());
         }
         *self = joined;
     }
@@ -264,9 +317,6 @@ impl RegistryInterference {
         required: &EffectId,
         fact: RegistryFact,
     ) -> RegistryFact {
-        if fact == RegistryFact::DeferredWrite {
-            return fact;
-        }
         if self.open.contains(&address.owner)
             || self
                 .opaque

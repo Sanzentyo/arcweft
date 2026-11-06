@@ -347,6 +347,10 @@ Registration happens only when execution reaches the `defer` statement. Each
 scope runs its matching registered blocks once in reverse registration order;
 an untaken branch registers nothing. A line scope waits for cancelled children
 to unwind before running its own registered cleanup.
+Registration transfers the captured inputs and leaves existing registry entries
+available. A deferred registry write takes effect during its owning scope's
+cleanup. A later read needs type and presence evidence for the registry after
+that scope has exited.
 
 ```arcw
 alice(look=smile, focus=.soft)[

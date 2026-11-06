@@ -490,6 +490,7 @@ impl CheckedIncludeFlowTarget {
 pub struct CheckedDefer {
     owner: arcweft_lang_hir::identity::StmtId,
     outcome: DeferOutcome,
+    runtime_owner: arcweft_core::plan::RuntimeDeferOwner,
     body: ExprId,
     definition_identity: crate::final_analysis::CheckedExecutionDefinitionIdentity,
     captures: Box<[CheckedExecutableCapture]>,
@@ -499,6 +500,7 @@ impl CheckedDefer {
     pub(crate) fn new(
         owner: arcweft_lang_hir::identity::StmtId,
         outcome: DeferOutcome,
+        runtime_owner: arcweft_core::plan::RuntimeDeferOwner,
         body: ExprId,
         definition_identity: crate::final_analysis::CheckedExecutionDefinitionIdentity,
         captures: Box<[CheckedExecutableCapture]>,
@@ -506,6 +508,7 @@ impl CheckedDefer {
         Self {
             owner,
             outcome,
+            runtime_owner,
             body,
             definition_identity,
             captures,
@@ -514,6 +517,10 @@ impl CheckedDefer {
 
     pub const fn outcome(&self) -> DeferOutcome {
         self.outcome
+    }
+
+    pub const fn runtime_owner(&self) -> arcweft_core::plan::RuntimeDeferOwner {
+        self.runtime_owner
     }
 
     pub const fn owner(&self) -> arcweft_lang_hir::identity::StmtId {

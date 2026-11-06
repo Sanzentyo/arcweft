@@ -1946,6 +1946,8 @@ entry cli @entry.main { goto @flow.main }
 
 #[test]
 fn line_root_deferred_children_execute_in_native_and_awbc_lifo() {
+    use arcweft_core::value::{AwbcRuntimeValueSnapshot, RuntimeInt};
+
     for terminal_separator in [";", ""] {
         let compiled = compile_attached_dialogue_project(&format!(
             r#"
@@ -1954,7 +1956,20 @@ flow main() -> Unit {{
     let message = "first"
     alice: hello[p]
     with:
-        defer {{ log.info(message){terminal_separator} }}
+        init {{
+            'line.init_flag <- true
+            'line.completed_flag <- true
+            defer on failed {{ 'line.completed_flag <- 1i64; log.info("failed init") }}
+            defer {{ 'line.init_flag <- 1i64; log.info("init cleanup") }}
+            let inside_init: bool = 'line.init_flag
+            if inside_init {{ log.info("before init cleanup") }}
+        }}
+        let completed: bool = 'line.completed_flag
+        if completed {{ log.info("after init cleanup") }}
+        'line.flag <- true
+        defer {{ 'line.flag <- false; log.info(message){terminal_separator} }}
+        let before_close: bool = 'line.flag
+        if before_close {{ log.info("before line cleanup") }}
         defer on failed {{ log.info("failed"){terminal_separator} }}
         defer {{ log.info("last"){terminal_separator} }}
 }}
@@ -2004,9 +2019,19 @@ entry cli @entry.main {{ goto @flow.main }}
             |input, options| native.step_with_pure_backend(input, options, &mut native_backend),
             template.id(),
         );
-        assert_eq!(log_messages(&native_effects), ["last", "first"]);
+        assert_eq!(
+            log_messages(&native_effects),
+            [
+                "before init cleanup",
+                "init cleanup",
+                "after init cleanup",
+                "before line cleanup",
+                "last",
+                "first",
+            ],
+        );
 
-        let mut awbc = arcweft_core::executor::ArcweftRuntimeExecutor::from_awbc_product(
+        let awbc = arcweft_core::executor::ArcweftRuntimeExecutor::from_awbc_product(
             decoded,
             arcweft_core::awbc::schema::AwbcEntryId(0),
         )
@@ -2016,11 +2041,94 @@ entry cli @entry.main {{ goto @flow.main }}
             .with_external_calls(
                 arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&awbc_schema),
             );
+        let mut awbc = Some(awbc);
+        let mut observed_initial = false;
+        let mut observed_replacement = false;
+        let initial = serde_json::to_value(AwbcRuntimeValueSnapshot::Bool(true)).unwrap();
+        let replacement =
+            serde_json::to_value(AwbcRuntimeValueSnapshot::Int(RuntimeInt::I64(1))).unwrap();
         let (_, _, awbc_effects) = execute_single_dialogue_with_content(
-            |input, options| awbc.step_with_pure_backend(input, options, &mut awbc_backend),
+            |input, options| {
+                let mut executor = awbc.take().unwrap();
+                let result = executor.step_with_pure_backend(input, options, &mut awbc_backend);
+                let (restored, _) = roundtrip_nested_awbc_checking(executor, |executor, saved| {
+                    let entries = saved["dialogues"]["entries"].as_array().unwrap();
+                    for rows in entries
+                        .iter()
+                        .filter_map(|entry| entry.pointer("/Active/line/line_registry"))
+                        .filter_map(serde_json::Value::as_array)
+                    {
+                        for entry in rows {
+                            let row = &entry["row"];
+                            if row["key"]["segments"][0] == "init_flag" {
+                                observed_initial |= row["value"] == initial;
+                                observed_replacement |= row["value"] == replacement;
+                            }
+                        }
+                    }
+                    executor
+                });
+                awbc = Some(restored);
+                result
+            },
             template.id(),
         );
+        assert!(
+            observed_initial,
+            "the live init value crossed the save boundary"
+        );
+        assert!(
+            observed_replacement,
+            "the cleanup replacement crossed the save boundary"
+        );
         assert_eq!(log_messages(&awbc_effects), log_messages(&native_effects));
+    }
+}
+
+#[test]
+fn scoped_deferred_registry_writes_invalidate_later_reads() {
+    use arcweft_lang_sema::final_analysis::{CheckedLocalUseError, FinalSemanticAnalysisError};
+
+    for source in [
+        r#"
+pub character alice { display = "Alice" }
+flow main() -> Unit {
+    alice()[hello[p]] with {
+        init {
+            'line.flag <- true
+            defer { 'line.flag <- 1i64; log.info("cleanup") }
+        }
+        let stale: bool = 'line.flag
+        if stale { log.info("unexpected") }
+    }
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+        r#"
+pub character alice { display = "Alice" }
+flow main() -> Unit {
+    'flow.flag <- true
+    alice()[hello[p]] with {
+        defer { 'flow.flag <- 1i64; log.info("cleanup") }
+    }
+    let stale: bool = 'flow.flag
+    if stale { log.info("unexpected") }
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    ] {
+        let error = compile_attached_dialogue_project(source)
+            .err()
+            .expect("the reached cleanup may have replaced the item with a different type");
+        assert!(
+            matches!(
+                error.semantic_error(),
+                Some(FinalSemanticAnalysisError::LocalUse(
+                    CheckedLocalUseError::RegistryRegistrationUnavailable { .. }
+                ))
+            ),
+            "{error:?}"
+        );
     }
 }
 

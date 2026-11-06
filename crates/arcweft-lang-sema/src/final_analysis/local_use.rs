@@ -71,8 +71,8 @@ pub use access::{
     CheckedPlaceDisplacement, CheckedPlaceInitialization,
 };
 use flow::{
-    Availability, Event, NodeId, OwnershipFlow, RegistryConcurrency, RegistryOwner, RegistrySite,
-    Violation,
+    Availability, Event, NodeId, OwnershipFlow, RegistryConcurrency, RegistryDeferOwner,
+    RegistryOwner, RegistrySite, Violation,
 };
 
 /// A builder-issued runtime local with no HIR LocalId. The checked semantic
@@ -1040,20 +1040,30 @@ impl<'a> LocalUseChecker<'a> {
         &mut self,
         effects: &crate::effects::EffectSet,
         state: &mut Availability,
-        deferred: bool,
     ) {
         if !self.registry_proofs {
             return;
         }
         let writes = registry_write_effects(effects);
         if !writes.is_empty() {
-            let event = if deferred {
-                Event::DeferredRegistryWrites(self.registry_site, writes)
-            } else {
-                Event::ForgetRegistryWrites(self.registry_site, writes)
-            };
-            self.flow.append(state, event);
+            self.flow.append(
+                state,
+                Event::ForgetRegistryWrites(self.registry_site, writes),
+            );
         }
+    }
+
+    fn with_registry_scope<T>(
+        &mut self,
+        body: impl FnOnce(&mut Self) -> Result<T, CheckedLocalUseError>,
+    ) -> Result<T, CheckedLocalUseError> {
+        if !self.registry_proofs {
+            return body(self);
+        }
+        let enclosing = self.flow.push_registry_scope();
+        let result = body(self);
+        self.flow.replace_registry_scope(enclosing);
+        result
     }
 
     fn begin_loop(
@@ -1149,6 +1159,7 @@ impl<'a> LocalUseChecker<'a> {
             &mut self.registry_concurrency,
             RegistryConcurrency::Unknown(self.registry_site),
         );
+        let registry_scope = self.flow.replace_registry_scope(None);
         let mut state = self.flow.entry();
         let result = body(self, &mut state);
         self.active_receiver_loans = loans;
@@ -1157,6 +1168,7 @@ impl<'a> LocalUseChecker<'a> {
         self.outputs = outputs;
         self.guard_bindings = guards;
         self.registry_concurrency = registry_concurrency;
+        self.flow.replace_registry_scope(registry_scope);
         result
     }
 
@@ -1989,15 +2001,15 @@ impl<'a> LocalUseChecker<'a> {
         body: &HirContextualStmtBody,
         state: &mut Availability,
     ) -> Result<(), CheckedLocalUseError> {
-        match body {
+        self.with_registry_scope(|this| match body {
             HirContextualStmtBody::Ordinary { statements, .. } => {
                 for statement in statements.iter().copied() {
-                    self.statement(statement, state)?;
+                    this.statement(statement, state)?;
                 }
+                Ok(())
             }
-            HirContextualStmtBody::Thread(body) => self.thread_body(body, state)?,
-        }
-        Ok(())
+            HirContextualStmtBody::Thread(body) => this.thread_body(body, state),
+        })
     }
 
     fn branch(
@@ -2563,10 +2575,12 @@ impl<'a> LocalUseChecker<'a> {
         value: &arcweft_lang_hir::expr::HirBlockExpr,
         state: &mut Availability,
     ) -> Result<std::ops::ControlFlow<()>, CheckedLocalUseError> {
-        for statement in value.statements() {
-            self.statement(*statement, state)?;
-        }
-        self.expression(value.tail(), state)?;
+        self.with_registry_scope(|this| {
+            for statement in value.statements() {
+                this.statement(*statement, state)?;
+            }
+            this.expression(value.tail(), state)
+        })?;
         Ok(std::ops::ControlFlow::Continue(()))
     }
 
@@ -2589,10 +2603,12 @@ impl<'a> LocalUseChecker<'a> {
         } else {
             None
         };
-        for statement in value.statements() {
-            self.statement(*statement, state)?;
-        }
-        self.expression(value.tail(), state)?;
+        self.with_registry_scope(|this| {
+            for statement in value.statements() {
+                this.statement(*statement, state)?;
+            }
+            this.expression(value.tail(), state)
+        })?;
         if let Some(exit) = exit {
             self.carriers
                 .pop()
@@ -2641,10 +2657,12 @@ impl<'a> LocalUseChecker<'a> {
         value: &arcweft_lang_hir::expr::HirNamedBlockExpr,
         state: &mut Availability,
     ) -> Result<std::ops::ControlFlow<()>, CheckedLocalUseError> {
-        for statement in value.statements() {
-            self.statement(*statement, state)?;
-        }
-        self.expression(value.tail(), state)?;
+        self.with_registry_scope(|this| {
+            for statement in value.statements() {
+                this.statement(*statement, state)?;
+            }
+            this.expression(value.tail(), state)
+        })?;
         Ok(std::ops::ControlFlow::Continue(()))
     }
 
@@ -2658,10 +2676,12 @@ impl<'a> LocalUseChecker<'a> {
             state,
             arcweft_lang_hir::project::HirSemanticBodyOwner::direct_expression(owner),
         )?;
-        for statement in value.statements() {
-            self.statement(*statement, state)?;
-        }
-        self.expression(value.tail(), state)?;
+        self.with_registry_scope(|this| {
+            for statement in value.statements() {
+                this.statement(*statement, state)?;
+            }
+            this.expression(value.tail(), state)
+        })?;
         self.end_loop(state)?;
         Ok(std::ops::ControlFlow::Continue(()))
     }
@@ -2906,11 +2926,11 @@ impl<'a> LocalUseChecker<'a> {
             if self.analysis.statement(statement).is_none() {
                 continue;
             }
-            let kind = self
+            let source = self
                 .module
                 .resolve_stmt(statement)
-                .map_err(|_| CheckedLocalUseError::InvalidTopology)?
-                .kind();
+                .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
+            let kind = source.kind();
             let grouped = path.segments().iter().any(|segment| {
                 matches!(
                     segment,
@@ -2935,7 +2955,9 @@ impl<'a> LocalUseChecker<'a> {
             {
                 scheduled.push(statement);
             } else {
-                eager.push(statement);
+                let init_scope =
+                    matches!(role, HirLinePlanStatementRole::Init { .. }).then(|| source.scope());
+                eager.push((statement, init_scope));
             }
         }
 
@@ -2945,8 +2967,18 @@ impl<'a> LocalUseChecker<'a> {
         let exit = self.flow.detached();
         self.outputs.push((owner, exit));
         let eager_mark = self.flow.mark_registry_events();
-        for statement in eager {
-            self.statement(statement, state)?;
+        for batch in eager.chunk_by(|left, right| left.1.is_some() && left.1 == right.1) {
+            let mut visit = |this: &mut Self| {
+                for &(statement, _) in batch {
+                    this.statement(statement, state)?;
+                }
+                Ok(())
+            };
+            if batch[0].1.is_some() {
+                self.with_registry_scope(visit)?;
+            } else {
+                visit(self)?;
+            }
         }
         let scheduled_mark = self.flow.mark_registry_events();
         let concurrency = self.registry_concurrency;
@@ -3036,7 +3068,7 @@ impl<'a> LocalUseChecker<'a> {
                 );
             }
             if let Some(effects) = core.effects().closed_value() {
-                self.forget_registry_writes(&effects, state, false);
+                self.forget_registry_writes(&effects, state);
             } else {
                 self.flow
                     .append(state, Event::RegistryBoundary(self.registry_site));
@@ -3102,6 +3134,8 @@ impl<'a> LocalUseChecker<'a> {
             HirStmtEvaluationPlan::EventBody { .. } | HirStmtEvaluationPlan::CancelRule { .. }
         );
         let bypass = event_body.then(|| state.clone());
+        let enclosing_registry_scope =
+            (event_body && self.registry_proofs).then(|| self.flow.push_registry_scope());
         let registry_concurrency = self.registry_concurrency;
         let unknown_event_body =
             event_body && !matches!(registry_concurrency, RegistryConcurrency::Scheduled(_));
@@ -3189,8 +3223,36 @@ impl<'a> LocalUseChecker<'a> {
                     .expression(body)
                     .ok_or(CheckedLocalUseError::InvalidTopology)?
                     .effects();
-                self.forget_registry_writes(effects, state, true);
-                self.callable_body(|this, state| this.expression(body, state))?;
+                if self.registry_proofs {
+                    let effects = registry_write_effects(effects);
+                    if !effects.is_empty() {
+                        let owner = match defer.runtime_owner() {
+                            arcweft_core::plan::RuntimeDeferOwner::LineRoot => {
+                                RegistryDeferOwner::Line(
+                                    self.registry_site
+                                        .line_owner()
+                                        .ok_or(CheckedLocalUseError::InvalidTopology)?,
+                                )
+                            }
+                            arcweft_core::plan::RuntimeDeferOwner::CurrentScope => {
+                                self.flow.lexical_defer_owner()
+                            }
+                        };
+                        self.flow.append(
+                            state,
+                            Event::DeferRegistryWrites {
+                                owner,
+                                site: self.registry_site,
+                                outcome: defer.outcome(),
+                                effects,
+                            },
+                        );
+                    }
+                }
+                let was_latent = self.flow.replace_registry_latency(true);
+                let checked = self.callable_body(|this, state| this.expression(body, state));
+                self.flow.replace_registry_latency(was_latent);
+                checked?;
             }
             HirStmtEvaluationPlan::If {
                 condition,
@@ -3438,6 +3500,10 @@ impl<'a> LocalUseChecker<'a> {
                 self.flow.connect(state, *exit);
                 state.terminate();
             }
+            HirStmtEvaluationPlan::Scope { body, .. }
+            | HirStmtEvaluationPlan::SourceLocale { body, .. } => {
+                self.contextual_body(body, state)?;
+            }
             other => {
                 let mut steps = Vec::new();
                 other
@@ -3471,6 +3537,9 @@ impl<'a> LocalUseChecker<'a> {
                     }
                 }
             }
+        }
+        if let Some(enclosing) = enclosing_registry_scope {
+            self.flow.replace_registry_scope(enclosing);
         }
         if let Some(bypass) = bypass {
             *state = bypass.join(state.clone());

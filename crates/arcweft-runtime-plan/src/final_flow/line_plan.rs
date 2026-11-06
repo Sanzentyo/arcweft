@@ -277,10 +277,7 @@ impl LinePlanLowerer<'_, '_> {
                     self.lower_init(*scope, statements)?;
                 }
                 HirLinePlanItem::Statement(statement) => {
-                    self.lower_top_level_statement(
-                        *statement,
-                        arcweft_core::plan::RuntimeDeferOwner::LineRoot,
-                    )?;
+                    self.lower_top_level_statement(*statement)?;
                 }
                 HirLinePlanItem::StartGroup(items) => {
                     let children = self.lower_node_items(items)?;
@@ -333,10 +330,7 @@ impl LinePlanLowerer<'_, '_> {
                 )));
             }
             let root_children_before = self.root_children.len();
-            self.lower_top_level_statement(
-                *statement,
-                arcweft_core::plan::RuntimeDeferOwner::CurrentScope,
-            )?;
+            self.lower_top_level_statement(*statement)?;
             if self.root_children.len() != root_children_before {
                 return Err(RuntimePlanLowerError::new(
                     "Init cannot spawn line-task children before reveal",
@@ -351,7 +345,6 @@ impl LinePlanLowerer<'_, '_> {
     fn lower_top_level_statement(
         &mut self,
         statement: StmtId,
-        defer_owner: arcweft_core::plan::RuntimeDeferOwner,
     ) -> Result<(), RuntimePlanLowerError> {
         let kind = self.resolve_statement(statement)?.kind().clone();
         match self.statement_projection(statement)? {
@@ -418,7 +411,7 @@ impl LinePlanLowerer<'_, '_> {
                 }
                 HirStmtKind::Defer { .. } => {
                     self.activation_ops.push(FlowDraft::Flow(
-                        self.flow.lower_defer_registration(statement, defer_owner)?,
+                        self.flow.lower_defer_registration(statement)?,
                     ));
                 }
                 HirStmtKind::Expression { expression } => {
@@ -620,10 +613,9 @@ impl LinePlanLowerer<'_, '_> {
                 }
                 let kind = payload.kind().clone();
                 if matches!(kind, HirStmtKind::Defer { .. }) {
-                    actions.push(FlowDraft::Flow(self.flow.lower_defer_registration(
-                        *statement,
-                        arcweft_core::plan::RuntimeDeferOwner::CurrentScope,
-                    )?));
+                    actions.push(FlowDraft::Flow(
+                        self.flow.lower_defer_registration(*statement)?,
+                    ));
                 } else {
                     actions.extend(self.lower_statement_action(*statement, &kind)?);
                 }

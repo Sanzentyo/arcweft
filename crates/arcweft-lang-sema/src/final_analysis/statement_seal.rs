@@ -7,7 +7,10 @@
 use std::collections::BTreeMap;
 
 use arcweft_lang_hir::{
-    expr::HirExprKind,
+    expr::{
+        HirExprKind, HirExpressionOwnedBodyRole, HirLinePlanStatementRole,
+        HirNestedExpressionPathSegment,
+    },
     identity::{ExprId, LocalId, StmtId},
     leaf::{HirLiteral, HirStringLiteral},
     module::HirModule,
@@ -21,7 +24,7 @@ use arcweft_lang_hir::{
 
 use crate::{
     callable::{CheckedCallableCatalog, CheckedCallableDeclaration},
-    semantic_coordinate::SemanticCoordinateIndex,
+    semantic_coordinate::{CheckedSemanticPathStep, SemanticCoordinateIndex},
     types::TypeKind,
 };
 
@@ -668,9 +671,29 @@ impl CheckedStatementPayloadSealer for CheckedStatementSeal<'_, '_, '_> {
                     },
                     |local| self.locals.get(&local).map(|binding| binding.ty().clone()),
                 )?;
+                let coordinate = self
+                    .coordinates
+                    .statement(owner)
+                    .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+                let runtime_owner = match coordinate.path().steps().last() {
+                    Some(CheckedSemanticPathStep::ExpressionOwned(
+                        HirExpressionOwnedBodyRole::DialogueLinePlanStatement {
+                            path,
+                            role: HirLinePlanStatementRole::Statement,
+                        },
+                    )) if matches!(
+                        path.segments(),
+                        [HirNestedExpressionPathSegment::LinePlanItem { .. }]
+                    ) =>
+                    {
+                        arcweft_core::plan::RuntimeDeferOwner::LineRoot
+                    }
+                    _ => arcweft_core::plan::RuntimeDeferOwner::CurrentScope,
+                };
                 Ok(CheckedStatementPayload::Defer(Box::new(CheckedDefer::new(
                     owner,
                     *outcome,
+                    runtime_owner,
                     *expression,
                     super::CheckedExecutionDefinitionIdentity::from_coordinate(
                         &super::CheckedExecutionCoordinate::CallableBody(

@@ -2723,7 +2723,11 @@ impl AwbcProductExecutorSnapshot {
             for tag in &expected_joined {
                 ledger_child_tokens.entry(tag.clone()).or_default();
             }
-            if let Some((registration, _)) = actual_deferred_pair {
+            let active_defer_registrations = actual_deferred_pair
+                .map(|(registration, _)| registration)
+                .into_iter()
+                .chain(actual_scoped_inflight.map(|(_, _, registration, _)| registration));
+            for registration in active_defer_registrations {
                 ledger_child_tokens
                     .entry(LineTaskWorkTag::activation(
                         active.activation.clone(),
