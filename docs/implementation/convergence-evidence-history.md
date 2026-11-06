@@ -14959,3 +14959,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source 141951ede3bd866be36cbdeb75582dc80010e1bc で、Native と正規 AWBC の親が子の StageActor を受け取り、別のローカルに移し、ワイルドカードで破棄した。元の発行 ID と同じハンドルを子の台帳から一度だけ解放した。AWBC は取得応答待ちから解放まで毎ステップ公開 JSON を保存・復元した。不正な台帳キーと受け取り先レジスタを拒否し、元の実行を続けた。
 - 修正前は両実行系が別の対話のハンドルとして拒否した。途中の保存における affine 値と JSON のキー、AWBC の破棄証拠の失敗を保持した。Compiler 87件、Core／RuntimePlan 2,422件が通過し、fixture 再生成1件をスキップした。構造監査、ワークスペース全体の check と Clippy は終了コード0。全逆依存53パッケージの実行は別途追跡する。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-06 — Borrowing a returned StageActor
+
+- Source 64829f5d62302e2d658e88494655c7cef2cc96aa で、Native と正規デコード済み AWBC の親が子の StageActor を移動してから借用した。Look コマンドは元の actor ID と親の cue ID を保持し、cue を取り消した後に元の actor を一度だけ解放した。AWBC は各ステップの公開保存を復元し、保留中の借用コマンドを改変した保存を拒否して元の実行を継続した。
+- 初回は省略した crossfade の Duration 型未登録で2件失敗した。登録後は Source の nominal Look と実行側の旧形式が一致せず2件失敗した。修復後の Compiler 統合87件と Core／RuntimePlan 2422件が通過し、構造監査のブロッキング違反は0件だった。全体の cargo clean は25,901ファイル、61.3 GiBを削除した。先行の53パッケージ検証はカタログ作成中に中断した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。

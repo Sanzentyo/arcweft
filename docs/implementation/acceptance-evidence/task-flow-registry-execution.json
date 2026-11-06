@@ -12439,5 +12439,256 @@
         }
       ]
     }
+  },
+  "awbcNestedStageActorLook": {
+    "source": "64829f5d62302e2d658e88494655c7cef2cc96aa",
+    "base": "8f08254594a848473f200b2d4ebf35f575486505",
+    "published": "64829f5d62302e2d658e88494655c7cef2cc96aa",
+    "tree": "55b1bdb21f56573cc02f3d8e1da0bd32a97dbd99",
+    "patchSha256": "caf2644efa83cf5d8824498c3f86aef6c41f380e4741519371fe461012b118a9",
+    "blobDrift": 0,
+    "workspaceClean": {
+      "version": 1,
+      "workspace": "D:/git/arcweft",
+      "target": "D:/git/arcweft/target",
+      "command": [
+        "cargo",
+        "clean"
+      ],
+      "exitCode": 0,
+      "removedFiles": 25901,
+      "reportedSize": "61.3GiB",
+      "freeBytesBefore": 480775913472,
+      "freeBytesAfter": 543198859264,
+      "targetExistsAfter": false,
+      "interrupted": {
+        "source": "8f08254594a848473f200b2d4ebf35f575486505",
+        "suite": "Core 53-package reverse dependency standard suite",
+        "stage": "non-CLI nextest list was compiling",
+        "reason": "Stopped before the user-authorized workspace cargo clean",
+        "testResult": null
+      }
+    },
+    "attempts": [
+      {
+        "exitCode": 100,
+        "passed": 0,
+        "failed": 2,
+        "failure": "Both authored fixtures reached RuntimePlan lowering and rejected the generated default crossfade because Duration had not entered the admitted type batch."
+      },
+      {
+        "exitCode": 100,
+        "passed": 0,
+        "failed": 2,
+        "failure": "After Duration admission, Native rejected the authored nominal look as a foreign look and decoded AWBC rejected the old EntityRef operand shape. The fix uses the original executable nominal Look case on both backends."
+      }
+    ],
+    "checkedBehavior": "The parent moves the child-issued StageActor to a new local, borrows the same token in a parent-owned SetCharacterLook command, and cancels the parent-owned cue. The child issuer releases its exact acquired token once. Decoded AWBC saves and restores JSON after every step, rejects a forged actor token in the pending look command and the prior key and owner-slot forgeries, then resumes with the original executor.",
+    "compiler": {
+      "exitCode": 0,
+      "passed": 87,
+      "failed": 0,
+      "skipped": 0,
+      "targets": [
+        "evaluated_effects",
+        "flow_include"
+      ]
+    },
+    "structure": {
+      "exitCode": 0,
+      "blockingViolations": 0
+    },
+    "ownerTest": {
+      "version": 1,
+      "base": "8f08254594a848473f200b2d4ebf35f575486505",
+      "run": "awbc-nested-look-owners-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [  60.094s] 2422 tests run: 2422 passed, 1 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2422,
+      "passed": 2422,
+      "failed": 0,
+      "skipped": 1,
+      "selectedPackages": 2,
+      "matchedPackages": 2,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4134,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-06T13:26:39.0125673Z"
+    },
+    "reverseGraph": {
+      "version": 1,
+      "base": "8f08254594a848473f200b2d4ebf35f575486505",
+      "reviewedTree": "55b1bdb21f56573cc02f3d8e1da0bd32a97dbd99",
+      "owner": "arcweft-core",
+      "command": [
+        "tree",
+        "--locked",
+        "--workspace",
+        "--all-features",
+        "--target",
+        "all",
+        "--invert",
+        "arcweft-core",
+        "--prefix",
+        "none",
+        "--format",
+        "{p}"
+      ],
+      "workspaceReversePackages": [
+        "arcweft",
+        "arcweft-adapter-desktop",
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-policy",
+        "arcweft-agent-protocol",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-browser-bench",
+        "arcweft-bundle",
+        "arcweft-bundle-assets",
+        "arcweft-character-view",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-core",
+        "arcweft-debug-model",
+        "arcweft-debug-sqlite",
+        "arcweft-dialogue",
+        "arcweft-glyphon",
+        "arcweft-host-adapter",
+        "arcweft-lang-jit-cranelift",
+        "arcweft-lang-sema",
+        "arcweft-launch",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-text-input",
+        "arcweft-player-web",
+        "arcweft-project",
+        "arcweft-project-loader",
+        "arcweft-rag",
+        "arcweft-render-text",
+        "arcweft-render-web",
+        "arcweft-render-wgpu",
+        "arcweft-resource-manifest",
+        "arcweft-resource-model",
+        "arcweft-runtime-accelerator",
+        "arcweft-runtime-codegen",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-runtime-scheduler",
+        "arcweft-save",
+        "arcweft-test",
+        "arcweft-text-layout",
+        "arcweft-text-model",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3",
+        "arcweft-view"
+      ],
+      "graphDifference": 0,
+      "cargoTargets": 226,
+      "cargoTestTargets": 223
+    },
+    "boundary": "This result covers StageActor.look in the receiving dialogue with explicit stage command outcomes. Re-export of a received handle and the complete reverse dependency matrix remain separate.",
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-nested-stage-look.raw.zip",
+      "sha256": "2a4eedf3c0ac433850112c0df3b59c2a2f6978e4604db4be9f6125203556d89c",
+      "entries": [
+        {
+          "entry": "checkpoint-awbc-nested-look-20261106.verified.json",
+          "bytes": 2814,
+          "sha256": "53a837e0db1be93fbd17fe0174e99f26d81f04e0cd408a38e25736781489db9a"
+        },
+        {
+          "entry": "awbc-nested-look-20261106.reverse.json",
+          "bytes": 1954,
+          "sha256": "b6d759154499cbc2fe390718726addd46792997ec5136e1e69c64897e58aea33"
+        },
+        {
+          "entry": "awbc-nested-look-20261106.cargo-tree.txt",
+          "bytes": 19738,
+          "sha256": "6faeeed739d0af632e3113b6277894050cc873c26197f6ed19a43d8f412d22f7"
+        },
+        {
+          "entry": "awbc-nested-look-clean-20261106.json",
+          "bytes": 622,
+          "sha256": "3449da59e664b3f62f2dfe6aacadb6f26bb6e0c73cd373799234960b774c5721"
+        },
+        {
+          "entry": "awbc-nested-look-structure-20261106.log",
+          "bytes": 65741,
+          "sha256": "5b43cd7f81a0ce0bcac7e952cb3ccb7d48e501627abe0b0325fd7d014cd1968a"
+        },
+        {
+          "entry": "awbc-nested-affine-reverse-noncli-20261106.catalog.log",
+          "bytes": 100227,
+          "sha256": "2ff797c52d0ea55035127ee0a9c90d7cfc8646c8791ecc3437fdb04f6a7aeae3"
+        },
+        {
+          "entry": "awbc-nested-look-first-nextest-20261106.log",
+          "bytes": 102847,
+          "sha256": "d61c0f9ab119d81f49a3a6aa3597ef1b50130b2381a0586045f10531872617cf"
+        },
+        {
+          "entry": "awbc-nested-look-second-nextest-20261106.log",
+          "bytes": 89177,
+          "sha256": "c63c9a94e34eeb081a37709d8c6e183354f8ef17b1abe2c9bc0af71abba1cf80"
+        },
+        {
+          "entry": "awbc-nested-look-third-nextest-20261106.log",
+          "bytes": 99523,
+          "sha256": "5db035f2b16d305219623f1576051d8e43699358f84c9312e84bc4f8824ac9e9"
+        },
+        {
+          "entry": "awbc-nested-look-owners-20261106.source-freeze.json",
+          "bytes": 808439,
+          "sha256": "87aa338cce2b257ff5aa5c8348a3d1f71d35680606d1c824d7a9b52874e3fb65"
+        },
+        {
+          "entry": "awbc-nested-look-owners-20261106.catalog.json",
+          "bytes": 562,
+          "sha256": "61b1ad40c7b21134126f0ba999d5f5377485625f62a4051a6784c962b7d1703f"
+        },
+        {
+          "entry": "awbc-nested-look-owners-20261106.catalog.log",
+          "bytes": 518517,
+          "sha256": "205b2b3db5457891288568037ad759913f69aacc55a0f94459b575e9606c71dd"
+        },
+        {
+          "entry": "awbc-nested-look-owners-20261106.catalog.inventory.json",
+          "bytes": 617806,
+          "sha256": "1deb169e61c1648c5184bd2c3bfeabafdbc1e402bf81c56eae44ce006ace2bc7"
+        },
+        {
+          "entry": "awbc-nested-look-owners-20261106.binaries-before.json",
+          "bytes": 447,
+          "sha256": "bf0136b286601c912f4de4de4b35bfd7de44be1be8f4cfc43488e2cf43c52346"
+        },
+        {
+          "entry": "awbc-nested-look-owners-20261106.runtime.json",
+          "bytes": 654,
+          "sha256": "c43a50d21df8fbc21700c11fcb6639b417d97f7284537eed2d46235a1fd76708"
+        },
+        {
+          "entry": "awbc-nested-look-owners-20261106.runtime.log",
+          "bytes": 840716,
+          "sha256": "65f746f16f47d9d1ab6e669924723a71c55f7b0ca5ebe4fe89aa994598f58310"
+        },
+        {
+          "entry": "awbc-nested-look-owners-20261106.runtime.terminal-audit.json",
+          "bytes": 621,
+          "sha256": "365c6925c4bf7ec21f55b2895262c9480e3e3e98f01bcbc1de08f8d6c45abddc"
+        }
+      ]
+    }
   }
 }
