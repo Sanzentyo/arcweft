@@ -14828,3 +14828,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source 6b72d7ca42beb3661a7025598cf74a341d61fc21 used the exact 13-package Cargo reverse closure. The 15 partitions executed 1964 cases in 10 packages, with 1957 passes and 7 failures. The Agent batch stopped before runtime after concurrent rustc processes reported memory allocation failures. Compiler results form part of the aggregate and are archived separately.
 - The archived catalog identities are disjoint. The test inputs were pinned before and after each batch. [Exact terminal runs, CLI failure comparison and raw outputs](acceptance-evidence/task-proof-trust-policy.json).
+
+## 2026-11-06 — Agent target recovery for the trusted dependency matrix
+
+- Source 6b72d7ca42beb3661a7025598cf74a341d61fc21. The target-level recovery produced 70 actual runtime cases, 70 passes and 0 failures. Incomplete targets 0. The concurrent allocation failure remains in the first run record.
+- The disjoint observed targets now cover 13 packages. Combined 2034 tests ran with 2027 passes and 7 failures. [Target receipts, case identities and complete raw output](acceptance-evidence/task-proof-trust-policy.json).

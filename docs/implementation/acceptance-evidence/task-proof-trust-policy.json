@@ -5055,6 +5055,806 @@
         ]
       },
       "compilerRawField": "trustedDependencies.compilerTargets.raw"
+    },
+    "agentRecovery": {
+      "version": 1,
+      "source": "6b72d7ca42beb3661a7025598cf74a341d61fc21",
+      "previousField": "trustedDependencies.consumerPartitions",
+      "agentTargets": 13,
+      "agentExecuted": 70,
+      "agentPassed": 70,
+      "agentFailed": 0,
+      "incomplete": [],
+      "batches": [
+        {
+          "name": "arcweft-agent-mcp-lib",
+          "package": "arcweft-agent-mcp",
+          "binary": "arcweft-agent-mcp",
+          "status": "runtime",
+          "terminal": {
+            "version": 1,
+            "base": "ffae3a19a517c9c95c72b02d39b4d3330318e274",
+            "run": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-lib.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   0.149s] 24 tests run: 24 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 24,
+            "passed": 24,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:20:46.1023351Z"
+          }
+        },
+        {
+          "name": "arcweft-agent-mcp-descriptor_invariants",
+          "package": "arcweft-agent-mcp",
+          "binary": "arcweft-agent-mcp::descriptor_invariants",
+          "status": "runtime",
+          "terminal": {
+            "version": 1,
+            "base": "ffae3a19a517c9c95c72b02d39b4d3330318e274",
+            "run": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-descriptor_invariants.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   0.018s] 2 tests run: 2 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 2,
+            "passed": 2,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:21:03.8338813Z"
+          }
+        },
+        {
+          "name": "arcweft-agent-mcp-repl_command",
+          "package": "arcweft-agent-mcp",
+          "binary": "arcweft-agent-mcp::repl_command",
+          "status": "runtime",
+          "terminal": {
+            "version": 1,
+            "base": "ffae3a19a517c9c95c72b02d39b4d3330318e274",
+            "run": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-repl_command.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   0.075s] 5 tests run: 5 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 5,
+            "passed": 5,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:21:22.7257112Z"
+          }
+        },
+        {
+          "name": "arcweft-agent-mcp-client-lib",
+          "package": "arcweft-agent-mcp-client",
+          "binary": "arcweft-agent-mcp-client",
+          "status": "runtime",
+          "terminal": {
+            "version": 1,
+            "base": "cbea18b5affdcda24e560724dba444bb4a003a5b",
+            "run": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-client-lib.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   0.039s] 2 tests run: 2 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 2,
+            "passed": 2,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:21:40.9408856Z"
+          }
+        },
+        {
+          "name": "arcweft-agent-repl-lib",
+          "package": "arcweft-agent-repl",
+          "binary": "arcweft-agent-repl",
+          "status": "runtime",
+          "terminal": {
+            "version": 1,
+            "base": "cbea18b5affdcda24e560724dba444bb4a003a5b",
+            "run": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-lib.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   0.120s] 12 tests run: 12 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 12,
+            "passed": 12,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:21:51.1485863Z"
+          }
+        },
+        {
+          "name": "arcweft-agent-repl-api_compile",
+          "package": "arcweft-agent-repl",
+          "binary": "arcweft-agent-repl::api_compile",
+          "status": "runtime",
+          "terminal": {
+            "version": 1,
+            "base": "cbea18b5affdcda24e560724dba444bb4a003a5b",
+            "run": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-api_compile.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   4.583s] 1 test run: 1 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 1,
+            "passed": 1,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:22:05.1256734Z"
+          }
+        },
+        {
+          "name": "arcweft-agent-repl-repl_cell",
+          "package": "arcweft-agent-repl",
+          "binary": "arcweft-agent-repl::repl_cell",
+          "status": "runtime",
+          "terminal": {
+            "version": 1,
+            "base": "cbea18b5affdcda24e560724dba444bb4a003a5b",
+            "run": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_cell.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   0.129s] 3 tests run: 3 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 3,
+            "passed": 3,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:22:25.3177444Z"
+          }
+        },
+        {
+          "name": "arcweft-agent-repl-repl_command",
+          "package": "arcweft-agent-repl",
+          "binary": "arcweft-agent-repl::repl_command",
+          "status": "runtime",
+          "terminal": {
+            "version": 1,
+            "base": "cbea18b5affdcda24e560724dba444bb4a003a5b",
+            "run": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_command.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   0.094s] 8 tests run: 8 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 8,
+            "passed": 8,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:22:43.2355365Z"
+          }
+        },
+        {
+          "name": "arcweft-agent-repl-repl_task_adapter",
+          "package": "arcweft-agent-repl",
+          "binary": "arcweft-agent-repl::repl_task_adapter",
+          "status": "runtime",
+          "terminal": {
+            "version": 1,
+            "base": "cbea18b5affdcda24e560724dba444bb4a003a5b",
+            "run": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_task_adapter.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   0.032s] 2 tests run: 2 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 2,
+            "passed": 2,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:22:52.8627217Z"
+          }
+        },
+        {
+          "name": "arcweft-agent-repl-repl_tiering",
+          "package": "arcweft-agent-repl",
+          "binary": "arcweft-agent-repl::repl_tiering",
+          "status": "runtime",
+          "terminal": {
+            "version": 1,
+            "base": "cbea18b5affdcda24e560724dba444bb4a003a5b",
+            "run": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_tiering.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   0.134s] 3 tests run: 3 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 3,
+            "passed": 3,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:23:02.9499652Z"
+          }
+        },
+        {
+          "name": "arcweft-agent-repl-repl_trace",
+          "package": "arcweft-agent-repl",
+          "binary": "arcweft-agent-repl::repl_trace",
+          "status": "runtime",
+          "terminal": {
+            "version": 1,
+            "base": "cbea18b5affdcda24e560724dba444bb4a003a5b",
+            "run": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_trace.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   0.044s] 5 tests run: 5 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 5,
+            "passed": 5,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:23:12.2540566Z"
+          }
+        },
+        {
+          "name": "arcweft-agent-repl-repl_transaction",
+          "package": "arcweft-agent-repl",
+          "binary": "arcweft-agent-repl::repl_transaction",
+          "status": "runtime",
+          "terminal": {
+            "version": 1,
+            "base": "cbea18b5affdcda24e560724dba444bb4a003a5b",
+            "run": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_transaction.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   0.042s] 2 tests run: 2 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 2,
+            "passed": 2,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:23:21.711001Z"
+          }
+        },
+        {
+          "name": "arcweft-agent-repl-runtime_assertion_diagnostic",
+          "package": "arcweft-agent-repl",
+          "binary": "arcweft-agent-repl::runtime_assertion_diagnostic",
+          "status": "runtime",
+          "terminal": {
+            "version": 1,
+            "base": "cbea18b5affdcda24e560724dba444bb4a003a5b",
+            "run": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-runtime_assertion_diagnostic.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   0.080s] 1 test run: 1 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 1,
+            "passed": 1,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:23:40.8704866Z"
+          }
+        }
+      ],
+      "combined": {
+        "packages": [
+          "arcweft-agent-mcp",
+          "arcweft-agent-mcp-client",
+          "arcweft-agent-repl",
+          "arcweft-cli",
+          "arcweft-compiler",
+          "arcweft-lsp",
+          "arcweft-player-native",
+          "arcweft-player-web",
+          "arcweft-runtime-host",
+          "arcweft-verify",
+          "arcweft-verify-lsp",
+          "arcweft-verify-oxiz",
+          "arcweft-verify-z3"
+        ],
+        "executed": 2034,
+        "passed": 2027,
+        "failed": 7,
+        "complete": true
+      },
+      "raw": {
+        "path": "docs/implementation/acceptance-evidence/task-typed-proof-dependencies-agent-recovery.raw.zip",
+        "bytes": 208972,
+        "sha256": "e7596f04c0aa78d501719b8c5975e2b67cdc853326740263a8ba5d84f4f2b34d",
+        "entryDrift": 0,
+        "entries": [
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-client-lib.binaries-before.json",
+            "bytes": 226,
+            "sha256": "52a035534dd4a1e5f14b82bcac1424528633efec883ef793a7f6050ec9003b6f"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-client-lib.catalog.inventory.json",
+            "bytes": 525,
+            "sha256": "90de1fe1c171d83bba76625b6f3941f5078c4379e46897a84f44f411231b1397"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-client-lib.catalog.json",
+            "bytes": 602,
+            "sha256": "aaad3bdd97be3442196004330cc1f4f349e18762fd3b53c00719b335ae8b4128"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-client-lib.runtime.json",
+            "bytes": 694,
+            "sha256": "c01c0eb7bd946fcbaf2e39199bbbb2bbfd885227e13582aeb4289cf7d6f89897"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-client-lib.runtime.log",
+            "bytes": 85199,
+            "sha256": "2a1266312cf78e86720595db3bab26257a8c125d0e23ce2bd27174ea6dea62f8"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-client-lib.runtime.terminal-audit.json",
+            "bytes": 654,
+            "sha256": "b604081d91ce5e0fac6ed10583400b81bfb928839e94893b04085afae770a44c"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-descriptor_invariants.binaries-before.json",
+            "bytes": 239,
+            "sha256": "83174e52e79acdebc1fa62d8241487d852c7a5928d1594933ebe9fa75fd03152"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-descriptor_invariants.catalog.inventory.json",
+            "bytes": 496,
+            "sha256": "50ccbe193b36a86519e5939cbc3a2fa61c902661378427fc9067cd73142bc588"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-descriptor_invariants.catalog.json",
+            "bytes": 637,
+            "sha256": "0cabd853c09b9c63a18c48659697ecb257b3f53f1acc7dcd8fc287b74ff02afb"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-descriptor_invariants.runtime.json",
+            "bytes": 729,
+            "sha256": "4dd1ff72f0c2da1b283242d290382ca5c14469fe9ace683569445c47219f869e"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-descriptor_invariants.runtime.log",
+            "bytes": 85169,
+            "sha256": "862486872d31ea7d8054c717cb6ac0028fd14f5e1ccf00df29ad09096ce12ab2"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-descriptor_invariants.runtime.terminal-audit.json",
+            "bytes": 665,
+            "sha256": "498da8d08a1283cc854c4ec115793f4997249c2a38acca86066633c8545dcc28"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-lib.binaries-before.json",
+            "bytes": 212,
+            "sha256": "17336856473df2005b98c6d55c2d731dd809fd2573ad002e9bacf5d3cd3a2886"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-lib.catalog.inventory.json",
+            "bytes": 5399,
+            "sha256": "f507341d0e3e167b7e62c462c2661700edb64c8ebba9762db392d80649f538a4"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-lib.catalog.json",
+            "bytes": 588,
+            "sha256": "5c5d67d2e377a2e9a9a1c6689e3ab7da9ffdd608b4fb76ea55e376852b10abf5"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-lib.runtime.json",
+            "bytes": 680,
+            "sha256": "c9787ddd520a276f3bc8474b3d158c5eb529267a6bee3924ca881a9dab46a25d"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-lib.runtime.log",
+            "bytes": 90146,
+            "sha256": "81708b84d0c03ffa25c5824caca6c2814a82e8760f80e76bce6a1f6422e0e27d"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-lib.runtime.terminal-audit.json",
+            "bytes": 651,
+            "sha256": "2053bc2155892cf11413602c0ba58f1ff75fa8563b4b33b05f7b04c2b87b0d1e"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-repl_command.binaries-before.json",
+            "bytes": 221,
+            "sha256": "3e635dbe322cdfaa97d0ec55bfa28d621dfd2b442a6d422598be2005dd3d09a3"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-repl_command.catalog.inventory.json",
+            "bytes": 1214,
+            "sha256": "df22ec1eaa085efdf91ff3ea236e422bf8e205194a17de85a8e6a2a2e0ce0e8a"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-repl_command.catalog.json",
+            "bytes": 619,
+            "sha256": "588311bcdc7bdcb9f138b5e67bd6daa116eba74e862f61b38695cc6312408584"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-repl_command.runtime.json",
+            "bytes": 711,
+            "sha256": "6706623404c73aad3037a2f136179ff27729475b349f4aa7500ff139a69b68d6"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-repl_command.runtime.log",
+            "bytes": 85933,
+            "sha256": "560748e1df577b291cffd9cb1c4522a0bd6dbc9ba296c8b566d580f954e8bd9e"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-mcp-repl_command.runtime.terminal-audit.json",
+            "bytes": 656,
+            "sha256": "5ebd099fa7c4766c6ad430a5eb7fb2792bc3d701cb6419b3e08974a56c2fb6ae"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-api_compile.binaries-before.json",
+            "bytes": 220,
+            "sha256": "136e5c94d1fe8632865fb499ccd4f0aaef5b9e15a1228dc19eee2098e3543097"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-api_compile.catalog.inventory.json",
+            "bytes": 261,
+            "sha256": "b473f6f35ee2a96e7d2c54cb949b964671b76c93fd92d064f4dd1a2dac38c475"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-api_compile.catalog.json",
+            "bytes": 619,
+            "sha256": "757d2ddb977892dd83473d5af53944be8de2ebdfe47175cacaff450801b0cc8a"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-api_compile.runtime.json",
+            "bytes": 711,
+            "sha256": "d767ca2c4232828c45d34f04a9cb08df083f3e1314bf989e32b4a1cff0d7069c"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-api_compile.runtime.log",
+            "bytes": 84919,
+            "sha256": "11cff692801012051082438b0fbf4a079883f984e82bdb0c70a8476167dae7bf"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-api_compile.runtime.terminal-audit.json",
+            "bytes": 655,
+            "sha256": "e39a695801ad631015ce4efa706f11d910d9b7cd9d8c4b198ca2de88c8cffef9"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-lib.binaries-before.json",
+            "bytes": 214,
+            "sha256": "4007324a3d6f134e36701387d5aaa4e8db497dbfab9c17c83dc9933f1edad96d"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-lib.catalog.inventory.json",
+            "bytes": 2989,
+            "sha256": "2f5c5c146b518f2c0d62128d4c37c639f7d5060199950c31bbaad6cc10eabd29"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-lib.catalog.json",
+            "bytes": 590,
+            "sha256": "5eb5cc609865165b132b1be5b143705735a8d3c76f343fd0d8db895aa2bdad5f"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-lib.runtime.json",
+            "bytes": 682,
+            "sha256": "30e7e6d52303e85f7b27214253edbca9d729d42bc6b834532a2cc8b2412dc554"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-lib.runtime.log",
+            "bytes": 87942,
+            "sha256": "eeb40ff5f44dc82e27d94afc7bc1eb0354267cffe2dc6ab5fd3e48ce362df338"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-lib.runtime.terminal-audit.json",
+            "bytes": 652,
+            "sha256": "f2837501d6e015f00392e1d00eda8a14e8ab6f95511c0d6c9b7fceb98aa33e93"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_cell.binaries-before.json",
+            "bytes": 216,
+            "sha256": "a5cc7ad309e10f3eccba9f8f9d469e71165cbbdd8e60d0021e9dbfa98b243717"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_cell.catalog.inventory.json",
+            "bytes": 711,
+            "sha256": "6f27c1295c27feb004002855d19fbd92564d78cf3d9f2fc44e353dafb7fec07e"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_cell.catalog.json",
+            "bytes": 615,
+            "sha256": "9bf1ebd58c1459e567e2504ae693f975fc043b5ee912986ce82046ee664dfb2a"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_cell.runtime.json",
+            "bytes": 707,
+            "sha256": "5288666f4493508f6273d42230d363f66e17b6c63cdbd89a2bcc721f1bf55442"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_cell.runtime.log",
+            "bytes": 85369,
+            "sha256": "5ac29325480d0d2dfc62c11d1625b036faacf9807e61534688d04bfd7a22817b"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_cell.runtime.terminal-audit.json",
+            "bytes": 654,
+            "sha256": "e5cbaf772027b593a1320a10e00c763b57dfa9d6c74687493bc646a9fe0b946e"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_command.binaries-before.json",
+            "bytes": 222,
+            "sha256": "c3f6c6773be620b2ada61730a9c78e13aa0eab8c1f6b618313c2fc61a7f570f2"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_command.catalog.inventory.json",
+            "bytes": 1955,
+            "sha256": "4a786a626a5e92e3d44dd6509f6fe872d70f8458653febd3c53c3c80cf802e80"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_command.catalog.json",
+            "bytes": 621,
+            "sha256": "3fb275569aee6dfdc31046492637faecd4fb2b6cd8a28a5baae8d1e5cd3497f2"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_command.runtime.json",
+            "bytes": 713,
+            "sha256": "6540f8551af73a5fc900146c20c1620d4d8849e88f43b05282d4dc75a94389c9"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_command.runtime.log",
+            "bytes": 86727,
+            "sha256": "5b65c148bef8a449733d9bb717b4c0eb65a417effe759bd173c621c2534a1f6a"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_command.runtime.terminal-audit.json",
+            "bytes": 657,
+            "sha256": "8f7e2dd379a1459a5fde874755ecfffc83f24924a9095d1586fead291cc698a5"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_task_adapter.binaries-before.json",
+            "bytes": 232,
+            "sha256": "a26199833bb35e279a62e82001c264b2d21c22a4a8cba1e404db40684c85cada"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_task_adapter.catalog.inventory.json",
+            "bytes": 520,
+            "sha256": "eb455266119372b3fdcb88285e29a4b6821975897a7822f7d1f584b7766c6489"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_task_adapter.catalog.json",
+            "bytes": 631,
+            "sha256": "aeefc72e7ce4d8c421de62e84c4c13208c50d117a8695a4bd7b3ecd8fae96b7a"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_task_adapter.runtime.json",
+            "bytes": 723,
+            "sha256": "1e25711e41bb861657d6f5555d22895b7d5459334698065c5ab9366307b6b89e"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_task_adapter.runtime.log",
+            "bytes": 85213,
+            "sha256": "7b54768b4bda5f26b4caf64690d657d9d3f487cfe1c7d5dbffa8b37a0e54cc73"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_task_adapter.runtime.terminal-audit.json",
+            "bytes": 662,
+            "sha256": "1c5eb4cc9f32071f75362a0e0caf0789babc2b52132389b403ccef3e84d2bdbe"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_tiering.binaries-before.json",
+            "bytes": 222,
+            "sha256": "87e828126d02a287b364d9983894a5badc3a6c20b7073f92d66647045fa41839"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_tiering.catalog.inventory.json",
+            "bytes": 788,
+            "sha256": "656adf035d6b08436da0109460a4ed132e5107d9c69f1d1d0137207b2edaea2e"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_tiering.catalog.json",
+            "bytes": 621,
+            "sha256": "c3a3e298b83665ea0c8b755ea65d4ba08a8a67cf050cda9170a1d328a6d1d0c6"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_tiering.runtime.json",
+            "bytes": 713,
+            "sha256": "730bdded0452965275d644a708d0b75e1b342b150b6707944942641292fbe19e"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_tiering.runtime.log",
+            "bytes": 85523,
+            "sha256": "23b121e538210601491b97939936e8e923635b841c47415bd1342416961d68a1"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_tiering.runtime.terminal-audit.json",
+            "bytes": 657,
+            "sha256": "5f14fc645a543b3c7e6afec67c605dcdfc0b488d771c33a3e018a3defe2da6ed"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_trace.binaries-before.json",
+            "bytes": 218,
+            "sha256": "ad8251370408455542f21cd8b02c55cf1c9c5c1fb677913ee52c9b6f1ece47dd"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_trace.catalog.inventory.json",
+            "bytes": 1174,
+            "sha256": "9258a8ce45a87aef81e5f5d86ac224e48c004678758d813be27ce671fb6acde6"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_trace.catalog.json",
+            "bytes": 617,
+            "sha256": "bc5fea68a1d91d050a6116b037c6c6242afb4bd9a3e4839243547983724424df"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_trace.runtime.json",
+            "bytes": 709,
+            "sha256": "33f78996c3ad9956cd9303f50d7c7270e66d356bceaf8217a1f33ce5c9a9bed5"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_trace.runtime.log",
+            "bytes": 85843,
+            "sha256": "0cf70483768bb948edb51584e1abe5637664c1b829664ffcca5b2b8dd088e918"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_trace.runtime.terminal-audit.json",
+            "bytes": 655,
+            "sha256": "94cd348954e0bfcef6b476f195da789838f9c74859a635bfae5d71194d737ea5"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_transaction.binaries-before.json",
+            "bytes": 230,
+            "sha256": "e6a7f12f7687fadeb69865f3c545dc103dd63150c32495c44f1204e50dfd997a"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_transaction.catalog.inventory.json",
+            "bytes": 499,
+            "sha256": "21e8e283d351fbbbcee14a326d158335b55c74b5c6245b9c7fba5151f87d01b4"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_transaction.catalog.json",
+            "bytes": 629,
+            "sha256": "9fd69c25303f241cafc4a7dd8eb6154c4ed1be64838ebbd6897fa17dde172eec"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_transaction.runtime.json",
+            "bytes": 721,
+            "sha256": "5a8421bb62d9ad84f89aa4d5efe55321f84a24263286218cd006c7427f42e7bf"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_transaction.runtime.log",
+            "bytes": 85171,
+            "sha256": "09ae343e40e82a501ae0d966b2bbe9ab3df4d5c5261d9cce1b20d737ae1c991c"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-repl_transaction.runtime.terminal-audit.json",
+            "bytes": 661,
+            "sha256": "fbd8805ff19e91adf5c45a3d453c403382ac32ae4677e6a61bb4261a40c6a846"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-runtime_assertion_diagnostic.binaries-before.json",
+            "bytes": 254,
+            "sha256": "62b236425953a36cc5aae2add8ca4e71614fcaaa54310aac36893bec29f19d80"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-runtime_assertion_diagnostic.catalog.inventory.json",
+            "bytes": 287,
+            "sha256": "4632e9284e81c11fe802b8e9636b0f1cae4b058ad9f43a7e0227455e26dd1766"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-runtime_assertion_diagnostic.catalog.json",
+            "bytes": 653,
+            "sha256": "c0eedccf4b22061d413766c384ce480b5b2a8694365e4fc2bb8b295dc731d35f"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-runtime_assertion_diagnostic.runtime.json",
+            "bytes": 745,
+            "sha256": "1e7cbab2968ace9064ed335d66bf9441b3d30a493f1f80a5d211158a73f821f4"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-runtime_assertion_diagnostic.runtime.log",
+            "bytes": 84971,
+            "sha256": "42c4502b1b538b9a8d88d9d19f1d326295682045c699460c368e3ede0fa63c4a"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106-arcweft-agent-repl-runtime_assertion_diagnostic.runtime.terminal-audit.json",
+            "bytes": 672,
+            "sha256": "adbb8ce8877b50463531c33f3b70e9b8d0f390e1ec861b6dbd7fec7df43e02a7"
+          },
+          {
+            "entry": "typed-proof-dependencies-agent-recovery-20261106.progress.json",
+            "bytes": 9113,
+            "sha256": "568cd9a68f97266f803f7000b29f5c5e87c1122c261251edfdc402bd1ec45a73"
+          }
+        ]
+      }
     }
   }
 }
