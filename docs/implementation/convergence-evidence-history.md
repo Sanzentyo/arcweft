@@ -15075,3 +15075,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source bee6829b8967723e67dcaefc6f11b6e0a570f733。作業ツリーには既存の追跡済み12件と未追跡6件があった。旧資料の受理済みレポートは MustDrop などの義務を列挙していたが、検証器の収集処理が生成するのは proof_body、assertion_proof、unsafe_lifetime_audit だった。受理済みレポートの説明を訂正し、要求仕様と個別の未達を [言語契約](../01-language/proofs-and-unsafe-audits.md) と [現状一覧](current-status.md) に記載した。
 - 同じソースで cargo clean は53,522ファイル、66.7 GiBを削除し、ビルド出力先の消失を確認した。空の出力先から Sema の対象テストと検証器のライブラリテストをビルドし、34件すべて通過した。フィルター対象外は1,359件だった。[実測・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Deferred child custody in the Line registry
+
+- Source fb816a17c72dd1c02cb14ddc8ec1d4107d90324f。正常終了と取消しの各 defer 子タスクが捕捉した StageActor を Line に移した。保持と Bool への置換の4入力を Native とデコード済み AWBC で実行し、発行元への解放要求が各1回であることを確認した。AWBC は全ステップで保存・復元し、所有行と置換後の行を確認した。Compiler の evaluated_effects は78件通過、失敗・スキップ0件。列挙した実行IDと一致し、対象の Clippy は警告ありで終了コード0だった。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+- 初回の時刻指定入力は HIR readiness で止まり、字下げ版の HIR 追跡で defer 末尾の if let が MissingRequiredTail になっていることを確認した。Unit 末尾の追加後は、Cue を返す型を要求する at に Unit を返すコールバックを渡していたため型検査で停止した。検証入力を defer へ切り替えた。4入力に拡張した最初の実行では保存行のラッパーを含まない JSON パスを使い、77件通過・1件失敗だった。実際の v1 保存形に合わせてパスを訂正し、再実行した。[各試行の原本](acceptance-evidence/task-flow-registry-execution.json)。

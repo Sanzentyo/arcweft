@@ -16388,5 +16388,167 @@
         }
       ]
     }
+  },
+  "deferredLineRegistryCustody": {
+    "source": "fb816a17c72dd1c02cb14ddc8ec1d4107d90324f",
+    "test": {
+      "version": 1,
+      "base": "475b19960466a3196fefbd11f9e38f768cdad10f",
+      "testSource": "crates/arcweft-compiler/tests/evaluated_effects.rs",
+      "testBlob": "13f33eed850743b09414c30f2f646febbeb30623",
+      "testBlobAfter": "13f33eed850743b09414c30f2f646febbeb30623",
+      "catalogCommand": [
+        "cargo",
+        "nextest",
+        "list",
+        "--locked",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--message-format",
+        "json"
+      ],
+      "catalogExit": 0,
+      "testCommand": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "testExit": 0,
+      "summary": "Summary [   5.054s] 78 tests run: 78 passed, 0 skipped",
+      "startedAt": "2026-11-06T18:47:35.8012321Z",
+      "finishedAt": "2026-11-06T18:47:56.3634136Z"
+    },
+    "exactCases": {
+      "testBlob": "13f33eed850743b09414c30f2f646febbeb30623",
+      "caseDrift": 0,
+      "passed": 78,
+      "catalog": 78,
+      "failed": 0,
+      "skipped": 0
+    },
+    "clippy": {
+      "version": 1,
+      "sourceBlob": "13f33eed850743b09414c30f2f646febbeb30623",
+      "sourceBlobAfter": "13f33eed850743b09414c30f2f646febbeb30623",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects"
+      ],
+      "exitCode": 0,
+      "warningsPresent": true
+    },
+    "compilerAndConsumers": [
+      "arcweft-agent-mcp",
+      "arcweft-agent-mcp-client",
+      "arcweft-agent-repl",
+      "arcweft-cli",
+      "arcweft-compiler",
+      "arcweft-lsp",
+      "arcweft-player-native",
+      "arcweft-player-web",
+      "arcweft-runtime-host",
+      "arcweft-verify-lsp"
+    ],
+    "verificationScope": "Only the compiler integration test changed. Its entire evaluated_effects binary ran, including the normal and cancelled defer paths under both execution backends.",
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-deferred-line-registry-custody.raw.zip",
+      "sha256": "44ae4ff51bb1836c1b3e76b4ac38ae4025ef86c4b1354d1f946af4236f6f9d30",
+      "entries": [
+        {
+          "entry": "scheduled-line-registry-20261107.initial.log",
+          "bytes": 107093,
+          "sha256": "8bbdb2c522f3924610f2c4fa3d621aa03a674916ac2f4f886fbf9aa39bf1d2b7"
+        },
+        {
+          "entry": "scheduled-line-registry-20261107.indent.log",
+          "bytes": 87982,
+          "sha256": "27b0c63a1b8ddc7e79fba5760eb57973c457abb46e2830f690a5926f8f013e0a"
+        },
+        {
+          "entry": "scheduled-line-registry-20261107.hir-trace.log",
+          "bytes": 92915,
+          "sha256": "60862c8be67e3446fef6e937a9b809a1955a49111df1337078d1482f0aa15f99"
+        },
+        {
+          "entry": "scheduled-line-registry-20261107.unit-tail.log",
+          "bytes": 88090,
+          "sha256": "7cc3bac011f0b8b457001f7c4cffceae162ec0dabf16fa7ae0a3aa93edad64a3"
+        },
+        {
+          "entry": "scheduled-line-registry-20261107.defer.log",
+          "bytes": 85922,
+          "sha256": "95581cada90e3fcdc1462544c69d555de3bb8dd93e6cf68c03c2d05ec100a158"
+        },
+        {
+          "entry": "scheduled-line-registry-20261107.full.log",
+          "bytes": 108781,
+          "sha256": "99b5085a3ea47c40bce772c959048455bda198693f5a219a3bc3a5a23bc1fc2b"
+        },
+        {
+          "entry": "scheduled-line-registry-20261107.final.log",
+          "bytes": 108065,
+          "sha256": "111d86fc4a05b105edd40ce8a8989d1308ae13517a758e8a7d60eb051dc005e7"
+        },
+        {
+          "entry": "scheduled-line-registry-20261107.fmt-final.log",
+          "bytes": 107985,
+          "sha256": "1b7d87c84e2c6e3856d1c667941387f1e95fe3072fc30d19a0128597a4cc2a29"
+        },
+        {
+          "entry": "scheduled-line-registry-20261107.fmt-final.receipt.json",
+          "bytes": 974,
+          "sha256": "728ae38d7c3755aadc748eb4ce04cb4d983d63088781d2c38e36b23de4d30b3f"
+        },
+        {
+          "entry": "scheduled-line-registry-20261107.final-catalog.json",
+          "bytes": 12255,
+          "sha256": "08fb47f6af39c7aa41edd83c623c08904f305d9c6d6663e2635da1a600260fe1"
+        },
+        {
+          "entry": "scheduled-line-registry-20261107.final-catalog.log",
+          "bytes": 85647,
+          "sha256": "eabae931815b8351b83824debb3bf02360b0ab0f4cbe2c610ff93ef3b5062265"
+        },
+        {
+          "entry": "scheduled-line-registry-20261107.final-cases.json",
+          "bytes": 151,
+          "sha256": "2117069fb7d86484130fd2a09ccf525f689016b5bbdd8df0a2448d686bb46a08"
+        },
+        {
+          "entry": "scheduled-line-registry-20261107.reverse.json",
+          "bytes": 2397,
+          "sha256": "7567e95074a3058d3108f8dc8dd5e50f54706d192f3012edbdf85569a1a98a80"
+        },
+        {
+          "entry": "scheduled-line-registry-20261107.clippy.log",
+          "bytes": 6738628,
+          "sha256": "c9afec7da7a22151ceb3340da512e1bd85773b80d66e3cd859e83ba0bee1cbe2"
+        },
+        {
+          "entry": "scheduled-line-registry-20261107.clippy.receipt.json",
+          "bytes": 339,
+          "sha256": "7d6d61aa33d156860a72f188776f1e0ff276cf2693668ebbda9f5ccdb4982d48"
+        }
+      ]
+    }
   }
 }
