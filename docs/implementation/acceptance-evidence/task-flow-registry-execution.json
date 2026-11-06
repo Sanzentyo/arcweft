@@ -14046,5 +14046,283 @@
         }
       ]
     }
+  },
+  "dialogueForwardingReverseCleanAndDropPipeControls": {
+    "source": "d3332620ac662de3e0da5d893f83f42c70d997b8",
+    "interruptedReverseRun": {
+      "reason": "Stopped during the nextest catalog build for the user-authorized workspace cargo clean.",
+      "selectedPackages": 52,
+      "testsExecuted": 0,
+      "catalog": {
+        "version": 1,
+        "base": "49ffafc33a02a799bb51de4ac20b460661af2607",
+        "command": [
+          "nextest",
+          "list",
+          "--locked",
+          "--lib",
+          "--tests",
+          "-p",
+          "arcweft",
+          "-p",
+          "arcweft-adapter-desktop",
+          "-p",
+          "arcweft-adapter-sema",
+          "-p",
+          "arcweft-agent-mcp",
+          "-p",
+          "arcweft-agent-mcp-client",
+          "-p",
+          "arcweft-agent-policy",
+          "-p",
+          "arcweft-agent-protocol",
+          "-p",
+          "arcweft-agent-repl",
+          "-p",
+          "arcweft-agent-runner",
+          "-p",
+          "arcweft-browser-bench",
+          "-p",
+          "arcweft-bundle",
+          "-p",
+          "arcweft-bundle-assets",
+          "-p",
+          "arcweft-character-view",
+          "-p",
+          "arcweft-compiler",
+          "-p",
+          "arcweft-core",
+          "-p",
+          "arcweft-debug-model",
+          "-p",
+          "arcweft-debug-sqlite",
+          "-p",
+          "arcweft-dialogue",
+          "-p",
+          "arcweft-glyphon",
+          "-p",
+          "arcweft-host-adapter",
+          "-p",
+          "arcweft-lang-jit-cranelift",
+          "-p",
+          "arcweft-lang-sema",
+          "-p",
+          "arcweft-launch",
+          "-p",
+          "arcweft-lsp",
+          "-p",
+          "arcweft-player-native",
+          "-p",
+          "arcweft-player-scene",
+          "-p",
+          "arcweft-player-text-input",
+          "-p",
+          "arcweft-player-web",
+          "-p",
+          "arcweft-project",
+          "-p",
+          "arcweft-project-loader",
+          "-p",
+          "arcweft-rag",
+          "-p",
+          "arcweft-render-text",
+          "-p",
+          "arcweft-render-web",
+          "-p",
+          "arcweft-render-wgpu",
+          "-p",
+          "arcweft-resource-manifest",
+          "-p",
+          "arcweft-resource-model",
+          "-p",
+          "arcweft-runtime-accelerator",
+          "-p",
+          "arcweft-runtime-codegen",
+          "-p",
+          "arcweft-runtime-driver",
+          "-p",
+          "arcweft-runtime-host",
+          "-p",
+          "arcweft-runtime-plan",
+          "-p",
+          "arcweft-runtime-scheduler",
+          "-p",
+          "arcweft-save",
+          "-p",
+          "arcweft-test",
+          "-p",
+          "arcweft-text-layout",
+          "-p",
+          "arcweft-text-model",
+          "-p",
+          "arcweft-tooling",
+          "-p",
+          "arcweft-verify",
+          "-p",
+          "arcweft-verify-lsp",
+          "-p",
+          "arcweft-verify-oxiz",
+          "-p",
+          "arcweft-verify-z3",
+          "-p",
+          "arcweft-view",
+          "--message-format",
+          "json"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/awbc-nested-reexport-reverse-noncli-serial-20261107.catalog.log",
+        "exitCode": 1,
+        "sourceInputs": 4134,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T15:04:35.9301746Z",
+        "finishedAt": "2026-11-06T15:35:48.8081639Z"
+      }
+    },
+    "cargoClean": {
+      "command": "cargo clean",
+      "target": "D:/git/arcweft/target",
+      "exitCode": 0,
+      "removedFiles": 17777,
+      "reportedSize": "67.7 GiB",
+      "targetPresentAfterCommand": false,
+      "volumeFreeBeforeBytes": 470018543616,
+      "volumeFreeAfterBytes": 539398672384,
+      "volumeFreeDeltaBytes": 69380128768
+    },
+    "pipeProbe": {
+      "probeInputHead": "eebee83404f385042677ead832e3cd3b015f5d06",
+      "sourceSha256": "565c2138492c6d461d6e485f39f80dc862a4effa80c35486832ca0c3a701d53c",
+      "binarySha256": "ff4db15bbcd1320f6ae7cee44f7eee87a97e8212a93e120e12ab821d07215e5c",
+      "cases": [
+        {
+          "form": "true |> drop",
+          "result": "Type-check failed with ValueResolutionFailed."
+        },
+        {
+          "form": "true |> drop(^)",
+          "result": "Native and decoded AWBC reached the following log."
+        },
+        {
+          "form": "'flow.flags.seen |> drop(^)",
+          "result": "Native and decoded AWBC reached the following log."
+        },
+        {
+          "form": "'flow.flags.seen? |> drop_optional(^)",
+          "result": "Native and decoded AWBC reached the following log."
+        }
+      ],
+      "runs": [
+        {
+          "name": "bare_drop_pipe_local",
+          "exitCode": 101,
+          "stdoutSha256": "408eb97023e863f5d7554e4c33c757472c66e9603d498daf8b2c82b56d1edc87",
+          "stderrSha256": "706bea4f9538b898a2d9814488e4e73561bde31ca19550cb251d9b28592d4646"
+        },
+        {
+          "name": "explicit_drop_pipe_local",
+          "exitCode": 0,
+          "stdoutSha256": "4272598204ddab7a25e600a866b12753ca1fd89f348be7270c0999e31444c34b",
+          "stderrSha256": "3db6cf272a8a5d6f9078e2cb8e510c23a3a0fbeb454c5f11be1cb0b28a42e2dd"
+        },
+        {
+          "name": "explicit_drop_pipe_registry",
+          "exitCode": 0,
+          "stdoutSha256": "fd4cf0f10206c6fa965381e74e5e4280de3b08d63bf5064c62aec890e0c2610a",
+          "stderrSha256": "3db6cf272a8a5d6f9078e2cb8e510c23a3a0fbeb454c5f11be1cb0b28a42e2dd"
+        },
+        {
+          "name": "explicit_drop_optional_pipe_registry",
+          "exitCode": 0,
+          "stdoutSha256": "9a5a201780368de0bea4078eacfb3568095c4647cb73db75eaace06f68c54fed",
+          "stderrSha256": "3db6cf272a8a5d6f9078e2cb8e510c23a3a0fbeb454c5f11be1cb0b28a42e2dd"
+        }
+      ],
+      "coverage": "The passing controls assert that execution reached the following log."
+    },
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-dialogue-forwarding-clean-and-drop-pipes.raw.zip",
+      "sha256": "6199606549040e167e066613a903d2dcd1bbae9dfdd860c4027bbc297fc0a220",
+      "entries": [
+        {
+          "entry": "awbc-nested-reexport-reverse-noncli-serial-20261107.active.json",
+          "bytes": 2329,
+          "sha256": "4522e407186b268ef840f41aac000b66a111c3513e73d2c7eac47bc4687b8267"
+        },
+        {
+          "entry": "awbc-nested-reexport-reverse-noncli-serial-20261107.catalog.json",
+          "bytes": 2528,
+          "sha256": "09c7368d76890c69e05428fd5cd6addcd716b40285c0dabe6975545c54f85391"
+        },
+        {
+          "entry": "awbc-nested-reexport-reverse-noncli-serial-20261107.catalog.log",
+          "bytes": 107977,
+          "sha256": "ee3d47e3f1ca445d564f250e11a251e2731b88efae3d067e011fe231a6ddd12c"
+        },
+        {
+          "entry": "awbc-nested-reexport-reverse-noncli-serial-20261107.source-freeze.json",
+          "bytes": 808439,
+          "sha256": "0b87b2649b2366a7860223aa38207436abd96cb14df8db535ed6161dd4dd5fa2"
+        },
+        {
+          "entry": "registry-drop-pipe-control-20261107/receipt.json",
+          "bytes": 19130,
+          "sha256": "dbf77f7d0246b5460acb324be2359c5e4768104295f83f0aa6d82bc430fe9a44"
+        },
+        {
+          "entry": "registry-drop-pipe-control-20261107/registry_drop_pipe.rs",
+          "bytes": 189448,
+          "sha256": "565c2138492c6d461d6e485f39f80dc862a4effa80c35486832ca0c3a701d53c"
+        },
+        {
+          "entry": "registry-drop-pipe-control-20261107/build.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "registry-drop-pipe-control-20261107/build.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "registry-drop-pipe-control-20261107/bare_drop_pipe_local.stdout.log",
+          "bytes": 201,
+          "sha256": "408eb97023e863f5d7554e4c33c757472c66e9603d498daf8b2c82b56d1edc87"
+        },
+        {
+          "entry": "registry-drop-pipe-control-20261107/bare_drop_pipe_local.stderr.log",
+          "bytes": 1488,
+          "sha256": "706bea4f9538b898a2d9814488e4e73561bde31ca19550cb251d9b28592d4646"
+        },
+        {
+          "entry": "registry-drop-pipe-control-20261107/explicit_drop_pipe_local.stdout.log",
+          "bytes": 150,
+          "sha256": "4272598204ddab7a25e600a866b12753ca1fd89f348be7270c0999e31444c34b"
+        },
+        {
+          "entry": "registry-drop-pipe-control-20261107/explicit_drop_pipe_local.stderr.log",
+          "bytes": 50,
+          "sha256": "3db6cf272a8a5d6f9078e2cb8e510c23a3a0fbeb454c5f11be1cb0b28a42e2dd"
+        },
+        {
+          "entry": "registry-drop-pipe-control-20261107/explicit_drop_pipe_registry.stdout.log",
+          "bytes": 153,
+          "sha256": "fd4cf0f10206c6fa965381e74e5e4280de3b08d63bf5064c62aec890e0c2610a"
+        },
+        {
+          "entry": "registry-drop-pipe-control-20261107/explicit_drop_pipe_registry.stderr.log",
+          "bytes": 50,
+          "sha256": "3db6cf272a8a5d6f9078e2cb8e510c23a3a0fbeb454c5f11be1cb0b28a42e2dd"
+        },
+        {
+          "entry": "registry-drop-pipe-control-20261107/explicit_drop_optional_pipe_registry.stdout.log",
+          "bytes": 162,
+          "sha256": "9a5a201780368de0bea4078eacfb3568095c4647cb73db75eaace06f68c54fed"
+        },
+        {
+          "entry": "registry-drop-pipe-control-20261107/explicit_drop_optional_pipe_registry.stderr.log",
+          "bytes": 50,
+          "sha256": "3db6cf272a8a5d6f9078e2cb8e510c23a3a0fbeb454c5f11be1cb0b28a42e2dd"
+        }
+      ]
+    }
   }
 }

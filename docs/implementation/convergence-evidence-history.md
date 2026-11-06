@@ -14990,3 +14990,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Registry reads in generic call arguments
 
 - Source d3332620ac662de3e0da5d893f83f42c70d997b8 の4入力で、汎用型 T の引数に渡した必須読み取りと、型注釈を付けた optional 欠損を Native とデコード済みAWBC の両方で確認した。Option<T> の引数に直接渡す optional 読み取りは、登録済みと、書込みから型が分かる欠損の両方で ExpressionTypeUnavailable により型検査で停止した。[入力・実測・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Workspace clean and drop pipe controls
+
+- Source d3332620ac662de3e0da5d893f83f42c70d997b8 の非CLI逆依存52パッケージは、利用者の指定による全体の cargo clean に合わせ、一覧生成中に中断した。4,134入力の差分は0、テスト実行は0件。cargo clean は17,777ファイル、67.7 GiBを削除し、終了コードは0だった。[実測・原本](acceptance-evidence/task-flow-registry-execution.json)。
+- 同じ公開Rustソースで、Boolリテラルを渡す裸の drop パイプも ValueResolutionFailed で停止した。明示的な ^ を渡したローカル対照とレジストリの必須・optional の3入力は、Native とデコード済みAWBC の両方で後続のログまで実行した。この3入力のアサーションは後続ログを対象とした。[入力・実測・原本](acceptance-evidence/task-flow-registry-execution.json)。
