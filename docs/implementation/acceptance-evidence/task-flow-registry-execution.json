@@ -21005,5 +21005,337 @@
         }
       ]
     }
+  },
+  "awbcMarkScopedDefer": {
+    "source": "e2bde6d10aa3a04a753488c131d3dd715d3cc461",
+    "base": "9d1a6ab88f71133d9bd6533c16f60afd08647017",
+    "published": {
+      "version": 1,
+      "commit": "e2bde6d10aa3a04a753488c131d3dd715d3cc461",
+      "parent": "9d1a6ab88f71133d9bd6533c16f60afd08647017",
+      "tree": "ce5512059d56a89735e03ebda4fa008e7fc30a47",
+      "remote": "e2bde6d10aa3a04a753488c131d3dd715d3cc461",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects.rs",
+          "blob": "a94b38f5a66a310dd207f7e40e8c0aaf6cf0700f"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/fiber.rs",
+          "blob": "6407e58deafb38ab5e8f4feb1daa52b73db53843"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step.rs",
+          "blob": "997b29cd0cd747d4f7e6d44daf11defa058d7ff2"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/line.rs",
+          "blob": "7b6e9fb16292e15f0d92ee2f30100ca02bcb728b"
+        },
+        {
+          "path": "crates/arcweft-core/src/awbc/product_step/snapshot.rs",
+          "blob": "4e0d686ef605c2382e6a44dce6c9ddca58772535"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task.rs",
+          "blob": "1cfae79e60ea8b56f255832567497be9c614689a"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task/handle.rs",
+          "blob": "98ed5b4977e94842b2b3b165bc5567b2e0f00dd9"
+        },
+        {
+          "path": "docs/02-runtime/save-replay.md",
+          "blob": "fdbace3553b48332c4f1cc2549f4c5df0505f95b"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "e2e125aa50008afbe5d73e16ba2db05c4f164edab7631fc345cc2dc3ce7bdab7",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-06T23:37:53.9165401Z"
+    },
+    "testedRustPatchSha256": "890711d400129c3ccaf7be724ab04d438cb1c6cabf8d605b07e9dcb10b846121",
+    "compiler": {
+      "passed": 87,
+      "failed": 0,
+      "skipped": 0,
+      "exactCases": [
+        "awbc_mark_scope_defer_resumes_before_publishing_the_selected_result",
+        "awbc_failed_mark_unwinds_its_lexical_defer_before_reporting_failure",
+        "awbc_cancelled_mark_joins_after_its_lexical_defer",
+        "skipped_init_defer_keeps_its_affine_release_until_the_host_acknowledges",
+        "line_root_deferred_children_execute_in_native_and_awbc_lifo"
+      ],
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ]
+    },
+    "acceptance": {
+      "version": 1,
+      "head": "9d1a6ab88f71133d9bd6533c16f60afd08647017",
+      "patchSha256": "890711d400129c3ccaf7be724ab04d438cb1c6cabf8d605b07e9dcb10b846121",
+      "sourceInputs": 3638,
+      "sourceDrift": [],
+      "runs": [
+        {
+          "version": 1,
+          "name": "core",
+          "head": "9d1a6ab88f71133d9bd6533c16f60afd08647017",
+          "patchSha256": "890711d400129c3ccaf7be724ab04d438cb1c6cabf8d605b07e9dcb10b846121",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-core",
+            "--lib",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast",
+            "--status-level",
+            "all",
+            "--final-status-level",
+            "all"
+          ],
+          "exitCode": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 02s",
+            "Summary [  17.429s] 2296 tests run: 2296 passed, 0 skipped"
+          ],
+          "startedAt": "2026-11-06T23:34:02.8990899Z",
+          "finishedAt": "2026-11-06T23:36:24.4242665Z"
+        },
+        {
+          "version": 1,
+          "name": "runtime",
+          "head": "9d1a6ab88f71133d9bd6533c16f60afd08647017",
+          "patchSha256": "890711d400129c3ccaf7be724ab04d438cb1c6cabf8d605b07e9dcb10b846121",
+          "command": [
+            "cargo",
+            "nextest",
+            "run",
+            "--locked",
+            "-p",
+            "arcweft-runtime-driver",
+            "-p",
+            "arcweft-runtime-host",
+            "-p",
+            "arcweft-save",
+            "--no-tests",
+            "fail",
+            "--no-fail-fast",
+            "--status-level",
+            "all",
+            "--final-status-level",
+            "all"
+          ],
+          "exitCode": 0,
+          "summary": [
+            "Finished `test` profile [unoptimized + debuginfo] target(s) in 4m 42s",
+            "Summary [ 104.381s] 260 tests run: 260 passed (1 slow), 0 skipped"
+          ],
+          "startedAt": "2026-11-06T23:36:24.4422296Z",
+          "finishedAt": "2026-11-06T23:42:59.7757073Z"
+        },
+        {
+          "version": 1,
+          "name": "workspace-check",
+          "head": "9d1a6ab88f71133d9bd6533c16f60afd08647017",
+          "patchSha256": "890711d400129c3ccaf7be724ab04d438cb1c6cabf8d605b07e9dcb10b846121",
+          "command": [
+            "cargo",
+            "check",
+            "--locked",
+            "--workspace",
+            "--all-targets",
+            "--all-features"
+          ],
+          "exitCode": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 3m 54s"
+          ],
+          "startedAt": "2026-11-06T23:42:59.7776684Z",
+          "finishedAt": "2026-11-06T23:46:56.1627996Z"
+        },
+        {
+          "version": 1,
+          "name": "workspace-clippy",
+          "head": "9d1a6ab88f71133d9bd6533c16f60afd08647017",
+          "patchSha256": "890711d400129c3ccaf7be724ab04d438cb1c6cabf8d605b07e9dcb10b846121",
+          "command": [
+            "cargo",
+            "clippy",
+            "--locked",
+            "--workspace",
+            "--all-targets",
+            "--all-features"
+          ],
+          "exitCode": 0,
+          "summary": [
+            "Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 46s"
+          ],
+          "startedAt": "2026-11-06T23:46:56.1645095Z",
+          "finishedAt": "2026-11-06T23:49:44.8940717Z"
+        }
+      ]
+    },
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-defer-awbc-mark.raw.zip",
+      "sha256": "805a68b464cb094f0f3fd9177dd9ce17277f0e5996daf16fb0cd28444604d317",
+      "entries": [
+        {
+          "entry": "awbc-mark-scope-implementation-20261107.verified.json",
+          "bytes": 1629,
+          "sha256": "b02bcfe18041ec425121c38e05dab412d96e6554658b82a98ce4ecb6d5ce196b"
+        },
+        {
+          "entry": "awbc-mark-scope-frontier-draft.patch",
+          "bytes": 86222,
+          "sha256": "9f0128a62c29e237b49c02c0e2eeecb855f7b7dee8b2c7efeb6656d1e106fac6"
+        },
+        {
+          "entry": "awbc-mark-scope-first-proof-20261107.receipt.json",
+          "bytes": 2524,
+          "sha256": "ffefb7d7dbf13ead64b05f72625685bd902d27742a03983db8135825c6396732"
+        },
+        {
+          "entry": "awbc-mark-scope-first-proof-20261107.list.json",
+          "bytes": 14921,
+          "sha256": "5e25823e7be070faa9ea7fd61ae5e5d5295e793ca8e174dd908eacf9f9f147ca"
+        },
+        {
+          "entry": "awbc-mark-scope-first-proof-20261107.list.log",
+          "bytes": 87570,
+          "sha256": "412717337acc29edf5863bdfe530e613d688f5ae5486085cbe14dc145cbe7faf"
+        },
+        {
+          "entry": "awbc-mark-scope-first-proof-20261107.run.log",
+          "bytes": 111416,
+          "sha256": "ce974e9bcf17c21d61b5d06963fa6e276271808b040b3d302299da93f2d38d20"
+        },
+        {
+          "entry": "awbc-mark-scope-second-proof-20261107.patch",
+          "bytes": 91809,
+          "sha256": "4ab46852ff09ba88b16c993b9347cf3dd9c454387f5fdf2530ce1070d96e5670"
+        },
+        {
+          "entry": "awbc-mark-scope-second-proof-20261107.receipt.json",
+          "bytes": 421,
+          "sha256": "ef3cab788af5254bc8273e594f7e2fe113c83fd825254686d7bc30f8a50ef328"
+        },
+        {
+          "entry": "awbc-mark-scope-second-proof-20261107.run.log",
+          "bytes": 112580,
+          "sha256": "820dced2119a08b7e83b03988efaf47b80440b1ed831b2c67ea4869c4fc2a1f1"
+        },
+        {
+          "entry": "awbc-mark-scope-affine-proof-20261107.receipt.json",
+          "bytes": 433,
+          "sha256": "f60ffddff142c73d1dd2e934e459359c14b1a1ccd4262d11a14d91da0233fe40"
+        },
+        {
+          "entry": "awbc-mark-scope-affine-proof-20261107.run.log",
+          "bytes": 111299,
+          "sha256": "2b58f97c41f0e821533c646ca04bd51b43a90853dd64a44ef4ae93cbd4913c0a"
+        },
+        {
+          "entry": "awbc-mark-scope-terminal-proof-20261107.patch",
+          "bytes": 109556,
+          "sha256": "6cd054a6b126b0078587e4cb0194ec7562a99b7cb4d7d5a733d23845cc7797b7"
+        },
+        {
+          "entry": "awbc-mark-scope-terminal-proof-20261107.receipt.json",
+          "bytes": 1651,
+          "sha256": "7edca96aa45729c85fba354847d82a0f6895284d0e457ce7d345344a97ea010c"
+        },
+        {
+          "entry": "awbc-mark-scope-terminal-proof-20261107.run.log",
+          "bytes": 13004,
+          "sha256": "2228f75a32e188c26306432552d08c21cac6e84c20c674f65844b73d3a1f295d"
+        },
+        {
+          "entry": "awbc-mark-scope-terminal-proof-20261107.second.patch",
+          "bytes": 113577,
+          "sha256": "890711d400129c3ccaf7be724ab04d438cb1c6cabf8d605b07e9dcb10b846121"
+        },
+        {
+          "entry": "awbc-mark-scope-terminal-proof-20261107.second.receipt.json",
+          "bytes": 1649,
+          "sha256": "d40c7e3f433e4268c05222525273b34745fa09b08dbece1d2a97eee692fef181"
+        },
+        {
+          "entry": "awbc-mark-scope-terminal-proof-20261107.second.run.log",
+          "bytes": 112727,
+          "sha256": "965f50cdae488786461825279184384055a239cdd43c887e482d97df00f16a77"
+        },
+        {
+          "entry": "awbc-mark-scope-terminal-proof-20261107.second.structure.log",
+          "bytes": 65784,
+          "sha256": "40c24c285c8cb38134ce00c44fe3d5c0ded6f8259fe45fa9e0eb6e70f3782ee9"
+        },
+        {
+          "entry": "awbc-mark-scope-acceptance-20261107.receipt.json",
+          "bytes": 3230,
+          "sha256": "40c2eaa70c8639705f8fc32f2f4140cb245ee427dbe77f659486efec4012e9d5"
+        },
+        {
+          "entry": "awbc-mark-scope-acceptance-20261107.core.receipt.json",
+          "bytes": 720,
+          "sha256": "88132371e425033bba68bc0be5a5cf22d3a8db3732d3a77aa0bcb870828b2121"
+        },
+        {
+          "entry": "awbc-mark-scope-acceptance-20261107.core.log",
+          "bytes": 739183,
+          "sha256": "d09987b569debbd01357c54b6a926de25270a639233097b331dba4cd15467f31"
+        },
+        {
+          "entry": "awbc-mark-scope-acceptance-20261107.runtime.receipt.json",
+          "bytes": 798,
+          "sha256": "7928bea43282d26b78361dad10169e6c684e404d9c063643114816bc52a4571c"
+        },
+        {
+          "entry": "awbc-mark-scope-acceptance-20261107.runtime.log",
+          "bytes": 169440,
+          "sha256": "3456fd14cb1eda0613451dce2b8b5a9b6d4888224ee7b774b187703ae96b1aca"
+        },
+        {
+          "entry": "awbc-mark-scope-acceptance-20261107.workspace-check.receipt.json",
+          "bytes": 537,
+          "sha256": "3c6195a56d4cd79dfdd5507c9c7115ff6f44b752291cc6c0acf19d654c559a6b"
+        },
+        {
+          "entry": "awbc-mark-scope-acceptance-20261107.workspace-check.log",
+          "bytes": 132019,
+          "sha256": "787cc9ca23f02a9e57159005b139f8b9cc56ef957a6a9ef6afc2107dcd5cb458"
+        },
+        {
+          "entry": "awbc-mark-scope-acceptance-20261107.workspace-clippy.receipt.json",
+          "bytes": 539,
+          "sha256": "5a4afd8bcb1ce96ff585240c0093ed262f62da66eeaa30bef4d0c2cb344b7946"
+        },
+        {
+          "entry": "awbc-mark-scope-acceptance-20261107.workspace-clippy.log",
+          "bytes": 9053165,
+          "sha256": "e06268a7011ae9915dc8319b0ca5c1b8ba0fec9f8d0d9af9caae69dee103f85a"
+        }
+      ]
+    }
   }
 }

@@ -15164,3 +15164,10 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 - 公開ソース `3b7a98a0f3983c8d45148ac4e401e29a136e082b`。`cargo clean` 後に追加分の先頭5組13ターゲットを実行し、368件が通過した。失敗とスキップは0件。旧集計で漏れていた `arcweft` のライブラリはビルドでき、テストケースは0件だった。CLI の2組は各10件、Compiler の2組は16件と332件が通過した。固定したソース入力3,638件に差分は0件だった。区切り時点の追加分191ターゲットはこの結果に含めていない。[終了した5組のコマンド・結果・ログ](acceptance-evidence/task-flow-registry-execution.json)。
 
 - 同じソースでさらに8組24ターゲットを実行し、245件が通過した。clean 後の合計は13組37ターゲット、613件通過、失敗・スキップ0件だった。固定した3,638入力に差分がないことを終了時に確認した。マークハンドラーの修正を試すため、Core の組が終了した時点で旧ソースの分割実行を区切った。残り167ターゲットはこのソースでは未実行。先頭5組の原本を保持し、後続8組と停止時の集計を追記した。[ソース切替時のコマンド・結果・ログ](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Scoped defer execution in AWBC mark handlers
+
+- 公開ソース `e2bde6d10aa3a04a753488c131d3dd715d3cc461`。AWBC の子ファイバーの lexical scope が defer の登録・終了条件・実行中の子を保持する。捕捉値は登録の確定と同時に台帳上の所有先を移す。取消しを受けた子の合流は lexical scope が終わるまで待つ。保存では登録を元のファイバーとフレームに結び付け、条件不一致で解放する捕捉値もホストの応答まで同じ登録に結び付ける。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+- Compiler の evaluated_effects 87件と Core の2,296件がすべて通過した。デコード済み AWBC の正常終了・ゼロ除算による失敗・入力による取消しで、対応する defer が結果公開または失敗報告より先に実行された。複数が該当する場合は逆登録順だった。各ステップで保存・復元した。init でスキップした defer の捕捉値は Native と AWBC で解放を1回だけ要求した。AWBC は解放要求直後の保存からも復元でき、実行中の子を別ファイバーに付け替えた保存を拒否した。構造ゲートのブロッキング違反は0件だった。[コマンド・実測](acceptance-evidence/task-flow-registry-execution.json)。
+- 初回の対象3件は既存2件が通過し、追加したマークのテストは登録時に失敗した。VM の命令トレースを除き、同じステップで一つの登録要求だけを認めるよう修正し、対象3件はすべて通過した。失敗・取消しを追加した初回のビルドは不足した `VmError` の import で停止した。追加して全スイートを実行した。現状一覧はマークハンドラーの AWBC 側だけを検証・公開済みに更新し、旧ソースの拒否を履歴に保持した。[初回の失敗・修正後の原本](acceptance-evidence/task-flow-registry-execution.json)。
+- Runtime Driver／Runtime Host／Save の260件がすべて通過した。全ターゲット・全機能の workspace check と Clippy は終了コード0で、警告を原本に保持した。3,638件のソース入力には既存の未コミット変更12パスを含み、開始時と終了時のハッシュ差分は0件だった。公開した Rust 差分の SHA-256 は検証時と一致した。[実行結果・入力・公開差分の照合](acceptance-evidence/task-flow-registry-execution.json)。
