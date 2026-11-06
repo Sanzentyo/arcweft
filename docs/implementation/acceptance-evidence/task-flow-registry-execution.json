@@ -18202,5 +18202,177 @@
         }
       ]
     }
+  },
+  "deferLexicalReadBaseline": {
+    "source": "f3626f1a2ffc608dced6ac28916ab2b89134b0e5",
+    "command": [
+      "arcw",
+      "check",
+      "--manifest-path",
+      "<case>/arcw.toml",
+      "--json"
+    ],
+    "receipt": {
+      "version": 1,
+      "source": "f3626f1a2ffc608dced6ac28916ab2b89134b0e5",
+      "executable": "D:\\git\\arcweft\\target\\debug\\arcw.exe",
+      "executableSha256": "10b463cd01187d2c96a674ba8d5e291eaf86914b7e0678da352d17409f6d1d12",
+      "cases": [
+        {
+          "case": "init_control",
+          "exitCode": 0,
+          "status": "ok",
+          "stderr": null,
+          "sourceSha256": "c003895827d5d6618e5dd980716e3124485b344bbc04349c6adf51ae87198714"
+        },
+        {
+          "case": "init_before_cleanup",
+          "exitCode": 1,
+          "status": null,
+          "stderr": "error[sema.final_analysis]: lifetime registry read ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 29, kind: Expr }) requires a registration of the expected type on every reaching path for LifetimeRegistryKey { scope: Line, segments: [DeclarationName(\"flag\")] }\r\n",
+          "sourceSha256": "1d1da26484fca78844bbc154a31342d4291625e280233f4920010e7d947b7c37"
+        },
+        {
+          "case": "init_after_failed_guard",
+          "exitCode": 1,
+          "status": null,
+          "stderr": "error[sema.final_analysis]: lifetime registry read ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 29, kind: Expr }) requires a registration of the expected type on every reaching path for LifetimeRegistryKey { scope: Line, segments: [DeclarationName(\"flag\")] }\r\n",
+          "sourceSha256": "b05a293445c0838da35a9e4d6f5859ea0cecc493dd7dff20816f4350c82dcdb2"
+        },
+        {
+          "case": "init_after_normal_cleanup",
+          "exitCode": 1,
+          "status": null,
+          "stderr": "error[sema.final_analysis]: lifetime registry read ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 29, kind: Expr }) requires a registration of the expected type on every reaching path for LifetimeRegistryKey { scope: Line, segments: [DeclarationName(\"flag\")] }\r\n",
+          "sourceSha256": "f7b8b3b7412bd4a1e054239fa75225cc3a2ac3d47499bc93dc43b3de1ef956a2"
+        },
+        {
+          "case": "line_after_normal_cleanup",
+          "exitCode": 1,
+          "status": null,
+          "stderr": "error[sema.final_analysis]: lifetime registry read ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 28, kind: Expr }) requires a registration of the expected type on every reaching path for LifetimeRegistryKey { scope: Flow, segments: [DeclarationName(\"flag\")] }\r\n",
+          "sourceSha256": "6f585bca41735e14de3796c1cb15c8b0b5112880e7504dc0049e68652666f25b"
+        }
+      ]
+    },
+    "expectation": {
+      "init_control": "accept",
+      "init_before_cleanup": "accept",
+      "init_after_failed_guard": "accept",
+      "init_after_normal_cleanup": "reject stale item type",
+      "line_after_normal_cleanup": "reject stale item type"
+    },
+    "boundary": "Registration is separate from executing cleanup. The log-only init control succeeds. A write that has only been registered and a write guarded by failed exit both make the old analysis reject a valid read. The stale type controls remain rejected after the corresponding completed cleanup.",
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-defer-lexical-baseline.raw.zip",
+      "sha256": "dad54e082eac9f87418b1f9c3216a1378a01d4a6372772750d79663c41675358",
+      "entries": [
+        {
+          "entry": "registry-defer-lexical-baseline-20261107.receipt.json",
+          "bytes": 2523,
+          "sha256": "2ae720c84f9e0e1b9ebced27cbc331bd876f9cfdd19889e92e6ff851821ff767"
+        },
+        {
+          "entry": "registry-defer-lexical-baseline-20261107-init_control/src/main.arcw",
+          "bytes": 339,
+          "sha256": "c003895827d5d6618e5dd980716e3124485b344bbc04349c6adf51ae87198714"
+        },
+        {
+          "entry": "registry-defer-lexical-baseline-20261107-init_control/arcw.toml",
+          "bytes": 215,
+          "sha256": "a96fc123a3cdd164daf27b39e9893be8074a08ffe119a427e82a98750847a3d0"
+        },
+        {
+          "entry": "registry-defer-lexical-baseline-20261107-init_control.json",
+          "bytes": 1097,
+          "sha256": "6c6177f5a9b7ee2cae6abd503d0008fc70d56093b4a60249f4e9c04956eb1952"
+        },
+        {
+          "entry": "registry-defer-lexical-baseline-20261107-init_control.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "registry-defer-lexical-baseline-20261107-init_before_cleanup/src/main.arcw",
+          "bytes": 359,
+          "sha256": "1d1da26484fca78844bbc154a31342d4291625e280233f4920010e7d947b7c37"
+        },
+        {
+          "entry": "registry-defer-lexical-baseline-20261107-init_before_cleanup/arcw.toml",
+          "bytes": 215,
+          "sha256": "a96fc123a3cdd164daf27b39e9893be8074a08ffe119a427e82a98750847a3d0"
+        },
+        {
+          "entry": "registry-defer-lexical-baseline-20261107-init_before_cleanup.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "registry-defer-lexical-baseline-20261107-init_before_cleanup.stderr.log",
+          "bytes": 300,
+          "sha256": "3136e22d6715edd0ef1204f66611d4f4a3e01ec583950b6d117aa67abf9ddc34"
+        },
+        {
+          "entry": "registry-defer-lexical-baseline-20261107-init_after_failed_guard/src/main.arcw",
+          "bytes": 360,
+          "sha256": "b05a293445c0838da35a9e4d6f5859ea0cecc493dd7dff20816f4350c82dcdb2"
+        },
+        {
+          "entry": "registry-defer-lexical-baseline-20261107-init_after_failed_guard/arcw.toml",
+          "bytes": 215,
+          "sha256": "a96fc123a3cdd164daf27b39e9893be8074a08ffe119a427e82a98750847a3d0"
+        },
+        {
+          "entry": "registry-defer-lexical-baseline-20261107-init_after_failed_guard.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "registry-defer-lexical-baseline-20261107-init_after_failed_guard.stderr.log",
+          "bytes": 300,
+          "sha256": "3136e22d6715edd0ef1204f66611d4f4a3e01ec583950b6d117aa67abf9ddc34"
+        },
+        {
+          "entry": "registry-defer-lexical-baseline-20261107-init_after_normal_cleanup/src/main.arcw",
+          "bytes": 347,
+          "sha256": "f7b8b3b7412bd4a1e054239fa75225cc3a2ac3d47499bc93dc43b3de1ef956a2"
+        },
+        {
+          "entry": "registry-defer-lexical-baseline-20261107-init_after_normal_cleanup/arcw.toml",
+          "bytes": 215,
+          "sha256": "a96fc123a3cdd164daf27b39e9893be8074a08ffe119a427e82a98750847a3d0"
+        },
+        {
+          "entry": "registry-defer-lexical-baseline-20261107-init_after_normal_cleanup.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "registry-defer-lexical-baseline-20261107-init_after_normal_cleanup.stderr.log",
+          "bytes": 300,
+          "sha256": "3136e22d6715edd0ef1204f66611d4f4a3e01ec583950b6d117aa67abf9ddc34"
+        },
+        {
+          "entry": "registry-defer-lexical-baseline-20261107-line_after_normal_cleanup/src/main.arcw",
+          "bytes": 302,
+          "sha256": "6f585bca41735e14de3796c1cb15c8b0b5112880e7504dc0049e68652666f25b"
+        },
+        {
+          "entry": "registry-defer-lexical-baseline-20261107-line_after_normal_cleanup/arcw.toml",
+          "bytes": 215,
+          "sha256": "a96fc123a3cdd164daf27b39e9893be8074a08ffe119a427e82a98750847a3d0"
+        },
+        {
+          "entry": "registry-defer-lexical-baseline-20261107-line_after_normal_cleanup.json",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "registry-defer-lexical-baseline-20261107-line_after_normal_cleanup.stderr.log",
+          "bytes": 300,
+          "sha256": "0ac72919504f8f5cdc14104181814c47a86c598772cee2df8aa7eb2f44044a92"
+        }
+      ]
+    }
   }
 }

@@ -15117,3 +15117,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Registry read before a deferred write
 
 - Source f3626f1a2ffc608dced6ac28916ab2b89134b0e5 の実CLIで、登録済みの Line 値を終了前に読み取る入力は通過した。ログだけの defer を挟んでも通過した。同じキーへの書込みを defer に登録すると、その後の読取りが型検査で拒否された。Flow でも書込みを登録した入力は型検査で拒否され、ログだけの defer は型検査を通過して RuntimePlan のスコープ所有登録で停止した。[正負の入力・CLI原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Registry reads around init cleanup
+
+- Source f3626f1a2ffc608dced6ac28916ab2b89134b0e5 の実CLIで、ログだけの defer がある init 内の読取りは通過した。同じキーに別型を書き込む defer を登録すると、init 終了前の読取りを型検査が拒否した。正常終了する init の defer on failed に同じ書込みを置いても、init 終了後の読取りを拒否した。通常終了時に別型を書き込む init と Line 全体の defer の後で古い型を要求する対照も拒否された。[5入力・実CLI原本](acceptance-evidence/task-flow-registry-execution.json)。
