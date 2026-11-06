@@ -3129,5 +3129,193 @@
       "entryDrift": 0,
       "inventory": "flow-registry-reverse-20261106.archive-entries.json"
     }
+  },
+  "lineOwnedEffectAnalysis": {
+    "source": "138c5ad3c377455e4589e322bd60014c9449f27a",
+    "contract": "The enclosing callable permission includes owned line work and effects of selected project calls. Effect membership is folded separately from eager suspension and capture, which stay on the actual execution body.",
+    "focus": {
+      "version": 1,
+      "base": "f729c1310b6fd1269a7be15a6280eec7bc5590ce",
+      "run": "line-owned-effects-focus-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   0.580s] 2 tests run: 2 passed, 1374 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 1374,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4130,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-06T03:58:59.3027925Z"
+    },
+    "semaLibrary": {
+      "version": 1,
+      "base": "dc33057d6f70e13953bda2c7d15de010e8ad74b2",
+      "run": "line-owned-effects-sema-final-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [  15.343s] 1376 tests run: 1376 passed, 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 1376,
+      "passed": 1376,
+      "failed": 0,
+      "skipped": 0,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4130,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-06T04:00:59.2927172Z"
+    },
+    "reverseImpactPackages": 22,
+    "reverseImpactExecuted": false,
+    "published": {
+      "version": 1,
+      "commit": "138c5ad3c377455e4589e322bd60014c9449f27a",
+      "parent": "dc33057d6f70e13953bda2c7d15de010e8ad74b2",
+      "tree": "41f7e51e979ec99bd1ee3b0b6c10e5be7eda4c23",
+      "remote": "138c5ad3c377455e4589e322bd60014c9449f27a",
+      "paths": [
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/callable_effect_graph.rs",
+          "blob": "a83e49873c7bcf47d67653b0a6e39b187fbc0722"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/items.rs",
+          "blob": "e8df68445729c6e28bceecbefd652efa1804e551"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/pending_effects.rs",
+          "blob": "c59ce61e35c7255be687134472baf7bbaab9ce5e"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/statement_effects.rs",
+          "blob": "8be391aebc17a9a342d44c281206dbf8b17ba2a5"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests/effect_contracts.rs",
+          "blob": "7c14ce1a221139409442a8e26181dea4e17a10e4"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "abeaa80377a0d32f1ab660db4a309e90c370efbc297f33297f6906b139a9fc51",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-06T04:01:41.125863Z"
+    },
+    "rawArchive": {
+      "path": "task-line-owned-effects-sema.raw.zip",
+      "bytes": 737599,
+      "sha256": "f128cba76c0e342c4949f5da42e22573a360b5f49cb792c7da7e9948ab405ae4",
+      "entryDrift": 0,
+      "entries": [
+        {
+          "entry": "checkpoint-line-owned-effects-20261106.verified.json",
+          "bytes": 1353,
+          "sha256": "a89395a137bebf78e071e7d2ad65b865a844a5a4a986ead0a8d661d251e40b97"
+        },
+        {
+          "entry": "line-owned-effects-focus-20261106.binaries-before.json",
+          "bytes": 212,
+          "sha256": "4a586e7583eaf4aae6ed76f6b7498d495e0671b9deeda4a9cc81380bc903554c"
+        },
+        {
+          "entry": "line-owned-effects-focus-20261106.catalog.inventory.json",
+          "bytes": 363357,
+          "sha256": "49586fec24dc5b69a5f499eedd8b17274439053dc63a522131f38359292eebd3"
+        },
+        {
+          "entry": "line-owned-effects-focus-20261106.catalog.json",
+          "bytes": 717,
+          "sha256": "52d67a4292706e67682e314b026d1f39b1dc5e9d0cda7e432f6787d6a44e52a6"
+        },
+        {
+          "entry": "line-owned-effects-focus-20261106.catalog.log",
+          "bytes": 346094,
+          "sha256": "ed1326cb6e66ef27be266750362db862285a575a569787d847f3569ac07ee0ec"
+        },
+        {
+          "entry": "line-owned-effects-focus-20261106.queue.json",
+          "bytes": 1615,
+          "sha256": "874b9479f1b7f0919b3b2c68641ae3f55578f5dbbb52f025df9e7bc780120cc6"
+        },
+        {
+          "entry": "line-owned-effects-focus-20261106.runtime.json",
+          "bytes": 809,
+          "sha256": "3629a15d5a311bf8a46bfd1d974a1f69807c7841ae0ed8c6d69c4d6dc90eb5e9"
+        },
+        {
+          "entry": "line-owned-effects-focus-20261106.runtime.log",
+          "bytes": 510072,
+          "sha256": "7459aa56512db1200e566cc627437f49dc1c8f66163e57ed9f6a1b2fd0fcdd81"
+        },
+        {
+          "entry": "line-owned-effects-focus-20261106.runtime.terminal-audit.json",
+          "bytes": 616,
+          "sha256": "dfad0d9a53c336bc765024078eb2e2e9c2f637d765a244b1ef522bbe5373077c"
+        },
+        {
+          "entry": "line-owned-effects-focus-20261106.source-freeze.json",
+          "bytes": 807631,
+          "sha256": "90fd64ea60025b2a2d924d58bd55cd9762d0ff14f2f7f068e1d42889d14444d4"
+        },
+        {
+          "entry": "line-owned-effects-sema-final-20261106.binaries-before.json",
+          "bytes": 212,
+          "sha256": "3fffda7bbdca66ce5d0100116f5064fd72b97099ebea3e3e46f5d1874b5ae1cc"
+        },
+        {
+          "entry": "line-owned-effects-sema-final-20261106.catalog.inventory.json",
+          "bytes": 361980,
+          "sha256": "5ff6df3091f99800c69fce6d62dbc73827830b73212aa56771e6e43e8ff17bdf"
+        },
+        {
+          "entry": "line-owned-effects-sema-final-20261106.catalog.json",
+          "bytes": 556,
+          "sha256": "78525b4c65d755e38c3fcb4b167da8701042f4b8be946ea99ef710ec2fa710a9"
+        },
+        {
+          "entry": "line-owned-effects-sema-final-20261106.catalog.log",
+          "bytes": 314180,
+          "sha256": "b02b3a32b0c2614f92a24ec145fc98dbc8332af26e1f74e14a2db28ac5b8a2c1"
+        },
+        {
+          "entry": "line-owned-effects-sema-final-20261106.runtime.json",
+          "bytes": 648,
+          "sha256": "c1276624a448868d93ffaff74eb193a2ff475ed9ab53ffe7d649950e84bdddd9"
+        },
+        {
+          "entry": "line-owned-effects-sema-final-20261106.runtime.log",
+          "bytes": 510081,
+          "sha256": "aa1c2afa1ea389d171824dd2e755aeef8e86b3a592f2c8f8735515ffd890eeee"
+        },
+        {
+          "entry": "line-owned-effects-sema-final-20261106.runtime.terminal-audit.json",
+          "bytes": 627,
+          "sha256": "b405952a31f29b4323e4f4f7d00b6d6e4a571157ace15b4efc0ea97b2eebb858"
+        },
+        {
+          "entry": "line-owned-effects-sema-final-20261106.source-freeze.json",
+          "bytes": 807631,
+          "sha256": "ded21529f14ab09ef024fcdf79a38a4083c0a145e6dcd3a8669bdde8da94e925"
+        },
+        {
+          "entry": "line-registry-candidate-impact-20261106.json",
+          "bytes": 4837,
+          "sha256": "06328fa016f1315ad97cc0381103bb3a84192a72df5f4cbfdc1250895c6a41e0"
+        }
+      ]
+    }
   }
 }

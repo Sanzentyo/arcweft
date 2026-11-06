@@ -14856,3 +14856,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 - The Flow-key bound failure spans seven authored phases. Matching and unrelated permissions both passed for activation, mark, cancellation, Thread, completed defer, cancelled defer and unconditional defer. Eight preliminary defer cases stopped at HIR recovery before semantic analysis. A terminated registry write followed by a valid log expression reached the checked defer body in the final three pairs. [Fourteen admitted cases and eight recovery cases](acceptance-evidence/task-flow-registry-execution.json).
 
 - A selected ordinary function that declares and performs the same Flow write also reproduces the bound failure. The direct call with the exact permission passed, and the direct call with an unrelated permission failed with `AWF-EFX-001`. Both bounds passed when the call ran in line `init` or mark handling. [Six paired inputs and exact CLI results](acceptance-evidence/task-flow-registry-execution.json).
+
+## 2026-11-06 — Line callbacks use the enclosing effect bound
+
+- Source 138c5ad3c377455e4589e322bd60014c9449f27a で、line の本体と遅延して実行する処理を外側の effect 上限に含めた。選択済み関数の効果も追跡し、停止とcaptureは元の実行本体が保持する。従来はline内の直接書込みや関数経由の書込みで、対象外の権限でも受理されていた。
+- 対象2件と、改行を正規化した公開ソースのSemaライブラリ全1,376件が通過。各実行の固定入力4,130件とテスト一覧は差分0件。ローカル検証には既存ユーザー変更12ファイルを含む。Cargo逆依存の22パッケージは別の検証範囲。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
