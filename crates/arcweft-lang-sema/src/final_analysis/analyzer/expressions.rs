@@ -5253,7 +5253,11 @@ impl Analyzer<'_, '_, '_> {
                 let (read, location, activation) =
                     super::super::CheckedRegistryRead::from_path(&self.topology, owner, path)
                         .map_err(AnalyzerExpressionError::fatal)?;
-                if !path.optional()
+                // A call candidate must not manufacture a different item type
+                // from its parameter expectation. Explicitly typed reads
+                // outside candidate selection retain the control-flow check.
+                if context.is_candidate()
+                    && !path.optional()
                     && let Some(expected) = expected
                     && let Some(item) =
                         self.infer_registry_item(module, location, activation, read.key())?
