@@ -15271,5 +15271,68 @@
         }
       ]
     }
+  },
+  "reachedRegistryLiveTableRuntimeReverse": {
+    "source": "e74b4d75bbc730ab29b5b5ead19030cc078c38e3",
+    "packages": [
+      "arcweft-runtime-driver",
+      "arcweft-runtime-host",
+      "arcweft-save"
+    ],
+    "passed": 260,
+    "failed": 0,
+    "skipped": 0,
+    "comparedTestIdsFrom": "901926eca718a2c3f110916234aa9f64b8e1d192",
+    "testIdDrift": 0,
+    "receipt": {
+      "version": 1,
+      "source": "e74b4d75bbc730ab29b5b5ead19030cc078c38e3",
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-runtime-driver",
+        "-p",
+        "arcweft-runtime-host",
+        "-p",
+        "arcweft-save",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 0,
+      "summary": "Summary [ 108.951s] 260 tests run: 260 passed (1 slow), 0 skipped",
+      "sourceInputs": 3638,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-06T17:07:00.9575223Z",
+      "finishedAt": "2026-11-06T17:14:41.1525063Z"
+    },
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-live-table-identity-runtime-reverse.raw.zip",
+      "sha256": "1a67fdcb64097750d9c25f274b805371d9ef1493ca721392515580ba6d2420ca",
+      "entries": [
+        {
+          "entry": "registry-live-table-identity-reverse-20261107.log",
+          "bytes": 165590,
+          "sha256": "85bc8aa726eae42a9abd149fa9dc26c3f5d5cb3603ba27d06541931be36a6106"
+        },
+        {
+          "entry": "registry-live-table-identity-reverse-20261107.source-freeze.json",
+          "bytes": 599451,
+          "sha256": "79b048d00a302225d335c6bd92b13d07ac0665a5c6e96e981a1934828af99fb9"
+        },
+        {
+          "entry": "registry-live-table-identity-reverse-20261107.receipt.json",
+          "bytes": 648,
+          "sha256": "64b88656274a93e454bce36c14a4a8dcf09c43eafd0f5939998d6f9a2afac508"
+        }
+      ]
+    }
   }
 }
