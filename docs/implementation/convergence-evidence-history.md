@@ -14871,3 +14871,4 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source e4387fee79d0c83873e5728c6eb71ea1c24a785e で、NativeとAWBCが実際のline activationに書き込む。初期化、その分岐、mark、取消、正常終了と取消の各deferを実行し、AWBCでは最大1操作ごとに公開Saveを符号化・復元した。保存行は元のactivationとAWBC書込み命令に結び付き、改変を拒否し、フレーム解放で退役する。
 - Core全2,281件とCompilerの対話テスト全54件が通過。最初のコンパイル移行漏れ、AWBCの命令追跡の誤拒否、Nativeが取消後にcompleted deferを選んだ失敗の原本も保持した。取消時は元のreducer終了理由を引き継ぐよう修正した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+- 同じ公開Source e4387fee79d0c83873e5728c6eb71ea1c24a785e のCLIを再ビルドし、以前失敗した同一入力と引数を再実行した。verify、plan、Bytecode VM、AWBC Productはすべてexit 0。両実行モードは32ステップ後に対話待ちとなり、各ステップ最大1操作、診断0件。最初の集計は終了状態を別フィールドから読んでいたため、同じ出力原本から訂正した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。

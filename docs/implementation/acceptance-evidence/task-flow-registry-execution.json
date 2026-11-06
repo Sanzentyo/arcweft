@@ -4087,5 +4087,131 @@
         }
       ]
     }
+  },
+  "lineRegistryCliReproduction": {
+    "source": "e4387fee79d0c83873e5728c6eb71ea1c24a785e",
+    "testedHead": "28f800e16eccfaa152f72f2d53e6c9316a400b7e",
+    "sourceInputs": 4130,
+    "sourceDrift": 0,
+    "fixtureSha256": "26a8fe93c63b4c1c5581b9b56a0513a4c6f5008e7139fdb63d38e0e60193b2a5",
+    "binarySha256": "e08eb7d454d40a7c59bfe3d46d21e03013947260740737dc7d97b2a3854db0a5",
+    "build": [
+      "build",
+      "-p",
+      "arcweft-cli",
+      "--bin",
+      "arcw",
+      "--locked",
+      "--all-features"
+    ],
+    "buildExit": 0,
+    "wrapperAttempt": {
+      "exit": 101,
+      "reason": "The first reader used status instead of the actual final_status field. All four Arcweft processes had exited zero.",
+      "raw": "line-registry-cli-final-20261106.probe-parser-original.json"
+    },
+    "cases": [
+      {
+        "name": "verify",
+        "exit": 0,
+        "status": null,
+        "steps": 0,
+        "maxExecutedOps": null
+      },
+      {
+        "name": "plan",
+        "exit": 0,
+        "status": null,
+        "steps": 0,
+        "maxExecutedOps": null
+      },
+      {
+        "name": "native",
+        "exit": 0,
+        "status": "dialogue",
+        "steps": 32,
+        "maxExecutedOps": 1.0
+      },
+      {
+        "name": "awbc",
+        "exit": 0,
+        "status": "dialogue",
+        "steps": 32,
+        "maxExecutedOps": 1.0
+      }
+    ],
+    "rawArchive": {
+      "path": "task-line-registry-cli-runtime.raw.zip",
+      "bytes": 29274,
+      "sha256": "9e4ee02dd11f8ae994f550c1a39197bacf33a61fe13f09d73b7daa516f7aa3b3",
+      "entryDrift": 0,
+      "entries": [
+        {
+          "entry": "line-registry-cli-final-20261106.build.log",
+          "bytes": 109694,
+          "sha256": "6a27d9032cbd50e9026ccde6230c68bb9359771045ec1cfea6dcc15d07f81b96"
+        },
+        {
+          "entry": "line-registry-cli-final-20261106.receipt.json",
+          "bytes": 9743,
+          "sha256": "cba080304d7143a927d50f93a7e3bfd5d53fd454bebc1e847817d8b88c99e572"
+        },
+        {
+          "entry": "line-registry-cli-final-20261106.probe-parser-original.json",
+          "bytes": 9453,
+          "sha256": "9297e6b9c3dc194a557738517fd89b67a1b234aa8e68a315fccd7cdf9d72583e"
+        },
+        {
+          "entry": "line-registry-product-phases-red-20261106.arcw",
+          "bytes": 560,
+          "sha256": "26a8fe93c63b4c1c5581b9b56a0513a4c6f5008e7139fdb63d38e0e60193b2a5"
+        },
+        {
+          "entry": "line-registry-product-phases-red-20261106.receipt.json",
+          "bytes": 3062,
+          "sha256": "be7a240ab2f2ee0051c9a17c085a3ec3dfe798db8d239d32332c4ace3dad5081"
+        },
+        {
+          "entry": "line-registry-cli-final-20261106.verify.stdout.json",
+          "bytes": 202,
+          "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+        },
+        {
+          "entry": "line-registry-cli-final-20261106.verify.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-registry-cli-final-20261106.plan.stdout.json",
+          "bytes": 5960,
+          "sha256": "1f82ba0dfb7f048bbbd6ac207bd95b48527a9cdb9aa5beea2640d8de89f80210"
+        },
+        {
+          "entry": "line-registry-cli-final-20261106.plan.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-registry-cli-final-20261106.native.stdout.json",
+          "bytes": 55446,
+          "sha256": "9cfcf353e87daef4a4a83abb770626925e329178e420bcd0e20e7b493f4a1d52"
+        },
+        {
+          "entry": "line-registry-cli-final-20261106.native.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-registry-cli-final-20261106.awbc.stdout.json",
+          "bytes": 55416,
+          "sha256": "6be240f12a954986e0a45b697344a41b262fadeb77392d4022e9e170d041ad79"
+        },
+        {
+          "entry": "line-registry-cli-final-20261106.awbc.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    }
   }
 }
