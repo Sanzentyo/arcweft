@@ -14965,5 +14965,87 @@
         }
       ]
     }
+  },
+  "reachedRegistryWriteRowAdmission": {
+    "source": "7d31dc1bd81398a904c267336c3d2406668b33c4",
+    "parent": "d6e8c2e70b0f73021c65d06f0efdade28d4c7731",
+    "changedBlobs": [
+      {
+        "path": "crates/arcweft-core/src/awbc/vm/resources.rs",
+        "blob": "4bf071170d6ed8f2e4c6c3843dbab572b12f0bdc"
+      },
+      {
+        "path": "crates/arcweft-core/src/effect.rs",
+        "blob": "a41cb069dd47c070ad94dcd5487de97789ef175a"
+      },
+      {
+        "path": "crates/arcweft-core/src/effect/registry.rs",
+        "blob": "43c45df58a3905621a6b1fd36c30bfb95e502637"
+      },
+      {
+        "path": "crates/arcweft-core/src/effect/registry/scope.rs",
+        "blob": "c459365518b24f0aeff24b8bcfac27bde9c52937"
+      },
+      {
+        "path": "crates/arcweft-core/src/effect/registry/tests.rs",
+        "blob": "52a66c634c393f2210cc30706ad249a042f02b03"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/dialogue.rs",
+        "blob": "44c153cc1f67b562e124e6b3ffb7c104e2072e10"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/registry.rs",
+        "blob": "56347b9e9259670274f96bf4fc49120e3c85b5c0"
+      },
+      {
+        "path": "crates/arcweft-core/src/line_task/activation/contour/tests.rs",
+        "blob": "25a24d99dee7e95510842abe426547294ee17cd4"
+      }
+    ],
+    "patchSha256": "8df35727d78f93d80feca2f98dc7a4cabc618a5dd45bb9a062058a13c97dbe41",
+    "registrationCommit": "One preparation pairs reached row identity, admitted table size, original invocation, and evaluated input. A key lookup at commit tolerates a changed sibling position and rejects a changed target row or admission size. AWBC commits the reached Flow write before consuming its input register.",
+    "focused": {
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "-E",
+        "test(/registry|inline_dialogue_reads_the_reached_line/)"
+      ],
+      "executed": 59,
+      "passed": 59,
+      "failed": 0,
+      "excludedByFilter": 2499,
+      "regression": "A sibling replacement shifts the target position at constant table length. A same-key replacement invalidates an already reserved write."
+    },
+    "rustfmtExitCode": 0,
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-write-row-admission.raw.zip",
+      "sha256": "27f0708771f7dfc63bd9b5af7dbe8f720d31caa8c149f060d06a6884248bcea6",
+      "entries": [
+        {
+          "entry": "registry-write-row-admission-20261107.nextest.log",
+          "bytes": 108059,
+          "sha256": "7df9756ac4785dbaabb671463ab872734fbce6bdd0442ca487526e0cef193472"
+        },
+        {
+          "entry": "registry-write-row-admission-20261107.verified.json",
+          "bytes": 1647,
+          "sha256": "ab0f90377ff5c564ba0ad1d4c65a5c8342a1e5a4de7bbb4c371dab36bd6bce8b"
+        }
+      ]
+    }
   }
 }

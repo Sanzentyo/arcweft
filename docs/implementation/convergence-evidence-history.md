@@ -15018,3 +15018,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Storage and runtime reverse dependency tests for reached registry drop
 
 - Source 901926eca718a2c3f110916234aa9f64b8e1d192 を公開した入力で runtime-driver、runtime-host、save の3パッケージを実行した。260件通過・失敗0・スキップ0。4,033入力、ケース一覧、実行バイナリの照合で差分は0だった。[実測・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Registry writes commit against their observed row
+
+- Source 7d31dc1bd81398a904c267336c3d2406668b33c4 で、書込み準備は対象行と検査済みの件数を保持する。隣接行が入れ替わって対象の位置が変わった場合も、キーで引き直して同じ行を更新する。対象行が差し替わった場合は、領域の確保後でも書込みを拒否する。Core／Compiler の関連59件が通過した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
