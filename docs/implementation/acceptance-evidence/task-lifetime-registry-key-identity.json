@@ -963,5 +963,735 @@
         }
       ]
     }
+  },
+  "lineDeferRegistryProbe": {
+    "version": 1,
+    "source": "6b72d7ca42beb3661a7025598cf74a341d61fc21",
+    "observedHead": "b705473419038e6a825a1bdfdb5a8e32576be6ff",
+    "binarySha256": "2ff22b4131a512cfcfdaa4c9b4e1efa14341da397a9678a5b8dd66083825a1c2",
+    "fixture": "arcweft-cli::check verify_json_respects_semantic_defer_cancel_discharge",
+    "maintainedFixture": "tests/fixtures/arcw/current_pass/check/023_dialogue_cancel_defer_on.arcw",
+    "controlledCases": [
+      {
+        "case": "maintained",
+        "arguments": [
+          "verify",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-defer-registry-control-20261106.maintained.arcw",
+          "--mode",
+          "test",
+          "--json"
+        ],
+        "exit": 0,
+        "stage": null,
+        "diagnostics": [],
+        "obligations": [],
+        "sourceSha256": "a25aacc33a8e0d56f9487ee9edf673b2f7f7d56a3d290a8a27168420d886a3e0",
+        "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "case": "line_write_only",
+        "arguments": [
+          "verify",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-defer-registry-control-20261106.line_write_only.arcw",
+          "--mode",
+          "test",
+          "--json"
+        ],
+        "exit": 0,
+        "stage": null,
+        "diagnostics": [],
+        "obligations": [],
+        "sourceSha256": "74305ef1925ee055e1770e4a8f3141a575542fb2c2e23f89124d113bd3ac2cee",
+        "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "case": "direct_read",
+        "arguments": [
+          "verify",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-defer-registry-control-20261106.direct_read.arcw",
+          "--mode",
+          "test",
+          "--json"
+        ],
+        "exit": 1,
+        "stage": "type-check",
+        "diagnostics": [
+          {
+            "module": null,
+            "stage": "type-check",
+            "diagnostic": {
+              "severity": "error",
+              "code": "sema.final_analysis",
+              "message": "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 34, kind: Expr }) has no admissible final type",
+              "span": null,
+              "labels": [],
+              "notes": [],
+              "suggestions": [],
+              "commands": []
+            }
+          }
+        ],
+        "obligations": [],
+        "sourceSha256": "ad045cf2faaa145a7fd3aa6db88e4e942d51cbb281e4c3c1f2d12660a0718034",
+        "stdoutSha256": "4f4b926b9fbe69f73e870ae498bf6f8e4701f9995bb8f6b2aa706ab3782ddea6",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "case": "optional_read",
+        "arguments": [
+          "verify",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-defer-registry-control-20261106.optional_read.arcw",
+          "--mode",
+          "test",
+          "--json"
+        ],
+        "exit": 1,
+        "stage": "type-check",
+        "diagnostics": [
+          {
+            "module": null,
+            "stage": "type-check",
+            "diagnostic": {
+              "severity": "error",
+              "code": "sema.final_analysis",
+              "message": "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 34, kind: Expr }) has no admissible final type",
+              "span": null,
+              "labels": [],
+              "notes": [],
+              "suggestions": [],
+              "commands": []
+            }
+          }
+        ],
+        "obligations": [],
+        "sourceSha256": "d7a915979751d8c27e836122749723aec19317c190dcb71737d3c323c7510d5b",
+        "stdoutSha256": "4f4b926b9fbe69f73e870ae498bf6f8e4701f9995bb8f6b2aa706ab3782ddea6",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "case": "required_drop",
+        "arguments": [
+          "verify",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-defer-registry-control-20261106.required_drop.arcw",
+          "--mode",
+          "test",
+          "--json"
+        ],
+        "exit": 1,
+        "stage": "type-check",
+        "diagnostics": [
+          {
+            "module": null,
+            "stage": "type-check",
+            "diagnostic": {
+              "severity": "error",
+              "code": "sema.final_analysis",
+              "message": "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 33, kind: Expr }) has no admissible final type",
+              "span": null,
+              "labels": [],
+              "notes": [],
+              "suggestions": [],
+              "commands": []
+            }
+          }
+        ],
+        "obligations": [],
+        "sourceSha256": "171f244e4a58143dc7d4305012c324b0ceee374b100c78df4068f5f0557e70d6",
+        "stdoutSha256": "c3eef73bd076bcab4a440c0fd1e67eb204fb676a6f59fdb3a4dcada4d526eab6",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "case": "optional_drop",
+        "arguments": [
+          "verify",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-defer-registry-control-20261106.optional_drop.arcw",
+          "--mode",
+          "test",
+          "--json"
+        ],
+        "exit": 1,
+        "stage": "type-check",
+        "diagnostics": [
+          {
+            "module": null,
+            "stage": "type-check",
+            "diagnostic": {
+              "severity": "error",
+              "code": "sema.final_analysis",
+              "message": "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 33, kind: Expr }) has no admissible final type",
+              "span": null,
+              "labels": [],
+              "notes": [],
+              "suggestions": [],
+              "commands": []
+            }
+          }
+        ],
+        "obligations": [],
+        "sourceSha256": "93c5d072430dbf986d9925c7a870df5e4e5c83fb782d19a5f5963618e761bf9b",
+        "stdoutSha256": "c3eef73bd076bcab4a440c0fd1e67eb204fb676a6f59fdb3a4dcada4d526eab6",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "case": "flow_write_only",
+        "arguments": [
+          "verify",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-defer-registry-control-20261106.flow_write_only.arcw",
+          "--mode",
+          "test",
+          "--json"
+        ],
+        "exit": 0,
+        "stage": null,
+        "diagnostics": [],
+        "obligations": [],
+        "sourceSha256": "28fc8ece599be8e57074b0ef357a35f99861b822714a98d17ba3e8ac2fa7ac2e",
+        "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "case": "flow_optional_read",
+        "arguments": [
+          "verify",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/line-defer-registry-control-20261106.flow_optional_read.arcw",
+          "--mode",
+          "test",
+          "--json"
+        ],
+        "exit": 1,
+        "stage": "type-check",
+        "diagnostics": [
+          {
+            "module": null,
+            "stage": "type-check",
+            "diagnostic": {
+              "severity": "error",
+              "code": "sema.final_analysis",
+              "message": "semantic expression ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(1), slot: 1 }, slot: 15, kind: Expr }) has no admissible final type",
+              "span": null,
+              "labels": [],
+              "notes": [],
+              "suggestions": [],
+              "commands": []
+            }
+          }
+        ],
+        "obligations": [],
+        "sourceSha256": "add129772979f68b4a985a044ee1299970b9585fea64f208738b78882f69d711",
+        "stdoutSha256": "a0fde84eb34d918c70c78f35340b4b0e809ced34c1dcf9902c525aec7ee7440b",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ],
+    "diagnosis": "The maintained cancellation and defer scaffold passes, including a checked line-registry write. Introducing only the direct or optional registry read into the cancelled defer fails before the verifier. Drop and drop_optional on those paths fail at the same boundary, and an independent flow optional read has the same failure. The checked address model currently covers writes. MustDropDischarge exists as an obligation kind; these inputs supply no evidence of a generated or discharged obligation.",
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-line-defer-registry-control.raw.zip",
+      "bytes": 40343,
+      "sha256": "fdcdd98a101d9966012cb0a49fd4efdda399e72ac8fefdbd42b83e8e29b3d99e",
+      "entryDrift": 0,
+      "entries": [
+        {
+          "entry": "line-defer-fixture-baseline-20261106.guaranteed_call.arcw",
+          "bytes": 334,
+          "sha256": "6196239846e09b27f5cc55b560b2c1baf39ca608ed0460d5eb2a6e3370630ce7"
+        },
+        {
+          "entry": "line-defer-fixture-baseline-20261106.guaranteed_call.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-fixture-baseline-20261106.guaranteed_call.stdout.json",
+          "bytes": 540,
+          "sha256": "7625139bc120e64df8528a240e42907403559f7144d151edba51906dd9e9b079"
+        },
+        {
+          "entry": "line-defer-fixture-baseline-20261106.guaranteed_pipe.arcw",
+          "bytes": 338,
+          "sha256": "3e08a5191051e2808be3b21792ea65031ce31ae5a7f71084880bdf482825aa3a"
+        },
+        {
+          "entry": "line-defer-fixture-baseline-20261106.guaranteed_pipe.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-fixture-baseline-20261106.guaranteed_pipe.stdout.json",
+          "bytes": 540,
+          "sha256": "dc16c6e2f67654fd388ecc8cbdf2634c7d984b0b5a543fd7091be63ce895bd10"
+        },
+        {
+          "entry": "line-defer-fixture-baseline-20261106.optional_call.arcw",
+          "bytes": 354,
+          "sha256": "6a8279078f8c7643c15ef0765edf078236ea2d5b25da8ce9892fb09cf9ffca1e"
+        },
+        {
+          "entry": "line-defer-fixture-baseline-20261106.optional_call.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-fixture-baseline-20261106.optional_call.stdout.json",
+          "bytes": 540,
+          "sha256": "7625139bc120e64df8528a240e42907403559f7144d151edba51906dd9e9b079"
+        },
+        {
+          "entry": "line-defer-fixture-baseline-20261106.optional_pipe.arcw",
+          "bytes": 358,
+          "sha256": "c7c47bf60ba71008e4cd728cf6c9f52fd19a06ad3f52455f45f7863fe32fb84f"
+        },
+        {
+          "entry": "line-defer-fixture-baseline-20261106.optional_pipe.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-fixture-baseline-20261106.optional_pipe.stdout.json",
+          "bytes": 540,
+          "sha256": "dc16c6e2f67654fd388ecc8cbdf2634c7d984b0b5a543fd7091be63ce895bd10"
+        },
+        {
+          "entry": "line-defer-fixture-baseline-20261106.original.arcw",
+          "bytes": 356,
+          "sha256": "1b38009a176248ff27d0bf78f83792a121e59ac4a812ffbf6a9e5fa8b2d56621"
+        },
+        {
+          "entry": "line-defer-fixture-baseline-20261106.original.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-fixture-baseline-20261106.original.stdout.json",
+          "bytes": 540,
+          "sha256": "dc16c6e2f67654fd388ecc8cbdf2634c7d984b0b5a543fd7091be63ce895bd10"
+        },
+        {
+          "entry": "line-defer-fixture-baseline-20261106.receipt.json",
+          "bytes": 6156,
+          "sha256": "5ef1f595a5c8854ed4c6fa173307417a7cb33323d1fa050c9002ea007819daa1"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.guaranteed_call.arcw",
+          "bytes": 360,
+          "sha256": "72ff740ad3feb8852ca1e65290f8cff757a853b467a2fa6a5d08b42f622560d1"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.guaranteed_call.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.guaranteed_call.stdout.json",
+          "bytes": 540,
+          "sha256": "7625139bc120e64df8528a240e42907403559f7144d151edba51906dd9e9b079"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.guaranteed_pipe.arcw",
+          "bytes": 364,
+          "sha256": "29892e3476dcff3cbe98cbe9ae207941b7a7b27416cc2937e8c4e563a0a6eadc"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.guaranteed_pipe.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.guaranteed_pipe.stdout.json",
+          "bytes": 540,
+          "sha256": "dc16c6e2f67654fd388ecc8cbdf2634c7d984b0b5a543fd7091be63ce895bd10"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.maintained_fixture.arcw",
+          "bytes": 385,
+          "sha256": "a25aacc33a8e0d56f9487ee9edf673b2f7f7d56a3d290a8a27168420d886a3e0"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.maintained_fixture.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.maintained_fixture.stdout.json",
+          "bytes": 202,
+          "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.missing_cancelled_drop.arcw",
+          "bytes": 313,
+          "sha256": "5c4208effcffee28119b0c1c0c13607cd7294fc1cd7926dac992ff7397deaa42"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.missing_cancelled_drop.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.missing_cancelled_drop.stdout.json",
+          "bytes": 540,
+          "sha256": "dc16c6e2f67654fd388ecc8cbdf2634c7d984b0b5a543fd7091be63ce895bd10"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.missing_completed_drop.arcw",
+          "bytes": 313,
+          "sha256": "9ac1a03506f9cdbd4b5bfb092580ae72636b3db744cf9df8caf82f8e1b22e71f"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.missing_completed_drop.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.missing_completed_drop.stdout.json",
+          "bytes": 540,
+          "sha256": "dc16c6e2f67654fd388ecc8cbdf2634c7d984b0b5a543fd7091be63ce895bd10"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.optional_call.arcw",
+          "bytes": 380,
+          "sha256": "8a659e11aef69ca276a2218bc0e724bf4bc5c09d27873ce4312e4625f2a7e0b5"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.optional_call.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.optional_call.stdout.json",
+          "bytes": 540,
+          "sha256": "7625139bc120e64df8528a240e42907403559f7144d151edba51906dd9e9b079"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.optional_pipe.arcw",
+          "bytes": 384,
+          "sha256": "fbfc47184ebcd91c78ad7884584d847e7f243dcecc9925f1eff41501b38c9daa"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.optional_pipe.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.optional_pipe.stdout.json",
+          "bytes": 540,
+          "sha256": "dc16c6e2f67654fd388ecc8cbdf2634c7d984b0b5a543fd7091be63ce895bd10"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.original.arcw",
+          "bytes": 382,
+          "sha256": "9725582a07ec4114a3e34e3db94a5de395f610604e4fe636a6e3f58a8f24c778"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.original.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.original.stdout.json",
+          "bytes": 540,
+          "sha256": "dc16c6e2f67654fd388ecc8cbdf2634c7d984b0b5a543fd7091be63ce895bd10"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.receipt.json",
+          "bytes": 14201,
+          "sha256": "5e17a517e7952afa8536368899d9f67270650ad57158ecac90e860fd13f7b01b"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.typed_focus_missing_cancelled.arcw",
+          "bytes": 267,
+          "sha256": "ece03dc6dcd322c5124429bfa13b2ebb79beffc487813fd38f6fc4e8bc2ed2ae"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.typed_focus_missing_cancelled.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.typed_focus_missing_cancelled.stdout.json",
+          "bytes": 539,
+          "sha256": "5954344374eb32cc61e698aea508ef4a709cf01677e28aa7b7b03b4f250a5979"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.typed_focus_missing_completed.arcw",
+          "bytes": 267,
+          "sha256": "60651249af92ab04723b6b6fbdc7dbd052eb4fbb7be79a9d93c98bc76475c104"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.typed_focus_missing_completed.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.typed_focus_missing_completed.stdout.json",
+          "bytes": 539,
+          "sha256": "5954344374eb32cc61e698aea508ef4a709cf01677e28aa7b7b03b4f250a5979"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.typed_focus_no_cleanup.arcw",
+          "bytes": 209,
+          "sha256": "bf7b04063aaf53507f6ceb6f3ba2fe687d20ba800b01789da0544856dbadbf41"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.typed_focus_no_cleanup.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.typed_focus_no_cleanup.stdout.json",
+          "bytes": 539,
+          "sha256": "5954344374eb32cc61e698aea508ef4a709cf01677e28aa7b7b03b4f250a5979"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.typed_focus.arcw",
+          "bytes": 325,
+          "sha256": "90b89b9f6528048a12fee23e0e551221afd343961f08613bb998693f0ebfcb60"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.typed_focus.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-fixture-normal-out-probe-20261106.typed_focus.stdout.json",
+          "bytes": 539,
+          "sha256": "5954344374eb32cc61e698aea508ef4a709cf01677e28aa7b7b03b4f250a5979"
+        },
+        {
+          "entry": "line-defer-fixture-out-probe-20261106.guaranteed_call.arcw",
+          "bytes": 335,
+          "sha256": "9f63a7a47e0e27825889afafd4e5381d17995825f14f3087dfb9f3e8cc352091"
+        },
+        {
+          "entry": "line-defer-fixture-out-probe-20261106.guaranteed_call.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-fixture-out-probe-20261106.guaranteed_call.stdout.json",
+          "bytes": 540,
+          "sha256": "7625139bc120e64df8528a240e42907403559f7144d151edba51906dd9e9b079"
+        },
+        {
+          "entry": "line-defer-fixture-out-probe-20261106.guaranteed_pipe.arcw",
+          "bytes": 339,
+          "sha256": "3ff53fcc30457f78b6f8d9f94c4987c58af2037ae4c73cb04653784e17ab70dd"
+        },
+        {
+          "entry": "line-defer-fixture-out-probe-20261106.guaranteed_pipe.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-fixture-out-probe-20261106.guaranteed_pipe.stdout.json",
+          "bytes": 540,
+          "sha256": "dc16c6e2f67654fd388ecc8cbdf2634c7d984b0b5a543fd7091be63ce895bd10"
+        },
+        {
+          "entry": "line-defer-fixture-out-probe-20261106.missing_cancelled_drop.arcw",
+          "bytes": 288,
+          "sha256": "e172f05cac19d6b92dfa649e3a3620995ab58eb4a44f8b7d78863cd0dfc6753f"
+        },
+        {
+          "entry": "line-defer-fixture-out-probe-20261106.missing_cancelled_drop.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-fixture-out-probe-20261106.missing_cancelled_drop.stdout.json",
+          "bytes": 540,
+          "sha256": "dc16c6e2f67654fd388ecc8cbdf2634c7d984b0b5a543fd7091be63ce895bd10"
+        },
+        {
+          "entry": "line-defer-fixture-out-probe-20261106.missing_completed_drop.arcw",
+          "bytes": 288,
+          "sha256": "ab529f772cafafefb8e6274bcbb02df02fe66996dde69ab83f27b6cba11d0b1a"
+        },
+        {
+          "entry": "line-defer-fixture-out-probe-20261106.missing_completed_drop.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-fixture-out-probe-20261106.missing_completed_drop.stdout.json",
+          "bytes": 540,
+          "sha256": "dc16c6e2f67654fd388ecc8cbdf2634c7d984b0b5a543fd7091be63ce895bd10"
+        },
+        {
+          "entry": "line-defer-fixture-out-probe-20261106.optional_call.arcw",
+          "bytes": 355,
+          "sha256": "4ec0c8865af4f21081757f7443d1eb946d67b7b0bb65ca59369c0aa534a24f82"
+        },
+        {
+          "entry": "line-defer-fixture-out-probe-20261106.optional_call.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-fixture-out-probe-20261106.optional_call.stdout.json",
+          "bytes": 540,
+          "sha256": "7625139bc120e64df8528a240e42907403559f7144d151edba51906dd9e9b079"
+        },
+        {
+          "entry": "line-defer-fixture-out-probe-20261106.optional_pipe.arcw",
+          "bytes": 359,
+          "sha256": "1b31cf419c6f0f8e3ddb24d0fdc9ac06a9c97086f9bc96cef83b4e7e473d19c7"
+        },
+        {
+          "entry": "line-defer-fixture-out-probe-20261106.optional_pipe.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-fixture-out-probe-20261106.optional_pipe.stdout.json",
+          "bytes": 540,
+          "sha256": "dc16c6e2f67654fd388ecc8cbdf2634c7d984b0b5a543fd7091be63ce895bd10"
+        },
+        {
+          "entry": "line-defer-fixture-out-probe-20261106.original.arcw",
+          "bytes": 357,
+          "sha256": "a189e8101e59d319ca706c6aa87c61891b95d116525f2f14ecffbad1ac756764"
+        },
+        {
+          "entry": "line-defer-fixture-out-probe-20261106.original.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-fixture-out-probe-20261106.original.stdout.json",
+          "bytes": 540,
+          "sha256": "dc16c6e2f67654fd388ecc8cbdf2634c7d984b0b5a543fd7091be63ce895bd10"
+        },
+        {
+          "entry": "line-defer-fixture-out-probe-20261106.receipt.json",
+          "bytes": 8589,
+          "sha256": "4e951bfe7ab3bcff774913768ecf51f278276caba675d422204533b7affc6438"
+        },
+        {
+          "entry": "line-defer-registry-control-20261106.direct_read.arcw",
+          "bytes": 468,
+          "sha256": "ad045cf2faaa145a7fd3aa6db88e4e942d51cbb281e4c3c1f2d12660a0718034"
+        },
+        {
+          "entry": "line-defer-registry-control-20261106.direct_read.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-registry-control-20261106.direct_read.stdout.json",
+          "bytes": 540,
+          "sha256": "4f4b926b9fbe69f73e870ae498bf6f8e4701f9995bb8f6b2aa706ab3782ddea6"
+        },
+        {
+          "entry": "line-defer-registry-control-20261106.flow_optional_read.arcw",
+          "bytes": 106,
+          "sha256": "add129772979f68b4a985a044ee1299970b9585fea64f208738b78882f69d711"
+        },
+        {
+          "entry": "line-defer-registry-control-20261106.flow_optional_read.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-registry-control-20261106.flow_optional_read.stdout.json",
+          "bytes": 540,
+          "sha256": "a0fde84eb34d918c70c78f35340b4b0e809ced34c1dcf9902c525aec7ee7440b"
+        },
+        {
+          "entry": "line-defer-registry-control-20261106.flow_write_only.arcw",
+          "bytes": 73,
+          "sha256": "28fc8ece599be8e57074b0ef357a35f99861b822714a98d17ba3e8ac2fa7ac2e"
+        },
+        {
+          "entry": "line-defer-registry-control-20261106.flow_write_only.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-registry-control-20261106.flow_write_only.stdout.json",
+          "bytes": 202,
+          "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+        },
+        {
+          "entry": "line-defer-registry-control-20261106.line_write_only.arcw",
+          "bytes": 464,
+          "sha256": "74305ef1925ee055e1770e4a8f3141a575542fb2c2e23f89124d113bd3ac2cee"
+        },
+        {
+          "entry": "line-defer-registry-control-20261106.line_write_only.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-registry-control-20261106.line_write_only.stdout.json",
+          "bytes": 202,
+          "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+        },
+        {
+          "entry": "line-defer-registry-control-20261106.maintained.arcw",
+          "bytes": 385,
+          "sha256": "a25aacc33a8e0d56f9487ee9edf673b2f7f7d56a3d290a8a27168420d886a3e0"
+        },
+        {
+          "entry": "line-defer-registry-control-20261106.maintained.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-registry-control-20261106.maintained.stdout.json",
+          "bytes": 202,
+          "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+        },
+        {
+          "entry": "line-defer-registry-control-20261106.optional_drop.arcw",
+          "bytes": 470,
+          "sha256": "93c5d072430dbf986d9925c7a870df5e4e5c83fb782d19a5f5963618e761bf9b"
+        },
+        {
+          "entry": "line-defer-registry-control-20261106.optional_drop.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-registry-control-20261106.optional_drop.stdout.json",
+          "bytes": 540,
+          "sha256": "c3eef73bd076bcab4a440c0fd1e67eb204fb676a6f59fdb3a4dcada4d526eab6"
+        },
+        {
+          "entry": "line-defer-registry-control-20261106.optional_read.arcw",
+          "bytes": 469,
+          "sha256": "d7a915979751d8c27e836122749723aec19317c190dcb71737d3c323c7510d5b"
+        },
+        {
+          "entry": "line-defer-registry-control-20261106.optional_read.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-registry-control-20261106.optional_read.stdout.json",
+          "bytes": 540,
+          "sha256": "4f4b926b9fbe69f73e870ae498bf6f8e4701f9995bb8f6b2aa706ab3782ddea6"
+        },
+        {
+          "entry": "line-defer-registry-control-20261106.receipt.json",
+          "bytes": 8143,
+          "sha256": "f79ad2f4fdeb02975f9e593319b298a5ce598ced9799741fe4d2eb2ecb07f0e5"
+        },
+        {
+          "entry": "line-defer-registry-control-20261106.required_drop.arcw",
+          "bytes": 460,
+          "sha256": "171f244e4a58143dc7d4305012c324b0ceee374b100c78df4068f5f0557e70d6"
+        },
+        {
+          "entry": "line-defer-registry-control-20261106.required_drop.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "entry": "line-defer-registry-control-20261106.required_drop.stdout.json",
+          "bytes": 540,
+          "sha256": "c3eef73bd076bcab4a440c0fd1e67eb204fb676a6f59fdb3a4dcada4d526eab6"
+        }
+      ]
+    }
   }
 }
