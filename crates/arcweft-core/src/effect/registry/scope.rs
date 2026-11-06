@@ -10,7 +10,7 @@ use crate::runtime_id::{DialogueActivationId, RuntimeFiberInstanceId, RuntimeFra
 use crate::task::RuntimeProgramOwner;
 use crate::value::{AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission, RuntimeValue};
 use arcweft_id::{LifetimeRegistryKey, LifetimeScopeKind};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 /// The actual reached owner against which an inert registry row is admitted.
 /// Execution obtains this from a live frame or an activation transaction.
@@ -130,17 +130,39 @@ struct RegistryEntry {
 
 /// The enclosing activation grants access. This inert data can survive a
 /// private checkpoint or public AWBC save without becoming an active lease.
-#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
 #[serde(transparent)]
-pub(crate) struct RuntimeScopeRegistry(Vec<RegistryEntry>);
+pub(crate) struct RuntimeScopeRegistry {
+    rows: Vec<RegistryEntry>,
+    // A staged mutation is local to this live table, including when its key
+    // is absent. Inert copies and restores have no pending mutations.
+    #[serde(skip)]
+    identity: OnceLock<Arc<()>>,
+}
+
+impl Clone for RuntimeScopeRegistry {
+    fn clone(&self) -> Self {
+        Self {
+            rows: self.rows.clone(),
+            identity: OnceLock::new(),
+        }
+    }
+}
+
+impl PartialEq for RuntimeScopeRegistry {
+    fn eq(&self, other: &Self) -> bool {
+        self.rows == other.rows
+    }
+}
 
 impl RuntimeScopeRegistry {
     pub(crate) fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.rows.is_empty()
     }
 
     pub(crate) fn clear(&mut self) {
-        self.0.clear();
+        self.rows.clear();
+        self.identity = OnceLock::new();
     }
     /// Copies a reached row after admitting the full future value under the
     /// reader's result type and original invocation. Optional absence still
@@ -191,10 +213,10 @@ impl RuntimeScopeRegistry {
                 "registry address does not select this activation",
             ));
         }
-        let Ok(index) = self.0.binary_search_by(|entry| entry.row.key.cmp(key)) else {
+        let Ok(index) = self.rows.binary_search_by(|entry| entry.row.key.cmp(key)) else {
             return Ok(None);
         };
-        let entry = &self.0[index];
+        let entry = &self.rows[index];
         entry
             .source
             .admit(owner, key, entry.row.expected, admission)?;
@@ -227,7 +249,7 @@ impl RuntimeScopeRegistry {
         admission.validate_metadata(&(key, expected, binding))?;
         Ok(RuntimePreparedRegistryDrop {
             key: key.clone(),
-            row,
+            observed: self.observe(row),
         })
     }
 
@@ -245,26 +267,42 @@ impl RuntimeScopeRegistry {
                 "registry address does not select this activation",
             ));
         }
-        let position = self.0.binary_search_by(|entry| entry.row.key.cmp(key));
-        admission.validate_metadata_collection(self.0.len() + usize::from(position.is_err()))?;
+        let position = self.rows.binary_search_by(|entry| entry.row.key.cmp(key));
+        admission.validate_metadata_collection(self.rows.len() + usize::from(position.is_err()))?;
         source.admit(owner, key, value_type, admission)?;
         let value = RuntimeRegistryStateUpdate::prepare(key, value_type, binding, admission)?;
         Ok(RuntimeRegistryWritePreparation {
-            len: self.0.len(),
-            previous: position.ok().map(|index| Arc::clone(&self.0[index].row)),
+            len: self.rows.len(),
+            observed: self.observe(position.ok().map(|index| Arc::clone(&self.rows[index].row))),
             source,
             value,
         })
     }
 
+    fn observe(&self, row: Option<Arc<RuntimeRegistryValue>>) -> RuntimeRegistryObservation {
+        RuntimeRegistryObservation {
+            registry: Arc::clone(self.identity.get_or_init(|| Arc::new(()))),
+            row,
+        }
+    }
+
     fn revalidate_row(
         &self,
         key: &LifetimeRegistryKey,
-        previous: Option<&Arc<RuntimeRegistryValue>>,
+        observed: &RuntimeRegistryObservation,
     ) -> Result<Result<usize, usize>, AwbcRuntimeValueSnapshotError> {
-        let position = self.0.binary_search_by(|entry| entry.row.key.cmp(key));
-        match (position, previous) {
-            (Ok(index), Some(row)) if Arc::ptr_eq(&self.0[index].row, row) => Ok(position),
+        if !self
+            .identity
+            .get()
+            .is_some_and(|identity| Arc::ptr_eq(identity, &observed.registry))
+        {
+            return Err(invalid_registry(
+                "registry mutation selected a different table",
+            ));
+        }
+        let position = self.rows.binary_search_by(|entry| entry.row.key.cmp(key));
+        match (position, observed.row.as_ref()) {
+            (Ok(index), Some(row)) if Arc::ptr_eq(&self.rows[index].row, row) => Ok(position),
             (Err(_), None) => Ok(position),
             _ => Err(invalid_registry("registry row changed before commit")),
         }
@@ -275,7 +313,7 @@ impl RuntimeScopeRegistry {
         position: Result<usize, usize>,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         if position.is_err() {
-            self.0
+            self.rows
                 .try_reserve(1)
                 .map_err(|_| invalid_registry("registry allocation failed"))?;
         }
@@ -293,8 +331,8 @@ impl RuntimeScopeRegistry {
             row: Arc::new(update.row),
         };
         match position {
-            Ok(index) => self.0[index] = entry,
-            Err(index) => self.0.insert(index, entry),
+            Ok(index) => self.rows[index] = entry,
+            Err(index) => self.rows.insert(index, entry),
         }
     }
 
@@ -303,10 +341,10 @@ impl RuntimeScopeRegistry {
         owner: RuntimeRegistryOwner,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
-        admission.validate_metadata_collection(self.0.len())?;
+        admission.validate_metadata_collection(self.rows.len())?;
         let scope = owner.scope();
         let mut previous = None;
-        for entry in &self.0 {
+        for entry in &self.rows {
             let key = &entry.row.key;
             if key.scope() != &scope || previous.is_some_and(|prior| prior >= key) {
                 return Err(invalid_registry("invalid registry key order or selector"));
@@ -321,10 +359,15 @@ impl RuntimeScopeRegistry {
     }
 }
 
+struct RuntimeRegistryObservation {
+    registry: Arc<()>,
+    row: Option<Arc<RuntimeRegistryValue>>,
+}
+
 /// The reached registry and value admission stay paired while the input is evaluated.
 pub(crate) struct RuntimeRegistryWritePreparation<'key, 'budget> {
     len: usize,
-    previous: Option<Arc<RuntimeRegistryValue>>,
+    observed: RuntimeRegistryObservation,
     source: RuntimeRegistryWriteSource,
     value: PreparedRegistryValue<'key, 'budget>,
 }
@@ -336,7 +379,7 @@ impl RuntimeRegistryWritePreparation<'_, '_> {
     ) -> Result<RuntimePreparedRegistryWrite, AwbcRuntimeValueSnapshotError> {
         Ok(RuntimePreparedRegistryWrite {
             len: self.len,
-            previous: self.previous,
+            observed: self.observed,
             source: self.source,
             update: self.value.capture(value)?,
         })
@@ -346,7 +389,7 @@ impl RuntimeRegistryWritePreparation<'_, '_> {
 /// A checked write held outside its scope until its owning step commits.
 pub(crate) struct RuntimePreparedRegistryWrite {
     len: usize,
-    previous: Option<Arc<RuntimeRegistryValue>>,
+    observed: RuntimeRegistryObservation,
     source: RuntimeRegistryWriteSource,
     update: RuntimeRegistryStateUpdate,
 }
@@ -356,10 +399,10 @@ impl RuntimePreparedRegistryWrite {
         &self,
         rows: &RuntimeScopeRegistry,
     ) -> Result<Result<usize, usize>, AwbcRuntimeValueSnapshotError> {
-        if rows.0.len() != self.len {
+        if rows.rows.len() != self.len {
             return Err(invalid_registry("registry size changed before write"));
         }
-        rows.revalidate_row(self.update.key(), self.previous.as_ref())
+        rows.revalidate_row(self.update.key(), &self.observed)
     }
 
     pub(crate) fn reserve(
@@ -383,7 +426,7 @@ impl RuntimePreparedRegistryWrite {
 /// A registry removal can consume only the row observed during preflight.
 pub(crate) struct RuntimePreparedRegistryDrop {
     key: LifetimeRegistryKey,
-    row: Option<Arc<RuntimeRegistryValue>>,
+    observed: RuntimeRegistryObservation,
 }
 
 impl RuntimePreparedRegistryDrop {
@@ -391,7 +434,7 @@ impl RuntimePreparedRegistryDrop {
         &self,
         rows: &RuntimeScopeRegistry,
     ) -> Result<Option<usize>, AwbcRuntimeValueSnapshotError> {
-        Ok(rows.revalidate_row(&self.key, self.row.as_ref())?.ok())
+        Ok(rows.revalidate_row(&self.key, &self.observed)?.ok())
     }
 
     pub(crate) fn commit(
@@ -399,7 +442,7 @@ impl RuntimePreparedRegistryDrop {
         rows: &mut RuntimeScopeRegistry,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         if let Some(index) = self.position(rows)? {
-            rows.0.remove(index);
+            rows.rows.remove(index);
         }
         Ok(())
     }

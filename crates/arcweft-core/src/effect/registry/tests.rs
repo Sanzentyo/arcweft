@@ -206,6 +206,68 @@ fn prepared_registry_write_tracks_its_row_across_sibling_changes() {
 }
 
 #[test]
+fn prepared_registry_mutations_require_the_same_live_table() {
+    let [plan, _] = owners();
+    let owner = RuntimeRegistryOwner::NativeFlow;
+    let target = key("flow", &["target"]);
+    let write = |rows: &RuntimeScopeRegistry| {
+        rows.prepare_write(
+            owner,
+            &target,
+            semantic(1),
+            None,
+            RuntimeRegistryWriteSource::Native,
+            &mut admission(&plan),
+        )
+        .unwrap()
+        .capture(&RuntimeValue::Bool(true))
+        .unwrap()
+    };
+    let drop = |rows: &RuntimeScopeRegistry, kind| {
+        rows.prepare_drop(
+            owner,
+            &target,
+            kind,
+            semantic(1),
+            None,
+            &mut admission(&plan),
+        )
+        .unwrap()
+    };
+
+    let mut rows = RuntimeScopeRegistry::default();
+    let mut other = RuntimeScopeRegistry::default();
+    let staged = write(&rows);
+    assert!(staged.reserve(&mut other).is_err());
+    assert!(
+        drop(&rows, RuntimeRegistryReadKind::Optional)
+            .commit(&mut other)
+            .is_err()
+    );
+    staged.commit(&mut rows).unwrap();
+    assert!(other.is_empty());
+
+    let mut inert_copy = rows.clone();
+    assert_eq!(inert_copy, rows);
+    let encoded = serde_json::to_value(&rows).unwrap();
+    assert_eq!(encoded.as_array().unwrap().len(), 1);
+    let mut restored = serde_json::from_value::<RuntimeScopeRegistry>(encoded).unwrap();
+    assert_eq!(restored, rows);
+    let staged = write(&rows);
+    assert!(staged.reserve(&mut inert_copy).is_err());
+    assert!(staged.reserve(&mut restored).is_err());
+    let removal = drop(&rows, RuntimeRegistryReadKind::Required);
+    assert!(removal.commit(&mut inert_copy).is_err());
+    assert_eq!(inert_copy, rows);
+
+    rows.clear();
+    let stale_absence = write(&rows);
+    rows.clear();
+    assert!(stale_absence.commit(&mut rows).is_err());
+    assert!(rows.is_empty());
+}
+
+#[test]
 fn registry_update_rejects_other_programs_and_retains_the_first_failure() {
     for (owner, foreign) in owners().into_iter().zip(owners()) {
         let packet = RuntimeRegistryStateUpdate::try_copy(
