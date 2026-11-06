@@ -2067,6 +2067,20 @@ fn pure_helper_i64_call_shapes(plan: &RuntimePlan) -> Vec<bool> {
 
 impl Engine {
     fn inert_rollback_image(&self) -> Result<NativeEngineRollbackImage, String> {
+        self.inert_rollback_image_with_dialogue(None)
+            .map(|(image, _)| image)
+    }
+
+    fn inert_rollback_image_with_dialogue(
+        &self,
+        transaction: Option<&dialogue::DialogueActivationTransaction>,
+    ) -> Result<
+        (
+            NativeEngineRollbackImage,
+            crate::value::RuntimeRetainedValueAdmission,
+        ),
+        String,
+    > {
         validate_program_task_launches(
             &self.fiber,
             &self.child_fibers,
@@ -2081,19 +2095,25 @@ impl Engine {
         )?;
         self.dialogue_activations
             .validate_parent_allocations(self.next_fiber_id)?;
+        if let Some(transaction) = transaction {
+            transaction.validate_parent_allocation(self.next_fiber_id)?;
+        }
         let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&self.plan));
         let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
             owner.clone(),
             crate::entry::RuntimeSchemaLimits::engine_default(),
         );
-        self.admit_live_retained_values(&mut admission)
+        self.admit_live_retained_values_with_dialogue(&mut admission, None, transaction)
             .map_err(|error| error.to_string())?;
+        let dialogue_activations =
+            self.dialogue_activations
+                .inert_rollback_image(&owner, &mut admission, transaction)?;
         let publication_image =
             |publication: &RuntimeNeedPublication| publication.snapshot_admitted(&owner);
         admission
             .finish_presentation_custody()
             .map_err(|error| error.to_string())?;
-        Ok(NativeEngineRollbackImage {
+        let image = NativeEngineRollbackImage {
             evaluation_stats: self.evaluation_stats.clone(),
             plan: Arc::clone(&self.plan),
             format_context: self.format_context.clone(),
@@ -2149,7 +2169,7 @@ impl Engine {
             next_fiber_id: self.next_fiber_id,
             next_scheduled_scope_sequence: self.next_scheduled_scope_sequence,
             dialogue_occurrences: self.dialogue_occurrences.clone(),
-            dialogue_activations: self.dialogue_activations.inert_rollback_image(&owner)?,
+            dialogue_activations,
             dialogue_effect_callback_activations: self.dialogue_effect_callback_activations.clone(),
             run_child_next: self.run_child_next,
             pure_i64_batch_inputs: self.pure_i64_batch_inputs.clone(),
@@ -2158,7 +2178,8 @@ impl Engine {
             audio_epoch: self.audio_epoch,
             next_audio_sequence: self.next_audio_sequence,
             next_host_call_sequence: self.next_host_call_sequence,
-        })
+        };
+        Ok((image, admission))
     }
 
     fn from_rollback_image(
@@ -4368,7 +4389,15 @@ impl Engine {
         assert!(self.parked_main.is_none(), "child selection cannot nest");
         self.parked_main = Some(std::mem::replace(&mut self.fiber, child));
         let mut drop_policy = None;
-        self.step_active_child_fiber(input, events, output, pure_backend, &mut drop_policy);
+        let mut line_registry_write = None;
+        self.step_active_child_fiber(
+            input,
+            events,
+            output,
+            pure_backend,
+            &mut drop_policy,
+            &mut line_registry_write,
+        );
         self.finish_active_child_if_exhausted(output, pure_backend);
         let main = self
             .parked_main
@@ -4423,6 +4452,15 @@ impl Engine {
                     .ok_or(crate::line_task::LineRuntimeError::InvalidActivationOperation)?,
                 &drops,
             )?;
+            if let Some(write) = line_registry_write {
+                let rows = transaction.line_mut().line_registry_mut()?;
+                write.reserve(rows).map_err(|error| {
+                    dialogue::DialogueExecutionError::ActivationEffectFailed {
+                        message: error.to_string(),
+                    }
+                })?;
+                write.commit(rows);
+            }
             let receipt = self.dialogue_activations.commit_transaction(transaction)?;
             Self::publish_dialogue_line_receipt(receipt.into_line(), output);
         }
@@ -4808,6 +4846,7 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
         drop_policy: &mut Option<crate::effect::RuntimeDropPolicy>,
+        line_registry_write: &mut Option<crate::effect::RuntimePreparedRegistryWrite>,
     ) {
         if self.fiber.owner.requests_scope_close() {
             self.close_active_child_fiber(output, pure_backend);
@@ -4824,7 +4863,10 @@ impl Engine {
             return;
         }
         if !self.fiber.frame.pending_ops.is_empty() || self.has_active_project_call() {
-            self.step_flow(output, pure_backend, drop_policy);
+            let line_registry = matches!(self.fiber.owner, FlowFiberOwner::LineTask(_)).then_some(
+                registry::NativeLineRegistryExecution::Child(line_registry_write),
+            );
+            self.step_flow_with_line_registry(output, pure_backend, drop_policy, line_registry);
         }
     }
 

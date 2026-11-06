@@ -64,7 +64,19 @@ fn complete_contour_borrows_actual_withdrawn_and_active_frames_without_copying()
         })
         .unwrap();
     assert_eq!(visited, [activation(0), activation(1)]);
+    let owner = admission.program_owner().unwrap();
+    let snapshot_frame = |frame: &RuntimeValue| Ok(frame == &RuntimeValue::Bool(true));
+    let withdrawn = contour
+        .snapshot_admitted(Some(owner), snapshot_frame)
+        .unwrap();
     registry.restore_transaction(transaction).unwrap();
+    assert_eq!(
+        withdrawn,
+        registry
+            .snapshot_admitted(Some(owner), snapshot_frame)
+            .unwrap(),
+        "projection preserves the original revision, frame, and line without the live reservation",
+    );
     assert_eq!(
         registry.active_frame(&activation(0)),
         Some(&RuntimeValue::Bool(true))
@@ -136,4 +148,118 @@ fn borrowed_contour_metadata_uses_the_original_trusted_allowance() {
     );
     assert!(admission.validate(&RuntimeValue::Unit).is_err());
     registry.restore_transaction(transaction).unwrap();
+}
+
+#[test]
+fn line_registry_save_roundtrips_under_its_original_activation_and_effect() {
+    use crate::awbc::schema::{
+        AwbcEffectPayload, AwbcEffectPlan, AwbcEffectPlanId, AwbcSignatureId,
+    };
+    use crate::effect::{
+        RuntimeRegistryOwner, RuntimeRegistryStateUpdate, RuntimeRegistryWriteSource,
+    };
+    use arcweft_id::{DeclarationName, LifetimeRegistryKey, LifetimeScopeKind};
+
+    let id = activation(0);
+    let key = LifetimeRegistryKey::new(
+        LifetimeScopeKind::Line,
+        vec![DeclarationName::try_new("focus").unwrap()].into_boxed_slice(),
+    );
+    let ty = crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest();
+    let program = RuntimeProgramOwner::Awbc(Arc::new(AwbcProgram {
+        runtime_types: vec![AwbcRuntimeType::new(ty, AwbcRuntimeTypeShape::Bool)],
+        effect_plans: vec![AwbcEffectPlan {
+            signature: AwbcSignatureId(0),
+            capability: None,
+            payload: AwbcEffectPayload::RegistryWrite {
+                key: key.clone(),
+                value_type: AwbcTypeId(0),
+            },
+            resources: Vec::new(),
+        }],
+        ..AwbcProgram::default()
+    }));
+    let mut registry = registry();
+    let mut transaction = registry.begin_transaction(&id).unwrap();
+    let source = RuntimeRegistryWriteSource::AwbcLine {
+        effect: AwbcEffectPlanId(0),
+        activation: id,
+    };
+    let mut admission = RuntimeRetainedValueAdmission::for_program(
+        program.clone(),
+        RuntimeSchemaLimits::engine_default(),
+    );
+    let rows = transaction.line_mut().line_registry_mut().unwrap();
+    let position = rows
+        .prepare_write(
+            RuntimeRegistryOwner::Dialogue(id),
+            &key,
+            ty,
+            source,
+            &mut admission,
+        )
+        .unwrap();
+    let value = RuntimeRegistryStateUpdate::try_copy(
+        &key,
+        ty,
+        None,
+        &RuntimeValue::Bool(true),
+        &mut admission,
+    )
+    .unwrap();
+    rows.reserve_write(position).unwrap();
+    rows.commit(position, source, value);
+    registry.commit(transaction).unwrap();
+
+    let snapshot = registry
+        .to_rollback_snapshot(&program, |frame| Ok(frame == &RuntimeValue::Bool(true)))
+        .unwrap();
+    let wire = serde_json::to_value(snapshot).unwrap();
+    let restore = |wire| {
+        RuntimeDialogueActivationRegistry::<RuntimeValue, AwbcTypeId>::from_save_snapshot_with_deferred_children(
+            serde_json::from_value(wire).unwrap(),
+            &program,
+            &BTreeMap::new(),
+            |_, frame, _| Ok(RuntimeValue::Bool(frame)),
+        )
+    };
+
+    let mut restored = restore(wire.clone()).unwrap();
+    assert_eq!(restored, registry);
+    let mut foreign_activation = wire.clone();
+    foreign_activation["entries"][0]["Active"]["activation"] =
+        serde_json::to_value(activation(1)).unwrap();
+    let error = restore(foreign_activation).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("registry row requires its original executable and activation"),
+        "{error}"
+    );
+
+    let mut foreign_effect = wire;
+    foreign_effect["entries"][0]["Active"]["line"]["line_registry"][0]["source"]["AwbcLine"]["effect"] =
+        serde_json::json!(1);
+    let error = restore(foreign_effect).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("registry row differs from its original write"),
+        "{error}"
+    );
+
+    let mut transaction = restored.begin_transaction(&id).unwrap();
+    transaction.line_mut().release_frame().unwrap();
+    assert!(matches!(
+        transaction.line().line_registry(),
+        Err(LineRuntimeError::ActivationFrameReleased)
+    ));
+    restored.restore_transaction(transaction).unwrap();
+    let released = restored.to_rollback_snapshot(&program, |_| Ok(())).unwrap();
+    let released = serde_json::to_value(released).unwrap();
+    assert!(
+        released["entries"][0]["Active"]["line"]
+            .get("line_registry")
+            .is_none()
+    );
 }

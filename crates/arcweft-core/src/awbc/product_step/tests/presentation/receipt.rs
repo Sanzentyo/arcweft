@@ -332,9 +332,12 @@ fn fixture(
         VmStepOptions {
             max_instructions: 1,
         },
-        &context,
-        &mut executor.presentation,
-        &mut executor.actions,
+        crate::awbc::vm::VmExecutionResources {
+            context: Some(&context),
+            presentation: Some(&mut executor.presentation),
+            actions: Some(&mut executor.actions),
+            line_registry: None,
+        },
         &mut host,
     )
     .unwrap();

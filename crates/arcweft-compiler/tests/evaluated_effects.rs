@@ -2257,6 +2257,238 @@ entry cli @entry.main { goto @flow.main }
 }
 
 #[test]
+fn line_registry_writes_run_in_owned_callbacks_and_survive_product_save() {
+    use arcweft_core::{
+        awbc::product_step::AwbcProductExecutorSaveSnapshot,
+        engine::{FlowExit, FlowFiberStatus},
+        executor::{ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot},
+        plan::FlowEvent,
+        runtime_id::DialogueActivationId,
+        step::{
+            RuntimeDialogueContentEvent, RuntimeDialogueContentEventKind,
+            RuntimeDialogueInputActionEvent, RuntimeStepInput, RuntimeStepOptions,
+            RuntimeStepResult,
+        },
+        time::TickId,
+    };
+    use arcweft_interaction_model::input::{InputActionId, InputEpoch, InputSequence};
+
+    let compiled = compile_attached_dialogue_project(
+        r#"
+pub character alice { display = "Alice" }
+flow main() -> Unit effects { state.write('line), log.write } {
+    alice:
+        本文。[mark @.change][p]
+    with:
+        init:
+            'line.initial_flag <- true
+            if true { 'line.nested_flag <- true }
+        on mark(@.change) {
+            'line.marked_flag <- true
+            log.info("mark")
+        }
+        cancel on input(.SkipLine) {
+            'line.cancel_flag <- true
+            log.info("cancel")
+            out "Skipped"
+        }
+        defer on completed { 'line.completed_flag <- true; log.info("completed") }
+        defer on cancelled { 'line.cancelled_flag <- true; log.info("cancelled") }
+        out "Completed"
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    )
+    .expect("checked line and callback writes compile");
+    let runtime = compiled.runtime_plan();
+    let report = AwbcLowerer::new(
+        &runtime.plan,
+        &runtime.dialogue_content_catalog,
+        "line_registry.arcw",
+    )
+    .lower()
+    .expect("line effects verify against their original group");
+    let bytes = report.program.encode_canonical().unwrap();
+    let decoded = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+        &bytes,
+        arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+    )
+    .unwrap();
+    let [flow] = runtime.plan.flows() else {
+        panic!("fixture owns one Flow")
+    };
+
+    for cancelled in [false, true] {
+        let run = |backend: &str,
+                   step: &mut dyn FnMut(
+            RuntimeStepInput,
+            RuntimeStepOptions,
+        ) -> RuntimeStepResult| {
+            let mut revealed = None::<DialogueActivationId>;
+            let mut sent_mark = false;
+            let mut sent_finish = false;
+            let mut mark_complete = false;
+            let mut logs = Vec::new();
+            for tick in 0..512 {
+                let mut input = RuntimeStepInput {
+                    tick: TickId(tick),
+                    ..Default::default()
+                };
+                if let Some(activation) = revealed {
+                    if !sent_mark {
+                        input
+                            .dialogue_content_events
+                            .push(RuntimeDialogueContentEvent::new(
+                                activation,
+                                RuntimeDialogueContentEventKind::Mark(
+                                    RuntimeDialogueMarkId::from_zero_based(0).unwrap(),
+                                ),
+                            ));
+                        sent_mark = true;
+                    } else if mark_complete && !sent_finish {
+                        if cancelled {
+                            input.dialogue_input_actions.push(
+                                RuntimeDialogueInputActionEvent::new(
+                                    activation,
+                                    InputActionId::new("SkipLine").unwrap(),
+                                    InputEpoch::new(1),
+                                    InputSequence::new(1),
+                                ),
+                            );
+                        } else {
+                            input.dialogue_advances.push(activation);
+                        }
+                        sent_finish = true;
+                    }
+                }
+                let result = step(input, RuntimeStepOptions::default());
+                assert!(result.stats.executed_ops <= 1, "{result:?}");
+                assert!(
+                    result.output.diagnostics.is_empty(),
+                    "{backend} tick={tick} cancelled={cancelled} revealed={revealed:?} sent_mark={sent_mark} sent_finish={sent_finish} logs={logs:?}: {result:?}"
+                );
+                assert!(result.output.requests.host_calls.is_empty());
+                logs.extend(log_messages(&result.output.effects.line));
+                mark_complete |=
+                    result.stats.child_fibers == 0 && logs.iter().any(|log| log == "mark");
+                for event in result.output.flow_events {
+                    if let FlowEvent::DialogueLine { activation, .. } = event {
+                        assert!(revealed.replace(activation).is_none());
+                    }
+                }
+                if result.fiber_status == FlowFiberStatus::Done(FlowExit::Done) {
+                    assert!(revealed.is_some() && sent_mark && sent_finish);
+                    return logs;
+                }
+            }
+            panic!("{backend} line did not finish within 512 steps, cancelled={cancelled}");
+        };
+
+        let mut plan = runtime.plan.clone();
+        plan.bind_artifact(
+            arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes(
+                *blake3::hash(&bytes).as_bytes(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let mut native = arcweft_core::engine::Engine::for_flow(plan, &flow.id).unwrap();
+        let native_schema = bind_test_character_dialogue_schema(
+            &compiled,
+            arcweft_core::task::RuntimeProgramOwner::Plan(native.program_plan()),
+        );
+        let mut native_backend = arcweft_core::pure::VmRuntimePureCallBackend::default()
+            .with_external_calls(
+                arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&native_schema),
+            );
+        let native_logs = run("native", &mut |input, options| {
+            native.step_with_pure_backend(input, options, &mut native_backend)
+        });
+
+        let awbc = ArcweftRuntimeExecutor::from_awbc_product(
+            decoded.clone(),
+            arcweft_core::awbc::schema::AwbcEntryId(0),
+        )
+        .unwrap();
+        let awbc_schema = bind_test_character_dialogue_schema(&compiled, awbc.program_owner());
+        let mut awbc_backend = arcweft_core::pure::VmRuntimePureCallBackend::default()
+            .with_external_calls(
+                arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&awbc_schema),
+            );
+        let mut awbc = Some(awbc);
+        let mut observed_keys = std::collections::BTreeSet::new();
+        let awbc_logs = run("awbc", &mut |input, options| {
+            let mut current = awbc.take().unwrap();
+            let result = current.step_with_pure_backend(input, options, &mut awbc_backend);
+            let ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot) = current.snapshot().unwrap();
+            let saved = AwbcProductExecutorSaveSnapshot::from_live(
+                &snapshot,
+                current.admitted_product_awbc_program().unwrap(),
+            )
+            .unwrap();
+            let wire = serde_json::to_value(&saved).unwrap();
+            let entries = wire["dialogues"]["entries"].as_array().unwrap();
+            if result.fiber_status == FlowFiberStatus::Done(FlowExit::Done) {
+                assert!(entries.iter().all(|entry| entry.get("Active").is_none()));
+            }
+            for entry in entries {
+                if let Some(rows) = entry["Active"]["line"]["line_registry"].as_array() {
+                    for row in rows {
+                        assert_eq!(row["row"]["key"]["scope"], "line");
+                        assert_eq!(row["row"]["value"]["Bool"], true);
+                        assert_eq!(
+                            row["source"]["AwbcLine"]["activation"],
+                            entry["Active"]["activation"]
+                        );
+                        let [key] = row["row"]["key"]["segments"].as_array().unwrap().as_slice()
+                        else {
+                            panic!("one authored path segment: {row}");
+                        };
+                        observed_keys.insert(key.as_str().unwrap().to_owned());
+                    }
+                }
+            }
+            let decoded = serde_json::from_slice(&serde_json::to_vec(&wire).unwrap()).unwrap();
+            let bound = current.bind_product_save_snapshot(decoded).unwrap();
+            awbc = Some(
+                current
+                    .restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(bound))
+                    .unwrap(),
+            );
+            result
+        });
+        let (logs, keys): (&[&str], &[&str]) = if cancelled {
+            (
+                &["mark", "cancel", "cancelled"],
+                &[
+                    "cancel_flag",
+                    "cancelled_flag",
+                    "initial_flag",
+                    "marked_flag",
+                    "nested_flag",
+                ],
+            )
+        } else {
+            (
+                &["mark", "completed"],
+                &[
+                    "completed_flag",
+                    "initial_flag",
+                    "marked_flag",
+                    "nested_flag",
+                ],
+            )
+        };
+        assert_eq!(native_logs, logs);
+        assert_eq!(awbc_logs, logs);
+        assert_eq!(
+            observed_keys.iter().map(String::as_str).collect::<Vec<_>>(),
+            keys
+        );
+    }
+}
+
+#[test]
 fn mark_out_selects_an_on_only_non_unit_result_in_native_and_decoded_awbc() {
     let compiled = compile_attached_dialogue_project(
         r#"

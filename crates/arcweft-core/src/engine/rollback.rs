@@ -1105,6 +1105,15 @@ impl Engine {
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
         removal: Option<crate::presentation::resources::PresentationSlotRemovalAdmission<'_>>,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+        self.admit_live_retained_values_with_dialogue(admission, removal, None)
+    }
+
+    pub(super) fn admit_live_retained_values_with_dialogue(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        removal: Option<crate::presentation::resources::PresentationSlotRemovalAdmission<'_>>,
+        transaction: Option<&super::dialogue::DialogueActivationTransaction>,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
         use crate::value::AwbcRuntimeValueSnapshotError;
         self.admit_presentation_state_for_slot_removal(admission, removal)?;
         self.admit_metadata(admission)?;
@@ -1127,8 +1136,10 @@ impl Engine {
             )?;
         }
         self.expected_deferred_children(|activation| {
-            self.dialogue_activations
-                .active_line(activation)
+            transaction
+                .filter(|transaction| transaction.activation() == activation)
+                .map(super::dialogue::DialogueActivationTransaction::line)
+                .or_else(|| self.dialogue_activations.active_line(activation))
                 .and_then(crate::line_task::RuntimeDialogueActivationState::deferred_inflight)
         })
         .map_err(|message| AwbcRuntimeValueSnapshotError::Message { message })?;

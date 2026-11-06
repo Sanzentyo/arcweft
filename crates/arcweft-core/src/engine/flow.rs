@@ -313,6 +313,16 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
         drop_policy: &mut Option<crate::effect::RuntimeDropPolicy>,
     ) {
+        self.step_flow_with_line_registry(output, pure_backend, drop_policy, None);
+    }
+
+    pub(super) fn step_flow_with_line_registry(
+        &mut self,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimeCallBackend,
+        drop_policy: &mut Option<crate::effect::RuntimeDropPolicy>,
+        line_registry: Option<super::registry::NativeLineRegistryExecution<'_>>,
+    ) {
         let plan = Arc::clone(&self.plan);
         // Empty body ranges are structural transitions, not executable polls.
         self.fiber.frame.normalize_pending_source_ranges(&plan);
@@ -401,6 +411,7 @@ impl Engine {
             output,
             pure_backend,
             drop_policy,
+            line_registry,
         );
     }
 
@@ -415,6 +426,7 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
         drop_policy: &mut Option<crate::effect::RuntimeDropPolicy>,
+        line_registry: Option<super::registry::NativeLineRegistryExecution<'_>>,
     ) {
         match op.as_ref() {
             FlowOp::Let { pattern, expr } => {
@@ -1066,11 +1078,34 @@ impl Engine {
                 }
             }
             FlowOp::EvaluatedEffect(effect) => {
-                if matches!(
-                    effect,
-                    crate::effect::RuntimeEffectExpr::RegistryWrite { .. }
-                ) {
-                    if let Err(error) = self.execute_registry_write(&source_site, pure_backend) {
+                if let crate::effect::RuntimeEffectExpr::RegistryWrite { key, .. } = effect {
+                    use super::registry::NativeLineRegistryExecution;
+                    let written = match line_registry {
+                        Some(NativeLineRegistryExecution::Child(pending))
+                            if key.scope() == &arcweft_id::LifetimeScopeKind::Line =>
+                        {
+                            self.stage_child_line_registry_write(&source_site, pure_backend)
+                                .map(|write| *pending = Some(write))
+                        }
+                        Some(NativeLineRegistryExecution::Activation {
+                            activation,
+                            group,
+                            rows,
+                            admission,
+                            pending,
+                        }) if key.scope() == &arcweft_id::LifetimeScopeKind::Line => self
+                            .stage_borrowed_line_registry_write(
+                                &source_site,
+                                activation,
+                                group,
+                                rows,
+                                admission,
+                                pure_backend,
+                            )
+                            .map(|write| *pending = Some(write)),
+                        _ => self.execute_registry_write(&source_site, pure_backend),
+                    };
+                    if let Err(error) = written {
                         self.fail_eval(error, output);
                         return;
                     }

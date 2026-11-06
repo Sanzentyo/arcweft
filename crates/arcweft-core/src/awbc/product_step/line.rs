@@ -1460,6 +1460,15 @@ impl super::AwbcProductStepExecutor {
         let mut effect_checkpoint = Some(self.execution_checkpoint(
             super::checkpoint::ProductCheckpointTarget::Dialogue(transaction),
         )?);
+        let mut registry_admission =
+            if crate::awbc::vm::is_line_registry_instruction(&self.program, effect_site) {
+                Some(self.retained_execution_admission(
+                    super::checkpoint::ProductCheckpointTarget::Dialogue(transaction),
+                )?)
+            } else {
+                None
+            };
+        let mut pending_registry_write = None;
         let (frame, line) = transaction.parts_mut();
         let phase = std::mem::replace(&mut frame.phase, ProductDialoguePhase::Transitioning);
         let ProductDialoguePhase::Activating {
@@ -1492,15 +1501,28 @@ impl super::AwbcProductStepExecutor {
                     trap,
                 )
             } else {
+                let registry_write = if let Some(admission) = registry_admission.as_mut() {
+                    Some(crate::awbc::vm::VmLineRegistryWrite {
+                        activation,
+                        rows: line.line_registry()?,
+                        admission,
+                        pending: &mut pending_registry_write,
+                    })
+                } else {
+                    None
+                };
                 crate::awbc::vm::step_with_execution_resources(
                     &self.program,
                     candidate.as_mut().expect("activation fiber remains owned"),
                     VmStepOptions {
                         max_instructions: 1,
                     },
-                    &context,
-                    &mut self.presentation,
-                    &mut self.actions,
+                    crate::awbc::vm::VmExecutionResources {
+                        context: Some(&context),
+                        presentation: Some(&mut self.presentation),
+                        actions: Some(&mut self.actions),
+                        line_registry: registry_write,
+                    },
                     &mut host,
                 )
             };
@@ -1520,6 +1542,15 @@ impl super::AwbcProductStepExecutor {
                     return Err(ProductStepError::Vm(error));
                 }
             };
+
+            if let Some(write) = pending_registry_write.as_ref() {
+                if !step.completed_single_effect_instruction() {
+                    return Err(LineRuntimeError::InvalidActivationOperation.into());
+                }
+                write
+                    .reserve(line.line_registry_mut()?)
+                    .map_err(crate::awbc::fiber::FiberStateError::Snapshot)?;
+            }
 
             let mut owned_observation = None;
             let mut line_defer_observation = None;
@@ -2005,6 +2036,25 @@ impl super::AwbcProductStepExecutor {
                 },
             }
         })();
+        if let Some(write) = pending_registry_write {
+            if result.is_ok() {
+                write.commit(
+                    line.line_registry_mut()
+                        .expect("prepared write has a live line"),
+                );
+            } else if let Some(checkpoint) = effect_checkpoint {
+                checkpoint
+                    .restore(
+                        candidate
+                            .as_mut()
+                            .expect("failed registry instruction retains the selected fiber"),
+                        &mut self.presentation,
+                        &mut self.actions,
+                        &self.program,
+                    )
+                    .expect("accepted activation checkpoint restores in its original program");
+            }
+        }
         if let Some(fiber) = candidate.take() {
             frame.phase = ProductDialoguePhase::Activating {
                 fiber,

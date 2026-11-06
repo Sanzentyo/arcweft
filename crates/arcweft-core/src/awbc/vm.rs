@@ -6,7 +6,7 @@
 
 use crate::value::runtime_value_views_equal;
 mod resources;
-use resources::VmExecutionResources;
+pub(crate) use resources::{VmExecutionResources, VmLineRegistryWrite};
 
 #[cfg(test)]
 mod dense_numeric_tests;
@@ -31,7 +31,6 @@ use super::schema::{
 use crate::effect::RuntimeArtifactFingerprint;
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::{RuntimeFlowTargetError, RuntimeValueOwnershipRequirement};
-use crate::presentation::resources::{PresentationBanks, PresentationBody};
 use crate::stream::RuntimeStreamYieldCopyProof;
 use crate::task::RuntimeProgramOwner;
 use crate::time::LogicalDuration;
@@ -211,6 +210,20 @@ pub struct VmStepOutput {
     pub executed: u64,
     pub observations: Vec<VmObservation>,
     pub exit: VmExit,
+}
+
+impl VmStepOutput {
+    pub(crate) fn completed_single_effect_instruction(&self) -> bool {
+        self.executed == 1
+            && matches!(self.exit, VmExit::Running)
+            && matches!(
+                self.observations.as_slice(),
+                [VmObservation::Instruction {
+                    opcode: AwbcOpcode::EmitEffect,
+                    ..
+                }]
+            )
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -537,6 +550,7 @@ pub(crate) fn trap_fiber(
                 context: None,
                 presentation: None,
                 actions: None,
+                line_registry: None,
             },
             trap.code,
             trap.message,
@@ -558,7 +572,14 @@ pub fn step_with_host(
     options: VmStepOptions,
     host: &mut impl VmHost,
 ) -> Result<VmStepOutput, VmError> {
-    step_with_host_context_optional(program, fiber, options, None, None, None, None, host)
+    step_with_host_context_optional(
+        program,
+        fiber,
+        options,
+        VmExecutionResources::default(),
+        None,
+        host,
+    )
 }
 
 /// Executes a bounded AWBC slice with the exact artifact context used for
@@ -574,9 +595,10 @@ pub fn step_with_host_context(
         program,
         fiber,
         options,
-        Some(context),
-        None,
-        None,
+        VmExecutionResources {
+            context: Some(context),
+            ..Default::default()
+        },
         None,
         host,
     )
@@ -599,11 +621,25 @@ pub fn step_function_with_host_context(
         program,
         fiber,
         options,
-        Some(context),
-        None,
-        None,
+        VmExecutionResources {
+            context: Some(context),
+            ..Default::default()
+        },
         Some(function),
         host,
+    )
+}
+
+pub(crate) fn is_line_registry_instruction(program: &AwbcProgram, cursor: FiberCursor) -> bool {
+    let Ok(AwbcInstruction::EmitEffect { effect, .. }) =
+        super::fiber::instruction_at_site(program, cursor)
+    else {
+        return false;
+    };
+    matches!(
+        program.effect_plans.get(effect.index()).map(|plan| &plan.payload),
+        Some(super::schema::AwbcEffectPayload::RegistryWrite { key, .. })
+            if key.scope() == &arcweft_id::LifetimeScopeKind::Line
     )
 }
 
@@ -613,40 +649,20 @@ pub(crate) fn step_with_execution_resources(
     program: &AwbcProgram,
     fiber: &mut FiberState,
     options: VmStepOptions,
-    context: &VmExecutionContext,
-    presentation: &mut Option<PresentationBanks<PresentationBody<crate::value::RuntimePayload>>>,
-    actions: &mut crate::action::RuntimeActionMailbox,
+    execution: VmExecutionResources<'_>,
     host: &mut impl VmHost,
 ) -> Result<VmStepOutput, VmError> {
-    step_with_host_context_optional(
-        program,
-        fiber,
-        options,
-        Some(context),
-        Some(presentation),
-        Some(actions),
-        None,
-        host,
-    )
+    step_with_host_context_optional(program, fiber, options, execution, None, host)
 }
 
 fn step_with_host_context_optional(
     program: &AwbcProgram,
     fiber: &mut FiberState,
     options: VmStepOptions,
-    context: Option<&VmExecutionContext>,
-    presentation: Option<
-        &mut Option<PresentationBanks<PresentationBody<crate::value::RuntimePayload>>>,
-    >,
-    actions: Option<&mut crate::action::RuntimeActionMailbox>,
+    mut execution: VmExecutionResources<'_>,
     function_boundary: Option<AwbcFunctionId>,
     host: &mut impl VmHost,
 ) -> Result<VmStepOutput, VmError> {
-    let mut execution = VmExecutionResources {
-        context,
-        presentation,
-        actions,
-    };
     let mut observations = Vec::new();
     let mut executed = 0_u64;
     while fiber.status == FiberStatus::Running && executed < options.max_instructions {

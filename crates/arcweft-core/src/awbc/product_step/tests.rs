@@ -236,9 +236,12 @@ fn suspend_fixture_dialogue(executor: &mut AwbcProductStepExecutor, captures: Ve
         &executor.program,
         &mut executor.fiber,
         crate::awbc::vm::VmStepOptions { max_instructions },
-        &context,
-        &mut executor.presentation,
-        &mut executor.actions,
+        crate::awbc::vm::VmExecutionResources {
+            context: Some(&context),
+            presentation: Some(&mut executor.presentation),
+            actions: Some(&mut executor.actions),
+            line_registry: None,
+        },
         &mut host,
     )
     .unwrap();

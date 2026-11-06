@@ -435,6 +435,11 @@ pub struct RuntimeLineHandleLedger {
 )]
 pub struct RuntimeDialogueActivationState<T, V = RuntimeValue> {
     ledger: RuntimeLineHandleLedger,
+    #[serde(
+        default,
+        skip_serializing_if = "crate::effect::RuntimeScopeRegistry::is_empty"
+    )]
+    line_registry: crate::effect::RuntimeScopeRegistry,
     command_sequence: u64,
     issued_commands: BTreeMap<
         crate::presentation::RuntimeLineCommandId,
@@ -670,6 +675,7 @@ impl<T: Clone> Clone for AwbcRuntimeDialogueActivationSnapshot<T> {
     fn clone(&self) -> Self {
         Self {
             ledger: self.ledger.clone(),
+            line_registry: self.line_registry.clone(),
             command_sequence: self.command_sequence,
             issued_commands: self.issued_commands.clone(),
             superseded_commands: self.superseded_commands.clone(),
@@ -791,6 +797,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
     pub fn new() -> Self {
         Self {
             ledger: RuntimeLineHandleLedger::default(),
+            line_registry: crate::effect::RuntimeScopeRegistry::default(),
             command_sequence: 0,
             issued_commands: BTreeMap::new(),
             superseded_commands: BTreeMap::new(),
@@ -803,6 +810,24 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             frame_released: false,
             prepared_commands: Vec::new(),
         }
+    }
+
+    pub(crate) fn line_registry(
+        &self,
+    ) -> Result<&crate::effect::RuntimeScopeRegistry, LineRuntimeError> {
+        if self.frame_released {
+            return Err(LineRuntimeError::ActivationFrameReleased);
+        }
+        Ok(&self.line_registry)
+    }
+
+    pub(crate) fn line_registry_mut(
+        &mut self,
+    ) -> Result<&mut crate::effect::RuntimeScopeRegistry, LineRuntimeError> {
+        if self.frame_released {
+            return Err(LineRuntimeError::ActivationFrameReleased);
+        }
+        Ok(&mut self.line_registry)
     }
 
     /// Checks the sole lifecycle condition before moving captured affine values.
@@ -2509,6 +2534,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         if self.has_pending_deferred_work() {
             return Err(LineRuntimeError::DeferredRegistrationsRemain);
         }
+        self.line_registry.clear();
         self.frame_released = true;
         Ok(())
     }
@@ -2703,7 +2729,7 @@ impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
                 crate::entry::RuntimeSchemaLimits::engine_default(),
             ),
         };
-        state.admit_retained_resources(&mut admission)?;
+        state.admit_retained_resources(None, &mut admission)?;
         Self::from_admitted_live(state, owner)
     }
 
@@ -2713,6 +2739,7 @@ impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
     ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {
         Ok(Self {
             ledger: state.ledger.clone(),
+            line_registry: state.line_registry.clone(),
             command_sequence: state.command_sequence,
             issued_commands: state.issued_commands.clone(),
             superseded_commands: state.superseded_commands.clone(),
@@ -2747,6 +2774,7 @@ impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
     {
         let owner = owner.into();
         self.admit_retained_resources(
+            None,
             &mut crate::value::RuntimeRetainedValueAdmission::for_program(
                 owner.owner().clone(),
                 crate::entry::RuntimeSchemaLimits::engine_default(),
@@ -2763,6 +2791,7 @@ impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
         let owner = owner.into();
         Ok(RuntimeDialogueActivationState {
             ledger: self.ledger,
+            line_registry: self.line_registry,
             command_sequence: self.command_sequence,
             issued_commands: self.issued_commands,
             superseded_commands: self.superseded_commands,
@@ -4812,6 +4841,7 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
     /// Activation/ledger and backend type obligations remain on their owners.
     pub(crate) fn admit_retained_resources(
         &self,
+        activation: Option<DialogueActivationId>,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
     where
@@ -4835,6 +4865,18 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
             self.frame_released,
             &self.prepared_commands,
         ))?;
+        if !self.line_registry.is_empty() {
+            let activation = activation.filter(|_| !self.frame_released).ok_or_else(|| {
+                crate::value::AwbcRuntimeValueSnapshotError::Message {
+                    message: "line registry requires its original unreleased dialogue activation"
+                        .to_owned(),
+                }
+            })?;
+            self.line_registry.admit_retained(
+                crate::effect::RuntimeRegistryOwner::Dialogue(activation),
+                admission,
+            )?;
+        }
         admission.validate_metadata_collection(self.scheduled.len())?;
         admission.validate_metadata_collection(self.deferred.len())?;
         for scheduled in &self.scheduled {
@@ -5832,13 +5874,17 @@ mod tests {
             owner.clone(),
             crate::entry::RuntimeSchemaLimits::engine_default(),
         );
-        let first = saved.admit_retained_resources(&mut admission).unwrap_err();
+        let first = saved
+            .admit_retained_resources(None, &mut admission)
+            .unwrap_err();
         assert!(matches!(
             first,
             crate::value::AwbcRuntimeValueSnapshotError::ProgramType(_)
         ));
         assert_eq!(
-            saved.admit_retained_resources(&mut admission).unwrap_err(),
+            saved
+                .admit_retained_resources(None, &mut admission)
+                .unwrap_err(),
             first
         );
         assert_eq!(serde_json::to_vec(&saved).unwrap(), before);

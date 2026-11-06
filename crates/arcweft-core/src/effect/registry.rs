@@ -18,7 +18,9 @@ use crate::value::{
 mod journal;
 mod scope;
 pub(crate) use journal::{RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJournalError};
-pub(crate) use scope::{RuntimeFlowRegistry, RuntimeRegistryWriteSource};
+pub(crate) use scope::{RuntimeRegistryOwner, RuntimeRegistryWriteSource, RuntimeScopeRegistry};
+
+pub(crate) use scope::RuntimePreparedRegistryWrite;
 
 /// Replayable update data admitted by the exact executable that produced it.
 ///

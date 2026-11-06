@@ -313,8 +313,8 @@ impl Engine {
             }
             if line_task.is_closing() || line_task.is_closed() {
                 let activation = finalize_live_line_task_close(group, line_task);
-                if line_task.is_closed() {
-                    frame.line_task = DialogueLineTaskState::Closed;
+                if let Some(exit) = line_task.closed_exit() {
+                    frame.line_task = DialogueLineTaskState::Closed(exit);
                     frame.phase = DialogueRuntimePhase::Closing;
                 }
                 start = Some(super::dialogue::DialogueLineTaskStart {
@@ -381,13 +381,8 @@ impl Engine {
                     callback_sites: Vec::new(),
                 });
             }
-            if matches!(frame.line_task, DialogueLineTaskState::Closed)
-                || matches!(
-                    &frame.line_task,
-                    DialogueLineTaskState::Live(line_task) if line_task.is_closed()
-                )
-            {
-                frame.line_task = DialogueLineTaskState::Closed;
+            if let Some(exit) = frame.line_task.closed_exit() {
+                frame.line_task = DialogueLineTaskState::Closed(exit);
                 frame.phase = DialogueRuntimePhase::Closing;
             }
         }

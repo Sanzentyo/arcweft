@@ -307,9 +307,12 @@ fn awbc_handle_retirement_capacity_rejects_before_moving_its_register_or_bank() 
             crate::awbc::vm::VmStepOptions {
                 max_instructions: 1,
             },
-            &context,
-            &mut executor.presentation,
-            &mut executor.actions,
+            crate::awbc::vm::VmExecutionResources {
+                context: Some(&context),
+                presentation: Some(&mut executor.presentation),
+                actions: Some(&mut executor.actions),
+                line_registry: None,
+            },
             &mut crate::awbc::vm::RejectingVmHost,
         )
         .unwrap_err();

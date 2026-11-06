@@ -1291,7 +1291,14 @@ impl LineTaskLiveState {
 
     #[must_use]
     pub(crate) fn is_closed(&self) -> bool {
-        matches!(self.phase, LineTaskPhase::Closed { .. })
+        self.closed_exit().is_some()
+    }
+
+    pub(crate) fn closed_exit(&self) -> Option<ScopeExit> {
+        match self.phase {
+            LineTaskPhase::Closed { exit } => Some(exit),
+            LineTaskPhase::Active | LineTaskPhase::Closing { .. } => None,
+        }
     }
 
     pub(crate) fn accepts_result_selection<P: LineTaskPlanView>(

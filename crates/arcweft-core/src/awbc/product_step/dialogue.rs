@@ -103,7 +103,14 @@ impl ProductDialogueStore {
     ) -> Option<&crate::line_task::RuntimeDialogueActivationState<AwbcTypeId>> {
         self.active_activation()
             .as_ref()
-            .and_then(|activation| self.registry.active_line(activation))
+            .and_then(|activation| self.active_line_for(activation))
+    }
+
+    pub(super) fn active_line_for(
+        &self,
+        activation: &DialogueActivationId,
+    ) -> Option<&crate::line_task::RuntimeDialogueActivationState<AwbcTypeId>> {
+        self.registry.active_line(activation)
     }
 
     /// Borrows the executor's actual phase and the same command/defer ledger

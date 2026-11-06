@@ -542,9 +542,15 @@ impl Engine {
         let activation_id = transaction.activation().clone();
         transaction.frame_mut().phase = DialogueRuntimePhase::Closing;
         if !self.has_joined_dialogue_work(&activation_id) {
-            let batch = match self
-                .prepare_dialogue_deferred_child(&mut transaction, ScopeExit::Completed)
-            {
+            let Some(exit) = transaction.frame().line_task.closed_exit() else {
+                self.begin_dialogue_failure(
+                    transaction,
+                    LineRuntimeError::InvalidDeferredTransition.into(),
+                    output,
+                );
+                return;
+            };
+            let batch = match self.prepare_dialogue_deferred_child(&mut transaction, exit) {
                 Ok(batch) => batch,
                 Err(error) => {
                     self.begin_dialogue_failure(transaction, error, output);
@@ -912,8 +918,25 @@ impl Engine {
             || !frame.execution.control_stack.is_empty()
             || !matches!(frame.execution.status, super::FlowFiberStatus::Running)
         {
+            let next_is_registry_write = matches!(
+                frame.execution.status,
+                super::FlowFiberStatus::Running
+            ) && matches!(
+                frame.execution.original_operation_remainder(&self.plan).and_then(|ops| ops.first()),
+                Some(FlowOp::EvaluatedEffect(RuntimeEffectExpr::RegistryWrite { key, .. }))
+                    if key.scope() == &arcweft_id::LifetimeScopeKind::Line
+            );
+            if next_is_registry_write {
+                return self.execute_queued_activation_registry_write(
+                    transaction,
+                    input,
+                    events,
+                    pure_backend,
+                );
+            }
             let before = self.activation_local_handle_owners(frame)?;
-            let staged = self.step_dialogue_execution(frame, None, input, events, pure_backend)?;
+            let staged =
+                self.step_dialogue_execution(frame, None, input, events, pure_backend, None)?;
             self.commit_activation_assignment_discards(&activation_id, frame, activation, &before)?;
             return Ok(DialogueActivationStep::Execution(staged));
         }
@@ -1004,6 +1027,16 @@ impl Engine {
             .activation_ops()
             .get(frame.activation_pc)
             .ok_or(LineRuntimeError::ResultNotCommitted)?;
+        if let FlowOp::EvaluatedEffect(RuntimeEffectExpr::RegistryWrite { key, value }) = operation
+        {
+            return self.execute_activation_registry_write(
+                transaction,
+                group.effects(),
+                key,
+                value,
+                pure_backend,
+            );
+        }
         let assignment_before = self.activation_local_handle_owners(frame)?;
         match operation {
             FlowOp::EnterScope { identity } => {
@@ -1175,6 +1208,7 @@ impl Engine {
                     input,
                     events,
                     pure_backend,
+                    None,
                 )?;
                 self.commit_activation_assignment_discards(
                     &activation_id,
@@ -1208,6 +1242,7 @@ impl Engine {
         input: &mut super::RuntimeStepInput,
         events: &[super::TaskEvent],
         pure_backend: &mut impl RuntimeCallBackend,
+        line_registry: Option<super::registry::NativeLineRegistryExecution<'_>>,
     ) -> Result<RuntimeStepOutput, DialogueExecutionError> {
         let mut staged = RuntimeStepOutput::default();
         let mut drop_policy = None;
@@ -1220,9 +1255,15 @@ impl Engine {
                 &mut staged,
                 pure_backend,
                 &mut drop_policy,
+                line_registry,
             );
         } else if !self.resume_suspended(input, events, &mut staged, pure_backend) {
-            self.step_flow(&mut staged, pure_backend, &mut drop_policy);
+            self.step_flow_with_line_registry(
+                &mut staged,
+                pure_backend,
+                &mut drop_policy,
+                line_registry,
+            );
         }
         std::mem::swap(&mut self.fiber.frame, &mut frame.execution);
         frame
@@ -2616,11 +2657,166 @@ impl Engine {
         )
         .expect("prepared publication pattern remains valid")
         .expect("publication pattern passed borrowed owning preflight");
-        state.line_task = DialogueLineTaskState::Closed;
         transaction
             .stage_disposition(DialogueCommitDisposition::Published { bindings })
             .expect("prepared publication has a vacant disposition");
         Ok(DialoguePublicationOutcome::Published(proof))
+    }
+
+    fn execute_activation_registry_write(
+        &mut self,
+        transaction: &mut DialogueActivationTransaction,
+        effects: &crate::plan::RuntimeEffectSet,
+        key: &arcweft_id::LifetimeRegistryKey,
+        value: &crate::value::RuntimeExpr,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> Result<DialogueActivationStep, DialogueExecutionError> {
+        use crate::effect::{
+            RuntimeRegistryOwner, RuntimeRegistryStateUpdate, RuntimeRegistryWriteSource,
+        };
+
+        let failure = |message| DialogueExecutionError::ActivationEffectFailed { message };
+        let required = arcweft_id::EffectId::state_write(key);
+        if key.scope() != &arcweft_id::LifetimeScopeKind::Line {
+            return Err(RuntimeEffectMaterializeError::RegistryContextRequired.into());
+        }
+        if !effects.iter().any(|effect| effect.covers(&required)) {
+            return Err(RuntimeEffectMaterializeError::RegistryWriteNotAuthorized {
+                effect: required,
+            }
+            .into());
+        }
+        let owner = crate::task::RuntimeProgramOwner::Plan(self.plan.clone());
+        if !transaction.frame().execution.program.same_program(&owner) {
+            return Err(RuntimeEffectMaterializeError::RegistryContextRequired.into());
+        }
+        let ty = self
+            .plan
+            .type_table()
+            .get(value.ty())
+            .ok_or(RuntimeEffectMaterializeError::RegistryContextRequired)?
+            .semantic_identity();
+        let id = *transaction.activation();
+        let binding = transaction.frame().execution.env.source_function_context();
+        let before = self.activation_local_handle_owners(transaction.frame())?;
+        let (image, mut admission) = self
+            .inert_rollback_image_with_dialogue(Some(transaction))
+            .map_err(failure)?;
+        let source = RuntimeRegistryWriteSource::NativeLine { activation: id };
+        let position = transaction
+            .line()
+            .line_registry()?
+            .prepare_write(
+                RuntimeRegistryOwner::Dialogue(id),
+                key,
+                ty,
+                source,
+                &mut admission,
+            )
+            .map_err(|error| failure(error.to_string()))?;
+        let prepared =
+            RuntimeRegistryStateUpdate::prepare(key, ty, binding.instantiation(), &mut admission)
+                .map_err(|error| failure(error.to_string()))?;
+        transaction
+            .line_mut()
+            .line_registry_mut()?
+            .reserve_write(position)
+            .map_err(|error| failure(error.to_string()))?;
+
+        let result = (|| {
+            let (frame, line) = transaction.parts_mut();
+            std::mem::swap(&mut self.fiber.frame, &mut frame.execution);
+            let evaluated = self.evaluate_expr_with_backend(value, pure_backend);
+            std::mem::swap(&mut self.fiber.frame, &mut frame.execution);
+            let update = prepared
+                .capture(&evaluated?)
+                .map_err(|error| failure(error.to_string()))?;
+            self.commit_activation_assignment_discards(&id, frame, line, &before)?;
+            advance_activation_pc(frame)?;
+            line.line_registry_mut()?.commit(position, source, update);
+            Ok(DialogueActivationStep::Continue)
+        })();
+        match result {
+            Ok(step) => Ok(step),
+            Err(cause) => {
+                Err(self.restore_failed_line_registry_write(transaction, image, &owner, cause))
+            }
+        }
+    }
+
+    fn execute_queued_activation_registry_write(
+        &mut self,
+        transaction: &mut DialogueActivationTransaction,
+        input: &mut super::RuntimeStepInput,
+        events: &[super::TaskEvent],
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> Result<DialogueActivationStep, DialogueExecutionError> {
+        use super::registry::NativeLineRegistryExecution;
+
+        let failure = |message| DialogueExecutionError::ActivationEffectFailed { message };
+        let activation = *transaction.activation();
+        let owner = crate::task::RuntimeProgramOwner::Plan(self.plan.clone());
+        let before = self.activation_local_handle_owners(transaction.frame())?;
+        let (image, mut admission) = self
+            .inert_rollback_image_with_dialogue(Some(transaction))
+            .map_err(failure)?;
+        let result = (|| {
+            let (frame, line) = transaction.parts_mut();
+            let group = frame.task_group;
+            let mut pending = None;
+            let staged = self.step_dialogue_execution(
+                frame,
+                None,
+                input,
+                events,
+                pure_backend,
+                Some(NativeLineRegistryExecution::Activation {
+                    activation,
+                    group,
+                    rows: line.line_registry()?,
+                    admission: &mut admission,
+                    pending: &mut pending,
+                }),
+            )?;
+            let write = pending.ok_or(LineRuntimeError::InvalidActivationOperation)?;
+            self.commit_activation_assignment_discards(&activation, frame, line, &before)?;
+            let rows = line.line_registry_mut()?;
+            write
+                .reserve(rows)
+                .map_err(|error| failure(error.to_string()))?;
+            write.commit(rows);
+            Ok(DialogueActivationStep::Execution(staged))
+        })();
+        match result {
+            Ok(step) => Ok(step),
+            Err(cause) => {
+                Err(self.restore_failed_line_registry_write(transaction, image, &owner, cause))
+            }
+        }
+    }
+
+    fn restore_failed_line_registry_write(
+        &mut self,
+        transaction: &mut DialogueActivationTransaction,
+        image: super::NativeEngineRollbackImage,
+        owner: &crate::task::RuntimeProgramOwner,
+        cause: DialogueExecutionError,
+    ) -> DialogueExecutionError {
+        let result = Self::from_rollback_image(image, owner).and_then(|mut restored| {
+            let original = restored
+                .dialogue_activations
+                .begin_transaction(transaction.activation())
+                .map_err(|error| error.to_string())?;
+            *transaction = original;
+            *self = restored;
+            Ok(())
+        });
+        match result {
+            Ok(()) => cause,
+            Err(message) => DialogueExecutionError::ActivationEffectFailed {
+                message: format!("{cause}; effect rollback failed: {message}"),
+            },
+        }
     }
 
     fn execute_dialogue_evaluated_effect(

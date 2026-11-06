@@ -424,7 +424,8 @@ impl<V> RuntimeEnv<V> {
         for scope in &self.scopes {
             admission.validate_metadata(&scope.identity)?;
             if let Some(registry) = &scope.flow_registry {
-                registry.admit_retained(None, admission)?;
+                registry
+                    .admit_retained(crate::effect::RuntimeRegistryOwner::NativeFlow, admission)?;
             }
             if let Some(binding) = &scope.presentation_scope {
                 binding.admit_retained(admission)?;
@@ -629,17 +630,17 @@ impl RuntimeEnv {
         self.scopes
             .last_mut()
             .expect("Flow has a physical execution scope")
-            .flow_registry = Some(crate::effect::RuntimeFlowRegistry::default());
+            .flow_registry = Some(crate::effect::RuntimeScopeRegistry::default());
     }
 
-    pub(crate) fn flow_registry(&self) -> Option<&crate::effect::RuntimeFlowRegistry> {
+    pub(crate) fn flow_registry(&self) -> Option<&crate::effect::RuntimeScopeRegistry> {
         self.scopes
             .iter()
             .rev()
             .find_map(|scope| scope.flow_registry.as_ref())
     }
 
-    pub(crate) fn flow_registry_mut(&mut self) -> Option<&mut crate::effect::RuntimeFlowRegistry> {
+    pub(crate) fn flow_registry_mut(&mut self) -> Option<&mut crate::effect::RuntimeScopeRegistry> {
         self.scopes
             .iter_mut()
             .rev()
@@ -669,7 +670,7 @@ impl RuntimeEnv {
         self.ensure_root_scope();
         let root = self.scopes.first_mut().expect("root scope was ensured");
         root.clear();
-        root.flow_registry = Some(crate::effect::RuntimeFlowRegistry::default());
+        root.flow_registry = Some(crate::effect::RuntimeScopeRegistry::default());
         root.function_context = super::RuntimeScopeFunctionContext::Function {
             site,
             instantiation,

@@ -4,8 +4,8 @@ use super::Engine;
 use super::audio::RuntimeEffectExecutionError;
 use super::code_cursor::NativeSourceOperation;
 use crate::effect::{
-    RuntimeEffectExpr, RuntimeEffectMaterializeError, RuntimeRegistryStateUpdate,
-    RuntimeRegistryWriteSource,
+    RuntimeEffectExpr, RuntimeEffectMaterializeError, RuntimeRegistryOwner,
+    RuntimeRegistryStateUpdate, RuntimeRegistryWriteSource,
 };
 use crate::plan::FlowOp;
 use crate::pure::RuntimeCallBackend;
@@ -13,7 +13,173 @@ use crate::task::RuntimeProgramOwner;
 use crate::value::{RuntimeRetainedValueAdmission, RuntimeScopeFunctionContext};
 use arcweft_id::{EffectId, LifetimeScopeKind};
 
+pub(super) enum NativeLineRegistryExecution<'a> {
+    Child(&'a mut Option<crate::effect::RuntimePreparedRegistryWrite>),
+    Activation {
+        activation: crate::runtime_id::DialogueActivationId,
+        group: crate::runtime_id::RuntimeLineTaskGroupId,
+        rows: &'a crate::effect::RuntimeScopeRegistry,
+        admission: &'a mut RuntimeRetainedValueAdmission,
+        pending: &'a mut Option<crate::effect::RuntimePreparedRegistryWrite>,
+    },
+}
+
+struct NativeLineRegistryOperands<'plan> {
+    key: &'plan arcweft_id::LifetimeRegistryKey,
+    value: &'plan crate::value::RuntimeExpr,
+    ty: crate::pattern::RuntimeSemanticTypeId,
+    binding: RuntimeScopeFunctionContext,
+}
+
 impl Engine {
+    pub(super) fn stage_borrowed_line_registry_write(
+        &mut self,
+        source: &NativeSourceOperation,
+        activation: crate::runtime_id::DialogueActivationId,
+        group: crate::runtime_id::RuntimeLineTaskGroupId,
+        rows: &crate::effect::RuntimeScopeRegistry,
+        admission: &mut RuntimeRetainedValueAdmission,
+        backend: &mut impl RuntimeCallBackend,
+    ) -> Result<crate::effect::RuntimePreparedRegistryWrite, RuntimeEffectExecutionError> {
+        use crate::effect::RuntimePreparedRegistryWrite;
+
+        let plan = self.plan.clone();
+        let operands = self.line_registry_operands(&plan, source, group)?;
+        let origin = RuntimeRegistryWriteSource::NativeLine { activation };
+        let position = rows.prepare_write(
+            RuntimeRegistryOwner::Dialogue(activation),
+            operands.key,
+            operands.ty,
+            origin,
+            admission,
+        )?;
+        let prepared = RuntimeRegistryStateUpdate::prepare(
+            operands.key,
+            operands.ty,
+            operands.binding.instantiation(),
+            admission,
+        )?;
+        let value = self.evaluate_expr_with_backend(operands.value, backend)?;
+        let update = prepared.capture(&value)?;
+        Ok(RuntimePreparedRegistryWrite::new(position, origin, update))
+    }
+
+    pub(super) fn stage_child_line_registry_write(
+        &mut self,
+        source: &NativeSourceOperation,
+        backend: &mut impl RuntimeCallBackend,
+    ) -> Result<crate::effect::RuntimePreparedRegistryWrite, RuntimeEffectExecutionError> {
+        use crate::effect::{RuntimePreparedRegistryWrite, RuntimeRegistryOwner};
+
+        let missing = RuntimeEffectMaterializeError::RegistryContextRequired;
+        let super::FlowFiberOwner::LineTask(child) = &self.fiber.owner else {
+            return Err(missing.into());
+        };
+        let activation = *child.tag.activation_id();
+        let group = self
+            .dialogue_activations
+            .active_task_group(&activation)
+            .ok_or(missing.clone())?;
+        let plan = self.plan.clone();
+        let owner = RuntimeProgramOwner::Plan(plan.clone());
+        let operands = self.line_registry_operands(&plan, source, group)?;
+        let line = self
+            .dialogue_activations
+            .active_line(&activation)
+            .ok_or(missing)?;
+        let rows = line.line_registry()?;
+        let (image, mut admission) = self
+            .inert_rollback_image_with_dialogue(None)
+            .map_err(|message| RuntimeEffectExecutionError::Checkpoint { message })?;
+        let source = RuntimeRegistryWriteSource::NativeLine { activation };
+        let position = rows.prepare_write(
+            RuntimeRegistryOwner::Dialogue(activation),
+            operands.key,
+            operands.ty,
+            source,
+            &mut admission,
+        )?;
+        let prepared = RuntimeRegistryStateUpdate::prepare(
+            operands.key,
+            operands.ty,
+            operands.binding.instantiation(),
+            &mut admission,
+        )?;
+        let evaluated = self.evaluate_expr_with_backend(operands.value, backend);
+        match evaluated
+            .map_err(RuntimeEffectExecutionError::from)
+            .and_then(|value| prepared.capture(&value).map_err(Into::into))
+        {
+            Ok(update) => Ok(RuntimePreparedRegistryWrite::new(position, source, update)),
+            Err(cause) => {
+                *self = Self::from_rollback_image(image, &owner).map_err(|message| {
+                    RuntimeEffectExecutionError::Rollback {
+                        cause: Box::new(cause.clone()),
+                        message,
+                    }
+                })?;
+                Err(cause)
+            }
+        }
+    }
+
+    fn line_registry_operands<'plan>(
+        &self,
+        plan: &'plan crate::plan::RuntimePlan,
+        source: &NativeSourceOperation,
+        group: crate::runtime_id::RuntimeLineTaskGroupId,
+    ) -> Result<NativeLineRegistryOperands<'plan>, RuntimeEffectExecutionError> {
+        use crate::plan::code::RuntimeCodeOwner;
+
+        let missing = RuntimeEffectMaterializeError::RegistryContextRequired;
+        let owner = RuntimeProgramOwner::Plan(self.plan.clone());
+        if !self.fiber.frame.program.same_program(&owner) {
+            return Err(missing.into());
+        }
+        let Some(FlowOp::EvaluatedEffect(RuntimeEffectExpr::RegistryWrite { key, value })) =
+            source.operation(plan)
+        else {
+            return Err(missing.into());
+        };
+        let binding = self.fiber.frame.env.source_function_context();
+        let effects = match source.owner() {
+            RuntimeCodeOwner::LineTask { group: source, .. } if source == group => plan
+                .line_task_groups()
+                .get(group.index())
+                .ok_or(missing.clone())?
+                .effects(),
+            RuntimeCodeOwner::Function(site)
+                if matches!(
+                    &binding, RuntimeScopeFunctionContext::Function { site: active, .. } if *active == site
+                ) =>
+            {
+                plan.function_sites()
+                    .get(site)
+                    .ok_or(missing.clone())?
+                    .invocation_effects()
+            }
+            _ => return Err(missing.into()),
+        };
+        let required = EffectId::state_write(key);
+        if !effects.iter().any(|effect| effect.covers(&required)) {
+            return Err(RuntimeEffectMaterializeError::RegistryWriteNotAuthorized {
+                effect: required,
+            }
+            .into());
+        }
+        let ty = plan
+            .type_table()
+            .get(value.ty())
+            .ok_or(missing.clone())?
+            .semantic_identity();
+        Ok(NativeLineRegistryOperands {
+            key,
+            value,
+            ty,
+            binding,
+        })
+    }
+
     pub(super) fn execute_registry_write(
         &mut self,
         source: &NativeSourceOperation,
@@ -57,8 +223,13 @@ impl Engine {
             crate::entry::RuntimeSchemaLimits::engine_default(),
         );
         self.admit_live_retained_values(&mut admission)?;
-        let position =
-            registry.prepare_write(key, RuntimeRegistryWriteSource::Native, &mut admission)?;
+        let position = registry.prepare_write(
+            RuntimeRegistryOwner::NativeFlow,
+            key,
+            ty,
+            RuntimeRegistryWriteSource::Native,
+            &mut admission,
+        )?;
         let prepared =
             RuntimeRegistryStateUpdate::prepare(key, ty, binding.instantiation(), &mut admission)?;
         let required = EffectId::state_write(key);

@@ -2851,9 +2851,12 @@ impl AwbcProductStepExecutor {
             VmStepOptions {
                 max_instructions: 1,
             },
-            &context,
-            &mut self.presentation,
-            &mut self.actions,
+            crate::awbc::vm::VmExecutionResources {
+                context: Some(&context),
+                presentation: Some(&mut self.presentation),
+                actions: Some(&mut self.actions),
+                line_registry: None,
+            },
             &mut host,
         ) {
             Ok(mut vm_output) => {
@@ -3286,6 +3289,27 @@ impl AwbcProductStepExecutor {
                 return true;
             }
         };
+        let registry_activation = match &front.owner {
+            ProductChildFiberOwner::LineTask { tag, .. } => Some(*tag.activation_id()),
+            ProductChildFiberOwner::Deferred { activation, .. }
+            | ProductChildFiberOwner::ScopedDeferred { activation, .. } => Some(*activation),
+            ProductChildFiberOwner::Independent | ProductChildFiberOwner::Program { .. } => None,
+        };
+        let mut registry_admission = if registry_activation.is_some()
+            && (front.fiber.status == FiberStatus::Suspended
+                || crate::awbc::vm::is_line_registry_instruction(&self.program, front.fiber.cursor))
+        {
+            match self.retained_execution_admission(ProductCheckpointTarget::Child(0)) {
+                Ok(admission) => Some(admission),
+                Err(error) => {
+                    self.fail_with_error(error, output);
+                    return true;
+                }
+            }
+        } else {
+            None
+        };
+        let mut pending_registry_write = None;
         let pending_host_call_before = front.pending_host_call.clone();
         let mut resume_journal = DeferredChildResumeJournal::capture(self);
         let mut staged_resume_output = RuntimeStepOutput::default();
@@ -3412,17 +3436,49 @@ impl AwbcProductStepExecutor {
         } else {
             terminal_exit.map_or_else(
                 || {
-                    step_with_execution_resources(
+                    let registry_write = if let (Some(activation), Some(admission)) =
+                        (registry_activation, registry_admission.as_mut())
+                        && crate::awbc::vm::is_line_registry_instruction(
+                            &self.program,
+                            child.fiber.cursor,
+                        ) {
+                        let missing =
+                            crate::effect::RuntimeEffectMaterializeError::RegistryContextRequired;
+                        let rows = self
+                            .dialogues
+                            .active_line_for(&activation)
+                            .ok_or_else(|| missing.clone())?
+                            .line_registry()
+                            .map_err(|_| missing)?;
+                        Some(crate::awbc::vm::VmLineRegistryWrite {
+                            activation,
+                            rows,
+                            admission,
+                            pending: &mut pending_registry_write,
+                        })
+                    } else {
+                        None
+                    };
+                    let step = step_with_execution_resources(
                         &self.program,
                         &mut child.fiber,
                         VmStepOptions {
                             max_instructions: 1,
                         },
-                        &context,
-                        &mut self.presentation,
-                        &mut self.actions,
+                        crate::awbc::vm::VmExecutionResources {
+                            context: Some(&context),
+                            presentation: Some(&mut self.presentation),
+                            actions: Some(&mut self.actions),
+                            line_registry: registry_write,
+                        },
                         &mut host,
-                    )
+                    )?;
+                    if pending_registry_write.is_some()
+                        && !step.completed_single_effect_instruction()
+                    {
+                        return Err(crate::awbc::fiber::FiberStateError::InvalidFrame.into());
+                    }
+                    Ok(step)
                 },
                 |exit| {
                     Ok(crate::awbc::vm::VmStepOutput {
@@ -3437,7 +3493,7 @@ impl AwbcProductStepExecutor {
             Ok(vm_output) => vm_output,
             Err(error) => {
                 let error = ProductStepError::Vm(error);
-                if error.is_execution_refusal() {
+                if pending_registry_write.is_some() || error.is_execution_refusal() {
                     if self.rollback_selected_child_step(
                         child,
                         checkpoint,
@@ -3820,12 +3876,17 @@ impl AwbcProductStepExecutor {
                 output,
             );
         };
-        if let Err(error) = transaction.line_mut().reconcile_child_scope_step(
-            &tag,
-            before_handles,
-            &after_handles,
-            &drop_policy,
-        ) {
+        let admitted_step = (|| {
+            let line = transaction.line_mut();
+            if let Some(write) = &pending_registry_write {
+                write
+                    .reserve(line.line_registry_mut()?)
+                    .map_err(crate::awbc::fiber::FiberStateError::Snapshot)?;
+            }
+            line.reconcile_child_scope_step(&tag, before_handles, &after_handles, &drop_policy)?;
+            Ok::<_, ProductStepError>(())
+        })();
+        if let Err(error) = admitted_step {
             if !self.rollback_selected_child_step(
                 child,
                 checkpoint,
@@ -3837,7 +3898,7 @@ impl AwbcProductStepExecutor {
                 let _ = self.dialogues.restore_transaction(transaction);
                 return true;
             }
-            return self.begin_product_dialogue_failure(transaction, error.into(), output);
+            return self.begin_product_dialogue_failure(transaction, error, output);
         }
 
         if child.fiber.status == FiberStatus::Running
@@ -3871,6 +3932,14 @@ impl AwbcProductStepExecutor {
                 &mut child.fiber,
             );
             resume_journal.commit_staged_host_call(&mut input.host_call_results, &mut child);
+            if let Some(write) = pending_registry_write {
+                write.commit(
+                    transaction
+                        .line_mut()
+                        .line_registry_mut()
+                        .expect("prepared child write has a live line"),
+                );
+            }
             let receipt = self.dialogues.commit_prepared(transaction, proof);
             self.child_fibers.push_back(child);
             resume_journal.commit(self, staged_resume_output, output);
@@ -5887,12 +5956,7 @@ impl AwbcProductStepExecutor {
     }
 
     fn closed_line_task_exit(&self, active: &ActiveDialogue) -> Option<ScopeExit> {
-        let line_task = active.line_task()?;
-        match line_task.snapshot().phase() {
-            crate::line_task::LineTaskPhase::Closed { exit } => Some(exit),
-            crate::line_task::LineTaskPhase::Active
-            | crate::line_task::LineTaskPhase::Closing { .. } => None,
-        }
+        active.line_task()?.closed_exit()
     }
 
     fn prepare_owned_line_task_completion(

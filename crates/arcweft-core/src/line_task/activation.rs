@@ -385,7 +385,21 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
     pub(crate) fn snapshot_admitted<S>(
         &self,
         owner: Option<&RuntimeProgramOwner>,
+        snapshot_frame: impl FnMut(&F) -> Result<S, RuntimeDialogueRegistrySnapshotError>,
+    ) -> Result<RuntimeDialogueRegistrySaveSnapshot<S, T>, RuntimeDialogueRegistrySnapshotError>
+    where
+        T: super::handle::RuntimeDialogueTypeCoordinate,
+    {
+        self.snapshot_admitted_with(owner, snapshot_frame, |_| None)
+    }
+
+    fn snapshot_admitted_with<'a, S>(
+        &'a self,
+        owner: Option<&RuntimeProgramOwner>,
         mut snapshot_frame: impl FnMut(&F) -> Result<S, RuntimeDialogueRegistrySnapshotError>,
+        mut withdrawn: impl FnMut(
+            &DialogueActivationId,
+        ) -> Option<(&'a F, &'a RuntimeDialogueActivationState<T>)>,
     ) -> Result<RuntimeDialogueRegistrySaveSnapshot<S, T>, RuntimeDialogueRegistrySnapshotError>
     where
         T: super::handle::RuntimeDialogueTypeCoordinate,
@@ -394,31 +408,33 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
             .entries
             .iter()
             .map(|(activation, entry)| {
-                Ok(match entry {
+                let (revision, frame, line) = match entry {
                     RuntimeDialogueRegistryEntry::Active {
                         revision,
                         frame,
                         line,
-                    } => RuntimeDialogueRegistrySaveEntry::Active {
-                        activation: activation.clone(),
-                        revision: *revision,
-                        frame: snapshot_frame(frame)?,
-                        line: AwbcRuntimeDialogueActivationSnapshot::from_admitted_live(
-                            line, owner,
-                        )?,
-                    },
+                    } => (*revision, frame, line),
+                    RuntimeDialogueRegistryEntry::InFlight { revision, .. } => {
+                        let (frame, line) = withdrawn(activation).ok_or_else(|| {
+                            RuntimeDialogueRegistrySnapshotError::Frame {
+                                message: "dialogue transaction is in flight".to_owned(),
+                            }
+                        })?;
+                        (*revision, frame, line)
+                    }
                     RuntimeDialogueRegistryEntry::PublishedHandles { revision, handles } => {
-                        RuntimeDialogueRegistrySaveEntry::PublishedHandles {
-                            activation: activation.clone(),
+                        return Ok(RuntimeDialogueRegistrySaveEntry::PublishedHandles {
+                            activation: *activation,
                             revision: *revision,
                             handles: handles.clone(),
-                        }
-                    }
-                    RuntimeDialogueRegistryEntry::InFlight { .. } => {
-                        return Err(RuntimeDialogueRegistrySnapshotError::Frame {
-                            message: "dialogue transaction is in flight".to_owned(),
                         });
                     }
+                };
+                Ok(RuntimeDialogueRegistrySaveEntry::Active {
+                    activation: *activation,
+                    revision,
+                    frame: snapshot_frame(frame)?,
+                    line: AwbcRuntimeDialogueActivationSnapshot::from_admitted_live(line, owner)?,
                 })
             })
             .collect::<Result<_, RuntimeDialogueRegistrySnapshotError>>()?;
@@ -544,7 +560,7 @@ impl<F, T: Clone + super::handle::RuntimeDialogueTypeCoordinate>
             }
             match entry {
                 RuntimeDialogueRegistrySaveEntry::Active { line, .. } => {
-                    line.admit_retained_resources(admission)?;
+                    line.admit_retained_resources(Some(*activation), admission)?;
                     line.restore_admit_with_deferred_child(
                         activation,
                         expected_children.get(activation).copied(),

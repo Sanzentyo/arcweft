@@ -588,9 +588,9 @@ pub struct FiberFrame<
     pub root_presentation_scope: Option<G>,
     #[serde(
         default,
-        skip_serializing_if = "crate::effect::RuntimeFlowRegistry::is_empty"
+        skip_serializing_if = "crate::effect::RuntimeScopeRegistry::is_empty"
     )]
-    pub(in crate::awbc) flow_registry: crate::effect::RuntimeFlowRegistry,
+    pub(in crate::awbc) flow_registry: crate::effect::RuntimeScopeRegistry,
     pub scopes: Vec<FiberScope<V, G>>,
 }
 
@@ -633,8 +633,13 @@ impl<V, B, R, G> FiberFrame<V, B, R, G> {
                 message: "Flow registry requires a reached AWBC Flow frame".to_owned(),
             });
         }
-        self.flow_registry
-            .admit_retained(Some((fiber, self.instance)), admission)
+        self.flow_registry.admit_retained(
+            crate::effect::RuntimeRegistryOwner::AwbcFlow {
+                fiber,
+                frame: self.instance,
+            },
+            admission,
+        )
     }
 }
 
@@ -4284,7 +4289,7 @@ fn validate_cursor(program: &AwbcProgram, cursor: FiberCursor) -> Result<(), Fib
     Ok(())
 }
 
-fn instruction_at_site(
+pub(super) fn instruction_at_site(
     program: &AwbcProgram,
     site: FiberCursor,
 ) -> Result<&AwbcInstruction, FiberStateError> {
@@ -5556,7 +5561,7 @@ impl FiberFrame {
             format_attempts: Vec::new(),
             root_cleanups: Vec::new(),
             root_presentation_scope: None,
-            flow_registry: crate::effect::RuntimeFlowRegistry::default(),
+            flow_registry: crate::effect::RuntimeScopeRegistry::default(),
             scopes: Vec::with_capacity(layout.max_scope_depth as usize),
         })
     }

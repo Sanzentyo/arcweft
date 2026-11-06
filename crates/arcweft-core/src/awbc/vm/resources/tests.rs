@@ -218,6 +218,7 @@ fn factory_call_rejects_invalid_metadata_and_missing_authority_before_moving_cap
             context: None,
             presentation: Some(&mut storage),
             actions: None,
+            line_registry: None,
         };
         let mut observations = Vec::new();
         let error = execute_instruction(

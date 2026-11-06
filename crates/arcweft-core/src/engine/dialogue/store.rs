@@ -5,7 +5,7 @@ use crate::line_task::{
     LineRuntimeError, LineTaskLiveState, RuntimeDialogueAbandonedCommitProof,
     RuntimeDialogueActivationRegistry, RuntimeDialogueActivationState,
     RuntimeDialogueActivationTransaction, RuntimeDialogueCommitProof, RuntimeDialogueCommitReceipt,
-    RuntimeDialoguePublishedCommitProof, RuntimeHandleDropReceipt,
+    RuntimeDialoguePublishedCommitProof, RuntimeHandleDropReceipt, ScopeExit,
 };
 use crate::pattern::RuntimePattern;
 use crate::runtime_id::{DialogueActivationId, RuntimeLocalDeclarationId, RuntimePlanTypeId};
@@ -685,7 +685,17 @@ struct DialogueStepInbox {
 pub(crate) enum DialogueLineTaskState {
     NotStarted,
     Live(LineTaskLiveState),
-    Closed,
+    Closed(ScopeExit),
+}
+
+impl DialogueLineTaskState {
+    pub(in crate::engine) fn closed_exit(&self) -> Option<ScopeExit> {
+        match self {
+            Self::NotStarted => None,
+            Self::Live(task) => task.closed_exit(),
+            Self::Closed(exit) => Some(*exit),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -893,6 +903,13 @@ impl DialogueActivationStore {
         }
     }
 
+    pub(in crate::engine) fn active_task_group(
+        &self,
+        activation: &DialogueActivationId,
+    ) -> Option<crate::runtime_id::RuntimeLineTaskGroupId> {
+        Some(self.registry.active_frame(activation)?.frame.task_group)
+    }
+
     pub(crate) fn active_line(
         &self,
         activation: &DialogueActivationId,
@@ -903,22 +920,28 @@ impl DialogueActivationStore {
     pub(crate) fn inert_rollback_image(
         &self,
         owner: &crate::task::RuntimeProgramOwner,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        transaction: Option<&DialogueActivationTransaction>,
     ) -> Result<DialogueActivationStoreRollbackImage, String> {
-        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
-            owner.clone(),
-            crate::entry::RuntimeSchemaLimits::engine_default(),
-        );
-        self.registry
-            .admit_retained(&mut admission)
+        let contour = self
+            .registry
+            .retained_contour(
+                transaction
+                    .map(|transaction| &transaction.inner)
+                    .into_iter(),
+                admission,
+            )
             .map_err(|error| error.to_string())?;
-        self.registry
+        contour
+            .admit_retained(admission)
+            .map_err(|error| error.to_string())?;
+        contour
             .try_visit_active(|activation, active, line| {
                 admission.validate_metadata(&(active.frame.parent, &active.inbox))?;
-                active.frame.admit_reducer(activation, line, &mut admission)
+                active.frame.admit_reducer(activation, line, admission)
             })
             .map_err(|error| error.to_string())?;
-        let registry = self
-            .registry
+        let registry = contour
             .snapshot_admitted(Some(owner), |active| {
                 Ok(NativeEngineDialogueFrameRollbackImage {
                     frame: active
@@ -1018,6 +1041,21 @@ pub(crate) struct DialogueTerminalReceipt {
 }
 
 impl DialogueActivationTransaction {
+    pub(in crate::engine) fn validate_parent_allocation(
+        &self,
+        next_fiber_id: u64,
+    ) -> Result<(), String> {
+        let activation = *self.activation();
+        if self.frame().execution.presentation_bank
+            != (crate::runtime_id::RuntimePresentationBankId::Dialogue { activation })
+        {
+            return Err("dialogue presentation bank differs from its activation".into());
+        }
+        self.frame()
+            .validate_parent(&activation, next_fiber_id)
+            .map_err(|error| error.to_string())
+    }
+
     #[must_use]
     pub(crate) const fn activation(&self) -> &DialogueActivationId {
         self.inner.activation()
@@ -1571,7 +1609,13 @@ mod tests {
                 .unwrap();
         }
         let before = store.registry.active_ids();
-        let error = store.inert_rollback_image(&owner).unwrap_err();
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        let error = store
+            .inert_rollback_image(&owner, &mut admission, None)
+            .unwrap_err();
         assert_eq!(
             error,
             crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {

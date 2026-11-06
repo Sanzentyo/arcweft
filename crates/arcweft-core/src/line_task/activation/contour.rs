@@ -62,6 +62,24 @@ impl<F, T> RuntimeDialogueActivationRegistry<F, T> {
 }
 
 impl<'a, F, T> RuntimeDialogueRetainedContour<'a, F, T> {
+    /// Projects the original revision and values of a verified reservation.
+    /// The live reservation itself never enters the inert snapshot.
+    pub(crate) fn snapshot_admitted<S>(
+        &self,
+        owner: Option<&RuntimeProgramOwner>,
+        snapshot_frame: impl FnMut(&F) -> Result<S, RuntimeDialogueRegistrySnapshotError>,
+    ) -> Result<RuntimeDialogueRegistrySaveSnapshot<S, T>, RuntimeDialogueRegistrySnapshotError>
+    where
+        T: Clone + super::super::handle::RuntimeDialogueTypeCoordinate,
+    {
+        self.registry
+            .snapshot_admitted_with(owner, snapshot_frame, |activation| {
+                self.borrowed
+                    .get(activation)
+                    .map(|transaction| (transaction.frame(), transaction.line()))
+            })
+    }
+
     pub(crate) fn try_visit_active<E>(
         &self,
         mut visit: impl FnMut(
@@ -95,11 +113,11 @@ impl<'a, F, T> RuntimeDialogueRetainedContour<'a, F, T> {
         for (activation, entry) in &self.registry.entries {
             match entry {
                 RuntimeDialogueRegistryEntry::Active { line, .. } => {
-                    line.admit_retained_resources(admission)?
+                    line.admit_retained_resources(Some(*activation), admission)?
                 }
                 RuntimeDialogueRegistryEntry::InFlight { .. } => self.borrowed[activation]
                     .line
-                    .admit_retained_resources(admission)?,
+                    .admit_retained_resources(Some(*activation), admission)?,
                 RuntimeDialogueRegistryEntry::PublishedHandles { handles, .. } => {
                     admission.validate_metadata(handles)?;
                     handles.restore_admit(activation)?;

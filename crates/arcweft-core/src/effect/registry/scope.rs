@@ -1,12 +1,34 @@
-//! Retained, replay-safe values on one reached Flow invocation.
+//! Retained, replay-safe values on one reached execution scope.
 
 use super::{RuntimeRegistryStateUpdate, RuntimeRegistryValue};
 use crate::awbc::schema::{AwbcEffectPayload, AwbcEffectPlanId};
-use crate::runtime_id::{RuntimeFiberInstanceId, RuntimeFrameInstanceId};
+use crate::pattern::RuntimeSemanticTypeId;
+use crate::runtime_id::{DialogueActivationId, RuntimeFiberInstanceId, RuntimeFrameInstanceId};
 use crate::task::RuntimeProgramOwner;
 use crate::value::{AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission};
 use arcweft_id::{LifetimeRegistryKey, LifetimeScopeKind};
 use std::sync::Arc;
+
+/// The actual reached owner against which an inert registry row is admitted.
+/// Execution obtains this from a live frame or an activation transaction.
+#[derive(Clone, Copy)]
+pub(crate) enum RuntimeRegistryOwner {
+    NativeFlow,
+    AwbcFlow {
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+    },
+    Dialogue(DialogueActivationId),
+}
+
+impl RuntimeRegistryOwner {
+    const fn scope(self) -> LifetimeScopeKind {
+        match self {
+            Self::NativeFlow | Self::AwbcFlow { .. } => LifetimeScopeKind::Flow,
+            Self::Dialogue(_) => LifetimeScopeKind::Line,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub(crate) enum RuntimeRegistryWriteSource {
@@ -16,13 +38,69 @@ pub(crate) enum RuntimeRegistryWriteSource {
         fiber: RuntimeFiberInstanceId,
         frame: RuntimeFrameInstanceId,
     },
+    NativeLine {
+        activation: DialogueActivationId,
+    },
+    AwbcLine {
+        effect: AwbcEffectPlanId,
+        activation: DialogueActivationId,
+    },
 }
 
 impl RuntimeRegistryWriteSource {
     fn admit(
         self,
+        owner: RuntimeRegistryOwner,
+        key: &LifetimeRegistryKey,
+        value_type: RuntimeSemanticTypeId,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        use RuntimeRegistryOwner::{AwbcFlow, Dialogue, NativeFlow};
+
+        let original = match (admission.program_owner(), self, owner) {
+            (Some(RuntimeProgramOwner::Plan(_)), Self::Native, NativeFlow) => None,
+            (
+                Some(RuntimeProgramOwner::Plan(_)),
+                Self::NativeLine { activation },
+                Dialogue(expected),
+            ) if activation == expected => None,
+            (
+                Some(RuntimeProgramOwner::Awbc(program)),
+                Self::Awbc {
+                    effect,
+                    fiber,
+                    frame,
+                },
+                AwbcFlow {
+                    fiber: original_fiber,
+                    frame: original_frame,
+                },
+            ) if (fiber, frame) == (original_fiber, original_frame) => Some((program, effect)),
+            (
+                Some(RuntimeProgramOwner::Awbc(program)),
+                Self::AwbcLine { effect, activation },
+                Dialogue(expected),
+            ) if activation == expected => Some((program, effect)),
+            _ => {
+                return Err(invalid_registry(
+                    "registry row requires its original executable and activation",
+                ));
+            }
+        };
+        if let Some((program, effect)) = original {
+            let payload = program
+                .effect_plans
+                .get(effect.index())
+                .map(|row| &row.payload);
+            if !matches!(payload, Some(AwbcEffectPayload::RegistryWrite { key: original, value_type: original_type })
+                if original == key && program.runtime_types.get(original_type.index())
+                    .is_some_and(|ty| ty.semantic_identity() == value_type))
+            {
+                return Err(invalid_registry(
+                    "registry row differs from its original write",
+                ));
+            }
+        }
         match self {
             Self::Native => admission.validate_metadata(&0_u8),
             Self::Awbc {
@@ -31,6 +109,10 @@ impl RuntimeRegistryWriteSource {
                 frame,
             } => {
                 admission.validate_metadata(&(1_u8, effect.0, fiber.get().get(), frame.get().get()))
+            }
+            Self::NativeLine { activation } => admission.validate_metadata(&(2_u8, activation)),
+            Self::AwbcLine { effect, activation } => {
+                admission.validate_metadata(&(3_u8, effect.0, activation))
             }
         }
     }
@@ -47,9 +129,9 @@ struct RegistryEntry {
 /// private checkpoint or public AWBC save without becoming an active lease.
 #[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(transparent)]
-pub(crate) struct RuntimeFlowRegistry(Vec<RegistryEntry>);
+pub(crate) struct RuntimeScopeRegistry(Vec<RegistryEntry>);
 
-impl RuntimeFlowRegistry {
+impl RuntimeScopeRegistry {
     pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -60,18 +142,20 @@ impl RuntimeFlowRegistry {
 
     pub(crate) fn prepare_write(
         &self,
+        owner: RuntimeRegistryOwner,
         key: &LifetimeRegistryKey,
+        value_type: RuntimeSemanticTypeId,
         source: RuntimeRegistryWriteSource,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<Result<usize, usize>, AwbcRuntimeValueSnapshotError> {
-        if key.scope() != &LifetimeScopeKind::Flow {
+        if key.scope() != &owner.scope() {
             return Err(invalid_registry(
-                "registry address does not select this Flow",
+                "registry address does not select this activation",
             ));
         }
         let position = self.0.binary_search_by(|entry| entry.row.key.cmp(key));
         admission.validate_metadata_collection(self.0.len() + usize::from(position.is_err()))?;
-        source.admit(admission)?;
+        source.admit(owner, key, value_type, admission)?;
         Ok(position)
     }
 
@@ -82,7 +166,7 @@ impl RuntimeFlowRegistry {
         if position.is_err() {
             self.0
                 .try_reserve(1)
-                .map_err(|_| invalid_registry("Flow registry allocation failed"))?;
+                .map_err(|_| invalid_registry("registry allocation failed"))?;
         }
         Ok(())
     }
@@ -105,54 +189,56 @@ impl RuntimeFlowRegistry {
 
     pub(crate) fn admit_retained(
         &self,
-        awbc_frame: Option<(RuntimeFiberInstanceId, RuntimeFrameInstanceId)>,
+        owner: RuntimeRegistryOwner,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         admission.validate_metadata_collection(self.0.len())?;
+        let scope = owner.scope();
         let mut previous = None;
         for entry in &self.0 {
             let key = &entry.row.key;
-            if key.scope() != &LifetimeScopeKind::Flow || previous.is_some_and(|prior| prior >= key)
-            {
-                return Err(invalid_registry(
-                    "invalid Flow registry key order or selector",
-                ));
+            if key.scope() != &scope || previous.is_some_and(|prior| prior >= key) {
+                return Err(invalid_registry("invalid registry key order or selector"));
             }
-            entry.source.admit(admission)?;
-            match (admission.program_owner(), entry.source, awbc_frame) {
-                (Some(RuntimeProgramOwner::Plan(_)), RuntimeRegistryWriteSource::Native, None) => {}
-                (
-                    Some(RuntimeProgramOwner::Awbc(program)),
-                    RuntimeRegistryWriteSource::Awbc {
-                        effect,
-                        fiber,
-                        frame,
-                    },
-                    Some(expected_frame),
-                ) if (fiber, frame) == expected_frame => {
-                    let payload = program
-                        .effect_plans
-                        .get(effect.index())
-                        .map(|plan| &plan.payload);
-                    if !matches!(payload, Some(AwbcEffectPayload::RegistryWrite { key: declared, value_type })
-                        if declared == key && program.runtime_types.get(value_type.index())
-                            .is_some_and(|ty| ty.semantic_identity() == entry.row.expected))
-                    {
-                        return Err(invalid_registry(
-                            "saved registry row differs from its original write",
-                        ));
-                    }
-                }
-                _ => {
-                    return Err(invalid_registry(
-                        "registry row requires its original executable and Flow invocation",
-                    ));
-                }
-            }
+            entry
+                .source
+                .admit(owner, key, entry.row.expected, admission)?;
             entry.row.admit_retained(admission)?;
             previous = Some(key);
         }
         Ok(())
+    }
+}
+
+/// A checked write held outside the line until its owning step commits.
+pub(crate) struct RuntimePreparedRegistryWrite {
+    position: Result<usize, usize>,
+    source: RuntimeRegistryWriteSource,
+    update: RuntimeRegistryStateUpdate,
+}
+
+impl RuntimePreparedRegistryWrite {
+    pub(crate) fn new(
+        position: Result<usize, usize>,
+        source: RuntimeRegistryWriteSource,
+        update: RuntimeRegistryStateUpdate,
+    ) -> Self {
+        Self {
+            position,
+            source,
+            update,
+        }
+    }
+
+    pub(crate) fn reserve(
+        &self,
+        rows: &mut RuntimeScopeRegistry,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        rows.reserve_write(self.position)
+    }
+
+    pub(crate) fn commit(self, rows: &mut RuntimeScopeRegistry) {
+        rows.commit(self.position, self.source, self.update);
     }
 }
 

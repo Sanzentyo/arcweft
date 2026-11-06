@@ -3,19 +3,88 @@
 use super::{
     AwbcProgram, AwbcRegisterId, FiberState, FiberStateError, VmError, VmExecutionContext,
 };
+use crate::effect::{
+    RuntimePreparedRegistryWrite, RuntimeRegistryOwner, RuntimeRegistryStateUpdate,
+    RuntimeRegistryWriteSource, RuntimeScopeRegistry,
+};
 use crate::presentation::resources::{PresentationBanks, PresentationBody};
-use crate::value::{RuntimePayload, RuntimeStoredValue};
+use crate::runtime_id::DialogueActivationId;
+use crate::value::{RuntimePayload, RuntimeRetainedValueAdmission, RuntimeStoredValue};
 
-pub(super) struct VmExecutionResources<'execution> {
-    pub(super) context: Option<&'execution VmExecutionContext>,
-    pub(super) presentation:
+#[derive(Default)]
+pub(crate) struct VmExecutionResources<'execution> {
+    pub(crate) context: Option<&'execution VmExecutionContext>,
+    pub(crate) presentation:
         Option<&'execution mut Option<PresentationBanks<PresentationBody<RuntimePayload>>>>,
-    pub(super) actions: Option<&'execution mut crate::action::RuntimeActionMailbox>,
+    pub(crate) actions: Option<&'execution mut crate::action::RuntimeActionMailbox>,
+    pub(crate) line_registry: Option<VmLineRegistryWrite<'execution>>,
+}
+
+/// Holds a single Product step's real line registry and complete retained
+/// admission. Only the enclosing line transaction can publish the result.
+pub(crate) struct VmLineRegistryWrite<'a> {
+    pub(crate) activation: DialogueActivationId,
+    pub(crate) rows: &'a RuntimeScopeRegistry,
+    pub(crate) admission: &'a mut RuntimeRetainedValueAdmission,
+    pub(crate) pending: &'a mut Option<RuntimePreparedRegistryWrite>,
+}
+
+impl VmLineRegistryWrite<'_> {
+    fn prepare(
+        &mut self,
+        program: &AwbcProgram,
+        fiber: &mut FiberState,
+        effect: crate::awbc::schema::AwbcEffectPlanId,
+        key: &arcweft_id::LifetimeRegistryKey,
+        value_type: crate::awbc::schema::AwbcTypeId,
+        args: &[AwbcRegisterId],
+    ) -> Result<(), VmError> {
+        if self.pending.is_some() {
+            return Err(FiberStateError::InvalidFrame.into());
+        }
+        let [source_register] = args else {
+            return Err(FiberStateError::InvalidFrame.into());
+        };
+        let ty = program
+            .runtime_types
+            .get(value_type.index())
+            .ok_or(FiberStateError::InvalidFrame)?
+            .semantic_identity();
+        let source = RuntimeRegistryWriteSource::AwbcLine {
+            effect,
+            activation: self.activation,
+        };
+        let position = self
+            .rows
+            .prepare_write(
+                RuntimeRegistryOwner::Dialogue(self.activation),
+                key,
+                ty,
+                source,
+                self.admission,
+            )
+            .map_err(FiberStateError::Snapshot)?;
+        let frame = fiber.active_frame()?;
+        let prepared = RuntimeRegistryStateUpdate::prepare(
+            key,
+            ty,
+            frame.type_instantiation.as_deref(),
+            self.admission,
+        )
+        .map_err(FiberStateError::Snapshot)?;
+        let transfer = frame.prepare_register_values(program, args)?;
+        let update = prepared
+            .capture(frame.register(*source_register)?)
+            .map_err(FiberStateError::Snapshot)?;
+        drop(transfer.commit(fiber.active_frame_mut()?));
+        *self.pending = Some(RuntimePreparedRegistryWrite::new(position, source, update));
+        Ok(())
+    }
 }
 
 impl VmExecutionResources<'_> {
     pub(super) fn registry_write(
-        &self,
+        &mut self,
         program: &AwbcProgram,
         fiber: &mut FiberState,
         effect: crate::awbc::schema::AwbcEffectPlanId,
@@ -25,7 +94,8 @@ impl VmExecutionResources<'_> {
     ) -> Result<(), VmError> {
         use crate::awbc::schema::AwbcFunctionKind;
         use crate::effect::{
-            RuntimeEffectMaterializeError, RuntimeRegistryStateUpdate, RuntimeRegistryWriteSource,
+            RuntimeEffectMaterializeError, RuntimeRegistryOwner, RuntimeRegistryStateUpdate,
+            RuntimeRegistryWriteSource,
         };
 
         let missing = RuntimeEffectMaterializeError::RegistryContextRequired;
@@ -33,6 +103,10 @@ impl VmExecutionResources<'_> {
         let admitted = context
             .admitted_program(program)
             .map_err(|_| missing.clone())?;
+        if key.scope() == &arcweft_id::LifetimeScopeKind::Line {
+            let line = self.line_registry.as_mut().ok_or(missing.clone())?;
+            return line.prepare(program, fiber, effect, key, value_type, args);
+        }
         if key.scope() != &arcweft_id::LifetimeScopeKind::Flow {
             return Err(missing.into());
         }
@@ -67,7 +141,16 @@ impl VmExecutionResources<'_> {
         };
         let position = fiber.frames[destination]
             .flow_registry
-            .prepare_write(key, write_source, &mut admission)
+            .prepare_write(
+                RuntimeRegistryOwner::AwbcFlow {
+                    fiber: fiber.instance,
+                    frame: fiber.frames[destination].instance,
+                },
+                key,
+                ty,
+                write_source,
+                &mut admission,
+            )
             .map_err(result)?;
         let frame = fiber.active_frame()?;
         let prepared = RuntimeRegistryStateUpdate::prepare(
