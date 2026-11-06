@@ -17363,5 +17363,340 @@
         }
       ]
     }
+  },
+  "orderedReplacementTypeInference": {
+    "source": "f3626f1a2ffc608dced6ac28916ab2b89134b0e5",
+    "sourcePublication": {
+      "version": 1,
+      "commit": "f3626f1a2ffc608dced6ac28916ab2b89134b0e5",
+      "parent": "e7ac3e205a6be0088d576fe218ce4628a66a8fb4",
+      "tree": "6ea88363c89bfc0e6580114a2bcef115e08eecdd",
+      "remote": "f3626f1a2ffc608dced6ac28916ab2b89134b0e5",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects.rs",
+          "blob": "e8999a83c7b0173c2dac0dd2049ace0e20cebba0"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs",
+          "blob": "8cb1e74ea75919b6a65de5663666568520ccdc06"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/model.rs",
+          "blob": "9ece5c436a2d43dfb504b3e16cfaa7ee96f1a8f5"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/model/registry.rs",
+          "blob": "8875ca07e413be628af990e7b062983caf2a9889"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/src/final_analysis/tests/statement_producers.rs",
+          "blob": "2dc19615265431e88c2de165b5793ca236f933f7"
+        },
+        {
+          "path": "docs/02-runtime/executable-runtime-core.md",
+          "blob": "63e3237fa3186e66f2f5268256b80645987e9eed"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "af65224b1b6f5e3da0f84f9a8a1dbb640a789732220bf1ef3f2d71f9c1cedbfa",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-06T20:10:06.2883599Z"
+    },
+    "decision": "Use the HIR sequence coordinates of checked writes to discard older type witnesses on the ordered path to a registry read. The existing ownership CFG checks required presence and reaching item type, including branch and scheduled effects.",
+    "before": {
+      "version": 1,
+      "source": "e7ac3e205a6be0088d576fe218ce4628a66a8fb4",
+      "testFixture": "crates/arcweft-compiler/tests/evaluated_effects.rs",
+      "fixtureSha256": "9513449d636bf66d9529ff85d4a0edb504b1c5d6e6405018e3c1bb742831d416",
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "-E",
+        "test(=source_registry_reads_infer_the_type_after_a_definite_replacement)",
+        "--no-tests",
+        "fail",
+        "--status-level",
+        "pass",
+        "--final-status-level",
+        "fail"
+      ],
+      "exitCode": 100,
+      "startedAt": "2026-11-06T19:56:29.0737339Z",
+      "finishedAt": "2026-11-06T19:56:44.8672631Z"
+    },
+    "baselineError": "The original combined input was rejected by semantic analysis because the replaced i64 witness conflicted with the reaching bool witness.",
+    "firstFixed": "The combined input compiled and ran into the existing 32-step execution assertion. The final fixtures exercise the required and optional generic calls separately and retain the same assertion and limit.",
+    "owner": {
+      "version": 1,
+      "base": "e7ac3e205a6be0088d576fe218ce4628a66a8fb4",
+      "catalogCommand": [
+        "cargo",
+        "nextest",
+        "list",
+        "--locked",
+        "-p",
+        "arcweft-lang-sema",
+        "--lib",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--message-format",
+        "json"
+      ],
+      "catalogExit": 0,
+      "testCommand": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-lang-sema",
+        "--lib",
+        "-p",
+        "arcweft-runtime-plan",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "testExit": 0,
+      "summary": "Summary [ 107.721s] 1791 tests run: 1791 passed (1 slow), 1 skipped",
+      "sourceInputs": 3638,
+      "sourceDrift": [],
+      "startedAt": "2026-11-06T20:01:58.7635615Z",
+      "finishedAt": "2026-11-06T20:09:28.5539919Z"
+    },
+    "testIdentity": {
+      "catalog": 1791,
+      "run": 1791,
+      "ignored": [
+        "arcweft-runtime-plan awbc_lower::tests::program_fanout::regenerate_presentation_cancellation_fixtures"
+      ],
+      "targetedCases": [
+        "arcweft-compiler::evaluated_effects source_registry_reads_infer_the_type_after_a_definite_replacement",
+        "arcweft-compiler::evaluated_effects source_optional_registry_reads_reach_the_line_and_parent_flow",
+        "arcweft-lang-sema final_analysis::tests::statement_producers::inferred_registry_reads_keep_a_differently_typed_reaching_branch"
+      ],
+      "runCatalogDrift": 0
+    },
+    "direct": [
+      {
+        "id": "arcweft-compiler::evaluated_effects source_registry_reads_infer_the_type_after_a_definite_replacement",
+        "binary": "D:\\git\\arcweft\\target\\debug\\deps\\evaluated_effects-506eedf4cb018774.exe",
+        "cwd": "D:\\git\\arcweft\\crates\\arcweft-compiler",
+        "exitCode": 0,
+        "log": "registry-reaching-type-20261107.direct-source_registry_reads_infer_the_type_after_a_definite_replacement.log"
+      },
+      {
+        "id": "arcweft-compiler::evaluated_effects source_optional_registry_reads_reach_the_line_and_parent_flow",
+        "binary": "D:\\git\\arcweft\\target\\debug\\deps\\evaluated_effects-506eedf4cb018774.exe",
+        "cwd": "D:\\git\\arcweft\\crates\\arcweft-compiler",
+        "exitCode": 0,
+        "log": "registry-reaching-type-20261107.direct-source_optional_registry_reads_reach_the_line_and_parent_flow.log"
+      },
+      {
+        "id": "arcweft-lang-sema final_analysis::tests::statement_producers::inferred_registry_reads_keep_a_differently_typed_reaching_branch",
+        "binary": "D:\\git\\arcweft\\target\\debug\\deps\\arcweft_lang_sema-39a1091d9054babc.exe",
+        "cwd": "D:\\git\\arcweft\\crates\\arcweft-lang-sema",
+        "exitCode": 0,
+        "log": "registry-reaching-type-20261107.direct-inferred_registry_reads_keep_a_differently_typed_reaching_branch.log"
+      }
+    ],
+    "workspaceCheck": {
+      "version": 1,
+      "base": "e7ac3e205a6be0088d576fe218ce4628a66a8fb4",
+      "command": [
+        "cargo",
+        "check",
+        "--locked",
+        "--workspace",
+        "--all-targets",
+        "--all-features"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 3638,
+      "sourceDrift": [],
+      "startedAt": "2026-11-06T20:03:44.7319068Z",
+      "finishedAt": "2026-11-06T20:07:38.6979438Z"
+    },
+    "structure": {
+      "version": 1,
+      "command": [
+        "just",
+        "structure-audit-gate"
+      ],
+      "exitCode": 0,
+      "completedAt": "2026-11-06T20:02:01.6510294Z"
+    },
+    "structureBlockingViolations": 0,
+    "reverseGraph": {
+      "version": 1,
+      "command": [
+        "cargo",
+        "tree",
+        "--locked",
+        "--workspace",
+        "--invert",
+        "arcweft-lang-sema",
+        "--target",
+        "all",
+        "--prefix",
+        "none",
+        "--format",
+        "{p}"
+      ],
+      "exitCode": 0,
+      "packageCount": 22,
+      "packages": [
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lang-sema",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-web",
+        "arcweft-project-loader",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-test",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ]
+    },
+    "remaining": "The full affected target and workspace Clippy runs are tracked separately. Type inference from dynamic writes outside the ordered witness scope and MustDrop proof production are open.",
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-reaching-type.raw.zip",
+      "sha256": "115a57a2e2e91d61894f0e6f37fc0d1bcfbca847cb5e2a8e2dff94d714b9fa31",
+      "entries": [
+        {
+          "entry": "registry-reaching-type-20261107.baseline.log",
+          "bytes": 88103,
+          "sha256": "f142bb895828824b59f8bbf3b20f8cd35cd064e4f6b5f520577d7b587b8015e2"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.baseline.receipt.json",
+          "bytes": 715,
+          "sha256": "bc86d16ae33eb520c96f8a7aab562524d7a362d0a953eb32db4eb10132a21831"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.first-fixed.log",
+          "bytes": 87256,
+          "sha256": "82b13055804702f2201857e575ee1264c467a83a0b2afd26b802016bdaa27ead"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.owner.catalog.json",
+          "bytes": 303454,
+          "sha256": "4eb9fac4611549ee98902bbe7d475880112329ff93002113dee7fa63cba897ce"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.owner.catalog.log",
+          "bytes": 88951,
+          "sha256": "d4f2c1f4765cc18c9352d54b89a347d6ac2c03f26c38eb5f2e083054adf860ee"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.owner.runtime.log",
+          "bytes": 644334,
+          "sha256": "3d48f1d6e43fd8c50a2e06b4457074cffef964abe9e8df46caabcb9c47ca6edb"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.owner.receipt.json",
+          "bytes": 1022,
+          "sha256": "ed1a50d04470cff1c68523d3679a0f2fd2eb7d0e2c56be24c63a6f34fd4ae47a"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.owner.source-freeze.json",
+          "bytes": 599451,
+          "sha256": "d8f72f677542607f32847a7f56456445dd0700756eac5f1588988979e180cd0e"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.owner.test-identity.json",
+          "bytes": 575,
+          "sha256": "3ef9f76c7d61240c8805f0eb7db4e7d544369e85bdae637e0b9ebc368a4fb0e6"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.structure.log",
+          "bytes": 65741,
+          "sha256": "b67813d1091281c2f26e5b8b64c48179ca2e2a5602941c113575e98266189aa3"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.structure.receipt.json",
+          "bytes": 153,
+          "sha256": "679f50a3d7f890d4c991eef5ceb514cc38fb5ca704497365e9723f1b856fd9ad"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.reverse-tree.log",
+          "bytes": 4982,
+          "sha256": "1b6e596577e5467179d6fb0c9f9b2c1be3f9a40dc284530ed1593f2e15498fba"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.reverse-tree.receipt.json",
+          "bytes": 891,
+          "sha256": "a5e15c0e92df55ee035721f8f45cbe1ddd5d6371b4ddb6ebb30e628a6d3609e4"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.workspace-check.log",
+          "bytes": 128993,
+          "sha256": "9e68b2dfb4e3cc1707d2eb4a47ad29fa8490d0f8c343b4da52bd172be79e0275"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.workspace-check.receipt.json",
+          "bytes": 370,
+          "sha256": "fc5150705a7d536af973391e093d755dc09fd1da2e627c6d281cfa46b59022dc"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.direct.receipt.json",
+          "bytes": 1294,
+          "sha256": "a0d44ca27a9d18e97174535e2f29556ceace8cd777bf6292dde6842da487711a"
+        },
+        {
+          "entry": "registry-reaching-type-implementation-20261107.verified.json",
+          "bytes": 1447,
+          "sha256": "f76b4d3d59d99a054a3768d835c8cae55c5bb3f721315e1ec9720ea7095e229c"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.direct-source_registry_reads_infer_the_type_after_a_definite_replacement.log",
+          "bytes": 197,
+          "sha256": "c22021b71c4998ab9e04e9de6b099c0d67d97ac3c6e40f0a71a720cdc37a20a3"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.direct-source_optional_registry_reads_reach_the_line_and_parent_flow.log",
+          "bytes": 193,
+          "sha256": "f1d9b7cd3965af47813691067404dd7ffd5dd13dada7911472b1dfc4226f263a"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.direct-inferred_registry_reads_keep_a_differently_typed_reaching_branch.log",
+          "bytes": 242,
+          "sha256": "9276098fe9489b6b93be67915a1f5d6a007ef35e072ee7f8383366af3748f60b"
+        }
+      ]
+    }
   }
 }

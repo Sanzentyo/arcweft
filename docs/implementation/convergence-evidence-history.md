@@ -15101,3 +15101,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Resumed scheduled capture runtime reverse dependencies
 
 - Source c1c372b5e4474229a6af0b69b0f9b4a1a7156abd の Line 終了と保存復元の修正を Runtime Driver、Runtime Host、Save で再検証した。260件通過、失敗・スキップともに0件。前回の同3クレートの実行IDとの差分と、実行前後のソース入力3638件の差分は0件。対象 Clippy は警告ありで終了0だった。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Registry item type after ordered replacement
+
+- Source f3626f1a2ffc608dced6ac28916ab2b89134b0e5。Flow／Line で順序が確定した書込みを使い、読取り前に上書きされた型候補を除く。分岐や並行実行から到達し得る候補と登録の有無は既存の所有権フローで検査する。必須・任意の読取りから汎用呼出しへの型推論と、Line 初期化での置換を Native／デコード済み AWBC で確認した。異なる型が到達し得る分岐は拒否した。対象1,791件が通過、既存1件がスキップ。workspace check は終了0、構造ゲートのブロッキング違反は0件。初回の型拒否と、修正後の複合入力が既存の32ステップ上限に達した実測を保持した。必須・任意の実行を分け、上限は維持した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
