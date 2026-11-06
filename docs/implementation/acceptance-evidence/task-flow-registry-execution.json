@@ -16731,5 +16731,68 @@
         }
       ]
     }
+  },
+  "registryCueSettlementRuntimeReverse": {
+    "source": "7bb5bd2ccde1e38791c577040bb29badb60494c2",
+    "packages": [
+      "arcweft-runtime-driver",
+      "arcweft-runtime-host",
+      "arcweft-save"
+    ],
+    "passed": 260,
+    "failed": 0,
+    "skipped": 0,
+    "comparedTestIdsFrom": "fc7aaa4ffe8773c9df17a3d570c21bbf909da42b",
+    "testIdDrift": 0,
+    "receipt": {
+      "version": 1,
+      "source": "7bb5bd2ccde1e38791c577040bb29badb60494c2",
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-runtime-driver",
+        "-p",
+        "arcweft-runtime-host",
+        "-p",
+        "arcweft-save",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 0,
+      "summary": "Summary [ 109.376s] 260 tests run: 260 passed (1 slow), 0 skipped",
+      "sourceInputs": 3638,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-06T19:18:53.0899269Z",
+      "finishedAt": "2026-11-06T19:26:05.8540227Z"
+    },
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-cue-settlement-runtime-reverse.raw.zip",
+      "sha256": "7d4e1049f90fcd4e44bb646f66350291a02699d8263771d6a73ccf72acc9c3b7",
+      "entries": [
+        {
+          "entry": "registry-cue-settlement-runtime-reverse-20261107.log",
+          "bytes": 172346,
+          "sha256": "713cacf20cf6571974a9d95df0261cb9bbb34276da73a1a1623e24a6f7b9dede"
+        },
+        {
+          "entry": "registry-cue-settlement-runtime-reverse-20261107.source-freeze.json",
+          "bytes": 599451,
+          "sha256": "bacde44ad566c5e27fbadbcf8fb146ec237dfa68b76b372e30b54dff9dd41c1b"
+        },
+        {
+          "entry": "registry-cue-settlement-runtime-reverse-20261107.receipt.json",
+          "bytes": 648,
+          "sha256": "b153c08064aac367ed610e218d5d7c7c464f95d2e4789bc70244e46cd6036387"
+        }
+      ]
+    }
   }
 }

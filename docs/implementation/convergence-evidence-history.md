@@ -15085,3 +15085,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source 7bb5bd2ccde1e38791c577040bb29badb60494c2。Line の所有行を外した後は RetiringLineRegistry が発行元の後処理を保持する。Cue の終端は捕捉パケットまたは正規の子タスクから共通処理で確定する。AWBC は発火前パケットと実行中ファイバーの所有を別々に照合する。Native と毎ステップで保存・復元する AWBC で、正常終了、取消し、発火前の明示破棄と置換を確認した。同じ発行サイトの二つの実行中 Cue は単体テストで片方だけを取り消した。Core と Compiler の対象は 2566 件通過。実行IDとソース入力の差分は0件、構造ゲートのブロッキング違反は0件、対象 Clippy は警告ありで終了0だった。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
 - 修正前の Native は未発火 Cue の取消しを二重に適用し、Cancelled から Cancelled への遷移で失敗した。途中の AWBC 保存では、発火前パケットの所有を子ファイバーに求める誤判定と、正常終了時に捕捉パケットを終端化せずリースだけを破棄する別経路を確認した。両方を修正した。ホストの Accepted 後に同じ命令へ Rejected を返した探索入力は、正規の Cue 取消しを再現する入力から外した。[各試行の原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Scheduled Cue registry runtime reverse dependencies
+
+- Source 7bb5bd2ccde1e38791c577040bb29badb60494c2 のスケジュール Cue の修正を Runtime Driver、Runtime Host、Save で再検証した。260件通過、失敗・スキップともに0件。実行前後でソース入力3638件のハッシュが一致した。現状一覧の旧件数は履歴と実測へ集約した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
