@@ -14792,3 +14792,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - The nine all-feature locked reverse partitions selected 22 packages on Source db071219f84e57186efa9d40dccc3bb8620f417c. The actual nextest terminals ran 3321 cases, with 3313 passed and 8 failed. Runtime results are absent for arcweft-compiler. The separate Compiler integration executable passed all 11 continuation/save cases, including the seven Generic Match acceptance identities.
 - The original unified build failures, each partition result and the standalone Compiler results are recorded independently. [Package results, actual failure IDs and raw receipts](acceptance-evidence/task-proof-trust-policy.json).
+
+## 2026-11-06 — Checked unsafe audit fixture repair
+
+- Source 554fc474824f0cc70a225903b41f074c240d50eb, parent a852e3f34ef1bd770b8a32e74b066f4476753f14. The external construction fixture supplies the private audit reason and preserves the other rejected constructors. The all-feature locked Sema api_compile run passed the exact test, with 13 skipped in 3.234 seconds and zero drift across 4,126 input pins.
+- The original compile-fail fixture failure remains tied to its earlier input. The focused retry is stored separately. [Publication, runtime result and raw logs](acceptance-evidence/task-unsafe-audit-reason.json).

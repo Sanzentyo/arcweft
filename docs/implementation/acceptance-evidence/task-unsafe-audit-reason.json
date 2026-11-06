@@ -534,5 +534,101 @@
         }
       ]
     }
+  },
+  "privacyFixtureResolution": {
+    "version": 1,
+    "source": "554fc474824f0cc70a225903b41f074c240d50eb",
+    "publication": {
+      "version": 1,
+      "commit": "554fc474824f0cc70a225903b41f074c240d50eb",
+      "parent": "a852e3f34ef1bd770b8a32e74b066f4476753f14",
+      "tree": "fb4f1276595d643ca1870e2803cb7b1dcadc0d4c",
+      "remote": "554fc474824f0cc70a225903b41f074c240d50eb",
+      "paths": [
+        {
+          "path": "crates/arcweft-lang-sema/tests/ui/checked_statement_authorities_are_not_constructible.rs",
+          "blob": "3e68b7fef1fb2142d361f2e46861fb59d06a6de6"
+        },
+        {
+          "path": "crates/arcweft-lang-sema/tests/ui/checked_statement_authorities_are_not_constructible.stderr",
+          "blob": "e64b1e86128a1253d6c7cd9ffb304044d1187e87"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "918dd55486409d5c79419de475db487f04c54b094bbe0c846beb7f6630ff5ff9",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-06T00:50:13.5222114Z"
+    },
+    "terminal": {
+      "version": 1,
+      "base": "a852e3f34ef1bd770b8a32e74b066f4476753f14",
+      "run": "checked-audit-privacy-fixture-owner1-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   3.234s] 1 test run: 1 passed, 13 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 13,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4126,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-06T00:49:29.9490731Z"
+    },
+    "rustDiagnostics": {
+      "privateFieldErrors": 8,
+      "privateTypeErrors": 2
+    },
+    "raw": {
+      "path": "docs/implementation/acceptance-evidence/task-unsafe-audit-privacy-fixture.raw.zip",
+      "bytes": 29727,
+      "sha256": "b0cc3747b0ab1bd3a986bf6c5f93e76ce42b8c7c932430e573b690c6c5e48bf8",
+      "entryDrift": 0,
+      "entries": [
+        {
+          "entry": "checked-audit-privacy-fixture-owner1-20261106.binaries-before.json",
+          "bytes": 219,
+          "sha256": "d15621305033befce20c26e7a836f1e11162c522e1476b623d7ce58f145473f7"
+        },
+        {
+          "entry": "checked-audit-privacy-fixture-owner1-20261106.catalog.inventory.json",
+          "bytes": 3294,
+          "sha256": "9884628494d0809850c13150f05870de26d301f08d91787f37a5024bec48f1c1"
+        },
+        {
+          "entry": "checked-audit-privacy-fixture-owner1-20261106.catalog.json",
+          "bytes": 670,
+          "sha256": "60cda03251907305f94af2280d4157be3dc9bcb68b8c4795ec6ee4522a8a32d5"
+        },
+        {
+          "entry": "checked-audit-privacy-fixture-owner1-20261106.catalog.log",
+          "bytes": 88896,
+          "sha256": "12c9f2b6b3a1ff63965d90c706bf38c247f0dbfa790e5dc6f3193e4780573dfb"
+        },
+        {
+          "entry": "checked-audit-privacy-fixture-owner1-20261106.runtime.json",
+          "bytes": 762,
+          "sha256": "399b3456578bfef40f58fab61d2a1a561e88202b5faa01a825e94284dc9fe554"
+        },
+        {
+          "entry": "checked-audit-privacy-fixture-owner1-20261106.runtime.log",
+          "bytes": 86697,
+          "sha256": "a80362a7a1de94bfa054b30f505d7058a8984f008c7797c113267e337c810491"
+        },
+        {
+          "entry": "checked-audit-privacy-fixture-owner1-20261106.runtime.terminal-audit.json",
+          "bytes": 623,
+          "sha256": "ee6eedaaf75b38a1980b551666859e2eb38f80e487c702d3b560cd57bf7bd66d"
+        }
+      ]
+    }
   }
 }
