@@ -1,0 +1,759 @@
+{
+  "version": 1,
+  "date": "2026-11-06",
+  "source": "5deb88741e1f64df26ac08bc5a536f0a6063cd80",
+  "published": {
+    "version": 1,
+    "commit": "5deb88741e1f64df26ac08bc5a536f0a6063cd80",
+    "parent": "2ad957746656f14a0bc6fde76d82bbbc847f50e0",
+    "tree": "338f916f6c5cb0dd0a227e531726fe6d43da77a4",
+    "remote": "5deb88741e1f64df26ac08bc5a536f0a6063cd80",
+    "paths": [
+      {
+        "path": "crates/arcweft-compiler/tests/flow_include.rs",
+        "blob": "6a6712caf7ae716f6944eeddb7cea55a2e26b1db"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/fiber.rs",
+        "blob": "f7edca8477bb1fac1ef4035e9961e3c7cfc477ba"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/vm.rs",
+        "blob": "a1b0191057ed237a37cce679732da1cdf5a90b7e"
+      },
+      {
+        "path": "crates/arcweft-core/src/awbc/vm/resources.rs",
+        "blob": "a40a92c767cd12fe1a8292cb43e3f5b2c5d74161"
+      },
+      {
+        "path": "crates/arcweft-core/src/effect.rs",
+        "blob": "88b67eb5180095d73178efb32f6b8f2a8426b03b"
+      },
+      {
+        "path": "crates/arcweft-core/src/effect/registry.rs",
+        "blob": "6f75384b1c696ae394487a20f17f3a62bb39799f"
+      },
+      {
+        "path": "crates/arcweft-core/src/effect/registry/scope.rs",
+        "blob": "df6554a674b3f08ead471b1ab8573d0819f9c099"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine.rs",
+        "blob": "3af13f7323212a8cf719c7b473e34b40527157a0"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/audio.rs",
+        "blob": "2c07017d18fb6b0a2f789a3a9017f50feee6d99b"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/flow.rs",
+        "blob": "9eae0bc4564b67c7d1c6413b497c2889c629cb54"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/flow/function_call.rs",
+        "blob": "2e6a6c872c5f73240e833c991a3fb2c46e8193b6"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/line.rs",
+        "blob": "378ee68a9cb30cb429a434aa0ee0529a3f537d7a"
+      },
+      {
+        "path": "crates/arcweft-core/src/engine/registry.rs",
+        "blob": "bc79edad0af79379b061d85642c57749aa907583"
+      },
+      {
+        "path": "crates/arcweft-core/src/value.rs",
+        "blob": "b6de0b0637ffa14780ec6ff43ff1b2e63f474ff5"
+      },
+      {
+        "path": "crates/arcweft-core/src/value/env.rs",
+        "blob": "f8fc6b2f06004d6a8009b2b055b2f792dc159e19"
+      },
+      {
+        "path": "docs/02-runtime/executable-runtime-core.md",
+        "blob": "1cf00cbfcc697dc360574dfbe8ab9384654105d4"
+      }
+    ],
+    "blobDrift": 0,
+    "patchSha256": "d25bbaf5170e03066fa2fed572de9bbef8abfa454c52bf4b4c8d56c9f5b798bd",
+    "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+    "separatelyHeld": [],
+    "indexEmpty": true,
+    "at": "2026-11-06T02:00:56.4330171Z"
+  },
+  "workingTree": {
+    "trackedHeld": 12,
+    "untrackedHeld": 6,
+    "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+    "originalWipParticipatedInLocalValidation": true
+  },
+  "scope": {
+    "destination": "nearest reached Flow on the same execution stack",
+    "native": "exact original function authorization and RHS admission with private rollback",
+    "awbc": "admitted executable, frame-scoped typed rows, operand transfer after admission, version-one save",
+    "verifiedTampering": [
+      "original key modified",
+      "parent and child registry rows exchanged"
+    ],
+    "design": "Both executors use one replay-safe typed registry row representation. Native stores it on the reached RuntimeScope and AWBC on the physical FiberFrame. Current scope and original executable stay with their existing owners."
+  },
+  "actual": [
+    {
+      "version": 1,
+      "base": "2ad957746656f14a0bc6fde76d82bbbc847f50e0",
+      "run": "flow-registry-core-owner-final-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [  20.152s] 2280 tests run: 2280 passed, 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2280,
+      "passed": 2280,
+      "failed": 0,
+      "skipped": 0,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4033,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-06T01:58:21.2244228Z"
+    },
+    {
+      "version": 1,
+      "base": "2ad957746656f14a0bc6fde76d82bbbc847f50e0",
+      "run": "flow-registry-compiler-owner-final-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [   1.778s] 19 tests run: 19 passed, 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 19,
+      "passed": 19,
+      "failed": 0,
+      "skipped": 0,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4033,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-06T02:00:30.9893921Z"
+    }
+  ],
+  "attempts": [
+    {
+      "outcome": {
+        "version": 1,
+        "base": "2ad957746656f14a0bc6fde76d82bbbc847f50e0",
+        "run": "flow-registry-compiler-owner1-20261106.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   0.077s] 1 test run: 0 passed, 1 failed, 18 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 1,
+        "passed": 0,
+        "failed": 1,
+        "skipped": 18,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4129,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::flow_include",
+            "test": "flow_registry_keeps_caller_and_include_writes_separate_across_save"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-06T01:44:28.4707401Z"
+      },
+      "reason": "The helper fixture omitted an explicit Unit return type and the exact write effect. Execution did not start."
+    },
+    {
+      "outcome": {
+        "version": 1,
+        "base": "2ad957746656f14a0bc6fde76d82bbbc847f50e0",
+        "run": "flow-registry-compiler-owner2-20261106.runtime",
+        "actualExitCode": 100,
+        "summary": "Summary [   1.853s] 19 tests run: 18 passed, 1 failed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 19,
+        "passed": 18,
+        "failed": 1,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4130,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [
+          {
+            "status": "FAIL",
+            "binary": "arcweft-compiler::flow_include",
+            "test": "flow_registry_keeps_caller_and_include_writes_separate_across_save"
+          }
+        ],
+        "isPassingRun": false,
+        "recordedAt": "2026-11-06T01:47:10.9856223Z"
+      },
+      "reason": "The test expected inert binding to reject the altered save. Restore, the transactional activation entry point, rejects it."
+    },
+    {
+      "outcome": {
+        "version": 1,
+        "base": "2ad957746656f14a0bc6fde76d82bbbc847f50e0",
+        "run": "flow-registry-core-owner1-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   0.158s] 22 tests run: 22 passed, 2257 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 22,
+        "passed": 22,
+        "failed": 0,
+        "skipped": 2257,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4130,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T01:51:28.1498232Z"
+      },
+      "reason": "Targeted passing run before Native original-function authorization."
+    },
+    {
+      "outcome": {
+        "version": 1,
+        "base": "2ad957746656f14a0bc6fde76d82bbbc847f50e0",
+        "run": "flow-registry-compiler-owner3-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   1.795s] 19 tests run: 19 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 19,
+        "passed": 19,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4130,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T01:53:32.4278588Z"
+      },
+      "reason": "Passing corrected restore test before Native original-function authorization."
+    }
+  ],
+  "priorExecutionReproduction": {
+    "version": 1,
+    "base": "2ad957746656f14a0bc6fde76d82bbbc847f50e0",
+    "source": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/active-flow-registry-fixture-exact_effect-20261106.arcw",
+    "sourceSha256": "867adce853399896d7db6f4921d85861626be351339458da888af8b469e76601",
+    "binarySha256": "2ff22b4131a512cfcfdaa4c9b4e1efa14341da397a9678a5b8dd66083825a1c2",
+    "cases": [
+      {
+        "case": "verify",
+        "arguments": [
+          "verify",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/active-flow-registry-fixture-exact_effect-20261106.arcw",
+          "--mode",
+          "test",
+          "--json"
+        ],
+        "exit": 0,
+        "status": null,
+        "steps": [],
+        "stdoutSha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "case": "plan",
+        "arguments": [
+          "plan",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/active-flow-registry-fixture-exact_effect-20261106.arcw",
+          "--json"
+        ],
+        "exit": 0,
+        "status": null,
+        "steps": [],
+        "stdoutSha256": "399a376e200f08a65219abaef44be801bf20deae91b7870ce73bb8855c7f1ca2",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "case": "native",
+        "arguments": [
+          "run",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/active-flow-registry-fixture-exact_effect-20261106.arcw",
+          "--entry",
+          "entry.main",
+          "--executor",
+          "bytecode-vm",
+          "--mode",
+          "one-op",
+          "--max-ops",
+          "1",
+          "--steps",
+          "64",
+          "--json"
+        ],
+        "exit": 1,
+        "status": "failed registry writes require their original program and owning execution context",
+        "steps": [
+          {
+            "ops": 1,
+            "stop": "Failed",
+            "diagnostics": [
+              "registry writes require their original program and owning execution context"
+            ]
+          }
+        ],
+        "stdoutSha256": "16058cb67addbf7d346b2d8c6b58a3310c5a278d428b945d0beca6d39716ace7",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "case": "awbc",
+        "arguments": [
+          "run",
+          "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/active-flow-registry-fixture-exact_effect-20261106.arcw",
+          "--entry",
+          "entry.main",
+          "--executor",
+          "awbc-product",
+          "--mode",
+          "one-op",
+          "--max-ops",
+          "1",
+          "--steps",
+          "64",
+          "--json"
+        ],
+        "exit": 1,
+        "status": "failed registry writes require their original program and owning execution context",
+        "steps": [
+          {
+            "ops": 1,
+            "stop": "OneOp",
+            "diagnostics": []
+          },
+          {
+            "ops": 1,
+            "stop": "Failed",
+            "diagnostics": [
+              "registry writes require their original program and owning execution context"
+            ]
+          }
+        ],
+        "stdoutSha256": "80125dcc434e1311c19c47ba5715da923d4a90d788e7d108ae18b939dac50e42",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ]
+  },
+  "clean": {
+    "command": "cargo clean",
+    "receipt": "user-authorized-cargo-clean-20261105-232524.json",
+    "removedFiles": 217383,
+    "removedGiB": 274.7,
+    "exit": 0
+  },
+  "impactSelection": {
+    "roots": [
+      "arcweft-core",
+      "arcweft-compiler"
+    ],
+    "packages": [
+      "arcweft",
+      "arcweft-adapter-desktop",
+      "arcweft-adapter-sema",
+      "arcweft-agent-mcp",
+      "arcweft-agent-mcp-client",
+      "arcweft-agent-policy",
+      "arcweft-agent-protocol",
+      "arcweft-agent-repl",
+      "arcweft-agent-runner",
+      "arcweft-browser-bench",
+      "arcweft-bundle",
+      "arcweft-bundle-assets",
+      "arcweft-character-view",
+      "arcweft-cli",
+      "arcweft-compiler",
+      "arcweft-core",
+      "arcweft-debug-model",
+      "arcweft-debug-sqlite",
+      "arcweft-dialogue",
+      "arcweft-glyphon",
+      "arcweft-host-adapter",
+      "arcweft-lang-jit-cranelift",
+      "arcweft-lang-sema",
+      "arcweft-launch",
+      "arcweft-lsp",
+      "arcweft-player-native",
+      "arcweft-player-scene",
+      "arcweft-player-text-input",
+      "arcweft-player-web",
+      "arcweft-project",
+      "arcweft-project-loader",
+      "arcweft-rag",
+      "arcweft-render-text",
+      "arcweft-render-web",
+      "arcweft-render-wgpu",
+      "arcweft-resource-manifest",
+      "arcweft-resource-model",
+      "arcweft-runtime-accelerator",
+      "arcweft-runtime-codegen",
+      "arcweft-runtime-driver",
+      "arcweft-runtime-host",
+      "arcweft-runtime-plan",
+      "arcweft-runtime-scheduler",
+      "arcweft-save",
+      "arcweft-test",
+      "arcweft-text-layout",
+      "arcweft-text-model",
+      "arcweft-tooling",
+      "arcweft-verify",
+      "arcweft-verify-lsp",
+      "arcweft-verify-oxiz",
+      "arcweft-verify-z3",
+      "arcweft-view"
+    ],
+    "cargoInputPins": 101,
+    "cargoInputDrift": 0,
+    "metadataSha256": "09d79ab6276c3ae65cf0c974acd21d9c4b5f710ef2c21a903f3cfb5c4b37e51b"
+  },
+  "remaining": [
+    "Authored reads and drops",
+    "MustDrop creation and discharge",
+    "Other reached lifetime scopes, cross-fiber grants and upper-scope adapter events",
+    "Complete reverse-dependency execution"
+  ],
+  "rawArchive": {
+    "path": "task-flow-registry-execution.raw.zip",
+    "bytes": 1865387,
+    "sha256": "f2eb59536a41bfe96b94f25025d521e38c103886aa827f1609101de834d5cb7f",
+    "entryDrift": 0,
+    "entries": [
+      {
+        "entry": "active-flow-registry-exact-red-20261106.awbc.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "active-flow-registry-exact-red-20261106.awbc.stdout.json",
+        "bytes": 7445,
+        "sha256": "80125dcc434e1311c19c47ba5715da923d4a90d788e7d108ae18b939dac50e42"
+      },
+      {
+        "entry": "active-flow-registry-exact-red-20261106.native.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "active-flow-registry-exact-red-20261106.native.stdout.json",
+        "bytes": 5845,
+        "sha256": "16058cb67addbf7d346b2d8c6b58a3310c5a278d428b945d0beca6d39716ace7"
+      },
+      {
+        "entry": "active-flow-registry-exact-red-20261106.plan.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "active-flow-registry-exact-red-20261106.plan.stdout.json",
+        "bytes": 169,
+        "sha256": "399a376e200f08a65219abaef44be801bf20deae91b7870ce73bb8855c7f1ca2"
+      },
+      {
+        "entry": "active-flow-registry-exact-red-20261106.receipt.json",
+        "bytes": 3501,
+        "sha256": "a4315dded0effc71e5153145b50de9ccdf1903ef321870a05e597287527a2c80"
+      },
+      {
+        "entry": "active-flow-registry-exact-red-20261106.verify.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "entry": "active-flow-registry-exact-red-20261106.verify.stdout.json",
+        "bytes": 202,
+        "sha256": "1964193f6ddbcb35802bd812c426f5608d83462229fef1722dd05b7ffa17596c"
+      },
+      {
+        "entry": "active-flow-registry-fixture-exact_effect-20261106.arcw",
+        "bytes": 401,
+        "sha256": "867adce853399896d7db6f4921d85861626be351339458da888af8b469e76601"
+      },
+      {
+        "entry": "active-flow-registry.reverse-selection.json",
+        "bytes": 19489,
+        "sha256": "39ac58b37bedcee3c2c543b63e39e570ebbb714266da559070bccf34029a0034"
+      },
+      {
+        "entry": "checkpoint-flow-registry-scope-20261106.verified.json",
+        "bytes": 2658,
+        "sha256": "6c68d564d4be7e09eb6c1fb295c7245b15b2ba23e586857e8f12e847ff173b5c"
+      },
+      {
+        "entry": "flow-registry-compiler-owner-final-20261106.binaries-before.json",
+        "bytes": 220,
+        "sha256": "f23986097cedacb1399c57f1d7c6ed70bad8dac915768116379fa9c6d2d82590"
+      },
+      {
+        "entry": "flow-registry-compiler-owner-final-20261106.catalog.inventory.json",
+        "bytes": 4711,
+        "sha256": "08be73e464a74a8ec4e1c571b8f8674dcf2faad2c08fac51ca4f4591eea7e31b"
+      },
+      {
+        "entry": "flow-registry-compiler-owner-final-20261106.catalog.json",
+        "bytes": 582,
+        "sha256": "7b19f8ceb1cc2dd5271624e7d499bb789a4d4ff8f4c339698ce8fb95c34c0c0d"
+      },
+      {
+        "entry": "flow-registry-compiler-owner-final-20261106.catalog.log",
+        "bytes": 89650,
+        "sha256": "a498ac44d4445fc55c9acff1278e78db462a844475ff085de955bddb062bf35a"
+      },
+      {
+        "entry": "flow-registry-compiler-owner-final-20261106.runtime.json",
+        "bytes": 674,
+        "sha256": "dd7671f446aad801924405263699acdeac3bd9879d6a934fb9a37ab5eb6babdf"
+      },
+      {
+        "entry": "flow-registry-compiler-owner-final-20261106.runtime.log",
+        "bytes": 89603,
+        "sha256": "60dc4a7cffccec3ce9797307d198cfccafe5d819a61ab5916c02596015223722"
+      },
+      {
+        "entry": "flow-registry-compiler-owner-final-20261106.runtime.terminal-audit.json",
+        "bytes": 624,
+        "sha256": "2bb388e9436fddb4292d438b1c00f044906db047c6c0b45c7b3c9ca1d3be837d"
+      },
+      {
+        "entry": "flow-registry-compiler-owner-final-20261106.source-freeze.json",
+        "bytes": 788275,
+        "sha256": "eaccf3ded0c39c98bdcf19d333b388c012d146b64fb9af876f2b90660d0697c7"
+      },
+      {
+        "entry": "flow-registry-compiler-owner1-20261106.binaries-before.json",
+        "bytes": 220,
+        "sha256": "7f0fee0c3ee07df458e1e106139877588e1c2a44586d33baeeb333f251648316"
+      },
+      {
+        "entry": "flow-registry-compiler-owner1-20261106.catalog.inventory.json",
+        "bytes": 4730,
+        "sha256": "717d8ac6f9506b14fc80147d03d46300c192bb138c55470ceec38db091b9c3c9"
+      },
+      {
+        "entry": "flow-registry-compiler-owner1-20261106.catalog.json",
+        "bytes": 670,
+        "sha256": "af2f0a29fc6fc61bdade3492faf9271aa4975ec737d0efbbf4ec1fb68d3f0970"
+      },
+      {
+        "entry": "flow-registry-compiler-owner1-20261106.catalog.log",
+        "bytes": 90376,
+        "sha256": "744181a4cbe705a6808be3dc8d19b6059e7c8e733f3e98ab1c1822b215c5f56d"
+      },
+      {
+        "entry": "flow-registry-compiler-owner1-20261106.runtime.json",
+        "bytes": 764,
+        "sha256": "5e84e1fdbb2bbd3b6cfa0c93883ff11c0ed874e96b2e292000a1744836719014"
+      },
+      {
+        "entry": "flow-registry-compiler-owner1-20261106.runtime.log",
+        "bytes": 91835,
+        "sha256": "a8d0ced90456b5eca02c17a499117d304bd27a8f13dda9bab7e8116fcddeb6c9"
+      },
+      {
+        "entry": "flow-registry-compiler-owner1-20261106.runtime.terminal-audit.json",
+        "bytes": 807,
+        "sha256": "15109ee731559b508b3ba8866e8c65f7acbe41d354e04e5d785a79bcd31eb7a0"
+      },
+      {
+        "entry": "flow-registry-compiler-owner1-20261106.source-freeze.json",
+        "bytes": 807448,
+        "sha256": "eda2a7dab4b4036e122260184d186da0a71417bc9782e99650433fd1dd27af99"
+      },
+      {
+        "entry": "flow-registry-compiler-owner2-20261106.binaries-before.json",
+        "bytes": 220,
+        "sha256": "86919d8c580c70e5f6b59b41111f155180d6d78592a5583ca581d91c35838803"
+      },
+      {
+        "entry": "flow-registry-compiler-owner2-20261106.catalog.inventory.json",
+        "bytes": 4711,
+        "sha256": "08be73e464a74a8ec4e1c571b8f8674dcf2faad2c08fac51ca4f4591eea7e31b"
+      },
+      {
+        "entry": "flow-registry-compiler-owner2-20261106.catalog.json",
+        "bytes": 577,
+        "sha256": "7fd5fa4e786e6abd92a99220ff6309ebf145574b718c73cea1c621768efa22c1"
+      },
+      {
+        "entry": "flow-registry-compiler-owner2-20261106.catalog.log",
+        "bytes": 89962,
+        "sha256": "04c2b81cb41f23022da360793ecbac19b0a282c520bc78e7b69e71b1dd131b9b"
+      },
+      {
+        "entry": "flow-registry-compiler-owner2-20261106.runtime.json",
+        "bytes": 671,
+        "sha256": "b04965e8390c7acc5de76fee6886ebca0fd4476bc97abf67c066c9f7fd4f8503"
+      },
+      {
+        "entry": "flow-registry-compiler-owner2-20261106.runtime.log",
+        "bytes": 90635,
+        "sha256": "84d811cf237e8e88605331715ab5567e50d63a10e5b32be34e65da2c2a89ef04"
+      },
+      {
+        "entry": "flow-registry-compiler-owner2-20261106.runtime.terminal-audit.json",
+        "bytes": 810,
+        "sha256": "77f8d805d189ded090f63b51267bfb0abf10878b78c9468a1204347fab0dff35"
+      },
+      {
+        "entry": "flow-registry-compiler-owner2-20261106.source-freeze.json",
+        "bytes": 807631,
+        "sha256": "fe78c8850d9c6b3027e74c04ccc6f84c63963d789a1b35637f4c3b9e49095745"
+      },
+      {
+        "entry": "flow-registry-compiler-owner3-20261106.binaries-before.json",
+        "bytes": 220,
+        "sha256": "b42d6aab3d79fbadad386951f1845534d412aa1070211e63782d35b67dcae041"
+      },
+      {
+        "entry": "flow-registry-compiler-owner3-20261106.catalog.inventory.json",
+        "bytes": 4711,
+        "sha256": "08be73e464a74a8ec4e1c571b8f8674dcf2faad2c08fac51ca4f4591eea7e31b"
+      },
+      {
+        "entry": "flow-registry-compiler-owner3-20261106.catalog.json",
+        "bytes": 577,
+        "sha256": "b69a19da5203966132cd8da4ebd05c44ab3be36f501fc8da35de185b1b6f84cd"
+      },
+      {
+        "entry": "flow-registry-compiler-owner3-20261106.catalog.log",
+        "bytes": 89962,
+        "sha256": "d3d9b13f9fcfa5778a1d4f954533a89ff92e5728f74881ed417609940bbde0ca"
+      },
+      {
+        "entry": "flow-registry-compiler-owner3-20261106.runtime.json",
+        "bytes": 669,
+        "sha256": "6d77790ff623046ede2c8edd1ad00c330ba219add20fb41bd2b741dabf395905"
+      },
+      {
+        "entry": "flow-registry-compiler-owner3-20261106.runtime.log",
+        "bytes": 89915,
+        "sha256": "2fd7c6f6736ff0daaad4c3b25e3732497a4a17094e6943142e8f468869992747"
+      },
+      {
+        "entry": "flow-registry-compiler-owner3-20261106.runtime.terminal-audit.json",
+        "bytes": 619,
+        "sha256": "15f8306fffb5af5de919d021a29c2382143031892049581fde2dc6a94ab3d126"
+      },
+      {
+        "entry": "flow-registry-compiler-owner3-20261106.source-freeze.json",
+        "bytes": 807631,
+        "sha256": "10978fd1f1aa65d3bb35b13c8156c392feb34f121820c1900784f61ec4da5155"
+      },
+      {
+        "entry": "flow-registry-core-owner-final-20261106.binaries-before.json",
+        "bytes": 202,
+        "sha256": "898fb2608aacd61c81d8a490afbd6b493bc31a5373b543a30c6bc288e8575207"
+      },
+      {
+        "entry": "flow-registry-core-owner-final-20261106.catalog.inventory.json",
+        "bytes": 580852,
+        "sha256": "e0501345a8edae56dcbc6b00986dea0007ef05f0b21284f1cd9082e2adf54a95"
+      },
+      {
+        "entry": "flow-registry-core-owner-final-20261106.catalog.json",
+        "bytes": 552,
+        "sha256": "568364fa17230b042a1ed23e6496fb9251cc6119c309962b95fbe5054bdb7889"
+      },
+      {
+        "entry": "flow-registry-core-owner-final-20261106.catalog.log",
+        "bytes": 426858,
+        "sha256": "d6dcd97013ff023ecaa8554a548f741b5515137641153a917cbe06f80464a52e"
+      },
+      {
+        "entry": "flow-registry-core-owner-final-20261106.runtime.json",
+        "bytes": 644,
+        "sha256": "3b2df37afe14d7f8011812d713aa20022b9266baa1a80a55f289f96aa7dd0d0f"
+      },
+      {
+        "entry": "flow-registry-core-owner-final-20261106.runtime.log",
+        "bytes": 733196,
+        "sha256": "01e42e81aa63e7bf5c81405c31008a6c7f0c2fe9318caa6353114f5160f42050"
+      },
+      {
+        "entry": "flow-registry-core-owner-final-20261106.runtime.terminal-audit.json",
+        "bytes": 628,
+        "sha256": "924eb7aff5ff7af2f82d01d70c2dc798c9af3f5cf5e7639e620c630e43ad3b82"
+      },
+      {
+        "entry": "flow-registry-core-owner-final-20261106.source-freeze.json",
+        "bytes": 788275,
+        "sha256": "cc9d455cfc034a3fa02c43c8964617861b157547aeb5a230f77bf98e26ec8dc9"
+      },
+      {
+        "entry": "flow-registry-core-owner1-20261106.binaries-before.json",
+        "bytes": 202,
+        "sha256": "702e52b620d7ed9ba40409148e5ba52f1cbdbf5e651c829f062665b0cc3327e0"
+      },
+      {
+        "entry": "flow-registry-core-owner1-20261106.catalog.inventory.json",
+        "bytes": 582876,
+        "sha256": "53a091db8de96c98ae5fec2d66e4ddf6fd0026c9df8851bb94efc897a3fc46a5"
+      },
+      {
+        "entry": "flow-registry-core-owner1-20261106.catalog.json",
+        "bytes": 831,
+        "sha256": "4293ed2e8db2f480792d578746e9805321c916f989c427880277c5ba5a4b7104"
+      },
+      {
+        "entry": "flow-registry-core-owner1-20261106.catalog.log",
+        "bytes": 480916,
+        "sha256": "4671697744ce500107a5e0ab2d50e5336f38e6084e52cd61918efe809c03e24d"
+      },
+      {
+        "entry": "flow-registry-core-owner1-20261106.runtime.json",
+        "bytes": 923,
+        "sha256": "a2acb8f0b050b432ee50bdc346e827fc9b86786d600116443985828f5fb104f3"
+      },
+      {
+        "entry": "flow-registry-core-owner1-20261106.runtime.log",
+        "bytes": 760164,
+        "sha256": "ad2ff61a0be5f17954c8b6ff20a2210212fdcfbb67f079d211a75ed518408479"
+      },
+      {
+        "entry": "flow-registry-core-owner1-20261106.runtime.terminal-audit.json",
+        "bytes": 621,
+        "sha256": "0b925c7a047a233931299876edf7c437811dbd383c82cdab663db12bbe863256"
+      },
+      {
+        "entry": "flow-registry-core-owner1-20261106.source-freeze.json",
+        "bytes": 807631,
+        "sha256": "0907c239de7499ec98b5688188f273e45872b91f5a8a86a53dcf382675ac122d"
+      },
+      {
+        "entry": "user-authorized-cargo-clean-20261105-232524.json",
+        "bytes": 557,
+        "sha256": "8469c45dfc0aa1aa0f700c82982522b555246a47b31898a136ca86d53c6eaa0e"
+      },
+      {
+        "entry": "user-authorized-cargo-clean-20261105-232524.log",
+        "bytes": 43,
+        "sha256": "a1ee6c5553955034fce634be10c33cad8a532237a137f6e6a117fe0ab60087ee"
+      }
+    ]
+  }
+}

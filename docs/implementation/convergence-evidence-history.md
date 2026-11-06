@@ -14837,3 +14837,9 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-06 — Trusted dependency workspace checks
 
 - Source 6b72d7ca42beb3661a7025598cf74a341d61fc21, pinned inputs 4127, zero drift. Exit codes fmt 0, check 0, clippy 0, doctest 0, structure 0. The verifier doctest command reported 0 tests. [Commands, warning output and structural artifacts](acceptance-evidence/task-proof-trust-policy.json).
+
+## 2026-11-06 — Flow registry execution and save restore
+
+- Source 5deb88741e1f64df26ac08bc5a536f0a6063cd80, parent and tested base 2ad957746656f14a0bc6fde76d82bbbc847f50e0. Core library 2,280/2,280 and Compiler `flow_include` 19/19 passed, with zero drift across 4,033 pinned inputs per run. The original twelve tracked working changes participated in the local test inputs. The published source contains only the sixteen reviewed paths.
+- Supersedes the active Flow write failure at the earlier source. The registry uses one typed replay row and lives on the existing reached scope or frame. Native verifies the original function's permission. AWBC rejects a changed key and exchanged parent/child rows during restore and preserves the live state on rejection. Both paths retain the one-operation bound in the authored regression.
+- The first Compiler attempt failed before runtime due to the fixture's missing return and effect declarations. The second expected inert save binding to reject; the corrected test checks transactional restore. Preserve both failures and the previous CLI failure, alongside the passing runs and the full-workspace `cargo clean` receipt. [Actual test inputs, publish record and verified raw archive](acceptance-evidence/task-flow-registry-execution.json).
