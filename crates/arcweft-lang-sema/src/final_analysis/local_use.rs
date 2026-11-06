@@ -13,7 +13,7 @@ use std::{
     sync::Arc,
 };
 
-use arcweft_core::value::RuntimeOpaqueValueClass;
+use arcweft_core::{effect::RuntimeRegistryReadKind, value::RuntimeOpaqueValueClass};
 use arcweft_dialogue::{
     CharacterDialoguePolicyTypeGraph, CharacterDialoguePolicyTypeSchema,
     CharacterDialoguePolicyVariantOwner,
@@ -274,6 +274,13 @@ pub enum CheckedLocalUseError {
     IndexRequiresCopy {
         expression: ExprId,
         ty: SemanticTypeDigest,
+    },
+    #[error(
+        "lifetime registry read {expression:?} requires a registration of the expected type on every reaching path for {key:?}"
+    )]
+    RegistryRegistrationUnavailable {
+        expression: ExprId,
+        key: Arc<arcweft_id::LifetimeRegistryKey>,
     },
     #[error("synthetic value {owner:?} is unavailable at expression {expression:?}")]
     SyntheticUnavailable {
@@ -592,6 +599,9 @@ impl CheckedLocalUseCatalog {
             selected_in_place_receivers(analysis, analysis.calls().map(|(owner, _)| owner))?;
         let borrowed_receivers =
             selected_borrowed_receivers(analysis, analysis.calls().map(|(owner, _)| owner))?;
+        let registry_proofs = analysis
+            .expressions()
+            .any(|(_, expression)| required_registry_read(expression).is_some());
         for topology in analysis.hir_topology().modules() {
             let module = project
                 .modules()
@@ -610,6 +620,7 @@ impl CheckedLocalUseCatalog {
                 &in_place_receivers,
                 &borrowed_receivers,
                 None,
+                registry_proofs,
             );
             let open_declarations = topology
                 .entries()
@@ -646,7 +657,7 @@ impl CheckedLocalUseCatalog {
                 }
             }
             for entry in topology.entries() {
-                let mut item_state = Availability::root();
+                let mut item_state = checker.flow.entry();
                 for root in entry.roots() {
                     checker.body(root.projection(), &mut item_state)?;
                 }
@@ -660,6 +671,11 @@ impl CheckedLocalUseCatalog {
                 }
             }
             checker.solve_flow()?;
+            checker.require_registry_reads(
+                analysis
+                    .expressions()
+                    .filter(|(owner, _)| owner.module() == topology.module()),
+            )?;
         }
         Ok(result)
     }
@@ -719,6 +735,12 @@ impl CheckedLocalUseCatalog {
             selected_scheduled_callback_roots(analysis, scope.expression_owners())?;
         let in_place_receivers = selected_in_place_receivers(analysis, scope.expression_owners())?;
         let borrowed_receivers = selected_borrowed_receivers(analysis, scope.expression_owners())?;
+        let registry_proofs = scope.expression_owners().any(|owner| {
+            analysis
+                .expression(owner)
+                .and_then(required_registry_read)
+                .is_some()
+        });
         let mut checker = LocalUseChecker::new(
             analysis,
             module.as_ref(),
@@ -732,6 +754,7 @@ impl CheckedLocalUseCatalog {
             &in_place_receivers,
             &borrowed_receivers,
             Some(instance),
+            registry_proofs,
         );
         for pattern in scope.pattern_owners() {
             if analysis.pattern(pattern).is_some() {
@@ -748,11 +771,27 @@ impl CheckedLocalUseCatalog {
         }
         checker.declaration(view.body())?;
         checker.solve_flow()?;
+        checker.require_registry_reads(scope.expression_owners().filter_map(|owner| {
+            analysis
+                .expression(owner)
+                .map(|expression| (owner, expression))
+        }))?;
         Ok(CheckedLocalUseInstanceCatalog {
             identity,
             catalog: result,
         })
     }
+}
+
+fn required_registry_read(
+    expression: &super::CheckedExpression,
+) -> Option<&super::CheckedRegistryRead> {
+    let CheckedExpressionResolution::Value(CheckedValueResolution::RegistryRead(read)) =
+        expression.resolution()
+    else {
+        return None;
+    };
+    (read.kind() == RuntimeRegistryReadKind::Required).then_some(read)
 }
 
 struct LocalUseChecker<'a> {
@@ -772,6 +811,8 @@ struct LocalUseChecker<'a> {
     callback_local_uses: Vec<BTreeSet<LocalId>>,
     instance: Option<CheckedLocalUseInstantiation<'a>>,
     flow: OwnershipFlow,
+    registry_proofs: bool,
+    registry_may_interleave: bool,
     loops: Vec<OwnershipLoop>,
     carriers: Vec<(ExprId, NodeId)>,
     outputs: Vec<(ExprId, NodeId)>,
@@ -801,6 +842,7 @@ impl<'a> LocalUseChecker<'a> {
         in_place_receivers: &'a BTreeSet<ExprId>,
         borrowed_receivers: &'a BTreeMap<ExprId, SelectedReceiverBorrow>,
         instance: Option<CheckedLocalUseInstantiation<'a>>,
+        registry_proofs: bool,
     ) -> Self {
         Self {
             analysis,
@@ -818,6 +860,8 @@ impl<'a> LocalUseChecker<'a> {
             callback_local_uses: Vec::new(),
             instance,
             flow: OwnershipFlow::default(),
+            registry_proofs,
+            registry_may_interleave: false,
             loops: Vec::new(),
             carriers: Vec::new(),
             outputs: Vec::new(),
@@ -849,6 +893,12 @@ impl<'a> LocalUseChecker<'a> {
             let mut rejected = None;
             for violation in solution.violations {
                 match violation {
+                    Violation::RequiredRegistryRead { owner, key } => {
+                        return Err(CheckedLocalUseError::RegistryRegistrationUnavailable {
+                            expression: owner,
+                            key,
+                        });
+                    }
                     Violation::Local {
                         local,
                         site,
@@ -920,6 +970,52 @@ impl<'a> LocalUseChecker<'a> {
             if !changed {
                 return Err(rejected.ok_or(CheckedLocalUseError::InvalidTopology)?);
             }
+        }
+    }
+
+    fn require_registry_reads<'fact>(
+        &self,
+        expressions: impl Iterator<Item = (ExprId, &'fact super::CheckedExpression)>,
+    ) -> Result<(), CheckedLocalUseError> {
+        if !self.registry_proofs {
+            return Ok(());
+        }
+        let visited = self.flow.required_registry_reads();
+        for (owner, expression) in expressions {
+            if let Some(read) = required_registry_read(expression)
+                && !visited.contains(&owner)
+            {
+                return Err(CheckedLocalUseError::RegistryRegistrationUnavailable {
+                    expression: owner,
+                    key: read.shared_key(),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn forget_registry_writes(
+        &mut self,
+        effects: &crate::effects::EffectSet,
+        state: &mut Availability,
+        deferred: bool,
+    ) {
+        if !self.registry_proofs {
+            return;
+        }
+        use arcweft_id::EffectId;
+        let writes = effects
+            .iter()
+            .filter(|effect| effect.path() == EffectId::STATE_WRITE_LABEL)
+            .cloned()
+            .collect::<Box<[_]>>();
+        if !writes.is_empty() {
+            let event = if deferred {
+                Event::DeferredRegistryWrites(writes)
+            } else {
+                Event::ForgetRegistryWrites(writes)
+            };
+            self.flow.append(state, event);
         }
     }
 
@@ -1012,12 +1108,15 @@ impl<'a> LocalUseChecker<'a> {
         let carriers = std::mem::take(&mut self.carriers);
         let outputs = std::mem::take(&mut self.outputs);
         let guards = std::mem::take(&mut self.guard_bindings);
-        let result = body(self, &mut Availability::root());
+        let registry_may_interleave = std::mem::replace(&mut self.registry_may_interleave, true);
+        let mut state = self.flow.entry();
+        let result = body(self, &mut state);
         self.active_receiver_loans = loans;
         self.loops = loops;
         self.carriers = carriers;
         self.outputs = outputs;
         self.guard_bindings = guards;
+        self.registry_may_interleave = registry_may_interleave;
         result
     }
 
@@ -1650,7 +1749,7 @@ impl<'a> LocalUseChecker<'a> {
         &mut self,
         body: &HirDeclarationBodyTopology,
     ) -> Result<(), CheckedLocalUseError> {
-        let mut state = Availability::root();
+        let mut state = self.flow.entry();
         for phase in body.phases() {
             match phase {
                 HirDeclarationEvaluationPhase::Parameter(root) => {
@@ -1668,7 +1767,8 @@ impl<'a> LocalUseChecker<'a> {
                 HirDeclarationEvaluationPhase::Contract(root) => {
                     // Contract evaluation has its own entry path. It does not
                     // transfer a local into the callable body.
-                    self.expression(root.child(), &mut Availability::root())?;
+                    let mut contract = self.flow.entry();
+                    self.expression(root.child(), &mut contract)?;
                 }
                 HirDeclarationEvaluationPhase::Body(root) => {
                     self.body(root.projection(), &mut state)?;
@@ -2159,6 +2259,31 @@ impl<'a> LocalUseChecker<'a> {
         state: &mut Availability,
     ) -> Result<std::ops::ControlFlow<()>, CheckedLocalUseError> {
         match expression.kind() {
+            HirExprKind::LifetimePath(_) => {
+                let checked = self
+                    .analysis
+                    .expression(owner)
+                    .ok_or(CheckedLocalUseError::InvalidTopology)?;
+                if let Some(read) = required_registry_read(checked) {
+                    // A sibling callback may replace this shared row between
+                    // operations. A callback-local write cannot certify its type.
+                    if self.registry_may_interleave {
+                        self.flow.append(state, Event::RegistryBoundary);
+                    }
+                    let ty = checked
+                        .source_value_type()
+                        .ok_or(CheckedLocalUseError::InvalidTopology)?;
+                    self.flow.append(
+                        state,
+                        Event::RequiredRegistryRead {
+                            owner,
+                            key: read.shared_key(),
+                            ty: Arc::new(self.closed_type(ty)?),
+                        },
+                    );
+                }
+                Ok(std::ops::ControlFlow::Continue(()))
+            }
             HirExprKind::Index(_) => self.emit_index_expression(owner, state),
             HirExprKind::Await(value) => self.emit_await_expression(owner, value, state),
             HirExprKind::Pipe(_) => self.emit_pipe_expression(owner, state),
@@ -2693,7 +2818,7 @@ impl<'a> LocalUseChecker<'a> {
                 Some(CheckedExpressionResolution::DialogueApplication { .. })
             )
         ) {
-            self.flow.append(state, Event::Join);
+            self.flow.append(state, Event::EnterLineRegistry);
             let exit = self.flow.detached();
             self.outputs.push((owner, exit));
             for edge in expression
@@ -2701,11 +2826,17 @@ impl<'a> LocalUseChecker<'a> {
                 .expression_owned_child_edges()
                 .map_err(|_| CheckedLocalUseError::InvalidTopology)?
             {
-                if !matches!(
-                    edge.role(),
-                    HirExpressionOwnedBodyRole::DialogueLinePlanStatement { .. }
-                ) {
+                let HirExpressionOwnedBodyRole::DialogueLinePlanStatement { path, .. } =
+                    edge.role()
+                else {
                     continue;
+                };
+                let grouped = path.segments().len() > 1;
+                let registry_may_interleave = self.registry_may_interleave;
+                let bypass = grouped.then(|| state.clone());
+                if grouped {
+                    self.registry_may_interleave = true;
+                    self.flow.append(state, Event::RegistryBoundary);
                 }
                 match edge.child() {
                     HirExpressionOwnedChild::Statement(statement) => {
@@ -2721,12 +2852,18 @@ impl<'a> LocalUseChecker<'a> {
                     },
                     HirExpressionOwnedChild::Pattern(_) => {}
                 }
+                if let Some(bypass) = bypass {
+                    self.registry_may_interleave = registry_may_interleave;
+                    *state = bypass.join(state.clone());
+                    self.flow.append(state, Event::RegistryBoundary);
+                }
             }
             self.outputs
                 .pop()
                 .ok_or(CheckedLocalUseError::InvalidTopology)?;
             self.flow.connect(state, exit);
             *state = Availability::at(exit);
+            self.flow.append(state, Event::RegistryBoundary);
         }
         Ok(std::ops::ControlFlow::Continue(()))
     }
@@ -2736,6 +2873,18 @@ impl<'a> LocalUseChecker<'a> {
         owner: ExprId,
         state: &mut Availability,
     ) -> Result<(), CheckedLocalUseError> {
+        if self.registry_proofs
+            && let Some(application) = self
+                .analysis
+                .call(owner)
+                .and_then(crate::callable::CallTargetFacts::selected_application)
+        {
+            if let Some(effects) = application.core().effects().closed_value() {
+                self.forget_registry_writes(&effects, state, false);
+            } else {
+                self.flow.append(state, Event::RegistryBoundary);
+            }
+        }
         if self
             .analysis
             .expression(owner)
@@ -2790,7 +2939,18 @@ impl<'a> LocalUseChecker<'a> {
             .module
             .resolve_stmt(owner)
             .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
-        match statement.kind().evaluation_plan() {
+        let plan = statement.kind().evaluation_plan();
+        let event_body = matches!(
+            plan,
+            HirStmtEvaluationPlan::EventBody { .. } | HirStmtEvaluationPlan::CancelRule { .. }
+        );
+        let bypass = event_body.then(|| state.clone());
+        let registry_may_interleave = self.registry_may_interleave;
+        if event_body {
+            self.registry_may_interleave = true;
+            self.flow.append(state, Event::RegistryBoundary);
+        }
+        match plan {
             HirStmtEvaluationPlan::Binding { input, locals, .. } => {
                 self.expression(input, state)?;
                 self.bind(locals, state);
@@ -2810,6 +2970,35 @@ impl<'a> LocalUseChecker<'a> {
                     .and_then(super::CheckedExpression::mutable_place)
                     .ok_or(CheckedLocalUseError::InvalidTopology)?;
                 self.access_place(first, place, CheckedLocalPlaceMode::Assign, state)?;
+            }
+            HirStmtEvaluationPlan::OrderedPair {
+                kind: HirStmtOrderedPairPlanKind::LifetimeSet,
+                first,
+                second,
+            } => {
+                self.expression(second, state)?;
+                let Some(super::CheckedStatementPayload::RegistryWrite(write)) = self
+                    .analysis
+                    .statement(owner)
+                    .map(super::CheckedStatement::payload)
+                else {
+                    return Err(CheckedLocalUseError::InvalidTopology);
+                };
+                if write.address().target() != first || write.value() != second {
+                    return Err(CheckedLocalUseError::InvalidTopology);
+                }
+                if self.registry_proofs {
+                    self.flow.append(
+                        state,
+                        Event::RegistryWrite {
+                            key: write.address().shared_key(),
+                            ty: Arc::new(self.closed_type(write.value_type())?),
+                        },
+                    );
+                }
+            }
+            HirStmtEvaluationPlan::Include { .. } => {
+                self.flow.append(state, Event::RegistryBoundary);
             }
             HirStmtEvaluationPlan::Value {
                 kind: arcweft_lang_hir::stmt::HirStmtValuePlanKind::Defer,
@@ -2832,6 +3021,12 @@ impl<'a> LocalUseChecker<'a> {
                 for input in captures.sources() {
                     self.use_local(input.site(), input.local(), state)?;
                 }
+                let effects = self
+                    .analysis
+                    .expression(body)
+                    .ok_or(CheckedLocalUseError::InvalidTopology)?
+                    .effects();
+                self.forget_registry_writes(effects, state, true);
                 self.callable_body(|this, state| this.expression(body, state))?;
             }
             HirStmtEvaluationPlan::If {
@@ -3113,6 +3308,11 @@ impl<'a> LocalUseChecker<'a> {
                     }
                 }
             }
+        }
+        if let Some(bypass) = bypass {
+            self.registry_may_interleave = registry_may_interleave;
+            *state = bypass.join(state.clone());
+            self.flow.append(state, Event::RegistryBoundary);
         }
         // Dead statements remain checked, but cannot revive either a Never
         // prefix or an unreachable ownership path through a loop exit node.

@@ -90,6 +90,10 @@ impl CheckedRegistryRead {
         &self.key
     }
 
+    pub(in crate::final_analysis) fn shared_key(&self) -> Arc<LifetimeRegistryKey> {
+        Arc::clone(&self.key)
+    }
+
     pub const fn kind(&self) -> arcweft_core::effect::RuntimeRegistryReadKind {
         self.kind
     }
@@ -159,6 +163,9 @@ impl CheckedRegistryAddress {
     }
     pub fn key(&self) -> &LifetimeRegistryKey {
         &self.key
+    }
+    pub(in crate::final_analysis) fn shared_key(&self) -> Arc<LifetimeRegistryKey> {
+        Arc::clone(&self.key)
     }
     pub fn matches_path(&self, path: &HirLifetimeRegistryPath) -> bool {
         !path.optional() && self.key == *path.key()

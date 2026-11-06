@@ -865,6 +865,51 @@ fn optional_registry_reads_require_a_reached_scope() {
 }
 
 #[test]
+fn required_registry_reads_reject_missing_paths_and_mismatched_registrations() {
+    for prefix in [
+        "",
+        "if false { 'flow.flag <- true }",
+        "if flag { 'flow.flag <- true }",
+        "while flag { 'flow.flag <- true; break }",
+        "'flow.flag <- 1i64",
+        "if flag { 'flow.flag <- true } else { 'flow.flag <- 1i64 }",
+    ] {
+        let world = fixture(
+            &format!(
+                "flow main(flag: bool) effects {{ state.write('flow) }} {{
+                    {prefix}
+                    let value: bool = 'flow.flag
+                }}"
+            ),
+            None,
+        );
+        let result = super::analyze(&world);
+        assert!(
+            matches!(
+                result,
+                Err(FinalSemanticAnalysisError::LocalUse(
+                    crate::final_analysis::CheckedLocalUseError::RegistryRegistrationUnavailable { .. }
+                ))
+            ),
+            "{prefix:?} => {result:?}",
+        );
+    }
+}
+
+#[test]
+fn required_registry_reads_ignore_paths_that_return_before_the_read() {
+    let world = fixture(
+        "flow main(flag: bool) -> bool effects { state.write('flow) } {
+            if flag { 'flow.flag <- true } else { return false }
+            let value: bool = 'flow.flag
+            return value
+        }",
+        None,
+    );
+    super::analyze(&world).expect("the unregistered branch leaves the Flow");
+}
+
+#[test]
 fn registry_write_retains_a_core_facing_static_key_with_unicode_components() {
     let world = fixture(
         "flow registry effects { state.write('flow) } { 'flow.旗.既読 <- true }",

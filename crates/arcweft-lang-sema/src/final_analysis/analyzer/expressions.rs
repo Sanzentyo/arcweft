@@ -5233,12 +5233,18 @@ impl Analyzer<'_, '_, '_> {
                 .check_postfix_bracket(context, owner, postfix, expectation, transaction_authority)
                 .map_err(E::from),
             HirExprKind::LifetimePath(path) => {
-                let Some(path) = path.as_resolved().filter(|path| path.optional()) else {
+                let Some(path) = path
+                    .as_resolved()
+                    .filter(|path| path.scope_selector().is_none())
+                else {
                     return Err(AnalyzerExpressionError::rejected(owner).into());
                 };
-                let Some(ty @ TypeKind::Option(_)) = expectation.contextual_shape() else {
+                let Some(ty) = expectation.contextual_shape() else {
                     return Err(AnalyzerExpressionError::rejected(owner).into());
                 };
+                if path.optional() && !matches!(ty, TypeKind::Option(_)) {
+                    return Err(AnalyzerExpressionError::rejected(owner).into());
+                }
                 let read =
                     super::super::CheckedRegistryRead::from_path(&self.topology, owner, path)
                         .map_err(AnalyzerExpressionError::fatal)?;

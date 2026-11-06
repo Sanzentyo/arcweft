@@ -9,7 +9,12 @@ use super::{
 };
 use crate::final_analysis::completion::NormalContinuation;
 use crate::record_field::CheckedRecordFieldSemanticId;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use crate::types::TypeKind;
+use arcweft_id::{EffectId, LifetimeRegistryKey, LifetimeScopeKind};
+use std::{
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    sync::Arc,
+};
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct MovePath {
@@ -57,7 +62,7 @@ pub(super) struct Availability {
 }
 
 impl Availability {
-    pub(super) fn root() -> Self {
+    fn root() -> Self {
         Self {
             reachable: true,
             result_type: NormalContinuation::Unit,
@@ -104,6 +109,19 @@ pub(super) enum Event {
     Synthetic(ExprId),
     Bind(Box<[LocalId]>),
     BindSynthetic(CheckedSyntheticUseOwner),
+    RegistryWrite {
+        key: Arc<LifetimeRegistryKey>,
+        ty: Arc<TypeKind>,
+    },
+    RequiredRegistryRead {
+        owner: ExprId,
+        key: Arc<LifetimeRegistryKey>,
+        ty: Arc<TypeKind>,
+    },
+    ForgetRegistryWrites(Box<[EffectId]>),
+    DeferredRegistryWrites(Box<[EffectId]>),
+    EnterLineRegistry,
+    RegistryBoundary,
 }
 
 struct Node {
@@ -160,6 +178,9 @@ impl Default for LocalInitialization {
 struct Initialization {
     locals: BTreeMap<MovePath, LocalInitialization>,
     synthetic: BTreeMap<CheckedSyntheticUseOwner, BTreeSet<ExprId>>,
+    // A row is present only if all incoming paths have registered its type.
+    registry: BTreeMap<Arc<LifetimeRegistryKey>, Arc<TypeKind>>,
+    deferred_registry_keys: BTreeSet<Arc<LifetimeRegistryKey>>,
 }
 
 impl Initialization {
@@ -168,6 +189,7 @@ impl Initialization {
         event: &Event,
         rows: &BTreeMap<CheckedLocalUseSite, CheckedLocalAccess>,
         synthetic: &BTreeMap<ExprId, CheckedSyntheticUse>,
+        registry_keys: &BTreeMap<Arc<LifetimeRegistryKey>, EffectId>,
     ) -> Result<(), CheckedLocalUseError> {
         match event {
             Event::Access(site) => {
@@ -213,7 +235,33 @@ impl Initialization {
             Event::BindSynthetic(owner) => {
                 self.synthetic.remove(owner);
             }
-            Event::Join => {}
+            Event::RegistryWrite { key, ty } => {
+                if registry_keys.contains_key(key) && !self.deferred_registry_keys.contains(key) {
+                    self.registry.insert(Arc::clone(key), Arc::clone(ty));
+                }
+            }
+            Event::ForgetRegistryWrites(effects) | Event::DeferredRegistryWrites(effects) => {
+                self.registry.retain(|key, _| {
+                    !effects
+                        .iter()
+                        .any(|effect| effect.covers(&registry_keys[key.as_ref()]))
+                });
+                if matches!(event, Event::DeferredRegistryWrites(_)) {
+                    self.deferred_registry_keys.extend(
+                        registry_keys
+                            .iter()
+                            .filter(|(_, required)| {
+                                effects.iter().any(|effect| effect.covers(required))
+                            })
+                            .map(|(key, _)| Arc::clone(key)),
+                    );
+                }
+            }
+            Event::EnterLineRegistry => self
+                .registry
+                .retain(|key, _| key.scope() != &LifetimeScopeKind::Line),
+            Event::RegistryBoundary => self.registry.clear(),
+            Event::Join | Event::RequiredRegistryRead { .. } => {}
         }
 
         Ok(())
@@ -237,11 +285,19 @@ impl Initialization {
         for (owner, sites) in &other.synthetic {
             self.synthetic.entry(*owner).or_default().extend(sites);
         }
+        self.registry
+            .retain(|key, ty| other.registry.get(key) == Some(ty));
+        self.deferred_registry_keys
+            .extend(other.deferred_registry_keys.iter().cloned());
         *self != before
     }
 }
 
 pub(super) enum Violation {
+    RequiredRegistryRead {
+        owner: ExprId,
+        key: Arc<LifetimeRegistryKey>,
+    },
     Local {
         local: LocalId,
         site: CheckedLocalUseSite,
@@ -259,6 +315,26 @@ pub(super) struct OwnershipFlowSolution {
 }
 
 impl OwnershipFlow {
+    /// Anchor the empty execution path before it can fork.
+    pub(super) fn entry(&mut self) -> Availability {
+        let mut state = Availability::root();
+        self.append(&mut state, Event::Join);
+        state
+    }
+
+    pub(super) fn required_registry_reads(&self) -> BTreeSet<ExprId> {
+        self.nodes
+            .iter()
+            .filter_map(|node| {
+                if let Event::RequiredRegistryRead { owner, .. } = node.event {
+                    Some(owner)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     pub(super) fn append(&mut self, state: &mut Availability, event: Event) -> NodeId {
         let id = NodeId(self.nodes.len());
         let entry = state.reachable && state.frontier.is_empty();
@@ -297,6 +373,16 @@ impl OwnershipFlow {
         rows: &BTreeMap<CheckedLocalUseSite, CheckedLocalAccess>,
         synthetic: &BTreeMap<ExprId, CheckedSyntheticUse>,
     ) -> Result<OwnershipFlowSolution, CheckedLocalUseError> {
+        let registry_keys = self
+            .nodes
+            .iter()
+            .filter_map(|node| {
+                let Event::RequiredRegistryRead { key, .. } = &node.event else {
+                    return None;
+                };
+                Some((Arc::clone(key), EffectId::state_write(key)))
+            })
+            .collect::<BTreeMap<_, _>>();
         let mut incoming = vec![None; self.nodes.len()];
         let mut queue = VecDeque::new();
         for (index, node) in self.nodes.iter().enumerate() {
@@ -309,7 +395,7 @@ impl OwnershipFlow {
             let mut state = incoming[id.0]
                 .clone()
                 .ok_or(CheckedLocalUseError::InvalidTopology)?;
-            state.transfer(&self.nodes[id.0].event, rows, synthetic)?;
+            state.transfer(&self.nodes[id.0].event, rows, synthetic, &registry_keys)?;
             for successor in &self.nodes[id.0].successors {
                 let changed = match &mut incoming[successor.0] {
                     Some(previous) => previous.join(&state),
@@ -337,8 +423,17 @@ impl OwnershipFlow {
                 }
                 continue;
             };
-            match node.event {
+            match &node.event {
+                Event::RequiredRegistryRead { owner, key, ty } => {
+                    if state.registry.get(key) != Some(ty) {
+                        violations.push(Violation::RequiredRegistryRead {
+                            owner: *owner,
+                            key: Arc::clone(key),
+                        });
+                    }
+                }
                 Event::Access(site) => {
+                    let site = *site;
                     let row = rows
                         .get(&site)
                         .ok_or(CheckedLocalUseError::InvalidTopology)?;
@@ -409,6 +504,7 @@ impl OwnershipFlow {
                     }
                 }
                 Event::Synthetic(expression) => {
+                    let expression = *expression;
                     let row = synthetic
                         .get(&expression)
                         .ok_or(CheckedLocalUseError::InvalidTopology)?;

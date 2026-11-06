@@ -11991,10 +11991,12 @@ fn validate_resolved_value(
             if path
                 .as_resolved()
                 .is_some_and(|path| read.matches_path(expression, path))
-                && matches!(
-                    expression_type.map(RuntimeNormalizedType::shape),
-                    Some(RuntimeTypeShape::Option { .. })
-                )
+                && expression_type.is_some_and(|ty| match read.kind() {
+                    arcweft_core::effect::RuntimeRegistryReadKind::Required => true,
+                    arcweft_core::effect::RuntimeRegistryReadKind::Optional => {
+                        matches!(ty.shape(), RuntimeTypeShape::Option { .. })
+                    }
+                })
             {
                 Ok(())
             } else {

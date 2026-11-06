@@ -3018,6 +3018,28 @@ entry cli @entry.main { goto @flow.main }
 }
 
 #[test]
+fn source_required_registry_reads_use_reaching_branches_in_native_and_decoded_awbc() {
+    for (flag, expected) in [(true, "then"), (false, "else")] {
+        let compiled = compile_source(&format!(
+            r#"
+flow main() -> Unit effects {{ state.write('flow), log.write }} {{
+    if {flag} {{
+        'flow.flags.seen <- "then"
+    }} else {{
+        'flow.flags.seen <- "else"
+    }}
+    let present: String = 'flow.flags.seen
+    log.info(present)
+}}
+entry cli @entry.main {{ goto @flow.main }}
+"#,
+        ))
+        .expect("both reaching branches register the exact item type");
+        assert_simple_flow_logs_native_and_awbc(&compiled, &[expected]);
+    }
+}
+
+#[test]
 fn source_optional_registry_reads_reach_the_line_and_parent_flow() {
     use arcweft_core::awbc::{
         codec::AwbcDecodeBudget,
@@ -3031,11 +3053,16 @@ fn source_optional_registry_reads_reach_the_line_and_parent_flow() {
         r#"
 pub character alice { display = "Alice" }
 flow main() -> Unit effects { state.write('flow), state.write('line), log.write } {
+    'flow.prior <- "parent at entry"
     let result = alice()[本文。[mark @.release][p]] with {
         init {
+            let inherited: String = 'flow.prior
+            log.info(inherited)
             let absent: Option<String> = 'line.saved?
             if let .None = absent { log.info("line absent") }
             'line.saved <- "line value"
+            let present: String = 'line.saved
+            log.info(present)
             'flow.saved <- "parent value"
         }
         on mark(@.release) {
@@ -3089,7 +3116,9 @@ entry cli @entry.main { goto @flow.main }
         arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&awbc_schema),
     );
     let expected = [
+        "parent at entry",
         "line absent",
+        "line value",
         "mark-handler-enter",
         "parent value",
         "line value",
@@ -3108,6 +3137,41 @@ entry cli @entry.main { goto @flow.main }
     );
     assert!(completed);
     assert_eq!(logs, expected);
+}
+
+#[test]
+fn source_required_registry_reads_reject_a_shared_handler_write_as_type_evidence() {
+    use arcweft_lang_sema::final_analysis::{CheckedLocalUseError, FinalSemanticAnalysisError};
+
+    let error = compile_attached_dialogue_project(
+        r#"
+pub character alice { display = "Alice" }
+flow main() -> Unit effects { state.write('line), log.write } {
+    alice()[本文。[mark @.first][mark @.second][p]] with {
+        on mark(@.first) {
+            'line.saved <- "first"
+            let present: String = 'line.saved
+            log.info(present)
+        }
+        on mark(@.second) {
+            'line.saved <- true
+        }
+    }
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    )
+    .err()
+    .expect("a sibling handler can replace the line registry row between operations");
+    assert!(
+        matches!(
+            error.semantic_error(),
+            Some(FinalSemanticAnalysisError::LocalUse(
+                CheckedLocalUseError::RegistryRegistrationUnavailable { .. }
+            ))
+        ),
+        "{error:?}",
+    );
 }
 
 #[test]

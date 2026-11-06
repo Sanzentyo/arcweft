@@ -1262,7 +1262,9 @@ fn validate_expression_resolution(
             };
             let path = path.as_resolved().ok_or(FinalSemanticAnalysisError::RecoveredOwner)?;
             let expected = super::CheckedRegistryRead::from_path(topology, owner, path)?;
-            (read == &expected && path.optional() && matches!(ty, TypeKind::Option(_)))
+            (read == &expected
+                && path.scope_selector().is_none()
+                && (!path.optional() || matches!(ty, TypeKind::Option(_))))
                 .then_some(())
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)
         }
