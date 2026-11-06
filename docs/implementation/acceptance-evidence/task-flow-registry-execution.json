@@ -14543,5 +14543,226 @@
         }
       ]
     }
+  },
+  "reachedRegistryDropSourceExecution": {
+    "source": "ed20481369773dfba4d231547fae124953b62984",
+    "publishedBlobDrift": 0,
+    "stagedPatchSha256": "46ec3fa35694e2c46b573694874cec1666b1b74e60118be502b822b804ad9902",
+    "currentScope": "Exact reached Flow and Line registrations carrying unrestricted values.",
+    "sourceCases": [
+      "Required and optional direct forms",
+      "Required and optional explicit pipe placeholders",
+      "Stop with Duration fade",
+      "Optional absence",
+      "Line and parent Flow cancellation on both backends, with AWBC JSON save and restore after each step"
+    ],
+    "focused": {
+      "passed": 3,
+      "failed": 0,
+      "excludedByFilter": 73
+    },
+    "priorWorkingDiffs": [
+      {
+        "passed": 59,
+        "failed": 4,
+        "excludedByFilter": 2493,
+        "causes": [
+          "Required call selected the policy overload",
+          "Optional reached item proof was unknown",
+          "AWBC fixture used the wrong Duration type ID",
+          "RuntimePlan test mixed arbitrary write keys with restricted Drop scopes"
+        ]
+      },
+      {
+        "passed": 62,
+        "failed": 2,
+        "excludedByFilter": 2493,
+        "causes": [
+          "Destructive pipe was still admitted as a pipe value binding",
+          "Line cancellation lexical analysis lost its owning Line"
+        ]
+      }
+    ],
+    "publishedInitialOwner": {
+      "source": "ed20481369773dfba4d231547fae124953b62984",
+      "result": {
+        "executed": 4074,
+        "passed": 4073,
+        "failed": 1,
+        "skipped": 1,
+        "summary": "Summary [ 144.489s] 4074 tests run: 4073 passed (1 slow), 1 failed, 1 skipped"
+      },
+      "failure": "An annotated required read reported ExpressionTypeUnavailable instead of the established reachability diagnostic."
+    },
+    "diagnosisFix": {
+      "source": "901926eca718a2c3f110916234aa9f64b8e1d192",
+      "targetedPassed": 4,
+      "excludedByFilter": 1646,
+      "reason": "Only call candidate selection uses the lexical write type to reject an incompatible expectation. Annotated reads retain the reachability diagnostic."
+    },
+    "owner": {
+      "source": "901926eca718a2c3f110916234aa9f64b8e1d192",
+      "result": {
+        "executed": 4074,
+        "passed": 4074,
+        "failed": 0,
+        "skipped": 1,
+        "summary": "Summary [ 112.397s] 4074 tests run: 4074 passed (1 slow), 1 skipped"
+      }
+    },
+    "structure": {
+      "source": "ed20481369773dfba4d231547fae124953b62984",
+      "blockingViolations": 0,
+      "reviewTriggers": 386,
+      "ownership": "The scoped registry admits and commits the exact row. Semantic checking owns its address and write capability. Native and AWBC stage the same typed mutation at their existing publication boundaries."
+    },
+    "reverseDependencyGraph": {
+      "source": "901926eca718a2c3f110916234aa9f64b8e1d192",
+      "command": [
+        "cargo",
+        "tree",
+        "--workspace",
+        "--locked",
+        "--invert",
+        "arcweft-core",
+        "--edges",
+        "normal,build,dev",
+        "--prefix",
+        "none",
+        "--format",
+        "{p}"
+      ],
+      "packages": [
+        "arcweft",
+        "arcweft-adapter-desktop",
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-policy",
+        "arcweft-agent-protocol",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-browser-bench",
+        "arcweft-bundle",
+        "arcweft-bundle-assets",
+        "arcweft-character-view",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-core",
+        "arcweft-debug-model",
+        "arcweft-debug-sqlite",
+        "arcweft-dialogue",
+        "arcweft-glyphon",
+        "arcweft-host-adapter",
+        "arcweft-lang-jit-cranelift",
+        "arcweft-lang-sema",
+        "arcweft-launch",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-text-input",
+        "arcweft-player-web",
+        "arcweft-project",
+        "arcweft-project-loader",
+        "arcweft-rag",
+        "arcweft-render-text",
+        "arcweft-render-wgpu",
+        "arcweft-resource-manifest",
+        "arcweft-resource-model",
+        "arcweft-runtime-accelerator",
+        "arcweft-runtime-codegen",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-runtime-scheduler",
+        "arcweft-save",
+        "arcweft-test",
+        "arcweft-text-layout",
+        "arcweft-text-model",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3",
+        "arcweft-view"
+      ]
+    },
+    "remaining": [
+      "Broader reverse dependency acceptance",
+      "Affine registry entries and adapter cleanup obligations",
+      "Other reached lifetime scopes",
+      "Dynamic write type inference"
+    ],
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-flow-line-registry-drop.raw.zip",
+      "sha256": "64625ebfe9fde77a44d9723341b16d3f0e50d4231a837c3ca2c23d971dc02051",
+      "entries": [
+        {
+          "entry": "registry-drop-integrated-20261107.check.log",
+          "bytes": 94203,
+          "sha256": "1f6c0a29a3f01c54a23287080e0d85a5efe5f05a6252073b1f67c5683271228a"
+        },
+        {
+          "entry": "registry-drop-integrated-20261107.focused.log",
+          "bytes": 115363,
+          "sha256": "7c07fa68c12b7ae6716caa6ae6000779826e6aabcf7626372cbb2407f1109e56"
+        },
+        {
+          "entry": "registry-drop-integrated-20261107.sema-trace.log",
+          "bytes": 91068,
+          "sha256": "7f8e26f88642803a5bc152f1846abbf890e15bfafd4d741ee150bf3c83c2213a"
+        },
+        {
+          "entry": "registry-drop-integrated-20261107.proof-trace.log",
+          "bytes": 92246,
+          "sha256": "f395bcc940bc587f4b7f6dd5ec9464434a5f78e239754310ea937b356e0b8cee"
+        },
+        {
+          "entry": "registry-drop-integrated-20261107.focused-retry.log",
+          "bytes": 112455,
+          "sha256": "79dadc2713f1f578fc076b05819527718e01031475cfd6dd4845b6faa4bbdfc6"
+        },
+        {
+          "entry": "registry-drop-integrated-20261107.flow-line-retry.log",
+          "bytes": 86305,
+          "sha256": "d58c1e937ee8da09b0e99d05d2d99cb45535e6c073f900761cbee1aa174a6928"
+        },
+        {
+          "entry": "registry-drop-integrated-20261107.candidate-boundary.log",
+          "bytes": 88131,
+          "sha256": "9f51859b5882d75cab0e256717688293fa122431f1e64ac1c7b217d44bbcef68"
+        },
+        {
+          "entry": "registry-drop-integrated-20261107.verified.json",
+          "bytes": 8103,
+          "sha256": "6e1d8a40e2d6085008ea6445302acbe7c8aed4765125bcc7f4c1c157b12292fb"
+        },
+        {
+          "entry": "registry-drop-integrated-20261107.structure.log",
+          "bytes": 65741,
+          "sha256": "edb7308fc0812fcbb605a8c242c9fcfc902f12f06aa14342a3e5907a11029a78"
+        },
+        {
+          "entry": "registry-drop-integrated-20261107.owner.log",
+          "bytes": 730024,
+          "sha256": "d7b78c3aceefd683b0a396c1e0568a2f816529b837973da824ef3cd1f53ca099"
+        },
+        {
+          "entry": "registry-drop-integrated-20261107.owner-final.log",
+          "bytes": 728691,
+          "sha256": "83d40e48c5d566a55aaeb13c674a3407adebb5c60a9625546e8d304ce81ea88d"
+        },
+        {
+          "entry": "registry-drop-integrated-20261107.inverse-cargo.txt",
+          "bytes": 19452,
+          "sha256": "3f1a725a8c4e20d7ff324f499910203eab3b157f862f4030f796f3b84bf6d79a"
+        },
+        {
+          "entry": "registry-drop-candidate-boundary-20261107.verified.json",
+          "bytes": 854,
+          "sha256": "a93383b2416b0f694da31a4f6de837036863d66abe7476cba53be524f05bf1ba"
+        }
+      ]
+    }
   }
 }

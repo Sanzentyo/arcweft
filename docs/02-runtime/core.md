@@ -379,11 +379,20 @@ effects { state.write('flow), state.write('global) }
 ```
 
 Line lifetime registry paths such as `'line.focus` are owned by the line scope.
-Guaranteed keys can be read directly; optional reads use `'line.focus?`. Drop
-operations remove registered values and run their adapter cleanup policy through
-emitted requests. Lower-scope keys such as `'line.*` are not available outside
-their active scope or across a thread boundary unless an explicit move/share or
-detach operation makes the capture safe.
+Guaranteed keys can be read directly. Optional reads use `'line.focus?`.
+`drop('line.focus)` removes a guaranteed registration in the reached Line
+and `drop_optional('line.focus?)` also accepts absence. The same operations
+address the reached Flow when the path selects `'flow`. Both require
+`state.write` coverage for the key. An explicit pipe such as
+`'line.focus |> drop(^)` carries the address into the operation. Dropping a
+local binding operates on the value held by the binding.
+
+Replayable registry entries carry unrestricted values. The runtime checks the
+registered item's type before removal. A Stop policy takes a `Duration` fade.
+Adapter cleanup for dropped owned values runs through emitted requests.
+A dialogue cancellation body can reach its Line and parent Flow. An independent
+thread boundary requires an explicit move, share, or detach operation for a
+lower-scope capture.
 
 The checker treats lifetime operations as intrinsics with typestate effects:
 
