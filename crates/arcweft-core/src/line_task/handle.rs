@@ -27,6 +27,8 @@ use std::collections::BTreeMap;
 use std::num::NonZeroU64;
 use thiserror::Error;
 
+mod journal_rows;
+
 pub const MAX_LINE_HANDLE_SITES: usize = 128;
 pub const MAX_LINE_LIVE_HANDLES: usize = 256;
 pub const MAX_LINE_SCHEDULED_CALLBACKS: usize = 128;
@@ -262,6 +264,20 @@ pub enum RuntimeHandleOwnerSlot {
     ParentFiber(RuntimeOwnedSlotId),
 }
 
+impl RuntimeHandleOwnerSlot {
+    pub(crate) fn in_dialogue_fiber(
+        activation: &DialogueActivationId,
+        token: &RuntimeLineHandleToken,
+        slot: RuntimeOwnedSlotId,
+    ) -> Self {
+        if token.activation() == activation {
+            Self::ActivationLocal(slot)
+        } else {
+            Self::ParentFiber(slot)
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeHandleLeaseState {
@@ -416,6 +432,7 @@ impl RuntimeHandleLease {
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RuntimeLineHandleLedger {
     issuance_by_site: BTreeMap<RuntimeLineHandleSiteId, u32>,
+    #[serde(with = "journal_rows")]
     leases: BTreeMap<RuntimeLineHandleToken, RuntimeHandleLease>,
 }
 
@@ -441,10 +458,12 @@ pub struct RuntimeDialogueActivationState<T, V = RuntimeValue> {
     )]
     line_registry: crate::effect::RuntimeScopeRegistry,
     command_sequence: u64,
+    #[serde(with = "journal_rows")]
     issued_commands: BTreeMap<
         crate::presentation::RuntimeLineCommandId,
         crate::presentation::RuntimeLineHostCommand,
     >,
+    #[serde(with = "journal_rows")]
     superseded_commands: BTreeMap<
         crate::presentation::RuntimeLineCommandId,
         crate::presentation::RuntimeLineHostCommand,
@@ -661,6 +680,7 @@ impl<T> RuntimeDialogueActivationState<T> {
 pub(crate) struct RuntimePublishedDialogueHandles {
     ledger: RuntimeLineHandleLedger,
     command_sequence: u64,
+    #[serde(with = "journal_rows")]
     issued_commands: BTreeMap<
         crate::presentation::RuntimeLineCommandId,
         crate::presentation::RuntimeLineHostCommand,
@@ -725,6 +745,10 @@ pub(crate) struct RuntimeDialogueCommitReceipt {
 }
 
 impl RuntimeDialogueCommitReceipt {
+    pub(crate) fn extend_parent_commands(&mut self, receipt: RuntimeHandleDropReceipt) {
+        self.commands.extend(receipt.into_commands());
+    }
+
     pub(crate) fn into_commands(self) -> Vec<crate::presentation::RuntimeLineHostCommand> {
         self.commands
     }
@@ -3010,6 +3034,24 @@ impl<T: Clone> AwbcRuntimeDialogueResultSnapshot<T> {
 }
 
 impl RuntimePublishedDialogueHandles {
+    pub(crate) fn receiver_slots(
+        &self,
+    ) -> impl Iterator<Item = (&RuntimeLineHandleToken, RuntimeOwnedSlotId)> {
+        self.ledger.leases().iter().filter_map(|(token, lease)| {
+            match (lease.owner(), lease.state()) {
+                (
+                    _,
+                    RuntimeHandleLeaseState::Released
+                    | RuntimeHandleLeaseState::Cancelling
+                    | RuntimeHandleLeaseState::Cancelled
+                    | RuntimeHandleLeaseState::Failed,
+                ) => None,
+                (RuntimeHandleOwnerSlot::ParentFiber(slot), _) => Some((token, *slot)),
+                _ => None,
+            }
+        })
+    }
+
     pub(crate) fn restore_admit(
         &self,
         activation: &DialogueActivationId,

@@ -103,7 +103,7 @@ pub(super) enum DialogueActivationStep {
 enum ActivationScopeStep {
     Waiting,
     Deferred(super::NativeLineTaskExecutionBatch),
-    Finished,
+    Finished(Option<crate::line_task::PreparedRuntimeParentFiberReconciliation>),
 }
 
 enum DialoguePublicationOutcome {
@@ -565,8 +565,11 @@ impl Engine {
                     }
                 };
                 match step {
-                    ActivationScopeStep::Finished => {}
-                    ActivationScopeStep::Waiting => {
+                    ActivationScopeStep::Finished(None) => {}
+                    ActivationScopeStep::Waiting | ActivationScopeStep::Finished(Some(_)) => {
+                        if let ActivationScopeStep::Finished(received) = step {
+                            transaction.stage_received_handles(received);
+                        }
                         match self.commit_dialogue_activation_transaction(transaction, output) {
                             Ok(()) => {
                                 self.fiber.frame.status =
@@ -1103,11 +1106,14 @@ impl Engine {
                     pure_backend,
                 );
             }
-            let before = self.activation_local_handle_owners(frame)?;
+            let before = self.activation_local_handle_owners(&activation_id, frame)?;
+            let resumed_child = match &frame.execution.status {
+                super::FlowFiberStatus::Dialogue(status) => Some(*status.activation()),
+                _ => None,
+            };
             let staged =
                 self.step_dialogue_execution(slot, None, input, events, pure_backend, None)?;
-            let (frame, activation) = slot.transaction_mut().parts_mut();
-            self.commit_activation_assignment_discards(&activation_id, frame, activation, &before)?;
+            self.reconcile_activation_instruction(slot.transaction_mut(), &before, resumed_child)?;
             return Ok(DialogueActivationStep::Execution(staged));
         }
         if frame.pending_line_operation.is_some() {
@@ -1173,7 +1179,9 @@ impl Engine {
                     ScopeExit::Completed,
                 )?;
                 return match step {
-                    ActivationScopeStep::Waiting | ActivationScopeStep::Finished => {
+                    ActivationScopeStep::Waiting => Ok(DialogueActivationStep::Continue),
+                    ActivationScopeStep::Finished(received) => {
+                        slot.transaction_mut().stage_received_handles(received);
                         Ok(DialogueActivationStep::Continue)
                     }
                     ActivationScopeStep::Deferred(batch) => {
@@ -1207,7 +1215,7 @@ impl Engine {
                 pure_backend,
             );
         }
-        let assignment_before = self.activation_local_handle_owners(frame)?;
+        let assignment_before = self.activation_local_handle_owners(&activation_id, frame)?;
         match operation {
             FlowOp::EnterScope { identity } => {
                 frame
@@ -1228,14 +1236,22 @@ impl Engine {
                     ActivationScopeStep::Deferred(batch) => {
                         Ok(DialogueActivationStep::Deferred(batch))
                     }
-                    ActivationScopeStep::Finished => {
+                    ActivationScopeStep::Finished(received) => {
                         advance_activation_pc(frame)?;
+                        slot.transaction_mut().stage_received_handles(received);
                         Ok(DialogueActivationStep::Continue)
                     }
                 };
             }
             FlowOp::Let { pattern, expr } => {
-                self.bind_dialogue_let(&activation_id, slot, pattern, expr, pure_backend)?;
+                self.bind_dialogue_let(
+                    &activation_id,
+                    slot,
+                    pattern,
+                    expr,
+                    &assignment_before,
+                    pure_backend,
+                )?;
             }
             FlowOp::HostCall { binding, target } => {
                 let (args, named_args) = self
@@ -1243,7 +1259,7 @@ impl Engine {
                         this.evaluate_host_call_arguments(&target.args, pure_backend)
                     })?
                     .map_err(|message| DialogueExecutionError::HostCallFailed { message })?;
-                let (frame, activation) = slot.transaction_mut().parts_mut();
+                let frame = slot.transaction_mut().frame_mut();
                 for value in args
                     .iter()
                     .chain(named_args.iter().map(|argument| &argument.value))
@@ -1264,11 +1280,10 @@ impl Engine {
                     result: target.result,
                     binding: binding.clone(),
                 });
-                self.commit_activation_assignment_discards(
-                    &activation_id,
-                    frame,
-                    activation,
+                self.reconcile_activation_instruction(
+                    slot.transaction_mut(),
                     &assignment_before,
+                    None,
                 )?;
                 return Ok(DialogueActivationStep::HostCall(Box::new(
                     target
@@ -1322,7 +1337,6 @@ impl Engine {
                     pure_backend,
                 )?;
                 if let Some(request) = request {
-                    let (frame, activation) = slot.transaction_mut().parts_mut();
                     let request = match request {
                         LineEffectRequest::Panic(message)
                         | LineEffectRequest::Fail(message)
@@ -1331,13 +1345,12 @@ impl Engine {
                         }
                         request => request,
                     };
-                    self.commit_activation_assignment_discards(
-                        &activation_id,
-                        frame,
-                        activation,
+                    self.reconcile_activation_instruction(
+                        slot.transaction_mut(),
                         &assignment_before,
+                        None,
                     )?;
-                    advance_activation_pc(frame)?;
+                    advance_activation_pc(slot.transaction_mut().frame_mut())?;
                     return Ok(DialogueActivationStep::Effect(request));
                 }
             }
@@ -1372,24 +1385,17 @@ impl Engine {
                     pure_backend,
                     None,
                 )?;
-                let (frame, activation) = slot.transaction_mut().parts_mut();
-                self.commit_activation_assignment_discards(
-                    &activation_id,
-                    frame,
-                    activation,
+                self.reconcile_activation_instruction(
+                    slot.transaction_mut(),
                     &assignment_before,
+                    None,
                 )?;
-                advance_activation_pc(frame)?;
+                advance_activation_pc(slot.transaction_mut().frame_mut())?;
                 return Ok(DialogueActivationStep::Execution(staged));
             }
         }
-        let (frame, activation) = slot.transaction_mut().parts_mut();
-        self.commit_activation_assignment_discards(
-            &activation_id,
-            frame,
-            activation,
-            &assignment_before,
-        )?;
+        self.reconcile_activation_instruction(slot.transaction_mut(), &assignment_before, None)?;
+        let frame = slot.transaction_mut().frame_mut();
         if frame.pending_line_operation.is_none() {
             advance_activation_pc(frame)?;
         }
@@ -1452,6 +1458,7 @@ impl Engine {
 
     fn activation_local_handle_owners(
         &self,
+        activation: &DialogueActivationId,
         frame: &DialogueActivationFrame,
     ) -> Result<
         std::collections::BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>,
@@ -1459,17 +1466,30 @@ impl Engine {
     > {
         let mut owners = std::collections::BTreeMap::new();
         for (local, value) in frame.execution.env.bindings() {
-            let owner = RuntimeHandleOwnerSlot::ActivationLocal(self.owned_slot(local)?);
+            let slot = self.owned_slot(local)?;
             for handle in unique_affine_line_handles(value)? {
-                if owners
-                    .insert(handle.token().clone(), owner.clone())
-                    .is_some()
-                {
+                let owner =
+                    RuntimeHandleOwnerSlot::in_dialogue_fiber(activation, handle.token(), slot);
+                if owners.insert(handle.token().clone(), owner).is_some() {
                     return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
                 }
             }
         }
         Ok(owners)
+    }
+
+    fn reconcile_activation_instruction(
+        &self,
+        transaction: &mut DialogueActivationTransaction,
+        before: &std::collections::BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>,
+        resumed_child: Option<DialogueActivationId>,
+    ) -> Result<(), DialogueExecutionError> {
+        let id = *transaction.activation();
+        let (frame, line) = transaction.parts_mut();
+        let received =
+            self.commit_activation_assignment_discards(&id, frame, line, before, resumed_child)?;
+        transaction.stage_received_handles(received);
+        Ok(())
     }
 
     fn commit_activation_assignment_discards(
@@ -1478,20 +1498,36 @@ impl Engine {
         frame: &mut DialogueActivationFrame,
         activation: &mut NativeDialogueActivationState,
         before: &std::collections::BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>,
-    ) -> Result<(), DialogueExecutionError> {
+        resumed_child: Option<DialogueActivationId>,
+    ) -> Result<
+        Option<crate::line_task::PreparedRuntimeParentFiberReconciliation>,
+        DialogueExecutionError,
+    > {
         let drops = frame.execution.env.take_assignment_discard_authorization();
-        let after = self.activation_local_handle_owners(frame)?;
+        let after = self.activation_local_handle_owners(activation_id, frame)?;
         if !drops.has_displaced_values() && before == &after {
-            return Ok(());
+            return Ok(None);
         }
         drops.validate_removed(
             |token| before.contains_key(token),
             |token| after.contains_key(token),
         )?;
+        let received = self
+            .dialogue_activations
+            .inspect_received_fiber_reconciliation(
+                self.fiber.execution,
+                before,
+                &after,
+                &drops,
+                resumed_child,
+            )?;
         let mut ledger = activation.ledger().clone();
         let mut commands =
             RuntimeCommandQueue::new(activation_id.clone(), activation.command_sequence());
         for (token, destination) in &after {
+            if token.activation() != activation_id {
+                continue;
+            }
             let Some(source) = before.get(token) else {
                 continue;
             };
@@ -1508,6 +1544,9 @@ impl Engine {
             }
         }
         for token in drops.displaced_tokens() {
+            if token.activation() != activation_id {
+                continue;
+            }
             let owner = before
                 .get(token)
                 .ok_or(LineRuntimeError::UnjournaledHandleDrop)?;
@@ -1518,7 +1557,7 @@ impl Engine {
         }
         flush_commands(activation_id, activation, commands)?;
         activation.commit_ledger(ledger);
-        Ok(())
+        Ok(received)
     }
 
     /// Captures the exact reached defer site without executing its body.
@@ -1737,9 +1776,9 @@ impl Engine {
                 }
             }
         }
-        self.release_activation_scope_locals(activation_id, frame, activation)?;
+        let received = self.release_activation_scope_locals(activation_id, frame, activation)?;
         frame.scopes.pop();
-        Ok(ActivationScopeStep::Finished)
+        Ok(ActivationScopeStep::Finished(received))
     }
 
     /// Releases lexical locals after all deferred callbacks have observed them.
@@ -1751,17 +1790,28 @@ impl Engine {
         activation_id: &crate::runtime_id::DialogueActivationId,
         frame: &mut DialogueActivationFrame,
         activation: &mut NativeDialogueActivationState,
-    ) -> Result<(), DialogueExecutionError> {
+    ) -> Result<
+        Option<crate::line_task::PreparedRuntimeParentFiberReconciliation>,
+        DialogueExecutionError,
+    > {
         let mut ledger = activation.ledger().clone();
         let mut commands =
             RuntimeCommandQueue::new(activation_id.clone(), activation.command_sequence());
         let mut seen = std::collections::BTreeSet::new();
+        let mut received = std::collections::BTreeMap::new();
         for (local, value) in frame.execution.env.current_scope_bindings() {
             for handle in unique_affine_line_handles(value)? {
-                if handle.token().activation() != activation_id
-                    || !seen.insert(handle.token().clone())
-                {
+                if !seen.insert(handle.token().clone()) {
                     return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
+                }
+                let owner = RuntimeHandleOwnerSlot::in_dialogue_fiber(
+                    activation_id,
+                    handle.token(),
+                    self.owned_slot(local)?,
+                );
+                if matches!(owner, RuntimeHandleOwnerSlot::ParentFiber(_)) {
+                    received.insert(handle.token().clone(), owner);
+                    continue;
                 }
                 let lease = ledger
                     .lease(handle.token())
@@ -1772,14 +1822,24 @@ impl Engine {
                 if matches!(lease.owner(), RuntimeHandleOwnerSlot::DialogueResult(_)) {
                     continue;
                 }
-                let owner = RuntimeHandleOwnerSlot::ActivationLocal(self.owned_slot(local)?);
                 ledger.drop_owned(handle.token(), &owner, &mut commands)?;
             }
         }
+        let received = self
+            .dialogue_activations
+            .inspect_received_fiber_reconciliation(
+                self.fiber.execution,
+                &received,
+                &Default::default(),
+                &crate::line_task::RuntimeHandleDropAuthorization::at_boundary(Some(
+                    RuntimeDropPolicy::Default,
+                )),
+                None,
+            )?;
         flush_commands(activation_id, activation, commands)?;
         activation.commit_ledger(ledger);
         let _ = frame.execution.env.pop_scope_bindings();
-        Ok(())
+        Ok(received)
     }
 
     fn evaluate_dialogue_expr(
@@ -1800,6 +1860,7 @@ impl Engine {
         slot: &mut DialogueActivationExecutionSlot,
         pattern: &RuntimePattern,
         expression: &crate::value::RuntimeExpr,
+        before: &std::collections::BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<(), DialogueExecutionError> {
         let value = self.evaluate_dialogue_expr(slot, expression, pure_backend)?;
@@ -1831,20 +1892,28 @@ impl Engine {
         let mut commands =
             RuntimeCommandQueue::new(activation_id.clone(), activation.command_sequence());
         let mut moved_sources = std::collections::BTreeSet::new();
+        let mut discarded_received = Vec::new();
         for handle in handles {
-            if handle.token().activation() != activation_id {
-                return Err(LineRuntimeError::WrongActivation.into());
-            }
-            let lease = ledger
-                .lease(handle.token())
-                .ok_or(LineRuntimeError::UnknownHandle)?;
-            if lease.resource().kind() != handle.kind() {
-                return Err(LineRuntimeError::WrongOpaqueProducer.into());
-            }
-            let source = lease.owner().clone();
+            let issued_here = handle.token().activation() == activation_id;
+            let source = if issued_here {
+                let lease = ledger
+                    .lease(handle.token())
+                    .ok_or(LineRuntimeError::UnknownHandle)?;
+                if lease.resource().kind() != handle.kind() {
+                    return Err(LineRuntimeError::WrongOpaqueProducer.into());
+                }
+                lease.owner().clone()
+            } else {
+                before
+                    .get(handle.token())
+                    .filter(|owner| matches!(owner, RuntimeHandleOwnerSlot::ParentFiber(_)))
+                    .cloned()
+                    .ok_or(LineRuntimeError::WrongOwner)?
+            };
             match &source {
                 RuntimeHandleOwnerSlot::LineScope => {}
-                RuntimeHandleOwnerSlot::ActivationLocal(slot) => {
+                RuntimeHandleOwnerSlot::ActivationLocal(slot)
+                | RuntimeHandleOwnerSlot::ParentFiber(slot) => {
                     let mut source_local = if let Some(local) = preconsumed_local {
                         (&self.owned_slot(local)? == slot
                             && value_contains_token(&value, handle.token())?)
@@ -1866,8 +1935,12 @@ impl Engine {
                 }
                 _ => return Err(LineRuntimeError::WrongOwner.into()),
             }
-            if let Some(local) = preview_result_destination_local(pattern, &value, handle.token())?
-            {
+            let destination = preview_result_destination_local(pattern, &value, handle.token())?;
+            if !issued_here {
+                if destination.is_none() {
+                    discarded_received.push(handle);
+                }
+            } else if let Some(local) = destination {
                 let destination = RuntimeHandleOwnerSlot::ActivationLocal(self.owned_slot(local)?);
                 if source != destination {
                     ledger.transfer(handle.token(), &source, destination)?;
@@ -1898,6 +1971,10 @@ impl Engine {
                 return Err(LineRuntimeError::InvalidActivationOperation.into());
             }
         }
+        frame
+            .execution
+            .env
+            .authorize_assignment_discard_handles(discarded_received)?;
         flush_commands(activation_id, activation, commands)?;
         activation.commit_ledger(ledger);
         for local in moved_sources {
@@ -2869,7 +2946,7 @@ impl Engine {
             .semantic_identity();
         let id = *transaction.activation();
         let binding = transaction.frame().execution.env.source_function_context();
-        let before = self.activation_local_handle_owners(transaction.frame())?;
+        let before = self.activation_local_handle_owners(&id, transaction.frame())?;
         let (image, mut admission) = self
             .inert_rollback_image_with_dialogue(
                 Some(transaction),
@@ -2901,9 +2978,8 @@ impl Engine {
                 .capture(&evaluated)
                 .map_err(|error| failure(error.to_string()))?;
             let transaction = slot.transaction_mut();
-            let (frame, line) = transaction.parts_mut();
-            self.commit_activation_assignment_discards(&id, frame, line, &before)?;
-            advance_activation_pc(frame)?;
+            self.reconcile_activation_instruction(transaction, &before, None)?;
+            advance_activation_pc(transaction.frame_mut())?;
             self.commit_dialogue_registry_write(
                 transaction,
                 NativeDialogueRegistryWrite {
@@ -2938,7 +3014,7 @@ impl Engine {
         let transaction = slot.transaction();
         let activation = *transaction.activation();
         let owner = crate::task::RuntimeProgramOwner::Plan(self.plan.clone());
-        let before = self.activation_local_handle_owners(transaction.frame())?;
+        let before = self.activation_local_handle_owners(&activation, transaction.frame())?;
         let (image, mut admission) = self
             .inert_rollback_image_with_dialogue(
                 Some(transaction),
@@ -2960,8 +3036,7 @@ impl Engine {
             )?;
             let write = pending.ok_or(LineRuntimeError::InvalidActivationOperation)?;
             let transaction = slot.transaction_mut();
-            let (frame, line) = transaction.parts_mut();
-            self.commit_activation_assignment_discards(&activation, frame, line, &before)?;
+            self.reconcile_activation_instruction(transaction, &before, None)?;
             self.commit_dialogue_registry_write(transaction, write)
                 .map_err(|error| failure(error.to_string()))?;
             Ok(DialogueActivationStep::Execution(staged))
@@ -3071,7 +3146,12 @@ impl Engine {
             let mut ledger = activation.ledger().clone();
             let mut commands =
                 RuntimeCommandQueue::new(activation_id.clone(), activation.command_sequence());
+            let mut drops_received_handle = false;
             for handle in handles {
+                if handle.token().activation() != activation_id {
+                    drops_received_handle = true;
+                    continue;
+                }
                 let expected = ledger
                     .lease(handle.token())
                     .map(|lease| lease.owner().clone())
@@ -3083,6 +3163,12 @@ impl Engine {
                     return Err(DialogueExecutionError::from(LineRuntimeError::WrongOwner));
                 }
                 ledger.drop_owned_with_policy(handle.token(), &expected, policy, &mut commands)?;
+            }
+            if drops_received_handle {
+                state
+                    .execution
+                    .env
+                    .set_assignment_discard_boundary(Some(policy))?;
             }
             activation.commit_ledger(ledger);
             flush_commands(activation_id, activation, commands)?;
@@ -3924,7 +4010,7 @@ mod tests {
 
         assert!(matches!(
             engine.prepare_activation_scope_exit(&id, &mut frame, &mut line, ScopeExit::Failed),
-            Ok(ActivationScopeStep::Finished)
+            Ok(ActivationScopeStep::Finished(None))
         ));
         assert!(frame.scopes.is_empty());
         assert!(matches!(
@@ -4222,6 +4308,7 @@ mod tests {
                 &mut slot,
                 &pattern,
                 &expr,
+                &Default::default(),
                 &mut VmRuntimePureCallBackend::default(),
             )
             .expect("affine let transfers owner");
@@ -4270,7 +4357,7 @@ mod tests {
                 crate::value::RuntimeLocalReadMode::Move,
             )),
         );
-        let before = engine.activation_local_handle_owners(frame).unwrap();
+        let before = engine.activation_local_handle_owners(&id, frame).unwrap();
         let value = engine
             .evaluate_dialogue_expr(
                 &mut slot,
@@ -4285,7 +4372,7 @@ mod tests {
             .assign_runtime_place(crate::value::RuntimeMutablePlace::Local(destination), value)
             .unwrap();
         engine
-            .commit_activation_assignment_discards(&id, frame, line, &before)
+            .commit_activation_assignment_discards(&id, frame, line, &before, None)
             .unwrap();
         assert_eq!(
             line.ledger().lease(&token).unwrap().state(),
@@ -4323,7 +4410,7 @@ mod tests {
 
         assert!(matches!(
             engine.prepare_activation_scope_exit(&id, frame, line, ScopeExit::Completed),
-            Ok(ActivationScopeStep::Finished)
+            Ok(ActivationScopeStep::Finished(None))
         ));
         assert!(frame.scopes.is_empty());
         assert!(frame.execution.env.get(source).is_none());

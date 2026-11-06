@@ -96,6 +96,9 @@ use arcweft_interaction_model::audio::{AudioCommandEnvelope, AudioDispatchId};
 use arcweft_need::Need;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
+
+const PRODUCT_EXECUTION_ID: crate::runtime_id::ExecutionInstanceId =
+    crate::runtime_id::ExecutionInstanceId::from_allocated(std::num::NonZeroU64::MIN);
 use thiserror::Error;
 
 /// Executes one verified stable pure-program binding through its exact AWBC
@@ -399,6 +402,9 @@ fn partition_drop_observation(
                 authorization.set_boundary(Some(policy))?;
             }
             VmObservation::DiscardedValue(value) => authorization.authorize_displaced(&value)?,
+            VmObservation::DiscardedLineHandles(tokens) => {
+                authorization.authorize_tokens(tokens)?
+            }
             observation => remaining.push(observation),
         }
     }
@@ -2282,9 +2288,7 @@ impl AwbcProductStepExecutor {
             parent: None,
             launch: crate::engine::FlowFiberLaunch::Local,
             persistent_id: crate::runtime_id::RuntimePersistentFiberId::from_allocated(1),
-            execution: crate::runtime_id::ExecutionInstanceId::from_allocated(
-                std::num::NonZeroU64::MIN,
-            ),
+            execution: PRODUCT_EXECUTION_ID,
             owner: FlowFiberOwner::Executor,
         };
         for (index, _) in program.stream_plans.iter().enumerate() {

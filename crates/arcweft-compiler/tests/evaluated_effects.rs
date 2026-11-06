@@ -3342,6 +3342,16 @@ fn compile_nested_awbc(
 fn roundtrip_nested_awbc(
     executor: arcweft_core::executor::ArcweftRuntimeExecutor,
 ) -> (arcweft_core::executor::ArcweftRuntimeExecutor, usize) {
+    roundtrip_nested_awbc_checking(executor, |executor, _| executor)
+}
+
+fn roundtrip_nested_awbc_checking(
+    executor: arcweft_core::executor::ArcweftRuntimeExecutor,
+    check: impl FnOnce(
+        arcweft_core::executor::ArcweftRuntimeExecutor,
+        &serde_json::Value,
+    ) -> arcweft_core::executor::ArcweftRuntimeExecutor,
+) -> (arcweft_core::executor::ArcweftRuntimeExecutor, usize) {
     use arcweft_core::{
         awbc::product_step::AwbcProductExecutorSaveSnapshot,
         executor::ArcweftRuntimeExecutorSnapshot,
@@ -3361,6 +3371,7 @@ fn roundtrip_nested_awbc(
         .iter()
         .filter(|entry| entry.get("Active").is_some())
         .count();
+    let executor = check(executor, &value);
     let decoded = serde_json::from_slice(&bytes).unwrap();
     let decoded = executor.bind_product_save_snapshot(decoded).unwrap();
     let restored = executor
@@ -3400,6 +3411,208 @@ fn decoded_awbc_nested_line_registries_resume_their_parent_through_each_save() {
     assert_eq!(
         logs,
         ["inner", "returned by inner", "outer", "updated by inner"]
+    );
+}
+
+const NESTED_LINE_HANDLE_SOURCE: &str = r#"
+pub character alice { display = "Alice" }
+flow main() -> Unit {
+    alice()[Outer[p]] with {
+        init {
+            let actor = alice()[Inner[p]] with {
+                let lease = alice.stage.acquire(scope=line)
+                out lease
+            }
+            let moved = actor
+            let _ = moved
+            log.info("parent consumed the child handle")
+        }
+    }
+}
+entry cli @entry.main { goto @flow.main }
+"#;
+
+fn execute_nested_line_handle_transfer(
+    mut step: impl FnMut(
+        arcweft_core::step::RuntimeStepInput,
+        arcweft_core::step::RuntimeStepOptions,
+    ) -> arcweft_core::step::RuntimeStepResult,
+) {
+    use arcweft_core::{
+        engine::{FlowExit, FlowFiberStatus},
+        plan::FlowEvent,
+        presentation::{
+            RuntimeLineHostCommand, RuntimeLineHostOutcome, RuntimeStageCommand,
+            RuntimeStageCommandOutcome,
+        },
+        step::{RuntimeStepInput, RuntimeStepOptions},
+        time::TickId,
+    };
+
+    let mut input = RuntimeStepInput::default();
+    let mut actor = None;
+    let mut released = false;
+    let mut lines = Vec::new();
+    let mut effects = Vec::new();
+    for tick in 0..512 {
+        input.tick = TickId(tick);
+        let result = step(std::mem::take(&mut input), RuntimeStepOptions::default());
+        assert!(
+            result.output.diagnostics.is_empty(),
+            "tick {tick}: {:?}",
+            result.output.diagnostics
+        );
+        effects.extend(result.output.effects.line);
+        for event in result.output.flow_events {
+            if let FlowEvent::DialogueLine { activation, .. } = event {
+                input.dialogue_advances.push(activation);
+                lines.push(activation);
+            }
+        }
+        for command in result.output.requests.line_commands {
+            let outcome = match command {
+                RuntimeLineHostCommand::Stage(RuntimeStageCommand::AcquireActor {
+                    command,
+                    actor: token,
+                    ..
+                }) => {
+                    assert_eq!(token.activation(), command.activation());
+                    assert!(actor.replace(token.clone()).is_none());
+                    RuntimeStageCommandOutcome::Acquired {
+                        command,
+                        actor: token,
+                    }
+                }
+                RuntimeLineHostCommand::Stage(RuntimeStageCommand::ReleaseActor {
+                    command,
+                    actor: token,
+                }) => {
+                    assert_eq!(token.activation(), command.activation());
+                    assert_eq!(actor.as_ref(), Some(&token));
+                    assert!(!released);
+                    released = true;
+                    RuntimeStageCommandOutcome::ReleasedActor {
+                        command,
+                        actor: token,
+                    }
+                }
+                other => panic!("unexpected line command: {other:?}"),
+            };
+            input
+                .line_outcomes
+                .push(RuntimeLineHostOutcome::Stage(outcome));
+        }
+        match result.fiber_status {
+            FlowFiberStatus::Dialogue(_) | FlowFiberStatus::Running => {}
+            FlowFiberStatus::Done(FlowExit::Done) if input.line_outcomes.is_empty() => {
+                let [inner, outer] = lines.as_slice() else {
+                    panic!("revealed lines: {lines:?}")
+                };
+                assert_ne!(inner, outer);
+                assert_eq!(actor.unwrap().activation(), inner);
+                assert!(released);
+                assert_eq!(log_messages(&effects), ["parent consumed the child handle"]);
+                return;
+            }
+            FlowFiberStatus::Done(FlowExit::Done) => {}
+            status => panic!("nested line handle stopped at tick {tick}: {status:?}"),
+        }
+    }
+    panic!("nested line handle transfer did not finish");
+}
+
+#[test]
+fn native_nested_line_handle_moves_into_the_receiving_activation() {
+    use arcweft_core::{
+        effect::RuntimeArtifactFingerprint, engine::Engine, pure::VmRuntimePureCallBackend,
+        task::RuntimeProgramOwner,
+    };
+
+    let compiled = compile_attached_dialogue_project(NESTED_LINE_HANDLE_SOURCE).unwrap();
+    let mut plan = compiled.runtime_plan().plan.clone();
+    let flow = plan.flows()[0].id.clone();
+    let artifact = blake3::hash(NESTED_LINE_HANDLE_SOURCE.as_bytes());
+    plan.bind_artifact(RuntimeArtifactFingerprint::try_from_bytes(*artifact.as_bytes()).unwrap())
+        .unwrap();
+    let mut native = Engine::for_flow(plan, &flow).unwrap();
+    let schema = bind_test_character_dialogue_schema(
+        &compiled,
+        RuntimeProgramOwner::Plan(native.program_plan()),
+    );
+    let mut backend = VmRuntimePureCallBackend::default().with_external_calls(
+        arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
+    );
+    execute_nested_line_handle_transfer(|input, options| {
+        native.step_with_pure_backend(input, options, &mut backend)
+    });
+}
+
+#[test]
+fn decoded_awbc_nested_line_handle_moves_through_save() {
+    use arcweft_core::{
+        awbc::product_step::AwbcProductExecutorSaveSnapshot,
+        executor::ArcweftRuntimeExecutorSnapshot, pure::VmRuntimePureCallBackend,
+    };
+
+    let (compiled, awbc) = compile_nested_awbc(NESTED_LINE_HANDLE_SOURCE);
+    let schema = bind_test_character_dialogue_schema(&compiled, awbc.program_owner());
+    let mut backend = VmRuntimePureCallBackend::default().with_external_calls(
+        arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&schema),
+    );
+    let mut awbc = Some(awbc);
+    let mut checked_published_lease = false;
+    execute_nested_line_handle_transfer(|input, options| {
+        let mut current = awbc.take().unwrap();
+        let result = current.step_with_pure_backend(input, options, &mut backend);
+        let (restored, _) = roundtrip_nested_awbc_checking(current, |executor, save| {
+            if checked_published_lease {
+                return executor;
+            }
+            let Some(index) = save["dialogues"]["entries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .position(|entry| entry.get("PublishedHandles").is_some())
+            else {
+                return executor;
+            };
+            let mut forged = save.clone();
+            let leases = forged["dialogues"]["entries"][index]["PublishedHandles"]["handles"]
+                ["ledger"]["leases"].as_object_mut().unwrap();
+            let key = leases.keys().next().cloned().expect("published lease key");
+            let mut lease = leases.remove(&key).expect("published lease row");
+            leases.insert("other".to_owned(), lease.clone());
+            let error = serde_json::from_value::<AwbcProductExecutorSaveSnapshot>(forged.clone())
+                .expect_err("the lease key must agree with the typed token");
+            assert!(error.to_string().contains("identity differs"), "{error}");
+            let leases = forged["dialogues"]["entries"][index]["PublishedHandles"]["handles"]
+                ["ledger"]["leases"].as_object_mut().unwrap();
+            leases.remove("other");
+            let slot = &mut lease["owner"]["ParentFiber"];
+            assert_eq!(slot["kind"], "awbc_register");
+            slot["register"] = (slot["register"].as_u64().unwrap() + 1).into();
+            leases.insert(key, lease);
+            let bad: AwbcProductExecutorSaveSnapshot = serde_json::from_value(forged).unwrap();
+            let bad = executor.bind_product_save_snapshot(bad).unwrap();
+            let Err(rejected) =
+                executor.restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(bad))
+            else {
+                panic!("a published handle cannot name a different receiver slot");
+            };
+            let (executor, error) = rejected.into_parts();
+            assert!(
+                error.to_string().contains("owned by another runtime slot"),
+                "{error}"
+            );
+            checked_published_lease = true;
+            executor
+        });
+        awbc = Some(restored);
+        result
+    });
+    assert!(
+        checked_published_lease,
+        "a live published lease crossed the public save boundary"
     );
 }
 

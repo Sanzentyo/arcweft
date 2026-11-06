@@ -616,6 +616,32 @@ impl<V: InertRuntimeValueStorage + Clone, B: Clone, R: Clone, G: Clone> Clone
     }
 }
 
+impl<V, O, N, B, R, G> FiberState<V, O, N, B, R, G> {
+    /// Visits retained formatter operands at their original physical slots.
+    pub(crate) fn visit_formatter_operand_values<E>(
+        &self,
+        mut visitor: impl FnMut(RuntimeFrameInstanceId, FiberCursor, usize, &V) -> Result<(), E>,
+    ) -> Result<(), E> {
+        for frame in &self.frames {
+            if let Some(format) = &frame.format {
+                for (ordinal, value) in format.storage.values.iter().enumerate() {
+                    if let Some(value) = value.as_ref() {
+                        visitor(frame.instance, format.storage.site, ordinal, value)?;
+                    }
+                }
+            }
+            for attempt in &frame.format_attempts {
+                for (ordinal, value) in attempt.values().iter().enumerate() {
+                    if let Some(value) = value.as_ref() {
+                        visitor(frame.instance, attempt.site(), ordinal, value)?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 impl<V, B, R, G> FiberFrame<V, B, R, G> {
     fn admit_flow_registry(
         &self,
@@ -2175,36 +2201,6 @@ impl FiberState {
                 | FiberTerminalValue::Trapped(_)
                 | FiberTerminalValue::ReturnedTransferred
                 | FiberTerminalValue::DialogueResultTransferred => {}
-            }
-        }
-        Ok(())
-    }
-
-    /// Visits completed values retained by inline or Flow-lowered formatter
-    /// continuations with their exact dynamic frame and static instruction site.
-    pub(crate) fn visit_formatter_operand_values<E>(
-        &self,
-        mut visitor: impl FnMut(
-            RuntimeFrameInstanceId,
-            FiberCursor,
-            usize,
-            &RuntimeValue,
-        ) -> Result<(), E>,
-    ) -> Result<(), E> {
-        for frame in &self.frames {
-            if let Some(format) = &frame.format {
-                for (ordinal, value) in format.storage.values.iter().enumerate() {
-                    if let Some(value) = value.as_ref() {
-                        visitor(frame.instance, format.storage.site, ordinal, value)?;
-                    }
-                }
-            }
-            for attempt in &frame.format_attempts {
-                for (ordinal, value) in attempt.values().iter().enumerate() {
-                    if let Some(value) = value.as_ref() {
-                        visitor(frame.instance, attempt.site(), ordinal, value)?;
-                    }
-                }
             }
         }
         Ok(())

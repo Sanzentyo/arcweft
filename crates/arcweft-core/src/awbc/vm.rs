@@ -319,6 +319,8 @@ pub enum VmObservation {
     /// Owning packet for the exact graph displaced by one assignment. The
     /// product owner journals its resource drops before publishing the write.
     DiscardedValue(RuntimeValue),
+    /// Exact line leases discarded by a consuming pattern or lexical scope exit.
+    DiscardedLineHandles(Vec<crate::runtime_id::RuntimeLineHandleToken>),
     Trap(FiberTrap),
 }
 
@@ -1028,6 +1030,7 @@ fn execute_instruction(
             });
             let active_scope_depth = u32::try_from(frame.scopes.len())
                 .map_err(|_| VmError::Runtime("scope depth exceeds u32".to_owned()))?;
+            let mut discarded = Vec::new();
             for (register, slot) in frame.registers.iter_mut().zip(&layout.slots) {
                 if slot.scope_depth > active_scope_depth
                     && !matches!(
@@ -1036,8 +1039,21 @@ fn execute_instruction(
                             | super::schema::AwbcFrameSlotRole::RuntimeState
                     )
                 {
+                    for value in register.values() {
+                        discarded.extend(
+                            value
+                                .view()
+                                .line_handle_projection()
+                                .map_err(|error| VmError::Runtime(error.to_string()))?
+                                .into_iter()
+                                .map(|handle| handle.token().clone()),
+                        );
+                    }
                     *register = Default::default();
                 }
+            }
+            if !discarded.is_empty() {
+                observations.push(VmObservation::DiscardedLineHandles(discarded));
             }
             if let Some(trap) = defer_failure {
                 observations.push(VmObservation::ScopedDeferFailure(trap));
@@ -1050,15 +1066,6 @@ fn execute_instruction(
             mode,
         } => {
             let value_ref = register(fiber, *value)?;
-            if !test_pattern_view(
-                program,
-                Some(fiber.active_frame()?),
-                *pattern,
-                value_ref.view(),
-                0,
-            )? {
-                return Err(VmError::PatternMismatch);
-            }
             if *mode == crate::awbc::schema::AwbcBindMode::Guard {
                 prepare_pattern_binding(program, fiber, *pattern, value_ref)?;
                 let mut bindings = Vec::new();
@@ -1080,8 +1087,22 @@ fn execute_instruction(
                     fiber.active_frame_mut()?.set_register(target, value)?;
                 }
             } else {
+                let prepared = prepare_pattern_binding(program, fiber, *pattern, value_ref)?;
+                let discarded = prepared
+                    .resource_destinations()
+                    .filter_map(|(token, destination)| match (token, destination) {
+                        (
+                            crate::value::ownership::RuntimeAffineResourceToken::Line(token),
+                            None,
+                        ) => Some(token.clone()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
                 let value = fiber.active_frame_mut()?.take_register(*value)?;
-                bind_tested_pattern_owned(program, fiber, *pattern, value)?;
+                bind_pattern_owned_prepared(program, fiber, prepared, value);
+                if !discarded.is_empty() {
+                    observations.push(VmObservation::DiscardedLineHandles(discarded));
+                }
             }
         }
         AwbcInstruction::TestPattern {

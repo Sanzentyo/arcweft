@@ -51,18 +51,24 @@ impl RuntimeHandleDropAuthorization {
         &mut self,
         handles: Vec<crate::value::ownership::RuntimeAffineLineHandle>,
     ) -> Result<(), LineRuntimeError> {
+        self.authorize_tokens(handles.into_iter().map(|handle| handle.token().clone()))
+    }
+
+    pub(crate) fn authorize_tokens(
+        &mut self,
+        tokens: impl IntoIterator<Item = RuntimeLineHandleToken>,
+    ) -> Result<(), LineRuntimeError> {
         let mut observed = BTreeSet::new();
-        for handle in &handles {
-            if !observed.insert(handle.token().clone())
-                || self.displaced.contains_key(handle.token())
-            {
+        for token in tokens {
+            if self.displaced.contains_key(&token) || !observed.insert(token) {
                 return Err(LineRuntimeError::DuplicateHandleOccurrence);
             }
         }
-        for handle in handles {
-            self.displaced
-                .insert(handle.token().clone(), RuntimeDropPolicy::Default);
-        }
+        self.displaced.extend(
+            observed
+                .into_iter()
+                .map(|token| (token, RuntimeDropPolicy::Default)),
+        );
         Ok(())
     }
 
@@ -98,5 +104,17 @@ impl RuntimeHandleDropAuthorization {
 
     pub(crate) fn displaced_tokens(&self) -> impl Iterator<Item = &RuntimeLineHandleToken> {
         self.displaced.keys()
+    }
+
+    pub(crate) fn for_tokens(&self, includes: impl Fn(&RuntimeLineHandleToken) -> bool) -> Self {
+        Self {
+            boundary: self.boundary,
+            displaced: self
+                .displaced
+                .iter()
+                .filter(|(token, _)| includes(token))
+                .map(|(token, policy)| (token.clone(), *policy))
+                .collect(),
+        }
     }
 }

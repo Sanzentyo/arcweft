@@ -140,6 +140,20 @@ retains both the pending dialogue packet and the active receiver relation at
 their respective step boundaries. A Line registry belongs to its activation,
 and Flow registry access follows that activation's receiver ancestry.
 
+A line handle returned to an activation retains the issuing dialogue's
+identity. Moves and drops update the exact receiving fiber slot and the
+issuer's published ledger together. A release command remains correlated
+with the issuing dialogue even when the receiving activation triggers it.
+Restore checks a published handle in a receiving activation against its
+physical slot before constructing the live frame.
+
+A pending stage operation can retain an affine value while awaiting its
+host receipt. Save admission checks the original instruction, destination,
+issued command and lease together. In the version-one JSON save, lease
+journals use the site and issuance ordinal as the object key, and command
+journals use the command sequence. The row retains the complete identity,
+and the decoder checks the key against it.
+
 Published dialogue registry metadata has one movable owner independent of the
 executor's released frame type. A registry may enter that published transfer
 phase only when every activation is published. Active or in-flight state rejects

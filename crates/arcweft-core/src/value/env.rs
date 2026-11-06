@@ -1026,6 +1026,13 @@ impl RuntimeEnv {
         self.assignment_discards.set_boundary(policy)
     }
 
+    pub(crate) fn authorize_assignment_discard_handles(
+        &mut self,
+        handles: Vec<super::ownership::RuntimeAffineLineHandle>,
+    ) -> Result<(), crate::line_task::LineRuntimeError> {
+        self.assignment_discards.authorize_handles(handles)
+    }
+
     pub fn bindings_snapshot(&self) -> Vec<RuntimeLocalSlot> {
         self.scopes
             .iter()

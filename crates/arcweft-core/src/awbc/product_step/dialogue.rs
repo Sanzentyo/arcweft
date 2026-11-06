@@ -9,7 +9,7 @@ use crate::line_task::{
     RuntimeDialogueCommitProof, RuntimeDialoguePublishedCommitProof,
     RuntimeDialogueRegistryCommitReceipt,
 };
-use crate::runtime_id::DialogueActivationId;
+use crate::runtime_id::{DialogueActivationId, RuntimeLineHandleToken};
 use crate::step::RuntimeDialogueContentEvent;
 use crate::task::RuntimeProgramOwner;
 use crate::time::LogicalDuration;
@@ -769,6 +769,17 @@ impl ProductDialogueStore {
     ) -> Result<PreparedRuntimeParentFiberReconciliation, LineRuntimeError> {
         self.registry
             .inspect_parent_fiber_reconciliation(execution, before, after, drops)
+    }
+
+    pub(super) fn inspect_received_fiber_reconciliation(
+        &self,
+        execution: crate::runtime_id::ExecutionInstanceId,
+        before: &BTreeMap<RuntimeLineHandleToken, crate::line_task::RuntimeHandleOwnerSlot>,
+        after: &BTreeMap<RuntimeLineHandleToken, crate::line_task::RuntimeHandleOwnerSlot>,
+        drops: &crate::line_task::RuntimeHandleDropAuthorization,
+    ) -> Result<Option<PreparedRuntimeParentFiberReconciliation>, LineRuntimeError> {
+        self.registry
+            .inspect_received_fiber_reconciliation(execution, before, after, drops, None)
     }
 
     pub(super) fn commit_parent_fiber_reconciliation(

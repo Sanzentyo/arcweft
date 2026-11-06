@@ -124,6 +124,21 @@ pub enum RuntimeOwnedSlotId {
 }
 
 impl RuntimeOwnedSlotId {
+    pub(crate) const fn awbc_fiber(self) -> Option<RuntimeFiberInstanceId> {
+        match self {
+            Self::AwbcRegister { fiber, .. }
+            | Self::AwbcFrameLocal { fiber, .. }
+            | Self::AwbcFormatOperand { fiber, .. }
+            | Self::AwbcCleanupArg { fiber, .. }
+            | Self::AwbcAwaitManyResult { fiber, .. }
+            | Self::AwbcAwaitManyItem { fiber, .. }
+            | Self::AwbcLineObservationArg { fiber, .. }
+            | Self::AwbcDialogueResultObservation { fiber, .. }
+            | Self::AwbcEffectObservationArg { fiber, .. } => Some(fiber),
+            _ => None,
+        }
+    }
+
     #[must_use]
     pub fn environment_local(
         execution: ExecutionInstanceId,

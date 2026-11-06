@@ -3079,20 +3079,20 @@ fn dialogue_frame_joins_the_original_bank_before_capture_or_restore() {
         .unwrap();
     snapshot
         .dialogues
-        .try_visit_active(|_, saved, _| {
+        .try_visit_active(|_, saved, saved_line| {
             let mut inert = RuntimeRetainedValueAdmission::for_program(owner.clone(), limits(2));
             inert
                 .validate_snapshot(&crate::value::AwbcRuntimeValueSnapshot::Unit)
                 .unwrap();
             assert_eq!(
                 saved
-                    .admit_retained(&executor.program, &mut inert)
+                    .admit_retained(&executor.program, saved_line, &mut inert)
                     .unwrap_err(),
                 error
             );
             assert_eq!(
                 saved
-                    .admit_retained(&executor.program, &mut inert)
+                    .admit_retained(&executor.program, saved_line, &mut inert)
                     .unwrap_err(),
                 error
             );
@@ -3100,7 +3100,9 @@ fn dialogue_frame_joins_the_original_bank_before_capture_or_restore() {
             exact
                 .validate_snapshot(&crate::value::AwbcRuntimeValueSnapshot::Unit)
                 .unwrap();
-            saved.admit_retained(&executor.program, &mut exact).unwrap();
+            saved
+                .admit_retained(&executor.program, saved_line, &mut exact)
+                .unwrap();
             Ok::<_, std::convert::Infallible>(())
         })
         .unwrap();

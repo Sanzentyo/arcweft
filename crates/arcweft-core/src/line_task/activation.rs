@@ -1,10 +1,12 @@
 use super::{
     AwbcRuntimeDialogueActivationSnapshot, AwbcRuntimePublishedDialogueHandlesSnapshot,
     LineRuntimeError, RuntimeDialogueActivationState, RuntimeDialogueCommitReceipt,
-    RuntimeDialogueTerminalKind, RuntimeHandleDropReceipt, RuntimePublishedDialogueHandles,
+    RuntimeDialogueTerminalKind, RuntimeHandleDropReceipt, RuntimeHandleOwnerSlot,
+    RuntimePublishedDialogueHandles,
 };
 use crate::runtime_id::{
     DialogueActivationId, ExecutionInstanceId, RuntimeDeferRegistrationId, RuntimeDeferSiteId,
+    RuntimeLineHandleToken,
 };
 use crate::task::RuntimeProgramOwner;
 use crate::value::ownership::RuntimeOwnedSlotId;
@@ -135,6 +137,7 @@ pub(crate) struct RuntimeDialogueActivationTransaction<F, T> {
     reservation: RuntimeDialogueReservation,
     frame: F,
     line: RuntimeDialogueActivationState<T>,
+    received_handles: Option<PreparedRuntimeParentFiberReconciliation>,
 }
 
 /// Live provenance of one withdrawal. It is absent from snapshots and never
@@ -184,6 +187,7 @@ pub(crate) struct RuntimeDialoguePublishedOutcomeStage {
 
 /// Borrowed, fully checked parent-handle transition. It contains only cloned
 /// ledger metadata and host commands, never a live RuntimeValue owner.
+#[derive(Debug, PartialEq)]
 pub(crate) struct PreparedRuntimeParentFiberReconciliation {
     updates: Vec<(
         DialogueActivationId,
@@ -201,6 +205,34 @@ pub(crate) struct RuntimeDialogueRegistrySaveSnapshot<F, T> {
 }
 
 impl<F, T> RuntimeDialogueRegistrySaveSnapshot<F, T> {
+    pub(crate) fn validate_awbc_dialogue_receivers(
+        &self,
+        fibers: &std::collections::BTreeSet<crate::runtime_id::RuntimeFiberInstanceId>,
+        actual: &BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>,
+    ) -> Result<(), LineRuntimeError> {
+        let mut matched = 0;
+        for entry in &self.entries {
+            let RuntimeDialogueRegistrySaveEntry::PublishedHandles { handles, .. } = entry else {
+                continue;
+            };
+            for (token, slot) in handles.receiver_slots() {
+                if slot
+                    .awbc_fiber()
+                    .is_some_and(|fiber| fibers.contains(&fiber))
+                {
+                    if actual.get(token) != Some(&slot) {
+                        return Err(LineRuntimeError::WrongOwner);
+                    }
+                    matched += 1;
+                }
+            }
+        }
+        if matched != actual.len() {
+            return Err(LineRuntimeError::UnexpectedParentHandleOccurrence);
+        }
+        Ok(())
+    }
+
     pub(crate) fn active_line(
         &self,
         activation: &DialogueActivationId,
@@ -310,6 +342,17 @@ impl<F, T> RuntimeDialogueActivationTransaction<F, T> {
         (&mut self.frame, &mut self.line)
     }
 
+    /// The frame is the receiver of leases whose journals remain with the
+    /// publishing dialogue. Advance their slots and this frame together.
+    pub(crate) fn stage_received_handles(
+        &mut self,
+        prepared: Option<PreparedRuntimeParentFiberReconciliation>,
+    ) {
+        if let Some(prepared) = prepared {
+            assert!(self.received_handles.replace(prepared).is_none());
+        }
+    }
+
     /// Replaces the frame representation while moving the sole line owner
     /// through the same registry transaction.
     pub(crate) fn map_frame<G>(
@@ -322,6 +365,7 @@ impl<F, T> RuntimeDialogueActivationTransaction<F, T> {
             reservation: self.reservation,
             frame: map(self.frame),
             line: self.line,
+            received_handles: self.received_handles,
         }
     }
 }
@@ -756,6 +800,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
                     reservation,
                     frame,
                     line,
+                    received_handles: None,
                 })
             }
             Some(RuntimeDialogueRegistryEntry::InFlight { .. }) => {
@@ -812,6 +857,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         if transaction.line.terminal_kind().is_some() {
             return Err(LineRuntimeError::UnexpectedTerminalDisposition);
         }
+        self.inspect_received_handles(transaction)?;
         let next_revision = match self.entries.get(&transaction.activation) {
             Some(RuntimeDialogueRegistryEntry::InFlight {
                 revision,
@@ -852,9 +898,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
             Some(RuntimeDialogueRegistryEntry::InFlight { revision, reservation })
                 if *revision == proof.revision && reservation == &proof.reservation
         ));
-        let receipt = RuntimeDialogueRegistryCommitReceipt {
-            line: transaction.line.take_commit_receipt(),
-        };
+        let receipt = self.take_transaction_receipt(&mut transaction);
         *self
             .entries
             .get_mut(&transaction.activation)
@@ -874,6 +918,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         transaction: &RuntimeDialogueActivationTransaction<F, T>,
     ) -> Result<RuntimeDialoguePublishedCommitProof, LineRuntimeError> {
         transaction.line.inspect_publish_completion()?;
+        self.inspect_received_handles(transaction)?;
         let next_revision = match self.entries.get(&transaction.activation) {
             Some(RuntimeDialogueRegistryEntry::InFlight {
                 revision,
@@ -914,9 +959,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
                 if *revision == proof.revision && reservation == &proof.reservation
         ));
         assert!(transaction.line.can_into_published_handles().is_ok());
-        let receipt = RuntimeDialogueRegistryCommitReceipt {
-            line: transaction.line.take_commit_receipt(),
-        };
+        let receipt = self.take_transaction_receipt(&mut transaction);
         let handles = transaction
             .line
             .into_published_handles()
@@ -942,6 +985,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         transaction: &RuntimeDialogueActivationTransaction<F, T>,
     ) -> Result<RuntimeDialogueAbandonedCommitProof, LineRuntimeError> {
         transaction.line.inspect_abandon_completion()?;
+        self.inspect_received_handles(transaction)?;
         match self.entries.get(&transaction.activation) {
             Some(RuntimeDialogueRegistryEntry::InFlight {
                 revision,
@@ -982,9 +1026,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
             Some(RuntimeDialogueTerminalKind::Abandoned)
         );
         assert!(transaction.line.is_terminal());
-        let receipt = RuntimeDialogueRegistryCommitReceipt {
-            line: transaction.line.take_commit_receipt(),
-        };
+        let receipt = self.take_transaction_receipt(&mut transaction);
         self.entries.remove(&transaction.activation);
         receipt
     }
@@ -1026,9 +1068,11 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
             self.restore_transaction(transaction)?;
             return Err(error);
         }
-        let receipt = RuntimeDialogueRegistryCommitReceipt {
-            line: transaction.line.take_commit_receipt(),
-        };
+        if let Err(error) = self.inspect_received_handles(&transaction) {
+            self.restore_transaction(transaction)?;
+            return Err(error);
+        }
+        let receipt = self.take_transaction_receipt(&mut transaction);
         let handles = transaction
             .line
             .into_published_handles()
@@ -1064,11 +1108,44 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
             self.restore_transaction(transaction)?;
             return Err(LineRuntimeError::StaleActivationTransaction);
         }
-        let receipt = RuntimeDialogueRegistryCommitReceipt {
-            line: transaction.line.take_commit_receipt(),
-        };
+        if let Err(error) = self.inspect_received_handles(&transaction) {
+            self.restore_transaction(transaction)?;
+            return Err(error);
+        }
+        let receipt = self.take_transaction_receipt(&mut transaction);
         self.entries.remove(&transaction.activation);
         Ok(receipt)
+    }
+
+    fn inspect_received_handles(
+        &self,
+        transaction: &RuntimeDialogueActivationTransaction<F, T>,
+    ) -> Result<(), LineRuntimeError> {
+        if transaction
+            .received_handles
+            .as_ref()
+            .is_some_and(|prepared| {
+                prepared.updates.iter().any(|(activation, expected, _, _)| {
+                    !matches!(self.entries.get(activation),
+                    Some(RuntimeDialogueRegistryEntry::PublishedHandles { revision, .. })
+                        if revision == expected)
+                })
+            })
+        {
+            return Err(LineRuntimeError::StaleActivationTransaction);
+        }
+        Ok(())
+    }
+
+    fn take_transaction_receipt(
+        &mut self,
+        transaction: &mut RuntimeDialogueActivationTransaction<F, T>,
+    ) -> RuntimeDialogueRegistryCommitReceipt {
+        let mut line = transaction.line.take_commit_receipt();
+        if let Some(prepared) = transaction.received_handles.take() {
+            line.extend_parent_commands(self.commit_parent_fiber_reconciliation(prepared));
+        }
+        RuntimeDialogueRegistryCommitReceipt { line }
     }
 
     pub(crate) fn accept_published_outcome(
@@ -1178,6 +1255,48 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
             updates,
             receipt: RuntimeHandleDropReceipt::from_commands(commands),
         })
+    }
+
+    pub(crate) fn inspect_received_fiber_reconciliation(
+        &self,
+        execution: ExecutionInstanceId,
+        before: &BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>,
+        after: &BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>,
+        drops: &super::RuntimeHandleDropAuthorization,
+        resumed_child: Option<DialogueActivationId>,
+    ) -> Result<Option<PreparedRuntimeParentFiberReconciliation>, LineRuntimeError> {
+        let receiver_slots = |owners: &BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>| {
+            owners
+                .iter()
+                .filter_map(|(token, owner)| match owner {
+                    RuntimeHandleOwnerSlot::ParentFiber(slot) => Some((token.clone(), *slot)),
+                    _ => None,
+                })
+                .collect::<BTreeMap<_, _>>()
+        };
+        let mut published_before = receiver_slots(before);
+        let published_after = receiver_slots(after);
+        if published_before == published_after {
+            return Ok(None);
+        }
+        for (token, slot) in &published_after {
+            if let Entry::Vacant(entry) = published_before.entry(token.clone()) {
+                if Some(*token.activation()) != resumed_child {
+                    return Err(LineRuntimeError::UnexpectedParentHandleOccurrence);
+                }
+                // Publication already bound this exact destination. The
+                // published lease must confirm the arriving slot below.
+                entry.insert(*slot);
+            }
+        }
+        let drops = drops.for_tokens(|token| published_before.contains_key(token));
+        let prepared = self.inspect_parent_fiber_reconciliation(
+            execution,
+            &published_before,
+            &published_after,
+            &drops,
+        )?;
+        Ok((!prepared.updates.is_empty()).then_some(prepared))
     }
 
     pub(crate) fn commit_parent_fiber_reconciliation(

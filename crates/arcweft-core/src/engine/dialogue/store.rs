@@ -1222,6 +1222,13 @@ impl DialogueActivationTransaction {
         (&mut frame.frame, line)
     }
 
+    pub(super) fn stage_received_handles(
+        &mut self,
+        prepared: Option<crate::line_task::PreparedRuntimeParentFiberReconciliation>,
+    ) {
+        self.inner.stage_received_handles(prepared);
+    }
+
     pub(crate) fn stage_disposition(
         &mut self,
         disposition: DialogueCommitDisposition,
@@ -1551,6 +1558,30 @@ impl DialogueActivationStore {
     ) -> Result<crate::line_task::PreparedRuntimeParentFiberReconciliation, LineRuntimeError> {
         self.registry
             .inspect_parent_fiber_reconciliation(execution, before, after, drops)
+    }
+
+    pub(super) fn inspect_received_fiber_reconciliation(
+        &self,
+        execution: crate::runtime_id::ExecutionInstanceId,
+        before: &BTreeMap<
+            crate::runtime_id::RuntimeLineHandleToken,
+            crate::line_task::RuntimeHandleOwnerSlot,
+        >,
+        after: &BTreeMap<
+            crate::runtime_id::RuntimeLineHandleToken,
+            crate::line_task::RuntimeHandleOwnerSlot,
+        >,
+        drops: &crate::line_task::RuntimeHandleDropAuthorization,
+        resumed_child: Option<DialogueActivationId>,
+    ) -> Result<Option<crate::line_task::PreparedRuntimeParentFiberReconciliation>, LineRuntimeError>
+    {
+        self.registry.inspect_received_fiber_reconciliation(
+            execution,
+            before,
+            after,
+            drops,
+            resumed_child,
+        )
     }
 
     pub(crate) fn commit_transaction(

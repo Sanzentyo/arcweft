@@ -25,7 +25,7 @@ use crate::task::{
     NeedProducerRegistry, NeedProducerRegistrySaveSnapshot, NeedProducerRuntimeArgument,
     NeedProducerSiteDigest, RuntimeNeedProducerState, TaskId, TaskPublicationCursor,
 };
-use crate::value::{AwbcRuntimeValueSnapshot, RuntimePayload, RuntimeValue};
+use crate::value::{AwbcRuntimeValueSnapshot, RuntimePayload, RuntimeStoredValue, RuntimeValue};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 pub use task_publication::{
@@ -1150,33 +1150,8 @@ impl super::ActiveDialogue {
                 ..
             }) => {
                 fiber.admit_retained(admission)?;
-                match pending {
-                    Some(
-                        super::ProductPendingLineOperation::AcquireActor {
-                            cursor,
-                            destination,
-                            command,
-                            value,
-                            token,
-                        }
-                        | super::ProductPendingLineOperation::ActorLook {
-                            cursor,
-                            destination,
-                            command,
-                            value,
-                            token,
-                        },
-                    ) => {
-                        admission.validate_metadata(&(cursor, destination, command, token))?;
-                        admission.validate(value)?;
-                    }
-                    Some(super::ProductPendingLineOperation::StartVoice {
-                        cursor,
-                        destination,
-                        command,
-                        site,
-                    }) => admission.validate_metadata(&(cursor, destination, command, site))?,
-                    None => {}
+                if let Some(pending) = pending {
+                    pending.admit_retained(program, activation, fiber.cursor, line, admission)?;
                 }
             }
             _ => {}
@@ -1222,6 +1197,7 @@ impl AwbcProductActiveDialogueSaveSnapshot {
     pub(super) fn admit_retained(
         &self,
         program: &crate::awbc::schema::AwbcProgram,
+        line: &crate::line_task::AwbcRuntimeDialogueActivationSnapshot<AwbcTypeId>,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
     ) -> Result<(), crate::line_task::RuntimeDialogueRegistrySnapshotError> {
         let invalid =
@@ -1250,33 +1226,14 @@ impl AwbcProductActiveDialogueSaveSnapshot {
                 ..
             }) => {
                 fiber.admit_retained(admission)?;
-                match pending {
-                    Some(
-                        super::AwbcProductPendingLineOperation::AcquireActor {
-                            cursor,
-                            destination,
-                            command,
-                            value,
-                            token,
-                        }
-                        | super::AwbcProductPendingLineOperation::ActorLook {
-                            cursor,
-                            destination,
-                            command,
-                            value,
-                            token,
-                        },
-                    ) => {
-                        admission.validate_metadata(&(cursor, destination, command, token))?;
-                        admission.validate_snapshot(value)?;
-                    }
-                    Some(super::AwbcProductPendingLineOperation::StartVoice {
-                        cursor,
-                        destination,
-                        command,
-                        site,
-                    }) => admission.validate_metadata(&(cursor, destination, command, site))?,
-                    None => {}
+                if let Some(pending) = pending {
+                    pending.admit_retained(
+                        program,
+                        &self.activation,
+                        fiber.cursor,
+                        line,
+                        admission,
+                    )?;
                 }
             }
             _ => {}
@@ -1339,6 +1296,126 @@ impl AwbcProductActiveDialogueSaveSnapshot {
                 ) => visit(value)?,
                 Some(AwbcProductPendingLineOperationSaveSnapshot::StartVoice { .. }) | None => {}
             }
+        }
+        Ok(())
+    }
+}
+
+impl<V: RuntimeStoredValue> super::AwbcProductPendingLineOperation<V> {
+    fn admit_retained(
+        &self,
+        program: &crate::awbc::schema::AwbcProgram,
+        activation: &DialogueActivationId,
+        current: super::FiberCursor,
+        line: &crate::line_task::RuntimeDialogueActivationState<AwbcTypeId, V>,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::line_task::RuntimeDialogueRegistrySnapshotError> {
+        use crate::awbc::schema::{AwbcInstruction, AwbcLineOperation};
+        use crate::presentation::{
+            RuntimeLineHostCommand, RuntimeStageCommand, RuntimeVoiceCommand,
+        };
+        use crate::value::{RuntimeHandleKind, RuntimeValueView};
+
+        let invalid = || crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
+            message: "pending line operation does not match its instruction, command, or lease"
+                .to_owned(),
+        };
+        let (cursor, destination) = match self {
+            Self::AcquireActor {
+                cursor,
+                destination,
+                ..
+            }
+            | Self::ActorLook {
+                cursor,
+                destination,
+                ..
+            }
+            | Self::StartVoice {
+                cursor,
+                destination,
+                ..
+            } => (*cursor, *destination),
+        };
+        let command = self.command();
+        admission.validate_metadata(&(cursor, destination, command))?;
+        if cursor != current || command.activation() != activation {
+            return Err(invalid());
+        }
+        let Ok(AwbcInstruction::ExecuteLineOperation { dst, operation, .. }) =
+            crate::awbc::fiber::instruction_at_site(program, cursor)
+        else {
+            return Err(invalid());
+        };
+        if *dst != destination {
+            return Err(invalid());
+        }
+        let operation = program
+            .line_operations
+            .get(operation.index())
+            .ok_or_else(invalid)?;
+        let (value, token, kind) = match (self, operation, line.issued_command(command)) {
+            (
+                Self::AcquireActor { value, token, .. },
+                AwbcLineOperation::AcquireActor {
+                    character, scope, ..
+                },
+                Some(RuntimeLineHostCommand::Stage(RuntimeStageCommand::AcquireActor {
+                    actor,
+                    character: issued_character,
+                    scope: issued_scope,
+                    ..
+                })),
+            ) if token == actor && character == issued_character && scope == issued_scope => {
+                (value, token, RuntimeHandleKind::StageActor)
+            }
+            (
+                Self::ActorLook { value, token, .. },
+                AwbcLineOperation::ActorLook { character, .. },
+                Some(RuntimeLineHostCommand::Stage(RuntimeStageCommand::SetCharacterLook {
+                    cue,
+                    character: issued_character,
+                    ..
+                })),
+            ) if token == cue && character == issued_character => {
+                (value, token, RuntimeHandleKind::Cue)
+            }
+            (
+                Self::StartVoice { site, .. },
+                AwbcLineOperation::VoiceHandle { site: source, .. },
+                Some(RuntimeLineHostCommand::Voice(RuntimeVoiceCommand::StartDialogueVoice {
+                    ..
+                })),
+            ) if site == source => {
+                admission.validate_metadata(site)?;
+                return Ok(());
+            }
+            _ => return Err(invalid()),
+        };
+        admission.validate_metadata(token)?;
+        let ty = program
+            .runtime_types
+            .get(operation.result_type().index())
+            .ok_or_else(invalid)?;
+        admission.validate_owned_typed_borrowed(value.borrowed_value(), ty.semantic_identity())?;
+        let view = value.borrowed_view();
+        if !matches!(view, RuntimeValueView::Opaque(_)) || token.activation() != activation {
+            return Err(invalid());
+        }
+        let handles = view.affine_line_handles().map_err(|_| invalid())?;
+        let [handle] = handles.as_slice() else {
+            return Err(invalid());
+        };
+        let lease = line.ledger().lease(token).ok_or_else(invalid)?;
+        if handle.token() != token
+            || handle.kind() != kind
+            || lease.resource().kind() != kind
+            || !matches!(
+                lease.owner(),
+                crate::line_task::RuntimeHandleOwnerSlot::LineScope
+            )
+        {
+            return Err(invalid());
         }
         Ok(())
     }
@@ -2060,12 +2137,26 @@ impl AwbcProductExecutorSnapshot {
                 .push(child);
         }
         let mut all_child_tokens = BTreeSet::new();
+        let mut receiver_fibers = BTreeSet::new();
+        let mut received_slots = BTreeMap::new();
         snapshot
             .dialogues
             .try_visit_active(|activation, active, shared_line| {
-            active.admit_retained(program, admission).map_err(|error| {
+            active.admit_retained(program, shared_line, admission).map_err(|error| {
                 AwbcProductStepBuildError::RestoreSnapshot { message: error.to_string() }
             })?;
+            if let Some(fiber) = active.activation_fiber() {
+                receiver_fibers.insert(fiber.instance);
+                let slots = super::line::physical_fiber_line_handle_slots(super::PRODUCT_EXECUTION_ID, fiber)
+                    .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot { message: error.to_string() })?;
+                for (token, slot) in slots {
+                    if token.activation() != activation && received_slots.insert(token, slot).is_some() {
+                        return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                            message: "published line handle occurs in more than one receiving activation".to_owned(),
+                        });
+                    }
+                }
+            }
             let children = dialogue_children.get(activation).map(Vec::as_slice).unwrap_or_default();
             let reducer = active.line_task();
             let content = program
@@ -2176,55 +2267,6 @@ impl AwbcProductExecutorSnapshot {
                 .scheduled_child_custody_keys()
                 .into_iter()
                 .collect::<BTreeSet<_>>();
-            let pending = match &active.phase {
-                super::AwbcProductDialoguePhase::Activating { pending, .. }
-                | super::AwbcProductDialoguePhase::Closing(super::AwbcProductDialogueClosing {
-                    state: super::AwbcProductDialogueClosingState::Activation { pending, .. },
-                    ..
-                }) => pending.as_ref(),
-                super::AwbcProductDialoguePhase::Reducing { .. }
-                | super::AwbcProductDialoguePhase::Publishing { .. }
-                | super::AwbcProductDialoguePhase::Closing(super::AwbcProductDialogueClosing {
-                    state: super::AwbcProductDialogueClosingState::LineTask { .. },
-                    ..
-                }) => None,
-                super::AwbcProductDialoguePhase::Transitioning => {
-                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "cannot validate a transient dialogue transition".to_owned(),
-                    });
-                }
-            };
-            if let Some(pending) = pending {
-                let command = shared_line
-                    .issued_command(pending.command())
-                    .ok_or_else(|| AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "pending line operation has no exact issued command".to_owned(),
-                    })?;
-                let exact = matches!(
-                    (pending, command),
-                    (
-                        super::AwbcProductPendingLineOperation::AcquireActor { .. },
-                        crate::presentation::RuntimeLineHostCommand::Stage(
-                            crate::presentation::RuntimeStageCommand::AcquireActor { .. }
-                        )
-                    ) | (
-                        super::AwbcProductPendingLineOperation::ActorLook { .. },
-                        crate::presentation::RuntimeLineHostCommand::Stage(
-                            crate::presentation::RuntimeStageCommand::SetCharacterLook { .. }
-                        )
-                    ) | (
-                        super::AwbcProductPendingLineOperation::StartVoice { .. },
-                        crate::presentation::RuntimeLineHostCommand::Voice(
-                            crate::presentation::RuntimeVoiceCommand::StartDialogueVoice { .. }
-                        )
-                    )
-                );
-                if !exact {
-                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "pending line operation command kind is inconsistent".to_owned(),
-                    });
-                }
-            }
             let activation_host_suspension = active
                 .activation_fiber()
                 .and_then(|fiber| fiber.suspension.as_ref())
@@ -2616,6 +2658,12 @@ impl AwbcProductExecutorSnapshot {
             }
             Ok::<_, AwbcProductStepBuildError>(())
         })?;
+        snapshot
+            .dialogues
+            .validate_awbc_dialogue_receivers(&receiver_fibers, &received_slots)
+            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                message: error.to_string(),
+            })?;
         if let Some(active) = &snapshot.active_choice {
             Self::validate_active_choice(program, active)?;
         }

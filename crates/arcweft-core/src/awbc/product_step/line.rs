@@ -34,7 +34,9 @@ use crate::runtime_id::{
 };
 use crate::time::LogicalDuration;
 use crate::value::ownership::RuntimeOwnedSlotId;
-use crate::value::{RuntimeHandleKind, RuntimeLocalBinding, RuntimePayload, RuntimeValue};
+use crate::value::{
+    RuntimeHandleKind, RuntimeLocalBinding, RuntimePayload, RuntimeStoredValue, RuntimeValue,
+};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 
@@ -85,6 +87,7 @@ struct ProductLineSiteEvidence {
 struct PreparedActivationFiberReconciliation {
     ledger: RuntimeLineHandleLedger,
     commands: Option<RuntimePreparedLineCommands>,
+    received_handles: Option<crate::line_task::PreparedRuntimeParentFiberReconciliation>,
 }
 
 struct PreparedLineChildSpawn {
@@ -1491,6 +1494,12 @@ impl super::AwbcProductStepExecutor {
         }
         let before_owners =
             activation_fiber_handle_owners(self.facade_fiber.execution, &activation, before)?;
+        let receives_handles = before_owners
+            .values()
+            .any(|owner| matches!(owner, RuntimeHandleOwnerSlot::ParentFiber(_)));
+        if receives_handles {
+            self.dialogues.inspect_commit(transaction)?;
+        }
         // Effect and cleanup observations do not yield at their source
         // instruction. An inert checkpoint retains the pre-step owner graph
         // until their complete ledger/materialization preflight commits.
@@ -1508,6 +1517,7 @@ impl super::AwbcProductStepExecutor {
             None
         };
         let mut pending_registry_write = None;
+        let mut received_handles = None;
         let (frame, line) = transaction.parts_mut();
         let phase = std::mem::replace(&mut frame.phase, ProductDialoguePhase::Transitioning);
         let ProductDialoguePhase::Activating {
@@ -1616,6 +1626,9 @@ impl super::AwbcProductStepExecutor {
                         }
                         VmObservation::DiscardedValue(value) => {
                             drops.authorize_displaced(&value)?
+                        }
+                        VmObservation::DiscardedLineHandles(tokens) => {
+                            drops.authorize_tokens(tokens)?
                         }
                         VmObservation::LineOperation { .. }
                         | VmObservation::DialogueResult { .. } => {
@@ -1807,12 +1820,19 @@ impl super::AwbcProductStepExecutor {
                 &deferred_tokens,
                 &scoped_reconciled_tokens,
             );
-            let mut reconciliation = Some(match inspected {
-                Ok(prepared) => prepared,
-                Err(error) => {
-                    if !activation_effects.is_empty() {
-                        drop(std::mem::take(&mut activation_effects));
-                        effect_checkpoint
+            let mut reconciliation = Some(
+                match inspected.and_then(|prepared| {
+                    if composed_observation && prepared.received_handles.is_some() {
+                        return Err(LineRuntimeError::InvalidActivationOperation.into());
+                    }
+                    Ok(prepared)
+                }) {
+                    Ok(prepared) => prepared,
+                    Err(error) => {
+                        if receives_handles || !activation_effects.is_empty() {
+                            drop(std::mem::take(&mut activation_effects));
+                            drop(owned_observation.take());
+                            effect_checkpoint
                             .take()
                             .expect("effect-producing step retained its checkpoint")
                             .restore(
@@ -1824,18 +1844,19 @@ impl super::AwbcProductStepExecutor {
                             .expect(
                                 "accepted activation checkpoint restores in its original program",
                             );
-                    } else if let Some(observation) = owned_observation.take() {
-                        restore_owned_vm_observation(
-                            &self.program,
-                            candidate.as_mut().expect("activation fiber remains owned"),
-                            observation,
-                        );
+                        } else if let Some(observation) = owned_observation.take() {
+                            restore_owned_vm_observation(
+                                &self.program,
+                                candidate.as_mut().expect("activation fiber remains owned"),
+                                observation,
+                            );
+                        }
+                        return Err(error);
                     }
-                    return Err(error);
-                }
-            });
+                },
+            );
             if !composed_observation {
-                Self::commit_activation_fiber_reconciliation(
+                received_handles = Self::commit_activation_fiber_reconciliation(
                     line,
                     reconciliation
                         .take()
@@ -2111,6 +2132,7 @@ impl super::AwbcProductStepExecutor {
                 pending: None,
             };
         }
+        transaction.stage_received_handles(received_handles);
         result
     }
 
@@ -2490,6 +2512,7 @@ impl super::AwbcProductStepExecutor {
                 let PreparedActivationFiberReconciliation {
                     mut ledger,
                     commands,
+                    received_handles: _,
                 } = reconciliation;
                 let Some((
                     VmLineOperationArgument::OwnedValue {
@@ -3314,6 +3337,7 @@ impl super::AwbcProductStepExecutor {
         let PreparedActivationFiberReconciliation {
             mut ledger,
             commands,
+            received_handles: _,
         } = reconciliation;
         let source_value = source
             .as_ref()
@@ -3425,7 +3449,7 @@ impl super::AwbcProductStepExecutor {
                     crate::line_task::ScopeExit::Completed,
                     &mut batch,
                 )?;
-                self.reconcile_activation_fiber_ownership(
+                let received = self.reconcile_activation_fiber_ownership(
                     &activation,
                     line,
                     &before_owners,
@@ -3435,6 +3459,7 @@ impl super::AwbcProductStepExecutor {
                     &BTreeSet::new(),
                     &handled,
                 )?;
+                transaction.stage_received_handles(received);
                 return Ok(ProductActivationProgress {
                     trap: None,
                     progressed: true,
@@ -3459,7 +3484,7 @@ impl super::AwbcProductStepExecutor {
                     args: cleanup.args,
                 });
             }
-            self.reconcile_activation_fiber_ownership(
+            let received = self.reconcile_activation_fiber_ownership(
                 &activation,
                 line,
                 &before_owners,
@@ -3471,6 +3496,7 @@ impl super::AwbcProductStepExecutor {
                 &BTreeSet::new(),
                 &BTreeSet::new(),
             )?;
+            transaction.stage_received_handles(received);
             if let Some(trap) = failure {
                 return Err(ProductStepError::ActivationTrap(trap));
             }
@@ -3536,7 +3562,7 @@ impl super::AwbcProductStepExecutor {
                 exit,
                 batch,
             )?;
-            self.reconcile_activation_fiber_ownership(
+            let received = self.reconcile_activation_fiber_ownership(
                 &activation,
                 line,
                 &before_owners,
@@ -3546,6 +3572,7 @@ impl super::AwbcProductStepExecutor {
                 &BTreeSet::new(),
                 &handled,
             )?;
+            transaction.stage_received_handles(received);
             return Ok((true, None));
         }
         if !scope.defer_releasing.is_empty() {
@@ -3561,7 +3588,7 @@ impl super::AwbcProductStepExecutor {
                 args: cleanup.args,
             });
         }
-        self.reconcile_activation_fiber_ownership(
+        let received = self.reconcile_activation_fiber_ownership(
             &activation,
             line,
             &before_owners,
@@ -3573,6 +3600,7 @@ impl super::AwbcProductStepExecutor {
             &BTreeSet::new(),
             &BTreeSet::new(),
         )?;
+        transaction.stage_received_handles(received);
         Ok((true, failure))
     }
 
@@ -3681,7 +3709,8 @@ impl super::AwbcProductStepExecutor {
         drops: &crate::line_task::RuntimeHandleDropAuthorization,
         deferred_tokens: &BTreeSet<crate::runtime_id::RuntimeLineHandleToken>,
         scoped_reconciled_tokens: &BTreeSet<crate::runtime_id::RuntimeLineHandleToken>,
-    ) -> Result<(), ProductStepError> {
+    ) -> Result<Option<crate::line_task::PreparedRuntimeParentFiberReconciliation>, ProductStepError>
+    {
         let prepared = self.inspect_activation_fiber_reconciliation(
             activation,
             line,
@@ -3693,18 +3722,18 @@ impl super::AwbcProductStepExecutor {
             deferred_tokens,
             scoped_reconciled_tokens,
         )?;
-        Self::commit_activation_fiber_reconciliation(line, prepared);
-        Ok(())
+        Ok(Self::commit_activation_fiber_reconciliation(line, prepared))
     }
 
     fn commit_activation_fiber_reconciliation(
         line: &mut RuntimeDialogueActivationState<AwbcTypeId>,
         prepared: PreparedActivationFiberReconciliation,
-    ) {
+    ) -> Option<crate::line_task::PreparedRuntimeParentFiberReconciliation> {
         if let Some(commands) = prepared.commands {
             line.record_commands_prepared(commands);
         }
         line.commit_ledger(prepared.ledger);
+        prepared.received_handles
     }
 
     fn inspect_activation_fiber_reconciliation(
@@ -3809,12 +3838,19 @@ impl super::AwbcProductStepExecutor {
             |token| before.contains_key(token),
             |token| after.contains_key(token),
         )?;
+        let received_handles = self.dialogues.inspect_received_fiber_reconciliation(
+            self.facade_fiber.execution,
+            before,
+            &after,
+            drops,
+        )?;
         let mut ledger = line.ledger().clone();
         let mut commands = RuntimeCommandQueue::new(activation.clone(), line.command_sequence());
         let mut emitted_command = false;
         let tokens = before
             .keys()
             .chain(after.keys())
+            .filter(|token| token.activation() == activation)
             .cloned()
             .collect::<BTreeSet<_>>();
         for token in tokens {
@@ -3854,7 +3890,11 @@ impl super::AwbcProductStepExecutor {
         let commands = emitted_command
             .then(|| line.inspect_record_commands(activation, &commands))
             .transpose()?;
-        Ok(PreparedActivationFiberReconciliation { ledger, commands })
+        Ok(PreparedActivationFiberReconciliation {
+            ledger,
+            commands,
+            received_handles,
+        })
     }
 }
 
@@ -4000,17 +4040,13 @@ fn activation_register_owner(
     })
 }
 
-fn awbc_formatter_handle_owners(
+fn awbc_formatter_handle_owners<V: RuntimeStoredValue, O, N, B, R, G>(
     execution: crate::runtime_id::ExecutionInstanceId,
-    fiber: &FiberState,
-    frame: crate::runtime_id::RuntimeFrameInstanceId,
+    fiber: &FiberState<V, O, N, B, R, G>,
 ) -> Result<BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>, ProductStepError> {
     let mut owners = BTreeMap::new();
     fiber.visit_formatter_operand_values(
         |value_frame, site, ordinal, value| -> Result<(), ProductStepError> {
-            if value_frame != frame {
-                return Ok(());
-            }
             let ordinal =
                 u32::try_from(ordinal).map_err(|_| LineRuntimeError::OwnedSlotOverflow)?;
             let owner = RuntimeOwnedSlotId::AwbcFormatOperand {
@@ -4020,7 +4056,7 @@ fn awbc_formatter_handle_owners(
                 site,
                 ordinal,
             };
-            for handle in unique_line_handles(value)? {
+            for handle in unique_line_handles_in_view(value.borrowed_view())? {
                 if owners.insert(handle.token().clone(), owner).is_some() {
                     return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
                 }
@@ -4200,58 +4236,14 @@ fn activation_fiber_handle_owners(
     activation: &DialogueActivationId,
     fiber: &FiberState,
 ) -> Result<BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>, ProductStepError> {
-    let mut owners = BTreeMap::new();
+    let mut owners = physical_fiber_line_handle_slots(execution, fiber)?
+        .into_iter()
+        .map(|(token, slot)| {
+            let owner = RuntimeHandleOwnerSlot::in_dialogue_fiber(activation, &token, slot);
+            (token, owner)
+        })
+        .collect::<BTreeMap<_, _>>();
     for frame in &fiber.frames {
-        for (index, value) in frame
-            .registers
-            .iter()
-            .enumerate()
-            .flat_map(|(index, storage)| storage.values().map(move |value| (index, value)))
-        {
-            let register = u32::try_from(index)
-                .map(crate::awbc::schema::AwbcRegisterId)
-                .map_err(|_| LineRuntimeError::OwnedSlotOverflow)?;
-            let owner = RuntimeOwnedSlotId::AwbcRegister {
-                execution,
-                fiber: fiber.instance,
-                frame: frame.instance,
-                register,
-            };
-            for handle in unique_line_handles(value)? {
-                if handle.token().activation() != activation {
-                    return Err(LineRuntimeError::WrongActivation.into());
-                }
-                if owners
-                    .insert(
-                        handle.token().clone(),
-                        RuntimeHandleOwnerSlot::ActivationLocal(owner),
-                    )
-                    .is_some()
-                {
-                    return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
-                }
-            }
-        }
-        for (token, owner) in awbc_formatter_handle_owners(execution, fiber, frame.instance)? {
-            if token.activation() != activation {
-                return Err(LineRuntimeError::WrongActivation.into());
-            }
-            if owners
-                .insert(token, RuntimeHandleOwnerSlot::ActivationLocal(owner))
-                .is_some()
-            {
-                return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
-            }
-        }
-        for (token, owner) in awbc_cleanup_handle_owners(execution, fiber, frame)? {
-            if token.activation() != activation
-                || owners
-                    .insert(token, RuntimeHandleOwnerSlot::ActivationLocal(owner))
-                    .is_some()
-            {
-                return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
-            }
-        }
         for scope in &frame.scopes {
             for deferred in &scope.defers {
                 for capture in &deferred.captures {
@@ -4274,12 +4266,12 @@ fn activation_fiber_handle_owners(
     Ok(owners)
 }
 
-fn parent_fiber_handle_owners(
+/// The same physical slots back live reconciliation and inert admission.
+pub(super) fn physical_fiber_line_handle_slots<V: RuntimeStoredValue, O, N, B, R, G>(
     execution: crate::runtime_id::ExecutionInstanceId,
-    activation: &DialogueActivationId,
-    fiber: &FiberState,
+    fiber: &FiberState<V, O, N, B, R, G>,
 ) -> Result<BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>, ProductStepError> {
-    let mut owners = BTreeMap::new();
+    let mut owners = awbc_formatter_handle_owners(execution, fiber)?;
     for frame in &fiber.frames {
         for (index, value) in frame
             .registers
@@ -4296,31 +4288,28 @@ fn parent_fiber_handle_owners(
                 frame: frame.instance,
                 register,
             };
-            for handle in unique_line_handles(value)? {
-                if handle.token().activation() != activation {
-                    continue;
-                }
+            for handle in unique_line_handles_in_view(value.borrowed_view())? {
                 if owners.insert(handle.token().clone(), owner).is_some() {
                     return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
                 }
             }
         }
-        for (token, owner) in awbc_formatter_handle_owners(execution, fiber, frame.instance)? {
-            if token.activation() == activation && owners.insert(token, owner).is_some() {
-                return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
-            }
-        }
-        for (token, owner) in awbc_cleanup_handle_owners(execution, fiber, frame)? {
-            if token.activation() == activation && owners.insert(token, owner).is_some() {
+        for (token, owner) in awbc_cleanup_handle_owners(execution, fiber.instance, frame)? {
+            if owners.insert(token, owner).is_some() {
                 return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
             }
         }
     }
-    for (token, owner) in awbc_await_many_handle_owners(execution, fiber)? {
-        if token.activation() == activation && owners.insert(token, owner).is_some() {
-            return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
-        }
-    }
+    Ok(owners)
+}
+
+fn parent_fiber_handle_owners(
+    execution: crate::runtime_id::ExecutionInstanceId,
+    activation: &DialogueActivationId,
+    fiber: &FiberState,
+) -> Result<BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>, ProductStepError> {
+    let mut owners = product_fiber_handle_owners(execution, fiber)?;
+    owners.retain(|token, _| token.activation() == activation);
     Ok(owners)
 }
 
@@ -4328,7 +4317,7 @@ pub(super) fn product_fiber_handle_owners(
     execution: crate::runtime_id::ExecutionInstanceId,
     fiber: &FiberState,
 ) -> Result<BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>, ProductStepError> {
-    let mut owners = BTreeMap::new();
+    let mut owners = physical_fiber_line_handle_slots(execution, fiber)?;
     if let Some(FiberTerminalValue::Returned(Some(value))) = &fiber.terminal
         && matches!(fiber.root, crate::awbc::fiber::AwbcFiberRoot::Program(_))
     {
@@ -4340,39 +4329,6 @@ pub(super) fn product_fiber_handle_owners(
         };
         for handle in unique_line_handles(value)? {
             if owners.insert(handle.token().clone(), owner).is_some() {
-                return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
-            }
-        }
-    }
-    for frame in &fiber.frames {
-        for (index, value) in frame
-            .registers
-            .iter()
-            .enumerate()
-            .flat_map(|(index, storage)| storage.values().map(move |value| (index, value)))
-        {
-            let register = u32::try_from(index)
-                .map(crate::awbc::schema::AwbcRegisterId)
-                .map_err(|_| LineRuntimeError::OwnedSlotOverflow)?;
-            let owner = RuntimeOwnedSlotId::AwbcRegister {
-                execution,
-                fiber: fiber.instance,
-                frame: frame.instance,
-                register,
-            };
-            for handle in unique_line_handles(value)? {
-                if owners.insert(handle.token().clone(), owner).is_some() {
-                    return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
-                }
-            }
-        }
-        for (token, owner) in awbc_formatter_handle_owners(execution, fiber, frame.instance)? {
-            if owners.insert(token, owner).is_some() {
-                return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
-            }
-        }
-        for (token, owner) in awbc_cleanup_handle_owners(execution, fiber, frame)? {
-            if owners.insert(token, owner).is_some() {
                 return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
             }
         }
@@ -4473,10 +4429,10 @@ fn awbc_await_many_handle_owners(
     Ok(owners)
 }
 
-fn awbc_cleanup_handle_owners(
+fn awbc_cleanup_handle_owners<V: RuntimeStoredValue, B, R, G>(
     execution: crate::runtime_id::ExecutionInstanceId,
-    fiber: &FiberState,
-    frame: &crate::awbc::fiber::FiberFrame,
+    fiber: RuntimeFiberInstanceId,
+    frame: &crate::awbc::fiber::FiberFrame<V, B, R, G>,
 ) -> Result<Vec<(RuntimeLineHandleToken, RuntimeOwnedSlotId)>, ProductStepError> {
     let mut owners = Vec::new();
     for (scope, cleanups) in std::iter::once((None, frame.root_cleanups.as_slice())).chain(
@@ -4493,14 +4449,14 @@ fn awbc_cleanup_handle_owners(
                     u32::try_from(arg_ordinal).map_err(|_| LineRuntimeError::OwnedSlotOverflow)?;
                 let owner = RuntimeOwnedSlotId::AwbcCleanupArg {
                     execution,
-                    fiber: fiber.instance,
+                    fiber,
                     frame: frame.instance,
                     scope,
                     cleanup_ordinal,
                     arg_ordinal,
                 };
                 owners.extend(
-                    unique_line_handles(value)?
+                    unique_line_handles_in_view(value.borrowed_view())?
                         .into_iter()
                         .map(|handle| (handle.token().clone(), owner)),
                 );
@@ -4536,8 +4492,13 @@ pub(super) fn unique_line_handles(
 pub(super) fn unique_line_handles_view(
     value: crate::value::LiveRuntimeValueView<'_>,
 ) -> Result<Vec<crate::value::ownership::RuntimeAffineLineHandle>, ProductStepError> {
+    unique_line_handles_in_view(value.inspect())
+}
+
+fn unique_line_handles_in_view(
+    value: crate::value::RuntimeValueView<'_>,
+) -> Result<Vec<crate::value::ownership::RuntimeAffineLineHandle>, ProductStepError> {
     let handles = value
-        .inspect()
         .line_handle_projection()
         .map_err(|_| LineRuntimeError::InvalidHandlePayload)?;
     let mut unique = BTreeSet::new();
