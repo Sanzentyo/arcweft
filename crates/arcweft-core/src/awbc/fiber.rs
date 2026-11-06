@@ -1999,6 +1999,15 @@ fn visit_deferred_capture_values<E>(
 }
 
 impl FiberState {
+    pub(crate) fn reached_flow_frame_index(&self, program: &AwbcProgram) -> Option<usize> {
+        self.frames.iter().rposition(|frame| {
+            program
+                .functions
+                .get(frame.function.index())
+                .is_some_and(|function| function.kind == AwbcFunctionKind::Flow)
+        })
+    }
+
     /// Borrows live frame/value owners under the enclosing original program
     /// and allowance before any retained snapshot carrier is copied.
     pub(crate) fn admit_retained(

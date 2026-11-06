@@ -8,7 +8,6 @@ use crate::effect::{
     RuntimeRegistryWriteSource, RuntimeScopeRegistry,
 };
 use crate::presentation::resources::{PresentationBanks, PresentationBody};
-use crate::runtime_id::DialogueActivationId;
 use crate::value::{RuntimePayload, RuntimeRetainedValueAdmission, RuntimeStoredValue};
 
 #[derive(Default)]
@@ -17,19 +16,19 @@ pub(crate) struct VmExecutionResources<'execution> {
     pub(crate) presentation:
         Option<&'execution mut Option<PresentationBanks<PresentationBody<RuntimePayload>>>>,
     pub(crate) actions: Option<&'execution mut crate::action::RuntimeActionMailbox>,
-    pub(crate) line_registry: Option<VmLineRegistryWrite<'execution>>,
+    pub(crate) dialogue_registry: Option<VmDialogueRegistryWrite<'execution>>,
 }
 
-/// Holds a single Product step's real line registry and complete retained
-/// admission. Only the enclosing line transaction can publish the result.
-pub(crate) struct VmLineRegistryWrite<'a> {
-    pub(crate) activation: DialogueActivationId,
+/// Borrows the scope reached by a Product dialogue step. The enclosing
+/// transaction publishes the write after the instruction and custody checks.
+pub(crate) struct VmDialogueRegistryWrite<'a> {
+    pub(crate) owner: RuntimeRegistryOwner,
     pub(crate) rows: &'a RuntimeScopeRegistry,
     pub(crate) admission: &'a mut RuntimeRetainedValueAdmission,
-    pub(crate) pending: &'a mut Option<RuntimePreparedRegistryWrite>,
+    pub(crate) pending: &'a mut Option<(RuntimeRegistryOwner, RuntimePreparedRegistryWrite)>,
 }
 
-impl VmLineRegistryWrite<'_> {
+impl VmDialogueRegistryWrite<'_> {
     fn prepare(
         &mut self,
         program: &AwbcProgram,
@@ -50,19 +49,20 @@ impl VmLineRegistryWrite<'_> {
             .get(value_type.index())
             .ok_or(FiberStateError::InvalidFrame)?
             .semantic_identity();
-        let source = RuntimeRegistryWriteSource::AwbcLine {
-            effect,
-            activation: self.activation,
+        let source = match self.owner {
+            RuntimeRegistryOwner::Dialogue(activation) => {
+                RuntimeRegistryWriteSource::AwbcLine { effect, activation }
+            }
+            RuntimeRegistryOwner::AwbcFlow { fiber, frame } => RuntimeRegistryWriteSource::Awbc {
+                effect,
+                fiber,
+                frame,
+            },
+            RuntimeRegistryOwner::NativeFlow => return Err(FiberStateError::InvalidFrame.into()),
         };
         let position = self
             .rows
-            .prepare_write(
-                RuntimeRegistryOwner::Dialogue(self.activation),
-                key,
-                ty,
-                source,
-                self.admission,
-            )
+            .prepare_write(self.owner, key, ty, source, self.admission)
             .map_err(FiberStateError::Snapshot)?;
         let frame = fiber.active_frame()?;
         let prepared = RuntimeRegistryStateUpdate::prepare(
@@ -77,7 +77,10 @@ impl VmLineRegistryWrite<'_> {
             .capture(frame.register(*source_register)?)
             .map_err(FiberStateError::Snapshot)?;
         drop(transfer.commit(fiber.active_frame_mut()?));
-        *self.pending = Some(RuntimePreparedRegistryWrite::new(position, source, update));
+        *self.pending = Some((
+            self.owner,
+            RuntimePreparedRegistryWrite::new(position, source, update),
+        ));
         Ok(())
     }
 }
@@ -92,7 +95,6 @@ impl VmExecutionResources<'_> {
         value_type: crate::awbc::schema::AwbcTypeId,
         args: &[AwbcRegisterId],
     ) -> Result<(), VmError> {
-        use crate::awbc::schema::AwbcFunctionKind;
         use crate::effect::{
             RuntimeEffectMaterializeError, RuntimeRegistryOwner, RuntimeRegistryStateUpdate,
             RuntimeRegistryWriteSource,
@@ -104,22 +106,16 @@ impl VmExecutionResources<'_> {
             .admitted_program(program)
             .map_err(|_| missing.clone())?;
         if key.scope() == &arcweft_id::LifetimeScopeKind::Line {
-            let line = self.line_registry.as_mut().ok_or(missing.clone())?;
+            let line = self.dialogue_registry.as_mut().ok_or(missing.clone())?;
             return line.prepare(program, fiber, effect, key, value_type, args);
         }
         if key.scope() != &arcweft_id::LifetimeScopeKind::Flow {
             return Err(missing.into());
         }
-        let destination = fiber
-            .frames
-            .iter()
-            .rposition(|frame| {
-                program
-                    .functions
-                    .get(frame.function.index())
-                    .is_some_and(|function| function.kind == AwbcFunctionKind::Flow)
-            })
-            .ok_or(missing.clone())?;
+        let Some(destination) = fiber.reached_flow_frame_index(program) else {
+            let parent = self.dialogue_registry.as_mut().ok_or(missing.clone())?;
+            return parent.prepare(program, fiber, effect, key, value_type, args);
+        };
         let [source] = args else {
             return Err(FiberStateError::InvalidFrame.into());
         };

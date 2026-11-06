@@ -4471,6 +4471,21 @@ fn returning_calls_use_the_canonical_scoped_effect_coverage_rule() {
                 "fs.read(save)",
                 true,
             ),
+            (
+                vec!["state.write('flow)", "state.write('line)"],
+                "state.write('line.flags.seen)",
+                true,
+            ),
+            (
+                vec!["state.write('flow)", "state.write('line.flagship)"],
+                "state.write('line.flags.seen)",
+                false,
+            ),
+            (
+                vec!["fs.read(other,local)", "fs.read(save,local)"],
+                "fs.read(save.slot,local.cache)",
+                true,
+            ),
             (vec!["fs.read.deep", "fs.reader"], "fs.read", false),
         ] {
             let mut program = if project_call {

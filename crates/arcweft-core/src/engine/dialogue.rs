@@ -924,7 +924,7 @@ impl Engine {
             ) && matches!(
                 frame.execution.original_operation_remainder(&self.plan).and_then(|ops| ops.first()),
                 Some(FlowOp::EvaluatedEffect(RuntimeEffectExpr::RegistryWrite { key, .. }))
-                    if key.scope() == &arcweft_id::LifetimeScopeKind::Line
+                    if matches!(key.scope(), arcweft_id::LifetimeScopeKind::Line | arcweft_id::LifetimeScopeKind::Flow)
             );
             if next_is_registry_write {
                 return self.execute_queued_activation_registry_write(
@@ -1242,11 +1242,19 @@ impl Engine {
         input: &mut super::RuntimeStepInput,
         events: &[super::TaskEvent],
         pure_backend: &mut impl RuntimeCallBackend,
-        line_registry: Option<super::registry::NativeLineRegistryExecution<'_>>,
+        line_registry: Option<super::registry::NativeActivationRegistryExecution<'_>>,
     ) -> Result<RuntimeStepOutput, DialogueExecutionError> {
         let mut staged = RuntimeStepOutput::default();
         let mut drop_policy = None;
         std::mem::swap(&mut self.fiber.frame, &mut frame.execution);
+        let line_registry = line_registry.map(|execution| {
+            super::registry::NativeLineRegistryExecution::Activation(
+                super::registry::NativeActivationRegistryExecution {
+                    parent_rows: frame.execution.env.flow_registry(),
+                    ..execution
+                },
+            )
+        });
         if let Some((operation, source)) = operation {
             self.execute_flow_operation(
                 std::borrow::Cow::Borrowed(operation),
@@ -2671,15 +2679,12 @@ impl Engine {
         value: &crate::value::RuntimeExpr,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<DialogueActivationStep, DialogueExecutionError> {
-        use crate::effect::{
-            RuntimeRegistryOwner, RuntimeRegistryStateUpdate, RuntimeRegistryWriteSource,
-        };
+        use super::registry::{NativeDialogueRegistryTarget, NativeDialogueRegistryWrite};
+        use crate::effect::{RuntimePreparedRegistryWrite, RuntimeRegistryStateUpdate};
+        use arcweft_id::LifetimeScopeKind;
 
         let failure = |message| DialogueExecutionError::ActivationEffectFailed { message };
         let required = arcweft_id::EffectId::state_write(key);
-        if key.scope() != &arcweft_id::LifetimeScopeKind::Line {
-            return Err(RuntimeEffectMaterializeError::RegistryContextRequired.into());
-        }
         if !effects.iter().any(|effect| effect.covers(&required)) {
             return Err(RuntimeEffectMaterializeError::RegistryWriteNotAuthorized {
                 effect: required,
@@ -2702,27 +2707,27 @@ impl Engine {
         let (image, mut admission) = self
             .inert_rollback_image_with_dialogue(Some(transaction))
             .map_err(failure)?;
-        let source = RuntimeRegistryWriteSource::NativeLine { activation: id };
-        let position = transaction
-            .line()
-            .line_registry()?
-            .prepare_write(
-                RuntimeRegistryOwner::Dialogue(id),
-                key,
-                ty,
-                source,
-                &mut admission,
-            )
+        let (target, rows) = match key.scope() {
+            LifetimeScopeKind::Line => (
+                NativeDialogueRegistryTarget::Line,
+                transaction.line().line_registry()?,
+            ),
+            LifetimeScopeKind::Flow => {
+                let parent = transaction.frame().parent;
+                let rows = self
+                    .dialogue_parent_flow_registry(parent, id)
+                    .ok_or(RuntimeEffectMaterializeError::RegistryContextRequired)?;
+                (NativeDialogueRegistryTarget::ParentFlow(parent), rows)
+            }
+            _ => return Err(RuntimeEffectMaterializeError::RegistryContextRequired.into()),
+        };
+        let (destination, source) = target.origin(id);
+        let position = rows
+            .prepare_write(destination, key, ty, source, &mut admission)
             .map_err(|error| failure(error.to_string()))?;
         let prepared =
             RuntimeRegistryStateUpdate::prepare(key, ty, binding.instantiation(), &mut admission)
                 .map_err(|error| failure(error.to_string()))?;
-        transaction
-            .line_mut()
-            .line_registry_mut()?
-            .reserve_write(position)
-            .map_err(|error| failure(error.to_string()))?;
-
         let result = (|| {
             let (frame, line) = transaction.parts_mut();
             std::mem::swap(&mut self.fiber.frame, &mut frame.execution);
@@ -2733,7 +2738,14 @@ impl Engine {
                 .map_err(|error| failure(error.to_string()))?;
             self.commit_activation_assignment_discards(&id, frame, line, &before)?;
             advance_activation_pc(frame)?;
-            line.line_registry_mut()?.commit(position, source, update);
+            self.commit_dialogue_registry_write(
+                transaction,
+                NativeDialogueRegistryWrite {
+                    target,
+                    write: RuntimePreparedRegistryWrite::new(position, source, update),
+                },
+            )
+            .map_err(|error| failure(error.to_string()))?;
             Ok(DialogueActivationStep::Continue)
         })();
         match result {
@@ -2751,7 +2763,7 @@ impl Engine {
         events: &[super::TaskEvent],
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<DialogueActivationStep, DialogueExecutionError> {
-        use super::registry::NativeLineRegistryExecution;
+        use super::registry::NativeActivationRegistryExecution;
 
         let failure = |message| DialogueExecutionError::ActivationEffectFailed { message };
         let activation = *transaction.activation();
@@ -2763,6 +2775,13 @@ impl Engine {
         let result = (|| {
             let (frame, line) = transaction.parts_mut();
             let group = frame.task_group;
+            let parent = frame.parent;
+            if self.fiber.id != parent
+                || self.fiber.persistent_id != activation.owner_fiber()
+                || !self.fiber.frame.program.same_program(&owner)
+            {
+                return Err(RuntimeEffectMaterializeError::RegistryContextRequired.into());
+            }
             let mut pending = None;
             let staged = self.step_dialogue_execution(
                 frame,
@@ -2770,21 +2789,20 @@ impl Engine {
                 input,
                 events,
                 pure_backend,
-                Some(NativeLineRegistryExecution::Activation {
+                Some(NativeActivationRegistryExecution {
                     activation,
                     group,
                     rows: line.line_registry()?,
+                    parent,
+                    parent_rows: None,
                     admission: &mut admission,
                     pending: &mut pending,
                 }),
             )?;
             let write = pending.ok_or(LineRuntimeError::InvalidActivationOperation)?;
             self.commit_activation_assignment_discards(&activation, frame, line, &before)?;
-            let rows = line.line_registry_mut()?;
-            write
-                .reserve(rows)
+            self.commit_dialogue_registry_write(transaction, write)
                 .map_err(|error| failure(error.to_string()))?;
-            write.commit(rows);
             Ok(DialogueActivationStep::Execution(staged))
         })();
         match result {

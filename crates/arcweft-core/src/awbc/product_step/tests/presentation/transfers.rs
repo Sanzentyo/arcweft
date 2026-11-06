@@ -311,7 +311,7 @@ fn awbc_handle_retirement_capacity_rejects_before_moving_its_register_or_bank() 
                 context: Some(&context),
                 presentation: Some(&mut executor.presentation),
                 actions: Some(&mut executor.actions),
-                line_registry: None,
+                dialogue_registry: None,
             },
             &mut crate::awbc::vm::RejectingVmHost,
         )

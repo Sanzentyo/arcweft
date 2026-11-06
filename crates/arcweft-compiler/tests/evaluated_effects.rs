@@ -2257,12 +2257,12 @@ entry cli @entry.main { goto @flow.main }
 }
 
 #[test]
-fn line_registry_writes_run_in_owned_callbacks_and_survive_product_save() {
+fn dialogue_registry_writes_reach_the_line_and_nearest_flow_across_product_save() {
     use arcweft_core::{
         awbc::product_step::AwbcProductExecutorSaveSnapshot,
         engine::{FlowExit, FlowFiberStatus},
         executor::{ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot},
-        plan::FlowEvent,
+        plan::{FlowEvent, RuntimeEntryTarget},
         runtime_id::DialogueActivationId,
         step::{
             RuntimeDialogueContentEvent, RuntimeDialogueContentEventKind,
@@ -2276,25 +2276,39 @@ fn line_registry_writes_run_in_owned_callbacks_and_survive_product_save() {
     let compiled = compile_attached_dialogue_project(
         r#"
 pub character alice { display = "Alice" }
-flow main() -> Unit effects { state.write('line), log.write } {
+fn write_flow_flag() -> Unit effects { state.write('flow.helper_flag) } {
+    'flow.helper_flag <- true
+    return ()
+}
+flow main() -> Unit effects { state.write('line), state.write('flow), log.write } {
+    'flow.initial_flag <- false
+    include @flow.scene
+}
+flow scene() -> Unit effects { state.write('line), state.write('flow), log.write } {
     alice:
         本文。[mark @.change][p]
     with:
         init:
             'line.initial_flag <- true
+            'flow.initial_flag <- true
             if true { 'line.nested_flag <- true }
+            write_flow_flag()
         on mark(@.change) {
             'line.marked_flag <- true
+            'flow.marked_flag <- true
             log.info("mark")
         }
         cancel on input(.SkipLine) {
             'line.cancel_flag <- true
+            'flow.cancel_flag <- true
             log.info("cancel")
             out "Skipped"
         }
-        defer on completed { 'line.completed_flag <- true; log.info("completed") }
-        defer on cancelled { 'line.cancelled_flag <- true; log.info("cancelled") }
+        defer on completed { 'line.completed_flag <- true; 'flow.completed_flag <- true; log.info("completed") }
+        defer on cancelled { 'line.cancelled_flag <- true; 'flow.cancelled_flag <- true; log.info("cancelled") }
         out "Completed"
+    'flow.after_dialogue <- true
+    log.info("after dialogue")
 }
 entry cli @entry.main { goto @flow.main }
 "#,
@@ -2314,8 +2328,11 @@ entry cli @entry.main { goto @flow.main }
         arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
     )
     .unwrap();
-    let [flow] = runtime.plan.flows() else {
-        panic!("fixture owns one Flow")
+    let [entry] = runtime.plan.entries() else {
+        panic!("fixture owns one Entry")
+    };
+    let RuntimeEntryTarget::Flow(flow) = &entry.target else {
+        panic!("fixture Entry targets a Flow")
     };
 
     for cancelled in [false, true] {
@@ -2392,7 +2409,7 @@ entry cli @entry.main { goto @flow.main }
             .unwrap(),
         )
         .unwrap();
-        let mut native = arcweft_core::engine::Engine::for_flow(plan, &flow.id).unwrap();
+        let mut native = arcweft_core::engine::Engine::for_flow(plan, flow).unwrap();
         let native_schema = bind_test_character_dialogue_schema(
             &compiled,
             arcweft_core::task::RuntimeProgramOwner::Plan(native.program_plan()),
@@ -2417,6 +2434,7 @@ entry cli @entry.main { goto @flow.main }
             );
         let mut awbc = Some(awbc);
         let mut observed_keys = std::collections::BTreeSet::new();
+        let mut flow_keys_after_dialogue = None;
         let awbc_logs = run("awbc", &mut |input, options| {
             let mut current = awbc.take().unwrap();
             let result = current.step_with_pure_backend(input, options, &mut awbc_backend);
@@ -2428,8 +2446,41 @@ entry cli @entry.main { goto @flow.main }
             .unwrap();
             let wire = serde_json::to_value(&saved).unwrap();
             let entries = wire["dialogues"]["entries"].as_array().unwrap();
+            let fiber = &wire["fiber"];
+            let frames = fiber["frames"].as_array().unwrap();
+            if let [caller, scene] = frames.as_slice() {
+                let caller_rows = caller["flow_registry"].as_array().unwrap();
+                assert_eq!(caller_rows.len(), 1);
+                assert_eq!(caller_rows[0]["row"]["key"]["segments"][0], "initial_flag");
+                assert_eq!(caller_rows[0]["row"]["value"]["Bool"], false);
+                let mut keys = Vec::new();
+                if let Some(rows) = scene["flow_registry"].as_array() {
+                    for row in rows {
+                        assert_eq!(row["row"]["key"]["scope"], "flow");
+                        assert_eq!(row["row"]["value"]["Bool"], true);
+                        assert_eq!(row["source"]["Awbc"]["fiber"], fiber["instance"]);
+                        assert_eq!(row["source"]["Awbc"]["frame"], scene["instance"]);
+                        let [key] = row["row"]["key"]["segments"].as_array().unwrap().as_slice()
+                        else {
+                            panic!("one authored path segment: {row}");
+                        };
+                        keys.push(key.as_str().unwrap().to_owned());
+                    }
+                }
+                if flow_keys_after_dialogue.is_none()
+                    && keys.first().is_some_and(|key| key == "after_dialogue")
+                {
+                    assert!(entries.iter().all(|entry| entry.get("Active").is_none()));
+                    flow_keys_after_dialogue = Some(keys);
+                }
+            }
             if result.fiber_status == FlowFiberStatus::Done(FlowExit::Done) {
                 assert!(entries.iter().all(|entry| entry.get("Active").is_none()));
+                assert!(
+                    frames
+                        .iter()
+                        .all(|frame| frame.get("flow_registry").is_none())
+                );
             }
             for entry in entries {
                 if let Some(rows) = entry["Active"]["line"]["line_registry"].as_array() {
@@ -2457,9 +2508,9 @@ entry cli @entry.main { goto @flow.main }
             );
             result
         });
-        let (logs, keys): (&[&str], &[&str]) = if cancelled {
+        let (logs, keys, flow_keys): (&[&str], &[&str], &[&str]) = if cancelled {
             (
-                &["mark", "cancel", "cancelled"],
+                &["mark", "cancel", "cancelled", "after dialogue"],
                 &[
                     "cancel_flag",
                     "cancelled_flag",
@@ -2467,15 +2518,30 @@ entry cli @entry.main { goto @flow.main }
                     "marked_flag",
                     "nested_flag",
                 ],
+                &[
+                    "after_dialogue",
+                    "cancel_flag",
+                    "cancelled_flag",
+                    "helper_flag",
+                    "initial_flag",
+                    "marked_flag",
+                ],
             )
         } else {
             (
-                &["mark", "completed"],
+                &["mark", "completed", "after dialogue"],
                 &[
                     "completed_flag",
                     "initial_flag",
                     "marked_flag",
                     "nested_flag",
+                ],
+                &[
+                    "after_dialogue",
+                    "completed_flag",
+                    "helper_flag",
+                    "initial_flag",
+                    "marked_flag",
                 ],
             )
         };
@@ -2485,6 +2551,7 @@ entry cli @entry.main { goto @flow.main }
             observed_keys.iter().map(String::as_str).collect::<Vec<_>>(),
             keys
         );
+        assert_eq!(flow_keys_after_dialogue.unwrap(), flow_keys);
     }
 }
 

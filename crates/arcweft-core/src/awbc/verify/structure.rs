@@ -4125,17 +4125,23 @@ pub(super) fn effect_set_is_subset(
             return true;
         }
         EffectId::parse(&program.strings[effect.index()]).is_ok_and(|required| {
-            // Canonical string and effect tables make equal paths contiguous:
-            // the unscoped identity sorts before its scoped identities. After
-            // the exact lookup, the first identity at this path is sufficient
-            // for EffectId::covers, without a quadratic cross-product scan.
+            // Canonical strings group the unscoped identity and all its
+            // scoped grants. Any of those grants may cover the requirement.
             let first = superset.effects.partition_point(|candidate| {
                 program.strings[candidate.index()].as_str() < required.path()
             });
-            superset.effects.get(first).is_some_and(|candidate| {
-                EffectId::parse(&program.strings[candidate.index()])
-                    .is_ok_and(|permitted| permitted.covers(&required))
-            })
+            superset.effects[first..]
+                .iter()
+                .map(|candidate| program.strings[candidate.index()].as_str())
+                .take_while(|candidate| {
+                    *candidate == required.path()
+                        || candidate
+                            .strip_prefix(required.path())
+                            .is_some_and(|suffix| suffix.starts_with('('))
+                })
+                .any(|candidate| {
+                    EffectId::parse(candidate).is_ok_and(|permitted| permitted.covers(&required))
+                })
         })
     })
 }

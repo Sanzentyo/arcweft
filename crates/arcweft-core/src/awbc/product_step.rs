@@ -2855,7 +2855,7 @@ impl AwbcProductStepExecutor {
                 context: Some(&context),
                 presentation: Some(&mut self.presentation),
                 actions: Some(&mut self.actions),
-                line_registry: None,
+                dialogue_registry: None,
             },
             &mut host,
         ) {
@@ -3297,7 +3297,8 @@ impl AwbcProductStepExecutor {
         };
         let mut registry_admission = if registry_activation.is_some()
             && (front.fiber.status == FiberStatus::Suspended
-                || crate::awbc::vm::is_line_registry_instruction(&self.program, front.fiber.cursor))
+                || crate::awbc::vm::dialogue_registry_instruction(&self.program, &front.fiber)
+                    .is_some())
         {
             match self.retained_execution_admission(ProductCheckpointTarget::Child(0)) {
                 Ok(admission) => Some(admission),
@@ -3436,22 +3437,24 @@ impl AwbcProductStepExecutor {
         } else {
             terminal_exit.map_or_else(
                 || {
-                    let registry_write = if let (Some(activation), Some(admission)) =
-                        (registry_activation, registry_admission.as_mut())
-                        && crate::awbc::vm::is_line_registry_instruction(
-                            &self.program,
-                            child.fiber.cursor,
-                        ) {
+                    let registry_write = if let (Some(activation), Some(admission), Some(scope)) = (
+                        registry_activation,
+                        registry_admission.as_mut(),
+                        crate::awbc::vm::dialogue_registry_instruction(&self.program, &child.fiber),
+                    ) {
                         let missing =
                             crate::effect::RuntimeEffectMaterializeError::RegistryContextRequired;
-                        let rows = self
-                            .dialogues
-                            .active_line_for(&activation)
-                            .ok_or_else(|| missing.clone())?
-                            .line_registry()
-                            .map_err(|_| missing)?;
-                        Some(crate::awbc::vm::VmLineRegistryWrite {
+                        let line = self.dialogues.active_line_for(&activation).ok_or(missing)?;
+                        let (owner, rows) = dialogue::reached_registry(
+                            &self.program,
                             activation,
+                            &scope,
+                            line,
+                            std::iter::once(&self.fiber)
+                                .chain(self.child_fibers.iter().map(|child| &child.fiber)),
+                        )?;
+                        Some(crate::awbc::vm::VmDialogueRegistryWrite {
+                            owner,
                             rows,
                             admission,
                             pending: &mut pending_registry_write,
@@ -3469,7 +3472,7 @@ impl AwbcProductStepExecutor {
                             context: Some(&context),
                             presentation: Some(&mut self.presentation),
                             actions: Some(&mut self.actions),
-                            line_registry: registry_write,
+                            dialogue_registry: registry_write,
                         },
                         &mut host,
                     )?;
@@ -3878,9 +3881,9 @@ impl AwbcProductStepExecutor {
         };
         let admitted_step = (|| {
             let line = transaction.line_mut();
-            if let Some(write) = &pending_registry_write {
+            if let Some((owner, write)) = &pending_registry_write {
                 write
-                    .reserve(line.line_registry_mut()?)
+                    .reserve(self.reached_registry_mut(*tag.activation_id(), *owner, line)?)
                     .map_err(crate::awbc::fiber::FiberStateError::Snapshot)?;
             }
             line.reconcile_child_scope_step(&tag, before_handles, &after_handles, &drop_policy)?;
@@ -3932,12 +3935,10 @@ impl AwbcProductStepExecutor {
                 &mut child.fiber,
             );
             resume_journal.commit_staged_host_call(&mut input.host_call_results, &mut child);
-            if let Some(write) = pending_registry_write {
+            if let Some((owner, write)) = pending_registry_write {
                 write.commit(
-                    transaction
-                        .line_mut()
-                        .line_registry_mut()
-                        .expect("prepared child write has a live line"),
+                    self.reached_registry_mut(*tag.activation_id(), owner, transaction.line_mut())
+                        .expect("prepared child write keeps its reached registry"),
                 );
             }
             let receipt = self.dialogues.commit_prepared(transaction, proof);

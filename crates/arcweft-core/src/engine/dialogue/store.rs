@@ -910,6 +910,13 @@ impl DialogueActivationStore {
         Some(self.registry.active_frame(activation)?.frame.task_group)
     }
 
+    pub(in crate::engine) fn active_parent(
+        &self,
+        activation: &DialogueActivationId,
+    ) -> Option<super::super::FlowFiberId> {
+        Some(self.registry.active_frame(activation)?.frame.parent)
+    }
+
     pub(crate) fn active_line(
         &self,
         activation: &DialogueActivationId,

@@ -6,7 +6,7 @@
 
 use crate::value::runtime_value_views_equal;
 mod resources;
-pub(crate) use resources::{VmExecutionResources, VmLineRegistryWrite};
+pub(crate) use resources::{VmDialogueRegistryWrite, VmExecutionResources};
 
 #[cfg(test)]
 mod dense_numeric_tests;
@@ -550,7 +550,7 @@ pub(crate) fn trap_fiber(
                 context: None,
                 presentation: None,
                 actions: None,
-                line_registry: None,
+                dialogue_registry: None,
             },
             trap.code,
             trap.message,
@@ -630,17 +630,28 @@ pub fn step_function_with_host_context(
     )
 }
 
-pub(crate) fn is_line_registry_instruction(program: &AwbcProgram, cursor: FiberCursor) -> bool {
+pub(crate) fn dialogue_registry_instruction(
+    program: &AwbcProgram,
+    fiber: &FiberState,
+) -> Option<arcweft_id::LifetimeScopeKind> {
+    use arcweft_id::LifetimeScopeKind;
     let Ok(AwbcInstruction::EmitEffect { effect, .. }) =
-        super::fiber::instruction_at_site(program, cursor)
+        super::fiber::instruction_at_site(program, fiber.cursor)
     else {
-        return false;
+        return None;
     };
-    matches!(
-        program.effect_plans.get(effect.index()).map(|plan| &plan.payload),
-        Some(super::schema::AwbcEffectPayload::RegistryWrite { key, .. })
-            if key.scope() == &arcweft_id::LifetimeScopeKind::Line
-    )
+    let super::schema::AwbcEffectPayload::RegistryWrite { key, .. } =
+        &program.effect_plans.get(effect.index())?.payload
+    else {
+        return None;
+    };
+    match key.scope() {
+        LifetimeScopeKind::Line => Some(LifetimeScopeKind::Line),
+        LifetimeScopeKind::Flow if fiber.reached_flow_frame_index(program).is_none() => {
+            Some(LifetimeScopeKind::Flow)
+        }
+        _ => None,
+    }
 }
 
 /// Borrows the Product execution's actual resource owner for this VM slice.

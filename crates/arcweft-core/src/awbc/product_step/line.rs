@@ -1460,14 +1460,14 @@ impl super::AwbcProductStepExecutor {
         let mut effect_checkpoint = Some(self.execution_checkpoint(
             super::checkpoint::ProductCheckpointTarget::Dialogue(transaction),
         )?);
-        let mut registry_admission =
-            if crate::awbc::vm::is_line_registry_instruction(&self.program, effect_site) {
-                Some(self.retained_execution_admission(
-                    super::checkpoint::ProductCheckpointTarget::Dialogue(transaction),
-                )?)
-            } else {
-                None
-            };
+        let registry_scope = crate::awbc::vm::dialogue_registry_instruction(&self.program, before);
+        let mut registry_admission = if registry_scope.is_some() {
+            Some(self.retained_execution_admission(
+                super::checkpoint::ProductCheckpointTarget::Dialogue(transaction),
+            )?)
+        } else {
+            None
+        };
         let mut pending_registry_write = None;
         let (frame, line) = transaction.parts_mut();
         let phase = std::mem::replace(&mut frame.phase, ProductDialoguePhase::Transitioning);
@@ -1501,10 +1501,20 @@ impl super::AwbcProductStepExecutor {
                     trap,
                 )
             } else {
-                let registry_write = if let Some(admission) = registry_admission.as_mut() {
-                    Some(crate::awbc::vm::VmLineRegistryWrite {
+                let registry_write = if let Some((scope, admission)) =
+                    registry_scope.as_ref().zip(registry_admission.as_mut())
+                {
+                    let (owner, rows) = super::dialogue::reached_registry(
+                        &self.program,
                         activation,
-                        rows: line.line_registry()?,
+                        scope,
+                        line,
+                        std::iter::once(&self.fiber)
+                            .chain(self.child_fibers.iter().map(|child| &child.fiber)),
+                    )?;
+                    Some(crate::awbc::vm::VmDialogueRegistryWrite {
+                        owner,
+                        rows,
                         admission,
                         pending: &mut pending_registry_write,
                     })
@@ -1521,7 +1531,7 @@ impl super::AwbcProductStepExecutor {
                         context: Some(&context),
                         presentation: Some(&mut self.presentation),
                         actions: Some(&mut self.actions),
-                        line_registry: registry_write,
+                        dialogue_registry: registry_write,
                     },
                     &mut host,
                 )
@@ -1543,12 +1553,12 @@ impl super::AwbcProductStepExecutor {
                 }
             };
 
-            if let Some(write) = pending_registry_write.as_ref() {
+            if let Some((owner, write)) = pending_registry_write.as_ref() {
                 if !step.completed_single_effect_instruction() {
                     return Err(LineRuntimeError::InvalidActivationOperation.into());
                 }
                 write
-                    .reserve(line.line_registry_mut()?)
+                    .reserve(self.reached_registry_mut(activation, *owner, line)?)
                     .map_err(crate::awbc::fiber::FiberStateError::Snapshot)?;
             }
 
@@ -2036,11 +2046,11 @@ impl super::AwbcProductStepExecutor {
                 },
             }
         })();
-        if let Some(write) = pending_registry_write {
+        if let Some((owner, write)) = pending_registry_write {
             if result.is_ok() {
                 write.commit(
-                    line.line_registry_mut()
-                        .expect("prepared write has a live line"),
+                    self.reached_registry_mut(activation, owner, line)
+                        .expect("prepared write keeps its reached registry"),
                 );
             } else if let Some(checkpoint) = effect_checkpoint {
                 checkpoint

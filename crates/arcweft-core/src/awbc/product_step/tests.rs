@@ -240,7 +240,7 @@ fn suspend_fixture_dialogue(executor: &mut AwbcProductStepExecutor, captures: Ve
             context: Some(&context),
             presentation: Some(&mut executor.presentation),
             actions: Some(&mut executor.actions),
-            line_registry: None,
+            dialogue_registry: None,
         },
         &mut host,
     )

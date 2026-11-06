@@ -4453,13 +4453,12 @@ impl Engine {
                 &drops,
             )?;
             if let Some(write) = line_registry_write {
-                let rows = transaction.line_mut().line_registry_mut()?;
-                write.reserve(rows).map_err(|error| {
-                    dialogue::DialogueExecutionError::ActivationEffectFailed {
-                        message: error.to_string(),
-                    }
-                })?;
-                write.commit(rows);
+                self.commit_dialogue_registry_write(&mut transaction, write)
+                    .map_err(
+                        |error| dialogue::DialogueExecutionError::ActivationEffectFailed {
+                            message: error.to_string(),
+                        },
+                    )?;
             }
             let receipt = self.dialogue_activations.commit_transaction(transaction)?;
             Self::publish_dialogue_line_receipt(receipt.into_line(), output);
@@ -4846,7 +4845,7 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
         drop_policy: &mut Option<crate::effect::RuntimeDropPolicy>,
-        line_registry_write: &mut Option<crate::effect::RuntimePreparedRegistryWrite>,
+        line_registry_write: &mut Option<registry::NativeDialogueRegistryWrite>,
     ) {
         if self.fiber.owner.requests_scope_close() {
             self.close_active_child_fiber(output, pure_backend);

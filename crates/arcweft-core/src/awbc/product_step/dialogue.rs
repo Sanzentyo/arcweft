@@ -1,10 +1,13 @@
-use super::{ActiveDialogue, ProductStepError};
+use super::{ActiveDialogue, AwbcProductStepExecutor, ProductStepError};
+use crate::awbc::fiber::{FiberState, FiberStateError};
 use crate::awbc::schema::AwbcTypeId;
+use crate::effect::{RuntimeRegistryOwner, RuntimeScopeRegistry};
 use crate::line_task::{
     LineRuntimeError, PreparedRuntimeParentFiberReconciliation,
     RuntimeDialogueAbandonedCommitProof, RuntimeDialogueActivationRegistry,
-    RuntimeDialogueActivationTransaction, RuntimeDialogueCommitProof,
-    RuntimeDialoguePublishedCommitProof, RuntimeDialogueRegistryCommitReceipt,
+    RuntimeDialogueActivationState, RuntimeDialogueActivationTransaction,
+    RuntimeDialogueCommitProof, RuntimeDialoguePublishedCommitProof,
+    RuntimeDialogueRegistryCommitReceipt,
 };
 use crate::runtime_id::DialogueActivationId;
 use crate::step::RuntimeDialogueContentEvent;
@@ -24,6 +27,72 @@ pub(super) struct ProductDialogueStore {
 
 pub(super) type ProductDialogueTransaction =
     RuntimeDialogueActivationTransaction<ActiveDialogue, AwbcTypeId>;
+
+pub(super) fn reached_registry<'a>(
+    program: &crate::awbc::schema::AwbcProgram,
+    activation: DialogueActivationId,
+    scope: &arcweft_id::LifetimeScopeKind,
+    line: &'a RuntimeDialogueActivationState<AwbcTypeId>,
+    mut parents: impl Iterator<Item = &'a FiberState>,
+) -> Result<(RuntimeRegistryOwner, &'a RuntimeScopeRegistry), FiberStateError> {
+    use arcweft_id::LifetimeScopeKind;
+    match scope {
+        LifetimeScopeKind::Line => Ok((
+            RuntimeRegistryOwner::Dialogue(activation),
+            line.line_registry()
+                .map_err(|_| FiberStateError::InvalidFrame)?,
+        )),
+        LifetimeScopeKind::Flow => {
+            let parent = parents
+                .find(|fiber| fiber.instance.get().get() == activation.owner_fiber().get())
+                .ok_or(FiberStateError::InvalidDialogueReceiver { activation })?;
+            let index = parent
+                .reached_flow_frame_index(program)
+                .ok_or(FiberStateError::InvalidFrame)?;
+            let frame = &parent.frames[index];
+            Ok((
+                RuntimeRegistryOwner::AwbcFlow {
+                    fiber: parent.instance,
+                    frame: frame.instance,
+                },
+                &frame.flow_registry,
+            ))
+        }
+        _ => Err(FiberStateError::InvalidFrame),
+    }
+}
+
+impl AwbcProductStepExecutor {
+    pub(super) fn reached_registry_mut<'a>(
+        &'a mut self,
+        activation: DialogueActivationId,
+        owner: RuntimeRegistryOwner,
+        line: &'a mut RuntimeDialogueActivationState<AwbcTypeId>,
+    ) -> Result<&'a mut RuntimeScopeRegistry, FiberStateError> {
+        match owner {
+            RuntimeRegistryOwner::Dialogue(id) if id == activation => line
+                .line_registry_mut()
+                .map_err(|_| FiberStateError::InvalidFrame),
+            RuntimeRegistryOwner::AwbcFlow { fiber, frame }
+                if fiber.get().get() == activation.owner_fiber().get() =>
+            {
+                let parent = std::iter::once(&mut self.fiber)
+                    .chain(self.child_fibers.iter_mut().map(|child| &mut child.fiber))
+                    .find(|parent| parent.instance == fiber)
+                    .ok_or(FiberStateError::InvalidDialogueReceiver { activation })?;
+                let index = parent
+                    .reached_flow_frame_index(&self.program)
+                    .ok_or(FiberStateError::InvalidFrame)?;
+                let reached = &mut parent.frames[index];
+                if reached.instance != frame {
+                    return Err(FiberStateError::InvalidFrame);
+                }
+                Ok(&mut reached.flow_registry)
+            }
+            _ => Err(FiberStateError::InvalidFrame),
+        }
+    }
+}
 
 impl<V, O, E, F, L, P, H>
     super::AwbcProductActiveDialogue<V, O, E, super::AwbcProductDialoguePhase<F, L, P>, H>

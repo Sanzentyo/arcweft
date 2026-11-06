@@ -1082,27 +1082,26 @@ impl Engine {
                     use super::registry::NativeLineRegistryExecution;
                     let written = match line_registry {
                         Some(NativeLineRegistryExecution::Child(pending))
-                            if key.scope() == &arcweft_id::LifetimeScopeKind::Line =>
+                            if key.scope() == &arcweft_id::LifetimeScopeKind::Line
+                                || (key.scope() == &arcweft_id::LifetimeScopeKind::Flow
+                                    && self.fiber.frame.env.flow_registry().is_none()) =>
                         {
                             self.stage_child_line_registry_write(&source_site, pure_backend)
                                 .map(|write| *pending = Some(write))
                         }
-                        Some(NativeLineRegistryExecution::Activation {
-                            activation,
-                            group,
-                            rows,
-                            admission,
-                            pending,
-                        }) if key.scope() == &arcweft_id::LifetimeScopeKind::Line => self
-                            .stage_borrowed_line_registry_write(
+                        Some(NativeLineRegistryExecution::Activation(execution))
+                            if matches!(
+                                key.scope(),
+                                arcweft_id::LifetimeScopeKind::Line
+                                    | arcweft_id::LifetimeScopeKind::Flow
+                            ) =>
+                        {
+                            self.stage_borrowed_line_registry_write(
                                 &source_site,
-                                activation,
-                                group,
-                                rows,
-                                admission,
+                                execution,
                                 pure_backend,
                             )
-                            .map(|write| *pending = Some(write)),
+                        }
                         _ => self.execute_registry_write(&source_site, pure_backend),
                     };
                     if let Err(error) = written {
