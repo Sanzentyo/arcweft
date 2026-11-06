@@ -3,8 +3,8 @@
 use std::rc::Rc;
 
 use super::{
-    Analyzer, ExprId, FinalSemanticAnalysisError, HirExprKind, HirModule, HirStmtKind, PatternId,
-    StmtId, TypeId, TypeKind,
+    Analyzer, ExprId, FinalSemanticAnalysisError, HirExprKind, HirStmtKind, PatternId, StmtId,
+    TypeId, TypeKind,
     expression_error::{AnalyzerExpressionContext, AnalyzerExpressionError},
 };
 
@@ -169,6 +169,13 @@ impl Analyzer<'_, '_, '_> {
         let module = self
             .module(owner.module())
             .map_err(AnalyzerExpressionError::fatal)?;
+        let initializer_expression = module.resolve_expr(initializer).map_err(|_| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+        })?;
+        let binds_dialogue_result = matches!(
+            initializer_expression.kind(),
+            HirExprKind::AttachedContentApplication(application) if application.is_dialogue_line()
+        );
         let authored_type = annotation.or(module
             .resolve_pattern(pattern)
             .map_err(|_| AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner))?
@@ -183,39 +190,36 @@ impl Analyzer<'_, '_, '_> {
                 })
             })
             .transpose()?;
-        let actual = self.evaluate_expression(context, initializer, expected.as_ref())?;
+        // The call produces a line operation. The pattern receives its published result.
+        let dialogue_expectation = expected
+            .as_ref()
+            .filter(|_| binds_dialogue_result)
+            .map(|result| TypeKind::DialogueLine(Box::new(result.clone())));
+        let actual = self.evaluate_expression(
+            context,
+            initializer,
+            dialogue_expectation.as_ref().or(expected.as_ref()),
+        )?;
         let actual_type = actual
             .value_type()
             .ok_or_else(|| AnalyzerExpressionError::rejected(initializer))?;
+        let binding_type = if binds_dialogue_result {
+            let TypeKind::DialogueLine(result) = actual_type else {
+                return Err(AnalyzerExpressionError::fatal(
+                    FinalSemanticAnalysisError::WrongPayloadFamily,
+                ));
+            };
+            result.as_ref()
+        } else {
+            actual_type
+        };
         let binding = match expected {
             Some(expected) => expected
-                .binding_type_with_inferred_effects(actual_type)
+                .binding_type_with_inferred_effects(binding_type)
                 .ok_or_else(|| AnalyzerExpressionError::rejected(initializer))?,
-            None => dialogue_application_binding_type(module, initializer, actual_type)
-                .unwrap_or_else(|| actual_type.clone()),
+            None => binding_type.clone(),
         };
         self.seed_contextual_pattern_locals(module, pattern, &binding)
             .map_err(AnalyzerExpressionError::fatal)
     }
-}
-
-fn dialogue_application_binding_type(
-    module: &HirModule,
-    owner: ExprId,
-    ty: &TypeKind,
-) -> Option<TypeKind> {
-    let expression = module.resolve_expr(owner).ok()?;
-    let HirExprKind::AttachedContentApplication(application) = expression.kind() else {
-        return None;
-    };
-    if !matches!(
-        application.family(),
-        arcweft_lang_hir::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine { .. }
-    ) {
-        return None;
-    }
-    let TypeKind::DialogueLine(result) = ty else {
-        return None;
-    };
-    Some(result.as_ref().clone())
 }

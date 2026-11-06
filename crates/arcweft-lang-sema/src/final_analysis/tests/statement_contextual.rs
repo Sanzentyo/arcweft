@@ -291,6 +291,31 @@ flow row() -> Unit {
 }
 
 #[test]
+fn dialogue_binding_annotation_contextualizes_the_published_result() {
+    let source = r#"
+pub character alice { display = "Alice" }
+flow row() -> Option<String> {
+    let reply: Option<String> = alice[Hello[p]] with { out .Some("yes") }
+    return reply
+}
+"#;
+    let report = analyze(&fixture(source, None)).expect("line annotation supplies the Out type");
+    let result = TypeKind::Option(Box::new(TypeKind::String));
+    assert!(report.expressions().any(|(_, expression)| matches!(
+        expression.resolution(),
+        CheckedExpressionResolution::DialogueApplication { line_result, .. }
+            if line_result == &result
+                && expression.value_type() == Some(&TypeKind::DialogueLine(Box::new(result.clone())))
+    )));
+
+    let wrong_output = source.replace(".Some(\"yes\")", "false");
+    assert!(
+        analyze(&fixture(&wrong_output, None)).is_err(),
+        "an incompatible Out cannot be published as the annotated result"
+    );
+}
+
+#[test]
 fn dialogue_mark_handler_outs_contribute_to_the_line_result_type() {
     for (handler_value, accepted) in [("\"Released\"", true), ("7", false)] {
         let source = format!(

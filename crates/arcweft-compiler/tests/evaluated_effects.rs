@@ -3216,14 +3216,16 @@ flow main() -> Unit effects { state.write('flow), state.write('line), log.write 
     alice()[Outer[p]] with {
         init {
             'line.saved <- "outer"
-            alice()[Inner[p]] with {
+            let received: String = alice()[Inner[p]] with {
                 init {
                     'line.saved <- true
                     'flow.shared <- "updated by inner"
                     let inner: bool = 'line.saved
                     if inner { log.info("inner") }
                 }
+                out "returned by inner"
             }
+            log.info(received)
             let outer: String = 'line.saved
             log.info(outer)
         }
@@ -3301,7 +3303,7 @@ fn native_nested_line_registries_resume_their_parent_line_and_share_the_flow() {
             "Native nested registry",
             2,
         ),
-        ["inner", "outer", "updated by inner"],
+        ["inner", "returned by inner", "outer", "updated by inner"],
     );
 }
 
@@ -3395,7 +3397,10 @@ fn decoded_awbc_nested_line_registries_resume_their_parent_through_each_save() {
         saved_nested_session,
         "a published save contained both active dialogues"
     );
-    assert_eq!(logs, ["inner", "outer", "updated by inner"]);
+    assert_eq!(
+        logs,
+        ["inner", "returned by inner", "outer", "updated by inner"]
+    );
 }
 
 #[test]

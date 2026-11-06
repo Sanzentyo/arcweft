@@ -208,7 +208,9 @@ with:
     out (voice, look)
 ```
 
-The type is inferred from the `out` expression.
+The type is inferred from the `out` expression. A type annotation on a `let`
+binding of the line result supplies the expected type for `out`. For example,
+`let reply: Option<String>` allows the line plan to select `out .Some("yes")`.
 
 A marked line handler may be the only path that supplies a non-Unit result, as
 in the `.Released` [line-local mark example](dialogue-calls-scopes-cancellation.md#line-plan-block).
