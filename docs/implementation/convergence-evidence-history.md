@@ -15070,3 +15070,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Registry source custody runtime reverse dependencies
 
 - Source fc7aaa4ffe8773c9df17a3d570c21bbf909da42b の元スロットと発行元の照合を Runtime Driver、Runtime Host、Save で再検証した。260件通過、失敗・スキップともに0件。実行前後でソース入力3638件のハッシュが一致した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Correction to accepted verifier report documentation
+
+- Source bee6829b8967723e67dcaefc6f11b6e0a570f733。作業ツリーには既存の追跡済み12件と未追跡6件があった。旧資料の受理済みレポートは MustDrop などの義務を列挙していたが、検証器の収集処理が生成するのは proof_body、assertion_proof、unsafe_lifetime_audit だった。受理済みレポートの説明を訂正し、要求仕様と個別の未達を [言語契約](../01-language/proofs-and-unsafe-audits.md) と [現状一覧](current-status.md) に記載した。
+- 同じソースで cargo clean は53,522ファイル、66.7 GiBを削除し、ビルド出力先の消失を確認した。空の出力先から Sema の対象テストと検証器のライブラリテストをビルドし、34件すべて通過した。フィルター対象外は1,359件だった。[実測・原本](acceptance-evidence/task-flow-registry-execution.json)。

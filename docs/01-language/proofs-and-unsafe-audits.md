@@ -181,24 +181,26 @@ arcweft-verify-oxiz
   pure Rust OxiZ adapter boundary
 ```
 
-The semantic verifier generates obligations for lifetime promotion, unsafe
+The verifier contract defines obligations for lifetime promotion, unsafe
 lifetime audits, upper-lifetime registry writes, effect capability writes,
 thread capture, thread join typing, trusted assumptions, raw syntax that reaches
 semantic analysis, and sibling thread or line child task write conflicts.
+The verification guide describes accepted reports and semantic rejection reports.
+[Verification reports](../04-tooling/verification.md).
 
-Effect capability obligations are backed by semantic facts rather than ordinary
-symbol lookup. A flow or function contract such as
+A flow or function contract such as
 `effects { signal.write, state.write('flow) }` grants those capabilities inside
-the body. This
-discharges corresponding write obligations such as `signal.set(...)` and
-upper-lifetime registry writes like `'flow.flags.seen <- true`. Unknown or
-missing capability facts remain visible in verifier output.
+the body. The semantic checker uses them to admit writes such as
+`signal.set(...)` and `'flow.flags.seen <- true`. A missing required capability
+rejects semantic analysis.
 
-The current pass is CFG-aware for blocks, branches, line plans, cancellation
-rules, bounded loop fixed points, and scoped `defer` outcomes. Completed-only
-cleanup does not discharge a cancelled path; cancellation cleanup must use
-`defer on cancelled` or an unqualified `defer`. Proof declarations, header
-contracts, bodies, and calls must have accepted HIR and checker-owned facts
+The semantic checker tracks blocks, branches, line plans, cancellation rules,
+bounded loop fixed points, and scoped `defer` outcomes. For a resource that
+requires discharge, cancellation cleanup must use `defer on cancelled` or an
+unqualified `defer`.
+
+Proof declarations, header contracts, bodies, and calls must have accepted HIR
+and checker-owned facts
 before the verifier collects their pending `proof_body` obligations. An unknown
 proof call is rejected at that admission boundary. An `unsafe lifetime` block
 must contain the unchecked promotion it

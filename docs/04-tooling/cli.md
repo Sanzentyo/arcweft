@@ -173,11 +173,10 @@ unsafe and the inspection path of verify-types. Setup and runtime-host failures
 remain their own command boundaries. See [verification](verification.md) for
 the complete rejected-analysis contract.
 
-Accepted-report diagnostics include a
-stable diagnostic id, obligation id, severity, source span when available,
-related ids, and code-action descriptors. The report includes conservative
-semantic obligations such as MustDrop discharge, upper-lifetime writes, unsafe
-audits, thread capture, thread join typing, and simple sibling write conflicts.
+Accepted-report diagnostics include a stable diagnostic id, obligation id,
+severity, source span when available, related ids, and code-action descriptors.
+[Accepted verifier report](verification.md#source-proof-items-and-unsafe-audits).
+
 When `--backend oxiz` or `--backend z3` is selected, solver outcomes are also
 recorded in `solver_checks`. In `test` and `release` mode, a required missing
 obligation whose solver outcome is `sat`, `unknown`, or an adapter error is

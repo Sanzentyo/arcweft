@@ -65,12 +65,8 @@ The final project semantic pass owns checked facts and admits one exact HIR
 generation. `arcweft-verify` consumes that generation, its symbol authority and
 sealed `FinalSemanticAnalysis`. CLI, LSP and Agent tooling borrow those facts;
 they do not rerun analysis or manufacture an executable plan after rejection.
-The accepted verifier report collects obligations for lifetime
-promotion, `unsafe lifetime`, upper-lifetime registry writes, thread capture,
-proof-body validity, thread join result typing,
-trusted assumptions, `Raw` syntax that reached HIR-facing analysis, sibling
-thread and line child task write conflicts, and MustDrop registry values such
-as `'line.focus` that are not explicitly dropped or transferred.
+The accepted verifier report can carry `proof_body`, `assertion_proof`, and
+`unsafe_lifetime_audit` obligations for an admitted project.
 
 Effects are checked as semantic facts, not as ordinary value expressions.
 Flow/function effects clauses bound the inferred effects of their bodies:
@@ -104,18 +100,9 @@ solver checks, executable runtime plan or generated proof artifacts. Solver
 execution and `--emit-obligations`/`--emit-smt` begin only after compilation
 succeeds. The accepted verifier JSON grammar remains the shared verifier report.
 
-Verifier analysis is CFG-aware for blocks, branches, line plans,
-cancellation rules, bounded loop fixed points, and scoped `defer` outcomes. It
-checks proof references against typed `ensures` / `check` proof-body targets,
-reports unjustified proof `assume` clauses and unknown proof dependencies
-as `proof_body` obligations, and validates that unsafe audit blocks contain the
-unchecked operation they justify. Ownership/region validation rejects borrowed
-values escaping through block final values, returns, line-plan `out`, or
-upper-lifetime registry writes, and the type checker tracks direct local borrow
-drops across branch merges so maybe-dropped values cannot cross suspension
-boundaries or be reused. It remains conservative for full solver-backed proof
-term checking and open-ended effect inference; consumers use the verifier report
-for those obligations.
+The report draws proof references and unsafe audit metadata from checked inputs.
+The language contract defines proof admission and the checker's ownership and
+region rules. [Proofs and Unsafe Lifetime Audits](../01-language/proofs-and-unsafe-audits.md).
 
 Verifier JSON serializes proof expressions with adjacent tags so string-carrying
 variants remain stable across serde implementations:

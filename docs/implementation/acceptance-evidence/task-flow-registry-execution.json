@@ -16306,5 +16306,87 @@
         }
       ]
     }
+  },
+  "postCleanLifetimeSemaVerify": {
+    "source": "bee6829b8967723e67dcaefc6f11b6e0a570f733",
+    "clean": {
+      "target": "D:\\git\\arcweft\\target",
+      "exitCode": 0,
+      "freeBefore": 462346903552,
+      "freeAfter": 532290109440,
+      "freeChange": 69943205888,
+      "targetPresent": false,
+      "startedAt": "2026-11-06T18:22:07.9990492Z",
+      "finishedAt": "2026-11-06T18:22:31.6302145Z"
+    },
+    "test": {
+      "version": 1,
+      "source": "bee6829b8967723e67dcaefc6f11b6e0a570f733",
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-verify",
+        "-p",
+        "arcweft-lang-sema",
+        "--lib",
+        "-E",
+        "package(=arcweft-verify) | test(/(lifetime|registry|resource|discharge)/)",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 0,
+      "summary": "     Summary [   1.591s] 34 tests run: 34 passed, 1359 skipped",
+      "cleanTargetAtStart": true,
+      "startedAt": "2026-11-06T18:23:51.3815952Z",
+      "finishedAt": "2026-11-06T18:27:38.9506694Z"
+    },
+    "passed": 34,
+    "failed": 0,
+    "skippedByFilter": 1359,
+    "catalogCaseDrift": 0,
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-lifetime-post-clean.raw.zip",
+      "sha256": "6e740f67fbfa85641233f4e6427fb27ee7c7746cac6f876d3ddcde5be469a6c4",
+      "entries": [
+        {
+          "entry": "cargo-clean-full-20261107.log",
+          "bytes": 41,
+          "sha256": "fa7edf193eb7d39beaa274c20462ce60903f03d1b930a7bc8f0ca09189962825"
+        },
+        {
+          "entry": "cargo-clean-full-20261107.receipt.json",
+          "bytes": 279,
+          "sha256": "45ab1077d416b8aaf047db9046fe7ec1525965618bfacbe3e3cc138af8e70ece"
+        },
+        {
+          "entry": "post-clean-lifetime-sema-verify-20261107.log",
+          "bytes": 544206,
+          "sha256": "160dfe20ba89946103845f26b2571965e1d2537cd9f584b6d42339f0278aa5d8"
+        },
+        {
+          "entry": "post-clean-lifetime-sema-verify-20261107.receipt.json",
+          "bytes": 694,
+          "sha256": "ba1c3e8ee6aa8056636e7e126f45721f5bd3abd5f6163db6d022ddf7a8a0b2f2"
+        },
+        {
+          "entry": "post-clean-lifetime-sema-verify-20261107.catalog.json",
+          "bytes": 270831,
+          "sha256": "a8e681743f11b367780dbe25fcec4f338b94bb42547d2dd6d419e5f3efa6480e"
+        },
+        {
+          "entry": "post-clean-lifetime-sema-verify-20261107.catalog.log",
+          "bytes": 85199,
+          "sha256": "2377bf542444ff918802fb66a0b9d3cf7dbb419f8e6cfce7132e8f682aadd6ae"
+        }
+      ]
+    }
   }
 }
