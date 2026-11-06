@@ -4333,6 +4333,728 @@
           }
         ]
       }
+    },
+    "consumerPartitions": {
+      "version": 1,
+      "source": "6b72d7ca42beb3661a7025598cf74a341d61fc21",
+      "selectedPackages": [
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-repl",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-web",
+        "arcweft-runtime-host",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ],
+      "runtimePackages": [
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-web",
+        "arcweft-runtime-host",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3"
+      ],
+      "executionCount": 1964,
+      "passed": 1957,
+      "failed": 7,
+      "complete": false,
+      "incomplete": [
+        {
+          "name": "agent",
+          "packages": [
+            "arcweft-agent-mcp",
+            "arcweft-agent-mcp-client",
+            "arcweft-agent-repl"
+          ],
+          "status": "incomplete",
+          "exception": "Focused catalog failed",
+          "catalogExit": 101,
+          "diagnosis": "Concurrent rustc test target builds reported memory allocation failures. The Agent batch did not run tests."
+        }
+      ],
+      "batches": [
+        {
+          "name": "verify_lsp",
+          "packages": [
+            "arcweft-lsp",
+            "arcweft-verify",
+            "arcweft-verify-lsp",
+            "arcweft-verify-oxiz",
+            "arcweft-verify-z3"
+          ],
+          "runtimePackages": [
+            "arcweft-lsp",
+            "arcweft-verify",
+            "arcweft-verify-lsp",
+            "arcweft-verify-oxiz",
+            "arcweft-verify-z3"
+          ],
+          "status": "runtime",
+          "terminal": {
+            "version": 1,
+            "base": "6b72d7ca42beb3661a7025598cf74a341d61fc21",
+            "run": "typed-proof-dependencies-consumers-20261106-verify_lsp.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [  27.950s] 254 tests run: 254 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 254,
+            "passed": 254,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 5,
+            "matchedPackages": 5,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T00:57:19.9960589Z"
+          }
+        },
+        {
+          "name": "compiler_generic",
+          "packages": [
+            "arcweft-compiler"
+          ],
+          "runtimePackages": [
+            "arcweft-compiler"
+          ],
+          "status": "runtime",
+          "terminal": {
+            "version": 1,
+            "base": "6b72d7ca42beb3661a7025598cf74a341d61fc21",
+            "run": "typed-proof-dependencies-consumers-20261106-compiler_generic.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   1.272s] 11 tests run: 11 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 11,
+            "passed": 11,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T00:57:59.0038683Z"
+          }
+        },
+        {
+          "name": "compiler_view",
+          "packages": [
+            "arcweft-compiler"
+          ],
+          "runtimePackages": [
+            "arcweft-compiler"
+          ],
+          "status": "runtime",
+          "terminal": {
+            "version": 1,
+            "base": "b705473419038e6a825a1bdfdb5a8e32576be6ff",
+            "run": "typed-proof-dependencies-consumers-20261106-compiler_view.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [  69.396s] 72 tests run: 72 passed (1 slow), 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 72,
+            "passed": 72,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T00:59:36.089694Z"
+          }
+        },
+        {
+          "name": "compiler_lib",
+          "packages": [
+            "arcweft-compiler"
+          ],
+          "runtimePackages": [
+            "arcweft-compiler"
+          ],
+          "status": "runtime",
+          "terminal": {
+            "version": 1,
+            "base": "b705473419038e6a825a1bdfdb5a8e32576be6ff",
+            "run": "typed-proof-dependencies-consumers-20261106-compiler_lib.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   4.534s] 191 tests run: 191 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 191,
+            "passed": 191,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:00:13.2616389Z"
+          }
+        },
+        {
+          "name": "compiler_group1",
+          "packages": [
+            "arcweft-compiler"
+          ],
+          "runtimePackages": [
+            "arcweft-compiler"
+          ],
+          "status": "runtime",
+          "terminal": {
+            "version": 1,
+            "base": "b705473419038e6a825a1bdfdb5a8e32576be6ff",
+            "run": "typed-proof-dependencies-consumers-20261106-compiler_group1.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [  11.050s] 17 tests run: 17 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 17,
+            "passed": 17,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:00:56.1035365Z"
+          }
+        },
+        {
+          "name": "compiler_group2",
+          "packages": [
+            "arcweft-compiler"
+          ],
+          "runtimePackages": [
+            "arcweft-compiler"
+          ],
+          "status": "runtime",
+          "terminal": {
+            "version": 1,
+            "base": "b705473419038e6a825a1bdfdb5a8e32576be6ff",
+            "run": "typed-proof-dependencies-consumers-20261106-compiler_group2.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [  30.433s] 335 tests run: 335 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 335,
+            "passed": 335,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:02:07.4179046Z"
+          }
+        },
+        {
+          "name": "compiler_group3",
+          "packages": [
+            "arcweft-compiler"
+          ],
+          "runtimePackages": [
+            "arcweft-compiler"
+          ],
+          "status": "runtime",
+          "terminal": {
+            "version": 1,
+            "base": "b705473419038e6a825a1bdfdb5a8e32576be6ff",
+            "run": "typed-proof-dependencies-consumers-20261106-compiler_group3.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   1.679s] 66 tests run: 66 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 66,
+            "passed": 66,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:02:42.9629244Z"
+          }
+        },
+        {
+          "name": "compiler_group4",
+          "packages": [
+            "arcweft-compiler"
+          ],
+          "runtimePackages": [
+            "arcweft-compiler"
+          ],
+          "status": "runtime",
+          "terminal": {
+            "version": 1,
+            "base": "b705473419038e6a825a1bdfdb5a8e32576be6ff",
+            "run": "typed-proof-dependencies-consumers-20261106-compiler_group4.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   2.485s] 43 tests run: 43 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 43,
+            "passed": 43,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:03:23.9712661Z"
+          }
+        },
+        {
+          "name": "compiler_group5",
+          "packages": [
+            "arcweft-compiler"
+          ],
+          "runtimePackages": [
+            "arcweft-compiler"
+          ],
+          "status": "runtime",
+          "terminal": {
+            "version": 1,
+            "base": "b705473419038e6a825a1bdfdb5a8e32576be6ff",
+            "run": "typed-proof-dependencies-consumers-20261106-compiler_group5.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   0.885s] 14 tests run: 14 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 14,
+            "passed": 14,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:04:03.296358Z"
+          }
+        },
+        {
+          "name": "compiler_group6",
+          "packages": [
+            "arcweft-compiler"
+          ],
+          "runtimePackages": [
+            "arcweft-compiler"
+          ],
+          "status": "runtime",
+          "terminal": {
+            "version": 1,
+            "base": "8651b7caec180a310de0aca39952483ffd5dac46",
+            "run": "typed-proof-dependencies-consumers-20261106-compiler_group6.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   2.126s] 66 tests run: 66 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 66,
+            "passed": 66,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:04:48.1162634Z"
+          }
+        },
+        {
+          "name": "compiler_group7",
+          "packages": [
+            "arcweft-compiler"
+          ],
+          "runtimePackages": [
+            "arcweft-compiler"
+          ],
+          "status": "runtime",
+          "terminal": {
+            "version": 1,
+            "base": "8651b7caec180a310de0aca39952483ffd5dac46",
+            "run": "typed-proof-dependencies-consumers-20261106-compiler_group7.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   2.336s] 12 tests run: 12 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 12,
+            "passed": 12,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:05:16.9041472Z"
+          }
+        },
+        {
+          "name": "host_native",
+          "packages": [
+            "arcweft-runtime-host",
+            "arcweft-player-native"
+          ],
+          "runtimePackages": [
+            "arcweft-player-native",
+            "arcweft-runtime-host"
+          ],
+          "status": "runtime",
+          "terminal": {
+            "version": 1,
+            "base": "8651b7caec180a310de0aca39952483ffd5dac46",
+            "run": "typed-proof-dependencies-consumers-20261106-host_native.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   3.697s] 135 tests run: 135 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 135,
+            "passed": 135,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 2,
+            "matchedPackages": 2,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:08:50.0812327Z"
+          }
+        },
+        {
+          "name": "player_web",
+          "packages": [
+            "arcweft-player-web"
+          ],
+          "runtimePackages": [
+            "arcweft-player-web"
+          ],
+          "status": "runtime",
+          "terminal": {
+            "version": 1,
+            "base": "615b1568d563f121c042721c32e42a2442eb952d",
+            "run": "typed-proof-dependencies-consumers-20261106-player_web.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   0.350s] 36 tests run: 36 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 36,
+            "passed": 36,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:09:36.4520046Z"
+          }
+        },
+        {
+          "name": "agent",
+          "packages": [
+            "arcweft-agent-mcp",
+            "arcweft-agent-mcp-client",
+            "arcweft-agent-repl"
+          ],
+          "status": "incomplete",
+          "exception": "Focused catalog failed"
+        },
+        {
+          "name": "cli",
+          "packages": [
+            "arcweft-cli"
+          ],
+          "runtimePackages": [
+            "arcweft-cli"
+          ],
+          "status": "runtime",
+          "terminal": {
+            "version": 1,
+            "base": "615b1568d563f121c042721c32e42a2442eb952d",
+            "run": "typed-proof-dependencies-consumers-20261106-cli.runtime",
+            "actualExitCode": 100,
+            "summary": "Summary [ 555.489s] 712 tests run: 705 passed (27 slow), 7 failed, 23 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 712,
+            "passed": 705,
+            "failed": 7,
+            "skipped": 23,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [
+              {
+                "status": "FAIL",
+                "binary": "arcweft-cli::check",
+                "test": "agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering"
+              },
+              {
+                "status": "FAIL",
+                "binary": "arcweft-cli::check",
+                "test": "spec_valid_run_edge_fixture_now_executes"
+              },
+              {
+                "status": "FAIL",
+                "binary": "arcweft-cli::check",
+                "test": "unsafe_json_lists_audit_regions"
+              },
+              {
+                "status": "FAIL",
+                "binary": "arcweft-cli::check",
+                "test": "verify_json_records_required_solver_checks"
+              },
+              {
+                "status": "FAIL",
+                "binary": "arcweft-cli::check",
+                "test": "verify_json_reports_missing_promotion_proof"
+              },
+              {
+                "status": "FAIL",
+                "binary": "arcweft-cli::check",
+                "test": "spec_rejected_edge_fixtures_fail_with_diagnostics"
+              },
+              {
+                "status": "FAIL",
+                "binary": "arcweft-cli::check",
+                "test": "verify_json_respects_semantic_defer_cancel_discharge"
+              }
+            ],
+            "isPassingRun": false,
+            "recordedAt": "2026-11-06T01:20:14.3671221Z"
+          }
+        }
+      ],
+      "cliComparison": {
+        "previousSource": "db071219f84e57186efa9d40dccc3bb8620f417c",
+        "previousFailures": [
+          "arcweft-cli::check agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering",
+          "arcweft-cli::check spec_valid_run_edge_fixture_now_executes",
+          "arcweft-cli::check unsafe_json_lists_audit_regions",
+          "arcweft-cli::check verify_json_records_required_solver_checks",
+          "arcweft-cli::check spec_rejected_edge_fixtures_fail_with_diagnostics",
+          "arcweft-cli::check verify_json_reports_missing_promotion_proof",
+          "arcweft-cli::check verify_json_respects_semantic_defer_cancel_discharge"
+        ],
+        "currentFailures": [
+          "arcweft-cli::check agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering",
+          "arcweft-cli::check spec_valid_run_edge_fixture_now_executes",
+          "arcweft-cli::check unsafe_json_lists_audit_regions",
+          "arcweft-cli::check verify_json_records_required_solver_checks",
+          "arcweft-cli::check verify_json_reports_missing_promotion_proof",
+          "arcweft-cli::check spec_rejected_edge_fixtures_fail_with_diagnostics",
+          "arcweft-cli::check verify_json_respects_semantic_defer_cancel_discharge"
+        ],
+        "added": [],
+        "resolved": []
+      },
+      "raw": {
+        "path": "docs/implementation/acceptance-evidence/task-typed-proof-dependencies-consumers.raw.zip",
+        "bytes": 168402,
+        "sha256": "3139992fbb7a0c8867d752f0157d41eda8eeeb7eee3b32944061430231d9836e",
+        "entryDrift": 0,
+        "entries": [
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-agent.catalog.json",
+            "bytes": 637,
+            "sha256": "57b2598870ffd70762c6136fd1c37fb66331161ec611d2b29f2ad2ee5fd9b0e0"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-agent.catalog.log",
+            "bytes": 159751,
+            "sha256": "c760e74f24a1a515009fb65358443f063715c3e394ff4673e74c9f92f638d7a6"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-cli.binaries-before.json",
+            "bytes": 2892,
+            "sha256": "1a72a21e12981e930ae56a2aab6926bd36f521138b81b717a1d788380b3fd63d"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-cli.catalog.inventory.json",
+            "bytes": 176388,
+            "sha256": "04ff124b373451ed5e96dd3af8bb5c9b65c8a842167e5b99a596f3126d9f2c78"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-cli.catalog.json",
+            "bytes": 545,
+            "sha256": "93cc93d8754d81e87b2af9ce3e9c56895c75a3c4ac99785c1d83949a47022b4d"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-cli.runtime.json",
+            "bytes": 639,
+            "sha256": "0f580448c517cd131bdfde8c05e149a073a1c6e99e307d0d3bb93857412aaa4a"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-cli.runtime.log",
+            "bytes": 317206,
+            "sha256": "370c2d3892b4fbd56518f872d483b172d240a1df098cd5ee3eeabe2b98733ea8"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-cli.runtime.terminal-audit.json",
+            "bytes": 1690,
+            "sha256": "c2d0e37ddb04da4219920a2e7c5f32b81df51b2bc7d2ed9f88a0f45d0e383585"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-host_native.binaries-before.json",
+            "bytes": 2503,
+            "sha256": "14cb552bc69b130d9e50fe1b8149d2ed085fa7f12473d832e149984090123dc8"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-host_native.catalog.inventory.json",
+            "bytes": 33932,
+            "sha256": "dbb51dca937f7a2d072edd1c5a4fe2c9b53cee601855eeb313ef87b845af6744"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-host_native.catalog.json",
+            "bytes": 603,
+            "sha256": "2c8324d05b4a042e4e109a6bdde3b2d01ca939295b91f2a0c4e650f27c85ff3b"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-host_native.runtime.json",
+            "bytes": 695,
+            "sha256": "843ce4e9e4299e5f0b6c265b9b21edf14d4cecff99b895b67cbd5eecd9bb1692"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-host_native.runtime.log",
+            "bytes": 125415,
+            "sha256": "0b1f6bce32e561d7db575ce530ba9b6cc3e1c642a4d728c76714689f94b8b09b"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-host_native.runtime.terminal-audit.json",
+            "bytes": 640,
+            "sha256": "f631f701f98e1f51159c2e15789f869a53dfb6fbe7d51e8d8e93427f2d83a202"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-player_web.binaries-before.json",
+            "bytes": 1395,
+            "sha256": "dd91c87519b2800bffed69b1ab0bac6893f0082a477b534e807f40cdacd146d0"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-player_web.catalog.inventory.json",
+            "bytes": 8511,
+            "sha256": "b4776bdb8ea5dac3cc44ea7877b53e08f87c06a5db200a84b54b0785dbbd4f9e"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-player_web.catalog.json",
+            "bytes": 559,
+            "sha256": "3d5c3ed69f370ad5615f255900d078b288118bcc5ee1817c7c89075e910f8a83"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-player_web.runtime.json",
+            "bytes": 651,
+            "sha256": "afac7a287315908c0f80b7fd18075226769da302e69d25c05d5e5768ca21aa07"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-player_web.runtime.log",
+            "bytes": 93660,
+            "sha256": "e9f65773e6e47ea8f565fca7167a11e9219ed6298ec06b635222e2f93c2a3fcb"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-player_web.runtime.terminal-audit.json",
+            "bytes": 635,
+            "sha256": "0af98096553c096e00aeb14f091133653291b83747692181f50878cff0cad6dc"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-verify_lsp.binaries-before.json",
+            "bytes": 1800,
+            "sha256": "429186449d88ea952692ff4c2b24d4cab0abd7d1f717c1d6e1a1d67adba20a6e"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-verify_lsp.catalog.inventory.json",
+            "bytes": 59851,
+            "sha256": "28d1f10e055c45e3b4d3f7aa113595f81ab2e431e9538b25ba889112ef79651b"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-verify_lsp.catalog.json",
+            "bytes": 700,
+            "sha256": "8d851282b25cad4967bc6b0362234529f1e2f0abdc7c584227cafb8c85e74d27"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-verify_lsp.runtime.json",
+            "bytes": 792,
+            "sha256": "3a90f68679ff88a7f156822d2846935bbb6fb2735cb0df5444ed850276bba659"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-verify_lsp.runtime.log",
+            "bytes": 153962,
+            "sha256": "e4cbccd36d0d4467660d85d12ca66ce4384e8304ff3047b9f4b09b4febba1f76"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-verify_lsp.runtime.terminal-audit.json",
+            "bytes": 639,
+            "sha256": "cad205e394dbf747e014e7662197f26e7ff15388420c8769a02dabdc75b4aa29"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106.batch-progress.json",
+            "bytes": 8736,
+            "sha256": "f579e5750f872a324d624bcaf937c832b3d7352d26f91219536dc653a9049b32"
+          }
+        ]
+      },
+      "compilerRawField": "trustedDependencies.compilerTargets.raw"
     }
   }
 }
