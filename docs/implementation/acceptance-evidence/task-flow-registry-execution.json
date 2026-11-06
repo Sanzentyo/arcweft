@@ -18374,5 +18374,90 @@
         }
       ]
     }
+  },
+  "orderedReplacementCliExpanded": {
+    "source": "f3626f1a2ffc608dced6ac28916ab2b89134b0e5",
+    "receipt": {
+      "version": 1,
+      "source": "f3626f1a2ffc608dced6ac28916ab2b89134b0e5",
+      "batch": "10",
+      "package": "arcweft-cli",
+      "targets": [
+        "test:bracket_numeric_batch",
+        "test:check",
+        "test:environment_callable_tensor"
+      ],
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-cli",
+        "--test",
+        "bracket_numeric_batch",
+        "--test",
+        "check",
+        "--test",
+        "environment_callable_tensor",
+        "--no-tests",
+        "pass",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "exitCode": 100,
+      "summary": [
+        "Summary [ 537.498s] 477 tests run: 470 passed (26 slow), 7 failed, 23 skipped"
+      ],
+      "resourceFailure": false,
+      "split": false,
+      "startedAt": "2026-11-06T20:37:01.6297299Z",
+      "finishedAt": "2026-11-06T20:46:37.1369313Z",
+      "log": "registry-reaching-type-20261107.partition.10.log"
+    },
+    "executed": 477,
+    "passed": 470,
+    "failed": 7,
+    "skipped": 23,
+    "historicalFailureComparison": {
+      "historicalEvidence": "docs/implementation/acceptance-evidence/task-lifetime-registry-key-identity.json",
+      "historicalSource": "9a719aacb210b69b981ea2940c8c184766acaa19",
+      "caseIds": [
+        "arcweft-cli::check agent_observe_native::agent_observe_reports_authored_scroll_view_capture_and_release_filtering",
+        "arcweft-cli::check spec_rejected_edge_fixtures_fail_with_diagnostics",
+        "arcweft-cli::check spec_valid_run_edge_fixture_now_executes",
+        "arcweft-cli::check unsafe_json_lists_audit_regions",
+        "arcweft-cli::check verify_json_records_required_solver_checks",
+        "arcweft-cli::check verify_json_reports_missing_promotion_proof",
+        "arcweft-cli::check verify_json_respects_semantic_defer_cancel_discharge"
+      ],
+      "caseIdDrift": 0,
+      "checkedSourceInputs": 3638,
+      "sourceDrift": []
+    },
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-registry-reaching-type-expanded-cli.raw.zip",
+      "sha256": "dba6b1a934d978259b0bf7a0f94cc26dfc163e114989dc08a9694995706694f6",
+      "entries": [
+        {
+          "entry": "registry-reaching-type-20261107.partition.10.log",
+          "bytes": 252445,
+          "sha256": "3be7d95619a37310e0a8710c366e3074e5b9fbf96dd977736f87a9f58ac5b32f"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.10.receipt.json",
+          "bytes": 943,
+          "sha256": "dbc415d3d6b53071e913b6d5d799f96806a9a7e186a409699aa496a3cd9d9862"
+        },
+        {
+          "entry": "registry-reaching-type-20261107.partition.10.comparison.json",
+          "bytes": 824,
+          "sha256": "63e1b66f7e19e627eca2420ac246ee090fd9cf48010c4cf531f06922893a7b7f"
+        }
+      ]
+    }
   }
 }

@@ -15121,3 +15121,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Registry reads around init cleanup
 
 - Source f3626f1a2ffc608dced6ac28916ab2b89134b0e5 の実CLIで、ログだけの defer がある init 内の読取りは通過した。同じキーに別型を書き込む defer を登録すると、init 終了前の読取りを型検査が拒否した。正常終了する init の defer on failed に同じ書込みを置いても、init 終了後の読取りを拒否した。通常終了時に別型を書き込む init と Line 全体の defer の後で古い型を要求する対照も拒否された。[5入力・実CLI原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Expanded CLI partition for registry type inference
+
+- Source f3626f1a2ffc608dced6ac28916ab2b89134b0e5 の CLI 統合3ターゲットで477件を実行し、470件通過、7件失敗、23件スキップだった。失敗IDは 9a719aacb210b69b981ea2940c8c184766acaa19 の逆依存検証と一致した。ソース入力3638件の差分は0件。[今回の実測・原本](acceptance-evidence/task-flow-registry-execution.json)、[照合元](acceptance-evidence/task-lifetime-registry-key-identity.json)。
