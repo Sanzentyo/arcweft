@@ -14914,3 +14914,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source `b87f2ae1eb2bf6c7aafc97609237d10b686eecba` は、文脈型が定まる必須読取りを、到達する全経路で同じ型の登録が成立する場合に受理する。分岐両側の値、Line初期化でのLineと親Flowの読取りを、Nativeと正規デコードしたAWBCで確認した。未登録分岐・0回のループ・型違い・共有ハンドラーの書込みだけを根拠にした読取りを拒否した。
 - Sema／RuntimePlanの1,513件とCompilerのevaluated_effects 59件がPASS、ownerで1件skip。workspace check／Clippy／構造ゲートの終了コードは順に 0／0／0。先行実行と最終実行を個別に記録した。Cargoで照合した22逆依存の全実行は継続する。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-06 — Required registry read type inference
+
+- Source `f4c696d295c064d5739f27d04591ee52b8ad2055` で、同じ Flow／Line 内の検査済み書込みから必須読取りの型を推論し、到達経路ごとの登録は既存の制御フロー検査で証明する。Compilerで型注釈あり／なしの分岐両側とLine初期化をNative／正規デコードAWBCで実行した。
+- 初回はSema／RuntimePlanが1,513 PASS／2 FAIL／1 skip、Compiler対象が58 PASS／1 FAIL。Flowの分岐bodyと独立ThreadをHIR上の所有関係で区別し、optional読取りの型不一致診断を戻した。最終は順に1,515 PASS／1 skipと59 PASS。workspace check／Clippy／構造ゲートはすべてexit 0。全22逆依存の実行検証は別に追跡する。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
