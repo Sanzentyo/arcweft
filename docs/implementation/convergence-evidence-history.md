@@ -14964,3 +14964,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source 64829f5d62302e2d658e88494655c7cef2cc96aa で、Native と正規デコード済み AWBC の親が子の StageActor を移動してから借用した。Look コマンドは元の actor ID と親の cue ID を保持し、cue を取り消した後に元の actor を一度だけ解放した。AWBC は各ステップの公開保存を復元し、保留中の借用コマンドを改変した保存を拒否して元の実行を継続した。
 - 初回は省略した crossfade の Duration 型未登録で2件失敗した。登録後は Source の nominal Look と実行側の旧形式が一致せず2件失敗した。修復後の Compiler 統合87件と Core／RuntimePlan 2422件が通過し、構造監査のブロッキング違反は0件だった。全体の cargo clean は25,901ファイル、61.3 GiBを削除した。先行の53パッケージ検証はカタログ作成中に中断した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-06 — StageActor reverse tests and result publication failures
+
+- Source 64829f5d62302e2d658e88494655c7cef2cc96aa の逆依存検証は CLI のライブラリ・バイナリ196件と統合29件が通過した。非CLIの初回は registry_contract のビルド時に Core の rlib を参照できず、実行件数0で終了した。
+- 同じ公開ソースから生成した依存物を使い、三段の対話で中間の out が Native と AWBC の両方で失敗することを再現した。別の単一対話では、ワイルドカードに返した StageActor の解放待ち中に公開保存を復元できなかった。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。

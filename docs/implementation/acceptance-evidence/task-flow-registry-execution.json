@@ -12690,5 +12690,350 @@
         }
       ]
     }
+  },
+  "awbcNestedStageActorLookReverseAndResultBaseline": {
+    "source": "64829f5d62302e2d658e88494655c7cef2cc96aa",
+    "observedHead": "5f3aac31eb92750c07f9ce249c0ac319e7f75515",
+    "reverseNonCli": {
+      "receipt": {
+        "version": 1,
+        "base": "5f3aac31eb92750c07f9ce249c0ac319e7f75515",
+        "command": [
+          "nextest",
+          "list",
+          "--locked",
+          "--lib",
+          "--tests",
+          "-p",
+          "arcweft",
+          "-p",
+          "arcweft-adapter-desktop",
+          "-p",
+          "arcweft-adapter-sema",
+          "-p",
+          "arcweft-agent-mcp",
+          "-p",
+          "arcweft-agent-mcp-client",
+          "-p",
+          "arcweft-agent-policy",
+          "-p",
+          "arcweft-agent-protocol",
+          "-p",
+          "arcweft-agent-repl",
+          "-p",
+          "arcweft-agent-runner",
+          "-p",
+          "arcweft-browser-bench",
+          "-p",
+          "arcweft-bundle",
+          "-p",
+          "arcweft-bundle-assets",
+          "-p",
+          "arcweft-character-view",
+          "-p",
+          "arcweft-compiler",
+          "-p",
+          "arcweft-core",
+          "-p",
+          "arcweft-debug-model",
+          "-p",
+          "arcweft-debug-sqlite",
+          "-p",
+          "arcweft-dialogue",
+          "-p",
+          "arcweft-glyphon",
+          "-p",
+          "arcweft-host-adapter",
+          "-p",
+          "arcweft-lang-jit-cranelift",
+          "-p",
+          "arcweft-lang-sema",
+          "-p",
+          "arcweft-launch",
+          "-p",
+          "arcweft-lsp",
+          "-p",
+          "arcweft-player-native",
+          "-p",
+          "arcweft-player-scene",
+          "-p",
+          "arcweft-player-text-input",
+          "-p",
+          "arcweft-player-web",
+          "-p",
+          "arcweft-project",
+          "-p",
+          "arcweft-project-loader",
+          "-p",
+          "arcweft-rag",
+          "-p",
+          "arcweft-render-text",
+          "-p",
+          "arcweft-render-web",
+          "-p",
+          "arcweft-render-wgpu",
+          "-p",
+          "arcweft-resource-manifest",
+          "-p",
+          "arcweft-resource-model",
+          "-p",
+          "arcweft-runtime-accelerator",
+          "-p",
+          "arcweft-runtime-codegen",
+          "-p",
+          "arcweft-runtime-driver",
+          "-p",
+          "arcweft-runtime-host",
+          "-p",
+          "arcweft-runtime-plan",
+          "-p",
+          "arcweft-runtime-scheduler",
+          "-p",
+          "arcweft-save",
+          "-p",
+          "arcweft-test",
+          "-p",
+          "arcweft-text-layout",
+          "-p",
+          "arcweft-text-model",
+          "-p",
+          "arcweft-tooling",
+          "-p",
+          "arcweft-verify",
+          "-p",
+          "arcweft-verify-lsp",
+          "-p",
+          "arcweft-verify-oxiz",
+          "-p",
+          "arcweft-verify-z3",
+          "-p",
+          "arcweft-view",
+          "--message-format",
+          "json"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/awbc-nested-look-reverse-noncli-20261106.catalog.log",
+        "exitCode": 101,
+        "sourceInputs": 4134,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T13:28:14.4328902Z",
+        "finishedAt": "2026-11-06T13:34:30.7408503Z"
+      },
+      "testsExecuted": 0,
+      "diagnostic": "arcweft_core was required in rlib format but was not found when compiling arcweft-resource-model::registry_contract"
+    },
+    "reverseCli": [
+      {
+        "version": 1,
+        "base": "5f3aac31eb92750c07f9ce249c0ac319e7f75515",
+        "run": "awbc-nested-look-reverse-cli-lib-bin-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [  36.727s] 196 tests run: 196 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 196,
+        "passed": 196,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4134,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T13:36:33.7180503Z"
+      },
+      {
+        "version": 1,
+        "base": "5f3aac31eb92750c07f9ce249c0ac319e7f75515",
+        "run": "awbc-nested-look-reverse-cli-integration-20261106.runtime",
+        "actualExitCode": 0,
+        "summary": "Summary [   7.952s] 29 tests run: 29 passed, 0 skipped",
+        "caseRowSource": "final-status-after-summary",
+        "executed": 29,
+        "passed": 29,
+        "failed": 0,
+        "skipped": 0,
+        "selectedPackages": 1,
+        "matchedPackages": 1,
+        "noMatchingSelectedTests": [],
+        "catalogCaseDrift": 0,
+        "sourceInputs": 4134,
+        "sourceDrift": 0,
+        "held": 12,
+        "failureSet": [],
+        "isPassingRun": true,
+        "recordedAt": "2026-11-06T13:37:30.1762741Z"
+      }
+    ],
+    "baselines": [
+      {
+        "scope": "Canonical compiler source with three nested dialogue activations and a StageActor issued by the inner line. Both engines reached the second out. The decoded AWBC probe restores the public save after every step.",
+        "executed": 2,
+        "passed": 0,
+        "failed": 2,
+        "nativeTick": 13,
+        "awbcTick": 30,
+        "runs": [
+          {
+            "name": "native_nested_line_handle_reexports_from_receiving_activation",
+            "exitCode": 101,
+            "stdoutSha256": "a0c42d47c7a889fda02ec8d4aad6a2429fc0223f4af823f928aff6093e31d42b",
+            "stderrSha256": "cc783de216904c1125f2641b3254149e8b93d2471f1d14077b6e1444a3ce6b25"
+          },
+          {
+            "name": "decoded_awbc_nested_line_handle_reexports_through_save",
+            "exitCode": 101,
+            "stdoutSha256": "73359f4b5ba70802a52b5476121409a27fe3271d0f0cc14525ab94e22ece888e",
+            "stderrSha256": "749eddbfcf477925d5097e34cd451827a168a32b4c72446c4deee3773176b5a9"
+          }
+        ],
+        "diagnostics": [
+          "line handle is not live in this activation",
+          "one affine line handle token occurs more than once"
+        ]
+      },
+      {
+        "scope": "Canonical compiler source with one dialogue, a locally acquired StageActor returned by out, and a caller wildcard. The public JSON save during pending release is rejected at restore.",
+        "executed": 1,
+        "passed": 0,
+        "failed": 1,
+        "exitCode": 101,
+        "diagnostic": "restored dialogue result is inconsistent with its ledger/frame phase"
+      }
+    ],
+    "probeMethod": "The Compiler nextest artifact fingerprint selected every direct Cargo dependency. The direct test sources were compiled outside the checkout with pinned rlibs; those hashes and the workspace source stayed fixed. The direct probes are separate from the nextest catalog.",
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-line-result-reexport-baseline.raw.zip",
+      "sha256": "581c9f5e74e1f3655890c7ed2269a74bda42e286bb9293f8091ee179cd164926",
+      "entries": [
+        {
+          "entry": "awbc-nested-look-reverse-noncli-20261106.catalog.json",
+          "bytes": 2519,
+          "sha256": "3a676378a7a04175639ebf5ad686793eb26e73274ea7b010b733ff5a3727b822"
+        },
+        {
+          "entry": "awbc-nested-look-reverse-noncli-20261106.catalog.log",
+          "bytes": 116609,
+          "sha256": "878f6926e49e5fae8a80df2228f0294fba1f89fc91a3867533e4609c2a42ed70"
+        },
+        {
+          "entry": "awbc-nested-look-reverse-noncli-20261106.source-freeze.json",
+          "bytes": 808439,
+          "sha256": "5fa1486eb485f37fd1592d4b262266db255611de8d08f4437e55d3a9f28e92e6"
+        },
+        {
+          "entry": "awbc-nested-look-20261106.reverse.json",
+          "bytes": 1954,
+          "sha256": "b6d759154499cbc2fe390718726addd46792997ec5136e1e69c64897e58aea33"
+        },
+        {
+          "entry": "awbc-nested-look-reverse-cli-lib-bin-20261106.catalog.inventory.json",
+          "bytes": 47829,
+          "sha256": "44f4b16a3e7162048fc957ba081377b6a4f1a3ebd25f6d8b0c660c852c15fdbd"
+        },
+        {
+          "entry": "awbc-nested-look-reverse-cli-lib-bin-20261106.binaries-before.json",
+          "bytes": 430,
+          "sha256": "9b6139d5684037e7eda0a2e60125b05e2debb13a73dc6ae91a8a8e916c0edd4b"
+        },
+        {
+          "entry": "awbc-nested-look-reverse-cli-lib-bin-20261106.runtime.json",
+          "bytes": 641,
+          "sha256": "254eeaf55afb42c9277ed8424a59e7116b2bb64bedc9c43bc5da2263ce41d54a"
+        },
+        {
+          "entry": "awbc-nested-look-reverse-cli-lib-bin-20261106.runtime.log",
+          "bytes": 143821,
+          "sha256": "94cb3a482ab2e60823d645a49b84e0d5f4ed0bbb163913b35257de21082aee1e"
+        },
+        {
+          "entry": "awbc-nested-look-reverse-cli-lib-bin-20261106.runtime.terminal-audit.json",
+          "bytes": 630,
+          "sha256": "dc5b59c7f79134689936c33c1ae08bb361617b8aab3aaae61717222797dbff52"
+        },
+        {
+          "entry": "awbc-nested-look-reverse-cli-integration-20261106.catalog.inventory.json",
+          "bytes": 6650,
+          "sha256": "094e5f331bb1c47601d27ced7b6c2ca2128319ff10d972aa6178be6a137814b3"
+        },
+        {
+          "entry": "awbc-nested-look-reverse-cli-integration-20261106.binaries-before.json",
+          "bytes": 1511,
+          "sha256": "ce5834d5102b981e0e1933aa4911ac80aaf9086d2c3a608f5279afb30f51492d"
+        },
+        {
+          "entry": "awbc-nested-look-reverse-cli-integration-20261106.runtime.json",
+          "bytes": 907,
+          "sha256": "58d49f2ac8d20e0719d34d70aca873768004894a5614b0d860dc6f9cd9269ce9"
+        },
+        {
+          "entry": "awbc-nested-look-reverse-cli-integration-20261106.runtime.log",
+          "bytes": 95343,
+          "sha256": "acbe134801fb05ac16e0678ba8e1c621a6f935351d78d26546ceae117d625fcb"
+        },
+        {
+          "entry": "awbc-nested-look-reverse-cli-integration-20261106.runtime.terminal-audit.json",
+          "bytes": 630,
+          "sha256": "e5859cac78dc90a37430d38b3bc95cd685f52595d0f7a206fb59565104492ddd"
+        },
+        {
+          "entry": "probe-awbc-nested-reexport-20261106.ps1",
+          "bytes": 6518,
+          "sha256": "0385220744ecafff8f832832048c5525f32087308038ff3fa2c35a4f073fe52d"
+        },
+        {
+          "entry": "awbc-nested-reexport-baseline-20261106/receipt.json",
+          "bytes": 18649,
+          "sha256": "689d4dbbcad3ffba97ac87e52726e3f34343fa88f9c1a82974bf2b588d1b0202"
+        },
+        {
+          "entry": "awbc-nested-reexport-baseline-20261106/reexport.rs",
+          "bytes": 176459,
+          "sha256": "58c63ce6aaa1705b347eb5b50ac18aa306bb8335eddc9dee3b0f3e28e054a81a"
+        },
+        {
+          "entry": "awbc-line-result-wildcard-baseline-20261106/receipt.json",
+          "bytes": 585,
+          "sha256": "989100bae15e00b987793112b5acbb2f35a362881d9e6f5a649d1440b0a667a0"
+        },
+        {
+          "entry": "awbc-line-result-wildcard-baseline-20261106/wildcard.rs",
+          "bytes": 176076,
+          "sha256": "9b1e651ec864d09d3b61b1cbec3c44991e753a46460be9a7f341522ee3ff89b7"
+        },
+        {
+          "entry": "awbc-line-result-wildcard-baseline-20261106/attempt.stdout.log",
+          "bytes": 273,
+          "sha256": "7dc1bb12508b88945ee173bb7e55c92c97689dbf8415b835f34c25f59ebe3265"
+        },
+        {
+          "entry": "awbc-line-result-wildcard-baseline-20261106/attempt.stderr.log",
+          "bytes": 500,
+          "sha256": "f5cfcec036622b2bae885c53ac149470bdb5c342f88f1335f2ae293c3e290c02"
+        },
+        {
+          "entry": "awbc-nested-reexport-baseline-20261106/native_nested_line_handle_reexports_from_receiving_activation.stdout.log",
+          "bytes": 283,
+          "sha256": "a0c42d47c7a889fda02ec8d4aad6a2429fc0223f4af823f928aff6093e31d42b"
+        },
+        {
+          "entry": "awbc-nested-reexport-baseline-20261106/native_nested_line_handle_reexports_from_receiving_activation.stderr.log",
+          "bytes": 466,
+          "sha256": "cc783de216904c1125f2641b3254149e8b93d2471f1d14077b6e1444a3ce6b25"
+        },
+        {
+          "entry": "awbc-nested-reexport-baseline-20261106/decoded_awbc_nested_line_handle_reexports_through_save.stdout.log",
+          "bytes": 269,
+          "sha256": "73359f4b5ba70802a52b5476121409a27fe3271d0f0cc14525ab94e22ece888e"
+        },
+        {
+          "entry": "awbc-nested-reexport-baseline-20261106/decoded_awbc_nested_line_handle_reexports_through_save.stderr.log",
+          "bytes": 844,
+          "sha256": "749eddbfcf477925d5097e34cd451827a168a32b4c72446c4deee3773176b5a9"
+        }
+      ]
+    }
   }
 }
