@@ -14808,3 +14808,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source 6b72d7ca42beb3661a7025598cf74a341d61fc21 reproduced the existing cancellation-defer CLI failure. The maintained cancellation and both defers passed, including a control with an authorized line-registry write. Adding a direct or optional read or either drop call stopped in type-check. A flow-level optional read reproduced the same failure.
 - The accepted static registry key and checked write retain their independent evidence. The controlled inputs establish the missing read admission and do not verify a generated or discharged MustDrop obligation. [All controls, earlier variations and exact CLI output](acceptance-evidence/task-lifetime-registry-key-identity.json).
+
+## 2026-11-06 — Compiler recovery across all test targets
+
+- Source 6b72d7ca42beb3661a7025598cf74a341d61fc21. Ten all-feature locked nextest runs executed the 28 Compiler integration targets and the library target. All 827 cases passed. The catalog binary IDs and case identities were disjoint, and every run had zero drift across 4,127 input pins.
+- The earlier whole-package catalog exit 101 remains in its original evidence. The recovery used independent target partitions on the later source. [All 29 binary IDs, terminal results and raw output](acceptance-evidence/task-proof-trust-policy.json).

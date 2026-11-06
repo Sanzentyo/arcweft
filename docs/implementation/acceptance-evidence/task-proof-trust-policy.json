@@ -2865,6 +2865,626 @@
           "sha256": "84df18a1d69fac7d0ac32bd3125de4a23de4a477b449b3e39d40dcc29edeecd3"
         }
       ]
+    },
+    "compilerTargets": {
+      "version": 1,
+      "source": "6b72d7ca42beb3661a7025598cf74a341d61fc21",
+      "selectedTargets": 29,
+      "integrationTargets": 28,
+      "libraryTargets": 1,
+      "executed": 827,
+      "passed": 827,
+      "failed": 0,
+      "batches": [
+        {
+          "name": "compiler_generic",
+          "targets": [
+            "arcweft-compiler::generic_continuation_snapshot"
+          ],
+          "terminal": {
+            "version": 1,
+            "base": "6b72d7ca42beb3661a7025598cf74a341d61fc21",
+            "run": "typed-proof-dependencies-consumers-20261106-compiler_generic.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   1.272s] 11 tests run: 11 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 11,
+            "passed": 11,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T00:57:59.0038683Z"
+          }
+        },
+        {
+          "name": "compiler_view",
+          "targets": [
+            "arcweft-compiler::view_product"
+          ],
+          "terminal": {
+            "version": 1,
+            "base": "b705473419038e6a825a1bdfdb5a8e32576be6ff",
+            "run": "typed-proof-dependencies-consumers-20261106-compiler_view.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [  69.396s] 72 tests run: 72 passed (1 slow), 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 72,
+            "passed": 72,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T00:59:36.089694Z"
+          }
+        },
+        {
+          "name": "compiler_lib",
+          "targets": [
+            "arcweft-compiler"
+          ],
+          "terminal": {
+            "version": 1,
+            "base": "b705473419038e6a825a1bdfdb5a8e32576be6ff",
+            "run": "typed-proof-dependencies-consumers-20261106-compiler_lib.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   4.534s] 191 tests run: 191 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 191,
+            "passed": 191,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:00:13.2616389Z"
+          }
+        },
+        {
+          "name": "compiler_group1",
+          "targets": [
+            "arcweft-compiler::action_channel",
+            "arcweft-compiler::agent_enum_execution",
+            "arcweft-compiler::agent_project_summary",
+            "arcweft-compiler::api_compile"
+          ],
+          "terminal": {
+            "version": 1,
+            "base": "b705473419038e6a825a1bdfdb5a8e32576be6ff",
+            "run": "typed-proof-dependencies-consumers-20261106-compiler_group1.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [  11.050s] 17 tests run: 17 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 17,
+            "passed": 17,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:00:56.1035365Z"
+          }
+        },
+        {
+          "name": "compiler_group2",
+          "targets": [
+            "arcweft-compiler::assertions",
+            "arcweft-compiler::callable_execution",
+            "arcweft-compiler::catalog_asset_execution",
+            "arcweft-compiler::choice_static"
+          ],
+          "terminal": {
+            "version": 1,
+            "base": "b705473419038e6a825a1bdfdb5a8e32576be6ff",
+            "run": "typed-proof-dependencies-consumers-20261106-compiler_group2.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [  30.433s] 335 tests run: 335 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 335,
+            "passed": 335,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:02:07.4179046Z"
+          }
+        },
+        {
+          "name": "compiler_group3",
+          "targets": [
+            "arcweft-compiler::data_format_nominal",
+            "arcweft-compiler::diagnostic_ownership",
+            "arcweft-compiler::dialogue_profile_admission",
+            "arcweft-compiler::evaluated_effects"
+          ],
+          "terminal": {
+            "version": 1,
+            "base": "b705473419038e6a825a1bdfdb5a8e32576be6ff",
+            "run": "typed-proof-dependencies-consumers-20261106-compiler_group3.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   1.679s] 66 tests run: 66 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 66,
+            "passed": 66,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:02:42.9629244Z"
+          }
+        },
+        {
+          "name": "compiler_group4",
+          "targets": [
+            "arcweft-compiler::flow_effects",
+            "arcweft-compiler::flow_include",
+            "arcweft-compiler::flow_wait",
+            "arcweft-compiler::inline_failure_policy"
+          ],
+          "terminal": {
+            "version": 1,
+            "base": "b705473419038e6a825a1bdfdb5a8e32576be6ff",
+            "run": "typed-proof-dependencies-consumers-20261106-compiler_group4.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   2.485s] 43 tests run: 43 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 43,
+            "passed": 43,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:03:23.9712661Z"
+          }
+        },
+        {
+          "name": "compiler_group5",
+          "targets": [
+            "arcweft-compiler::iterator_witness_source",
+            "arcweft-compiler::local_declaration_source",
+            "arcweft-compiler::named_scopes",
+            "arcweft-compiler::parser_diagnostic"
+          ],
+          "terminal": {
+            "version": 1,
+            "base": "b705473419038e6a825a1bdfdb5a8e32576be6ff",
+            "run": "typed-proof-dependencies-consumers-20261106-compiler_group5.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   0.885s] 14 tests run: 14 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 14,
+            "passed": 14,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:04:03.296358Z"
+          }
+        },
+        {
+          "name": "compiler_group6",
+          "targets": [
+            "arcweft-compiler::project_cache_transaction",
+            "arcweft-compiler::project_function_instances",
+            "arcweft-compiler::runtime_color",
+            "arcweft-compiler::scope_propagation"
+          ],
+          "terminal": {
+            "version": 1,
+            "base": "8651b7caec180a310de0aca39952483ffd5dac46",
+            "run": "typed-proof-dependencies-consumers-20261106-compiler_group6.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   2.126s] 66 tests run: 66 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 66,
+            "passed": 66,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:04:48.1162634Z"
+          }
+        },
+        {
+          "name": "compiler_group7",
+          "targets": [
+            "arcweft-compiler::source_presentation_driver",
+            "arcweft-compiler::try_pipe"
+          ],
+          "terminal": {
+            "version": 1,
+            "base": "8651b7caec180a310de0aca39952483ffd5dac46",
+            "run": "typed-proof-dependencies-consumers-20261106-compiler_group7.runtime",
+            "actualExitCode": 0,
+            "summary": "Summary [   2.336s] 12 tests run: 12 passed, 0 skipped",
+            "caseRowSource": "final-status-after-summary",
+            "executed": 12,
+            "passed": 12,
+            "failed": 0,
+            "skipped": 0,
+            "selectedPackages": 1,
+            "matchedPackages": 1,
+            "noMatchingSelectedTests": [],
+            "catalogCaseDrift": 0,
+            "sourceInputs": 4127,
+            "sourceDrift": 0,
+            "held": 12,
+            "failureSet": [],
+            "isPassingRun": true,
+            "recordedAt": "2026-11-06T01:05:16.9041472Z"
+          }
+        }
+      ],
+      "scope": "Compiler targets were partitioned after the previous whole-package catalog hit Windows error 1455. All 29 actual catalog binary IDs were observed once on the later source. Compiler tests are a subset of the 13-package consumer validation.",
+      "raw": {
+        "path": "docs/implementation/acceptance-evidence/task-typed-proof-dependencies-compiler.raw.zip",
+        "bytes": 205697,
+        "sha256": "d4a749bb8da487acbbf3e38a4bfbee0ff8c44d8491ae1985f367cfcefdc08b67",
+        "entryDrift": 0,
+        "entries": [
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_generic.binaries-before.json",
+            "bytes": 254,
+            "sha256": "faf66ac3fdd086adf1712b249af7268aa3a7e60aa81c68d726bcd224d71da637"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_generic.catalog.inventory.json",
+            "bytes": 2919,
+            "sha256": "647b302e3e49c0662c6fe45ea902e0c4f7400a447a6a15eb3ab7a500d1c54008"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_generic.catalog.json",
+            "bytes": 616,
+            "sha256": "b85961e189e5192880867f29e1e7805ffba6e9787fc1ac7f7c8f9a9563dbbc4b"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_generic.runtime.json",
+            "bytes": 708,
+            "sha256": "5994e1e165c142db2b36c31a2dc921d0f3412292baad1dc4e94963ad1568f55d"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_generic.runtime.log",
+            "bytes": 88068,
+            "sha256": "ab4b5982468a2f72a4137bf9a5ea93e05eac274f6d889d9b4dffe4e0a51990cf"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_generic.runtime.terminal-audit.json",
+            "bytes": 641,
+            "sha256": "ac93442c65298b0c164454746babb07eef8eb0db62ff1adf7a90e3ab62e2754e"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group1.binaries-before.json",
+            "bytes": 965,
+            "sha256": "74fabc4d87e028cc1c4fd00346557448c9fb52d4e25a0a5f7972a0771992da1f"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group1.catalog.inventory.json",
+            "bytes": 4205,
+            "sha256": "a69c56c072c6156f2140d2a9efdc8761d2f812632aaaa2a961cdf8a712f344a8"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group1.catalog.json",
+            "bytes": 724,
+            "sha256": "484868b100ccb6d0ad9ad456cd94a24519570611404f68dd0d0c1f224716eee5"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group1.runtime.json",
+            "bytes": 816,
+            "sha256": "511274e5c3e683f6bf4ba40022081a2c9fc6f91efabf84138827e5c126300b42"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group1.runtime.log",
+            "bytes": 90340,
+            "sha256": "5069998d25d960ab3b56de7ab05c5092ff45e734b5b2bb61f22e32d2ffc357a1"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group1.runtime.terminal-audit.json",
+            "bytes": 640,
+            "sha256": "b24ee8adcd97c2468c69a03f0f826d18d21b4977539e04aa5a22671765331f9d"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group2.binaries-before.json",
+            "bytes": 961,
+            "sha256": "f10ae3c9367fda0c154070dc2d7089ba7a0382a78442c7e7ba2493f7191ad8e7"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group2.catalog.inventory.json",
+            "bytes": 82996,
+            "sha256": "d9918b412d225b60baa93f7d05e7c0a3be7b66d314c0a7547783c0029fbc1fd2"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group2.catalog.json",
+            "bytes": 722,
+            "sha256": "6924e57bfa35eac97cfefe77f449b64b98dc3bd665b9d085c94fa6ec9851d2ac"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group2.runtime.json",
+            "bytes": 814,
+            "sha256": "0b4eb1efd1fd03e4b6e67997afaf10a8d76fd0774170c6113579f3e19d857c7b"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group2.runtime.log",
+            "bytes": 179944,
+            "sha256": "6f6421ecc684742f40061526893c122d6edcb01650a971db295a91597f1cc308"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group2.runtime.terminal-audit.json",
+            "bytes": 644,
+            "sha256": "27667840c8befdcbc5f7d9e0a2f64c9e5c68530c25aec1a5e44c23d69d87a07d"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group3.binaries-before.json",
+            "bytes": 997,
+            "sha256": "ab1392ddd8141e34aa5536acb1ff694f09e68ab463033d2e8adb797bc03880bf"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group3.catalog.inventory.json",
+            "bytes": 16723,
+            "sha256": "f491224b95b57cc8244dcca1f1282827ae985915753dee67eef88a2cb7e0423b"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group3.catalog.json",
+            "bytes": 740,
+            "sha256": "0a479e021c7cf65fad1e55c3c7d13b48d276f66c915ea983c00acd0c1d9e5f43"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group3.runtime.json",
+            "bytes": 832,
+            "sha256": "3335d5817c893add1fc11b39b1baaa7ba7072bee9a712183a8b8e1ed2542e18a"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group3.runtime.log",
+            "bytes": 103688,
+            "sha256": "650e24c28314cc344a5c6d2f005a3ccd00b931590a0900dd5e7c6a61c916e4c5"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group3.runtime.terminal-audit.json",
+            "bytes": 640,
+            "sha256": "ac27857158564a773c1f1308eeed95d4b4293712061b79744c4351b8c00404b9"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group4.binaries-before.json",
+            "bytes": 941,
+            "sha256": "e4157d79735159762610fc521a0740b3e5bb2efec4e0c186ff62e31ee1252665"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group4.catalog.inventory.json",
+            "bytes": 10434,
+            "sha256": "30feedc60330ed9a7625f313b1af6e3dac1f06f7d99c996f947c5877c30e23b2"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group4.catalog.json",
+            "bytes": 712,
+            "sha256": "7f132244813e6ce0b23f1ca1035dd5b8e7c422017d086ebf5bc018ea2c029a6c"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group4.runtime.json",
+            "bytes": 804,
+            "sha256": "c23dc06f980b28e716759f65df04f9d74d119e9ac880eaf2b67f4385b5791402"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group4.runtime.log",
+            "bytes": 96991,
+            "sha256": "b226d6fbac35b51fd966f77658561cd022485b9b218fb1a90d0d1095ccdd9398"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group4.runtime.terminal-audit.json",
+            "bytes": 640,
+            "sha256": "bd65a2258c87756328ecf5e5c3d16ccbd08026e5e458682f3a9577e56e8bd3e4"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group5.binaries-before.json",
+            "bytes": 985,
+            "sha256": "f5c5c6e7caff3a17a36d50fe9e76f4f13235d5b95f09db35e9efbeb3bfe05944"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group5.catalog.inventory.json",
+            "bytes": 3516,
+            "sha256": "12c0ba7203e23ac55ca8af2aeb53622f7848936596362dacc9a60f3ed5c1d4cb"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group5.catalog.json",
+            "bytes": 734,
+            "sha256": "c19919a89a7e469a0a8304aeb87de03fd8419be2c967398bc18407388eecd781"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group5.runtime.json",
+            "bytes": 826,
+            "sha256": "05d782e033eda6691d510573b388eb5cd78e4670739d758828cf9b55da42fa35"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group5.runtime.log",
+            "bytes": 89608,
+            "sha256": "458c24631c49dc89f23ed4a0e3434eb2589620c639fb19b5cd3361829b910ebe"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group5.runtime.terminal-audit.json",
+            "bytes": 640,
+            "sha256": "d7bc43570f59be104995849c0b5bf07494d51eaadd676c0a70cb9c34868dacee"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group6.binaries-before.json",
+            "bytes": 995,
+            "sha256": "cb905c97a839428c45091c9f824940fa7d2a0e714ffa8314861b71d65da99ba2"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group6.catalog.inventory.json",
+            "bytes": 17065,
+            "sha256": "1c7d8c0572b37ed3b36a3ffc80abd30c845f30455fad7ca6e4cd0351159a7e0a"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group6.catalog.json",
+            "bytes": 739,
+            "sha256": "b4a72b3ef1575779bf7c7ac7b2100f9b331076088fb212b454754b52a83d2cdd"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group6.runtime.json",
+            "bytes": 831,
+            "sha256": "ebd328e219f2afec039c1450b45855a50098a22790eb6f17f0274309cc100c5e"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group6.runtime.log",
+            "bytes": 105564,
+            "sha256": "108c5a56ea15266d2b0d0c6eec1d886e3d602583ca62e8f3026041e59255704f"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group6.runtime.terminal-audit.json",
+            "bytes": 640,
+            "sha256": "6c0abcb9c512689118cfd3681edc10f5b345b09529b3e4b482977cc693b23412"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group7.binaries-before.json",
+            "bytes": 487,
+            "sha256": "451be95957447a0d917950b7dce5acc84df45927b23ba4538debb5353b3bb0d2"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group7.catalog.inventory.json",
+            "bytes": 2862,
+            "sha256": "8f30bd479ccb1b8e44b5e6302ad57de580bd2eb8c7107da9c63b532bc354175d"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group7.catalog.json",
+            "bytes": 644,
+            "sha256": "be7a78a7108d7b0a94c495098731657dd721b59678659c88c3f52662dd9269ce"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group7.runtime.json",
+            "bytes": 736,
+            "sha256": "c10868b26e35ca9944b46c2e9430a5d49c83ab8f6af7608588d6aec93423d91e"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group7.runtime.log",
+            "bytes": 88732,
+            "sha256": "6f5cc7ae546490fc503d4e54a2709510bfb657a6a31c4573155e6c457d7cf88c"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_group7.runtime.terminal-audit.json",
+            "bytes": 640,
+            "sha256": "a86be67201a4cd748327ef0e42319d79d22ca21ce7788c08a86de888bdd4cfa8"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_lib.binaries-before.json",
+            "bytes": 210,
+            "sha256": "333dd6369462792ba80c03b36cdf5dabd9700ac77c23bc41f55dce7af8f3c63c"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_lib.catalog.inventory.json",
+            "bytes": 48125,
+            "sha256": "481e2f8d4fe2e6a3a46f10a137630f384c2c93b99f0cea7218153dfe020fcf1f"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_lib.catalog.json",
+            "bytes": 573,
+            "sha256": "a77eb8a9f07c7546c525d7fd2a733338a1ca89f9334d2e89f31f016da41f338a"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_lib.runtime.json",
+            "bytes": 665,
+            "sha256": "991505aa4da5eb8bd14406fd1cd6740a3185e081b81ab4705395ee36a0f26618"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_lib.runtime.log",
+            "bytes": 140501,
+            "sha256": "c21bf6a91e4c2f3db6e33b8631250db3343c24e4b657e1308f835bffccc73413"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_lib.runtime.terminal-audit.json",
+            "bytes": 641,
+            "sha256": "22788719e1f078fa44c3eca2e52d7c350e7f0106b5e9158ea2585d8dcd793b58"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_view.binaries-before.json",
+            "bytes": 220,
+            "sha256": "ca31b5a7f47e41536f5f8ef88484f6d717d4c86e18af06fd39ea12fce80ff5ba"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_view.catalog.inventory.json",
+            "bytes": 17756,
+            "sha256": "8c25fab30ceb4a0f967986b38a97199aea5e1c3e833d6324fc458ce5308015f3"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_view.catalog.json",
+            "bytes": 596,
+            "sha256": "afa38ea6ac9c7f0aaad23d31492ad50565096edcbfec6f4f0fcc3873b5e31337"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_view.runtime.json",
+            "bytes": 688,
+            "sha256": "8541a6189d92117dc606c17065a49b6d95461a8840f41f5aa2f25c72590adb73"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_view.runtime.log",
+            "bytes": 104595,
+            "sha256": "98de01a391b4b103d1143c2eb9350c7424d9aea63e93d2ee28803885a9b092f5"
+          },
+          {
+            "entry": "typed-proof-dependencies-consumers-20261106-compiler_view.runtime.terminal-audit.json",
+            "bytes": 647,
+            "sha256": "bf743a33e7a7d760982c06b8aebb5ba311b5bfc6932eb9bffc76057049e1b07b"
+          }
+        ]
+      }
     }
   }
 }
