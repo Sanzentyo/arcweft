@@ -15154,5 +15154,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Scoped defer registration frontier restore fix
 
 - 公開ソース `3b7a98a0f3983c8d45148ac4e401e29a136e082b`。対話 activation の割当てから発行済みの ID を求め、保持する root と lexical scope の登録をまとめて照合する。捕捉値のない cleanup の実行待ちと実行中の両方で、次の登録IDを巻き戻した AWBC 保存を拒否し、元の owner を返した。正規の保存は毎ステップ復元できた。ソースの区切り有無を両方実行し、Native とデコード済みAWBC の逆登録順も確認した。[修正前後の実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
-- Core／Sema／RuntimePlan／Compiler の5バイナリで4,088件通過、既存1件スキップ。実行IDと一覧の差分は0件。Runtime Driver／Runtime Host／Save の14バイナリで260件通過。全ターゲット・全 feature の workspace check と Clippy は終了0で、警告を原本に保持した。ソース入力3,638件の差分と構造ゲートのブロッキング違反はともに0件。公開前から保持した tracked 12パスと untracked 6ファイルは検証範囲から分けて扱った。[コマンド・実測・原本](acceptance-evidence/task-flow-registry-execution.json)。
+- Core／Sema／RuntimePlan／Compiler の5バイナリで4,088件通過、既存1件スキップ。実行IDと一覧の差分は0件。Runtime Driver／Runtime Host／Save の14バイナリで260件通過。全ターゲット・全 feature の workspace check と Clippy は終了0で、警告を原本に保持した。ソース入力3,638件の差分と構造ゲートのブロッキング違反はともに0件。既存の未コミット変更12パスは実行時の入力ハッシュに含めた。これら12パスと既存の untracked 6ファイルは実装・証拠の公開差分と分けて保持した。[コマンド・実測・原本](acceptance-evidence/task-flow-registry-execution.json)。
 - 現状一覧では旧ソースの復元失敗を修正後の実測で更新した。旧集計の52パッケージ・222ターゲットは、`arcweft-` で始まる名前だけを抽出し、Cargo のグラフにあった `arcweft` の `lib:arcweft` を取りこぼしていた。workspace member と Cargo のテスト対象を照合し、53パッケージ・223ターゲットに訂正した。修正ソースで確認した19ターゲットと、これから検証する204ターゲットは別に記録した。旧ソースの実行数と失敗IDはその時点の証拠として保持した。[グラフ・メタデータ・検証計画の原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+- ユーザーの指定でワークスペース全体に `cargo clean` を実行した。終了コード0で168,883ファイル、224.9 GiBを削除し、直後に `target` が存在しないことを確認した。D: の空きは300,977,410,048バイトから532,319,698,944バイトになった。先行検証の結果は [公開した原本](acceptance-evidence/task-registry-defer-frontier-fix.raw.zip) に保存した。
