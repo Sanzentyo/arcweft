@@ -14887,3 +14887,9 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 - 公開CLIで登録直後の通常読取り・optional読取り・両分岐で登録した後の通常読取りは `sema.final_analysis` で失敗し、書き込みだけの対照は通過した。
 - Source `1b5884714a69d8eb4420d4c18280d193f287694c` はAWBC version 1に `ReadRegistry` を追加した。実lineまたは最寄りのFlowを選び、結果型・資源上限・保存行の元の書き込み計画を検査してから複製する。登録済み・欠落・型違い・誤った出力先を照合し、対話の初期化とmarkで各stepの公開保存復元を確認した。CoreとCompilerの対象は全2549件PASS。初回のテスト型エラー、型テーブルに起因する2件の失敗、対話fixtureの進行用ログ欠落による1件の失敗を保持した。実行試験は対象ownerとCompilerの対話・includeまで。Cargoから抽出した逆依存53パッケージ全体の実行は未完了。[実測・原本・公開SHA](acceptance-evidence/task-flow-registry-execution.json)。
 - 初回のワークスペース check とClippyはCodegenの命令分類に読取りがなかったためE0004で停止した。Source `836ebc3c678750ae75197c615a8d0e6f32b6ddd1` で、コンパイル済み領域では命令をProduct VMに戻すよう分類した。Codegen・Acceleratorの対象135件PASS。修正後のワークスペース検証は check 終了コード 0、clippy 終了コード 0、structure 終了コード 0。固定入力4130件に差分0件。[コマンドと原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-06 — Typed RuntimePlan lifetime registry reads
+
+- ワークスペース全体の `cargo clean` は exit 0。23万7,922ファイルを削除し、D: の空きが183.82 GiBから506.64 GiBに増えた。クリーン後の再ビルドではインクリメンタルコンパイルを無効にした。
+- Source `4e870814c2e61c87616d821e1128dfcfa7e1ea79` で、型付きRuntimePlanの読取りをNativeと生成AWBCに接続した。対象3クレート2537件がPASS、1件skip。NativeのFlow復元、対話から実lineと親Flowの選択、version 1式sourceの往復と切断拒否、両実行器の戻り値を確認した。固定入力4,130件とテスト一覧に差分0件。ローカル検証には既存ユーザー変更12ファイルが含まれる。
+- 初回のworkspace checkはアクセラレータの式分類漏れ、次は追加テストのコンストラクタ名で停止した。修正後はworkspace check、Clippy、構造gateがexit 0。全ターゲットのCargo metadataとcargo treeは逆依存53パッケージで一致した。Windowsのみのtreeではarcweft-render-webが外れた。全逆依存の実行は別途必要。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。

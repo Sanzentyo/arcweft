@@ -742,6 +742,14 @@ their original declaration therefore rejects registry payloads in both live and
 inert phases, before argument transfer or image construction. Registry work in
 `defer` uses an executable body with its owning execution context.
 
+A typed RuntimePlan registry read carries the same key and a presence mode.
+Native evaluates it in the reached Flow or Line scope, and AWBC lowering uses
+`ReadRegistry` with a register of the expression result type. Required reads
+fail on absence. Optional reads return a typed `Option` within a reached scope.
+Both evaluators admit the copied value against the original invocation before
+materializing it. The private expression source retains the key and mode in
+the version-one grammar.
+
 Resource access stores resource ID, access mode,
 and typed conflict policy (`Error`, `Append`, priority LWW, merge patch, or a
 fixed reduce operator).

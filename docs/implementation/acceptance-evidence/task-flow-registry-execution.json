@@ -6390,5 +6390,279 @@
         }
       ]
     }
+  },
+  "runtimePlanRegistryReadExpression": {
+    "source": "4e870814c2e61c87616d821e1128dfcfa7e1ea79",
+    "base": "f9257bf2e3bdd074efe9ffab394d99f20a952b83",
+    "tree": "edbcda3dda918f73214851a9a4966de617bf2eab",
+    "published": "4e870814c2e61c87616d821e1128dfcfa7e1ea79",
+    "patchSha256": "e5be5416a70576b049ae5ea42ba2c029a7628c541d3afb36e5133961d53ae85a",
+    "publishedBlobDrift": 0,
+    "clean": {
+      "command": [
+        "cargo",
+        "clean"
+      ],
+      "target": "D:/git/arcweft/target",
+      "removedFiles": 237922,
+      "reportedRemovedGiB": 335.2,
+      "freeBeforeGiB": 183.82,
+      "freeAfterGiB": 506.64,
+      "observedFreedGiB": 322.83,
+      "targetExistedAfter": false,
+      "exitCode": 0,
+      "rebuildIncremental": false
+    },
+    "actual": {
+      "version": 1,
+      "base": "f9257bf2e3bdd074efe9ffab394d99f20a952b83",
+      "run": "native-registry-expression-owner-clean-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [  92.679s] 2537 tests run: 2537 passed, 1 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2537,
+      "passed": 2537,
+      "failed": 0,
+      "skipped": 1,
+      "selectedPackages": 3,
+      "matchedPackages": 3,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4130,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-06T06:27:02.7413619Z"
+    },
+    "checks": [
+      {
+        "name": "check",
+        "command": [
+          "check",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4130,
+        "sourceDrift": 0
+      },
+      {
+        "name": "clippy",
+        "command": [
+          "clippy",
+          "--workspace",
+          "--all-targets",
+          "--all-features",
+          "--locked"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4130,
+        "sourceDrift": 0
+      },
+      {
+        "name": "structure",
+        "command": [
+          "+nightly",
+          "-Zscript",
+          "tools/structure-audit.rs",
+          "--root",
+          ".",
+          "--fail-on-blocking",
+          "--write",
+          "C:\\Users\\sanze\\AppData\\Local\\Temp\\arcweft-1011-convergence-resume-cb798c1d/native-registry-expression-workspace-quality-clean-20261106.structure-report"
+        ],
+        "exitCode": 0,
+        "sourceInputs": 4130,
+        "sourceDrift": 0
+      }
+    ],
+    "attempts": [
+      "The first workspace check found a missing accelerator inventory match for the expression. The next check found a wrong constructor name in the added Native test. Both were repaired before the owner and quality passes."
+    ],
+    "reverseDependencies": {
+      "target": "all",
+      "packages": [
+        "arcweft",
+        "arcweft-adapter-desktop",
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-policy",
+        "arcweft-agent-protocol",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-browser-bench",
+        "arcweft-bundle",
+        "arcweft-bundle-assets",
+        "arcweft-character-view",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-core",
+        "arcweft-debug-model",
+        "arcweft-debug-sqlite",
+        "arcweft-dialogue",
+        "arcweft-glyphon",
+        "arcweft-host-adapter",
+        "arcweft-lang-jit-cranelift",
+        "arcweft-lang-sema",
+        "arcweft-launch",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-text-input",
+        "arcweft-player-web",
+        "arcweft-project",
+        "arcweft-project-loader",
+        "arcweft-rag",
+        "arcweft-render-text",
+        "arcweft-render-web",
+        "arcweft-render-wgpu",
+        "arcweft-resource-manifest",
+        "arcweft-resource-model",
+        "arcweft-runtime-accelerator",
+        "arcweft-runtime-codegen",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-runtime-scheduler",
+        "arcweft-save",
+        "arcweft-test",
+        "arcweft-text-layout",
+        "arcweft-text-model",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3",
+        "arcweft-view"
+      ],
+      "metadataTreeDrift": 0,
+      "windowsOnlyExclusion": "arcweft-render-web",
+      "fullRuntimeExecuted": false
+    },
+    "unverifiedAtRun": [
+      "Source required and optional reads are rejected by semantic analysis.",
+      "Native inline reads admit the executing environment and the detached registry rows before copying. Full detached activation and suspended-parent session accounting needs integration.",
+      "The run did not include registry drop and ownership-transfer acceptance."
+    ],
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-native-registry-read-expression.raw.zip",
+      "sha256": "21a917337e2832647f29b4a70ad0aacb99097877474cf79043b3125c3e7bdd33",
+      "entries": [
+        {
+          "entry": "native-registry-workspace-clean-20261106.receipt.json",
+          "bytes": 319,
+          "sha256": "52375e74f5c00b6d37e29bd9750b0158e5fa7f90e57484d7566ef40d8317c6c2"
+        },
+        {
+          "entry": "native-registry-expression-first-20261106.log",
+          "bytes": 17022,
+          "sha256": "fafb72410f2aeb37da801083869df8fc6444123c2cb45d2dfb06624c08e0cb31"
+        },
+        {
+          "entry": "native-registry-expression-check-20261106.log",
+          "bytes": 17413,
+          "sha256": "8c68111a8e7a697ff3ac4132ee0fafdfb168ad5b08e60ce2f0abd07b5e4dcf14"
+        },
+        {
+          "entry": "native-registry-clean-workspace-check-20261106.log",
+          "bytes": 108689,
+          "sha256": "7b7cf4a66d8891da1124aba05e41bb6432ad34c56c167231ff78240758026557"
+        },
+        {
+          "entry": "native-registry-clean-workspace-check-final-20261106.log",
+          "bytes": 94622,
+          "sha256": "75e92e9340af49e76f895f6d5b2937f80b9aaac11fe755be2e2f9bbd4867f8c6"
+        },
+        {
+          "entry": "native-registry-expression-reverse-selection-20261106.json",
+          "bytes": 3211,
+          "sha256": "26adfbf597163e70032557a6ddff4047daa41912a3cb4b9f431bdccce2212823"
+        },
+        {
+          "entry": "native-registry-expression-reverse-selection-all-targets-20261106.json",
+          "bytes": 3290,
+          "sha256": "7199816bba0c7cd851d460f188d9cd11ebaeec0826ce3208495b85d0ed0297fb"
+        },
+        {
+          "entry": "checkpoint-native-registry-expression-20261106.verified.json",
+          "bytes": 4373,
+          "sha256": "b80c781a978cc59884b348aaa2fb40ff86f2f3bde93cb76b25666282124913f8"
+        },
+        {
+          "entry": "native-registry-expression-owner-clean-20261106.catalog.json",
+          "bytes": 647,
+          "sha256": "6aa11917b3992131c657fa0d09d11ed9de38247aee0314f60021721ae87b33a6"
+        },
+        {
+          "entry": "native-registry-expression-owner-clean-20261106.catalog.log",
+          "bytes": 538208,
+          "sha256": "8034d1c0ffa3d761fc226cfc57c3da26697fb7487bd286f4410507adf49aa4dc"
+        },
+        {
+          "entry": "native-registry-expression-owner-clean-20261106.catalog.inventory.json",
+          "bytes": 647283,
+          "sha256": "049617e1c481f3556c709e4f917b98d3a4a9bf1e5dd7d9bc81c6450a6be3e259"
+        },
+        {
+          "entry": "native-registry-expression-owner-clean-20261106.binaries-before.json",
+          "bytes": 690,
+          "sha256": "d43e4e7ac0ee37d82b9d397405dbcdfa12c744bed0de1d07c1ebb025e65211eb"
+        },
+        {
+          "entry": "native-registry-expression-owner-clean-20261106.runtime.json",
+          "bytes": 739,
+          "sha256": "5fb882b5daee461097092d20597d06efd3add16f8685c680485aec5c69a7819c"
+        },
+        {
+          "entry": "native-registry-expression-owner-clean-20261106.runtime.log",
+          "bytes": 872199,
+          "sha256": "8e7b1fb57181893185b9f54c60fbca61095bf0498c2243552ccb193394c0e2b9"
+        },
+        {
+          "entry": "native-registry-expression-owner-clean-20261106.runtime.terminal-audit.json",
+          "bytes": 636,
+          "sha256": "5aa29424c9de5d78e0ec390c46a3024a5d3691d8f78cf37fb675b405949b309d"
+        },
+        {
+          "entry": "native-registry-expression-owner-clean-20261106.source-freeze.json",
+          "bytes": 807633,
+          "sha256": "1d88676854fb71cb00955a243238afa20b25863d485d89f9ad4ebb1ab43dd7f9"
+        },
+        {
+          "entry": "native-registry-expression-workspace-quality-clean-20261106-check.log",
+          "bytes": 110543,
+          "sha256": "bbf39e4e344c5ef677f2edfb06979f70f678d96ccf9d43f2c06f5cbba9b70678"
+        },
+        {
+          "entry": "native-registry-expression-workspace-quality-clean-20261106-check.json",
+          "bytes": 600,
+          "sha256": "54b6e144941c48afbeeafabb3c6e166e6fb99e06283ef71b54d9c5d1483befcc"
+        },
+        {
+          "entry": "native-registry-expression-workspace-quality-clean-20261106-clippy.log",
+          "bytes": 8939486,
+          "sha256": "4158b3875dddd482f04955344c1d9075fdf541083cc2c358c94d738856e5b72d"
+        },
+        {
+          "entry": "native-registry-expression-workspace-quality-clean-20261106-clippy.json",
+          "bytes": 603,
+          "sha256": "f79525efdd777ae932db7b1d6e1850acea866843b715ec2da0f8c5f0634bd929"
+        },
+        {
+          "entry": "native-registry-expression-workspace-quality-clean-20261106-structure.log",
+          "bytes": 65817,
+          "sha256": "43324cc414e4d516804904d6c4c2f89a21c2051da5e7f365f4f392bf767f777c"
+        },
+        {
+          "entry": "native-registry-expression-workspace-quality-clean-20261106-structure.json",
+          "bytes": 813,
+          "sha256": "043c05b14857e43a4a122487ceff1703b627df3bd96449d13da23a40f95d0142"
+        }
+      ]
+    }
   }
 }
