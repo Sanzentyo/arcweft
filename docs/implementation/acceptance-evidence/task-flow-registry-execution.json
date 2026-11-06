@@ -9950,5 +9950,344 @@
         }
       ]
     }
+  },
+  "awbcDialogueReceiverAdmission": {
+    "source": "67f7ccf92e4ad1cd6ec68ce367cdd044c39412a0",
+    "base": "b0225379e20695c79f7857e6663d9fd3799a0925",
+    "published": "67f7ccf92e4ad1cd6ec68ce367cdd044c39412a0",
+    "tree": "9a88da95cb820ca006bb73b65fa9e512f7c18019",
+    "patchSha256": "70f94f9275930cfb069f97e0bef1cef7e0e68443d0322306a6062bd747b9e29c",
+    "blobDrift": 0,
+    "test": {
+      "version": 1,
+      "base": "b0225379e20695c79f7857e6663d9fd3799a0925",
+      "run": "awbc-dialogue-receivers-core-pinned-20261106.runtime",
+      "actualExitCode": 0,
+      "summary": "Summary [  16.952s] 2288 tests run: 2288 passed, 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2288,
+      "passed": 2288,
+      "failed": 0,
+      "skipped": 0,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4133,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [],
+      "isPassingRun": true,
+      "recordedAt": "2026-11-06T10:48:26.8733325Z"
+    },
+    "initialCompileFailures": [
+      {
+        "version": 1,
+        "base": "b0225379e20695c79f7857e6663d9fd3799a0925",
+        "command": [
+          "nextest",
+          "list",
+          "--locked",
+          "-p",
+          "arcweft-core",
+          "--lib",
+          "--message-format",
+          "json"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/awbc-dialogue-receivers-core-20261106.catalog.log",
+        "exitCode": 101,
+        "sourceInputs": 4133,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T10:38:57.263132Z",
+        "finishedAt": "2026-11-06T10:40:13.938107Z"
+      },
+      {
+        "version": 1,
+        "base": "b0225379e20695c79f7857e6663d9fd3799a0925",
+        "command": [
+          "nextest",
+          "list",
+          "--locked",
+          "-p",
+          "arcweft-core",
+          "--lib",
+          "--message-format",
+          "json"
+        ],
+        "log": "C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/awbc-dialogue-receivers-core-final-20261106.catalog.log",
+        "exitCode": 101,
+        "sourceInputs": 4133,
+        "sourceDrift": 0,
+        "startedAt": "2026-11-06T10:44:45.596779Z",
+        "finishedAt": "2026-11-06T10:45:34.8087001Z"
+      }
+    ],
+    "firstRuntime": {
+      "version": 1,
+      "base": "b0225379e20695c79f7857e6663d9fd3799a0925",
+      "run": "awbc-dialogue-receivers-core-retry-20261106.runtime",
+      "actualExitCode": 100,
+      "summary": "Summary [  17.742s] 2288 tests run: 2286 passed, 2 failed, 0 skipped",
+      "caseRowSource": "final-status-after-summary",
+      "executed": 2288,
+      "passed": 2286,
+      "failed": 2,
+      "skipped": 0,
+      "selectedPackages": 1,
+      "matchedPackages": 1,
+      "noMatchingSelectedTests": [],
+      "catalogCaseDrift": 0,
+      "sourceInputs": 4133,
+      "sourceDrift": 0,
+      "held": 12,
+      "failureSet": [
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::dialogue_activation_rejects_an_independently_valid_foreign_root_before_copy"
+        },
+        {
+          "status": "FAIL",
+          "binary": "arcweft-core",
+          "test": "awbc::product_step::tests::presentation::dialogue_bank_roundtrips_and_duplicate_activation_fiber_rejection_keeps_the_owner"
+        }
+      ],
+      "isPassingRun": false,
+      "recordedAt": "2026-11-06T10:42:54.703961Z"
+    },
+    "correction": "The first catalog needed explicit imports. In the next run the new receiver graph passed, but it reported the wrong first cause in two existing forged-snapshot tests. Bank allocation and the original content group now authenticate the activation frame before its suspension can contribute a receiver edge. The following catalog caught a mismatch between the type parameters of the frame and its fiber. The final signature uses their shared storage roles.",
+    "reverseGraph": {
+      "base": "b0225379e20695c79f7857e6663d9fd3799a0925",
+      "owners": [
+        "arcweft-core"
+      ],
+      "workspaceReversePackages": [
+        "arcweft",
+        "arcweft-adapter-desktop",
+        "arcweft-adapter-sema",
+        "arcweft-agent-mcp",
+        "arcweft-agent-mcp-client",
+        "arcweft-agent-policy",
+        "arcweft-agent-protocol",
+        "arcweft-agent-repl",
+        "arcweft-agent-runner",
+        "arcweft-browser-bench",
+        "arcweft-bundle",
+        "arcweft-bundle-assets",
+        "arcweft-character-view",
+        "arcweft-cli",
+        "arcweft-compiler",
+        "arcweft-core",
+        "arcweft-debug-model",
+        "arcweft-debug-sqlite",
+        "arcweft-dialogue",
+        "arcweft-glyphon",
+        "arcweft-host-adapter",
+        "arcweft-lang-jit-cranelift",
+        "arcweft-lang-sema",
+        "arcweft-launch",
+        "arcweft-lsp",
+        "arcweft-player-native",
+        "arcweft-player-scene",
+        "arcweft-player-text-input",
+        "arcweft-player-web",
+        "arcweft-project",
+        "arcweft-project-loader",
+        "arcweft-rag",
+        "arcweft-render-text",
+        "arcweft-render-web",
+        "arcweft-render-wgpu",
+        "arcweft-resource-manifest",
+        "arcweft-resource-model",
+        "arcweft-runtime-accelerator",
+        "arcweft-runtime-codegen",
+        "arcweft-runtime-driver",
+        "arcweft-runtime-host",
+        "arcweft-runtime-plan",
+        "arcweft-runtime-scheduler",
+        "arcweft-save",
+        "arcweft-test",
+        "arcweft-text-layout",
+        "arcweft-text-model",
+        "arcweft-tooling",
+        "arcweft-verify",
+        "arcweft-verify-lsp",
+        "arcweft-verify-oxiz",
+        "arcweft-verify-z3",
+        "arcweft-view"
+      ],
+      "features": "all",
+      "targets": "all",
+      "treeMetadataDifference": 0,
+      "reusedMetadataBase": "451425c7dc70a94760794e0e62c5918eebd2b41b",
+      "manifestDrift": 0,
+      "cargoTestTargets": 223
+    },
+    "testTargets": {
+      "total": 223,
+      "passing": 1,
+      "notRun": 222
+    },
+    "structure": {
+      "source": "67f7ccf92e4ad1cd6ec68ce367cdd044c39412a0",
+      "command": [
+        "+nightly",
+        "-Zscript",
+        "tools/structure-audit.rs",
+        "--root",
+        ".",
+        "--fail-on-blocking"
+      ],
+      "exitCode": 0,
+      "sourceInputs": 4133,
+      "sourceDrift": 0,
+      "startedAt": "2026-11-06T10:48:51.517237Z",
+      "finishedAt": "2026-11-06T10:48:56.7736684Z"
+    },
+    "workspaceCheck": "not_run",
+    "workspaceClippy": "not_run",
+    "coverage": "Live admission, the private snapshot and public save use one borrowed receiver topology. It checks the original dialogue site, rejects an unbacked suspension, and authenticates the allocator order before retaining the activation fiber as a receiver. The regression supplies an inner edge ahead of its receiver, rejects the missing intermediate frame, then admits the complete chain. It also rejects an inner fiber allocated at its parent coordinate. Existing public-save rejection and rollback atomicity tests remain active.",
+    "boundary": "This verifies receiver admission and preserves the current single-active execution limit. AWBC content generation, nested execution and the public save round trip of an actual nested session remain separate. The original 12 tracked and 6 untracked paths were held outside the checkpoint.",
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-awbc-dialogue-receivers.raw.zip",
+      "sha256": "44c53b926d10d41c9917a3ff97e95f07548d2d099f77a432f579764a4daa9f0a",
+      "entries": [
+        {
+          "entry": "awbc-dialogue-receivers-20261106.cargo-tree.txt",
+          "bytes": 19459,
+          "sha256": "b366a96025075e8716157c96ded790ee94ea9c0ae84008320c5b6ab7be47018c"
+        },
+        {
+          "entry": "awbc-dialogue-receivers-20261106.reverse.json",
+          "bytes": 1785,
+          "sha256": "5081faee1a4d747deae1a783583845f73857daa57677d48bbed60ca0bbaf3df7"
+        },
+        {
+          "entry": "checkpoint-awbc-dialogue-receivers-20261106.verified.json",
+          "bytes": 1446,
+          "sha256": "d08f02fa6adeec6f5d3aa2132d9c5ad4750a94aad68a2075f7871f246f0cee80"
+        },
+        {
+          "entry": "awbc-dialogue-receivers-structure-20261106.json",
+          "bytes": 363,
+          "sha256": "dc144abd1f55931974371f67d0319b3a7e4ec30f3ccd72c43a8303448c304a2f"
+        },
+        {
+          "entry": "awbc-dialogue-receivers-structure-20261106.log",
+          "bytes": 65698,
+          "sha256": "4f3b3b134c2d2aba861ab2192d49b834d58f946a5062f7d59f25625bb0211da2"
+        },
+        {
+          "entry": "awbc-dialogue-receivers-core-20261106.catalog.json",
+          "bytes": 529,
+          "sha256": "4e9f8d1db342c1e72a2c3a96ce18921bb9da7d36329bdac815af0bf0b3bbc7a2"
+        },
+        {
+          "entry": "awbc-dialogue-receivers-core-20261106.catalog.log",
+          "bytes": 17022,
+          "sha256": "f35206d30af2289e661b67baa1d1a2082cd56f9017243e0fc52b7eee986f3482"
+        },
+        {
+          "entry": "awbc-dialogue-receivers-core-20261106.source-freeze.json",
+          "bytes": 808242,
+          "sha256": "9d12575a5f5b41eab34258b711dff567d1da3f9bc6f95a3347504f4aa0802841"
+        },
+        {
+          "entry": "awbc-dialogue-receivers-core-final-20261106.catalog.json",
+          "bytes": 535,
+          "sha256": "73519f6207f0ffca1e028deb4c7d7ea909db859a9bf2cf3b5a3852472a8bd6b7"
+        },
+        {
+          "entry": "awbc-dialogue-receivers-core-final-20261106.catalog.log",
+          "bytes": 11465,
+          "sha256": "cbbe0f62680dfaaa44fdf6629569c47e475afa506b2a3d22656ff32abe3208d6"
+        },
+        {
+          "entry": "awbc-dialogue-receivers-core-final-20261106.source-freeze.json",
+          "bytes": 808242,
+          "sha256": "b233b02ab0f5e866976d88a27c129e666577cad5f720f6ba642e1e780a9f0c03"
+        },
+        {
+          "entry": "awbc-dialogue-receivers-core-retry-20261106.catalog.json",
+          "bytes": 533,
+          "sha256": "d0826988ff5bba65f25cf373f01bd934558c4de9195c01a5426d3b6d67f27e39"
+        },
+        {
+          "entry": "awbc-dialogue-receivers-core-retry-20261106.catalog.inventory.json",
+          "bytes": 582855,
+          "sha256": "927e6e819d907b1f7cf197aa00a9ceac132a26daf84cf044a1b76893061307f0"
+        },
+        {
+          "entry": "awbc-dialogue-receivers-core-retry-20261106.catalog.log",
+          "bytes": 428205,
+          "sha256": "d0d8a80d424732a7e702785bfa04ebb3c7d75f556caa6a84b805dc994192acf5"
+        },
+        {
+          "entry": "awbc-dialogue-receivers-core-retry-20261106.runtime.json",
+          "bytes": 627,
+          "sha256": "bcb9f0980ca5895fee8a05bc985bfb0b4bd985d9e1efef480258aa2fe53c80b5"
+        },
+        {
+          "entry": "awbc-dialogue-receivers-core-retry-20261106.runtime.log",
+          "bytes": 737729,
+          "sha256": "4961d76bc48a37c6f8c0ef05642c7535e517be7a243389644cfb96456c172607"
+        },
+        {
+          "entry": "awbc-dialogue-receivers-core-retry-20261106.runtime.terminal-audit.json",
+          "bytes": 1054,
+          "sha256": "f915a2e0c18543ab16a120cb6687f04d03318bacb49bf116ddd3044ca11f3343"
+        },
+        {
+          "entry": "awbc-dialogue-receivers-core-retry-20261106.binaries-before.json",
+          "bytes": 202,
+          "sha256": "6cf05933598897be027bd3230ca49a207f5ad02fc75422605695ba334e3f6fae"
+        },
+        {
+          "entry": "awbc-dialogue-receivers-core-retry-20261106.source-freeze.json",
+          "bytes": 808242,
+          "sha256": "148bd99966e2d2ce8a029a9222dde1162749fedf99e0539d7cda1cff4f57d9b8"
+        },
+        {
+          "entry": "awbc-dialogue-receivers-core-pinned-20261106.catalog.json",
+          "bytes": 534,
+          "sha256": "2b32e80b63ddd4c0dc95db2698d7813931f023bd4524cc28a34d4db970c328cc"
+        },
+        {
+          "entry": "awbc-dialogue-receivers-core-pinned-20261106.catalog.inventory.json",
+          "bytes": 582855,
+          "sha256": "927e6e819d907b1f7cf197aa00a9ceac132a26daf84cf044a1b76893061307f0"
+        },
+        {
+          "entry": "awbc-dialogue-receivers-core-pinned-20261106.catalog.log",
+          "bytes": 428205,
+          "sha256": "6a5d51acf4bdd85cbf4733bfaa4963f73fbef5f9672603be83a37f8b53e98d09"
+        },
+        {
+          "entry": "awbc-dialogue-receivers-core-pinned-20261106.runtime.json",
+          "bytes": 626,
+          "sha256": "2e460b7529b8f5b92e68b493dccd0b22c3917ef1613324f65bcbf1249dd416bf"
+        },
+        {
+          "entry": "awbc-dialogue-receivers-core-pinned-20261106.runtime.log",
+          "bytes": 735586,
+          "sha256": "680f53bfdbdfcd0f7cc9b29fd2f98335aaad0dbbe19356bce29d98fd674cbab3"
+        },
+        {
+          "entry": "awbc-dialogue-receivers-core-pinned-20261106.runtime.terminal-audit.json",
+          "bytes": 633,
+          "sha256": "e08e5e18496539819c678b67fe59e037c9442dcc1d1d82b7c0dd5f115e2a6e3e"
+        },
+        {
+          "entry": "awbc-dialogue-receivers-core-pinned-20261106.binaries-before.json",
+          "bytes": 202,
+          "sha256": "ce5453faaa45b5e091421910dbdf629e7e8279dbcdcf6e7aa024cf6096b1f101"
+        },
+        {
+          "entry": "awbc-dialogue-receivers-core-pinned-20261106.source-freeze.json",
+          "bytes": 808242,
+          "sha256": "4907a16e11263f771f3a272d24346b1cae843c2ebb0cdeaf135e00cad6777728"
+        }
+      ]
+    }
   }
 }

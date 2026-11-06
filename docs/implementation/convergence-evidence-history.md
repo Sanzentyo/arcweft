@@ -14939,3 +14939,8 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 
 - Source 5f9723a18aa888c7fe10ad254c04db8be5fd778a で、RuntimePlan が先にすべての対話内容ハンドルを登録する。Native で入れ子の二つの対話を明示進行し、子 Line の Bool、親 Line の String、共有 Flow の更新値をログ順で確認した。
 - Native の私有ロールバックは停止中の fiber と実行中の各対話を一度ずつ保存する。入れ子の書込み失敗を模擬し、保持中の親と子の復元、Line／Flow の参照先、累積資源枠の拒否を確認した。Compiler 83 PASS、Core／RuntimePlan 2,421 PASS・1 skip。構造監査のブロッキング違反は0。公開範囲を絞った後の workspace check は exit 0、Clippy は exit 0。初回のコンパイル失敗と訂正を保持した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-06 — AWBC dialogue receiver admission
+
+- Source 67f7ccf92e4ad1cd6ec68ce367cdd044c39412a0 は AWBC の live 実行、私有ロールバック、公開保存で受け手の照合を共有する。元の Dialogue 命令、結果 binding、fiber の発行順を確認する。子の参照を先に処理する入れ子の検証は通り、途中の親や正しい発行順が欠ける場合は拒否した。
+- Core は最終 2,288 PASS。途中の 2 件は、元実行ルートと重複 fiber の診断を出す前に親子関係を検査したため失敗した。検査順を修正し、初回と後続のコンパイル失敗も保持した。構造監査のブロッキング違反は0。入れ子の AWBC 実行と実セッションの公開保存・復元は継続する。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
