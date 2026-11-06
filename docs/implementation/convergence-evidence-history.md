@@ -15089,3 +15089,7 @@ full failed run: [layout presence evidence](acceptance-evidence/task-rich-text-l
 ## 2026-11-07 — Scheduled Cue registry runtime reverse dependencies
 
 - Source 7bb5bd2ccde1e38791c577040bb29badb60494c2 のスケジュール Cue の修正を Runtime Driver、Runtime Host、Save で再検証した。260件通過、失敗・スキップともに0件。実行前後でソース入力3638件のハッシュが一致した。現状一覧の旧件数は履歴と実測へ集約した。[実測・公開SHA・原本](acceptance-evidence/task-flow-registry-execution.json)。
+
+## 2026-11-07 — Save between scheduled capture releases
+
+- Source 2231793d9a51c0c71aed2cb7080a59e621ba8587。終了処理の確定と同時に Line が保持する時刻指定タスクの捕捉スロットを消費する。発行元の台帳と命令ジャーナルが解放応答を追跡する。二つの StageActor の解放応答を別々のステップで返し、間で AWBC を保存・復元して最後の応答まで実行した。修正前は同じ fixture を予約作業の所有状態の不整合として拒否した。Core／Compiler の対象2,567件が通過し、カタログと実行IDの差分、ソース入力3638件の差分、構造ゲートのブロッキング違反はいずれも0件。[実測・初回失敗・公開SHA](acceptance-evidence/task-flow-registry-execution.json)。

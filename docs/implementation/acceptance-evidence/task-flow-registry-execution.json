@@ -16794,5 +16794,195 @@
         }
       ]
     }
+  },
+  "scheduledCaptureClose": {
+    "source": "2231793d9a51c0c71aed2cb7080a59e621ba8587",
+    "sourcePublication": {
+      "version": 1,
+      "commit": "2231793d9a51c0c71aed2cb7080a59e621ba8587",
+      "parent": "0744bc24f1c2140d6c8890512b9c2324f3d7c2b4",
+      "tree": "2a416e90409ac2c897bc14dd937aa4d706345c07",
+      "remote": "2231793d9a51c0c71aed2cb7080a59e621ba8587",
+      "paths": [
+        {
+          "path": "crates/arcweft-compiler/tests/evaluated_effects.rs",
+          "blob": "131f2d77c041ff850b96c3a57e7de20d67c8d5d7"
+        },
+        {
+          "path": "crates/arcweft-core/src/line_task/handle.rs",
+          "blob": "4e9addf3711928e6c4975a82925f09623fea57ba"
+        },
+        {
+          "path": "docs/02-runtime/executable-runtime-core.md",
+          "blob": "2ac3e1728af875a2dfb7bcb5288d584689da9122"
+        }
+      ],
+      "blobDrift": 0,
+      "patchSha256": "14ad3b8563f5ca2773fefc215238a4ea73a906c1500345d80acd994d1e33f4b6",
+      "heldPatchSha256": "c838778adff4d217c794fa25650a77069777260a0df22f27528be31eb3fca53c",
+      "separatelyHeld": [],
+      "indexEmpty": true,
+      "at": "2026-11-06T19:38:40.6784026Z"
+    },
+    "decision": "Commit consumption of activation-owned scheduled capture slots with the cleanup journal and ledger. Issuers retain asynchronous release acknowledgements. Exact child fibers retain their own custody.",
+    "before": {
+      "version": 1,
+      "source": "0744bc24f1c2140d6c8890512b9c2324f3d7c2b4",
+      "testFixture": "crates/arcweft-compiler/tests/evaluated_effects.rs",
+      "fixtureSha256": "8bcc3bacac691614b3dd72c32e0f24cb875e21f5e21926b7c6e5d7d3f6153a88",
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "-E",
+        "test(=decoded_awbc_line_close_saves_between_scheduled_capture_releases)",
+        "--no-tests",
+        "fail",
+        "--status-level",
+        "pass",
+        "--final-status-level",
+        "fail"
+      ],
+      "exitCode": 100,
+      "startedAt": "2026-11-06T19:28:55.6776234Z",
+      "finishedAt": "2026-11-06T19:33:43.6337104Z"
+    },
+    "baselineError": "restored scheduled work is inconsistent with its cue resource or activation",
+    "owner": {
+      "version": 1,
+      "base": "0744bc24f1c2140d6c8890512b9c2324f3d7c2b4",
+      "catalogCommand": [
+        "cargo",
+        "nextest",
+        "list",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--message-format",
+        "json"
+      ],
+      "catalogExit": 0,
+      "testCommand": [
+        "cargo",
+        "nextest",
+        "run",
+        "--locked",
+        "-p",
+        "arcweft-core",
+        "--lib",
+        "-p",
+        "arcweft-compiler",
+        "--test",
+        "evaluated_effects",
+        "--no-tests",
+        "fail",
+        "--no-fail-fast",
+        "--status-level",
+        "all",
+        "--final-status-level",
+        "all"
+      ],
+      "testExit": 0,
+      "summary": "Summary [  24.968s] 2567 tests run: 2567 passed, 0 skipped",
+      "sourceInputs": 3638,
+      "sourceDrift": [],
+      "startedAt": "2026-11-06T19:34:31.868512Z",
+      "finishedAt": "2026-11-06T19:37:54.1662068Z"
+    },
+    "testIdentity": {
+      "prior": 2566,
+      "catalog": 2567,
+      "run": 2567,
+      "added": "arcweft-compiler::evaluated_effects decoded_awbc_line_close_saves_between_scheduled_capture_releases",
+      "runCatalogDrift": 0
+    },
+    "structure": {
+      "version": 1,
+      "command": [
+        "just",
+        "structure-audit-gate"
+      ],
+      "exitCode": 0,
+      "completedAt": "2026-11-06T19:34:34.8266822Z"
+    },
+    "structureBlockingViolations": 0,
+    "cargoClean": {
+      "exitCode": 0,
+      "removedFiles": 33734,
+      "cargoReported": "44.6GiB total",
+      "freeSpaceIncreaseBytes": 44608647168,
+      "targetPresentImmediatelyAfterClean": false
+    },
+    "rawArchive": {
+      "path": "docs/implementation/acceptance-evidence/task-scheduled-capture-close.raw.zip",
+      "sha256": "63369ebf13aaf7a30c751ca8dffb66b099f82334c749f45805af927a9ddc5cca",
+      "entries": [
+        {
+          "entry": "scheduled-capture-close-20261107.baseline.log",
+          "bytes": 97598,
+          "sha256": "8663a9114c29a433640840e7307b4ce67ebeccef2da26982ad2363b90e34e9a6"
+        },
+        {
+          "entry": "scheduled-capture-close-20261107.baseline.receipt.json",
+          "bytes": 714,
+          "sha256": "1c847be9a27e64546316cf8988f5dc86098688ec8ba5b74568579d5124e3e90d"
+        },
+        {
+          "entry": "scheduled-capture-close-20261107.owner.catalog.json",
+          "bytes": 440655,
+          "sha256": "2a071edda310d3acd76285135e1ea145f92c63b175b3067429697e7582836c2f"
+        },
+        {
+          "entry": "scheduled-capture-close-20261107.owner.catalog.log",
+          "bytes": 99007,
+          "sha256": "a0d93aa4ddc3dae8d503daca4ea1fb834189f3c62e2fe77bd56392999f608fb4"
+        },
+        {
+          "entry": "scheduled-capture-close-20261107.owner.runtime.log",
+          "bytes": 882381,
+          "sha256": "5d94786f33b5b97c6b6479a119078be26938b77a38c00ffee652432809f64498"
+        },
+        {
+          "entry": "scheduled-capture-close-20261107.owner.receipt.json",
+          "bytes": 923,
+          "sha256": "f6436b6ba332b88fbe4f9ec0f3e3447f20a38f9ee5752340d5c2a6c7a037a74c"
+        },
+        {
+          "entry": "scheduled-capture-close-20261107.owner.source-freeze.json",
+          "bytes": 599451,
+          "sha256": "1125b9e3668e1f66af04af1986ab356ba0e7b0face2e61c0055075340b2f0529"
+        },
+        {
+          "entry": "scheduled-capture-close-20261107.owner.test-identity.json",
+          "bytes": 200,
+          "sha256": "e6f3a8234d983c1ab592a32d0a58b2e6e32d03b62d32fa6f4584ba758b5d6676"
+        },
+        {
+          "entry": "scheduled-capture-close-20261107.structure.log",
+          "bytes": 65741,
+          "sha256": "66e9d7fef0c281640be972b3f55c8e3464409d263c5bb8a75122b010d1917d23"
+        },
+        {
+          "entry": "scheduled-capture-close-20261107.structure.receipt.json",
+          "bytes": 153,
+          "sha256": "66cf9996a583f32a2fcf3b6d63a6067a11d0db6de611da4bd52176e513d391c7"
+        },
+        {
+          "entry": "scheduled-capture-close-implementation-20261107.verified.json",
+          "bytes": 962,
+          "sha256": "557a2694d686de266979efc023961946acc40b1bf45212c36b429a7a41af09e1"
+        }
+      ]
+    }
   }
 }
