@@ -144,7 +144,7 @@ pub struct Engine<
     /// The actual main owner remains in the session while a selected child
     /// occupies the execution slot. It participates in admission and rollback.
     parked_main: Option<FlowFiber<F>>,
-    activation_registry_reads: Option<registry::NativeActivationRegistryReads>,
+    inline_dialogues: Vec<dialogue::DialogueActivationTransaction>,
     child_fibers: VecDeque<FlowFiber<F>>,
     next_fiber_id: u64,
     next_scheduled_scope_sequence: u64,
@@ -190,6 +190,13 @@ impl<N, P, R, F, D> Engine<N, P, R, F, D> {
     fn session_children(&self) -> impl Iterator<Item = &FlowFiber<F>> {
         self.session_fibers().filter(|fiber| fiber.id.0 != 0)
     }
+
+    fn session_frame<'a>(&self, fiber: &'a FlowFiber<F>, suspended: Option<&'a F>) -> &'a F {
+        match suspended {
+            Some(frame) if fiber.id == self.fiber.id => frame,
+            _ => &fiber.frame,
+        }
+    }
 }
 
 impl Clone for NativeEngineRollbackImage {
@@ -211,7 +218,7 @@ impl Clone for NativeEngineRollbackImage {
             root: self.root.clone(),
             fiber: self.fiber.clone(),
             parked_main: self.parked_main.clone(),
-            activation_registry_reads: None,
+            inline_dialogues: Vec::new(),
             child_fibers: self.child_fibers.clone(),
             next_fiber_id: self.next_fiber_id,
             next_scheduled_scope_sequence: self.next_scheduled_scope_sequence,
@@ -2089,6 +2096,9 @@ impl Engine {
         ),
         String,
     > {
+        if !self.inline_dialogues.is_empty() {
+            return Err("cannot checkpoint during an inline dialogue operation".into());
+        }
         validate_program_task_launches(
             &self.fiber,
             &self.child_fibers,
@@ -2109,7 +2119,7 @@ impl Engine {
         let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&self.plan));
         let mut admission =
             crate::value::RuntimeRetainedValueAdmission::for_program(owner.clone(), limits);
-        self.admit_live_retained_values_with_dialogue(&mut admission, None, transaction)
+        self.admit_live_fiber_values(&mut admission, None, transaction)
             .map_err(|error| error.to_string())?;
         let dialogue_activations =
             self.dialogue_activations
@@ -2164,7 +2174,7 @@ impl Engine {
                 .as_ref()
                 .map(|fiber| fiber.snapshot_with_admitted_values(&owner))
                 .transpose()?,
-            activation_registry_reads: None,
+            inline_dialogues: Vec::new(),
             child_fibers: self
                 .child_fibers
                 .iter()
@@ -2257,7 +2267,7 @@ impl Engine {
                 .parked_main
                 .map(|fiber| FlowFiber::from_rollback_image(fiber, owner))
                 .transpose()?,
-            activation_registry_reads: None,
+            inline_dialogues: Vec::new(),
             child_fibers: image
                 .child_fibers
                 .into_iter()
@@ -2427,7 +2437,7 @@ impl Engine {
             child_fibers: VecDeque::new(),
             next_fiber_id: 1,
             parked_main: None,
-            activation_registry_reads: None,
+            inline_dialogues: Vec::new(),
             next_scheduled_scope_sequence: 1,
             dialogue_occurrences: BTreeMap::new(),
             dialogue_activations: dialogue::DialogueActivationStore::default(),

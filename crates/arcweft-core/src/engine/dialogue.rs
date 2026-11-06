@@ -37,14 +37,26 @@ use crate::presentation::{
     RuntimeStageCommandOutcome, RuntimeVoiceCommandOutcome,
 };
 use crate::pure::RuntimeCallBackend;
-use crate::runtime_id::{
-    DialogueActivationId, RuntimeDeferSiteId, RuntimeLineHandleToken, RuntimePlanTypeId,
-};
+use crate::runtime_id::{RuntimeDeferSiteId, RuntimeLineHandleToken, RuntimePlanTypeId};
 use crate::value::RuntimeExprKind;
 use crate::value::ownership::RuntimeOwnedSlotId;
 use thiserror::Error;
 
 type NativeDialogueActivationState = RuntimeDialogueActivationState<RuntimePlanTypeId>;
+
+/// Between evaluations the step owns the activation transaction. During an
+/// evaluation the engine temporarily owns it and can borrow the whole contour.
+struct DialogueActivationExecutionSlot(Option<DialogueActivationTransaction>);
+
+impl DialogueActivationExecutionSlot {
+    fn transaction(&self) -> &DialogueActivationTransaction {
+        self.0.as_ref().expect("dialogue step owns its transaction")
+    }
+
+    fn transaction_mut(&mut self) -> &mut DialogueActivationTransaction {
+        self.0.as_mut().expect("dialogue step owns its transaction")
+    }
+}
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub(crate) enum DialogueExecutionError {
@@ -98,6 +110,47 @@ enum DialoguePublicationOutcome {
 }
 
 impl Engine {
+    fn with_inline_dialogue<T>(
+        &mut self,
+        slot: &mut DialogueActivationExecutionSlot,
+        run: impl FnOnce(&mut Self) -> T,
+    ) -> Result<T, LineRuntimeError> {
+        let transaction = slot.transaction();
+        transaction.line().line_registry()?;
+        if self.fiber.id != transaction.frame().parent
+            || self.fiber.persistent_id != transaction.activation().owner_fiber()
+            || !self
+                .fiber
+                .frame
+                .program
+                .same_program(&transaction.frame().execution.program)
+        {
+            return Err(LineRuntimeError::InvalidActivationOperation);
+        }
+        if !crate::entry::RuntimeSchemaLimits::engine_default()
+            .permits_depth(self.inline_dialogues.len() + 1)
+        {
+            return Err(LineRuntimeError::InvalidActivationOperation);
+        }
+        let mut transaction = slot.0.take().expect("dialogue step owns its transaction");
+        std::mem::swap(
+            &mut self.fiber.frame,
+            &mut transaction.frame_mut().execution,
+        );
+        self.inline_dialogues.push(transaction);
+        let result = run(self);
+        let mut transaction = self
+            .inline_dialogues
+            .pop()
+            .expect("inline operation retains its transaction");
+        std::mem::swap(
+            &mut self.fiber.frame,
+            &mut transaction.frame_mut().execution,
+        );
+        slot.0 = Some(transaction);
+        Ok(result)
+    }
+
     pub(super) fn begin_dialogue_activation_transaction(
         &mut self,
         activation: &crate::runtime_id::DialogueActivationId,
@@ -908,12 +961,38 @@ impl Engine {
 
     pub(super) fn resume_dialogue_activation(
         &mut self,
-        transaction: &mut DialogueActivationTransaction,
+        transaction: DialogueActivationTransaction,
+        outcomes: &[RuntimeLineHostOutcome],
+        input: &mut super::RuntimeStepInput,
+        events: &[super::TaskEvent],
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> (
+        DialogueActivationTransaction,
+        Result<DialogueActivationStep, DialogueExecutionError>,
+    ) {
+        let mut slot = DialogueActivationExecutionSlot(Some(transaction));
+        let result = self.resume_dialogue_activation_in_slot(
+            &mut slot,
+            outcomes,
+            input,
+            events,
+            pure_backend,
+        );
+        (
+            slot.0.expect("dialogue step returns its transaction"),
+            result,
+        )
+    }
+
+    fn resume_dialogue_activation_in_slot(
+        &mut self,
+        slot: &mut DialogueActivationExecutionSlot,
         outcomes: &[RuntimeLineHostOutcome],
         input: &mut super::RuntimeStepInput,
         events: &[super::TaskEvent],
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<DialogueActivationStep, DialogueExecutionError> {
+        let transaction = slot.transaction_mut();
         let activation_id = transaction.activation().clone();
         let (frame, activation) = transaction.parts_mut();
         if !frame.execution.pending_ops.is_empty()
@@ -930,22 +1009,16 @@ impl Engine {
             );
             if next_is_registry_write {
                 return self.execute_queued_activation_registry_write(
-                    transaction,
+                    slot,
                     input,
                     events,
                     pure_backend,
                 );
             }
             let before = self.activation_local_handle_owners(frame)?;
-            let staged = self.step_dialogue_execution(
-                frame,
-                (&activation_id, activation),
-                None,
-                input,
-                events,
-                pure_backend,
-                None,
-            )?;
+            let staged =
+                self.step_dialogue_execution(slot, None, input, events, pure_backend, None)?;
+            let (frame, activation) = slot.transaction_mut().parts_mut();
             self.commit_activation_assignment_discards(&activation_id, frame, activation, &before)?;
             return Ok(DialogueActivationStep::Execution(staged));
         }
@@ -1039,7 +1112,7 @@ impl Engine {
         if let FlowOp::EvaluatedEffect(RuntimeEffectExpr::RegistryWrite { key, value }) = operation
         {
             return self.execute_activation_registry_write(
-                transaction,
+                slot,
                 group.effects(),
                 key,
                 value,
@@ -1074,30 +1147,15 @@ impl Engine {
                 };
             }
             FlowOp::Let { pattern, expr } => {
-                self.bind_dialogue_let(
-                    &activation_id,
-                    frame,
-                    activation,
-                    pattern,
-                    expr,
-                    pure_backend,
-                )?;
+                self.bind_dialogue_let(&activation_id, slot, pattern, expr, pure_backend)?;
             }
             FlowOp::HostCall { binding, target } => {
                 let (args, named_args) = self
-                    .with_activation_registry_reads(
-                        activation_id,
-                        frame.parent,
-                        activation.line_registry()?,
-                        |this| {
-                            std::mem::swap(&mut this.fiber.frame.env, &mut frame.execution.env);
-                            let result =
-                                this.evaluate_host_call_arguments(&target.args, pure_backend);
-                            std::mem::swap(&mut this.fiber.frame.env, &mut frame.execution.env);
-                            result
-                        },
-                    )
+                    .with_inline_dialogue(slot, |this| {
+                        this.evaluate_host_call_arguments(&target.args, pure_backend)
+                    })?
                     .map_err(|message| DialogueExecutionError::HostCallFailed { message })?;
+                let (frame, activation) = slot.transaction_mut().parts_mut();
                 for value in args
                     .iter()
                     .chain(named_args.iter().map(|argument| &argument.value))
@@ -1156,32 +1214,27 @@ impl Engine {
             FlowOp::LineOperation { binding, operation } => {
                 self.execute_line_operation(
                     &activation_id,
-                    frame,
-                    activation,
+                    slot,
                     binding.clone(),
                     operation.clone(),
                     pure_backend,
                 )?;
             }
             FlowOp::CommitDialogueResult { value } => {
-                let value = self.evaluate_dialogue_expr(
-                    frame,
-                    (&activation_id, activation),
-                    value,
-                    pure_backend,
-                )?;
+                let value = self.evaluate_dialogue_expr(slot, value, pure_backend)?;
+                let (frame, activation) = slot.transaction_mut().parts_mut();
                 self.stage_dialogue_result(frame, activation, value)?;
                 frame.exiting_for_result = true;
             }
             FlowOp::EvaluatedEffect(effect) => {
                 let request = self.execute_dialogue_evaluated_effect(
                     &activation_id,
-                    frame,
-                    activation,
+                    slot,
                     effect,
                     pure_backend,
                 )?;
                 if let Some(request) = request {
+                    let (frame, activation) = slot.transaction_mut().parts_mut();
                     let request = match request {
                         LineEffectRequest::Panic(message)
                         | LineEffectRequest::Fail(message)
@@ -1224,14 +1277,14 @@ impl Engine {
                     .source_operation(&plan)
                     .ok_or(LineRuntimeError::InvalidActivationOperation)?;
                 let staged = self.step_dialogue_execution(
-                    frame,
-                    (&activation_id, activation),
+                    slot,
                     Some((operation, source)),
                     input,
                     events,
                     pure_backend,
                     None,
                 )?;
+                let (frame, activation) = slot.transaction_mut().parts_mut();
                 self.commit_activation_assignment_discards(
                     &activation_id,
                     frame,
@@ -1242,6 +1295,7 @@ impl Engine {
                 return Ok(DialogueActivationStep::Execution(staged));
             }
         }
+        let (frame, activation) = slot.transaction_mut().parts_mut();
         self.commit_activation_assignment_discards(
             &activation_id,
             frame,
@@ -1259,8 +1313,7 @@ impl Engine {
     /// stack; the enclosing dialogue continuation remains suspended.
     fn step_dialogue_execution(
         &mut self,
-        frame: &mut DialogueActivationFrame,
-        activation: (&DialogueActivationId, &NativeDialogueActivationState),
+        slot: &mut DialogueActivationExecutionSlot,
         operation: Option<(&FlowOp, super::code_cursor::NativeSourceOperation)>,
         input: &mut super::RuntimeStepInput,
         events: &[super::TaskEvent],
@@ -1269,41 +1322,29 @@ impl Engine {
     ) -> Result<RuntimeStepOutput, DialogueExecutionError> {
         let mut staged = RuntimeStepOutput::default();
         let mut drop_policy = None;
-        self.with_activation_registry_reads(
-            *activation.0,
-            frame.parent,
-            activation.1.line_registry()?,
-            |this| {
-                std::mem::swap(&mut this.fiber.frame, &mut frame.execution);
-                let line_registry = line_registry.map(|execution| {
-                    super::registry::NativeLineRegistryExecution::Activation(
-                        super::registry::NativeActivationRegistryExecution {
-                            parent_rows: frame.execution.env.flow_registry(),
-                            ..execution
-                        },
-                    )
-                });
-                if let Some((operation, source)) = operation {
-                    this.execute_flow_operation(
-                        std::borrow::Cow::Borrowed(operation),
-                        source,
-                        None,
-                        &mut staged,
-                        pure_backend,
-                        &mut drop_policy,
-                        line_registry,
-                    );
-                } else if !this.resume_suspended(input, events, &mut staged, pure_backend) {
-                    this.step_flow_with_line_registry(
-                        &mut staged,
-                        pure_backend,
-                        &mut drop_policy,
-                        line_registry,
-                    );
-                }
-                std::mem::swap(&mut this.fiber.frame, &mut frame.execution);
-            },
-        );
+        self.with_inline_dialogue(slot, |this| {
+            let line_registry =
+                line_registry.map(super::registry::NativeLineRegistryExecution::Activation);
+            if let Some((operation, source)) = operation {
+                this.execute_flow_operation(
+                    std::borrow::Cow::Borrowed(operation),
+                    source,
+                    None,
+                    &mut staged,
+                    pure_backend,
+                    &mut drop_policy,
+                    line_registry,
+                );
+            } else if !this.resume_suspended(input, events, &mut staged, pure_backend) {
+                this.step_flow_with_line_registry(
+                    &mut staged,
+                    pure_backend,
+                    &mut drop_policy,
+                    line_registry,
+                );
+            }
+        })?;
+        let frame = slot.transaction_mut().frame_mut();
         frame
             .execution
             .env
@@ -1655,38 +1696,26 @@ impl Engine {
 
     fn evaluate_dialogue_expr(
         &mut self,
-        state: &mut DialogueActivationFrame,
-        activation: (&DialogueActivationId, &NativeDialogueActivationState),
+        slot: &mut DialogueActivationExecutionSlot,
         expression: &crate::value::RuntimeExpr,
         pure_backend: &mut impl RuntimeCallBackend,
-    ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let rows = activation
-            .1
-            .line_registry()
-            .map_err(|_| RuntimeEvalError::RegistryReadContextRequired)?;
-        self.with_activation_registry_reads(*activation.0, state.parent, rows, |this| {
-            std::mem::swap(&mut this.fiber.frame.env, &mut state.execution.env);
-            let result = this.evaluate_expr_with_backend(expression, pure_backend);
-            std::mem::swap(&mut this.fiber.frame.env, &mut state.execution.env);
-            result
-        })
+    ) -> Result<RuntimeValue, DialogueExecutionError> {
+        self.with_inline_dialogue(slot, |this| {
+            this.evaluate_expr_with_backend(expression, pure_backend)
+        })?
+        .map_err(Into::into)
     }
 
     fn bind_dialogue_let(
         &mut self,
         activation_id: &crate::runtime_id::DialogueActivationId,
-        frame: &mut DialogueActivationFrame,
-        activation: &mut NativeDialogueActivationState,
+        slot: &mut DialogueActivationExecutionSlot,
         pattern: &RuntimePattern,
         expression: &crate::value::RuntimeExpr,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<(), DialogueExecutionError> {
-        let value = self.evaluate_dialogue_expr(
-            frame,
-            (activation_id, activation),
-            expression,
-            pure_backend,
-        )?;
+        let value = self.evaluate_dialogue_expr(slot, expression, pure_backend)?;
+        let (frame, activation) = slot.transaction_mut().parts_mut();
         let preconsumed_local = match expression.kind() {
             RuntimeExprKind::Local(read)
                 if read.mode() == crate::value::RuntimeLocalReadMode::Move =>
@@ -1808,8 +1837,7 @@ impl Engine {
     fn execute_line_operation(
         &mut self,
         activation_id: &crate::runtime_id::DialogueActivationId,
-        state: &mut DialogueActivationFrame,
-        activation: &mut NativeDialogueActivationState,
+        slot: &mut DialogueActivationExecutionSlot,
         binding: Option<RuntimePattern>,
         operation: RuntimeLineOperation,
         pure_backend: &mut impl RuntimeCallBackend,
@@ -1817,7 +1845,7 @@ impl Engine {
         let plan = std::sync::Arc::clone(&self.plan);
         let group = plan
             .line_task_groups()
-            .get(state.task_group.index())
+            .get(slot.transaction().frame().task_group.index())
             .ok_or(LineRuntimeError::UnknownTaskGroup)?;
         let site = group
             .handle_site(operation.site())
@@ -1827,6 +1855,7 @@ impl Engine {
             RuntimeLineOperation::AcquireActor {
                 character, scope, ..
             } => {
+                let (state, activation) = slot.transaction_mut().parts_mut();
                 if site.site_kind() != RuntimeLineHandleSiteKind::StageActor
                     || site.character() != Some(&character)
                 {
@@ -1876,34 +1905,28 @@ impl Engine {
                 {
                     return Err(LineRuntimeError::InvalidHandleSite.into());
                 }
-                let RuntimeValue::Duration(delay) = self.evaluate_dialogue_expr(
-                    state,
-                    (activation_id, activation),
-                    &delay,
-                    pure_backend,
-                )?
+                let RuntimeValue::Duration(delay) =
+                    self.evaluate_dialogue_expr(slot, &delay, pure_backend)?
                 else {
                     return Err(LineRuntimeError::InvalidCueDelay.into());
                 };
-                let deadline = state
+                let deadline = slot
+                    .transaction()
+                    .frame()
                     .elapsed
                     .checked_add(delay)
                     .ok_or(LineRuntimeError::CueDeadlineOverflow)?;
                 let captures = captures
                     .iter()
                     .map(|capture| {
-                        self.evaluate_dialogue_expr(
-                            state,
-                            (activation_id, activation),
-                            capture.value(),
-                            pure_backend,
-                        )
-                        .map(|value| RuntimeLocalBinding {
-                            local: capture.local(),
-                            value,
-                        })
+                        self.evaluate_dialogue_expr(slot, capture.value(), pure_backend)
+                            .map(|value| RuntimeLocalBinding {
+                                local: capture.local(),
+                                value,
+                            })
                     })
                     .collect::<Result<Vec<_>, _>>()?;
+                let (state, activation) = slot.transaction_mut().parts_mut();
                 if activation.scheduled().len() >= MAX_LINE_SCHEDULED_CALLBACKS {
                     return Err(LineRuntimeError::ScheduledCallbackLimitExceeded.into());
                 }
@@ -1992,6 +2015,7 @@ impl Engine {
                 crossfade,
                 ..
             } => {
+                let (state, activation) = slot.transaction_mut().parts_mut();
                 if site.site_kind() != RuntimeLineHandleSiteKind::StageLookCue
                     || site.character() != Some(&character)
                 {
@@ -2028,15 +2052,12 @@ impl Engine {
                     return Err(LineRuntimeError::WrongLookOwner.into());
                 }
                 let look = look.clone();
-                let RuntimeValue::Duration(crossfade) = self.evaluate_dialogue_expr(
-                    state,
-                    (activation_id, activation),
-                    &crossfade,
-                    pure_backend,
-                )?
+                let RuntimeValue::Duration(crossfade) =
+                    self.evaluate_dialogue_expr(slot, &crossfade, pure_backend)?
                 else {
                     return Err(LineRuntimeError::InvalidCrossfade.into());
                 };
+                let (state, activation) = slot.transaction_mut().parts_mut();
                 let mut ledger = activation.ledger().clone();
                 let value = RuntimeValue::Opaque(ledger.issue(
                     activation_id,
@@ -2065,6 +2086,7 @@ impl Engine {
                 });
             }
             RuntimeLineOperation::VoiceHandle { .. } => {
+                let (state, activation) = slot.transaction_mut().parts_mut();
                 if site.site_kind() != RuntimeLineHandleSiteKind::Voice {
                     return Err(LineRuntimeError::InvalidHandleSite.into());
                 }
@@ -2728,7 +2750,7 @@ impl Engine {
 
     fn execute_activation_registry_write(
         &mut self,
-        transaction: &mut DialogueActivationTransaction,
+        slot: &mut DialogueActivationExecutionSlot,
         effects: &crate::plan::RuntimeEffectSet,
         key: &arcweft_id::LifetimeRegistryKey,
         value: &crate::value::RuntimeExpr,
@@ -2747,6 +2769,7 @@ impl Engine {
             .into());
         }
         let owner = crate::task::RuntimeProgramOwner::Plan(self.plan.clone());
+        let transaction = slot.transaction();
         if !transaction.frame().execution.program.same_program(&owner) {
             return Err(RuntimeEffectMaterializeError::RegistryContextRequired.into());
         }
@@ -2787,21 +2810,12 @@ impl Engine {
             RuntimeRegistryStateUpdate::prepare(key, ty, binding.instantiation(), &mut admission)
                 .map_err(|error| failure(error.to_string()))?;
         let result = (|| {
-            let (frame, line) = transaction.parts_mut();
-            let evaluated = self.with_activation_registry_reads(
-                id,
-                frame.parent,
-                line.line_registry()?,
-                |this| {
-                    std::mem::swap(&mut this.fiber.frame, &mut frame.execution);
-                    let result = this.evaluate_expr_with_backend(value, pure_backend);
-                    std::mem::swap(&mut this.fiber.frame, &mut frame.execution);
-                    result
-                },
-            );
+            let evaluated = self.evaluate_dialogue_expr(slot, value, pure_backend)?;
             let update = prepared
-                .capture(&evaluated?)
+                .capture(&evaluated)
                 .map_err(|error| failure(error.to_string()))?;
+            let transaction = slot.transaction_mut();
+            let (frame, line) = transaction.parts_mut();
             self.commit_activation_assignment_discards(&id, frame, line, &before)?;
             advance_activation_pc(frame)?;
             self.commit_dialogue_registry_write(
@@ -2816,15 +2830,18 @@ impl Engine {
         })();
         match result {
             Ok(step) => Ok(step),
-            Err(cause) => {
-                Err(self.restore_failed_line_registry_write(transaction, image, &owner, cause))
-            }
+            Err(cause) => Err(self.restore_failed_line_registry_write(
+                slot.transaction_mut(),
+                image,
+                &owner,
+                cause,
+            )),
         }
     }
 
     fn execute_queued_activation_registry_write(
         &mut self,
-        transaction: &mut DialogueActivationTransaction,
+        slot: &mut DialogueActivationExecutionSlot,
         input: &mut super::RuntimeStepInput,
         events: &[super::TaskEvent],
         pure_backend: &mut impl RuntimeCallBackend,
@@ -2832,6 +2849,7 @@ impl Engine {
         use super::registry::NativeActivationRegistryExecution;
 
         let failure = |message| DialogueExecutionError::ActivationEffectFailed { message };
+        let transaction = slot.transaction();
         let activation = *transaction.activation();
         let owner = crate::task::RuntimeProgramOwner::Plan(self.plan.clone());
         let before = self.activation_local_handle_owners(transaction.frame())?;
@@ -2842,34 +2860,21 @@ impl Engine {
             )
             .map_err(failure)?;
         let result = (|| {
-            let (frame, line) = transaction.parts_mut();
-            let group = frame.task_group;
-            let parent = frame.parent;
-            if self.fiber.id != parent
-                || self.fiber.persistent_id != activation.owner_fiber()
-                || !self.fiber.frame.program.same_program(&owner)
-            {
-                return Err(RuntimeEffectMaterializeError::RegistryContextRequired.into());
-            }
             let mut pending = None;
             let staged = self.step_dialogue_execution(
-                frame,
-                (&activation, line),
+                slot,
                 None,
                 input,
                 events,
                 pure_backend,
                 Some(NativeActivationRegistryExecution {
-                    activation,
-                    group,
-                    rows: line.line_registry()?,
-                    parent,
-                    parent_rows: None,
                     admission: &mut admission,
                     pending: &mut pending,
                 }),
             )?;
             let write = pending.ok_or(LineRuntimeError::InvalidActivationOperation)?;
+            let transaction = slot.transaction_mut();
+            let (frame, line) = transaction.parts_mut();
             self.commit_activation_assignment_discards(&activation, frame, line, &before)?;
             self.commit_dialogue_registry_write(transaction, write)
                 .map_err(|error| failure(error.to_string()))?;
@@ -2877,9 +2882,12 @@ impl Engine {
         })();
         match result {
             Ok(step) => Ok(step),
-            Err(cause) => {
-                Err(self.restore_failed_line_registry_write(transaction, image, &owner, cause))
-            }
+            Err(cause) => Err(self.restore_failed_line_registry_write(
+                slot.transaction_mut(),
+                image,
+                &owner,
+                cause,
+            )),
         }
     }
 
@@ -2910,8 +2918,7 @@ impl Engine {
     fn execute_dialogue_evaluated_effect(
         &mut self,
         activation_id: &crate::runtime_id::DialogueActivationId,
-        state: &mut DialogueActivationFrame,
-        activation: &mut NativeDialogueActivationState,
+        slot: &mut DialogueActivationExecutionSlot,
         effect: &RuntimeEffectExpr,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<LineEffectRequest>, DialogueExecutionError> {
@@ -2920,24 +2927,18 @@ impl Engine {
             let values = effect
                 .argument_exprs()
                 .into_iter()
-                .map(|expression| {
-                    self.evaluate_dialogue_expr(
-                        state,
-                        (activation_id, activation),
-                        expression,
-                        pure_backend,
-                    )
-                })
+                .map(|expression| self.evaluate_dialogue_expr(slot, expression, pure_backend))
                 .collect::<Result<Vec<_>, _>>()?;
             let request = effect.materialize(&values)?;
             if let Some(LineEffectRequest::Wait(crate::effect::RuntimeWaitTarget::Duration(
                 duration,
             ))) = &request
             {
-                state.execution.status = crate::time::LogicalWait::start(*duration).map_or(
-                    super::FlowFiberStatus::Running,
-                    super::FlowFiberStatus::DurationWaiting,
-                );
+                slot.transaction_mut().frame_mut().execution.status =
+                    crate::time::LogicalWait::start(*duration).map_or(
+                        super::FlowFiberStatus::Running,
+                        super::FlowFiberStatus::DurationWaiting,
+                    );
             }
             return Ok(request);
         }
@@ -2948,12 +2949,8 @@ impl Engine {
             RuntimeDropPolicyExpr::Default => RuntimeDropPolicy::Default,
             RuntimeDropPolicyExpr::Cancel => RuntimeDropPolicy::Cancel,
             RuntimeDropPolicyExpr::Stop { fade } => {
-                let RuntimeValue::Duration(fade) = self.evaluate_dialogue_expr(
-                    state,
-                    (activation_id, activation),
-                    fade,
-                    pure_backend,
-                )?
+                let RuntimeValue::Duration(fade) =
+                    self.evaluate_dialogue_expr(slot, fade, pure_backend)?
                 else {
                     return Err(LineRuntimeError::InvalidDropPolicy.into());
                 };
@@ -2973,18 +2970,16 @@ impl Engine {
             _ => None,
         };
         let target = match source_local {
-            Some(local) => state
+            Some(local) => slot
+                .transaction_mut()
+                .frame_mut()
                 .execution
                 .env
                 .take(local)
                 .ok_or(RuntimeEvalError::UnknownLocal(local))?,
-            None => self.evaluate_dialogue_expr(
-                state,
-                (activation_id, activation),
-                target,
-                pure_backend,
-            )?,
+            None => self.evaluate_dialogue_expr(slot, target, pure_backend)?,
         };
+        let (state, activation) = slot.transaction_mut().parts_mut();
         let result = (|| {
             let handles = unique_affine_line_handles(&target)?;
             let mut ledger = activation.ledger().clone();
@@ -3467,23 +3462,18 @@ mod tests {
             RuntimeRegistryWriteSource, RuntimeScopeRegistry,
         };
         use crate::entry::RuntimeSchemaLimits;
-        use crate::pattern::RuntimeCheckedType;
         use crate::task::RuntimeProgramOwner;
         use crate::value::{RuntimeEnv, RuntimeRetainedValueAdmission};
         use arcweft_id::{DeclarationName, LifetimeRegistryKey, LifetimeScopeKind};
 
-        let boolean = RuntimeCheckedType::Bool.semantic_identity_digest();
-        let mut builder = RuntimePlanBuilder::new();
-        builder
-            .admit_type_batch(
-                [RuntimePlanTypeSeed::new(
-                    boolean,
-                    RuntimePlanTypeProjection::Bool,
-                )],
-                [],
-            )
-            .unwrap();
-        let mut engine = Engine::new(builder.finish().unwrap());
+        let (plan, flow) = super::super::registry::tests::flow_registry_plan(true);
+        let mut engine = Engine::for_flow(plan, &flow).unwrap();
+        for _ in 0..2 {
+            let step = engine.step(Default::default(), Default::default());
+            assert_eq!(step.stats.executed_ops, 1);
+            assert!(step.output.diagnostics.is_empty(), "{step:?}");
+        }
+        let boolean = crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest();
         let ty = engine.plan.type_table().id_for_semantic(boolean).unwrap();
         let owner = RuntimeProgramOwner::Plan(engine.program_plan());
         let activation = DialogueActivationId::new(
@@ -3495,7 +3485,14 @@ mod tests {
         let local = RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN);
         let mut frame = activation_frame(&engine, local);
         frame.parent = engine.fiber.id;
+        frame.target = None;
         frame.execution.env = RuntimeEnv::default();
+        engine.fiber.frame.selected_dialogue_result = Some(RuntimeValue::String("p".repeat(1024)));
+        frame.execution.selected_dialogue_result = Some(RuntimeValue::String("e".repeat(1024)));
+        frame.task_inputs = Box::new([RuntimeLocalBinding {
+            local,
+            value: RuntimeValue::String("a".repeat(1024)),
+        }]);
         engine
             .dialogue_activations
             .begin(activation, frame)
@@ -3504,7 +3501,6 @@ mod tests {
             .dialogue_activations
             .begin_transaction(&activation)
             .unwrap();
-        let (frame, line) = transaction.parts_mut();
         let key = |scope| {
             LifetimeRegistryKey::new(scope, Box::new([DeclarationName::try_new("flag").unwrap()]))
         };
@@ -3530,43 +3526,136 @@ mod tests {
                 rows.reserve_write(position).unwrap();
                 rows.commit(position, source, update);
             };
-        engine.fiber.frame.env.open_flow_registry();
         write(
-            engine.fiber.frame.env.flow_registry_mut().unwrap(),
-            &flow_key,
-            RuntimeRegistryOwner::NativeFlow,
-            RuntimeRegistryWriteSource::Native,
-            false,
-        );
-        write(
-            line.line_registry_mut().unwrap(),
+            transaction.line_mut().line_registry_mut().unwrap(),
             &line_key,
             RuntimeRegistryOwner::Dialogue(activation),
             RuntimeRegistryWriteSource::NativeLine { activation },
             true,
         );
 
+        let mut slot = super::DialogueActivationExecutionSlot(Some(transaction));
         let mut backend = VmRuntimePureCallBackend::default();
-        for (key, expected) in [(flow_key, false), (line_key, true)] {
+        for (key, expected) in [(&flow_key, false), (&line_key, true)] {
+            let limits = RuntimeSchemaLimits::engine_default();
+            for (limit, should_pass) in [(2500, false), (3300, true)] {
+                let result = engine
+                    .with_inline_dialogue(&mut slot, |engine| {
+                        engine.read_registry_value(
+                            key,
+                            RuntimeRegistryReadKind::Required,
+                            ty,
+                            RuntimeSchemaLimits {
+                                max_encoded_bytes: limit,
+                                ..limits
+                            },
+                        )
+                    })
+                    .unwrap();
+                if should_pass {
+                    assert_eq!(result, Ok(RuntimeValue::Bool(expected)));
+                } else {
+                    let error = result.unwrap_err();
+                    assert!(matches!(
+                        error,
+                        super::RuntimeEvalError::RegistryReadAdmission(_)
+                    ));
+                    assert!(error.to_string().contains("encoded_bytes"), "{error}");
+                }
+            }
             let expression = RuntimeExpr::from_admitted_parts(
                 ty,
                 RuntimeExprKind::RegistryRead {
-                    key,
+                    key: key.clone(),
                     kind: RuntimeRegistryReadKind::Required,
                 },
             );
             assert_eq!(
-                engine.evaluate_dialogue_expr(
-                    frame,
-                    (&activation, line),
-                    &expression,
-                    &mut backend
-                ),
+                engine.evaluate_dialogue_expr(&mut slot, &expression, &mut backend),
                 Ok(RuntimeValue::Bool(expected)),
             );
         }
-        assert!(engine.activation_registry_reads.is_none());
-        assert!(frame.execution.env.flow_registry().is_none());
+        engine
+            .with_inline_dialogue(&mut slot, |engine| {
+                let nested = DialogueActivationId::new(
+                    crate::effect::RuntimeArtifactFingerprint::try_from_bytes([0x5e; 32]).unwrap(),
+                    engine.fiber.persistent_id,
+                    RuntimeDialogueContentPlanId::from_accepted_ordinal(NonZeroU32::MIN),
+                    1,
+                );
+                let mut frame = activation_frame(engine, local);
+                frame.parent = engine.fiber.id;
+                frame.target = None;
+                frame.execution.env = RuntimeEnv::default();
+                frame.execution.selected_dialogue_result =
+                    Some(RuntimeValue::String("n".repeat(1024)));
+                engine.dialogue_activations.begin(nested, frame).unwrap();
+                let mut transaction = engine
+                    .dialogue_activations
+                    .begin_transaction(&nested)
+                    .unwrap();
+                write(
+                    transaction.line_mut().line_registry_mut().unwrap(),
+                    &line_key,
+                    RuntimeRegistryOwner::Dialogue(nested),
+                    RuntimeRegistryWriteSource::NativeLine { activation: nested },
+                    false,
+                );
+                let mut nested_slot = super::DialogueActivationExecutionSlot(Some(transaction));
+                engine
+                    .with_inline_dialogue(&mut nested_slot, |engine| {
+                        for key in [&line_key, &flow_key] {
+                            let result = engine.read_registry_value(
+                                key,
+                                RuntimeRegistryReadKind::Required,
+                                ty,
+                                RuntimeSchemaLimits {
+                                    max_encoded_bytes: 3500,
+                                    ..RuntimeSchemaLimits::engine_default()
+                                },
+                            );
+                            let error = result.unwrap_err();
+                            assert!(error.to_string().contains("encoded_bytes"), "{error}");
+                            assert_eq!(
+                                engine.read_registry_value(
+                                    key,
+                                    RuntimeRegistryReadKind::Required,
+                                    ty,
+                                    RuntimeSchemaLimits {
+                                        max_encoded_bytes: 4600,
+                                        ..RuntimeSchemaLimits::engine_default()
+                                    },
+                                ),
+                                Ok(RuntimeValue::Bool(false)),
+                            );
+                        }
+                    })
+                    .unwrap();
+                engine
+                    .dialogue_activations
+                    .commit_transaction(nested_slot.0.take().unwrap())
+                    .unwrap();
+                assert_eq!(
+                    engine.read_registry_value(
+                        &line_key,
+                        RuntimeRegistryReadKind::Required,
+                        ty,
+                        RuntimeSchemaLimits::engine_default(),
+                    ),
+                    Ok(RuntimeValue::Bool(true)),
+                );
+            })
+            .unwrap();
+        assert!(engine.inline_dialogues.is_empty());
+        assert!(
+            slot.transaction()
+                .frame()
+                .execution
+                .env
+                .flow_registry()
+                .is_none()
+        );
+        assert!(engine.fiber.frame.env.flow_registry().is_some());
     }
 
     #[test]
@@ -3585,7 +3674,7 @@ mod tests {
             .dialogue_activations
             .begin(activation.clone(), activation_frame(&engine, local))
             .expect("activation");
-        let mut owner = engine
+        let owner = engine
             .dialogue_activations
             .begin_transaction(&activation)
             .expect("sole dialogue owner");
@@ -3600,10 +3689,11 @@ mod tests {
             policy: RuntimeDropPolicyExpr::Default,
         };
         let mut pure = VmRuntimePureCallBackend::default();
-        let (frame, line) = owner.parts_mut();
+        let mut slot = super::DialogueActivationExecutionSlot(Some(owner));
         engine
-            .execute_dialogue_evaluated_effect(&activation, frame, line, &effect, &mut pure)
+            .execute_dialogue_evaluated_effect(&activation, &mut slot, &effect, &mut pure)
             .expect("drop candidate");
+        let mut owner = slot.0.take().unwrap();
         assert!(owner.frame().execution.env.get(local).is_none());
         owner.frame_mut().execution.env.push_scope();
         owner
@@ -3717,14 +3807,15 @@ mod tests {
             )
             .expect("staged result");
 
+        let (transaction, result) = engine.resume_dialogue_activation(
+            transaction,
+            &[],
+            &mut crate::step::RuntimeStepInput::default(),
+            &[],
+            &mut VmRuntimePureCallBackend::default(),
+        );
         assert!(matches!(
-            engine.resume_dialogue_activation(
-                &mut transaction,
-                &[],
-                &mut crate::step::RuntimeStepInput::default(),
-                &[],
-                &mut VmRuntimePureCallBackend::default(),
-            ),
+            result,
             Ok(super::DialogueActivationStep::Continue)
         ));
         assert!(transaction.frame().scopes.is_empty());
@@ -3784,7 +3875,7 @@ mod tests {
             super::DialogueActivationStep::HostCall(Box::new(request.clone())),
         );
         assert_eq!(output.requests.host_calls, vec![request]);
-        let mut transaction = engine
+        let transaction = engine
             .dialogue_activations
             .begin_transaction(&id)
             .expect("committed host call");
@@ -3792,17 +3883,18 @@ mod tests {
             id: call_id,
             outcome: Ok(crate::value::RuntimePayload::from(RuntimeValue::Unit)),
         };
+        let (transaction, result) = engine.resume_dialogue_activation(
+            transaction,
+            &[],
+            &mut crate::step::RuntimeStepInput {
+                host_call_results: vec![reply],
+                ..crate::step::RuntimeStepInput::default()
+            },
+            &[],
+            &mut VmRuntimePureCallBackend::default(),
+        );
         assert!(matches!(
-            engine.resume_dialogue_activation(
-                &mut transaction,
-                &[],
-                &mut crate::step::RuntimeStepInput {
-                    host_call_results: vec![reply],
-                    ..crate::step::RuntimeStepInput::default()
-                },
-                &[],
-                &mut VmRuntimePureCallBackend::default(),
-            ),
+            result,
             Ok(super::DialogueActivationStep::Continue)
         ));
         assert!(transaction.frame().pending_host_call.is_none());
@@ -3819,7 +3911,7 @@ mod tests {
             .dialogue_activations
             .begin(id.clone(), activation_frame(&engine, local))
             .expect("activation");
-        let mut transaction = engine
+        let transaction = engine
             .dialogue_activations
             .begin_transaction(&id)
             .expect("transaction");
@@ -3831,12 +3923,11 @@ mod tests {
             ),
             fields: Vec::new(),
         };
-        let (frame, line) = transaction.parts_mut();
+        let mut slot = super::DialogueActivationExecutionSlot(Some(transaction));
         let request = engine
             .execute_dialogue_evaluated_effect(
                 &id,
-                frame,
-                line,
+                &mut slot,
                 &effect,
                 &mut VmRuntimePureCallBackend::default(),
             )
@@ -3845,7 +3936,7 @@ mod tests {
         assert!(matches!(request, crate::effect::LineEffectRequest::Log(_)));
         let mut output = crate::step::RuntimeStepOutput::default();
         engine.commit_and_suspend_dialogue(
-            transaction,
+            slot.0.take().unwrap(),
             &mut output,
             super::DialogueActivationStep::Effect(request.clone()),
         );
@@ -3949,8 +4040,10 @@ mod tests {
             )
             .expect("actor acquired");
         frame.execution.env.set(source, RuntimeValue::Opaque(actor));
-        let mut line = RuntimeDialogueActivationState::new();
-        line.commit_ledger(ledger);
+        engine.dialogue_activations.begin(id, frame).unwrap();
+        let mut transaction = engine.dialogue_activations.begin_transaction(&id).unwrap();
+        transaction.line_mut().commit_ledger(ledger);
+        let mut slot = super::DialogueActivationExecutionSlot(Some(transaction));
         let path = RuntimePatternBindingPath::try_from_steps([RuntimePatternBindingStep::Whole])
             .expect("whole binding");
         let pattern = RuntimePattern::from_admitted_parts(
@@ -3970,13 +4063,13 @@ mod tests {
         engine
             .bind_dialogue_let(
                 &id,
-                &mut frame,
-                &mut line,
+                &mut slot,
                 &pattern,
                 &expr,
                 &mut VmRuntimePureCallBackend::default(),
             )
             .expect("affine let transfers owner");
+        let (frame, line) = slot.transaction_mut().parts_mut();
         assert!(frame.execution.env.get(source).is_none());
         assert!(matches!(
             frame.execution.env.get(destination),
@@ -4021,22 +4114,22 @@ mod tests {
                 crate::value::RuntimeLocalReadMode::Move,
             )),
         );
-        let before = engine.activation_local_handle_owners(&frame).unwrap();
+        let before = engine.activation_local_handle_owners(frame).unwrap();
         let value = engine
             .evaluate_dialogue_expr(
-                &mut frame,
-                (&id, &line),
+                &mut slot,
                 &incoming_expr,
                 &mut VmRuntimePureCallBackend::default(),
             )
             .unwrap();
+        let (frame, line) = slot.transaction_mut().parts_mut();
         frame
             .execution
             .env
             .assign_runtime_place(crate::value::RuntimeMutablePlace::Local(destination), value)
             .unwrap();
         engine
-            .commit_activation_assignment_discards(&id, &mut frame, &mut line, &before)
+            .commit_activation_assignment_discards(&id, frame, line, &before)
             .unwrap();
         assert_eq!(
             line.ledger().lease(&token).unwrap().state(),
@@ -4057,7 +4150,7 @@ mod tests {
         };
         assert_eq!(actor, &token);
         assert!(matches!(
-            engine.prepare_activation_scope_exit(&id, &mut frame, &mut line, ScopeExit::Completed),
+            engine.prepare_activation_scope_exit(&id, frame, line, ScopeExit::Completed),
             Ok(ActivationScopeStep::Waiting)
         ));
         line.accept_runtime_outcome(&crate::presentation::RuntimeLineHostOutcome::Stage(
@@ -4073,7 +4166,7 @@ mod tests {
         );
 
         assert!(matches!(
-            engine.prepare_activation_scope_exit(&id, &mut frame, &mut line, ScopeExit::Completed),
+            engine.prepare_activation_scope_exit(&id, frame, line, ScopeExit::Completed),
             Ok(ActivationScopeStep::Finished)
         ));
         assert!(frame.scopes.is_empty());

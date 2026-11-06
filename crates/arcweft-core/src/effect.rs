@@ -12,10 +12,7 @@ pub use assertion_identity::{
     RuntimeArtifactFingerprint, RuntimeAssertionGuardId, RuntimeIdentityDecodeError,
 };
 pub(crate) use registry::RuntimePreparedRegistryWrite;
-pub(crate) use registry::{
-    RuntimeRegistryOwner, RuntimeRegistryWriteSource, RuntimeScopeRegistry,
-    RuntimeScopeRegistryReadView,
-};
+pub(crate) use registry::{RuntimeRegistryOwner, RuntimeRegistryWriteSource, RuntimeScopeRegistry};
 pub use registry::{RuntimeRegistryReadKind, RuntimeRegistryStateUpdate};
 pub(crate) use registry::{RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJournalError};
 

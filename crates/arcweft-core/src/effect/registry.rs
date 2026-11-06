@@ -18,10 +18,7 @@ use crate::value::{
 mod journal;
 mod scope;
 pub(crate) use journal::{RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJournalError};
-pub(crate) use scope::{
-    RuntimeRegistryOwner, RuntimeRegistryWriteSource, RuntimeScopeRegistry,
-    RuntimeScopeRegistryReadView,
-};
+pub(crate) use scope::{RuntimeRegistryOwner, RuntimeRegistryWriteSource, RuntimeScopeRegistry};
 
 pub(crate) use scope::RuntimePreparedRegistryWrite;
 

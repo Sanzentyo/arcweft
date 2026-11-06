@@ -316,25 +316,30 @@ impl<N, P, Q, FV, FP, O, C, A, AS, MS, D>
         D,
     >
 {
-    pub(super) fn admit_root_execution(&self) -> Result<(), String>
+    pub(super) fn admit_root_execution(
+        &self,
+        suspended: Option<&NativeFlowExecutionFrame<FV, FP, O, C, A, FlowFiberStatus<AS, MS>>>,
+    ) -> Result<(), String>
     where
         C: ScopeControl<O>,
     {
         if !matches!(self.main_fiber().owner, FlowFiberOwner::Executor) {
             return Err("native main fiber does not have its executor owner".into());
         }
+        let main = self.session_frame(self.main_fiber(), suspended);
         crate::presentation::resources::PresentationExecutionRole::Root
-            .validate_registration_bank(self.main_fiber().frame.presentation_bank)
+            .validate_registration_bank(main.presentation_bank)
             .map_err(|error| error.to_string())?;
-        self.main_fiber().frame.admit_root_phase(
+        main.admit_root_phase(
             self.root.as_ref(),
             &self.main_fiber().owner,
-            matches!(self.main_fiber().frame.status, FlowFiberStatus::Failed(_)),
+            matches!(main.status, FlowFiberStatus::Failed(_)),
         )?;
         let mut reducer_count = 0;
         for child in self.session_children() {
+            let frame = self.session_frame(child, suspended);
             let root = if matches!(child.owner, FlowFiberOwner::RootReducer { .. }) {
-                if !matches!(child.frame.status, FlowFiberStatus::Running) {
+                if !matches!(frame.status, FlowFiberStatus::Running) {
                     return Err("native Root reducer is not a running pure frame".into());
                 }
                 reducer_count += 1;
@@ -342,7 +347,7 @@ impl<N, P, Q, FV, FP, O, C, A, AS, MS, D>
             } else {
                 None
             };
-            child.frame.admit_root_phase(root, &child.owner, false)?;
+            frame.admit_root_phase(root, &child.owner, false)?;
         }
         let evaluating = self.root.as_ref().is_some_and(|root| {
             matches!(
@@ -796,6 +801,7 @@ impl<N, P, R, FV, FP, O, C, A, S, D>
     pub(super) fn validate_scheduled_scope_state(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        suspended: Option<&NativeFlowExecutionFrame<FV, FP, O, C, A, S>>,
     ) -> Result<(), String>
     where
         O: ScopeOperation,
@@ -804,13 +810,14 @@ impl<N, P, R, FV, FP, O, C, A, S, D>
         // Bound the complete borrowed inventory before constructing validation
         // sets. Saved rows remain inert throughout these same scope laws.
         for fiber in self.session_fibers() {
+            let frame = self.session_frame(fiber, suspended);
             admission
-                .validate_metadata_collection(fiber.frame.pending_ops.len())
+                .validate_metadata_collection(frame.pending_ops.len())
                 .map_err(|error| error.to_string())?;
             admission
-                .validate_metadata_collection(fiber.frame.control_stack.len())
+                .validate_metadata_collection(frame.control_stack.len())
                 .map_err(|error| error.to_string())?;
-            for entry in &fiber.frame.control_stack {
+            for entry in &frame.control_stack {
                 entry.visit_scope_state(|state| match state {
                     ScopeState::Frame(token) => admission
                         .validate_metadata(&token)
@@ -827,11 +834,12 @@ impl<N, P, R, FV, FP, O, C, A, S, D>
         let mut opened = BTreeSet::new();
         let mut closed = BTreeSet::new();
         for fiber in self.session_fibers() {
+            let frame = self.session_frame(fiber, suspended);
             let valid = |token: crate::scope::RuntimeScheduledScopeToken| {
                 token.belongs_to(fiber.execution, fiber.persistent_id)
                     && token.ordinal().get() < self.next_scheduled_scope_sequence
             };
-            for entry in &fiber.frame.control_stack {
+            for entry in &frame.control_stack {
                 entry.visit_scope_state::<String>(|state| {
                     if let ScopeState::Frame(token) = state
                         && (!valid(token) || !opened.insert(token))
@@ -875,8 +883,8 @@ impl<N, P, R, FV, FP, O, C, A, S, D>
                 }
                 Ok(())
             };
-            pending(&fiber.frame.pending_ops)?;
-            for entry in &fiber.frame.control_stack {
+            pending(&frame.pending_ops)?;
+            for entry in &frame.control_stack {
                 entry.visit_scope_state(|state| match state {
                     ScopeState::Pending(ops) => pending(ops),
                     ScopeState::Frame(_) => Ok(()),
@@ -1105,16 +1113,39 @@ impl Engine {
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
         removal: Option<crate::presentation::resources::PresentationSlotRemovalAdmission<'_>>,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
-        self.admit_live_retained_values_with_dialogue(admission, removal, None)
+        self.admit_live_fiber_values(admission, removal, None)?;
+        if !self.inline_dialogues.is_empty() {
+            self.admit_live_dialogue_values(admission)?;
+        }
+        Ok(())
     }
 
-    pub(super) fn admit_live_retained_values_with_dialogue(
+    pub(super) fn admit_live_dialogue_values(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+        use crate::line_task::RuntimeDialogueRegistrySnapshotError;
+        self.dialogue_activations
+            .admit_live_with_inline_execution(admission, &self.inline_dialogues, &self.fiber.frame)
+            .map_err(|error| match error {
+                RuntimeDialogueRegistrySnapshotError::Value(error) => error,
+                error => crate::value::AwbcRuntimeValueSnapshotError::Message {
+                    message: error.to_string(),
+                },
+            })
+    }
+
+    pub(super) fn admit_live_fiber_values(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
         removal: Option<crate::presentation::resources::PresentationSlotRemovalAdmission<'_>>,
         transaction: Option<&super::dialogue::DialogueActivationTransaction>,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
         use crate::value::AwbcRuntimeValueSnapshotError;
+        let suspended = self
+            .inline_dialogues
+            .first()
+            .map(|transaction| &transaction.frame().execution);
         self.admit_presentation_state_for_slot_removal(admission, removal)?;
         self.admit_metadata(admission)?;
         self.need_producers.admit_retained(admission)?;
@@ -1123,21 +1154,24 @@ impl Engine {
         if let Some(root) = &self.root {
             root.admit_retained(admission)?;
         }
-        self.admit_root_execution()
+        self.admit_root_execution(suspended)
             .map_err(|message| AwbcRuntimeValueSnapshotError::Message { message })?;
-        self.validate_scheduled_scope_state(admission)
+        self.validate_scheduled_scope_state(admission, suspended)
             .map_err(|message| AwbcRuntimeValueSnapshotError::Message { message })?;
         for fiber in self.session_fibers() {
-            fiber.frame.admit_owned_values(admission)?;
-            fiber.frame.env.validate_presentation_context(
-                &fiber.frame.program,
+            let frame = self.session_frame(fiber, suspended);
+            frame.admit_owned_values(admission)?;
+            frame.env.validate_presentation_context(
+                &frame.program,
                 fiber.execution,
                 fiber.persistent_id,
             )?;
         }
         self.expected_deferred_children(|activation| {
             transaction
-                .filter(|transaction| transaction.activation() == activation)
+                .into_iter()
+                .chain(&self.inline_dialogues)
+                .find(|transaction| transaction.activation() == activation)
                 .map(super::dialogue::DialogueActivationTransaction::line)
                 .or_else(|| self.dialogue_activations.active_line(activation))
                 .and_then(crate::line_task::RuntimeDialogueActivationState::deferred_inflight)
@@ -1177,8 +1211,8 @@ impl NativeEngineRollbackImage {
             root.admit_retained(&mut admission)
                 .map_err(|error| error.to_string())?;
         }
-        self.admit_root_execution()?;
-        self.validate_scheduled_scope_state(&mut admission)?;
+        self.admit_root_execution(None)?;
+        self.validate_scheduled_scope_state(&mut admission, None)?;
         for fiber in self.session_fibers() {
             fiber
                 .frame

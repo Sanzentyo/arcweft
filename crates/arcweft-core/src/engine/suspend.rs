@@ -197,13 +197,14 @@ impl Engine {
             return;
         }
         if transaction.frame().phase == DialogueRuntimePhase::Activating {
-            match self.resume_dialogue_activation(
-                &mut transaction,
+            let (transaction, step) = self.resume_dialogue_activation(
+                transaction,
                 &line_outcomes,
                 input,
                 events,
                 pure_backend,
-            ) {
+            );
+            match step {
                 Ok(step) => self.commit_and_suspend_dialogue(transaction, output, step),
                 Err(error) => self.begin_dialogue_failure(transaction, error, output),
             }

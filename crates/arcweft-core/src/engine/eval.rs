@@ -130,9 +130,12 @@ impl Engine {
                 .ok_or(RuntimeEvalError::AffineLiteralCopy),
             RuntimeExprKind::Agent(agent) => self.evaluate_agent_expr(agent, pure_backend),
             RuntimeExprKind::Local(read) => self.fiber.frame.env.read(read),
-            RuntimeExprKind::RegistryRead { key, kind } => {
-                self.read_registry_value(key, *kind, expr.ty())
-            }
+            RuntimeExprKind::RegistryRead { key, kind } => self.read_registry_value(
+                key,
+                *kind,
+                expr.ty(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
             RuntimeExprKind::ArrayFromVec { value } => {
                 let value = self.evaluate_expr_with_backend(value, pure_backend)?;
                 self.fiber

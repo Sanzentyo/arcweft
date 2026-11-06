@@ -954,6 +954,62 @@ impl DialogueActivationStore {
         self.registry.active_line(activation)
     }
 
+    fn admit_contour<'a>(
+        &'a self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        transactions: impl ExactSizeIterator<Item = &'a DialogueActivationTransaction>,
+        executing_frame: impl Fn(
+            &DialogueActivationId,
+        ) -> Option<&'a super::super::NativeFlowExecutionFrame>,
+    ) -> Result<
+        crate::line_task::RuntimeDialogueRetainedContour<
+            'a,
+            EngineDialogueActivationFrame,
+            RuntimePlanTypeId,
+        >,
+        crate::line_task::RuntimeDialogueRegistrySnapshotError,
+    > {
+        let contour = self.registry.retained_contour(
+            transactions.map(|transaction| &transaction.inner),
+            admission,
+        )?;
+        contour.admit_retained(admission)?;
+        contour.try_visit_active(|activation, active, line| {
+            admission.validate_metadata(&active.inbox)?;
+            active.frame.admit_reducer(activation, line, admission)
+        })?;
+        contour.try_visit_active(|activation, active, _| {
+            active
+                .frame
+                .admit_frame_roots(admission, |frame, admission| {
+                    let frame = executing_frame(activation).unwrap_or(frame);
+                    frame.admit_owned_values(admission)
+                })
+        })?;
+        Ok(contour)
+    }
+
+    pub(in crate::engine) fn admit_live_with_inline_execution(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        stack: &[DialogueActivationTransaction],
+        execution: &super::super::NativeFlowExecutionFrame,
+    ) -> Result<(), crate::line_task::RuntimeDialogueRegistrySnapshotError> {
+        // Each transaction holds the frame it suspended. Its own running frame
+        // is held by the next transaction or by the active execution slot.
+        self.admit_contour(admission, stack.iter(), |activation| {
+            let index = stack
+                .iter()
+                .position(|transaction| transaction.activation() == activation)?;
+            Some(
+                stack
+                    .get(index + 1)
+                    .map_or(execution, |next| &next.frame().execution),
+            )
+        })?;
+        Ok(())
+    }
+
     pub(crate) fn inert_rollback_image(
         &self,
         owner: &crate::task::RuntimeProgramOwner,
@@ -961,31 +1017,7 @@ impl DialogueActivationStore {
         transaction: Option<&DialogueActivationTransaction>,
     ) -> Result<DialogueActivationStoreRollbackImage, String> {
         let contour = self
-            .registry
-            .retained_contour(
-                transaction
-                    .map(|transaction| &transaction.inner)
-                    .into_iter(),
-                admission,
-            )
-            .map_err(|error| error.to_string())?;
-        contour
-            .admit_retained(admission)
-            .map_err(|error| error.to_string())?;
-        contour
-            .try_visit_active(|activation, active, line| {
-                admission.validate_metadata(&active.inbox)?;
-                active.frame.admit_reducer(activation, line, admission)
-            })
-            .map_err(|error| error.to_string())?;
-        contour
-            .try_visit_active(|_, active, _| {
-                active
-                    .frame
-                    .admit_frame_roots(admission, |frame, admission| {
-                        frame.admit_owned_values(admission)
-                    })
-            })
+            .admit_contour(admission, transaction.into_iter(), |_| None)
             .map_err(|error| error.to_string())?;
         admission
             .finish_presentation_custody()
